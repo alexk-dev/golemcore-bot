@@ -92,12 +92,12 @@ Page ← useHook (cache update) ← api function ← response
 
 | Entity | Convention | Example |
 |---|---|---|
-| Component | PascalCase, descriptive noun/noun-phrase | `TelegramSettingsCard` |
+| Component | PascalCase, descriptive noun/noun-phrase | `VoiceRoutingTab` |
 | Page | `*Page` suffix | `SettingsPage` |
-| Hook | `use*` prefix | `useUpdateTelegram` |
-| API function | verb + resource (`get*`, `create*`, `update*`, `delete*`) | `updateTelegramConfig` |
+| Hook | `use*` prefix | `useUpdateVoice` |
+| API function | verb + resource (`get*`, `create*`, `update*`, `delete*`) | `updateRuntimeConfig` |
 | Store | `use*Store` | `useAuthStore` |
-| Interface/Type | PascalCase, no `I` prefix | `TelegramConfig` |
+| Interface/Type | PascalCase, no `I` prefix | `RuntimeConfig` |
 | Constants | UPPER_SNAKE_CASE | `MAX_RETRY_COUNT` |
 | Boolean props/vars | `is*`, `has*`, `should*`, `can*` prefix | `isLoading`, `hasError` |
 | Event handlers | `handle*` in component, `on*` in props | `handleSubmit`, `onSave` |

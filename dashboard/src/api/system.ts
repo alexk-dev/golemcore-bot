@@ -9,6 +9,11 @@ export interface SystemHealthResponse {
   channels: Record<string, { type: string; running: boolean; enabled: boolean }>;
 }
 
+export interface SystemChannelResponse {
+  type: string;
+  running: boolean;
+}
+
 export interface SystemDiagnosticsResponse {
   storage: {
     configuredBasePath: string;
@@ -25,18 +30,6 @@ export interface SystemDiagnosticsResponse {
     userDir: string;
     userHome: string;
   };
-}
-
-export interface BrowserHealthResponse {
-  enabled: boolean;
-  type: string;
-  provider: string;
-  headless: boolean;
-  timeoutMs: number;
-  availableBefore: boolean;
-  availableAfter: boolean;
-  ok: boolean;
-  message: string;
 }
 
 export interface LogEntryResponse {
@@ -68,17 +61,38 @@ export interface SystemUpdateVersionInfo {
 export interface SystemUpdateStatusResponse {
   state: string;
   enabled: boolean;
+  autoEnabled?: boolean;
+  maintenanceWindowEnabled?: boolean;
+  maintenanceWindowStartUtc?: string | null;
+  maintenanceWindowEndUtc?: string | null;
+  serverTimezone?: string | null;
+  windowOpen?: boolean;
+  busy?: boolean;
+  blockedReason?: string | null;
+  nextEligibleAt?: string | null;
   current: SystemUpdateVersionInfo | null;
+  target: SystemUpdateVersionInfo | null;
   staged: SystemUpdateVersionInfo | null;
   available: SystemUpdateVersionInfo | null;
   lastCheckAt: string | null;
   lastError: string | null;
+  progressPercent: number | null;
+  stageTitle: string | null;
+  stageDescription: string | null;
 }
 
 export interface SystemUpdateActionResponse {
   success: boolean;
   message: string;
   version?: string | null;
+}
+
+export interface SystemUpdateConfigResponse {
+  autoEnabled: boolean;
+  checkIntervalMinutes: number;
+  maintenanceWindowEnabled: boolean;
+  maintenanceWindowStartUtc: string;
+  maintenanceWindowEndUtc: string;
 }
 
 export async function getSystemHealth(): Promise<SystemHealthResponse> {
@@ -91,8 +105,18 @@ export async function getSystemDiagnostics(): Promise<SystemDiagnosticsResponse>
   return data;
 }
 
+export async function getSystemChannels(): Promise<SystemChannelResponse[]> {
+  const { data } = await client.get<SystemChannelResponse[]>('/system/channels');
+  return data;
+}
+
 export async function getSystemUpdateStatus(): Promise<SystemUpdateStatusResponse> {
   const { data } = await client.get<SystemUpdateStatusResponse>('/system/update/status');
+  return data;
+}
+
+export async function getSystemUpdateConfig(): Promise<SystemUpdateConfigResponse> {
+  const { data } = await client.get<SystemUpdateConfigResponse>('/system/update/config');
   return data;
 }
 
@@ -106,8 +130,10 @@ export async function updateSystemNow(): Promise<SystemUpdateActionResponse> {
   return data;
 }
 
-export async function getBrowserHealth(): Promise<BrowserHealthResponse> {
-  const { data } = await client.get<BrowserHealthResponse>('/system/browser/health');
+export async function updateSystemUpdateConfig(
+  payload: SystemUpdateConfigResponse,
+): Promise<SystemUpdateConfigResponse> {
+  const { data } = await client.put<SystemUpdateConfigResponse>('/system/update/config', payload);
   return data;
 }
 

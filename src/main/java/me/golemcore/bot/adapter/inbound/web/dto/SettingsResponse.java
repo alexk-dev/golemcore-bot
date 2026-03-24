@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import me.golemcore.bot.domain.model.UserPreferences;
 
 import java.util.Map;
 
@@ -18,6 +19,7 @@ public class SettingsResponse {
     private String modelTier;
     private boolean tierForce;
     private Map<String, TierOverrideDto> tierOverrides;
+    private UserPreferences.WebhookConfig webhooks;
 
     @Data
     @Builder

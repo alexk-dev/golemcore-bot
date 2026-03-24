@@ -3,11 +3,11 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import me.golemcore.bot.adapter.inbound.web.dto.LogEntryDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SystemHealthResponse;
 import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
-import me.golemcore.bot.domain.component.BrowserComponent;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
-import me.golemcore.bot.port.outbound.BrowserPort;
+import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +18,7 @@ import org.springframework.http.HttpStatus;
 import reactor.test.StepVerifier;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -27,7 +28,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -39,7 +39,7 @@ class SystemControllerTest {
     private BotProperties botProperties;
     private RuntimeConfigService runtimeConfigService;
     private StoragePort storagePort;
-    private BrowserComponent browserComponent;
+    private RagPort ragPort;
     private DashboardLogService dashboardLogService;
     private ObjectProvider<BuildProperties> buildPropertiesProvider;
     private ObjectProvider<GitProperties> gitPropertiesProvider;
@@ -58,10 +58,10 @@ class SystemControllerTest {
         botProperties = new BotProperties();
         runtimeConfigService = mock(RuntimeConfigService.class);
         storagePort = mock(StoragePort.class);
-        browserComponent = mock(BrowserComponent.class);
+        ragPort = mock(RagPort.class);
         dashboardLogService = mock(DashboardLogService.class);
-        buildPropertiesProvider = mock(ObjectProvider.class);
-        gitPropertiesProvider = mock(ObjectProvider.class);
+        buildPropertiesProvider = mockObjectProvider();
+        gitPropertiesProvider = mockObjectProvider();
 
         when(storagePort.listObjects("sessions", ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("telegram:1.json")));
@@ -69,24 +69,16 @@ class SystemControllerTest {
                 .thenReturn(CompletableFuture.completedFuture(Collections.emptyList()));
 
         when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
+        when(runtimeConfigService.isPlanEnabled()).thenReturn(false);
         when(runtimeConfigService.isAutoModeEnabled()).thenReturn(false);
-        when(runtimeConfigService.isBrowserEnabled()).thenReturn(true);
-        when(runtimeConfigService.getBrowserType()).thenReturn("playwright");
-        when(runtimeConfigService.getBrowserApiProvider()).thenReturn("brave");
-        when(runtimeConfigService.isBrowserHeadless()).thenReturn(true);
-        when(runtimeConfigService.getBrowserTimeoutMs()).thenReturn(30000);
-
-        BrowserPort browserPort = mock(BrowserPort.class);
-        when(browserComponent.getBrowserPort()).thenReturn(browserPort);
-        when(browserPort.getText(eq("https://example.com"))).thenReturn(CompletableFuture.completedFuture("ok"));
-        when(browserComponent.isAvailable()).thenReturn(true);
+        when(ragPort.isAvailable()).thenReturn(false);
 
         controller = new SystemController(
-                List.of(telegramPort, webPort),
+                new ChannelRegistry(List.of(telegramPort, webPort)),
                 botProperties,
                 runtimeConfigService,
                 storagePort,
-                browserComponent,
+                ragPort,
                 buildPropertiesProvider,
                 gitPropertiesProvider,
                 dashboardLogService);
@@ -201,6 +193,7 @@ class SystemControllerTest {
                     assertTrue(body.containsKey("llmProvider"));
                     assertTrue(body.containsKey("maxIterations"));
                     assertTrue(body.containsKey("dashboardEnabled"));
+                    assertTrue(body.containsKey("planEnabled"));
                 })
                 .verifyComplete();
     }
@@ -283,12 +276,24 @@ class SystemControllerTest {
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> storage = (Map<String, Object>) response.getBody().get("storage");
+                    Map<String, Object> storage = requireObjectMap(response.getBody(), "storage");
                     assertNotNull(storage);
                     assertEquals(-1, storage.get("sessionsFiles"));
                     assertEquals(-1, storage.get("usageFiles"));
                 })
                 .verifyComplete();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> ObjectProvider<T> mockObjectProvider() {
+        return mock(ObjectProvider.class);
+    }
+
+    private static Map<String, Object> requireObjectMap(Map<String, Object> source, String key) {
+        Object value = source.get(key);
+        assertTrue(value instanceof Map<?, ?>);
+        Map<String, Object> result = new LinkedHashMap<>();
+        ((Map<?, ?>) value).forEach((entryKey, entryValue) -> result.put(String.valueOf(entryKey), entryValue));
+        return result;
     }
 }

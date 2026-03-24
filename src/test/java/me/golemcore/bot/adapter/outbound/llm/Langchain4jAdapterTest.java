@@ -8,11 +8,14 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.ToolArtifactService;
+import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.Content;
 import dev.langchain4j.data.message.ContentType;
+import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
@@ -24,6 +27,7 @@ import dev.langchain4j.model.output.FinishReason;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -46,6 +50,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class Langchain4jAdapterTest {
@@ -73,13 +79,16 @@ class Langchain4jAdapterTest {
 
     private ModelConfigService modelConfig;
     private RuntimeConfigService runtimeConfigService;
+    private ToolArtifactService toolArtifactService;
     private Langchain4jAdapter adapter;
 
     @BeforeEach
     void setUp() {
         modelConfig = mock(ModelConfigService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        toolArtifactService = mock(ToolArtifactService.class);
         when(modelConfig.supportsTemperature(anyString())).thenReturn(true);
+        when(modelConfig.supportsVision(anyString())).thenReturn(false);
         when(modelConfig.getProvider(anyString())).thenReturn(OPENAI);
         when(modelConfig.isReasoningRequired(anyString())).thenReturn(false);
         when(modelConfig.getAllModels()).thenReturn(Map.of());
@@ -91,7 +100,7 @@ class Langchain4jAdapterTest {
         when(runtimeConfigService.getLlmProviderConfig(anyString()))
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder().build());
 
-        adapter = new Langchain4jAdapter(runtimeConfigService, modelConfig) {
+        adapter = new Langchain4jAdapter(runtimeConfigService, modelConfig, toolArtifactService) {
             @Override
             protected void sleepBeforeRetry(long backoffMs) {
                 // No-op for deterministic fast retry tests.
@@ -308,6 +317,65 @@ class Langchain4jAdapterTest {
         LlmRequest request = LlmRequest.builder().tools(List.of(tool)).build();
         @SuppressWarnings(SUPPRESS_UNCHECKED)
         List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    void shouldDropDuplicateToolDefinitionsByName() {
+        ToolDefinition first = ToolDefinition.builder()
+                .name(TEST_TOOL)
+                .description("first")
+                .inputSchema(Map.of(TYPE, OBJECT, PROPERTIES, Map.of()))
+                .build();
+        ToolDefinition duplicate = ToolDefinition.builder()
+                .name(TEST_TOOL)
+                .description("duplicate")
+                .inputSchema(Map.of(TYPE, OBJECT, PROPERTIES, Map.of()))
+                .build();
+
+        LlmRequest request = LlmRequest.builder().tools(List.of(first, duplicate)).build();
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
+
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    void shouldIgnoreInvalidToolSchemaShapesWithoutThrowing() {
+        ToolDefinition tool = ToolDefinition.builder()
+                .name(TEST_TOOL)
+                .description("A test tool")
+                .inputSchema(Map.of(
+                        TYPE, OBJECT,
+                        PROPERTIES, Map.of(
+                                "param1", "not-a-schema-map"),
+                        "required", List.of("param1")))
+                .build();
+
+        LlmRequest request = LlmRequest.builder().tools(List.of(tool)).build();
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
+
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    void shouldIgnoreNonStringSchemaTypeAndDescriptionWithoutThrowing() {
+        ToolDefinition tool = ToolDefinition.builder()
+                .name(TEST_TOOL)
+                .description("A test tool")
+                .inputSchema(Map.of(
+                        TYPE, OBJECT,
+                        PROPERTIES, Map.of(
+                                "param1", Map.of(
+                                        TYPE, List.of("not-a-string"),
+                                        "description", List.of("also-not-a-string")))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder().tools(List.of(tool)).build();
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<Object> result = (List<Object>) ReflectionTestUtils.invokeMethod(adapter, CONVERT_TOOLS, request);
+
         assertEquals(1, result.size());
     }
 
@@ -571,6 +639,76 @@ class Langchain4jAdapterTest {
     }
 
     @Test
+    void shouldRetryWithoutToolImagesWhenProviderRejectsOversizedJsonBody() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, "openai/gpt-4.1");
+        when(modelConfig.supportsVision("openai/gpt-4.1")).thenReturn(true);
+        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/pinchtab/capture.png"))
+                .thenReturn(ToolArtifactDownload.builder()
+                        .path(".golemcore/tool-artifacts/session/pinchtab/capture.png")
+                        .filename("capture.png")
+                        .mimeType("image/png")
+                        .size(4L)
+                        .data(new byte[] { 1, 2, 3, 4 })
+                        .build());
+
+        AiMessage aiMessage = AiMessage.from("Recovered without images");
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .finishReason(FinishReason.STOP)
+                .build();
+
+        when(mockModel.chat((List<ChatMessage>) any()))
+                .thenThrow(new RuntimeException("{\"detail\":\"request body must be valid JSON\"}"))
+                .thenReturn(chatResponse);
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_img")
+                        .name("pinchtab_screenshot")
+                        .arguments(Map.of("tabId", "tab-1"))
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Captured screenshot")
+                .toolCallId("call_img")
+                .toolName("pinchtab_screenshot")
+                .metadata(Map.of(
+                        "toolAttachments", List.of(Map.of(
+                                TYPE, "image",
+                                "name", "capture.png",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/pinchtab/capture.png"))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-4.1")
+                .messages(List.of(
+                        Message.builder().role(ROLE_USER).content("Inspect this capture").build(),
+                        assistantMsg,
+                        toolResultMsg))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+
+        assertEquals("Recovered without images", response.getContent());
+        assertEquals(Boolean.TRUE, response.getProviderMetadata().get("toolAttachmentFallbackApplied"));
+        assertEquals("oversize_invalid_json", response.getProviderMetadata().get("toolAttachmentFallbackReason"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChatMessage>> messagesCaptor = ArgumentCaptor.forClass(List.class);
+        verify(mockModel, times(2)).chat(messagesCaptor.capture());
+        List<List<ChatMessage>> calls = messagesCaptor.getAllValues();
+        assertTrue(hasImageContent(calls.get(0)));
+        assertFalse(hasImageContent(calls.get(1)));
+        assertTrue(hasToolAttachmentPlaceholder(calls.get(1),
+                ".golemcore/tool-artifacts/session/pinchtab/capture.png"));
+    }
+
+    @Test
     void shouldThrowOnNonRateLimitError() {
         ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
@@ -638,6 +776,82 @@ class Langchain4jAdapterTest {
     }
 
     @Test
+    void shouldHandleChatWithPartiallyNullTokenUsage() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, TEST_MODEL);
+
+        AiMessage aiMessage = AiMessage.from("Partial usage info");
+        TokenUsage tokenUsage = new TokenUsage(10, null, null);
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .tokenUsage(tokenUsage)
+                .finishReason(FinishReason.STOP)
+                .build();
+
+        when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+        assertNotNull(response.getUsage());
+        assertEquals(10, response.getUsage().getInputTokens());
+        assertEquals(0, response.getUsage().getOutputTokens());
+        assertEquals(10, response.getUsage().getTotalTokens());
+    }
+
+    @Test
+    void shouldHandleChatWithOnlyTotalTokenUsage() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, TEST_MODEL);
+
+        AiMessage aiMessage = AiMessage.from("Total-only usage info");
+        TokenUsage tokenUsage = new TokenUsage(null, null, 17);
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .tokenUsage(tokenUsage)
+                .finishReason(FinishReason.STOP)
+                .build();
+
+        when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+        assertNotNull(response.getUsage());
+        assertEquals(0, response.getUsage().getInputTokens());
+        assertEquals(0, response.getUsage().getOutputTokens());
+        assertEquals(17, response.getUsage().getTotalTokens());
+    }
+
+    @Test
+    void shouldReturnNullUsageWhenAllTokenUsageFieldsAreNull() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, TEST_MODEL);
+
+        AiMessage aiMessage = AiMessage.from("All usage fields null");
+        TokenUsage tokenUsage = new TokenUsage(null, null, null);
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .tokenUsage(tokenUsage)
+                .finishReason(FinishReason.STOP)
+                .build();
+
+        when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+        assertNull(response.getUsage());
+        assertEquals("All usage fields null", response.getContent());
+    }
+
+    @Test
     void shouldHandleNullFinishReason() throws Exception {
         ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, TEST_MODEL);
@@ -699,6 +913,467 @@ class Langchain4jAdapterTest {
 
         LlmResponse response = adapter.chat(request).get();
         assertEquals("Weather is sunny", response.getContent());
+    }
+
+    @Test
+    void shouldInjectToolImageAsMultimodalContextForVisionModels() {
+        when(modelConfig.supportsVision("openai/gpt-4.1")).thenReturn(true);
+        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/pinchtab/capture.png"))
+                .thenReturn(ToolArtifactDownload.builder()
+                        .path(".golemcore/tool-artifacts/session/pinchtab/capture.png")
+                        .filename("capture.png")
+                        .mimeType("image/png")
+                        .size(4L)
+                        .data(new byte[] { 1, 2, 3, 4 })
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_img")
+                        .name("pinchtab_screenshot")
+                        .arguments(Map.of("tabId", "tab-1"))
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Captured screenshot")
+                .toolCallId("call_img")
+                .toolName("pinchtab_screenshot")
+                .metadata(Map.of(
+                        "toolAttachments", List.of(Map.of(
+                                TYPE, "image",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/pinchtab/capture.png"))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-4.1")
+                .messages(List.of(
+                        Message.builder().role(ROLE_USER).content("Check the page").build(),
+                        assistantMsg,
+                        toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(4, messages.size());
+        assertTrue(messages.get(2) instanceof ToolExecutionResultMessage);
+        assertTrue(messages.get(3) instanceof UserMessage);
+        UserMessage visualContext = (UserMessage) messages.get(3);
+        assertEquals(2, visualContext.contents().size());
+        assertEquals(ContentType.TEXT, visualContext.contents().get(0).type());
+        assertEquals(ContentType.IMAGE, visualContext.contents().get(1).type());
+        assertTrue(textOf(visualContext.contents().get(0))
+                .contains(".golemcore/tool-artifacts/session/pinchtab/capture.png"));
+    }
+
+    @Test
+    void shouldSkipToolImageInjectionForNonVisionModels() {
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_img")
+                        .name("pinchtab_screenshot")
+                        .arguments(Map.of("tabId", "tab-1"))
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Captured screenshot")
+                .toolCallId("call_img")
+                .toolName("pinchtab_screenshot")
+                .metadata(Map.of(
+                        "toolAttachments", List.of(Map.of(
+                                TYPE, "image",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/pinchtab/capture.png"))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-4.1-mini")
+                .messages(List.of(assistantMsg, toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(3, messages.size());
+        assertTrue(messages.get(1) instanceof ToolExecutionResultMessage);
+        assertTrue(messages.get(2) instanceof UserMessage);
+        UserMessage placeholder = (UserMessage) messages.get(2);
+        assertEquals(1, placeholder.contents().size());
+        assertEquals(ContentType.TEXT, placeholder.contents().get(0).type());
+        assertTrue(textOf(placeholder.contents().get(0))
+                .contains(".golemcore/tool-artifacts/session/pinchtab/capture.png"));
+    }
+
+    @Test
+    void shouldIgnoreBrokenToolImageAttachmentDownload() {
+        when(modelConfig.supportsVision("openai/gpt-4.1")).thenReturn(true);
+        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/pinchtab/missing.png"))
+                .thenThrow(new IllegalArgumentException("File not found"));
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_img")
+                        .name("pinchtab_screenshot")
+                        .arguments(Map.of("tabId", "tab-1"))
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Captured screenshot")
+                .toolCallId("call_img")
+                .toolName("pinchtab_screenshot")
+                .metadata(Map.of(
+                        "toolAttachments", List.of(Map.of(
+                                TYPE, "image",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/pinchtab/missing.png"))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-4.1")
+                .messages(List.of(assistantMsg, toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(3, messages.size());
+        assertTrue(messages.get(1) instanceof ToolExecutionResultMessage);
+        assertTrue(messages.get(2) instanceof UserMessage);
+        UserMessage placeholder = (UserMessage) messages.get(2);
+        assertEquals(1, placeholder.contents().size());
+        assertEquals(ContentType.TEXT, placeholder.contents().get(0).type());
+        assertTrue(textOf(placeholder.contents().get(0))
+                .contains(".golemcore/tool-artifacts/session/pinchtab/missing.png"));
+    }
+
+    @Test
+    void shouldCollapseHistoricalToolImageAttachmentsToTextPlaceholder() {
+        when(modelConfig.supportsVision("openai/gpt-4.1")).thenReturn(true);
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_img")
+                        .name("pinchtab_screenshot")
+                        .arguments(Map.of("tabId", "tab-1"))
+                        .build()))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Captured screenshot")
+                .toolCallId("call_img")
+                .toolName("pinchtab_screenshot")
+                .metadata(Map.of(
+                        "toolAttachments", List.of(Map.of(
+                                TYPE, "image",
+                                "name", "capture.png",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/pinchtab/capture.png"))))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-4.1")
+                .messages(List.of(
+                        assistantMsg,
+                        toolResultMsg,
+                        Message.builder().role(ROLE_USER).content("Summarize it").build()))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(4, messages.size());
+        assertTrue(messages.get(1) instanceof ToolExecutionResultMessage);
+        assertTrue(messages.get(2) instanceof UserMessage);
+        UserMessage placeholder = (UserMessage) messages.get(2);
+        assertEquals(1, placeholder.contents().size());
+        assertEquals(ContentType.TEXT, placeholder.contents().get(0).type());
+        assertTrue(textOf(placeholder.contents().get(0)).contains("capture.png"));
+        assertTrue(textOf(placeholder.contents().get(0))
+                .contains(".golemcore/tool-artifacts/session/pinchtab/capture.png"));
+    }
+
+    @Test
+    void shouldHydrateGeminiThinkingSignatureIntoAssistantToolCalls() {
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .content("Let me check that")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_1")
+                        .name(WEATHER)
+                        .arguments(Map.of("location", "London"))
+                        .build()))
+                .metadata(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        Message toolResultMsg = Message.builder()
+                .role(ROLE_TOOL)
+                .content("Sunny, 25C")
+                .toolCallId("call_1")
+                .toolName(WEATHER)
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("google/gemini-3.1-preview")
+                .messages(List.of(assistantMsg, toolResultMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        AiMessage aiMessage = (AiMessage) messages.get(0);
+        assertEquals("Let me check that", aiMessage.text());
+        assertEquals("sig-123", aiMessage.attribute("thinking_signature", String.class));
+    }
+
+    @Test
+    void shouldStoreGeminiThinkingSignatureInResponseMetadata() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, "google/gemini-3.1-preview");
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+
+        ToolExecutionRequest toolReq = ToolExecutionRequest.builder()
+                .id("call_1")
+                .name(WEATHER)
+                .arguments("{\"location\":\"London\"}")
+                .build();
+        AiMessage aiMessage = AiMessage.builder()
+                .toolExecutionRequests(List.of(toolReq))
+                .attributes(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .finishReason(FinishReason.TOOL_EXECUTION)
+                .build();
+
+        when(mockModel.chat(any(ChatRequest.class))).thenReturn(chatResponse);
+
+        ToolDefinition toolDef = ToolDefinition.builder()
+                .name(WEATHER)
+                .description("Get weather")
+                .inputSchema(Map.of(TYPE, OBJECT, PROPERTIES, Map.of()))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("google/gemini-3.1-preview")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Weather?").build()))
+                .tools(List.of(toolDef))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+        assertEquals("sig-123", response.getProviderMetadata().get("thinking_signature"));
+    }
+
+    @Test
+    void shouldIgnoreGeminiThinkingSignatureForNonGeminiTargetModel() {
+        when(modelConfig.getProvider("openai/gpt-5.1")).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType(OPENAI)
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .content("Let me check that")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_1")
+                        .name(WEATHER)
+                        .arguments(Map.of("location", "London"))
+                        .build()))
+                .metadata(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("openai/gpt-5.1")
+                .messages(List.of(assistantMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        AiMessage aiMessage = (AiMessage) messages.get(0);
+        assertNull(aiMessage.attribute("thinking_signature", String.class));
+    }
+
+    @Test
+    void shouldUseCurrentGeminiModelWhenRequestModelMissingToHydrateSignature() {
+        injectChatModel(mock(ChatModel.class), "google/gemini-3.1-preview");
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_1")
+                        .name(WEATHER)
+                        .arguments(Map.of("location", "London"))
+                        .build()))
+                .metadata(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(assistantMsg))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        AiMessage aiMessage = (AiMessage) messages.get(0);
+        assertEquals("sig-123", aiMessage.attribute("thinking_signature", String.class));
+    }
+
+    @Test
+    void shouldNotStoreGeminiThinkingSignatureForFinalAnswerWithoutToolCalls() throws Exception {
+        ChatModel mockModel = mock(ChatModel.class);
+        injectChatModel(mockModel, "google/gemini-3.1-preview");
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+
+        AiMessage aiMessage = AiMessage.builder()
+                .text("Final answer")
+                .attributes(Map.of("thinking_signature", "sig-final"))
+                .build();
+
+        ChatResponse chatResponse = ChatResponse.builder()
+                .aiMessage(aiMessage)
+                .finishReason(FinishReason.STOP)
+                .build();
+
+        when(mockModel.chat((List<ChatMessage>) any())).thenReturn(chatResponse);
+
+        LlmRequest request = LlmRequest.builder()
+                .model("google/gemini-3.1-preview")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+        assertNull(response.getProviderMetadata());
+    }
+
+    @Test
+    void shouldToggleGeminiThoughtSignatureInjectionAcrossRepeatedModelSwitches() {
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(modelConfig.getProvider("openai/gpt-5.1")).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType(OPENAI)
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .content("Let me check that")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_1")
+                        .name(WEATHER)
+                        .arguments(Map.of("location", "London"))
+                        .build()))
+                .metadata(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> openAiMessages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, LlmRequest.builder()
+                        .model("openai/gpt-5.1")
+                        .messages(List.of(assistantMsg))
+                        .build());
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> geminiMessages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, LlmRequest.builder()
+                        .model("google/gemini-3.1-preview")
+                        .messages(List.of(assistantMsg))
+                        .build());
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> openAiAgainMessages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, LlmRequest.builder()
+                        .model("openai/gpt-5.1")
+                        .messages(List.of(assistantMsg))
+                        .build());
+
+        assertNull(((AiMessage) openAiMessages.get(0)).attribute("thinking_signature", String.class));
+        assertEquals("sig-123", ((AiMessage) geminiMessages.get(0)).attribute("thinking_signature", String.class));
+        assertNull(((AiMessage) openAiAgainMessages.get(0)).attribute("thinking_signature", String.class));
+    }
+
+    @Test
+    void shouldFlattenGeminiToolHistoryWhenAssistantToolCallMissingThinkingSignature() {
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiType("gemini")
+                        .build());
+
+        Message assistantMsg = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .content("Transitioning to reviewer")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call_1")
+                        .name("default_api:skill_transition")
+                        .arguments(Map.of("target_skill", "golemcore/code-reviewer"))
+                        .build()))
+                .build();
+
+        Message toolResult = Message.builder()
+                .role(ROLE_TOOL)
+                .toolCallId("call_1")
+                .toolName("default_api:skill_transition")
+                .content("Transitioning to skill: golemcore/code-reviewer")
+                .build();
+
+        LlmRequest request = LlmRequest.builder()
+                .model("google/gemini-3.1-preview")
+                .messages(List.of(assistantMsg, toolResult))
+                .build();
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        List<ChatMessage> messages = (List<ChatMessage>) ReflectionTestUtils.invokeMethod(
+                adapter, CONVERT_MESSAGES, request);
+
+        assertEquals(1, messages.size());
+        assertTrue(messages.get(0) instanceof AiMessage);
+        AiMessage aiMessage = (AiMessage) messages.get(0);
+        assertFalse(aiMessage.hasToolExecutionRequests());
+        assertTrue(aiMessage.text().contains("default_api:skill_transition"));
+        assertTrue(aiMessage.text().contains("Transitioning to skill: golemcore/code-reviewer"));
+        assertNull(aiMessage.attribute("thinking_signature", String.class));
     }
 
     // ===== convertMessages synthetic ID assignment =====
@@ -997,6 +1672,8 @@ class Langchain4jAdapterTest {
 
         ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null);
         assertTrue(result instanceof GoogleAiGeminiChatModel);
+        assertEquals(Boolean.TRUE, ReflectionTestUtils.getField(result, "returnThinking"));
+        assertEquals(Boolean.TRUE, ReflectionTestUtils.getField(result, "sendThinking"));
     }
 
     @Test
@@ -1033,5 +1710,40 @@ class Langchain4jAdapterTest {
         ReflectionTestUtils.setField(adapter, "chatModel", model);
         ReflectionTestUtils.setField(adapter, "currentModel", modelName);
         ReflectionTestUtils.setField(adapter, "initialized", true);
+    }
+
+    private boolean hasImageContent(List<ChatMessage> messages) {
+        for (ChatMessage message : messages) {
+            if (!(message instanceof UserMessage userMessage)) {
+                continue;
+            }
+            for (Content content : userMessage.contents()) {
+                if (content.type() == ContentType.IMAGE) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean hasToolAttachmentPlaceholder(List<ChatMessage> messages, String pathFragment) {
+        for (ChatMessage message : messages) {
+            if (!(message instanceof UserMessage userMessage)) {
+                continue;
+            }
+            for (Content content : userMessage.contents()) {
+                if (content.type() == ContentType.TEXT && textOf(content).contains(pathFragment)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private String textOf(Content content) {
+        if (content instanceof TextContent textContent) {
+            return textContent.text();
+        }
+        return String.valueOf(content);
     }
 }

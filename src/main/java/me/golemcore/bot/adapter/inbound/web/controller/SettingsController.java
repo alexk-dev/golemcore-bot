@@ -1,19 +1,19 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.domain.model.MemoryPreset;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.domain.model.TelegramRestartEvent;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import org.springframework.context.ApplicationEventPublisher;
+import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
+import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
@@ -41,16 +42,21 @@ import java.util.regex.Pattern;
  */
 @RestController
 @RequestMapping("/api/settings")
-@RequiredArgsConstructor
 @Slf4j
 public class SettingsController {
 
     private static final String TELEGRAM_AUTH_MODE_INVITE_ONLY = "invite_only";
-    private static final String STT_PROVIDER_ELEVENLABS = "elevenlabs";
-    private static final String STT_PROVIDER_WHISPER = "whisper";
-    private static final String TTS_PROVIDER_ELEVENLABS = "elevenlabs";
-    private static final Set<String> VALID_STT_PROVIDERS = Set.of(STT_PROVIDER_ELEVENLABS, STT_PROVIDER_WHISPER);
+    private static final String STT_PROVIDER_ELEVENLABS = "golemcore/elevenlabs";
+    private static final String STT_PROVIDER_WHISPER = "golemcore/whisper";
+    private static final String LEGACY_STT_PROVIDER_ELEVENLABS = "elevenlabs";
+    private static final String LEGACY_STT_PROVIDER_WHISPER = "whisper";
     private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
+    private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
+    private static final String COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
+    private static final Set<String> VALID_COMPACTION_TRIGGER_MODES = Set.of(
+            DEFAULT_COMPACTION_TRIGGER_MODE,
+            COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD);
+    private static final double DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO = 0.95d;
     private static final int MEMORY_SOFT_BUDGET_MIN = 200;
     private static final int MEMORY_SOFT_BUDGET_MAX = 10000;
     private static final int MEMORY_MAX_BUDGET_MIN = 200;
@@ -68,6 +74,12 @@ public class SettingsController {
             "full_pack");
     private static final Set<String> VALID_MEMORY_PROMPT_STYLES = Set.of("compact", "balanced", "rich");
     private static final Set<String> VALID_MEMORY_DIAGNOSTICS_VERBOSITY = Set.of("off", "basic", "detailed");
+    private static final int TURN_PROGRESS_BATCH_SIZE_MIN = 1;
+    private static final int TURN_PROGRESS_BATCH_SIZE_MAX = 50;
+    private static final int TURN_PROGRESS_MAX_SILENCE_SECONDS_MIN = 1;
+    private static final int TURN_PROGRESS_MAX_SILENCE_SECONDS_MAX = 300;
+    private static final int TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MIN = 1000;
+    private static final int TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MAX = 60000;
     private static final Pattern SHELL_ENV_VAR_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final Set<String> RESERVED_SHELL_ENV_VAR_NAMES = Set.of("HOME", "PWD");
     private static final int SHELL_ENV_VAR_NAME_MAX_LENGTH = 128;
@@ -77,7 +89,22 @@ public class SettingsController {
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
     private final MemoryPresetService memoryPresetService;
-    private final ApplicationEventPublisher eventPublisher;
+    private final SttProviderRegistry sttProviderRegistry;
+    private final TtsProviderRegistry ttsProviderRegistry;
+
+    public SettingsController(UserPreferencesService preferencesService,
+            ModelSelectionService modelSelectionService,
+            RuntimeConfigService runtimeConfigService,
+            MemoryPresetService memoryPresetService,
+            SttProviderRegistry sttProviderRegistry,
+            TtsProviderRegistry ttsProviderRegistry) {
+        this.preferencesService = preferencesService;
+        this.modelSelectionService = modelSelectionService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.memoryPresetService = memoryPresetService;
+        this.sttProviderRegistry = sttProviderRegistry;
+        this.ttsProviderRegistry = ttsProviderRegistry;
+    }
 
     @GetMapping
     public Mono<ResponseEntity<SettingsResponse>> getSettings() {
@@ -97,6 +124,7 @@ public class SettingsController {
                 .modelTier(prefs.getModelTier())
                 .tierForce(prefs.isTierForce())
                 .tierOverrides(overrideDtos)
+                .webhooks(prefs.getWebhooks())
                 .build();
         return Mono.just(ResponseEntity.ok(response));
     }
@@ -115,7 +143,7 @@ public class SettingsController {
             prefs.setNotificationsEnabled(request.getNotificationsEnabled());
         }
         if (request.getModelTier() != null) {
-            prefs.setModelTier(request.getModelTier());
+            prefs.setModelTier(normalizeOptionalSelectableTier(request.getModelTier(), "modelTier"));
         }
         if (request.getTierForce() != null) {
             prefs.setTierForce(request.getTierForce());
@@ -130,7 +158,8 @@ public class SettingsController {
                 .getAvailableModelsGrouped();
         Map<String, List<ModelDto>> result = new LinkedHashMap<>();
         grouped.forEach((provider, models) -> result.put(provider, models.stream()
-                .map(m -> new ModelDto(m.id(), m.displayName(), m.hasReasoning(), m.reasoningLevels()))
+                .map(m -> new ModelDto(m.id(), m.displayName(), m.hasReasoning(),
+                        m.reasoningLevels(), m.supportsVision()))
                 .toList()));
         return Mono.just(ResponseEntity.ok(result));
     }
@@ -140,7 +169,8 @@ public class SettingsController {
             @RequestBody Map<String, SettingsResponse.TierOverrideDto> overrides) {
         UserPreferences prefs = preferencesService.getPreferences();
         Map<String, UserPreferences.TierOverride> tierOverrides = new LinkedHashMap<>();
-        overrides.forEach((tier, dto) -> tierOverrides.put(tier,
+        overrides.forEach((tier, dto) -> tierOverrides.put(
+                normalizeRequiredSelectableTier(tier, "tierOverrides key"),
                 new UserPreferences.TierOverride(dto.getModel(), dto.getReasoning())));
         prefs.setTierOverrides(tierOverrides);
         preferencesService.savePreferences(prefs);
@@ -156,30 +186,31 @@ public class SettingsController {
 
     @PutMapping("/runtime")
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
-        if (config.getTelegram() == null) {
-            config.setTelegram(new RuntimeConfig.TelegramConfig());
+        RuntimeConfig current = runtimeConfigService.getRuntimeConfig();
+        rejectManagedHiveMutation(current, config != null ? config.getHive() : null);
+        RuntimeConfig merged = mergeRuntimeConfigSections(current, config);
+        if (merged.getTelegram() == null) {
+            merged.setTelegram(new RuntimeConfig.TelegramConfig());
         }
-        normalizeAndValidateTelegramConfig(config.getTelegram());
-        mergeRuntimeSecrets(runtimeConfigService.getRuntimeConfig(), config);
-        normalizeAndValidateShellEnvironmentVariables(config.getTools());
-        validateLlmConfig(config.getLlm(), config.getModelRouter());
-        if (config.getMemory() != null) {
-            validateMemoryConfig(config.getMemory());
+        normalizeAndValidateTelegramConfig(merged.getTelegram());
+        mergeRuntimeSecrets(current, merged);
+        normalizeAndValidateShellEnvironmentVariables(merged.getTools());
+        validateLlmConfig(merged.getLlm(), merged.getModelRouter());
+        validateModelRouterConfig(merged.getModelRouter(), merged.getLlm());
+        if (merged.getAutoMode() != null) {
+            validateAndNormalizeAutoModeConfig(merged.getAutoMode());
         }
-        validateVoiceConfig(config.getVoice());
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
-    }
-
-    @PutMapping("/runtime/telegram")
-    public Mono<ResponseEntity<RuntimeConfig>> updateTelegramConfig(
-            @RequestBody RuntimeConfig.TelegramConfig telegramConfig) {
-        normalizeAndValidateTelegramConfig(telegramConfig);
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        telegramConfig.setToken(mergeSecret(config.getTelegram().getToken(), telegramConfig.getToken()));
-        config.setTelegram(telegramConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        eventPublisher.publishEvent(new TelegramRestartEvent());
+        if (merged.getTracing() != null) {
+            validateAndNormalizeTracingConfig(merged.getTracing());
+        }
+        if (merged.getMemory() != null) {
+            validateMemoryConfig(merged.getMemory());
+        }
+        validateCompactionConfig(merged.getCompaction());
+        validateVoiceConfig(merged.getVoice());
+        validateAndNormalizeModelRegistryConfig(merged.getModelRegistry());
+        validateHiveConfig(merged.getHive());
+        runtimeConfigService.updateRuntimeConfig(merged);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
@@ -187,6 +218,7 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateModelRouterConfig(
             @RequestBody RuntimeConfig.ModelRouterConfig modelRouterConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        validateModelRouterConfig(modelRouterConfig, config.getLlm());
         config.setModelRouter(modelRouterConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -201,6 +233,7 @@ public class SettingsController {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         mergeLlmSecrets(config.getLlm(), llmConfig);
         validateLlmConfig(llmConfig, config.getModelRouter());
+        validateModelRouterConfig(config.getModelRouter(), llmConfig);
         config.setLlm(llmConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         log.info("[Settings] LLM config updated successfully");
@@ -280,7 +313,6 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateToolsConfig(
             @RequestBody RuntimeConfig.ToolsConfig toolsConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        mergeToolsSecrets(config.getTools(), toolsConfig);
         normalizeAndValidateShellEnvironmentVariables(toolsConfig);
         config.setTools(toolsConfig);
         runtimeConfigService.updateRuntimeConfig(config);
@@ -385,6 +417,7 @@ public class SettingsController {
     @PutMapping("/runtime/turn")
     public Mono<ResponseEntity<RuntimeConfig>> updateTurnConfig(
             @RequestBody RuntimeConfig.TurnConfig turnConfig) {
+        validateTurnConfig(turnConfig);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         config.setTurn(turnConfig);
         runtimeConfigService.updateRuntimeConfig(config);
@@ -424,16 +457,6 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
-    @PutMapping("/runtime/rag")
-    public Mono<ResponseEntity<RuntimeConfig>> updateRagConfig(
-            @RequestBody RuntimeConfig.RagConfig ragConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        ragConfig.setApiKey(mergeSecret(config.getRag().getApiKey(), ragConfig.getApiKey()));
-        config.setRag(ragConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
-    }
-
     @PutMapping("/runtime/mcp")
     public Mono<ResponseEntity<RuntimeConfig>> updateMcpConfig(
             @RequestBody RuntimeConfig.McpConfig mcpConfig) {
@@ -443,11 +466,33 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
+    @PutMapping("/runtime/hive")
+    public Mono<ResponseEntity<RuntimeConfig>> updateHiveConfig(
+            @RequestBody RuntimeConfig.HiveConfig hiveConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        rejectManagedHiveMutation(config, hiveConfig);
+        validateHiveConfig(hiveConfig);
+        config.setHive(hiveConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @PutMapping("/runtime/plan")
+    public Mono<ResponseEntity<RuntimeConfig>> updatePlanConfig(
+            @RequestBody RuntimeConfig.PlanConfig planConfig) {
+        validatePlanConfig(planConfig);
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setPlan(planConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
     @PutMapping("/runtime/webhooks")
     public Mono<ResponseEntity<Void>> updateWebhooksConfig(
             @RequestBody UserPreferences.WebhookConfig webhookConfig) {
         UserPreferences prefs = preferencesService.getPreferences();
         mergeWebhookSecrets(prefs.getWebhooks(), webhookConfig);
+        validateWebhookConfig(webhookConfig);
         prefs.setWebhooks(webhookConfig);
         preferencesService.savePreferences(prefs);
         return Mono.just(ResponseEntity.ok().build());
@@ -457,7 +502,18 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateAutoConfig(
             @RequestBody RuntimeConfig.AutoModeConfig autoConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        validateAndNormalizeAutoModeConfig(autoConfig);
         config.setAutoMode(autoConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @PutMapping("/runtime/tracing")
+    public Mono<ResponseEntity<RuntimeConfig>> updateTracingConfig(
+            @RequestBody RuntimeConfig.TracingConfig tracingConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        validateAndNormalizeTracingConfig(tracingConfig);
+        config.setTracing(tracingConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
@@ -473,52 +529,17 @@ public class SettingsController {
             config.setSecurity(request.security());
         }
         if (request.compaction() != null) {
+            validateCompactionConfig(request.compaction());
             config.setCompaction(request.compaction());
         }
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
     }
 
-    // ==================== Invite Codes ====================
-
-    @PostMapping("/telegram/invite-codes")
-    public Mono<ResponseEntity<RuntimeConfig.InviteCode>> generateInviteCode() {
-        RuntimeConfig.InviteCode code = runtimeConfigService.generateInviteCode();
-        return Mono.just(ResponseEntity.ok(code));
-    }
-
-    @DeleteMapping("/telegram/invite-codes/{code}")
-    public Mono<ResponseEntity<Void>> revokeInviteCode(@PathVariable String code) {
-        boolean revoked = runtimeConfigService.revokeInviteCode(code);
-        if (!revoked) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Invite code not found");
-        }
-        return Mono.just(ResponseEntity.ok().build());
-    }
-
-    @DeleteMapping("/telegram/allowed-users/{userId}")
-    public Mono<ResponseEntity<Void>> removeTelegramAllowedUser(@PathVariable String userId) {
-        if (userId == null || !userId.matches("\\d+")) {
-            throw new IllegalArgumentException("telegram.userId must be numeric");
-        }
-        boolean removed = runtimeConfigService.removeTelegramAllowedUser(userId);
-        if (!removed) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Telegram user not found");
-        }
-        return Mono.just(ResponseEntity.ok().build());
-    }
-
-    // ==================== Telegram Restart ====================
-
-    @PostMapping("/telegram/restart")
-    public Mono<ResponseEntity<Void>> restartTelegram() {
-        eventPublisher.publishEvent(new TelegramRestartEvent());
-        return Mono.just(ResponseEntity.ok().build());
-    }
-
     // ==================== DTOs ====================
 
-    private record ModelDto(String id, String displayName, boolean hasReasoning, List<String> reasoningLevels) {
+    private record ModelDto(String id, String displayName, boolean hasReasoning,
+            List<String> reasoningLevels, boolean supportsVision) {
     }
 
     private record AdvancedConfigRequest(
@@ -615,6 +636,86 @@ public class SettingsController {
         }
     }
 
+    private void validateModelRouterConfig(RuntimeConfig.ModelRouterConfig modelRouterConfig,
+            RuntimeConfig.LlmConfig llmConfig) {
+        if (modelRouterConfig == null) {
+            return;
+        }
+        List<String> configuredProviders = llmConfig != null && llmConfig.getProviders() != null
+                ? new ArrayList<>(llmConfig.getProviders().keySet())
+                : List.of();
+        validateModelRouterBinding(modelRouterConfig.getRouting(), "routing", configuredProviders);
+        if (modelRouterConfig.getTiers() == null) {
+            return;
+        }
+        for (Map.Entry<String, RuntimeConfig.TierBinding> entry : modelRouterConfig.getTiers().entrySet()) {
+            validateModelRouterBinding(entry.getValue(), entry.getKey(), configuredProviders);
+        }
+    }
+
+    private void validateModelRouterBinding(RuntimeConfig.TierBinding binding, String tier,
+            List<String> configuredProviders) {
+        if (binding == null || binding.getModel() == null || binding.getModel().isBlank()) {
+            return;
+        }
+        ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(
+                binding.getModel(),
+                configuredProviders);
+        if (validation.valid()) {
+            return;
+        }
+        throw switch (validation.error()) {
+        case "model.not.found" -> new IllegalArgumentException(
+                "Model router tier '" + tier + "' points to unknown model '" + binding.getModel() + "'");
+        case "provider.not.configured" -> new IllegalArgumentException(
+                "Model router tier '" + tier + "' points to model '" + binding.getModel()
+                        + "' whose provider is not configured");
+        default -> new IllegalArgumentException(
+                "Model router tier '" + tier + "' is invalid: " + validation.error());
+        };
+    }
+
+    private void validateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
+        if (turnConfig == null) {
+            throw new IllegalArgumentException("turn config is required");
+        }
+        if (turnConfig.getMaxLlmCalls() != null && turnConfig.getMaxLlmCalls() < 1) {
+            throw new IllegalArgumentException("turn.maxLlmCalls must be >= 1");
+        }
+        if (turnConfig.getMaxToolExecutions() != null && turnConfig.getMaxToolExecutions() < 1) {
+            throw new IllegalArgumentException("turn.maxToolExecutions must be >= 1");
+        }
+        if (turnConfig.getDeadline() != null && !turnConfig.getDeadline().isBlank()) {
+            try {
+                java.time.Duration deadline = java.time.Duration.parse(turnConfig.getDeadline().trim());
+                if (deadline.isZero() || deadline.isNegative()) {
+                    throw new IllegalArgumentException("turn.deadline must be a positive ISO-8601 duration");
+                }
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new IllegalArgumentException("turn.deadline must be a valid ISO-8601 duration");
+            }
+        }
+        validateRange(turnConfig.getProgressBatchSize(), TURN_PROGRESS_BATCH_SIZE_MIN, TURN_PROGRESS_BATCH_SIZE_MAX,
+                "turn.progressBatchSize");
+        validateRange(turnConfig.getProgressMaxSilenceSeconds(),
+                TURN_PROGRESS_MAX_SILENCE_SECONDS_MIN,
+                TURN_PROGRESS_MAX_SILENCE_SECONDS_MAX,
+                "turn.progressMaxSilenceSeconds");
+        validateRange(turnConfig.getProgressSummaryTimeoutMs(),
+                TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MIN,
+                TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MAX,
+                "turn.progressSummaryTimeoutMs");
+    }
+
+    private void validateRange(Integer value, int min, int max, String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
+        }
+    }
+
     private void validateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
         if (memoryConfig == null) {
             throw new IllegalArgumentException("memory config is required");
@@ -692,6 +793,41 @@ public class SettingsController {
                 "memory.diagnostics.verbosity"));
     }
 
+    private void validateCompactionConfig(RuntimeConfig.CompactionConfig compactionConfig) {
+        if (compactionConfig == null) {
+            return;
+        }
+
+        String triggerMode = compactionConfig.getTriggerMode();
+        if (triggerMode == null || triggerMode.isBlank()) {
+            compactionConfig.setTriggerMode(DEFAULT_COMPACTION_TRIGGER_MODE);
+        } else {
+            String normalized = triggerMode.trim().toLowerCase(Locale.ROOT);
+            if (!VALID_COMPACTION_TRIGGER_MODES.contains(normalized)) {
+                throw new IllegalArgumentException(
+                        "compaction.triggerMode must be one of " + VALID_COMPACTION_TRIGGER_MODES);
+            }
+            compactionConfig.setTriggerMode(normalized);
+        }
+
+        Double modelThresholdRatio = compactionConfig.getModelThresholdRatio();
+        if (modelThresholdRatio == null) {
+            compactionConfig.setModelThresholdRatio(DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO);
+        } else if (modelThresholdRatio <= 0.0d || modelThresholdRatio > 1.0d) {
+            throw new IllegalArgumentException("compaction.modelThresholdRatio must be between 0 and 1");
+        }
+
+        Integer maxContextTokens = compactionConfig.getMaxContextTokens();
+        if (maxContextTokens != null && maxContextTokens < 1) {
+            throw new IllegalArgumentException("compaction.maxContextTokens must be greater than 0");
+        }
+
+        Integer keepLastMessages = compactionConfig.getKeepLastMessages();
+        if (keepLastMessages != null && keepLastMessages < 1) {
+            throw new IllegalArgumentException("compaction.keepLastMessages must be greater than 0");
+        }
+    }
+
     private void validateNullableInteger(Integer value, int min, int max, String fieldName) {
         if (value == null) {
             return;
@@ -728,16 +864,29 @@ public class SettingsController {
         if (voiceConfig == null) {
             return;
         }
+        boolean voiceEnabled = Boolean.TRUE.equals(voiceConfig.getEnabled());
 
-        String normalizedSttProvider = normalizeProvider(voiceConfig.getSttProvider(), STT_PROVIDER_ELEVENLABS);
-        if (!VALID_STT_PROVIDERS.contains(normalizedSttProvider)) {
-            throw new IllegalArgumentException("voice.sttProvider must be one of " + VALID_STT_PROVIDERS);
+        String normalizedSttProvider = normalizeProvider(voiceConfig.getSttProvider());
+        if (normalizedSttProvider == null) {
+            normalizedSttProvider = firstLoadedSttProvider();
+        }
+        if (normalizedSttProvider == null && voiceEnabled) {
+            throw new IllegalArgumentException("voice.sttProvider must resolve to a loaded STT provider");
+        }
+        if (normalizedSttProvider != null && !isKnownSttProvider(normalizedSttProvider)) {
+            throw new IllegalArgumentException("voice.sttProvider must resolve to a loaded STT provider");
         }
         voiceConfig.setSttProvider(normalizedSttProvider);
 
-        String normalizedTtsProvider = normalizeProvider(voiceConfig.getTtsProvider(), TTS_PROVIDER_ELEVENLABS);
-        if (!TTS_PROVIDER_ELEVENLABS.equals(normalizedTtsProvider)) {
-            throw new IllegalArgumentException("voice.ttsProvider must be '" + TTS_PROVIDER_ELEVENLABS + "'");
+        String normalizedTtsProvider = normalizeProvider(voiceConfig.getTtsProvider());
+        if (normalizedTtsProvider == null) {
+            normalizedTtsProvider = firstLoadedTtsProvider();
+        }
+        if (normalizedTtsProvider == null && voiceEnabled) {
+            throw new IllegalArgumentException("voice.ttsProvider must resolve to a loaded TTS provider");
+        }
+        if (normalizedTtsProvider != null && !isKnownTtsProvider(normalizedTtsProvider)) {
+            throw new IllegalArgumentException("voice.ttsProvider must resolve to a loaded TTS provider");
         }
         voiceConfig.setTtsProvider(normalizedTtsProvider);
 
@@ -745,15 +894,79 @@ public class SettingsController {
         if (whisperSttUrl != null && whisperSttUrl.isBlank()) {
             voiceConfig.setWhisperSttUrl(null);
         }
-        String effectiveWhisperSttUrl = voiceConfig.getWhisperSttUrl();
-        if (STT_PROVIDER_WHISPER.equals(normalizedSttProvider)) {
-            if (effectiveWhisperSttUrl == null || effectiveWhisperSttUrl.isBlank()) {
-                throw new IllegalArgumentException(
-                        "voice.whisperSttUrl is required when voice.sttProvider is 'whisper'");
+    }
+
+    private void validatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
+        if (planConfig == null) {
+            throw new IllegalArgumentException("plan config is required");
+        }
+        validateNullableInteger(planConfig.getMaxPlans(), 1, 100, "plan.maxPlans");
+        validateNullableInteger(planConfig.getMaxStepsPerPlan(), 1, 1000, "plan.maxStepsPerPlan");
+    }
+
+    private void validateAndNormalizeAutoModeConfig(RuntimeConfig.AutoModeConfig autoConfig) {
+        if (autoConfig == null) {
+            throw new IllegalArgumentException("autoMode config is required");
+        }
+        autoConfig.setModelTier(normalizeOptionalSelectableTier(autoConfig.getModelTier(), "autoMode.modelTier"));
+        autoConfig.setReflectionModelTier(normalizeOptionalSelectableTier(autoConfig.getReflectionModelTier(),
+                "autoMode.reflectionModelTier"));
+    }
+
+    private void validateAndNormalizeTracingConfig(RuntimeConfig.TracingConfig tracingConfig) {
+        if (tracingConfig == null) {
+            throw new IllegalArgumentException("tracing config is required");
+        }
+        validateNullableInteger(tracingConfig.getSessionTraceBudgetMb(), 1, 1024, "tracing.sessionTraceBudgetMb");
+        validateNullableInteger(tracingConfig.getMaxSnapshotSizeKb(), 1, 10240, "tracing.maxSnapshotSizeKb");
+        validateNullableInteger(tracingConfig.getMaxSnapshotsPerSpan(), 1, 1000, "tracing.maxSnapshotsPerSpan");
+        validateNullableInteger(tracingConfig.getMaxTracesPerSession(), 1, 10000, "tracing.maxTracesPerSession");
+    }
+
+    private void validateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
+        if (hiveConfig == null) {
+            throw new IllegalArgumentException("hive config is required");
+        }
+        String serverUrl = hiveConfig.getServerUrl();
+        if (serverUrl != null && !serverUrl.isBlank() && !isValidHttpUrl(serverUrl)) {
+            throw new IllegalArgumentException("hive.serverUrl must be a valid http(s) URL");
+        }
+    }
+
+    private void validateAndNormalizeModelRegistryConfig(RuntimeConfig.ModelRegistryConfig modelRegistryConfig) {
+        if (modelRegistryConfig == null) {
+            return;
+        }
+        String repositoryUrl = modelRegistryConfig.getRepositoryUrl();
+        if (repositoryUrl != null) {
+            repositoryUrl = repositoryUrl.trim();
+        }
+        if (repositoryUrl == null || repositoryUrl.isBlank()) {
+            modelRegistryConfig.setRepositoryUrl(null);
+        } else {
+            if (!isValidHttpUrl(repositoryUrl)) {
+                throw new IllegalArgumentException("modelRegistry.repositoryUrl must be a valid http(s) URL");
             }
-            if (!isValidHttpUrl(effectiveWhisperSttUrl)) {
-                throw new IllegalArgumentException("voice.whisperSttUrl must be a valid http(s) URL");
+            modelRegistryConfig.setRepositoryUrl(repositoryUrl);
+        }
+
+        String branch = modelRegistryConfig.getBranch();
+        if (branch == null || branch.isBlank()) {
+            modelRegistryConfig.setBranch("main");
+        } else {
+            modelRegistryConfig.setBranch(branch.trim());
+        }
+    }
+
+    private void validateWebhookConfig(UserPreferences.WebhookConfig webhookConfig) {
+        if (webhookConfig == null || webhookConfig.getMappings() == null) {
+            return;
+        }
+        for (UserPreferences.HookMapping mapping : webhookConfig.getMappings()) {
+            if (mapping == null) {
+                continue;
             }
+            mapping.setModel(normalizeOptionalSelectableTier(mapping.getModel(), "webhooks.mapping.model"));
         }
     }
 
@@ -764,6 +977,47 @@ public class SettingsController {
             config.setTools(toolsConfig);
         }
         return toolsConfig;
+    }
+
+    private RuntimeConfig mergeRuntimeConfigSections(RuntimeConfig current, RuntimeConfig incoming) {
+        RuntimeConfig baseline = current != null ? current : RuntimeConfig.builder().build();
+        RuntimeConfig patch = incoming != null ? incoming : RuntimeConfig.builder().build();
+        return RuntimeConfig.builder()
+                .telegram(mergeSection(patch.getTelegram(), baseline.getTelegram(), RuntimeConfig.TelegramConfig::new))
+                .modelRouter(mergeSection(patch.getModelRouter(), baseline.getModelRouter(),
+                        RuntimeConfig.ModelRouterConfig::new))
+                .llm(mergeSection(patch.getLlm(), baseline.getLlm(), RuntimeConfig.LlmConfig::new))
+                .tools(mergeSection(patch.getTools(), baseline.getTools(), RuntimeConfig.ToolsConfig::new))
+                .voice(mergeSection(patch.getVoice(), baseline.getVoice(), RuntimeConfig.VoiceConfig::new))
+                .autoMode(mergeSection(patch.getAutoMode(), baseline.getAutoMode(), RuntimeConfig.AutoModeConfig::new))
+                .tracing(mergeSection(patch.getTracing(), baseline.getTracing(), RuntimeConfig.TracingConfig::new))
+                .rateLimit(mergeSection(patch.getRateLimit(), baseline.getRateLimit(),
+                        RuntimeConfig.RateLimitConfig::new))
+                .security(mergeSection(patch.getSecurity(), baseline.getSecurity(), RuntimeConfig.SecurityConfig::new))
+                .compaction(mergeSection(patch.getCompaction(), baseline.getCompaction(),
+                        RuntimeConfig.CompactionConfig::new))
+                .turn(mergeSection(patch.getTurn(), baseline.getTurn(), RuntimeConfig.TurnConfig::new))
+                .memory(mergeSection(patch.getMemory(), baseline.getMemory(), RuntimeConfig.MemoryConfig::new))
+                .skills(mergeSection(patch.getSkills(), baseline.getSkills(), RuntimeConfig.SkillsConfig::new))
+                .modelRegistry(mergeSection(patch.getModelRegistry(), baseline.getModelRegistry(),
+                        RuntimeConfig.ModelRegistryConfig::new))
+                .usage(mergeSection(patch.getUsage(), baseline.getUsage(), RuntimeConfig.UsageConfig::new))
+                .mcp(mergeSection(patch.getMcp(), baseline.getMcp(), RuntimeConfig.McpConfig::new))
+                .plan(mergeSection(patch.getPlan(), baseline.getPlan(), RuntimeConfig.PlanConfig::new))
+                .delayedActions(mergeSection(patch.getDelayedActions(), baseline.getDelayedActions(),
+                        RuntimeConfig.DelayedActionsConfig::new))
+                .hive(mergeSection(patch.getHive(), baseline.getHive(), RuntimeConfig.HiveConfig::new))
+                .build();
+    }
+
+    private <T> T mergeSection(T incoming, T current, Supplier<T> emptySupplier) {
+        if (incoming == null) {
+            return current;
+        }
+        if (current == null) {
+            return incoming;
+        }
+        return incoming.equals(emptySupplier.get()) ? current : incoming;
     }
 
     private List<RuntimeConfig.ShellEnvironmentVariable> ensureShellEnvironmentVariables(
@@ -862,11 +1116,17 @@ public class SettingsController {
         if (modelRouterConfig == null) {
             return usedProviders;
         }
-        addProviderFromModel(usedProviders, modelRouterConfig.getRoutingModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getBalancedModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getSmartModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getCodingModel());
-        addProviderFromModel(usedProviders, modelRouterConfig.getDeepModel());
+        RuntimeConfig.TierBinding routingBinding = modelRouterConfig.getRouting();
+        if (routingBinding != null) {
+            addProviderFromModel(usedProviders, routingBinding.getModel());
+        }
+        if (modelRouterConfig.getTiers() != null) {
+            for (RuntimeConfig.TierBinding tierBinding : modelRouterConfig.getTiers().values()) {
+                if (tierBinding != null) {
+                    addProviderFromModel(usedProviders, tierBinding.getModel());
+                }
+            }
+        }
         return usedProviders;
     }
 
@@ -874,11 +1134,35 @@ public class SettingsController {
         if (model == null || model.isBlank()) {
             return;
         }
+        String resolvedProvider = modelSelectionService.resolveProviderForModel(model);
+        if (resolvedProvider != null) {
+            usedProviders.add(resolvedProvider);
+            return;
+        }
         int delimiterIndex = model.indexOf('/');
         if (delimiterIndex <= 0) {
             return;
         }
         usedProviders.add(model.substring(0, delimiterIndex));
+    }
+
+    private String normalizeOptionalSelectableTier(String tier, String fieldName) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(tier);
+        if (normalizedTier == null) {
+            return null;
+        }
+        if ("default".equals(normalizedTier)) {
+            return null;
+        }
+        return normalizeRequiredSelectableTier(normalizedTier, fieldName);
+    }
+
+    private String normalizeRequiredSelectableTier(String tier, String fieldName) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(tier);
+        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
+            throw new IllegalArgumentException(fieldName + " must be a known tier id");
+        }
+        return normalizedTier;
     }
 
     private void mergeRuntimeSecrets(RuntimeConfig current, RuntimeConfig incoming) {
@@ -894,11 +1178,24 @@ public class SettingsController {
             incoming.getVoice().setWhisperSttApiKey(
                     mergeSecret(current.getVoice().getWhisperSttApiKey(), incoming.getVoice().getWhisperSttApiKey()));
         }
-        if (incoming.getRag() != null && current.getRag() != null) {
-            incoming.getRag().setApiKey(mergeSecret(current.getRag().getApiKey(), incoming.getRag().getApiKey()));
-        }
         mergeLlmSecrets(current.getLlm(), incoming.getLlm());
-        mergeToolsSecrets(current.getTools(), incoming.getTools());
+    }
+
+    private void rejectManagedHiveMutation(RuntimeConfig current, RuntimeConfig.HiveConfig incomingHiveConfig) {
+        if (current == null || !runtimeConfigService.isHiveManagedByProperties()) {
+            return;
+        }
+        if (incomingHiveConfig == null) {
+            return;
+        }
+        RuntimeConfig.HiveConfig currentHiveConfig = current.getHive();
+        RuntimeConfig.HiveConfig normalizedCurrentHiveConfig = currentHiveConfig != null
+                ? currentHiveConfig
+                : RuntimeConfig.HiveConfig.builder().build();
+        if (!incomingHiveConfig.equals(normalizedCurrentHiveConfig)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Hive settings are managed by bot.hive.* and are read-only");
+        }
     }
 
     private void mergeLlmSecrets(RuntimeConfig.LlmConfig current, RuntimeConfig.LlmConfig incoming) {
@@ -914,25 +1211,6 @@ public class SettingsController {
             if (incomingProvider != null && currentProvider != null) {
                 incomingProvider.setApiKey(mergeSecret(currentProvider.getApiKey(), incomingProvider.getApiKey()));
             }
-        }
-    }
-
-    private void mergeToolsSecrets(RuntimeConfig.ToolsConfig current, RuntimeConfig.ToolsConfig incoming) {
-        if (current == null || incoming == null) {
-            return;
-        }
-        incoming.setBraveSearchApiKey(mergeSecret(current.getBraveSearchApiKey(), incoming.getBraveSearchApiKey()));
-
-        RuntimeConfig.ImapConfig currentImap = current.getImap();
-        RuntimeConfig.ImapConfig incomingImap = incoming.getImap();
-        if (incomingImap != null && currentImap != null) {
-            incomingImap.setPassword(mergeSecret(currentImap.getPassword(), incomingImap.getPassword()));
-        }
-
-        RuntimeConfig.SmtpConfig currentSmtp = current.getSmtp();
-        RuntimeConfig.SmtpConfig incomingSmtp = incoming.getSmtp();
-        if (incomingSmtp != null && currentSmtp != null) {
-            incomingSmtp.setPassword(mergeSecret(currentSmtp.getPassword(), incomingSmtp.getPassword()));
         }
     }
 
@@ -985,11 +1263,34 @@ public class SettingsController {
                 .build();
     }
 
-    private String normalizeProvider(String value, String fallback) {
+    private String normalizeProvider(String value) {
         if (value == null || value.isBlank()) {
-            return fallback;
+            return null;
         }
-        return value.trim().toLowerCase(Locale.ROOT);
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if (LEGACY_STT_PROVIDER_ELEVENLABS.equals(normalized)) {
+            return STT_PROVIDER_ELEVENLABS;
+        }
+        if (LEGACY_STT_PROVIDER_WHISPER.equals(normalized)) {
+            return STT_PROVIDER_WHISPER;
+        }
+        return normalized;
+    }
+
+    private boolean isKnownSttProvider(String providerId) {
+        return providerId != null && sttProviderRegistry.find(providerId).isPresent();
+    }
+
+    private boolean isKnownTtsProvider(String providerId) {
+        return providerId != null && ttsProviderRegistry.find(providerId).isPresent();
+    }
+
+    private String firstLoadedSttProvider() {
+        return sttProviderRegistry.listProviderIds().keySet().stream().findFirst().orElse(null);
+    }
+
+    private String firstLoadedTtsProvider() {
+        return ttsProviderRegistry.listProviderIds().keySet().stream().findFirst().orElse(null);
     }
 
     private boolean isValidHttpUrl(String value) {

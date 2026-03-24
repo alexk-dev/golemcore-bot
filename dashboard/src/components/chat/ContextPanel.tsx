@@ -1,17 +1,84 @@
 import { Badge, Form, ProgressBar } from 'react-bootstrap';
-import { useContextPanelStore } from '../../store/contextPanelStore';
+import { getExplicitModelTierOptions, getModelTierMeta } from '../../lib/modelTiers';
+import { useContextPanelStore, type FileChangeStat } from '../../store/contextPanelStore';
 import PlanControlPanel from './PlanControlPanel';
-
-const TIER_COLORS: Record<string, string> = {
-  balanced: 'secondary',
-  smart: 'primary',
-  coding: 'success',
-  deep: 'warning',
-};
 
 function formatNumber(n: number | null): string {
   if (n == null) {return '--';}
   return n.toLocaleString();
+}
+
+function normalizeFileChanges(input: unknown): FileChangeStat[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const result: FileChangeStat[] = [];
+  for (const item of input) {
+    if (item == null || typeof item !== 'object') {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const path = typeof record.path === 'string' ? record.path : null;
+    if (path == null || path.trim().length === 0) {
+      continue;
+    }
+
+    const addedLines = typeof record.addedLines === 'number' ? record.addedLines : 0;
+    const removedLines = typeof record.removedLines === 'number' ? record.removedLines : 0;
+    const deleted = record.deleted === true;
+
+    result.push({
+      path,
+      addedLines,
+      removedLines,
+      deleted,
+    });
+  }
+
+  return result;
+}
+
+function extractFileName(path: string): string {
+  const normalized = path.replace(/\\/g, '/');
+  const segments = normalized.split('/');
+  const last = segments[segments.length - 1];
+  return last.length > 0 ? last : path;
+}
+
+function renderFileDelta(change: FileChangeStat): string {
+  const added = Math.max(0, change.addedLines);
+  const removed = Math.max(0, change.removedLines);
+  return `+${added} / -${removed}`;
+}
+
+interface FileChangeRowProps {
+  change: FileChangeStat;
+}
+
+function FileChangeRow({ change }: FileChangeRowProps) {
+  const added = Math.max(0, change.addedLines);
+  const removed = Math.max(0, change.removedLines);
+  const total = added + removed;
+  const addPercent = total > 0 ? Math.round((added / total) * 100) : 100;
+  const removePercent = Math.max(0, 100 - addPercent);
+  const isDeleted = change.deleted || (added === 0 && removed > 0);
+
+  return (
+    <div className="file-change-item">
+      <div className="file-change-header">
+        <span className={`file-change-name ${isDeleted ? 'file-change-name--deleted' : ''}`} title={change.path}>
+          {extractFileName(change.path)}
+        </span>
+        <small className="text-body-secondary">{renderFileDelta(change)}</small>
+      </div>
+      <div className="file-change-path text-body-secondary">{change.path}</div>
+      <div className="file-change-bar" role="img" aria-label={`Added ${added} and removed ${removed} lines`}>
+        <div className="file-change-bar-added" style={{ width: `${addPercent}%` }} />
+        {removePercent > 0 && <div className="file-change-bar-removed" style={{ width: `${removePercent}%` }} />}
+      </div>
+    </div>
+  );
 }
 
 interface Props {
@@ -43,6 +110,8 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
           : 'danger';
 
   const activeGoals = goals.filter((g) => g.status === 'ACTIVE');
+  const fileChanges = normalizeFileChanges(turnMetadata.fileChanges);
+  const resolvedTierMeta = getModelTierMeta(turnMetadata.tier ?? tier);
 
   return (
     <div className="context-panel">
@@ -61,8 +130,8 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
           </span>
         </div>
         <div className="d-flex align-items-center gap-2 mt-1">
-          <Badge bg={TIER_COLORS[turnMetadata.tier ?? tier] ?? 'secondary'}>
-            {(turnMetadata.tier ?? tier).toUpperCase()}
+          <Badge bg={resolvedTierMeta?.badgeBg ?? 'secondary'}>
+            {resolvedTierMeta?.label ?? (turnMetadata.tier ?? tier).toUpperCase()}
           </Badge>
           {turnMetadata.latencyMs != null && (
             <small className="text-body-secondary">{turnMetadata.latencyMs}ms</small>
@@ -109,10 +178,9 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
           value={tier}
           onChange={(e) => onTierChange(e.target.value)}
         >
-          <option value="balanced">Balanced</option>
-          <option value="smart">Smart</option>
-          <option value="coding">Coding</option>
-          <option value="deep">Deep</option>
+          {getExplicitModelTierOptions().map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
         </Form.Select>
         <Form.Check
           type="switch"
@@ -125,6 +193,18 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
 
       <PlanControlPanel chatSessionId={chatSessionId} />
 
+      {/* FILE CHANGES */}
+      {fileChanges.length > 0 && (
+        <div className="context-section">
+          <div className="section-label">EDITED FILES</div>
+          <div className="file-change-list">
+            {fileChanges.map((change) => (
+              <FileChangeRow key={change.path} change={change} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* GOALS */}
       {goalsFeatureEnabled && activeGoals.length > 0 && (
         <div className="context-section">
@@ -132,7 +212,12 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
           {activeGoals.map((goal) => (
             <div key={goal.id} className="goal-item">
               <div className="d-flex justify-content-between align-items-center">
-                <strong className="goal-title">{goal.title}</strong>
+                <div>
+                  <strong className="goal-title">{goal.title}</strong>
+                  <div className="small text-body-secondary">
+                    <code>{goal.id}</code>
+                  </div>
+                </div>
                 <small className="text-body-secondary">
                   {goal.completedTasks}/{goal.totalTasks}
                 </small>
@@ -142,9 +227,14 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
                   {goal.tasks.map((task) => (
                     <li key={task.id} className={`task-item ${task.status.toLowerCase()}`}>
                       <span className={`task-status-icon ${task.status.toLowerCase()}`} />
-                      <span className={task.status === 'COMPLETED' ? 'text-decoration-line-through text-body-secondary' : ''}>
-                        {task.title}
-                      </span>
+                      <div>
+                        <div className={task.status === 'COMPLETED' ? 'text-decoration-line-through text-body-secondary' : ''}>
+                          {task.title}
+                        </div>
+                        <div className="small text-body-secondary">
+                          <code>{task.id}</code>
+                        </div>
+                      </div>
                     </li>
                   ))}
                 </ul>

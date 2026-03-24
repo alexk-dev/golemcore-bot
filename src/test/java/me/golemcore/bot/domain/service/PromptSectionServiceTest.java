@@ -22,6 +22,7 @@ class PromptSectionServiceTest {
     private static final String IDENTITY_FILE = "IDENTITY.md";
     private static final String RULES_FILE = "RULES.md";
     private static final String VOICE_FILE = "VOICE.md";
+    private static final String WAITING_FILE = "WAITING_AND_FOLLOWUPS.md";
     private static final String IDENTITY_NAME = "identity";
     private static final String VAR_BOT_NAME = "BOT_NAME";
     private static final String VAR_DATE = "DATE";
@@ -159,6 +160,27 @@ class PromptSectionServiceTest {
     }
 
     @Test
+    void getAllSections_includesDisabledAndSortsByOrder() {
+        String enabled = "---\norder: 30\n---\nEnabled";
+        String disabled = "---\nenabled: false\norder: 10\n---\nDisabled";
+        String middle = "---\norder: 20\n---\nMiddle";
+
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of("ENABLED.md", "DISABLED.md", "MIDDLE.md")));
+        when(storagePort.getText(PROMPTS_DIR, "ENABLED.md")).thenReturn(CompletableFuture.completedFuture(enabled));
+        when(storagePort.getText(PROMPTS_DIR, "DISABLED.md")).thenReturn(CompletableFuture.completedFuture(disabled));
+        when(storagePort.getText(PROMPTS_DIR, "MIDDLE.md")).thenReturn(CompletableFuture.completedFuture(middle));
+
+        service.reload();
+
+        List<PromptSection> sections = service.getAllSections();
+        assertEquals(3, sections.size());
+        assertEquals("disabled", sections.get(0).getName());
+        assertEquals("middle", sections.get(1).getName());
+        assertEquals("enabled", sections.get(2).getName());
+    }
+
+    @Test
     void getSection_byName() {
         String content = "---\norder: 10\n---\nIdentity content";
 
@@ -176,6 +198,14 @@ class PromptSectionServiceTest {
 
         // Non-existent
         assertFalse(service.getSection("nonexistent").isPresent());
+    }
+
+    @Test
+    void isProtectedSection_matchesBuiltInsOnly() {
+        assertTrue(service.isProtectedSection("identity"));
+        assertTrue(service.isProtectedSection("RULES"));
+        assertFalse(service.isProtectedSection("voice"));
+        assertFalse(service.isProtectedSection("custom"));
     }
 
     @Test
@@ -264,6 +294,8 @@ class PromptSectionServiceTest {
                 .thenReturn(CompletableFuture.completedFuture(false));
         when(storagePort.exists(PROMPTS_DIR, RULES_FILE))
                 .thenReturn(CompletableFuture.completedFuture(false));
+        when(storagePort.exists(PROMPTS_DIR, WAITING_FILE))
+                .thenReturn(CompletableFuture.completedFuture(false));
         when(storagePort.putText(eq(PROMPTS_DIR), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
@@ -271,6 +303,10 @@ class PromptSectionServiceTest {
 
         verify(storagePort).putText(eq(PROMPTS_DIR), eq(IDENTITY_FILE), contains(VAR_BOT_NAME));
         verify(storagePort).putText(eq(PROMPTS_DIR), eq(RULES_FILE), contains("Rules"));
+        verify(storagePort).putText(eq(PROMPTS_DIR), eq(WAITING_FILE),
+                contains("Do not ask the user to come back manually"));
+        verify(storagePort).putText(eq(PROMPTS_DIR), eq(WAITING_FILE),
+                contains("Confirm the next local check time"));
     }
 
     @Test
@@ -279,11 +315,14 @@ class PromptSectionServiceTest {
                 .thenReturn(CompletableFuture.completedFuture(true));
         when(storagePort.exists(PROMPTS_DIR, RULES_FILE))
                 .thenReturn(CompletableFuture.completedFuture(true));
+        when(storagePort.exists(PROMPTS_DIR, WAITING_FILE))
+                .thenReturn(CompletableFuture.completedFuture(true));
 
         service.ensureDefaults();
 
         verify(storagePort, never()).putText(eq(PROMPTS_DIR), eq(IDENTITY_FILE), anyString());
         verify(storagePort, never()).putText(eq(PROMPTS_DIR), eq(RULES_FILE), anyString());
+        verify(storagePort, never()).putText(eq(PROMPTS_DIR), eq(WAITING_FILE), anyString());
     }
 
     @Test

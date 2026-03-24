@@ -24,10 +24,14 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TraceBudgetService;
+import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -124,9 +128,9 @@ class AgentLoopRoutingBddTest {
         // Use a real ResponseRoutingSystem so AgentLoop's instanceof check works.
         VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
         ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                List.of(channel), preferencesService, voiceHandler);
+                new ChannelRegistry(List.of(channel)), preferencesService, voiceHandler);
 
-        AgentLoop loop = new AgentLoop(
+        AgentLoop loop = createLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(requester, routing),
@@ -156,11 +160,33 @@ class AgentLoopRoutingBddTest {
                 "Orchestration must not write synthetic assistant messages to raw history");
     }
 
+    private static AgentLoop createLoop(
+            SessionPort sessionPort,
+            RateLimitPort rateLimitPort,
+            List<AgentSystem> systems,
+            List<ChannelPort> channels,
+            RuntimeConfigService runtimeConfigService,
+            UserPreferencesService preferencesService,
+            LlmPort llmPort,
+            Clock clock) {
+        return new AgentLoop(
+                sessionPort,
+                rateLimitPort,
+                systems,
+                new ChannelRegistry(channels),
+                runtimeConfigService,
+                preferencesService,
+                llmPort,
+                clock,
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
+    }
+
     private static RuntimeConfigService mockRuntimeConfigService(int maxLlmCalls) {
         RuntimeConfigService rcs = mock(RuntimeConfigService.class);
         when(rcs.getTurnMaxLlmCalls()).thenReturn(maxLlmCalls);
         when(rcs.getRoutingModel()).thenReturn("test-model");
         when(rcs.getRoutingModelReasoning()).thenReturn("none");
+        when(rcs.isTracingEnabled()).thenReturn(true);
         return rcs;
     }
 }

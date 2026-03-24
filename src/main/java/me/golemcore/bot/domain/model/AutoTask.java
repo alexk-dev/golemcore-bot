@@ -18,6 +18,7 @@ package me.golemcore.bot.domain.model;
  * Contact: alex@kuleshov.tech
  */
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -39,14 +40,42 @@ public class AutoTask {
     private String goalId;
     private String title;
     private String description;
+    private String prompt;
+    private String reflectionModelTier;
+    private boolean reflectionTierPriority;
 
     @Builder.Default
     private TaskStatus status = TaskStatus.PENDING;
 
     private String result;
     private int order;
+
+    @Builder.Default
+    private int consecutiveFailureCount = 0;
+
+    @Builder.Default
+    private boolean reflectionRequired = false;
+
+    private String lastFailureSummary;
+    private String lastFailureFingerprint;
+    private Instant lastFailureAt;
+    private String reflectionStrategy;
+    private String lastUsedSkillName;
+    private Instant lastReflectionAt;
     private Instant createdAt;
     private Instant updatedAt;
+
+    /**
+     * Returns the prompt that should be used for autonomous execution.
+     */
+    @JsonIgnore
+    public String getExecutionPrompt() {
+        String basePrompt = prompt != null && !prompt.isBlank() ? prompt : title;
+        if (reflectionStrategy == null || reflectionStrategy.isBlank()) {
+            return basePrompt;
+        }
+        return basePrompt + "\n\nRecovery strategy from previous reflection:\n" + reflectionStrategy;
+    }
 
     public enum TaskStatus {
         PENDING, IN_PROGRESS, COMPLETED, FAILED, SKIPPED

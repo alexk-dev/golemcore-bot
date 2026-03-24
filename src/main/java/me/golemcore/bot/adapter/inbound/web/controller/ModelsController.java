@@ -2,7 +2,9 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.service.ModelRegistryService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +34,8 @@ public class ModelsController {
 
     private final ModelConfigService modelConfigService;
     private final ModelSelectionService modelSelectionService;
+    private final ProviderModelDiscoveryService providerModelDiscoveryService;
+    private final ModelRegistryService modelRegistryService;
 
     /**
      * Get full models config (all models + defaults).
@@ -83,9 +87,48 @@ public class ModelsController {
                 .getAvailableModelsGrouped();
         Map<String, List<AvailableModelDto>> result = new LinkedHashMap<>();
         grouped.forEach((provider, models) -> result.put(provider, models.stream()
-                .map(m -> new AvailableModelDto(m.id(), m.displayName(), m.hasReasoning(), m.reasoningLevels()))
+                .map(m -> new AvailableModelDto(m.id(), m.displayName(), m.hasReasoning(),
+                        m.reasoningLevels(), m.supportsVision()))
                 .toList()));
         return Mono.just(ResponseEntity.ok(result));
+    }
+
+    /**
+     * Discover live models for a specific provider profile.
+     */
+    @GetMapping("/discover/{provider}")
+    public Mono<ResponseEntity<List<DiscoveredModelDto>>> discoverProviderModels(@PathVariable String provider) {
+        try {
+            List<ProviderModelDiscoveryService.DiscoveredModel> discoveredModels = providerModelDiscoveryService
+                    .discoverModels(provider);
+            List<DiscoveredModelDto> response = discoveredModels.stream()
+                    .map(model -> new DiscoveredModelDto(model.provider(), model.id(), model.displayName(),
+                            model.ownedBy()))
+                    .toList();
+            return Mono.just(ResponseEntity.ok(response));
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage());
+        }
+    }
+
+    @PostMapping("/registry/resolve")
+    public Mono<ResponseEntity<ResolveRegistryResponse>> resolveModelRegistry(
+            @RequestBody ResolveRegistryRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
+        }
+        String provider = requireValue(request.provider(), "provider");
+        String modelId = requireValue(request.modelId(), "modelId");
+        try {
+            ModelRegistryService.ResolveResult result = modelRegistryService.resolveDefaults(provider, modelId);
+            return Mono.just(ResponseEntity.ok(
+                    new ResolveRegistryResponse(result.defaultSettings(), result.configSource(),
+                            result.cacheStatus())));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+        }
     }
 
     /**
@@ -97,7 +140,24 @@ public class ModelsController {
         return Mono.just(ResponseEntity.ok().build());
     }
 
+    private String requireValue(String value, String fieldName) {
+        if (value == null || value.trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required");
+        }
+        return value.trim();
+    }
+
+    public record ResolveRegistryRequest(String provider, String modelId) {
+    }
+
+    public record ResolveRegistryResponse(ModelConfigService.ModelSettings defaultSettings, String configSource,
+            String cacheStatus) {
+    }
+
     private record AvailableModelDto(String id, String displayName, boolean hasReasoning,
-            List<String> reasoningLevels) {
+            List<String> reasoningLevels, boolean supportsVision) {
+    }
+
+    private record DiscoveredModelDto(String provider, String id, String displayName, String ownedBy) {
     }
 }

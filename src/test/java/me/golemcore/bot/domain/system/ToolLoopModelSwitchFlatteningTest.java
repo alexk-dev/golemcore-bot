@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -124,5 +125,111 @@ class ToolLoopModelSwitchFlatteningTest {
 
         // AND: metadata now tracks new model
         assertEquals("new", session.getMetadata().get(me.golemcore.bot.domain.model.ContextAttributes.LLM_MODEL));
+    }
+
+    @Test
+    void shouldFlattenToolMessagesAcrossRepeatedModelSwitchesWhileKeepingGeminiMetadataInRawHistory() {
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("chat1")
+                .metadata(new HashMap<>(Map.of(me.golemcore.bot.domain.model.ContextAttributes.LLM_MODEL,
+                        "google/gemini-3.1-preview")))
+                .messages(new ArrayList<>())
+                .build();
+
+        Message assistantWithToolCall = Message.builder()
+                .role("assistant")
+                .content("Calling tool")
+                .toolCalls(List.of(Message.ToolCall.builder().id("tc1").name("shell")
+                        .arguments(Map.of("command", "echo hi")).build()))
+                .metadata(new HashMap<>(Map.of("thinking_signature", "sig-123")))
+                .timestamp(Instant.parse("2026-01-01T00:00:00Z"))
+                .build();
+
+        Message toolResult = Message.builder()
+                .role("tool")
+                .toolCallId("tc1")
+                .toolName("shell")
+                .content("hi")
+                .timestamp(Instant.parse("2026-01-01T00:00:01Z"))
+                .build();
+
+        session.addMessage(assistantWithToolCall);
+        session.addMessage(toolResult);
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .toolResults(Map.of("tc1", ToolResult.success("hi")))
+                .modelTier("coding")
+                .build();
+
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier("coding"))
+                .thenReturn(new ModelSelectionService.ModelSelection("openai/gpt-5.1", null))
+                .thenReturn(new ModelSelectionService.ModelSelection("google/gemini-3.1-preview", null));
+
+        List<LlmRequest> capturedRequests = new ArrayList<>();
+        LlmPort llmPort = mock(LlmPort.class);
+        AtomicInteger llmCalls = new AtomicInteger();
+        when(llmPort.chat(any(LlmRequest.class))).thenAnswer(inv -> {
+            capturedRequests.add(inv.getArgument(0));
+            int call = llmCalls.incrementAndGet();
+            return CompletableFuture.completedFuture(LlmResponse.builder()
+                    .content("ok-" + call)
+                    .finishReason("stop")
+                    .build());
+        });
+
+        ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(
+                Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC));
+
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                settings,
+                modelSelectionService,
+                null,
+                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
+
+        toolLoop.processTurn(ctx);
+
+        Message secondUser = Message.builder()
+                .role("user")
+                .content("Try again")
+                .timestamp(Instant.parse("2026-01-01T00:00:02Z"))
+                .build();
+        session.addMessage(secondUser);
+        ctx.getMessages().add(secondUser);
+
+        toolLoop.processTurn(ctx);
+
+        assertEquals(2, capturedRequests.size());
+
+        Message firstSwitchAssistant = capturedRequests.get(0).getMessages().get(0);
+        assertEquals("assistant", firstSwitchAssistant.getRole());
+        assertFalse(firstSwitchAssistant.hasToolCalls());
+        assertTrue(firstSwitchAssistant.getContent().contains("masked"));
+        assertEquals("sig-123", firstSwitchAssistant.getMetadata().get("thinking_signature"));
+
+        Message secondSwitchAssistant = capturedRequests.get(1).getMessages().get(0);
+        assertEquals("assistant", secondSwitchAssistant.getRole());
+        assertFalse(secondSwitchAssistant.hasToolCalls());
+        assertTrue(secondSwitchAssistant.getContent().contains("masked"));
+        assertEquals("sig-123", secondSwitchAssistant.getMetadata().get("thinking_signature"));
+
+        assertTrue(ctx.getMessages().get(0).hasToolCalls(), "raw history must keep toolCalls after repeated switches");
+        assertEquals("sig-123", ctx.getMessages().get(0).getMetadata().get("thinking_signature"));
+        assertTrue(session.getMessages().get(0).hasToolCalls(), "session raw history must keep toolCalls");
+        assertEquals("sig-123", session.getMessages().get(0).getMetadata().get("thinking_signature"));
+        assertEquals("google/gemini-3.1-preview",
+                session.getMetadata().get(me.golemcore.bot.domain.model.ContextAttributes.LLM_MODEL));
     }
 }

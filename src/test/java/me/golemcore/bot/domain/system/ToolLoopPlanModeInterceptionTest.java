@@ -110,7 +110,13 @@ class ToolLoopPlanModeInterceptionTest {
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         when(toolExecutor.execute(any(), any())).thenAnswer(inv -> {
             Message.ToolCall tc = inv.getArgument(1);
-            return ToolExecutionOutcome.synthetic(tc, null, "OK");
+            return new ToolExecutionOutcome(
+                    tc.getId(),
+                    tc.getName(),
+                    me.golemcore.bot.domain.model.ToolResult.success("OK"),
+                    "OK",
+                    false,
+                    null);
         });
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));

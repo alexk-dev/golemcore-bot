@@ -1,7 +1,6 @@
 package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.*;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.RagPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,7 +18,6 @@ import static org.mockito.Mockito.*;
 class RagIndexingSystemTest {
 
     private RagPort ragPort;
-    private RuntimeConfigService runtimeConfigService;
     private RagIndexingSystem system;
 
     @BeforeEach
@@ -27,12 +25,9 @@ class RagIndexingSystemTest {
         ragPort = mock(RagPort.class);
         when(ragPort.isAvailable()).thenReturn(true);
         when(ragPort.index(anyString())).thenReturn(CompletableFuture.completedFuture(null));
+        when(ragPort.getIndexMinLength()).thenReturn(50);
 
-        runtimeConfigService = mock(RuntimeConfigService.class);
-        when(runtimeConfigService.isRagEnabled()).thenReturn(true);
-        when(runtimeConfigService.getRagIndexMinLength()).thenReturn(50);
-
-        system = new RagIndexingSystem(ragPort, runtimeConfigService);
+        system = new RagIndexingSystem(ragPort);
     }
 
     @Test
@@ -253,6 +248,27 @@ class RagIndexingSystemTest {
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(ragPort).index(captor.capture());
         assertTrue(captor.getValue().contains("Assistant: The capital of France is Paris"));
+    }
+
+    @Test
+    void processIgnoresInternalRetryMessageAsLastUserInput() {
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role("user").content("visible question")
+                                .timestamp(Instant.now()).build(),
+                        Message.builder().role("user").content("internal continue")
+                                .metadata(Map.of(ContextAttributes.MESSAGE_INTERNAL, true))
+                                .timestamp(Instant.now()).build())))
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("assistant answer with enough detail to index").build());
+
+        system.process(context);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(ragPort).index(captor.capture());
+        assertTrue(captor.getValue().contains("User: visible question"));
+        assertFalse(captor.getValue().contains("internal continue"));
     }
 
     private AgentContext buildContext(String userText, String assistantText) {

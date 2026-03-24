@@ -144,6 +144,29 @@ class MemoryPersistSystemTest {
     }
 
     @Test
+    void processIgnoresInternalRetryMessageAsLastUserInput() {
+        Message visibleUser = Message.builder()
+                .role(ROLE_USER)
+                .content("visible question")
+                .timestamp(Instant.now())
+                .build();
+        Message internalRetry = Message.builder()
+                .role(ROLE_USER)
+                .content("internal continue")
+                .metadata(Map.of(ContextAttributes.MESSAGE_INTERNAL, true))
+                .timestamp(Instant.now())
+                .build();
+        AgentContext ctx = contextWith(
+                List.of(visibleUser, internalRetry),
+                LlmResponse.builder().content("assistant reply").build());
+
+        system.process(ctx);
+
+        verify(memoryComponent).persistTurnMemory(argThat(event -> event != null
+                && "visible question".equals(event.getUserText())));
+    }
+
+    @Test
     void processPersistsSessionScopeInTurnMemoryEvent() {
         AgentSession session = AgentSession.builder()
                 .id("web:conv12345")

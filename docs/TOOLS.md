@@ -4,26 +4,25 @@ Built-in tools that the agent can call (via function/tool calling).
 
 ## Tool Safety Model
 
-- Most tools can be enabled/disabled at runtime in `preferences/runtime-config.json` (dashboard: Settings).
+- Core tool toggles live in `preferences/runtime-config.json` (dashboard: Settings).
+- Official integrations such as browser, Brave Search, Tavily Search, Firecrawl, Perplexity Sonar, weather, and mail are loaded through the plugin runtime and keep their own configuration under `preferences/plugins/<owner>/<plugin>.json`.
 - File and shell access are sandboxed to the tool workspace (`bot.tools.*.workspace`).
 - Destructive actions may require user confirmation when tool confirmations are enabled.
 
 ## Runtime Configuration
 
-Tools are primarily controlled via `runtime-config.json` under `tools` and `security`:
+Core tools are controlled via `runtime-config.json` under `tools` and `security`:
 
 ```json
 {
   "tools": {
     "filesystemEnabled": true,
     "shellEnabled": true,
-    "browserEnabled": true,
-    "braveSearchEnabled": false,
-    "braveSearchApiKey": "...",
     "skillManagementEnabled": true,
     "skillTransitionEnabled": true,
     "tierEnabled": true,
-    "goalManagementEnabled": true
+    "goalManagementEnabled": true,
+    "shellEnvironmentVariables": []
   },
   "security": {
     "toolConfirmationEnabled": false,
@@ -31,6 +30,16 @@ Tools are primarily controlled via `runtime-config.json` under `tools` and `secu
   }
 }
 ```
+
+Plugin-owned tool settings are stored separately, for example:
+
+- `preferences/plugins/golemcore/browser.json`
+- `preferences/plugins/golemcore/brave-search.json`
+- `preferences/plugins/golemcore/tavily-search.json`
+- `preferences/plugins/golemcore/firecrawl.json`
+- `preferences/plugins/golemcore/perplexity-sonar.json`
+- `preferences/plugins/golemcore/weather.json`
+- `preferences/plugins/golemcore/mail.json`
 
 ## Workspace Sandboxing (FileSystem/Shell)
 
@@ -84,6 +93,7 @@ Input fields:
 ### `browse`
 
 Headless browsing (Playwright) to extract page `text`, `html`, or capture `screenshot`.
+Provided by the official `golemcore/browser` plugin.
 
 Input fields:
 
@@ -94,7 +104,29 @@ Input fields:
 
 Web search via Brave Search API.
 
-Requires `tools.braveSearchEnabled=true` and `tools.braveSearchApiKey` in runtime config.
+Provided by the official `golemcore/brave-search` plugin.
+Configure it in Settings or `preferences/plugins/golemcore/brave-search.json`.
+
+### `tavily_search`
+
+Web search via Tavily Search API with optional answer synthesis and advanced retrieval depth.
+
+Provided by the official `golemcore/tavily-search` plugin.
+Configure it in Settings or `preferences/plugins/golemcore/tavily-search.json`.
+
+### `firecrawl_scrape`
+
+Remote webpage scraping via Firecrawl `/v2/scrape`.
+
+Provided by the official `golemcore/firecrawl` plugin.
+Configure it in Settings or `preferences/plugins/golemcore/firecrawl.json`.
+
+### `perplexity_ask`
+
+Grounded synchronous completions via Perplexity Sonar with selectable search model.
+
+Provided by the official `golemcore/perplexity-sonar` plugin.
+Configure it in Settings or `preferences/plugins/golemcore/perplexity-sonar.json`.
 
 ### `skill_management`
 
@@ -136,15 +168,20 @@ This tool uses Memory V2 APIs (no direct filesystem assumptions for memory write
 
 Email tools.
 
-Configured in runtime config under `tools.imap` and `tools.smtp`.
+Provided by the official `golemcore/mail` plugin.
+Configured in Settings or `preferences/plugins/golemcore/mail.json`.
 
 ### `send_voice`
 
 Synthesize and send voice responses (when voice is enabled and configured).
 
-### `datetime` / `weather`
+### `datetime`
 
-Utility tools.
+Built-in utility tool.
+
+### `weather`
+
+Weather lookup provided by the official `golemcore/weather` plugin.
 
 ## See Also
 

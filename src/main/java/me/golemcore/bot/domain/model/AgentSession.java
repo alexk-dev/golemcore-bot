@@ -20,6 +20,8 @@ package me.golemcore.bot.domain.model;
 
 import lombok.Builder;
 import lombok.Data;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceStorageStats;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -47,6 +49,12 @@ public class AgentSession {
     private Map<String, Object> metadata = new HashMap<>();
 
     @Builder.Default
+    private List<TraceRecord> traces = new ArrayList<>();
+
+    @Builder.Default
+    private TraceStorageStats traceStorageStats = new TraceStorageStats();
+
+    @Builder.Default
     private SessionState state = SessionState.ACTIVE;
 
     private Instant createdAt;
@@ -56,11 +64,12 @@ public class AgentSession {
      * Adds a message to the session history and updates the session timestamp.
      */
     public void addMessage(Message message) {
-        if (messages == null) {
-            messages = new ArrayList<>();
-        }
-        messages.add(message);
+        ensureMutableMessages().add(message);
         this.updatedAt = Instant.now();
+    }
+
+    public List<Message> mutableMessages() {
+        return ensureMutableMessages();
     }
 
     /**
@@ -79,5 +88,16 @@ public class AgentSession {
      */
     public enum SessionState {
         ACTIVE, PAUSED, TERMINATED
+    }
+
+    private List<Message> ensureMutableMessages() {
+        if (messages == null) {
+            messages = new ArrayList<>();
+            return messages;
+        }
+        if (!(messages instanceof ArrayList<?>)) {
+            messages = new ArrayList<>(messages);
+        }
+        return messages;
     }
 }

@@ -59,6 +59,7 @@ public class DashboardSecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers("/api/auth/login", "/api/auth/mfa-status", "/api/auth/refresh").permitAll()
+                        .pathMatchers("/api/hooks/**").permitAll()
                         .pathMatchers("/ws/**").permitAll()
                         .pathMatchers("/dashboard/**").permitAll()
                         .pathMatchers(HttpMethod.GET, "/", "/favicon.ico").permitAll()

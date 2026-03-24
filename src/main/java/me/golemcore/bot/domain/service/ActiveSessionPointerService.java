@@ -88,22 +88,23 @@ public class ActiveSessionPointerService {
             throw new IllegalArgumentException("conversationKey must not be blank");
         }
 
-        String previous;
-        Map<String, String> snapshot;
         synchronized (lock) {
-            previous = pointers.put(pointerKey, conversationKey);
-            snapshot = new LinkedHashMap<>(pointers);
-        }
-        try {
-            persistSnapshot(snapshot);
-        } catch (RuntimeException e) {
-            synchronized (lock) {
+            String previous = pointers.get(pointerKey);
+            if (Objects.equals(previous, conversationKey)) {
+                return;
+            }
+
+            pointers.put(pointerKey, conversationKey);
+            Map<String, String> snapshot = new LinkedHashMap<>(pointers);
+            try {
+                persistSnapshot(snapshot);
+            } catch (RuntimeException e) {
                 String current = pointers.get(pointerKey);
                 if (Objects.equals(current, conversationKey)) {
                     rollback(pointerKey, previous);
                 }
+                throw new IllegalStateException("Failed to set active conversation pointer", e);
             }
-            throw new IllegalStateException("Failed to set active conversation pointer", e);
         }
     }
 
@@ -113,24 +114,21 @@ public class ActiveSessionPointerService {
             return;
         }
 
-        String previous;
-        Map<String, String> snapshot;
         synchronized (lock) {
-            previous = pointers.remove(pointerKey);
+            String previous = pointers.remove(pointerKey);
             if (previous == null) {
                 return;
             }
-            snapshot = new LinkedHashMap<>(pointers);
-        }
-        try {
-            persistSnapshot(snapshot);
-        } catch (RuntimeException e) {
-            synchronized (lock) {
+
+            Map<String, String> snapshot = new LinkedHashMap<>(pointers);
+            try {
+                persistSnapshot(snapshot);
+            } catch (RuntimeException e) {
                 if (!pointers.containsKey(pointerKey)) {
                     pointers.put(pointerKey, previous);
                 }
+                throw new IllegalStateException("Failed to clear active conversation pointer", e);
             }
-            throw new IllegalStateException("Failed to clear active conversation pointer", e);
         }
     }
 

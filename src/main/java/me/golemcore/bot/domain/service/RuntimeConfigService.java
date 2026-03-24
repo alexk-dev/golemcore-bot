@@ -1,17 +1,37 @@
 package me.golemcore.bot.domain.service;
 
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,7 +50,7 @@ import java.util.function.Supplier;
  * <li>telegram.json - Telegram adapter configuration
  * <li>model-router.json - Model routing configuration
  * <li>llm.json - LLM provider configurations
- * <li>tools.json - Tool configurations (browser, filesystem, etc.)
+ * <li>tools.json - Core tool configurations
  * <li>voice.json - ElevenLabs voice configuration
  * <li>... and more (see {@link RuntimeConfig.ConfigSection})
  * </ul>
@@ -74,8 +94,32 @@ public class RuntimeConfigService {
     private static final int DEFAULT_AUTO_TIMEOUT_MINUTES = 10;
     private static final int DEFAULT_AUTO_MAX_GOALS = 3;
     private static final String DEFAULT_AUTO_MODEL_TIER = "default";
+    private static final boolean DEFAULT_AUTO_REFLECTION_ENABLED = true;
+    private static final int DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD = 2;
+    private static final boolean DEFAULT_UPDATE_AUTO_ENABLED = true;
+    private static final int DEFAULT_UPDATE_CHECK_INTERVAL_MINUTES = 60;
+    private static final boolean DEFAULT_UPDATE_MAINTENANCE_WINDOW_ENABLED = false;
+    private static final String DEFAULT_UPDATE_MAINTENANCE_WINDOW_START_UTC = "00:00";
+    private static final String DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC = "00:00";
+    private static final boolean DEFAULT_TRACING_ENABLED = true;
+    private static final boolean DEFAULT_TRACING_PAYLOAD_SNAPSHOTS_ENABLED = false;
+    private static final int DEFAULT_TRACING_SESSION_TRACE_BUDGET_MB = 128;
+    private static final int DEFAULT_TRACING_MAX_SNAPSHOT_SIZE_KB = 256;
+    private static final int DEFAULT_TRACING_MAX_SNAPSHOTS_PER_SPAN = 10;
+    private static final int DEFAULT_TRACING_MAX_TRACES_PER_SESSION = 100;
+    private static final boolean DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS = false;
+    private static final boolean DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS = false;
+    private static final boolean DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS = false;
+    private static final boolean DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS = false;
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
+    private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
+    private static final String COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
+    private static final double DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO = 0.95d;
+    private static final boolean DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES = true;
+    private static final boolean DEFAULT_COMPACTION_DETAILS_ENABLED = true;
+    private static final int DEFAULT_COMPACTION_DETAILS_MAX_ITEMS = 50;
+    private static final int DEFAULT_COMPACTION_SUMMARY_TIMEOUT_MS = 15000;
     private static final int DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS = 1800;
     private static final int DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS = 3500;
     private static final int DEFAULT_MEMORY_VERSION = 2;
@@ -97,33 +141,43 @@ public class RuntimeConfigService {
     private static final String DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY = "basic";
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
-    private static final java.time.Duration DEFAULT_TURN_DEADLINE = java.time.Duration.ofHours(1);
-    private static final int DEFAULT_IMAP_PORT = 993;
-    private static final int DEFAULT_IMAP_CONNECT_TIMEOUT = 10000;
-    private static final int DEFAULT_IMAP_READ_TIMEOUT = 30000;
-    private static final int DEFAULT_IMAP_MAX_BODY_LENGTH = 50000;
-    private static final int DEFAULT_IMAP_DEFAULT_MESSAGE_LIMIT = 20;
-    private static final String DEFAULT_IMAP_SECURITY = "ssl";
-    private static final int DEFAULT_SMTP_PORT = 587;
-    private static final int DEFAULT_SMTP_CONNECT_TIMEOUT = 10000;
-    private static final int DEFAULT_SMTP_READ_TIMEOUT = 30000;
-    private static final String DEFAULT_SMTP_SECURITY = "starttls";
-    private static final String DEFAULT_STT_PROVIDER = "elevenlabs";
-    private static final String DEFAULT_TTS_PROVIDER = "elevenlabs";
-    private static final String STT_PROVIDER_WHISPER = "whisper";
-    private static final String DEFAULT_BROWSER_API_PROVIDER = "brave";
-    private static final boolean DEFAULT_BROWSER_ENABLED = true;
-    private static final String DEFAULT_BROWSER_TYPE = "playwright";
-    private static final boolean DEFAULT_BROWSER_HEADLESS = true;
-    private static final int DEFAULT_BROWSER_TIMEOUT_MS = 30000;
-    private static final String DEFAULT_BROWSER_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
-    private static final String DEFAULT_RAG_URL = "http://localhost:9621";
-    private static final String DEFAULT_RAG_QUERY_MODE = "hybrid";
-    private static final int DEFAULT_RAG_TIMEOUT_SECONDS = 10;
-    private static final int DEFAULT_RAG_INDEX_MIN_LENGTH = 50;
+    private static final Duration DEFAULT_TURN_DEADLINE = Duration.ofHours(1);
+    private static final String DEFAULT_STT_PROVIDER = "golemcore/elevenlabs";
+    private static final String DEFAULT_TTS_PROVIDER = "golemcore/elevenlabs";
+    private static final String DEFAULT_WHISPER_STT_PROVIDER = "golemcore/whisper";
+    private static final String LEGACY_ELEVENLABS_PROVIDER = "elevenlabs";
+    private static final String LEGACY_WHISPER_PROVIDER = "whisper";
+    private static final boolean DEFAULT_TURN_AUTO_RETRY_ENABLED = true;
+    private static final int DEFAULT_TURN_AUTO_RETRY_MAX_ATTEMPTS = 2;
+    private static final long DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS = 600L;
+    private static final boolean DEFAULT_TURN_QUEUE_STEERING_ENABLED = true;
+    private static final String DEFAULT_TURN_QUEUE_STEERING_MODE = "one-at-a-time";
+    private static final String DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE = "one-at-a-time";
+    private static final boolean DEFAULT_TURN_PROGRESS_UPDATES_ENABLED = true;
+    private static final boolean DEFAULT_TURN_PROGRESS_INTENT_ENABLED = true;
+    private static final int DEFAULT_TURN_PROGRESS_BATCH_SIZE = 8;
+    private static final int DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS = 10;
+    private static final int DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS = 8000;
     private static final boolean DEFAULT_MCP_ENABLED = true;
     private static final int DEFAULT_MCP_STARTUP_TIMEOUT = 30;
     private static final int DEFAULT_MCP_IDLE_TIMEOUT = 5;
+    private static final boolean DEFAULT_PLAN_ENABLED = false;
+    private static final int DEFAULT_PLAN_MAX_PLANS = 5;
+    private static final int DEFAULT_PLAN_MAX_STEPS_PER_PLAN = 50;
+    private static final boolean DEFAULT_PLAN_STOP_ON_FAILURE = true;
+    private static final boolean DEFAULT_DELAYED_ACTIONS_ENABLED = true;
+    private static final int DEFAULT_DELAYED_ACTIONS_TICK_SECONDS = 1;
+    private static final int DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION = 50;
+    private static final Duration DEFAULT_DELAYED_ACTIONS_MAX_DELAY = Duration.ofDays(30);
+    private static final int DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS = 4;
+    private static final Duration DEFAULT_DELAYED_ACTIONS_LEASE_DURATION = Duration.ofMinutes(2);
+    private static final Duration DEFAULT_DELAYED_ACTIONS_RETENTION = Duration.ofDays(7);
+    private static final boolean DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER = true;
+    private static final String DEFAULT_MODEL_REGISTRY_BRANCH = "main";
+
+    private static final boolean DEFAULT_HIVE_ENABLED = false;
+    private static final boolean DEFAULT_HIVE_AUTO_CONNECT = false;
+    private static final boolean DEFAULT_HIVE_MANAGED_BY_PROPERTIES = false;
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
 
@@ -197,6 +251,16 @@ public class RuntimeConfigService {
             this.configRef.set(oldConfig);
             throw e;
         }
+    }
+
+    public RuntimeConfig.HiveConfig getHiveConfig() {
+        RuntimeConfig.HiveConfig hiveConfig = getRuntimeConfig().getHive();
+        return hiveConfig != null ? hiveConfig : RuntimeConfig.HiveConfig.builder().build();
+    }
+
+    public boolean isHiveManagedByProperties() {
+        Boolean managedByProperties = getHiveConfig().getManagedByProperties();
+        return managedByProperties != null && managedByProperties;
     }
 
     // ==================== Telegram ====================
@@ -359,45 +423,12 @@ public class RuntimeConfigService {
         return val != null ? val : true;
     }
 
-    // ==================== Brave Search ====================
-
-    public String getBrowserApiProvider() {
-        String val = getRuntimeConfig().getTools().getBrowserApiProvider();
-        return val != null && !val.isBlank() ? val : DEFAULT_BROWSER_API_PROVIDER;
-    }
-
-    public boolean isBrowserEnabled() {
-        Boolean val = getRuntimeConfig().getTools().getBrowserEnabled();
-        return val != null ? val : DEFAULT_BROWSER_ENABLED;
-    }
-
-    public String getBrowserType() {
-        String val = getRuntimeConfig().getTools().getBrowserType();
-        return val != null && !val.isBlank() ? val : DEFAULT_BROWSER_TYPE;
-    }
-
-    public int getBrowserTimeoutMs() {
-        Integer val = getRuntimeConfig().getTools().getBrowserTimeout();
-        return val != null ? val : DEFAULT_BROWSER_TIMEOUT_MS;
-    }
-
-    public String getBrowserUserAgent() {
-        String val = getRuntimeConfig().getTools().getBrowserUserAgent();
-        return val != null && !val.isBlank() ? val : DEFAULT_BROWSER_USER_AGENT;
-    }
-
-    public boolean isBrowserHeadless() {
-        Boolean val = getRuntimeConfig().getTools().getBrowserHeadless();
-        return val != null ? val : DEFAULT_BROWSER_HEADLESS;
-    }
-
-    public boolean isBraveSearchEnabled() {
-        Boolean val = getRuntimeConfig().getTools().getBraveSearchEnabled();
-        return val != null && val && DEFAULT_BROWSER_API_PROVIDER.equals(getBrowserApiProvider());
-    }
-
-    public String getBraveSearchApiKey() {
-        return Secret.valueOrEmpty(getRuntimeConfig().getTools().getBraveSearchApiKey());
+    public RuntimeConfig.TierBinding getModelTierBinding(String tier) {
+        RuntimeConfig.ModelRouterConfig modelRouter = getRuntimeConfig().getModelRouter();
+        if (ModelTierCatalog.ROUTING_TIER.equals(tier)) {
+            return modelRouter.getRouting();
+        }
+        return modelRouter.getTierBinding(tier);
     }
 
     public boolean isFilesystemEnabled() {
@@ -461,35 +492,6 @@ public class RuntimeConfigService {
         return val != null ? val : true;
     }
 
-    public boolean isRagEnabled() {
-        Boolean val = getRuntimeConfig().getRag().getEnabled();
-        return val != null && val;
-    }
-
-    public String getRagUrl() {
-        String val = getRuntimeConfig().getRag().getUrl();
-        return val != null && !val.isBlank() ? val : DEFAULT_RAG_URL;
-    }
-
-    public String getRagApiKey() {
-        return Secret.valueOrEmpty(getRuntimeConfig().getRag().getApiKey());
-    }
-
-    public String getRagQueryMode() {
-        String val = getRuntimeConfig().getRag().getQueryMode();
-        return val != null && !val.isBlank() ? val : DEFAULT_RAG_QUERY_MODE;
-    }
-
-    public int getRagTimeoutSeconds() {
-        Integer val = getRuntimeConfig().getRag().getTimeoutSeconds();
-        return val != null ? val : DEFAULT_RAG_TIMEOUT_SECONDS;
-    }
-
-    public int getRagIndexMinLength() {
-        Integer val = getRuntimeConfig().getRag().getIndexMinLength();
-        return val != null ? val : DEFAULT_RAG_INDEX_MIN_LENGTH;
-    }
-
     // ==================== MCP ====================
 
     public boolean isMcpEnabled() {
@@ -505,6 +507,129 @@ public class RuntimeConfigService {
     public int getMcpDefaultIdleTimeout() {
         Integer val = getRuntimeConfig().getMcp().getDefaultIdleTimeout();
         return val != null ? val : DEFAULT_MCP_IDLE_TIMEOUT;
+    }
+
+    // ==================== Plan ====================
+
+    public boolean isPlanEnabled() {
+        RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
+        if (planConfig == null) {
+            return DEFAULT_PLAN_ENABLED;
+        }
+        Boolean val = planConfig.getEnabled();
+        return val != null ? val : DEFAULT_PLAN_ENABLED;
+    }
+
+    public int getPlanMaxPlans() {
+        RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
+        if (planConfig == null) {
+            return DEFAULT_PLAN_MAX_PLANS;
+        }
+        Integer val = planConfig.getMaxPlans();
+        return val != null ? val : DEFAULT_PLAN_MAX_PLANS;
+    }
+
+    public int getPlanMaxStepsPerPlan() {
+        RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
+        if (planConfig == null) {
+            return DEFAULT_PLAN_MAX_STEPS_PER_PLAN;
+        }
+        Integer val = planConfig.getMaxStepsPerPlan();
+        return val != null ? val : DEFAULT_PLAN_MAX_STEPS_PER_PLAN;
+    }
+
+    public boolean isPlanStopOnFailure() {
+        RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
+        if (planConfig == null) {
+            return DEFAULT_PLAN_STOP_ON_FAILURE;
+        }
+        Boolean val = planConfig.getStopOnFailure();
+        return val != null ? val : DEFAULT_PLAN_STOP_ON_FAILURE;
+    }
+
+    // ==================== Delayed Actions ====================
+
+    public boolean isDelayedActionsEnabled() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null) {
+            return DEFAULT_DELAYED_ACTIONS_ENABLED;
+        }
+        Boolean val = delayedConfig.getEnabled();
+        return val != null ? val : DEFAULT_DELAYED_ACTIONS_ENABLED;
+    }
+
+    public int getDelayedActionsTickSeconds() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null) {
+            return DEFAULT_DELAYED_ACTIONS_TICK_SECONDS;
+        }
+        Integer val = delayedConfig.getTickSeconds();
+        return val != null && val > 0 ? val : DEFAULT_DELAYED_ACTIONS_TICK_SECONDS;
+    }
+
+    public int getDelayedActionsMaxPendingPerSession() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null) {
+            return DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION;
+        }
+        Integer val = delayedConfig.getMaxPendingPerSession();
+        return val != null && val > 0 ? val : DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION;
+    }
+
+    public Duration getDelayedActionsMaxDelay() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null || delayedConfig.getMaxDelay() == null || delayedConfig.getMaxDelay().isBlank()) {
+            return DEFAULT_DELAYED_ACTIONS_MAX_DELAY;
+        }
+        try {
+            return Duration.parse(delayedConfig.getMaxDelay());
+        } catch (DateTimeParseException e) {
+            return DEFAULT_DELAYED_ACTIONS_MAX_DELAY;
+        }
+    }
+
+    public int getDelayedActionsDefaultMaxAttempts() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null) {
+            return DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS;
+        }
+        Integer val = delayedConfig.getDefaultMaxAttempts();
+        return val != null && val > 0 ? val : DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS;
+    }
+
+    public Duration getDelayedActionsLeaseDuration() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null || delayedConfig.getLeaseDuration() == null
+                || delayedConfig.getLeaseDuration().isBlank()) {
+            return DEFAULT_DELAYED_ACTIONS_LEASE_DURATION;
+        }
+        try {
+            return Duration.parse(delayedConfig.getLeaseDuration());
+        } catch (DateTimeParseException e) {
+            return DEFAULT_DELAYED_ACTIONS_LEASE_DURATION;
+        }
+    }
+
+    public Duration getDelayedActionsRetentionAfterCompletion() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null || delayedConfig.getRetentionAfterCompletion() == null
+                || delayedConfig.getRetentionAfterCompletion().isBlank()) {
+            return DEFAULT_DELAYED_ACTIONS_RETENTION;
+        }
+        try {
+            return Duration.parse(delayedConfig.getRetentionAfterCompletion());
+        } catch (DateTimeParseException e) {
+            return DEFAULT_DELAYED_ACTIONS_RETENTION;
+        }
+    }
+
+    public boolean isDelayedActionsRunLaterEnabled() {
+        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
+        if (delayedConfig == null) {
+            return DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER;
+        }
+        Boolean val = delayedConfig.getAllowRunLater();
+        return val != null ? val : DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER;
     }
 
     public String getVoiceApiKey() {
@@ -542,13 +667,11 @@ public class RuntimeConfigService {
     }
 
     public String getSttProvider() {
-        String val = getRuntimeConfig().getVoice().getSttProvider();
-        return val != null && !val.isBlank() ? val : DEFAULT_STT_PROVIDER;
+        return normalizeVoiceProvider(getRuntimeConfig().getVoice().getSttProvider());
     }
 
     public String getTtsProvider() {
-        String val = getRuntimeConfig().getVoice().getTtsProvider();
-        return val != null && !val.isBlank() ? val : DEFAULT_TTS_PROVIDER;
+        return normalizeVoiceProvider(getRuntimeConfig().getVoice().getTtsProvider());
     }
 
     public String getWhisperSttUrl() {
@@ -561,53 +684,14 @@ public class RuntimeConfigService {
     }
 
     public boolean isWhisperSttConfigured() {
-        return STT_PROVIDER_WHISPER.equals(getSttProvider()) && !getWhisperSttUrl().isBlank();
-    }
-
-    // ==================== IMAP ====================
-
-    public BotProperties.ImapToolProperties getResolvedImapConfig() {
-        RuntimeConfig.ImapConfig rc = getRuntimeConfig().getTools().getImap();
-        BotProperties.ImapToolProperties resolved = new BotProperties.ImapToolProperties();
-        resolved.setEnabled(rc.getEnabled() != null && rc.getEnabled());
-        resolved.setHost(rc.getHost() != null ? rc.getHost() : "");
-        resolved.setPort(rc.getPort() != null ? rc.getPort() : DEFAULT_IMAP_PORT);
-        resolved.setUsername(rc.getUsername() != null ? rc.getUsername() : "");
-        resolved.setPassword(Secret.valueOrEmpty(rc.getPassword()));
-        resolved.setSecurity(rc.getSecurity() != null ? rc.getSecurity() : DEFAULT_IMAP_SECURITY);
-        resolved.setSslTrust(rc.getSslTrust() != null ? rc.getSslTrust() : "");
-        resolved.setConnectTimeout(
-                rc.getConnectTimeout() != null ? rc.getConnectTimeout() : DEFAULT_IMAP_CONNECT_TIMEOUT);
-        resolved.setReadTimeout(rc.getReadTimeout() != null ? rc.getReadTimeout() : DEFAULT_IMAP_READ_TIMEOUT);
-        resolved.setMaxBodyLength(rc.getMaxBodyLength() != null ? rc.getMaxBodyLength() : DEFAULT_IMAP_MAX_BODY_LENGTH);
-        resolved.setDefaultMessageLimit(
-                rc.getDefaultMessageLimit() != null ? rc.getDefaultMessageLimit() : DEFAULT_IMAP_DEFAULT_MESSAGE_LIMIT);
-        return resolved;
-    }
-
-    // ==================== SMTP ====================
-
-    public BotProperties.SmtpToolProperties getResolvedSmtpConfig() {
-        RuntimeConfig.SmtpConfig rc = getRuntimeConfig().getTools().getSmtp();
-        BotProperties.SmtpToolProperties resolved = new BotProperties.SmtpToolProperties();
-        resolved.setEnabled(rc.getEnabled() != null && rc.getEnabled());
-        resolved.setHost(rc.getHost() != null ? rc.getHost() : "");
-        resolved.setPort(rc.getPort() != null ? rc.getPort() : DEFAULT_SMTP_PORT);
-        resolved.setUsername(rc.getUsername() != null ? rc.getUsername() : "");
-        resolved.setPassword(Secret.valueOrEmpty(rc.getPassword()));
-        resolved.setSecurity(rc.getSecurity() != null ? rc.getSecurity() : DEFAULT_SMTP_SECURITY);
-        resolved.setSslTrust(rc.getSslTrust() != null ? rc.getSslTrust() : "");
-        resolved.setConnectTimeout(
-                rc.getConnectTimeout() != null ? rc.getConnectTimeout() : DEFAULT_SMTP_CONNECT_TIMEOUT);
-        resolved.setReadTimeout(rc.getReadTimeout() != null ? rc.getReadTimeout() : DEFAULT_SMTP_READ_TIMEOUT);
-        return resolved;
+        return DEFAULT_WHISPER_STT_PROVIDER.equals(getSttProvider()) && !getWhisperSttUrl().isBlank();
     }
 
     // ==================== Auto Mode ====================
 
     public boolean isAutoModeEnabled() {
         Boolean val = getRuntimeConfig().getAutoMode().getEnabled();
-        return val != null && val;
+        return val != null ? val : true;
     }
 
     public int getAutoTickIntervalSeconds() {
@@ -635,16 +719,168 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_AUTO_MODEL_TIER;
     }
 
+    public boolean isAutoReflectionEnabled() {
+        Boolean val = getRuntimeConfig().getAutoMode().getReflectionEnabled();
+        return val != null ? val : DEFAULT_AUTO_REFLECTION_ENABLED;
+    }
+
+    public int getAutoReflectionFailureThreshold() {
+        Integer val = getRuntimeConfig().getAutoMode().getReflectionFailureThreshold();
+        return val != null ? val : DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD;
+    }
+
+    public String getAutoReflectionModelTier() {
+        return getRuntimeConfig().getAutoMode().getReflectionModelTier();
+    }
+
+    public boolean isAutoReflectionTierPriority() {
+        Boolean val = getRuntimeConfig().getAutoMode().getReflectionTierPriority();
+        return val != null && val;
+    }
+
     public boolean isAutoNotifyMilestonesEnabled() {
         Boolean val = getRuntimeConfig().getAutoMode().getNotifyMilestones();
         return val != null ? val : true;
+    }
+
+    // ==================== Update ====================
+
+    public boolean isAutoUpdateEnabled() {
+        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
+        if (updateConfig == null) {
+            return DEFAULT_UPDATE_AUTO_ENABLED;
+        }
+        Boolean val = updateConfig.getAutoEnabled();
+        return val != null ? val : DEFAULT_UPDATE_AUTO_ENABLED;
+    }
+
+    public int getUpdateCheckIntervalMinutes() {
+        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
+        if (updateConfig == null) {
+            return DEFAULT_UPDATE_CHECK_INTERVAL_MINUTES;
+        }
+        Integer val = updateConfig.getCheckIntervalMinutes();
+        return val != null ? val : DEFAULT_UPDATE_CHECK_INTERVAL_MINUTES;
+    }
+
+    public boolean isUpdateMaintenanceWindowEnabled() {
+        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
+        if (updateConfig == null) {
+            return DEFAULT_UPDATE_MAINTENANCE_WINDOW_ENABLED;
+        }
+        Boolean val = updateConfig.getMaintenanceWindowEnabled();
+        return val != null ? val : DEFAULT_UPDATE_MAINTENANCE_WINDOW_ENABLED;
+    }
+
+    public String getUpdateMaintenanceWindowStartUtc() {
+        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
+        if (updateConfig == null) {
+            return DEFAULT_UPDATE_MAINTENANCE_WINDOW_START_UTC;
+        }
+        return normalizeUtcTimeValue(updateConfig.getMaintenanceWindowStartUtc(),
+                DEFAULT_UPDATE_MAINTENANCE_WINDOW_START_UTC);
+    }
+
+    public String getUpdateMaintenanceWindowEndUtc() {
+        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
+        if (updateConfig == null) {
+            return DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC;
+        }
+        return normalizeUtcTimeValue(updateConfig.getMaintenanceWindowEndUtc(),
+                DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC);
+    }
+
+    public boolean isTracingEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_ENABLED;
+        }
+        Boolean value = tracingConfig.getEnabled();
+        return value != null ? value : DEFAULT_TRACING_ENABLED;
+    }
+
+    public boolean isPayloadSnapshotsEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_PAYLOAD_SNAPSHOTS_ENABLED;
+        }
+        Boolean value = tracingConfig.getPayloadSnapshotsEnabled();
+        return value != null ? value : DEFAULT_TRACING_PAYLOAD_SNAPSHOTS_ENABLED;
+    }
+
+    public int getSessionTraceBudgetMb() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getSessionTraceBudgetMb() == null) {
+            return DEFAULT_TRACING_SESSION_TRACE_BUDGET_MB;
+        }
+        return tracingConfig.getSessionTraceBudgetMb();
+    }
+
+    public int getTraceMaxSnapshotSizeKb() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getMaxSnapshotSizeKb() == null) {
+            return DEFAULT_TRACING_MAX_SNAPSHOT_SIZE_KB;
+        }
+        return tracingConfig.getMaxSnapshotSizeKb();
+    }
+
+    public int getTraceMaxSnapshotsPerSpan() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getMaxSnapshotsPerSpan() == null) {
+            return DEFAULT_TRACING_MAX_SNAPSHOTS_PER_SPAN;
+        }
+        return tracingConfig.getMaxSnapshotsPerSpan();
+    }
+
+    public int getTraceMaxTracesPerSession() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getMaxTracesPerSession() == null) {
+            return DEFAULT_TRACING_MAX_TRACES_PER_SESSION;
+        }
+        return tracingConfig.getMaxTracesPerSession();
+    }
+
+    public boolean isTraceInboundPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureInboundPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS;
+    }
+
+    public boolean isTraceOutboundPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureOutboundPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS;
+    }
+
+    public boolean isTraceToolPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureToolPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS;
+    }
+
+    public boolean isTraceLlmPayloadCaptureEnabled() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null) {
+            return DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
+        }
+        Boolean value = tracingConfig.getCaptureLlmPayloads();
+        return value != null ? value : DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
     }
 
     // ==================== Rate Limit ====================
 
     public boolean isRateLimitEnabled() {
         Boolean val = getRuntimeConfig().getRateLimit().getEnabled();
-        return val != null ? val : true;
+        return val != null ? val : false;
     }
 
     public int getUserRequestsPerMinute() {
@@ -726,6 +962,39 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_AUTO_COMPACT_KEEP_LAST;
     }
 
+    public String getCompactionTriggerMode() {
+        String val = getRuntimeConfig().getCompaction().getTriggerMode();
+        return normalizeCompactionTriggerMode(val);
+    }
+
+    public double getCompactionModelThresholdRatio() {
+        Double val = getRuntimeConfig().getCompaction().getModelThresholdRatio();
+        if (val == null || val <= 0.0d || val > 1.0d) {
+            return DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO;
+        }
+        return val;
+    }
+
+    public boolean isCompactionPreserveTurnBoundariesEnabled() {
+        Boolean val = getRuntimeConfig().getCompaction().getPreserveTurnBoundaries();
+        return val != null ? val : DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES;
+    }
+
+    public boolean isCompactionDetailsEnabled() {
+        Boolean val = getRuntimeConfig().getCompaction().getDetailsEnabled();
+        return val != null ? val : DEFAULT_COMPACTION_DETAILS_ENABLED;
+    }
+
+    public int getCompactionDetailsMaxItemsPerCategory() {
+        Integer val = getRuntimeConfig().getCompaction().getDetailsMaxItemsPerCategory();
+        return val != null ? val : DEFAULT_COMPACTION_DETAILS_MAX_ITEMS;
+    }
+
+    public int getCompactionSummaryTimeoutMs() {
+        Integer val = getRuntimeConfig().getCompaction().getSummaryTimeoutMs();
+        return val != null ? val : DEFAULT_COMPACTION_SUMMARY_TIMEOUT_MS;
+    }
+
     // ==================== Turn Budget ====================
 
     public int getTurnMaxLlmCalls() {
@@ -746,16 +1015,131 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_TURN_MAX_TOOL_EXECUTIONS;
     }
 
-    public java.time.Duration getTurnDeadline() {
+    public Duration getTurnDeadline() {
         RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
         if (turnConfig == null || turnConfig.getDeadline() == null || turnConfig.getDeadline().isBlank()) {
             return DEFAULT_TURN_DEADLINE;
         }
         try {
-            return java.time.Duration.parse(turnConfig.getDeadline());
-        } catch (java.time.format.DateTimeParseException e) {
+            return Duration.parse(turnConfig.getDeadline());
+        } catch (DateTimeParseException e) {
             return DEFAULT_TURN_DEADLINE;
         }
+    }
+
+    public boolean isTurnAutoRetryEnabled() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_AUTO_RETRY_ENABLED;
+        }
+        Boolean val = turnConfig.getAutoRetryEnabled();
+        return val != null ? val : DEFAULT_TURN_AUTO_RETRY_ENABLED;
+    }
+
+    public int getTurnAutoRetryMaxAttempts() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_AUTO_RETRY_MAX_ATTEMPTS;
+        }
+        Integer val = turnConfig.getAutoRetryMaxAttempts();
+        return val != null ? val : DEFAULT_TURN_AUTO_RETRY_MAX_ATTEMPTS;
+    }
+
+    public long getTurnAutoRetryBaseDelayMs() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS;
+        }
+        Long val = turnConfig.getAutoRetryBaseDelayMs();
+        return val != null ? val : DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS;
+    }
+
+    public boolean isTurnQueueSteeringEnabled() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_QUEUE_STEERING_ENABLED;
+        }
+        Boolean val = turnConfig.getQueueSteeringEnabled();
+        return val != null ? val : DEFAULT_TURN_QUEUE_STEERING_ENABLED;
+    }
+
+    public String getTurnQueueSteeringMode() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null || turnConfig.getQueueSteeringMode() == null
+                || turnConfig.getQueueSteeringMode().isBlank()) {
+            return DEFAULT_TURN_QUEUE_STEERING_MODE;
+        }
+        return normalizeQueueMode(turnConfig.getQueueSteeringMode());
+    }
+
+    public String getTurnQueueFollowUpMode() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null || turnConfig.getQueueFollowUpMode() == null
+                || turnConfig.getQueueFollowUpMode().isBlank()) {
+            return DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE;
+        }
+        return normalizeQueueMode(turnConfig.getQueueFollowUpMode());
+    }
+
+    public boolean isTurnProgressUpdatesEnabled() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_UPDATES_ENABLED;
+        }
+        Boolean val = turnConfig.getProgressUpdatesEnabled();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_UPDATES_ENABLED;
+    }
+
+    public boolean isTurnProgressIntentEnabled() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_INTENT_ENABLED;
+        }
+        Boolean val = turnConfig.getProgressIntentEnabled();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_INTENT_ENABLED;
+    }
+
+    public int getTurnProgressBatchSize() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_BATCH_SIZE;
+        }
+        Integer val = turnConfig.getProgressBatchSize();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_BATCH_SIZE;
+    }
+
+    public Duration getTurnProgressMaxSilence() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return Duration.ofSeconds(DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS);
+        }
+        Integer seconds = turnConfig.getProgressMaxSilenceSeconds();
+        int safeSeconds = seconds != null ? seconds : DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS;
+        return Duration.ofSeconds(safeSeconds);
+    }
+
+    public int getTurnProgressSummaryTimeoutMs() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS;
+        }
+        Integer val = turnConfig.getProgressSummaryTimeoutMs();
+        return val != null ? val : DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS;
+    }
+
+    private String normalizeQueueMode(String mode) {
+        if (mode == null || mode.isBlank()) {
+            return DEFAULT_TURN_QUEUE_STEERING_MODE;
+        }
+        String normalized = mode.trim().toLowerCase(Locale.ROOT);
+        if ("all".equals(normalized)) {
+            return "all";
+        }
+        if ("one-at-a-time".equals(normalized) || "one_at_a_time".equals(normalized)
+                || "one-at-time".equals(normalized) || "single".equals(normalized)) {
+            return "one-at-a-time";
+        }
+        return DEFAULT_TURN_QUEUE_STEERING_MODE;
     }
 
     // ==================== Memory ====================
@@ -960,10 +1344,8 @@ public class RuntimeConfigService {
                 .build();
 
         RuntimeConfig cfg = getRuntimeConfig();
-        if (cfg.getTelegram().getInviteCodes() == null) {
-            cfg.getTelegram().setInviteCodes(new ArrayList<>());
-        }
-        cfg.getTelegram().getInviteCodes().add(inviteCode);
+        List<RuntimeConfig.InviteCode> inviteCodes = ensureMutableInviteCodes(cfg.getTelegram());
+        inviteCodes.add(inviteCode);
         persist(cfg);
 
         log.info("[RuntimeConfig] Generated invite code: {}", inviteCode.getCode());
@@ -975,10 +1357,7 @@ public class RuntimeConfigService {
      */
     public boolean revokeInviteCode(String code) {
         RuntimeConfig cfg = getRuntimeConfig();
-        List<RuntimeConfig.InviteCode> codes = cfg.getTelegram().getInviteCodes();
-        if (codes == null) {
-            return false;
-        }
+        List<RuntimeConfig.InviteCode> codes = ensureMutableInviteCodes(cfg.getTelegram());
         boolean removed = codes.removeIf(ic -> ic.getCode().equals(code));
         if (removed) {
             persist(cfg);
@@ -992,10 +1371,7 @@ public class RuntimeConfigService {
      */
     public boolean redeemInviteCode(String code, String userId) {
         RuntimeConfig cfg = getRuntimeConfig();
-        List<RuntimeConfig.InviteCode> codes = cfg.getTelegram().getInviteCodes();
-        if (codes == null) {
-            return false;
-        }
+        List<RuntimeConfig.InviteCode> codes = ensureMutableInviteCodes(cfg.getTelegram());
 
         List<String> allowed = ensureMutableAllowedUsers(cfg.getTelegram());
         if (!allowed.isEmpty() && !allowed.contains(userId)) {
@@ -1055,9 +1431,24 @@ public class RuntimeConfigService {
         return allowedUsers;
     }
 
-    private int revokeActiveInviteCodes(RuntimeConfig.TelegramConfig telegramConfig) {
+    private List<RuntimeConfig.InviteCode> ensureMutableInviteCodes(RuntimeConfig.TelegramConfig telegramConfig) {
         List<RuntimeConfig.InviteCode> inviteCodes = telegramConfig.getInviteCodes();
-        if (inviteCodes == null || inviteCodes.isEmpty()) {
+        if (inviteCodes == null) {
+            List<RuntimeConfig.InviteCode> mutableInviteCodes = new ArrayList<>();
+            telegramConfig.setInviteCodes(mutableInviteCodes);
+            return mutableInviteCodes;
+        }
+        if (!(inviteCodes instanceof ArrayList<?>)) {
+            List<RuntimeConfig.InviteCode> mutableInviteCodes = new ArrayList<>(inviteCodes);
+            telegramConfig.setInviteCodes(mutableInviteCodes);
+            return mutableInviteCodes;
+        }
+        return inviteCodes;
+    }
+
+    private int revokeActiveInviteCodes(RuntimeConfig.TelegramConfig telegramConfig) {
+        List<RuntimeConfig.InviteCode> inviteCodes = ensureMutableInviteCodes(telegramConfig);
+        if (inviteCodes.isEmpty()) {
             return 0;
         }
 
@@ -1095,6 +1486,10 @@ public class RuntimeConfigService {
                 RuntimeConfig.VoiceConfig::new);
         persistSection(RuntimeConfig.ConfigSection.AUTO_MODE, cfg.getAutoMode(),
                 RuntimeConfig.AutoModeConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.UPDATE, cfg.getUpdate(),
+                RuntimeConfig.UpdateConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.TRACING, cfg.getTracing(),
+                RuntimeConfig.TracingConfig::new);
         persistSection(RuntimeConfig.ConfigSection.RATE_LIMIT, cfg.getRateLimit(),
                 RuntimeConfig.RateLimitConfig::new);
         persistSection(RuntimeConfig.ConfigSection.SECURITY, cfg.getSecurity(),
@@ -1107,12 +1502,19 @@ public class RuntimeConfigService {
                 RuntimeConfig.MemoryConfig::new);
         persistSection(RuntimeConfig.ConfigSection.SKILLS, cfg.getSkills(),
                 RuntimeConfig.SkillsConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.MODEL_REGISTRY, cfg.getModelRegistry(),
+                RuntimeConfig.ModelRegistryConfig::new);
         persistSection(RuntimeConfig.ConfigSection.USAGE, cfg.getUsage(),
                 RuntimeConfig.UsageConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.RAG, cfg.getRag(),
-                RuntimeConfig.RagConfig::new);
         persistSection(RuntimeConfig.ConfigSection.MCP, cfg.getMcp(),
                 RuntimeConfig.McpConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.PLAN, cfg.getPlan(),
+                RuntimeConfig.PlanConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.DELAYED_ACTIONS, cfg.getDelayedActions(),
+                RuntimeConfig.DelayedActionsConfig::new);
+
+        persistSection(RuntimeConfig.ConfigSection.HIVE, cfg.getHive(),
+                RuntimeConfig.HiveConfig::new);
 
         log.debug("[RuntimeConfig] Persisted all config sections");
     }
@@ -1163,6 +1565,10 @@ public class RuntimeConfigService {
                 RuntimeConfig.VoiceConfig.class, RuntimeConfig.VoiceConfig::new);
         RuntimeConfig.AutoModeConfig autoMode = loadSection(RuntimeConfig.ConfigSection.AUTO_MODE,
                 RuntimeConfig.AutoModeConfig.class, RuntimeConfig.AutoModeConfig::new);
+        RuntimeConfig.UpdateConfig update = loadSection(RuntimeConfig.ConfigSection.UPDATE,
+                RuntimeConfig.UpdateConfig.class, RuntimeConfig.UpdateConfig::new);
+        RuntimeConfig.TracingConfig tracing = loadSection(RuntimeConfig.ConfigSection.TRACING,
+                RuntimeConfig.TracingConfig.class, RuntimeConfig.TracingConfig::new);
         RuntimeConfig.RateLimitConfig rateLimit = loadSection(RuntimeConfig.ConfigSection.RATE_LIMIT,
                 RuntimeConfig.RateLimitConfig.class, RuntimeConfig.RateLimitConfig::new);
         RuntimeConfig.SecurityConfig security = loadSection(RuntimeConfig.ConfigSection.SECURITY,
@@ -1175,12 +1581,19 @@ public class RuntimeConfigService {
                 RuntimeConfig.MemoryConfig.class, RuntimeConfig.MemoryConfig::new);
         RuntimeConfig.SkillsConfig skills = loadSection(RuntimeConfig.ConfigSection.SKILLS,
                 RuntimeConfig.SkillsConfig.class, RuntimeConfig.SkillsConfig::new);
+        RuntimeConfig.ModelRegistryConfig modelRegistry = loadSection(RuntimeConfig.ConfigSection.MODEL_REGISTRY,
+                RuntimeConfig.ModelRegistryConfig.class, RuntimeConfig.ModelRegistryConfig::new);
         RuntimeConfig.UsageConfig usage = loadSection(RuntimeConfig.ConfigSection.USAGE,
                 RuntimeConfig.UsageConfig.class, RuntimeConfig.UsageConfig::new);
-        RuntimeConfig.RagConfig rag = loadSection(RuntimeConfig.ConfigSection.RAG,
-                RuntimeConfig.RagConfig.class, RuntimeConfig.RagConfig::new);
         RuntimeConfig.McpConfig mcp = loadSection(RuntimeConfig.ConfigSection.MCP,
                 RuntimeConfig.McpConfig.class, RuntimeConfig.McpConfig::new);
+        RuntimeConfig.PlanConfig plan = loadSection(RuntimeConfig.ConfigSection.PLAN,
+                RuntimeConfig.PlanConfig.class, RuntimeConfig.PlanConfig::new);
+        RuntimeConfig.DelayedActionsConfig delayedActions = loadSection(RuntimeConfig.ConfigSection.DELAYED_ACTIONS,
+                RuntimeConfig.DelayedActionsConfig.class, RuntimeConfig.DelayedActionsConfig::new);
+
+        RuntimeConfig.HiveConfig hive = loadSection(RuntimeConfig.ConfigSection.HIVE,
+                RuntimeConfig.HiveConfig.class, RuntimeConfig.HiveConfig::new);
 
         RuntimeConfig config = RuntimeConfig.builder()
                 .telegram(telegram)
@@ -1189,15 +1602,22 @@ public class RuntimeConfigService {
                 .tools(tools)
                 .voice(voice)
                 .autoMode(autoMode)
+                .update(update)
+                .tracing(tracing)
                 .rateLimit(rateLimit)
                 .security(security)
                 .compaction(compaction)
                 .turn(turn)
                 .memory(memory)
                 .skills(skills)
+                .modelRegistry(modelRegistry)
                 .usage(usage)
-                .rag(rag)
                 .mcp(mcp)
+                .plan(plan)
+                .delayedActions(delayedActions)
+
+                .hive(hive)
+                .delayedActions(delayedActions)
                 .build();
 
         log.info("[RuntimeConfig] Loaded runtime config from {} section files",
@@ -1241,9 +1661,80 @@ public class RuntimeConfigService {
         }
         if (cfg.getTelegram() != null) {
             cfg.getTelegram().setAuthMode("invite_only");
+            ensureMutableAllowedUsers(cfg.getTelegram());
+            ensureMutableInviteCodes(cfg.getTelegram());
         }
         if (cfg.getTools() == null) {
             cfg.setTools(RuntimeConfig.ToolsConfig.builder().build());
+        }
+        if (cfg.getModelRouter() == null) {
+            cfg.setModelRouter(new RuntimeConfig.ModelRouterConfig());
+        }
+        normalizeModelRouterConfig(cfg.getModelRouter());
+        if (cfg.getAutoMode() == null) {
+            cfg.setAutoMode(new RuntimeConfig.AutoModeConfig());
+        }
+        if (cfg.getAutoMode().getReflectionEnabled() == null) {
+            cfg.getAutoMode().setReflectionEnabled(DEFAULT_AUTO_REFLECTION_ENABLED);
+        }
+        if (cfg.getAutoMode().getReflectionFailureThreshold() == null) {
+            cfg.getAutoMode().setReflectionFailureThreshold(DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD);
+        }
+        if (cfg.getUpdate() == null) {
+            cfg.setUpdate(new RuntimeConfig.UpdateConfig());
+        }
+        if (cfg.getUpdate().getAutoEnabled() == null) {
+            cfg.getUpdate().setAutoEnabled(DEFAULT_UPDATE_AUTO_ENABLED);
+        }
+        Integer updateCheckIntervalMinutes = cfg.getUpdate().getCheckIntervalMinutes();
+        if (updateCheckIntervalMinutes == null || updateCheckIntervalMinutes < 1) {
+            cfg.getUpdate().setCheckIntervalMinutes(DEFAULT_UPDATE_CHECK_INTERVAL_MINUTES);
+        }
+        if (cfg.getUpdate().getMaintenanceWindowEnabled() == null) {
+            cfg.getUpdate().setMaintenanceWindowEnabled(DEFAULT_UPDATE_MAINTENANCE_WINDOW_ENABLED);
+        }
+        cfg.getUpdate().setMaintenanceWindowStartUtc(normalizeUtcTimeValue(
+                cfg.getUpdate().getMaintenanceWindowStartUtc(),
+                DEFAULT_UPDATE_MAINTENANCE_WINDOW_START_UTC));
+        cfg.getUpdate().setMaintenanceWindowEndUtc(normalizeUtcTimeValue(
+                cfg.getUpdate().getMaintenanceWindowEndUtc(),
+                DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC));
+        if (cfg.getTracing() == null) {
+            cfg.setTracing(new RuntimeConfig.TracingConfig());
+        }
+        if (cfg.getTracing().getEnabled() == null) {
+            cfg.getTracing().setEnabled(DEFAULT_TRACING_ENABLED);
+        }
+        if (cfg.getTracing().getPayloadSnapshotsEnabled() == null) {
+            cfg.getTracing().setPayloadSnapshotsEnabled(DEFAULT_TRACING_PAYLOAD_SNAPSHOTS_ENABLED);
+        }
+        Integer sessionTraceBudgetMb = cfg.getTracing().getSessionTraceBudgetMb();
+        if (sessionTraceBudgetMb == null || sessionTraceBudgetMb < 1) {
+            cfg.getTracing().setSessionTraceBudgetMb(DEFAULT_TRACING_SESSION_TRACE_BUDGET_MB);
+        }
+        Integer maxSnapshotSizeKb = cfg.getTracing().getMaxSnapshotSizeKb();
+        if (maxSnapshotSizeKb == null || maxSnapshotSizeKb < 1) {
+            cfg.getTracing().setMaxSnapshotSizeKb(DEFAULT_TRACING_MAX_SNAPSHOT_SIZE_KB);
+        }
+        Integer maxSnapshotsPerSpan = cfg.getTracing().getMaxSnapshotsPerSpan();
+        if (maxSnapshotsPerSpan == null || maxSnapshotsPerSpan < 1) {
+            cfg.getTracing().setMaxSnapshotsPerSpan(DEFAULT_TRACING_MAX_SNAPSHOTS_PER_SPAN);
+        }
+        Integer maxTracesPerSession = cfg.getTracing().getMaxTracesPerSession();
+        if (maxTracesPerSession == null || maxTracesPerSession < 1) {
+            cfg.getTracing().setMaxTracesPerSession(DEFAULT_TRACING_MAX_TRACES_PER_SESSION);
+        }
+        if (cfg.getTracing().getCaptureInboundPayloads() == null) {
+            cfg.getTracing().setCaptureInboundPayloads(DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS);
+        }
+        if (cfg.getTracing().getCaptureOutboundPayloads() == null) {
+            cfg.getTracing().setCaptureOutboundPayloads(DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS);
+        }
+        if (cfg.getTracing().getCaptureToolPayloads() == null) {
+            cfg.getTracing().setCaptureToolPayloads(DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS);
+        }
+        if (cfg.getTracing().getCaptureLlmPayloads() == null) {
+            cfg.getTracing().setCaptureLlmPayloads(DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS);
         }
         cfg.getTools().setShellEnvironmentVariables(
                 normalizeShellEnvironmentVariables(cfg.getTools().getShellEnvironmentVariables()));
@@ -1256,8 +1747,145 @@ public class RuntimeConfigService {
         if (cfg.getMemory() == null) {
             cfg.setMemory(new RuntimeConfig.MemoryConfig());
         }
+        if (cfg.getCompaction() == null) {
+            cfg.setCompaction(new RuntimeConfig.CompactionConfig());
+        }
+        cfg.getCompaction().setTriggerMode(normalizeCompactionTriggerMode(cfg.getCompaction().getTriggerMode()));
+        Double modelThresholdRatio = cfg.getCompaction().getModelThresholdRatio();
+        if (modelThresholdRatio == null || modelThresholdRatio <= 0.0d || modelThresholdRatio > 1.0d) {
+            cfg.getCompaction().setModelThresholdRatio(DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO);
+        }
+        if (cfg.getCompaction().getPreserveTurnBoundaries() == null) {
+            cfg.getCompaction().setPreserveTurnBoundaries(DEFAULT_COMPACTION_PRESERVE_TURN_BOUNDARIES);
+        }
+        if (cfg.getCompaction().getDetailsEnabled() == null) {
+            cfg.getCompaction().setDetailsEnabled(DEFAULT_COMPACTION_DETAILS_ENABLED);
+        }
+        if (cfg.getCompaction().getDetailsMaxItemsPerCategory() == null) {
+            cfg.getCompaction().setDetailsMaxItemsPerCategory(DEFAULT_COMPACTION_DETAILS_MAX_ITEMS);
+        }
+        if (cfg.getCompaction().getSummaryTimeoutMs() == null) {
+            cfg.getCompaction().setSummaryTimeoutMs(DEFAULT_COMPACTION_SUMMARY_TIMEOUT_MS);
+        }
+        if (cfg.getTurn() == null) {
+            cfg.setTurn(new RuntimeConfig.TurnConfig());
+        }
+        if (cfg.getModelRegistry() == null) {
+            cfg.setModelRegistry(new RuntimeConfig.ModelRegistryConfig());
+        }
+        if (cfg.getModelRegistry().getBranch() == null || cfg.getModelRegistry().getBranch().isBlank()) {
+            cfg.getModelRegistry().setBranch(DEFAULT_MODEL_REGISTRY_BRANCH);
+        } else {
+            cfg.getModelRegistry().setBranch(cfg.getModelRegistry().getBranch().trim());
+        }
+        if (cfg.getPlan() == null) {
+            cfg.setPlan(new RuntimeConfig.PlanConfig());
+        }
+        if (cfg.getDelayedActions() == null) {
+            cfg.setDelayedActions(new RuntimeConfig.DelayedActionsConfig());
+        }
+        if (cfg.getPlan().getEnabled() == null) {
+            cfg.getPlan().setEnabled(DEFAULT_PLAN_ENABLED);
+        }
+        if (cfg.getPlan().getMaxPlans() == null || cfg.getPlan().getMaxPlans() < 1) {
+            cfg.getPlan().setMaxPlans(DEFAULT_PLAN_MAX_PLANS);
+        }
+        if (cfg.getPlan().getMaxStepsPerPlan() == null || cfg.getPlan().getMaxStepsPerPlan() < 1) {
+            cfg.getPlan().setMaxStepsPerPlan(DEFAULT_PLAN_MAX_STEPS_PER_PLAN);
+        }
+        if (cfg.getPlan().getStopOnFailure() == null) {
+            cfg.getPlan().setStopOnFailure(DEFAULT_PLAN_STOP_ON_FAILURE);
+        }
+        if (cfg.getDelayedActions().getEnabled() == null) {
+            cfg.getDelayedActions().setEnabled(DEFAULT_DELAYED_ACTIONS_ENABLED);
+        }
+        Integer delayedTickSeconds = cfg.getDelayedActions().getTickSeconds();
+        if (delayedTickSeconds == null || delayedTickSeconds < 1) {
+            cfg.getDelayedActions().setTickSeconds(DEFAULT_DELAYED_ACTIONS_TICK_SECONDS);
+        }
+        Integer delayedMaxPending = cfg.getDelayedActions().getMaxPendingPerSession();
+        if (delayedMaxPending == null || delayedMaxPending < 1) {
+            cfg.getDelayedActions().setMaxPendingPerSession(DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION);
+        }
+        if (cfg.getDelayedActions().getMaxDelay() == null || cfg.getDelayedActions().getMaxDelay().isBlank()) {
+            cfg.getDelayedActions().setMaxDelay(DEFAULT_DELAYED_ACTIONS_MAX_DELAY.toString());
+        } else if (!isValidDuration(cfg.getDelayedActions().getMaxDelay())) {
+            cfg.getDelayedActions().setMaxDelay(DEFAULT_DELAYED_ACTIONS_MAX_DELAY.toString());
+        }
+        Integer delayedMaxAttempts = cfg.getDelayedActions().getDefaultMaxAttempts();
+        if (delayedMaxAttempts == null || delayedMaxAttempts < 1) {
+            cfg.getDelayedActions().setDefaultMaxAttempts(DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS);
+        }
+        if (cfg.getDelayedActions().getLeaseDuration() == null
+                || cfg.getDelayedActions().getLeaseDuration().isBlank()) {
+            cfg.getDelayedActions().setLeaseDuration(DEFAULT_DELAYED_ACTIONS_LEASE_DURATION.toString());
+        } else if (!isValidDuration(cfg.getDelayedActions().getLeaseDuration())) {
+            cfg.getDelayedActions().setLeaseDuration(DEFAULT_DELAYED_ACTIONS_LEASE_DURATION.toString());
+        }
+        if (cfg.getDelayedActions().getRetentionAfterCompletion() == null
+                || cfg.getDelayedActions().getRetentionAfterCompletion().isBlank()) {
+            cfg.getDelayedActions().setRetentionAfterCompletion(DEFAULT_DELAYED_ACTIONS_RETENTION.toString());
+        } else if (!isValidDuration(cfg.getDelayedActions().getRetentionAfterCompletion())) {
+            cfg.getDelayedActions()
+                    .setRetentionAfterCompletion(DEFAULT_DELAYED_ACTIONS_RETENTION.toString());
+        }
+        if (cfg.getDelayedActions().getAllowRunLater() == null) {
+            cfg.getDelayedActions().setAllowRunLater(DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER);
+        }
+        if (cfg.getHive() == null) {
+            cfg.setHive(new RuntimeConfig.HiveConfig());
+        }
+        if (cfg.getHive().getEnabled() == null) {
+            cfg.getHive().setEnabled(DEFAULT_HIVE_ENABLED);
+        }
+        if (cfg.getHive().getAutoConnect() == null) {
+            cfg.getHive().setAutoConnect(DEFAULT_HIVE_AUTO_CONNECT);
+        }
+        if (cfg.getHive().getManagedByProperties() == null) {
+            cfg.getHive().setManagedByProperties(DEFAULT_HIVE_MANAGED_BY_PROPERTIES);
+        }
         if (!Integer.valueOf(DEFAULT_MEMORY_VERSION).equals(cfg.getMemory().getVersion())) {
             cfg.getMemory().setVersion(DEFAULT_MEMORY_VERSION);
+        }
+        if (cfg.getTurn().getAutoRetryEnabled() == null) {
+            cfg.getTurn().setAutoRetryEnabled(DEFAULT_TURN_AUTO_RETRY_ENABLED);
+        }
+        if (cfg.getTurn().getAutoRetryMaxAttempts() == null) {
+            cfg.getTurn().setAutoRetryMaxAttempts(DEFAULT_TURN_AUTO_RETRY_MAX_ATTEMPTS);
+        }
+        if (cfg.getTurn().getAutoRetryBaseDelayMs() == null) {
+            cfg.getTurn().setAutoRetryBaseDelayMs(DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS);
+        }
+        if (cfg.getTurn().getQueueSteeringEnabled() == null) {
+            cfg.getTurn().setQueueSteeringEnabled(DEFAULT_TURN_QUEUE_STEERING_ENABLED);
+        }
+        if (cfg.getTurn().getQueueSteeringMode() == null || cfg.getTurn().getQueueSteeringMode().isBlank()) {
+            cfg.getTurn().setQueueSteeringMode(DEFAULT_TURN_QUEUE_STEERING_MODE);
+        } else {
+            cfg.getTurn().setQueueSteeringMode(normalizeQueueMode(cfg.getTurn().getQueueSteeringMode()));
+        }
+        if (cfg.getTurn().getQueueFollowUpMode() == null || cfg.getTurn().getQueueFollowUpMode().isBlank()) {
+            cfg.getTurn().setQueueFollowUpMode(DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE);
+        } else {
+            cfg.getTurn().setQueueFollowUpMode(normalizeQueueMode(cfg.getTurn().getQueueFollowUpMode()));
+        }
+        if (cfg.getTurn().getProgressUpdatesEnabled() == null) {
+            cfg.getTurn().setProgressUpdatesEnabled(DEFAULT_TURN_PROGRESS_UPDATES_ENABLED);
+        }
+        if (cfg.getTurn().getProgressIntentEnabled() == null) {
+            cfg.getTurn().setProgressIntentEnabled(DEFAULT_TURN_PROGRESS_INTENT_ENABLED);
+        }
+        Integer progressBatchSize = cfg.getTurn().getProgressBatchSize();
+        if (progressBatchSize == null || progressBatchSize < 1) {
+            cfg.getTurn().setProgressBatchSize(DEFAULT_TURN_PROGRESS_BATCH_SIZE);
+        }
+        Integer progressMaxSilenceSeconds = cfg.getTurn().getProgressMaxSilenceSeconds();
+        if (progressMaxSilenceSeconds == null || progressMaxSilenceSeconds < 1) {
+            cfg.getTurn().setProgressMaxSilenceSeconds(DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS);
+        }
+        Integer progressSummaryTimeoutMs = cfg.getTurn().getProgressSummaryTimeoutMs();
+        if (progressSummaryTimeoutMs == null || progressSummaryTimeoutMs < 1000) {
+            cfg.getTurn().setProgressSummaryTimeoutMs(DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS);
         }
         normalizeMemoryConfig(cfg.getMemory());
         normalizeSecretFlags(cfg);
@@ -1308,6 +1936,118 @@ public class RuntimeConfigService {
         }
     }
 
+    private void normalizeModelRouterConfig(RuntimeConfig.ModelRouterConfig modelRouter) {
+        if (modelRouter == null) {
+            return;
+        }
+        RuntimeConfig.TierBinding routingBinding = normalizeBinding(
+                modelRouter.getRouting(),
+                DEFAULT_ROUTING_MODEL,
+                DEFAULT_ROUTING_REASONING);
+        modelRouter.setRouting(routingBinding);
+
+        Map<String, RuntimeConfig.TierBinding> normalizedTiers = new LinkedHashMap<>();
+        for (String tier : ModelTierCatalog.orderedExplicitTiers()) {
+            normalizedTiers.put(tier, normalizeBinding(
+                    modelRouter.getTierBinding(tier),
+                    defaultModelForTier(tier),
+                    defaultReasoningForTier(tier)));
+        }
+        modelRouter.setTiers(normalizedTiers);
+
+        if (modelRouter.getDynamicTierEnabled() == null) {
+            modelRouter.setDynamicTierEnabled(true);
+        }
+    }
+
+    private boolean isValidDuration(String value) {
+        try {
+            Duration parsed = Duration.parse(value);
+            return parsed != null;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
+    }
+
+    private RuntimeConfig.TierBinding normalizeBinding(RuntimeConfig.TierBinding binding, String defaultModel,
+            String defaultReasoning) {
+        RuntimeConfig.TierBinding normalized = binding != null
+                ? binding
+                : RuntimeConfig.TierBinding.builder().build();
+        if (normalized.getModel() != null) {
+            String trimmedModel = normalized.getModel().trim();
+            normalized.setModel(trimmedModel.isEmpty() ? null : trimmedModel);
+        }
+        if (normalized.getReasoning() != null) {
+            String trimmedReasoning = normalized.getReasoning().trim();
+            normalized.setReasoning(trimmedReasoning.isEmpty() ? null : trimmedReasoning);
+        }
+        if (normalized.getModel() == null && defaultModel != null) {
+            normalized.setModel(defaultModel);
+        }
+        if (normalized.getReasoning() == null) {
+            normalized.setReasoning(defaultReasoning);
+        }
+        return normalized;
+    }
+
+    private String defaultModelForTier(String tier) {
+        return switch (tier) {
+        case "balanced" -> DEFAULT_BALANCED_MODEL;
+        case "smart" -> DEFAULT_SMART_MODEL;
+        case "deep" -> DEFAULT_DEEP_MODEL;
+        case "coding" -> DEFAULT_CODING_MODEL;
+        default -> null;
+        };
+    }
+
+    private String defaultReasoningForTier(String tier) {
+        return switch (tier) {
+        case "balanced" -> DEFAULT_BALANCED_REASONING;
+        case "smart" -> DEFAULT_SMART_REASONING;
+        case "deep" -> DEFAULT_DEEP_REASONING;
+        case "coding" -> DEFAULT_CODING_REASONING;
+        default -> REASONING_NONE;
+        };
+    }
+
+    private String normalizeVoiceProvider(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if (LEGACY_ELEVENLABS_PROVIDER.equals(normalized)) {
+            return DEFAULT_STT_PROVIDER;
+        }
+        if (LEGACY_WHISPER_PROVIDER.equals(normalized)) {
+            return DEFAULT_WHISPER_STT_PROVIDER;
+        }
+        return normalized;
+    }
+
+    private String normalizeCompactionTriggerMode(String value) {
+        if (value == null || value.isBlank()) {
+            return DEFAULT_COMPACTION_TRIGGER_MODE;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+        case DEFAULT_COMPACTION_TRIGGER_MODE, COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD -> normalized;
+        default -> DEFAULT_COMPACTION_TRIGGER_MODE;
+        };
+    }
+
+    private String normalizeUtcTimeValue(String value, String defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            java.time.LocalTime parsed = java.time.LocalTime.parse(value.trim());
+            return parsed.withSecond(0).withNano(0).toString();
+        } catch (DateTimeParseException e) {
+            return defaultValue;
+        }
+    }
+
     private List<RuntimeConfig.ShellEnvironmentVariable> normalizeShellEnvironmentVariables(
             List<RuntimeConfig.ShellEnvironmentVariable> variables) {
         if (variables == null || variables.isEmpty()) {
@@ -1330,20 +2070,8 @@ public class RuntimeConfigService {
 
     private void normalizeSecretFlags(RuntimeConfig cfg) {
         cfg.getTelegram().setToken(normalizeSecret(cfg.getTelegram().getToken()));
-        cfg.getTools().setBraveSearchApiKey(normalizeSecret(cfg.getTools().getBraveSearchApiKey()));
         cfg.getVoice().setApiKey(normalizeSecret(cfg.getVoice().getApiKey()));
         cfg.getVoice().setWhisperSttApiKey(normalizeSecret(cfg.getVoice().getWhisperSttApiKey()));
-        cfg.getRag().setApiKey(normalizeSecret(cfg.getRag().getApiKey()));
-
-        RuntimeConfig.ImapConfig imapConfig = cfg.getTools().getImap();
-        if (imapConfig != null) {
-            imapConfig.setPassword(normalizeSecret(imapConfig.getPassword()));
-        }
-
-        RuntimeConfig.SmtpConfig smtpConfig = cfg.getTools().getSmtp();
-        if (smtpConfig != null) {
-            smtpConfig.setPassword(normalizeSecret(smtpConfig.getPassword()));
-        }
 
         if (cfg.getLlm() != null && cfg.getLlm().getProviders() != null) {
             for (RuntimeConfig.LlmProviderConfig providerConfig : cfg.getLlm().getProviders().values()) {
@@ -1371,20 +2099,8 @@ public class RuntimeConfigService {
 
     private void redactSecrets(RuntimeConfig cfg) {
         cfg.getTelegram().setToken(Secret.redacted(cfg.getTelegram().getToken()));
-        cfg.getTools().setBraveSearchApiKey(Secret.redacted(cfg.getTools().getBraveSearchApiKey()));
         cfg.getVoice().setApiKey(Secret.redacted(cfg.getVoice().getApiKey()));
         cfg.getVoice().setWhisperSttApiKey(Secret.redacted(cfg.getVoice().getWhisperSttApiKey()));
-        cfg.getRag().setApiKey(Secret.redacted(cfg.getRag().getApiKey()));
-
-        RuntimeConfig.ImapConfig imapConfig = cfg.getTools().getImap();
-        if (imapConfig != null) {
-            imapConfig.setPassword(Secret.redacted(imapConfig.getPassword()));
-        }
-
-        RuntimeConfig.SmtpConfig smtpConfig = cfg.getTools().getSmtp();
-        if (smtpConfig != null) {
-            smtpConfig.setPassword(Secret.redacted(smtpConfig.getPassword()));
-        }
 
         if (cfg.getLlm() != null && cfg.getLlm().getProviders() != null) {
             for (RuntimeConfig.LlmProviderConfig providerConfig : cfg.getLlm().getProviders().values()) {

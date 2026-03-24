@@ -1,9 +1,13 @@
 package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.domain.model.AvailableRelease;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.UpdateBlockedReason;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -11,40 +15,29 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.ApplicationContext;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLParameters;
-import javax.net.ssl.SSLSession;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.net.Authenticator;
-import java.net.CookieHandler;
-import java.net.ProxySelector;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpHeaders;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Flow;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -52,6 +45,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -61,14 +56,15 @@ class UpdateServiceTest {
     private static final Instant BASE_TIME = Instant.parse("2026-02-22T12:00:00Z");
     private static final String VERSION_CURRENT = "0.4.0";
     private static final String VERSION_PATCH = "0.4.2";
-    private static final long DEFAULT_JAR_ASSET_ID = 101L;
-    private static final long DEFAULT_SHA_ASSET_ID = 102L;
 
     private BotProperties botProperties;
     private ObjectProvider<BuildProperties> buildPropertiesProvider;
     private ApplicationContext applicationContext;
     private JvmExitService jvmExitService;
     private MutableClock clock;
+    private RuntimeConfigService runtimeConfigService;
+    private UpdateActivityGate updateActivityGate;
+    private UpdateMaintenanceWindow updateMaintenanceWindow;
 
     @BeforeEach
     void setUp() {
@@ -77,30 +73,40 @@ class UpdateServiceTest {
         applicationContext = mock(ApplicationContext.class);
         jvmExitService = mock(JvmExitService.class);
         clock = new MutableClock(BASE_TIME, ZoneOffset.UTC);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        updateActivityGate = mock(UpdateActivityGate.class);
+        updateMaintenanceWindow = new UpdateMaintenanceWindow();
 
         Properties props = new Properties();
         props.setProperty("version", VERSION_CURRENT);
         when(buildPropertiesProvider.getIfAvailable()).thenReturn(new BuildProperties(props));
+        when(runtimeConfigService.isAutoUpdateEnabled()).thenReturn(true);
+        when(runtimeConfigService.getUpdateCheckIntervalMinutes()).thenReturn(60);
+        when(runtimeConfigService.isUpdateMaintenanceWindowEnabled()).thenReturn(false);
+        when(runtimeConfigService.getUpdateMaintenanceWindowStartUtc()).thenReturn("00:00");
+        when(runtimeConfigService.getUpdateMaintenanceWindowEndUtc()).thenReturn("00:00");
+        when(updateActivityGate.getStatus()).thenReturn(UpdateActivityGate.Result.idle());
     }
 
     @Test
     void shouldReturnDisabledStateWhenUpdateFeatureIsOff() {
         botProperties.getUpdate().setEnabled(false);
 
-        UpdateService service = createService();
+        UpdateService service = createService(new StubReleaseSource());
         UpdateStatus status = service.getStatus();
 
         assertFalse(status.isEnabled());
         assertEquals(UpdateState.DISABLED, status.getState());
         assertNotNull(status.getCurrent());
         assertEquals(VERSION_CURRENT, status.getCurrent().getVersion());
+        assertEquals("Updates disabled", status.getStageTitle());
     }
 
     @Test
     void shouldUseDevVersionWhenBuildPropertiesAreUnavailable() {
         when(buildPropertiesProvider.getIfAvailable()).thenReturn(null);
 
-        UpdateService service = createService();
+        UpdateService service = createService(new StubReleaseSource());
         UpdateStatus status = service.getStatus();
 
         assertEquals("dev", status.getCurrent().getVersion());
@@ -110,7 +116,7 @@ class UpdateServiceTest {
     @Test
     void shouldRejectCheckWhenUpdateFeatureIsDisabled() {
         botProperties.getUpdate().setEnabled(false);
-        UpdateService service = createService();
+        UpdateService service = createService(new StubReleaseSource());
 
         IllegalStateException exception = assertThrows(IllegalStateException.class, service::check);
 
@@ -120,7 +126,7 @@ class UpdateServiceTest {
     @Test
     void shouldRejectUpdateNowWhenUpdateFeatureIsDisabled() {
         botProperties.getUpdate().setEnabled(false);
-        UpdateService service = createService();
+        UpdateService service = createService(new StubReleaseSource());
 
         IllegalStateException exception = assertThrows(IllegalStateException.class, service::updateNow);
 
@@ -130,21 +136,21 @@ class UpdateServiceTest {
     @Test
     void shouldRejectUpdateNowWhenNoAvailableUpdateExists(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(404, "{}");
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueEmpty();
+        TestableUpdateService service = createTestableService(source);
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class, service::updateNow);
-
-        assertEquals("No updates found", exception.getMessage());
+        assertEquals("Update workflow started. Checking the latest release.", service.updateNow().getMessage());
+        assertEquals(UpdateState.IDLE, service.getStatus().getState());
+        assertNull(service.getStatus().getAvailable());
     }
 
     @Test
     void shouldReturnNoUpdatesWhenReleaseApiReturnsNotFound(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(404, "{}");
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueEmpty();
+        TestableUpdateService service = createTestableService(source);
 
         assertEquals("No updates found", service.check().getMessage());
         assertEquals(UpdateState.IDLE, service.getStatus().getState());
@@ -154,26 +160,37 @@ class UpdateServiceTest {
     @Test
     void shouldReportAlreadyUpToDateWhenRemoteVersionIsNotNewer(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.4.0",
-                "bot-0.4.0.jar",
-                "2026-02-22T10:00:00Z"));
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.0", "bot-0.4.0.jar", "2026-02-22T10:00:00Z");
+        TestableUpdateService service = createTestableService(source);
 
         assertEquals("Already up to date", service.check().getMessage());
         assertNull(service.getStatus().getAvailable());
     }
 
     @Test
+    void shouldTreatExecClassifierAsTheSameVersion(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+
+        Properties props = new Properties();
+        props.setProperty("version", VERSION_PATCH + "-exec");
+        when(buildPropertiesProvider.getIfAvailable()).thenReturn(new BuildProperties(props));
+
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2-exec.jar", "2026-02-22T10:00:00Z");
+        TestableUpdateService service = createTestableService(source);
+
+        assertEquals("Already up to date", service.check().getMessage());
+        assertNull(service.getStatus().getAvailable());
+        assertEquals(VERSION_PATCH, service.getStatus().getCurrent().getVersion());
+    }
+
+    @Test
     void shouldSuggestDockerRolloutWhenMajorReleaseIsFound(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v1.0.0",
-                "bot-1.0.0.jar",
-                "2026-02-22T10:00:00Z"));
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("1.0.0", "bot-1.0.0.jar", "2026-02-22T10:00:00Z");
+        TestableUpdateService service = createTestableService(source);
 
         assertTrue(service.check().getMessage().contains("Docker image upgrade"));
         assertNull(service.getStatus().getAvailable());
@@ -182,12 +199,9 @@ class UpdateServiceTest {
     @Test
     void shouldDiscoverMinorUpdateWhenMajorVersionIsUnchanged(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.5.0",
-                "bot-0.5.0.jar",
-                "2026-02-22T10:00:00Z"));
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.5.0", "bot-0.5.0.jar", "2026-02-22T10:00:00Z");
+        TestableUpdateService service = createTestableService(source);
 
         assertEquals("Update available: 0.5.0", service.check().getMessage());
         assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
@@ -197,16 +211,30 @@ class UpdateServiceTest {
     @Test
     void shouldDiscoverPatchUpdate(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.4.2",
-                "bot-0.4.2.jar",
-                "2026-02-22T10:00:00Z"));
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        TestableUpdateService service = createTestableService(source);
 
         assertEquals("Update available: 0.4.2", service.check().getMessage());
         assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
         assertEquals(VERSION_PATCH, service.getStatus().getAvailable().getVersion());
+    }
+
+    @Test
+    void shouldExposeTargetProgressAndStageMetadataWhenUpdateIsAvailable(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        TestableUpdateService service = createTestableService(source);
+
+        service.check();
+        UpdateStatus status = service.getStatus();
+
+        assertNotNull(status.getTarget());
+        assertEquals(VERSION_PATCH, status.getTarget().getVersion());
+        assertEquals(Integer.valueOf(25), status.getProgressPercent());
+        assertEquals("Update available 0.4.2", status.getStageTitle());
+        assertTrue(status.getStageDescription().contains("compatible release"));
     }
 
     @Test
@@ -215,34 +243,22 @@ class UpdateServiceTest {
         byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
         String checksum = sha256Hex(jarBytes);
 
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.4.2",
-                "bot-0.4.2.jar",
-                "2026-02-22T10:00:00Z"));
-        httpClient.enqueueBinaryResponse(200, jarBytes);
-        httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        source.enqueueAsset(jarBytes);
+        source.enqueueChecksum(checksum, "SHA-256", "bot-0.4.2.jar");
+        TestableUpdateService service = createTestableService(source);
 
         assertEquals("Update available: 0.4.2", service.check().getMessage());
-        assertEquals("Update 0.4.2 is being applied. JVM restart scheduled.", service.updateNow().getMessage());
+        assertEquals("Update workflow started for 0.4.2. Page will reload after restart.",
+                service.updateNow().getMessage());
 
         assertTrue(service.isRestartRequested());
         assertEquals(UpdateState.APPLYING, service.getStatus().getState());
+        assertEquals("Scheduling restart 0.4.2", service.getStatus().getStageTitle());
         assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
         assertFalse(Files.exists(tempDir.resolve("staged.txt")));
         assertEquals("bot-0.4.2.jar", Files.readString(tempDir.resolve("current.txt"), StandardCharsets.UTF_8).trim());
-        assertEquals(
-                URI.create("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/latest"),
-                httpClient.getRequestedUris().get(0));
-        assertEquals(
-                URI.create("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/"
-                        + DEFAULT_JAR_ASSET_ID),
-                httpClient.getRequestedUris().get(1));
-        assertEquals(
-                URI.create("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/"
-                        + DEFAULT_SHA_ASSET_ID),
-                httpClient.getRequestedUris().get(2));
     }
 
     @Test
@@ -251,16 +267,13 @@ class UpdateServiceTest {
         byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
         String checksum = sha256Hex(jarBytes);
 
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.4.2",
-                "bot-0.4.2.jar",
-                "2026-02-22T10:00:00Z"));
-        httpClient.enqueueBinaryResponse(200, jarBytes);
-        httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        source.enqueueAsset(jarBytes);
+        source.enqueueChecksum(checksum, "SHA-256", "bot-0.4.2.jar");
+        TestableUpdateService service = createTestableService(source);
 
-        assertEquals("Update 0.4.2 is being applied. JVM restart scheduled.", service.updateNow().getMessage());
+        assertEquals("Update workflow started. Checking the latest release.", service.updateNow().getMessage());
         assertTrue(service.isRestartRequested());
         assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
     }
@@ -274,16 +287,13 @@ class UpdateServiceTest {
         byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
         String checksum = sha256Hex(jarBytes);
 
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.4.2",
-                "bot-0.4.2.jar",
-                "2026-02-22T10:00:00Z"));
-        httpClient.enqueueBinaryResponse(200, jarBytes);
-        httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        source.enqueueAsset(jarBytes);
+        source.enqueueChecksum(checksum, "SHA-256", "bot-0.4.2.jar");
+        TestableUpdateService service = createTestableService(source);
 
-        assertEquals("Update 0.4.2 is being applied. JVM restart scheduled.", service.updateNow().getMessage());
+        assertEquals("Update workflow started. Checking the latest release.", service.updateNow().getMessage());
         assertTrue(service.isRestartRequested());
         assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
         assertFalse(Files.exists(tempDir.resolve("staged.txt")));
@@ -298,14 +308,11 @@ class UpdateServiceTest {
         byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
         String checksum = sha256Hex(jarBytes);
 
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.4.2",
-                "bot-0.4.2.jar",
-                "2026-02-22T10:00:00Z"));
-        httpClient.enqueueBinaryResponse(200, jarBytes);
-        httpClient.enqueueStringResponse(200, checksum + "  bot-0.4.2.jar\n");
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        source.enqueueAsset(jarBytes);
+        source.enqueueChecksum(checksum, "SHA-256", "bot-0.4.2.jar");
+        TestableUpdateService service = createTestableService(source);
 
         service.check();
         service.updateNow();
@@ -318,22 +325,41 @@ class UpdateServiceTest {
     @Test
     void shouldFailUpdateNowWhenChecksumDoesNotMatchAndCleanTempJar(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.4.2",
-                "bot-0.4.2.jar",
-                "2026-02-22T10:00:00Z"));
-        httpClient.enqueueBinaryResponse(200, "jar-content".getBytes(StandardCharsets.UTF_8));
-        httpClient.enqueueStringResponse(200, "deadbeef bot-0.4.2.jar\n");
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        source.enqueueAsset("jar-content".getBytes(StandardCharsets.UTF_8));
+        source.enqueueChecksum("deadbeef", "SHA-256", "bot-0.4.2.jar");
+        TestableUpdateService service = createTestableService(source);
         service.check();
 
-        IllegalStateException error = assertThrows(IllegalStateException.class, service::updateNow);
-
-        assertTrue(error.getMessage().contains("Checksum mismatch"));
+        assertEquals("Update workflow started for 0.4.2. Page will reload after restart.",
+                service.updateNow().getMessage());
         assertFalse(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar.tmp")));
-        assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
+        assertEquals(UpdateState.FAILED, service.getStatus().getState());
         assertTrue(service.getStatus().getLastError().contains("Failed to prepare update"));
+        assertTrue(service.getStatus().getLastError().contains("Checksum mismatch"));
+        assertEquals("Update failed", service.getStatus().getStageTitle());
+    }
+
+    @Test
+    void shouldPreserveTargetAndProgressWhenPrepareFails(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        source.enqueueAsset("jar-content".getBytes(StandardCharsets.UTF_8));
+        source.enqueueChecksum("deadbeef", "SHA-256", "bot-0.4.2.jar");
+        TestableUpdateService service = createTestableService(source);
+
+        service.check();
+        service.updateNow();
+        UpdateStatus status = service.getStatus();
+
+        assertEquals(UpdateState.FAILED, status.getState());
+        assertNotNull(status.getTarget());
+        assertEquals(VERSION_PATCH, status.getTarget().getVersion());
+        assertEquals(Integer.valueOf(52), status.getProgressPercent());
+        assertEquals("Update failed", status.getStageTitle());
+        assertTrue(status.getStageDescription().contains("Checksum mismatch"));
     }
 
     @Test
@@ -342,42 +368,26 @@ class UpdateServiceTest {
         Files.writeString(blockedPath, "blocked", StandardCharsets.UTF_8);
         enableUpdates(blockedPath);
 
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                "v0.4.2",
-                "bot-0.4.2.jar",
-                "2026-02-22T10:00:00Z"));
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        source.enqueueAsset("jar-content".getBytes(StandardCharsets.UTF_8));
+        source.enqueueChecksum("ignored", "SHA-256", "bot-0.4.2.jar");
+        TestableUpdateService service = createTestableService(source);
         service.check();
 
-        IllegalStateException error = assertThrows(IllegalStateException.class, service::updateNow);
-
-        assertTrue(error.getMessage().contains("Update directory is not writable"));
-        assertTrue(error.getMessage().contains("Configure UPDATE_PATH"));
-        assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
-    }
-
-    @Test
-    void shouldRejectReleaseWhenTagIsMissing(@TempDir Path tempDir) {
-        enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueStringResponse(200, releaseJson(
-                " ",
-                "bot-0.4.2.jar",
-                "2026-02-22T10:00:00Z"));
-        TestableUpdateService service = createTestableService(httpClient);
-
-        IllegalStateException error = assertThrows(IllegalStateException.class, service::check);
-
-        assertTrue(error.getMessage().contains("Release tag is missing"));
+        assertEquals("Update workflow started for 0.4.2. Page will reload after restart.",
+                service.updateNow().getMessage());
+        assertTrue(service.getStatus().getLastError().contains("Update directory is not writable"));
+        assertTrue(service.getStatus().getLastError().contains("Configure UPDATE_PATH"));
+        assertEquals(UpdateState.FAILED, service.getStatus().getState());
     }
 
     @Test
     void shouldHandleInterruptedCheckAndPreserveInterruptFlag(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        StubHttpClient httpClient = new StubHttpClient();
-        httpClient.enqueueInterrupted(new InterruptedException("simulated interruption"));
-        TestableUpdateService service = createTestableService(httpClient);
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueInterrupted(new InterruptedException("simulated interruption"));
+        TestableUpdateService service = createTestableService(source);
 
         IllegalStateException error = assertThrows(IllegalStateException.class, service::check);
 
@@ -387,44 +397,289 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldRejectConcurrentOperationsWhileWorkflowIsRunning(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        DeferredUpdateService service = createDeferredUpdateService(new StubReleaseSource());
+
+        assertEquals("Update workflow started. Checking the latest release.", service.updateNow().getMessage());
+        assertEquals(UpdateState.CHECKING, service.getStatus().getState());
+
+        IllegalStateException checkError = assertThrows(IllegalStateException.class, service::check);
+        IllegalStateException updateError = assertThrows(IllegalStateException.class, service::updateNow);
+
+        assertEquals("Another update operation is already in progress", checkError.getMessage());
+        assertEquals("Another update operation is already in progress", updateError.getMessage());
+    }
+
+    @Test
+    void shouldRejectUpdateNowWhenRuntimeWorkIsActive(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        when(updateActivityGate.getStatus()).thenReturn(
+                UpdateActivityGate.Result.busy(UpdateBlockedReason.SESSION_WORK_RUNNING));
+
+        UpdateService service = createService(new StubReleaseSource());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, service::updateNow);
+
+        assertEquals("Update is blocked while runtime work is still running", error.getMessage());
+    }
+
+    @Test
+    void shouldNotInitializeAutoUpdateSchedulerWhenFeatureIsDisabled() {
+        botProperties.getUpdate().setEnabled(false);
+        UpdateService service = createService(new StubReleaseSource());
+
+        service.initAutoUpdateScheduler();
+
+        assertNull(readPrivateField(service, "autoUpdateScheduler", ScheduledExecutorService.class));
+        assertNull(readPrivateField(service, "autoUpdateTask", ScheduledFuture.class));
+    }
+
+    @Test
+    void shouldInitializeAndShutdownAutoUpdateScheduler(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        UpdateService service = createService(new StubReleaseSource());
+
+        service.initAutoUpdateScheduler();
+        ScheduledExecutorService scheduler = readPrivateField(service, "autoUpdateScheduler",
+                ScheduledExecutorService.class);
+        ScheduledFuture<?> task = readPrivateField(service, "autoUpdateTask", ScheduledFuture.class);
+
+        assertNotNull(scheduler);
+        assertNotNull(task);
+        assertFalse(scheduler.isShutdown());
+
+        service.shutdownAutoUpdateScheduler();
+
+        assertTrue(task.isCancelled());
+        assertTrue(scheduler.isShutdown());
+    }
+
+    @Test
+    void shouldReturnDefaultUpdateConfigWhenApiConfigIsMissing() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder().build();
+        runtimeConfig.setUpdate(null);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
+
+        UpdateService service = createService(new StubReleaseSource());
+        RuntimeConfig.UpdateConfig config = service.getConfig();
+
+        assertTrue(config.getAutoEnabled());
+        assertEquals(60, config.getCheckIntervalMinutes());
+        assertFalse(config.getMaintenanceWindowEnabled());
+        assertEquals("00:00", config.getMaintenanceWindowStartUtc());
+        assertEquals("00:00", config.getMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldPersistUpdatedConfigAndReturnSavedValue() {
+        AtomicReference<RuntimeConfig> storedConfig = new AtomicReference<>(RuntimeConfig.builder().build());
+        when(runtimeConfigService.getRuntimeConfig()).thenAnswer(invocation -> storedConfig.get());
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenAnswer(invocation -> storedConfig.get());
+        doAnswer(invocation -> {
+            storedConfig.set(invocation.getArgument(0));
+            return null;
+        }).when(runtimeConfigService).updateRuntimeConfig(any(RuntimeConfig.class));
+
+        UpdateService service = createService(new StubReleaseSource());
+        RuntimeConfig.UpdateConfig request = RuntimeConfig.UpdateConfig.builder()
+                .autoEnabled(false)
+                .checkIntervalMinutes(15)
+                .maintenanceWindowEnabled(true)
+                .maintenanceWindowStartUtc("01:30")
+                .maintenanceWindowEndUtc("03:00")
+                .build();
+
+        RuntimeConfig.UpdateConfig saved = service.updateConfig(request);
+
+        assertFalse(saved.getAutoEnabled());
+        assertEquals(15, saved.getCheckIntervalMinutes());
+        assertTrue(saved.getMaintenanceWindowEnabled());
+        assertEquals("01:30", saved.getMaintenanceWindowStartUtc());
+        assertEquals("03:00", saved.getMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldPersistDefaultUpdateConfigWhenNullConfigIsProvided() {
+        AtomicReference<RuntimeConfig> storedConfig = new AtomicReference<>(RuntimeConfig.builder().build());
+        when(runtimeConfigService.getRuntimeConfig()).thenAnswer(invocation -> storedConfig.get());
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenAnswer(invocation -> storedConfig.get());
+        doAnswer(invocation -> {
+            storedConfig.set(invocation.getArgument(0));
+            return null;
+        }).when(runtimeConfigService).updateRuntimeConfig(any(RuntimeConfig.class));
+
+        UpdateService service = createService(new StubReleaseSource());
+
+        RuntimeConfig.UpdateConfig saved = service.updateConfig(null);
+
+        assertTrue(saved.getAutoEnabled());
+        assertEquals(60, saved.getCheckIntervalMinutes());
+        assertFalse(saved.getMaintenanceWindowEnabled());
+        assertEquals("00:00", saved.getMaintenanceWindowStartUtc());
+        assertEquals("00:00", saved.getMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldAutoPrepareAndWaitForMaintenanceWindowWhenClosed(@TempDir Path tempDir) throws Exception {
+        enableUpdates(tempDir);
+        when(runtimeConfigService.isUpdateMaintenanceWindowEnabled()).thenReturn(true);
+        when(runtimeConfigService.getUpdateMaintenanceWindowStartUtc()).thenReturn("01:00");
+        when(runtimeConfigService.getUpdateMaintenanceWindowEndUtc()).thenReturn("02:00");
+
+        byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
+        String checksum = sha256Hex(jarBytes);
+
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        source.enqueueAsset(jarBytes);
+        source.enqueueChecksum(checksum, "SHA-256", "bot-0.4.2.jar");
+        TestableUpdateService service = createTestableService(source);
+
+        service.runAutoUpdateCycle();
+
+        assertEquals(UpdateState.WAITING_FOR_WINDOW, service.getStatus().getState());
+        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
+        assertTrue(Files.exists(tempDir.resolve("staged.txt")));
+        assertFalse(service.isRestartRequested());
+    }
+
+    @Test
+    void shouldAutoPrepareAndWaitForIdleWhenRuntimeWorkIsActive(@TempDir Path tempDir) throws Exception {
+        enableUpdates(tempDir);
+        when(updateActivityGate.getStatus()).thenReturn(
+                UpdateActivityGate.Result.busy(UpdateBlockedReason.SESSION_WORK_RUNNING));
+
+        byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
+        String checksum = sha256Hex(jarBytes);
+
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        source.enqueueAsset(jarBytes);
+        source.enqueueChecksum(checksum, "SHA-256", "bot-0.4.2.jar");
+        TestableUpdateService service = createTestableService(source);
+
+        service.runAutoUpdateCycle();
+
+        assertEquals(UpdateState.WAITING_FOR_IDLE, service.getStatus().getState());
+        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
+        assertTrue(Files.exists(tempDir.resolve("staged.txt")));
+        assertFalse(service.isRestartRequested());
+    }
+
+    @Test
+    void shouldAutoApplyStagedUpdateWhenWindowIsOpenAndRuntimeIsIdle(@TempDir Path tempDir) throws Exception {
+        enableUpdates(tempDir);
+        Files.createDirectories(tempDir.resolve("jars"));
+        Files.writeString(tempDir.resolve("jars").resolve("bot-0.4.2.jar"), "staged", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("staged.txt"), "bot-0.4.2.jar\n", StandardCharsets.UTF_8);
+
+        TestableUpdateService service = createTestableService(new StubReleaseSource());
+
+        service.runAutoUpdateCycle();
+
+        assertTrue(service.isRestartRequested());
+        assertFalse(Files.exists(tempDir.resolve("staged.txt")));
+        assertEquals("bot-0.4.2.jar", Files.readString(tempDir.resolve("current.txt"), StandardCharsets.UTF_8).trim());
+        assertEquals(UpdateState.APPLYING, service.getStatus().getState());
+    }
+
+    @Test
     void shouldCoverVersionComparisonAndChecksumHelpersViaReflection(@TempDir Path tempDir) throws Exception {
         enableUpdates(tempDir);
-        UpdateService service = createService();
+        UpdateService service = createService(new StubReleaseSource());
 
         assertTrue(invokeCompareVersions(service, "1.2.4", "1.2.3") > 0);
         assertTrue(invokeCompareVersions(service, "1.2.3-rc.1", "1.2.3-rc.2") < 0);
         assertEquals(0, invokeCompareVersions(service, "v1.2.3+build.1", "1.2.3"));
-        assertEquals("1.2.3", invokeExtractVersionFromAssetName(service, "bot-1.2.3.jar"));
-        assertEquals("1.2.3-rc.1", invokeExtractVersionFromAssetName(service, "release-v1.2.3-rc.1.jar"));
-        assertNull(invokeExtractVersionFromAssetName(service, "bot-latest.jar"));
-
-        String checksumText = """
-                ignored line
-                abcdef123456 *bot-1.0.0.jar
-                """;
-        assertEquals("abcdef123456", invokeExtractExpectedSha256(service, checksumText, "bot-1.0.0.jar"));
-
-        IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> invokeExtractExpectedSha256(service, "deadbeef other.jar", "bot-1.0.0.jar"));
-        assertTrue(error.getMessage().contains("Unable to find checksum"));
-
-        Path file = tempDir.resolve("payload.bin");
-        byte[] payload = "payload".getBytes(StandardCharsets.UTF_8);
-        Files.write(file, payload);
-        assertEquals(sha256Hex(payload), invokeComputeSha256(service, file));
+        assertEquals("1.2.3", service.extractVersionFromAssetName("bot-1.2.3.jar"));
+        assertEquals("1.2.3-rc.1", service.extractVersionFromAssetName("release-v1.2.3-rc.1.jar"));
+        assertEquals("1.2.3", service.extractVersionFromAssetName("bot-1.2.3-exec.jar"));
+        assertNull(service.extractVersionFromAssetName("bot-latest.jar"));
     }
 
-    private UpdateService createService() {
+    @Test
+    void shouldFallbackToGitHubWhenMavenCentralFails(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+
+        StubReleaseSource mavenCentral = new StubReleaseSource("maven-central");
+        mavenCentral.enqueueIOException(new IOException("Maven Central unavailable"));
+
+        StubReleaseSource github = new StubReleaseSource("github");
+        github.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+
+        TestableUpdateService service = createTestableServiceMultiSource(List.of(mavenCentral, github));
+
+        assertEquals("Update available: 0.4.2", service.check().getMessage());
+        assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
+    }
+
+    @Test
+    void shouldUseMavenCentralWhenAvailable(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+
+        StubReleaseSource mavenCentral = new StubReleaseSource("maven-central");
+        mavenCentral.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+
+        StubReleaseSource github = new StubReleaseSource("github");
+        github.enqueueRelease("0.4.1", "bot-0.4.1.jar", "2026-02-21T10:00:00Z");
+
+        TestableUpdateService service = createTestableServiceMultiSource(List.of(mavenCentral, github));
+
+        assertEquals("Update available: 0.4.2", service.check().getMessage());
+        assertEquals("0.4.2", service.getStatus().getAvailable().getVersion());
+    }
+
+    @Test
+    void shouldFailWhenAllSourcesFail(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+
+        StubReleaseSource mavenCentral = new StubReleaseSource("maven-central");
+        mavenCentral.enqueueIOException(new IOException("Maven Central unavailable"));
+
+        StubReleaseSource github = new StubReleaseSource("github");
+        github.enqueueIOException(new IOException("GitHub rate limited"));
+
+        TestableUpdateService service = createTestableServiceMultiSource(List.of(mavenCentral, github));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, service::check);
+        assertTrue(error.getMessage().contains("All release sources failed"));
+    }
+
+    @Test
+    void shouldVerifyWithSha1WhenSourceProvidesSha1(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
+        String sha1Checksum = sha1Hex(jarBytes);
+
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        source.enqueueAsset(jarBytes);
+        source.enqueueChecksum(sha1Checksum, "SHA-1", "bot-0.4.2.jar");
+        TestableUpdateService service = createTestableService(source);
+
+        service.check();
+        service.updateNow();
+
+        assertTrue(service.isRestartRequested());
+        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
+    }
+
+    private UpdateService createService(StubReleaseSource source) {
         return new UpdateService(
                 botProperties,
                 buildPropertiesProvider,
                 new ObjectMapper(),
                 applicationContext,
                 clock,
-                jvmExitService);
+                jvmExitService,
+                runtimeConfigService,
+                updateActivityGate,
+                updateMaintenanceWindow,
+                List.of(source));
     }
 
-    private TestableUpdateService createTestableService(StubHttpClient stubHttpClient) {
+    private TestableUpdateService createTestableService(StubReleaseSource source) {
         return new TestableUpdateService(
                 botProperties,
                 buildPropertiesProvider,
@@ -432,7 +687,38 @@ class UpdateServiceTest {
                 applicationContext,
                 clock,
                 jvmExitService,
-                stubHttpClient);
+                runtimeConfigService,
+                updateActivityGate,
+                updateMaintenanceWindow,
+                List.of(source));
+    }
+
+    private TestableUpdateService createTestableServiceMultiSource(List<ReleaseSourcePort> sources) {
+        return new TestableUpdateService(
+                botProperties,
+                buildPropertiesProvider,
+                new ObjectMapper(),
+                applicationContext,
+                clock,
+                jvmExitService,
+                runtimeConfigService,
+                updateActivityGate,
+                updateMaintenanceWindow,
+                sources);
+    }
+
+    private DeferredUpdateService createDeferredUpdateService(StubReleaseSource source) {
+        return new DeferredUpdateService(
+                botProperties,
+                buildPropertiesProvider,
+                new ObjectMapper(),
+                applicationContext,
+                clock,
+                jvmExitService,
+                runtimeConfigService,
+                updateActivityGate,
+                updateMaintenanceWindow,
+                List.of(source));
     }
 
     private void enableUpdates(Path updatesPath) {
@@ -440,39 +726,17 @@ class UpdateServiceTest {
         botProperties.getUpdate().setUpdatesPath(updatesPath.toString());
     }
 
-    private static String releaseJson(String tagName, String assetName, String publishedAt) {
-        return """
-                {
-                  "tag_name": "%s",
-                  "published_at": "%s",
-                  "assets": [
-                    {
-                      "id": %d,
-                      "name": "%s",
-                      "browser_download_url": "https://github.com/alexk-dev/golemcore-bot/releases/download/%s/%s"
-                    },
-                    {
-                      "id": %d,
-                      "name": "sha256sums.txt",
-                      "browser_download_url": "https://github.com/alexk-dev/golemcore-bot/releases/download/%s/sha256sums.txt"
-                    }
-                  ]
-                }
-                """
-                .formatted(
-                        tagName,
-                        publishedAt,
-                        DEFAULT_JAR_ASSET_ID,
-                        assetName,
-                        tagName,
-                        assetName,
-                        DEFAULT_SHA_ASSET_ID,
-                        tagName);
+    private static String sha256Hex(byte[] bytes) {
+        return digestHex(bytes, "SHA-256");
     }
 
-    private static String sha256Hex(byte[] bytes) {
+    private static String sha1Hex(byte[] bytes) {
+        return digestHex(bytes, "SHA-1");
+    }
+
+    private static String digestHex(byte[] bytes, String algorithm) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            MessageDigest digest = MessageDigest.getInstance(algorithm);
             byte[] hash = digest.digest(bytes);
             StringBuilder builder = new StringBuilder(hash.length * 2);
             for (byte value : hash) {
@@ -487,21 +751,6 @@ class UpdateServiceTest {
     private static int invokeCompareVersions(UpdateService service, String left, String right) {
         Method method = getDeclaredMethod("compareVersions", String.class, String.class);
         return (int) invokeReflective(method, service, left, right);
-    }
-
-    private static String invokeExtractExpectedSha256(UpdateService service, String checksumsText, String assetName) {
-        Method method = getDeclaredMethod("extractExpectedSha256", String.class, String.class);
-        return (String) invokeReflective(method, service, checksumsText, assetName);
-    }
-
-    private static String invokeComputeSha256(UpdateService service, Path filePath) {
-        Method method = getDeclaredMethod("computeSha256", Path.class);
-        return (String) invokeReflective(method, service, filePath);
-    }
-
-    private static String invokeExtractVersionFromAssetName(UpdateService service, String assetName) {
-        Method method = getDeclaredMethod("extractVersionFromAssetName", String.class);
-        return (String) invokeReflective(method, service, assetName);
     }
 
     @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
@@ -532,10 +781,22 @@ class UpdateServiceTest {
         }
     }
 
+    @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })
+    private static <T> T readPrivateField(UpdateService service, String fieldName, Class<T> fieldType) {
+        try {
+            Field field = UpdateService.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            return (T) field.get(service);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new IllegalStateException("Failed to read field: " + fieldName, e);
+        }
+    }
+
+    // ==================== Test Doubles ====================
+
     @SuppressWarnings("PMD.TestClassWithoutTestCases")
     private static final class TestableUpdateService extends UpdateService {
 
-        private final StubHttpClient stubHttpClient;
         private boolean restartRequested;
 
         private TestableUpdateService(
@@ -545,14 +806,21 @@ class UpdateServiceTest {
                 ApplicationContext applicationContext,
                 Clock clock,
                 JvmExitService jvmExitService,
-                StubHttpClient stubHttpClient) {
-            super(botProperties, buildPropertiesProvider, objectMapper, applicationContext, clock, jvmExitService);
-            this.stubHttpClient = stubHttpClient;
-        }
-
-        @Override
-        protected HttpClient buildHttpClient() {
-            return stubHttpClient;
+                RuntimeConfigService runtimeConfigService,
+                UpdateActivityGate updateActivityGate,
+                UpdateMaintenanceWindow updateMaintenanceWindow,
+                List<ReleaseSourcePort> releaseSources) {
+            super(
+                    botProperties,
+                    buildPropertiesProvider,
+                    objectMapper,
+                    applicationContext,
+                    clock,
+                    jvmExitService,
+                    runtimeConfigService,
+                    updateActivityGate,
+                    updateMaintenanceWindow,
+                    releaseSources);
         }
 
         @Override
@@ -560,222 +828,166 @@ class UpdateServiceTest {
             restartRequested = true;
         }
 
+        @Override
+        protected void startUpdateTask(Runnable task) {
+            task.run();
+        }
+
         private boolean isRestartRequested() {
             return restartRequested;
         }
     }
 
-    private static final class StubHttpClient extends HttpClient {
+    @SuppressWarnings("PMD.TestClassWithoutTestCases")
+    private static final class DeferredUpdateService extends UpdateService {
 
-        private final Deque<StubExchange> exchanges = new ArrayDeque<>();
-        private final Deque<URI> requestedUris = new ArrayDeque<>();
-
-        private void enqueueStringResponse(int statusCode, String responseBody) {
-            exchanges
-                    .addLast(new StubExchange(statusCode, responseBody.getBytes(StandardCharsets.UTF_8), Map.of(), null,
-                            null));
-        }
-
-        private void enqueueBinaryResponse(int statusCode, byte[] responseBody) {
-            exchanges.addLast(new StubExchange(statusCode, responseBody, Map.of(), null, null));
-        }
-
-        private void enqueueInterrupted(InterruptedException exception) {
-            exchanges.addLast(new StubExchange(0, null, Map.of(), null, exception));
-        }
-
-        @Override
-        public Optional<CookieHandler> cookieHandler() {
-            return Optional.empty();
-        }
-
-        @Override
-        public Optional<Duration> connectTimeout() {
-            return Optional.empty();
-        }
-
-        @Override
-        public Redirect followRedirects() {
-            return Redirect.NEVER;
+        private DeferredUpdateService(
+                BotProperties botProperties,
+                ObjectProvider<BuildProperties> buildPropertiesProvider,
+                ObjectMapper objectMapper,
+                ApplicationContext applicationContext,
+                Clock clock,
+                JvmExitService jvmExitService,
+                RuntimeConfigService runtimeConfigService,
+                UpdateActivityGate updateActivityGate,
+                UpdateMaintenanceWindow updateMaintenanceWindow,
+                List<ReleaseSourcePort> releaseSources) {
+            super(
+                    botProperties,
+                    buildPropertiesProvider,
+                    objectMapper,
+                    applicationContext,
+                    clock,
+                    jvmExitService,
+                    runtimeConfigService,
+                    updateActivityGate,
+                    updateMaintenanceWindow,
+                    releaseSources);
         }
 
         @Override
-        public Optional<ProxySelector> proxy() {
-            return Optional.empty();
+        protected void startUpdateTask(Runnable task) {
+            // Keep the workflow in a busy transient state so tests can verify
+            // duplicate-request guards.
         }
 
         @Override
-        public SSLContext sslContext() {
-            return null;
-        }
-
-        @Override
-        public SSLParameters sslParameters() {
-            return new SSLParameters();
-        }
-
-        @Override
-        public Optional<Authenticator> authenticator() {
-            return Optional.empty();
-        }
-
-        @Override
-        public Version version() {
-            return Version.HTTP_1_1;
-        }
-
-        @Override
-        public Optional<Executor> executor() {
-            return Optional.empty();
-        }
-
-        @Override
-        public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler)
-                throws IOException, InterruptedException {
-            requestedUris.add(request.uri());
-            StubExchange exchange = exchanges.pollFirst();
-            if (exchange == null) {
-                throw new IllegalStateException("No stub exchange configured for request " + request.uri());
-            }
-            if (exchange.interruptedException() != null) {
-                throw exchange.interruptedException();
-            }
-            if (exchange.ioException() != null) {
-                throw exchange.ioException();
-            }
-
-            byte[] payload = exchange.responseBody() != null ? exchange.responseBody() : new byte[0];
-            HttpHeaders headers = HttpHeaders.of(exchange.responseHeaders(), (name, value) -> true);
-            HttpResponse.ResponseInfo info = new StubResponseInfo(exchange.statusCode(), headers);
-            HttpResponse.BodySubscriber<T> subscriber = responseBodyHandler.apply(info);
-            subscriber.onSubscribe(new Flow.Subscription() {
-                @Override
-                public void request(long n) {
-                    // no-op
-                }
-
-                @Override
-                public void cancel() {
-                    // no-op
-                }
-            });
-            subscriber.onNext(List.of(ByteBuffer.wrap(payload)));
-            subscriber.onComplete();
-            T decodedBody = subscriber.getBody().toCompletableFuture().join();
-            return new StubHttpResponse<>(request, exchange.statusCode(), decodedBody, headers);
-        }
-
-        @Override
-        public <T> CompletableFuture<HttpResponse<T>> sendAsync(
-                HttpRequest request,
-                HttpResponse.BodyHandler<T> responseBodyHandler) {
-            try {
-                return CompletableFuture.completedFuture(send(request, responseBodyHandler));
-            } catch (IOException | InterruptedException e) {
-                CompletableFuture<HttpResponse<T>> failed = new CompletableFuture<>();
-                failed.completeExceptionally(e);
-                return failed;
-            }
-        }
-
-        @Override
-        public <T> CompletableFuture<HttpResponse<T>> sendAsync(
-                HttpRequest request,
-                HttpResponse.BodyHandler<T> responseBodyHandler,
-                HttpResponse.PushPromiseHandler<T> pushPromiseHandler) {
-            return sendAsync(request, responseBodyHandler);
-        }
-
-        private List<URI> getRequestedUris() {
-            return List.copyOf(requestedUris);
+        protected void requestRestartAsync() {
+            // no-op
         }
     }
 
-    private record StubExchange(
-            int statusCode,
-            byte[] responseBody,
-            Map<String, List<String>> responseHeaders,
-            IOException ioException,
-            InterruptedException interruptedException) {
+    private static final class StubReleaseSource implements ReleaseSourcePort {
+
+        private final String sourceName;
+        private final Deque<StubAction> actions = new ArrayDeque<>();
+
+        private StubReleaseSource() {
+            this("stub");
+        }
+
+        private StubReleaseSource(String sourceName) {
+            this.sourceName = sourceName;
+        }
+
+        @Override
+        public String name() {
+            return sourceName;
+        }
+
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+
+        @Override
+        public Optional<AvailableRelease> fetchLatestRelease() throws IOException, InterruptedException {
+            StubAction action = actions.pollFirst();
+            if (action == null) {
+                return Optional.empty();
+            }
+            if (action.interruptedException != null) {
+                throw action.interruptedException;
+            }
+            if (action.ioException != null) {
+                throw action.ioException;
+            }
+            return Optional.ofNullable(action.release);
+        }
+
+        @Override
+        public InputStream downloadAsset(AvailableRelease release) throws IOException, InterruptedException {
+            StubAction action = actions.pollFirst();
+            if (action == null) {
+                throw new IOException("No stub asset configured");
+            }
+            if (action.ioException != null) {
+                throw action.ioException;
+            }
+            return new ByteArrayInputStream(action.assetBytes);
+        }
+
+        @Override
+        public ChecksumInfo downloadChecksum(AvailableRelease release) throws IOException, InterruptedException {
+            StubAction action = actions.pollFirst();
+            if (action == null) {
+                throw new IOException("No stub checksum configured");
+            }
+            if (action.ioException != null) {
+                throw action.ioException;
+            }
+            return action.checksumInfo;
+        }
+
+        void enqueueRelease(String version, String assetName, String publishedAt) {
+            StubAction action = new StubAction();
+            action.release = AvailableRelease.builder()
+                    .version(version)
+                    .tagName("v" + version)
+                    .assetName(assetName)
+                    .downloadUrl("https://example.com/download/" + assetName)
+                    .checksumUrl("https://example.com/checksum/" + assetName)
+                    .publishedAt(Instant.parse(publishedAt))
+                    .source(sourceName)
+                    .build();
+            actions.addLast(action);
+        }
+
+        void enqueueEmpty() {
+            actions.addLast(new StubAction());
+        }
+
+        void enqueueAsset(byte[] bytes) {
+            StubAction action = new StubAction();
+            action.assetBytes = bytes;
+            actions.addLast(action);
+        }
+
+        void enqueueChecksum(String hexDigest, String algorithm, String assetName) {
+            StubAction action = new StubAction();
+            action.checksumInfo = new ChecksumInfo(hexDigest, algorithm, assetName);
+            actions.addLast(action);
+        }
+
+        void enqueueIOException(IOException exception) {
+            StubAction action = new StubAction();
+            action.ioException = exception;
+            actions.addLast(action);
+        }
+
+        void enqueueInterrupted(InterruptedException exception) {
+            StubAction action = new StubAction();
+            action.interruptedException = exception;
+            actions.addLast(action);
+        }
     }
 
-    private static final class StubResponseInfo implements HttpResponse.ResponseInfo {
-        private final int statusCodeValue;
-        private final HttpHeaders headersValue;
-
-        private StubResponseInfo(int statusCode, HttpHeaders headers) {
-            this.statusCodeValue = statusCode;
-            this.headersValue = headers;
-        }
-
-        @Override
-        public int statusCode() {
-            return statusCodeValue;
-        }
-
-        @Override
-        public HttpHeaders headers() {
-            return headersValue;
-        }
-
-        @Override
-        public HttpClient.Version version() {
-            return HttpClient.Version.HTTP_1_1;
-        }
-    }
-
-    private static final class StubHttpResponse<T> implements HttpResponse<T> {
-        private final HttpRequest requestValue;
-        private final int statusCodeValue;
-        private final T bodyValue;
-        private final HttpHeaders headersValue;
-
-        private StubHttpResponse(HttpRequest request, int statusCode, T body, HttpHeaders headers) {
-            this.requestValue = request;
-            this.statusCodeValue = statusCode;
-            this.bodyValue = body;
-            this.headersValue = headers;
-        }
-
-        @Override
-        public int statusCode() {
-            return statusCodeValue;
-        }
-
-        @Override
-        public HttpRequest request() {
-            return requestValue;
-        }
-
-        @Override
-        public Optional<HttpResponse<T>> previousResponse() {
-            return Optional.empty();
-        }
-
-        @Override
-        public HttpHeaders headers() {
-            return headersValue;
-        }
-
-        @Override
-        public T body() {
-            return bodyValue;
-        }
-
-        @Override
-        public Optional<SSLSession> sslSession() {
-            return Optional.empty();
-        }
-
-        @Override
-        public URI uri() {
-            return requestValue.uri();
-        }
-
-        @Override
-        public HttpClient.Version version() {
-            return HttpClient.Version.HTTP_1_1;
-        }
+    private static final class StubAction {
+        private AvailableRelease release;
+        private byte[] assetBytes;
+        private ReleaseSourcePort.ChecksumInfo checksumInfo;
+        private IOException ioException;
+        private InterruptedException interruptedException;
     }
 
     private static final class MutableClock extends Clock {

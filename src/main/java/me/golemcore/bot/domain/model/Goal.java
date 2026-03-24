@@ -41,6 +41,9 @@ public class Goal {
     private String id;
     private String title;
     private String description;
+    private String prompt;
+    private String reflectionModelTier;
+    private boolean reflectionTierPriority;
 
     @Builder.Default
     private GoalStatus status = GoalStatus.ACTIVE;
@@ -48,6 +51,18 @@ public class Goal {
     @Builder.Default
     private List<AutoTask> tasks = new ArrayList<>();
 
+    @Builder.Default
+    private int consecutiveFailureCount = 0;
+
+    @Builder.Default
+    private boolean reflectionRequired = false;
+
+    private String lastFailureSummary;
+    private String lastFailureFingerprint;
+    private String reflectionStrategy;
+    private String lastUsedSkillName;
+    private Instant lastFailureAt;
+    private Instant lastReflectionAt;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -59,6 +74,18 @@ public class Goal {
         return tasks.stream()
                 .filter(t -> t.getStatus() == AutoTask.TaskStatus.COMPLETED)
                 .count();
+    }
+
+    /**
+     * Returns the prompt that should be used for autonomous execution.
+     */
+    @JsonIgnore
+    public String getExecutionPrompt() {
+        String basePrompt = prompt != null && !prompt.isBlank() ? prompt : title;
+        if (reflectionStrategy == null || reflectionStrategy.isBlank()) {
+            return basePrompt;
+        }
+        return basePrompt + "\n\nRecovery strategy from previous reflection:\n" + reflectionStrategy;
     }
 
     /**

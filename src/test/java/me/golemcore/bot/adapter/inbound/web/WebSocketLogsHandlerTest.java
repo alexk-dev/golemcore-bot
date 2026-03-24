@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.adapter.inbound.web.dto.LogEntryDto;
 import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
@@ -7,6 +8,7 @@ import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.reactivestreams.Publisher;
 import org.springframework.web.reactive.socket.HandshakeInfo;
 import org.springframework.web.reactive.socket.WebSocketMessage;
@@ -22,7 +24,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -119,8 +120,10 @@ class WebSocketLogsHandlerTest {
         verify(dashboardLogService).streamAfter(5L);
         assertEquals(1, sentPayloads.size());
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> payload = objectMapper.readValue(sentPayloads.get(0), Map.class);
+        Map<String, Object> payload = objectMapper.readValue(
+                sentPayloads.get(0),
+                new TypeReference<>() {
+                });
         assertEquals("log_batch", payload.get("type"));
 
         Object rawItems = payload.get("items");
@@ -154,10 +157,10 @@ class WebSocketLogsHandlerTest {
             when(message.getPayloadAsText()).thenReturn(payload);
             return message;
         });
-        when(session.send(any(Publisher.class))).thenAnswer(invocation -> {
-            @SuppressWarnings("unchecked")
-            Publisher<WebSocketMessage> publisher = invocation.getArgument(0, Publisher.class);
+        when(session.send(ArgumentMatchers.<Publisher<WebSocketMessage>>any())).thenAnswer(invocation -> {
+            Publisher<?> publisher = invocation.getArgument(0);
             return Flux.from(publisher)
+                    .cast(WebSocketMessage.class)
                     .doOnNext(msg -> {
                         if (sentPayloads != null) {
                             sentPayloads.add(msg.getPayloadAsText());

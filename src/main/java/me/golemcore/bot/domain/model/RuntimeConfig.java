@@ -1,6 +1,9 @@
 package me.golemcore.bot.domain.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,8 +18,8 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Application-level runtime settings that override BotProperties defaults.
- * Persisted to {@code preferences/runtime-config.json} via StoragePort.
+ * Application-level runtime settings persisted as per-section files under
+ * {@code preferences/}.
  */
 @Data
 @NoArgsConstructor
@@ -43,6 +46,12 @@ public class RuntimeConfig {
     private AutoModeConfig autoMode = new AutoModeConfig();
 
     @Builder.Default
+    private UpdateConfig update = new UpdateConfig();
+
+    @Builder.Default
+    private TracingConfig tracing = new TracingConfig();
+
+    @Builder.Default
     private RateLimitConfig rateLimit = new RateLimitConfig();
 
     @Builder.Default
@@ -61,13 +70,22 @@ public class RuntimeConfig {
     private SkillsConfig skills = new SkillsConfig();
 
     @Builder.Default
+    private ModelRegistryConfig modelRegistry = new ModelRegistryConfig();
+
+    @Builder.Default
     private UsageConfig usage = new UsageConfig();
 
     @Builder.Default
-    private RagConfig rag = new RagConfig();
+    private McpConfig mcp = new McpConfig();
 
     @Builder.Default
-    private McpConfig mcp = new McpConfig();
+    private PlanConfig plan = new PlanConfig();
+
+    @Builder.Default
+    private DelayedActionsConfig delayedActions = new DelayedActionsConfig();
+
+    @Builder.Default
+    private HiveConfig hive = new HiveConfig();
 
     @Data
     @NoArgsConstructor
@@ -99,19 +117,244 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonPropertyOrder({ "temperature", "routing", "tiers", "dynamicTierEnabled" })
     public static class ModelRouterConfig {
         private Double temperature;
-        private String routingModel;
-        private String routingModelReasoning;
-        private String balancedModel;
-        private String balancedModelReasoning;
-        private String smartModel;
-        private String smartModelReasoning;
-        private String codingModel;
-        private String codingModelReasoning;
-        private String deepModel;
-        private String deepModelReasoning;
+        private TierBinding routing;
+        private Map<String, TierBinding> tiers = new LinkedHashMap<>();
         private Boolean dynamicTierEnabled;
+
+        public static class ModelRouterConfigBuilder {
+            private TierBinding routing;
+            private Map<String, TierBinding> tiers;
+
+            public ModelRouterConfigBuilder routingModel(String model) {
+                routingBinding().setModel(model);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder routingModelReasoning(String reasoning) {
+                routingBinding().setReasoning(reasoning);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder balancedModel(String model) {
+                tierBinding("balanced").setModel(model);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder balancedModelReasoning(String reasoning) {
+                tierBinding("balanced").setReasoning(reasoning);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder smartModel(String model) {
+                tierBinding("smart").setModel(model);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder smartModelReasoning(String reasoning) {
+                tierBinding("smart").setReasoning(reasoning);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder deepModel(String model) {
+                tierBinding("deep").setModel(model);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder deepModelReasoning(String reasoning) {
+                tierBinding("deep").setReasoning(reasoning);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder codingModel(String model) {
+                tierBinding("coding").setModel(model);
+                return this;
+            }
+
+            public ModelRouterConfigBuilder codingModelReasoning(String reasoning) {
+                tierBinding("coding").setReasoning(reasoning);
+                return this;
+            }
+
+            private TierBinding routingBinding() {
+                if (this.routing == null) {
+                    this.routing = new TierBinding();
+                }
+                return this.routing;
+            }
+
+            private TierBinding tierBinding(String tier) {
+                if (this.tiers == null) {
+                    this.tiers = new LinkedHashMap<>();
+                }
+                return this.tiers.computeIfAbsent(tier, ignored -> new TierBinding());
+            }
+        }
+
+        public TierBinding getTierBinding(String tier) {
+            if (tiers == null || tier == null) {
+                return null;
+            }
+            return tiers.get(tier);
+        }
+
+        public void setTierBinding(String tier, TierBinding binding) {
+            if (tier == null) {
+                return;
+            }
+            if (tiers == null) {
+                tiers = new LinkedHashMap<>();
+            }
+            tiers.put(tier, binding);
+        }
+
+        public String getTierModel(String tier) {
+            TierBinding binding = getTierBinding(tier);
+            return binding != null ? binding.getModel() : null;
+        }
+
+        public void setTierModel(String tier, String model) {
+            TierBinding binding = ensureTierBinding(tier);
+            binding.setModel(model);
+        }
+
+        public String getTierReasoning(String tier) {
+            TierBinding binding = getTierBinding(tier);
+            return binding != null ? binding.getReasoning() : null;
+        }
+
+        public void setTierReasoning(String tier, String reasoning) {
+            TierBinding binding = ensureTierBinding(tier);
+            binding.setReasoning(reasoning);
+        }
+
+        private TierBinding ensureTierBinding(String tier) {
+            if (tiers == null) {
+                tiers = new LinkedHashMap<>();
+            }
+            return tiers.computeIfAbsent(tier, ignored -> new TierBinding());
+        }
+
+        private TierBinding ensureRoutingBinding() {
+            if (routing == null) {
+                routing = new TierBinding();
+            }
+            return routing;
+        }
+
+        @JsonIgnore
+        public String getRoutingModel() {
+            return routing != null ? routing.getModel() : null;
+        }
+
+        @JsonSetter("routingModel")
+        public void setRoutingModel(String model) {
+            ensureRoutingBinding().setModel(model);
+        }
+
+        @JsonIgnore
+        public String getRoutingModelReasoning() {
+            return routing != null ? routing.getReasoning() : null;
+        }
+
+        @JsonSetter("routingModelReasoning")
+        public void setRoutingModelReasoning(String reasoning) {
+            ensureRoutingBinding().setReasoning(reasoning);
+        }
+
+        @JsonIgnore
+        public String getBalancedModel() {
+            return getTierModel("balanced");
+        }
+
+        @JsonSetter("balancedModel")
+        public void setBalancedModel(String model) {
+            setTierModel("balanced", model);
+        }
+
+        @JsonIgnore
+        public String getBalancedModelReasoning() {
+            return getTierReasoning("balanced");
+        }
+
+        @JsonSetter("balancedModelReasoning")
+        public void setBalancedModelReasoning(String reasoning) {
+            setTierReasoning("balanced", reasoning);
+        }
+
+        @JsonIgnore
+        public String getSmartModel() {
+            return getTierModel("smart");
+        }
+
+        @JsonSetter("smartModel")
+        public void setSmartModel(String model) {
+            setTierModel("smart", model);
+        }
+
+        @JsonIgnore
+        public String getSmartModelReasoning() {
+            return getTierReasoning("smart");
+        }
+
+        @JsonSetter("smartModelReasoning")
+        public void setSmartModelReasoning(String reasoning) {
+            setTierReasoning("smart", reasoning);
+        }
+
+        @JsonIgnore
+        public String getDeepModel() {
+            return getTierModel("deep");
+        }
+
+        @JsonSetter("deepModel")
+        public void setDeepModel(String model) {
+            setTierModel("deep", model);
+        }
+
+        @JsonIgnore
+        public String getDeepModelReasoning() {
+            return getTierReasoning("deep");
+        }
+
+        @JsonSetter("deepModelReasoning")
+        public void setDeepModelReasoning(String reasoning) {
+            setTierReasoning("deep", reasoning);
+        }
+
+        @JsonIgnore
+        public String getCodingModel() {
+            return getTierModel("coding");
+        }
+
+        @JsonSetter("codingModel")
+        public void setCodingModel(String model) {
+            setTierModel("coding", model);
+        }
+
+        @JsonIgnore
+        public String getCodingModelReasoning() {
+            return getTierReasoning("coding");
+        }
+
+        @JsonSetter("codingModelReasoning")
+        public void setCodingModelReasoning(String reasoning) {
+            setTierReasoning("coding", reasoning);
+        }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonPropertyOrder({ "model", "reasoning" })
+    public static class TierBinding {
+        private String model;
+        private String reasoning;
     }
 
     @Data
@@ -139,27 +382,16 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ToolsConfig {
-        private Boolean browserEnabled;
-        private String browserType;
-        private Integer browserTimeout;
-        private String browserUserAgent;
         private Boolean filesystemEnabled;
         private Boolean shellEnabled;
-        private String browserApiProvider;
-        private Boolean browserHeadless;
-        private Boolean braveSearchEnabled;
-        private Secret braveSearchApiKey;
         private Boolean skillManagementEnabled;
         private Boolean skillTransitionEnabled;
         private Boolean tierEnabled;
         private Boolean goalManagementEnabled;
         @Builder.Default
         private List<ShellEnvironmentVariable> shellEnvironmentVariables = new ArrayList<>();
-        @Builder.Default
-        private ImapConfig imap = new ImapConfig();
-        @Builder.Default
-        private SmtpConfig smtp = new SmtpConfig();
     }
 
     @Data
@@ -169,40 +401,6 @@ public class RuntimeConfig {
     public static class ShellEnvironmentVariable {
         private String name;
         private String value;
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Builder
-    public static class ImapConfig {
-        private Boolean enabled;
-        private String host;
-        private Integer port;
-        private String username;
-        private Secret password;
-        private String security;
-        private String sslTrust;
-        private Integer connectTimeout;
-        private Integer readTimeout;
-        private Integer maxBodyLength;
-        private Integer defaultMessageLimit;
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Builder
-    public static class SmtpConfig {
-        private Boolean enabled;
-        private String host;
-        private Integer port;
-        private String username;
-        private Secret password;
-        private String security;
-        private String sslTrust;
-        private Integer connectTimeout;
-        private Integer readTimeout;
     }
 
     @Data
@@ -239,7 +437,59 @@ public class RuntimeConfig {
         private Boolean autoStart;
         private Integer maxGoals;
         private String modelTier;
+        @Builder.Default
+        private Boolean reflectionEnabled = true;
+        @Builder.Default
+        private Integer reflectionFailureThreshold = 2;
+        private String reflectionModelTier;
+        private Boolean reflectionTierPriority;
         private Boolean notifyMilestones;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class UpdateConfig {
+        @Builder.Default
+        private Boolean autoEnabled = true;
+        @Builder.Default
+        private Integer checkIntervalMinutes = 60;
+        @Builder.Default
+        private Boolean maintenanceWindowEnabled = false;
+        @Builder.Default
+        private String maintenanceWindowStartUtc = "00:00";
+        @Builder.Default
+        private String maintenanceWindowEndUtc = "00:00";
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class TracingConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private Boolean payloadSnapshotsEnabled = false;
+        @Builder.Default
+        private Integer sessionTraceBudgetMb = 128;
+        @Builder.Default
+        private Integer maxSnapshotSizeKb = 256;
+        @Builder.Default
+        private Integer maxSnapshotsPerSpan = 10;
+        @Builder.Default
+        private Integer maxTracesPerSession = 100;
+        @Builder.Default
+        private Boolean captureInboundPayloads = false;
+        @Builder.Default
+        private Boolean captureOutboundPayloads = false;
+        @Builder.Default
+        private Boolean captureToolPayloads = false;
+        @Builder.Default
+        private Boolean captureLlmPayloads = false;
     }
 
     @Data
@@ -277,6 +527,18 @@ public class RuntimeConfig {
         private Boolean enabled;
         private Integer maxContextTokens;
         private Integer keepLastMessages;
+        @Builder.Default
+        private String triggerMode = "model_ratio";
+        @Builder.Default
+        private Double modelThresholdRatio = 0.95d;
+        @Builder.Default
+        private Boolean preserveTurnBoundaries = true;
+        @Builder.Default
+        private Boolean detailsEnabled = true;
+        @Builder.Default
+        private Integer detailsMaxItemsPerCategory = 50;
+        @Builder.Default
+        private Integer summaryTimeoutMs = 15000;
     }
 
     @Data
@@ -290,6 +552,28 @@ public class RuntimeConfig {
         private Integer maxToolExecutions = 500;
         @Builder.Default
         private String deadline = "PT1H";
+        @Builder.Default
+        private Boolean autoRetryEnabled = true;
+        @Builder.Default
+        private Integer autoRetryMaxAttempts = 2;
+        @Builder.Default
+        private Long autoRetryBaseDelayMs = 600L;
+        @Builder.Default
+        private Boolean queueSteeringEnabled = true;
+        @Builder.Default
+        private String queueSteeringMode = "one-at-a-time";
+        @Builder.Default
+        private String queueFollowUpMode = "one-at-a-time";
+        @Builder.Default
+        private Boolean progressUpdatesEnabled = true;
+        @Builder.Default
+        private Boolean progressIntentEnabled = true;
+        @Builder.Default
+        private Integer progressBatchSize = 8;
+        @Builder.Default
+        private Integer progressMaxSilenceSeconds = 10;
+        @Builder.Default
+        private Integer progressSummaryTimeoutMs = 8000;
     }
 
     @Data
@@ -407,6 +691,21 @@ public class RuntimeConfig {
         private Boolean enabled = true;
         @Builder.Default
         private Boolean progressiveLoading = true;
+        private String marketplaceSourceType;
+        private String marketplaceRepositoryDirectory;
+        private String marketplaceSandboxPath;
+        private String marketplaceRepositoryUrl;
+        private String marketplaceBranch;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class ModelRegistryConfig {
+        private String repositoryUrl;
+        @Builder.Default
+        private String branch = "main";
     }
 
     @Data
@@ -421,23 +720,65 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
-    public static class RagConfig {
+    public static class McpConfig {
         private Boolean enabled;
-        private String url;
-        private Secret apiKey;
-        private String queryMode;
-        private Integer timeoutSeconds;
-        private Integer indexMinLength;
+        private Integer defaultStartupTimeout;
+        private Integer defaultIdleTimeout;
     }
 
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
-    public static class McpConfig {
-        private Boolean enabled;
-        private Integer defaultStartupTimeout;
-        private Integer defaultIdleTimeout;
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class HiveConfig {
+        @Builder.Default
+        private Boolean enabled = false;
+        private String serverUrl;
+        private String displayName;
+        private String hostLabel;
+        @Builder.Default
+        private Boolean autoConnect = false;
+        @Builder.Default
+        private Boolean managedByProperties = false;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class PlanConfig {
+        @Builder.Default
+        private Boolean enabled = false;
+        @Builder.Default
+        private Integer maxPlans = 5;
+        @Builder.Default
+        private Integer maxStepsPerPlan = 50;
+        @Builder.Default
+        private Boolean stopOnFailure = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class DelayedActionsConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private Integer tickSeconds = 1;
+        @Builder.Default
+        private Integer maxPendingPerSession = 50;
+        @Builder.Default
+        private String maxDelay = "P30D";
+        @Builder.Default
+        private Integer defaultMaxAttempts = 4;
+        @Builder.Default
+        private String leaseDuration = "PT2M";
+        @Builder.Default
+        private String retentionAfterCompletion = "P7D";
+        @Builder.Default
+        private Boolean allowRunLater = true;
     }
 
     /**
@@ -450,12 +791,25 @@ public class RuntimeConfig {
     public enum ConfigSection {
         TELEGRAM("telegram", TelegramConfig.class), MODEL_ROUTER("model-router", ModelRouterConfig.class), LLM("llm",
                 LlmConfig.class), TOOLS("tools", ToolsConfig.class), VOICE("voice", VoiceConfig.class), AUTO_MODE(
-                        "auto-mode",
-                        AutoModeConfig.class), RATE_LIMIT("rate-limit", RateLimitConfig.class), SECURITY("security",
-                                SecurityConfig.class), COMPACTION("compaction", CompactionConfig.class), TURN("turn",
-                                        TurnConfig.class), MEMORY("memory", MemoryConfig.class), SKILLS("skills",
-                                                SkillsConfig.class), USAGE("usage", UsageConfig.class), RAG("rag",
-                                                        RagConfig.class), MCP("mcp", McpConfig.class);
+                        "auto-mode", AutoModeConfig.class), UPDATE("update", UpdateConfig.class), TRACING("tracing",
+                                TracingConfig.class), RATE_LIMIT(
+                                        "rate-limit",
+                                        RateLimitConfig.class), SECURITY("security", SecurityConfig.class), COMPACTION(
+                                                "compaction",
+                                                CompactionConfig.class), TURN("turn", TurnConfig.class), MEMORY(
+                                                        "memory",
+                                                        MemoryConfig.class), SKILLS("skills",
+                                                                SkillsConfig.class), MODEL_REGISTRY(
+                                                                        "model-registry",
+                                                                        ModelRegistryConfig.class), USAGE(
+                                                                                "usage",
+                                                                                UsageConfig.class), MCP("mcp",
+                                                                                        McpConfig.class), PLAN("plan",
+                                                                                                PlanConfig.class), DELAYED_ACTIONS(
+                                                                                                        "delayed-actions",
+                                                                                                        DelayedActionsConfig.class), HIVE(
+                                                                                                                "hive",
+                                                                                                                HiveConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

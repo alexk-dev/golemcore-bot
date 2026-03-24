@@ -81,6 +81,13 @@ public class Message {
     }
 
     /**
+     * Checks if this message is an internal runtime-only message.
+     */
+    public boolean isInternalMessage() {
+        return metadata != null && Boolean.TRUE.equals(metadata.get(ContextAttributes.MESSAGE_INTERNAL));
+    }
+
+    /**
      * Checks if this is a tool result message.
      */
     public boolean isToolMessage() {

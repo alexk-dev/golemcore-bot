@@ -22,18 +22,23 @@ import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.CompactionReason;
+import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
-import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.DelayedActionPolicyService;
+import me.golemcore.bot.domain.service.DelayedSessionActionService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
@@ -42,10 +47,10 @@ import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
+import me.golemcore.bot.tools.ScheduleSessionActionTool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
@@ -53,6 +58,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -107,11 +113,13 @@ public class CommandRouter implements CommandPort {
     private static final String CMD_GOAL = "goal";
     private static final String CMD_PLAN = "plan";
     private static final String CMD_PLANS = "plans";
+    private static final String CMD_LATER = "later";
     private static final String CMD_STATUS = "status";
     private static final int MIN_SCHEDULE_ARGS = 2;
     private static final int MIN_CRON_PARTS_FOR_REPEAT_CHECK = 1;
     private static final int MIN_REASONING_ARGS = 2;
     private static final String SUBCMD_LIST = "list";
+    private static final DateTimeFormatter LATER_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z");
     private static final String SUBCMD_RESET = "reset";
     private static final String SUBCMD_REASONING = "reasoning";
     private static final String ERR_PROVIDER_NOT_CONFIGURED = "provider.not.configured";
@@ -122,25 +130,23 @@ public class CommandRouter implements CommandPort {
     private final SessionPort sessionService;
     private final UsageTrackingPort usageTracker;
     private final UserPreferencesService preferencesService;
-    private final CompactionService compactionService;
+    private final CompactionOrchestrationService compactionOrchestrationService;
     private final AutoModeService autoModeService;
     private final ModelSelectionService modelSelectionService;
     private final PlanService planService;
     private final PlanExecutionService planExecutionService;
     private final ScheduleService scheduleService;
+    private final DelayedActionPolicyService delayedActionPolicyService;
+    private final DelayedSessionActionService delayedSessionActionService;
     private final SessionRunCoordinator runCoordinator;
     private final ApplicationEventPublisher eventPublisher;
-    private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
 
     private static final List<String> KNOWN_COMMANDS = List.of(
             "skills", "tools", CMD_STATUS, "new", SUBCMD_RESET, "compact", CMD_HELP,
-            "tier", "model", "sessions", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule",
+            "tier", "model", "sessions", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule", CMD_LATER,
             CMD_PLAN, CMD_PLANS, "stop");
-
-    private static final java.util.Set<String> VALID_TIERS = java.util.Set.of(
-            "balanced", "smart", "coding", "deep");
 
     public CommandRouter(
             SkillComponent skillComponent,
@@ -148,15 +154,16 @@ public class CommandRouter implements CommandPort {
             SessionPort sessionService,
             UsageTrackingPort usageTracker,
             UserPreferencesService preferencesService,
-            CompactionService compactionService,
+            CompactionOrchestrationService compactionOrchestrationService,
             AutoModeService autoModeService,
             ModelSelectionService modelSelectionService,
             PlanService planService,
             PlanExecutionService planExecutionService,
             ScheduleService scheduleService,
+            DelayedActionPolicyService delayedActionPolicyService,
+            DelayedSessionActionService delayedSessionActionService,
             SessionRunCoordinator runCoordinator,
             ApplicationEventPublisher eventPublisher,
-            BotProperties properties,
             RuntimeConfigService runtimeConfigService,
             ObjectProvider<BuildProperties> buildPropertiesProvider) {
         this.skillComponent = skillComponent;
@@ -164,15 +171,16 @@ public class CommandRouter implements CommandPort {
         this.sessionService = sessionService;
         this.usageTracker = usageTracker;
         this.preferencesService = preferencesService;
-        this.compactionService = compactionService;
+        this.compactionOrchestrationService = compactionOrchestrationService;
         this.autoModeService = autoModeService;
         this.modelSelectionService = modelSelectionService;
         this.planService = planService;
         this.planExecutionService = planExecutionService;
         this.scheduleService = scheduleService;
+        this.delayedActionPolicyService = delayedActionPolicyService;
+        this.delayedSessionActionService = delayedSessionActionService;
         this.runCoordinator = runCoordinator;
         this.eventPublisher = eventPublisher;
-        this.properties = properties;
         this.runtimeConfigService = runtimeConfigService;
         this.buildPropertiesProvider = buildPropertiesProvider;
         log.info("CommandRouter initialized with commands: {}", KNOWN_COMMANDS);
@@ -185,6 +193,7 @@ public class CommandRouter implements CommandPort {
             String channelType = (String) context.get("channelType");
             String chatId = (String) context.get("chatId");
             String sessionChatId = resolveContextString(context, "sessionChatId", chatId);
+            String conversationKey = resolveContextString(context, "conversationKey", sessionChatId);
             String transportChatId = resolveContextString(context, "transportChatId", chatId);
             boolean explicitSessionRouting = hasExplicitContextString(context, "sessionChatId")
                     || hasExplicitContextString(context, "conversationKey");
@@ -196,7 +205,7 @@ public class CommandRouter implements CommandPort {
 
             return switch (command) {
             case "skills" -> handleSkills();
-            case "tools" -> handleTools();
+            case "tools" -> handleTools(channelType);
             case CMD_STATUS -> handleStatus(sessionId);
             case "new" -> handleNew();
             case "reset" -> handleReset(sessionId, sessionIdentity);
@@ -211,6 +220,7 @@ public class CommandRouter implements CommandPort {
             case "diary" -> handleDiary(args);
             case "tasks" -> handleTasks();
             case "schedule" -> handleSchedule(args);
+            case CMD_LATER -> handleLater(args, channelType, conversationKey);
             case CMD_PLAN -> handlePlan(args, sessionIdentity, transportChatId);
             case CMD_PLANS -> handlePlans(sessionIdentity);
             case "stop" -> handleStop(channelType, sessionChatId);
@@ -247,11 +257,15 @@ public class CommandRouter implements CommandPort {
                 new CommandDefinition(SUBCMD_RESET, "Reset conversation", "/reset"),
                 new CommandDefinition("compact", "Compact conversation history", "/compact [keep]"),
                 new CommandDefinition(CMD_HELP, "Show available commands", "/help"),
-                new CommandDefinition("tier", "Set model tier", "/tier [balanced|smart|coding|deep] [force]"),
+                new CommandDefinition("tier", "Set model tier",
+                        "/tier [" + String.join("|", ModelTierCatalog.orderedExplicitTiers()) + "] [force]"),
                 new CommandDefinition("model", "Per-tier model selection",
                         "/model [list|<tier> <model>|<tier> reasoning <level>|<tier> reset]"),
                 new CommandDefinition("sessions", "Open session switcher menu (Telegram)", "/sessions"),
                 new CommandDefinition("stop", "Stop current run", "/stop")));
+        if (runtimeConfigService.isDelayedActionsEnabled()) {
+            commands.add(new CommandDefinition(CMD_LATER, "Reminders and follow-ups", "/later [list|cancel|now|help]"));
+        }
         if (autoModeService.isFeatureEnabled()) {
             commands.add(new CommandDefinition("auto", "Toggle auto mode", "/auto [on|off]"));
             commands.add(new CommandDefinition("goals", "List goals", "/goals"));
@@ -300,9 +314,10 @@ public class CommandRouter implements CommandPort {
         return CommandResult.success(sb.toString());
     }
 
-    private CommandResult handleTools() {
+    private CommandResult handleTools(String channelType) {
         List<ToolComponent> enabledTools = toolComponents.stream()
                 .filter(ToolComponent::isEnabled)
+                .filter(tool -> isToolVisibleForChannel(tool, channelType))
                 .toList();
 
         StringBuilder sb = new StringBuilder();
@@ -324,6 +339,19 @@ public class CommandRouter implements CommandPort {
         }
 
         return CommandResult.success(sb.toString());
+    }
+
+    private boolean isToolVisibleForChannel(ToolComponent tool, String channelType) {
+        if (tool == null) {
+            return false;
+        }
+        if (!ScheduleSessionActionTool.TOOL_NAME.equals(tool.getToolName())) {
+            return true;
+        }
+        if (delayedActionPolicyService == null) {
+            return true;
+        }
+        return delayedActionPolicyService.canScheduleActions(channelType);
     }
 
     private CommandResult handleStatus(String sessionId) {
@@ -453,30 +481,24 @@ public class CommandRouter implements CommandPort {
             }
         }
 
-        List<Message> toSummarize = sessionService.getMessagesToCompact(sessionId, keepLast);
-        if (toSummarize.isEmpty()) {
+        CompactionResult result = compactionOrchestrationService.compact(
+                sessionId,
+                CompactionReason.MANUAL_COMMAND,
+                keepLast);
+
+        if (result.removed() <= 0) {
             int count = sessionService.getMessageCount(sessionId);
             return CommandResult.success(msg("command.compact.nothing", count));
         }
 
-        String summary = compactionService.summarize(toSummarize);
-        int removed;
-        if (summary != null) {
-            Message summaryMsg = compactionService.createSummaryMessage(summary);
-            removed = sessionService.compactWithSummary(sessionId, keepLast, summaryMsg);
-            log.info("[Compact] Summarized {} messages for session {}", removed, sessionId);
+        if (result.usedSummary()) {
+            log.info("[Compact] Summarized {} messages for session {}", result.removed(), sessionId);
         } else {
-            removed = sessionService.compactMessages(sessionId, keepLast);
-            log.info("[Compact] Truncated {} messages (no LLM) for session {}", removed, sessionId);
+            log.info("[Compact] Truncated {} messages (no LLM) for session {}", result.removed(), sessionId);
         }
 
-        if (removed <= 0) {
-            int count = sessionService.getMessageCount(sessionId);
-            return CommandResult.success(msg("command.compact.nothing", count));
-        }
-
-        String resultKey = summary != null ? "command.compact.done.summary" : "command.compact.done";
-        return CommandResult.success(msg(resultKey, removed, keepLast));
+        String resultKey = result.usedSummary() ? "command.compact.done.summary" : "command.compact.done";
+        return CommandResult.success(msg(resultKey, result.removed(), keepLast));
     }
 
     private CommandResult handleHelp() {
@@ -501,8 +523,8 @@ public class CommandRouter implements CommandPort {
             return CommandResult.success(msg("command.tier.current", tier, force));
         }
 
-        String tierArg = args.get(0).toLowerCase(Locale.ROOT);
-        if (!VALID_TIERS.contains(tierArg)) {
+        String tierArg = ModelTierCatalog.normalizeTierId(args.get(0));
+        if (!ModelTierCatalog.isExplicitSelectableTier(tierArg)) {
             return CommandResult.success(msg("command.tier.invalid"));
         }
 
@@ -525,13 +547,13 @@ public class CommandRouter implements CommandPort {
             return handleModelShow();
         }
 
-        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
+        String subcommand = ModelTierCatalog.normalizeTierId(args.get(0));
         if (SUBCMD_LIST.equals(subcommand)) {
             return handleModelList();
         }
 
         // Tier-based subcommands: /model <tier> ...
-        if (!VALID_TIERS.contains(subcommand)) {
+        if (!ModelTierCatalog.isExplicitSelectableTier(subcommand)) {
             return CommandResult.success(msg("command.model.invalid.tier"));
         }
 
@@ -563,7 +585,7 @@ public class CommandRouter implements CommandPort {
         StringBuilder sb = new StringBuilder();
         sb.append("**").append(msg("command.model.show.title")).append("**\n\n");
 
-        for (String tier : List.of("balanced", "smart", "coding", "deep")) {
+        for (String tier : ModelTierCatalog.orderedExplicitTiers()) {
             ModelSelectionService.ModelSelection selection = modelSelectionService.resolveForTier(tier);
             String model = selection.model() != null ? selection.model() : "—";
             String reasoning = selection.reasoning() != null ? selection.reasoning() : "—";
@@ -724,13 +746,13 @@ public class CommandRouter implements CommandPort {
             long completed = goal.getCompletedTaskCount();
             int total = goal.getTasks().size();
             String statusIcon = switch (goal.getStatus()) {
-            case ACTIVE -> "\u25B6\uFE0F";
-            case COMPLETED -> "\u2705";
-            case PAUSED -> "\u23F8\uFE0F";
-            case CANCELLED -> "\u274C";
+            case ACTIVE -> "▶️";
+            case COMPLETED -> "✅";
+            case PAUSED -> "⏸️";
+            case CANCELLED -> "❌";
             };
-            sb.append(String.format("%s **%s** [%s] (%d/%d tasks)%n",
-                    statusIcon, goal.getTitle(), goal.getStatus(), completed, total));
+            sb.append(String.format("%s **%s** [%s] (%d/%d tasks) `goal_id: %s`%n",
+                    statusIcon, goal.getTitle(), goal.getStatus(), completed, total, goal.getId()));
             if (goal.getDescription() != null && !goal.getDescription().isBlank()) {
                 sb.append("  ").append(goal.getDescription()).append("\n");
             }
@@ -777,7 +799,7 @@ public class CommandRouter implements CommandPort {
                 continue;
 
             sb.append(msg("command.tasks.goal", goal.getTitle()));
-            sb.append(" [").append(goal.getStatus()).append("]\n");
+            sb.append(" [").append(goal.getStatus()).append("] `goal_id: ").append(goal.getId()).append("`\n");
 
             List<AutoTask> sortedTasks = goal.getTasks().stream()
                     .sorted(Comparator.comparingInt(AutoTask::getOrder))
@@ -791,7 +813,8 @@ public class CommandRouter implements CommandPort {
                 case FAILED -> "[!]";
                 case SKIPPED -> "[-]";
                 };
-                sb.append("  ").append(icon).append(" ").append(task.getTitle()).append("\n");
+                sb.append("  ").append(icon).append(" ").append(task.getTitle())
+                        .append(" `task_id: ").append(task.getId()).append("`\n");
             }
             sb.append("\n");
         }
@@ -878,7 +901,7 @@ public class CommandRouter implements CommandPort {
             String tierMsg = modelTier != null ? " (tier: " + modelTier + ")" : "";
             return CommandResult.success(msg("command.plan.enabled") + tierMsg);
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return CommandResult.failure(msg("command.plan.limit", properties.getPlan().getMaxPlans()));
+            return CommandResult.failure(msg("command.plan.limit", runtimeConfigService.getPlanMaxPlans()));
         }
     }
 
@@ -1009,13 +1032,13 @@ public class CommandRouter implements CommandPort {
             long completed = plan.getCompletedStepCount();
             int total = plan.getSteps().size();
             String statusIcon = switch (plan.getStatus()) {
-            case COLLECTING -> "\u270D\uFE0F";
-            case READY -> "\u23F3";
-            case APPROVED -> "\u2705";
-            case EXECUTING -> "\u25B6\uFE0F";
-            case COMPLETED -> "\u2705";
-            case PARTIALLY_COMPLETED -> "\u26A0\uFE0F";
-            case CANCELLED -> "\u274C";
+            case COLLECTING -> "✍️";
+            case READY -> "⏳";
+            case APPROVED -> "✅";
+            case EXECUTING -> "▶️";
+            case COMPLETED -> "✅";
+            case PARTIALLY_COMPLETED -> "⚠️";
+            case CANCELLED -> "❌";
             };
             sb.append(String.format("%s `%s` [%s] (%d/%d steps)%n",
                     statusIcon, plan.getId().substring(0, 8), plan.getStatus(), completed, total));
@@ -1184,7 +1207,7 @@ public class CommandRouter implements CommandPort {
                 .withZone(ZoneOffset.UTC);
 
         for (ScheduleEntry entry : schedules) {
-            String enabledIcon = entry.isEnabled() ? "\u2705" : "\u274C";
+            String enabledIcon = entry.isEnabled() ? "✅" : "❌";
             sb.append(String.format("%s `%s` [%s] -> %s%n",
                     enabledIcon, entry.getId(), entry.getType(), entry.getTargetId()));
             sb.append("  Cron: `").append(entry.getCronExpression()).append("`");
@@ -1216,7 +1239,141 @@ public class CommandRouter implements CommandPort {
         }
     }
 
+    private CommandResult handleLater(List<String> args, String channelType, String conversationKey) {
+        if (!runtimeConfigService.isDelayedActionsEnabled()) {
+            return CommandResult.success(msg("command.later.not-available"));
+        }
+        if (delayedSessionActionService == null) {
+            return CommandResult.success(msg("command.later.not-available"));
+        }
+        if (channelType == null || conversationKey == null) {
+            return CommandResult.failure(msg("command.later.not-available"));
+        }
+        if (delayedActionPolicyService != null && !delayedActionPolicyService.canScheduleActions(channelType)) {
+            return CommandResult.success(msg("command.later.not-available"));
+        }
+        if (args.isEmpty()) {
+            return CommandResult.success(msg("command.later.usage"));
+        }
+
+        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
+        return switch (subcommand) {
+        case SUBCMD_LIST -> handleLaterList(channelType, conversationKey);
+        case "cancel" -> handleLaterCancel(args.subList(1, args.size()), channelType, conversationKey);
+        case "now" -> handleLaterRunNow(args.subList(1, args.size()), channelType, conversationKey);
+        case CMD_HELP -> CommandResult.success(msg("command.later.help.text"));
+        default -> CommandResult.success(msg("command.later.usage"));
+        };
+    }
+
+    private CommandResult handleLaterList(String channelType, String conversationKey) {
+        List<DelayedSessionAction> actions = delayedSessionActionService.listActions(channelType, conversationKey);
+        if (actions.isEmpty()) {
+            return CommandResult.success(msg("command.later.list.empty"));
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(msg("command.later.list.title", actions.size())).append(DOUBLE_NEWLINE);
+        for (DelayedSessionAction action : actions) {
+            sb.append("`").append(action.getId()).append("` ");
+            sb.append(resolveLaterSummary(action)).append("\n");
+            sb.append(msg("command.later.list.status")).append(": ");
+            sb.append(resolveLaterStatus(action)).append("\n");
+            sb.append(msg("command.later.list.next-check")).append(": ");
+            sb.append(formatLaterRunAt(action));
+            if (action.isCancelOnUserActivity()) {
+                sb.append("\n").append(msg("command.later.list.cancel-on-activity"));
+            }
+            sb.append(DOUBLE_NEWLINE);
+        }
+        return CommandResult.success(sb.toString().stripTrailing());
+    }
+
+    private CommandResult handleLaterCancel(List<String> args, String channelType, String conversationKey) {
+        if (args.isEmpty()) {
+            return CommandResult.success(msg("command.later.cancel.usage"));
+        }
+        String actionId = args.get(0);
+        boolean cancelled = delayedSessionActionService.cancelAction(actionId, channelType, conversationKey);
+        if (!cancelled) {
+            return CommandResult.failure(msg("command.later.not-found", actionId));
+        }
+        return CommandResult.success(msg("command.later.cancelled", actionId));
+    }
+
+    private CommandResult handleLaterRunNow(List<String> args, String channelType, String conversationKey) {
+        if (args.isEmpty()) {
+            return CommandResult.success(msg("command.later.now.usage"));
+        }
+        String actionId = args.get(0);
+        boolean updated = delayedSessionActionService.runNow(actionId, channelType, conversationKey);
+        if (!updated) {
+            return CommandResult.failure(msg("command.later.not-found", actionId));
+        }
+        return CommandResult.success(msg("command.later.now.done", actionId));
+    }
+
     private String msg(String key, Object... args) {
         return preferencesService.getMessage(key, args);
+    }
+
+    private String resolveLaterSummary(DelayedSessionAction action) {
+        String humanSummary = payloadString(action, "humanSummary");
+        if (humanSummary != null) {
+            return humanSummary;
+        }
+        String message = payloadString(action, "message");
+        String originalSummary = payloadString(action, "originalSummary");
+        if (action.getKind() == null) {
+            return msg("command.later.kind.default");
+        }
+        return switch (action.getKind()) {
+        case REMIND_LATER -> message != null ? msg("command.later.kind.reminder.with-message", message)
+                : msg("command.later.kind.reminder");
+        case RUN_LATER -> originalSummary != null ? msg("command.later.kind.check-back.with-summary", originalSummary)
+                : msg("command.later.kind.check-back");
+        case NOTIFY_JOB_READY -> message != null ? message : msg("command.later.kind.job-result");
+        };
+    }
+
+    private String resolveLaterStatus(DelayedSessionAction action) {
+        if (action == null || action.getStatus() == null) {
+            return msg("command.later.status.unknown");
+        }
+        return switch (action.getStatus()) {
+        case SCHEDULED -> msg("command.later.status.scheduled");
+        case LEASED -> msg("command.later.status.leased");
+        case COMPLETED -> msg("command.later.status.completed");
+        case CANCELLED -> msg("command.later.status.cancelled");
+        case DEAD_LETTER -> msg("command.later.status.dead-letter");
+        };
+    }
+
+    private String formatLaterRunAt(DelayedSessionAction action) {
+        if (action == null || action.getRunAt() == null) {
+            return msg("command.later.list.no-time");
+        }
+        ZoneId zoneId = resolveUserZoneId();
+        return LATER_TIME_FORMATTER.format(action.getRunAt().atZone(zoneId));
+    }
+
+    private ZoneId resolveUserZoneId() {
+        try {
+            UserPreferences preferences = preferencesService.getPreferences();
+            if (preferences != null && preferences.getTimezone() != null && !preferences.getTimezone().isBlank()) {
+                return ZoneId.of(preferences.getTimezone().trim());
+            }
+        } catch (RuntimeException e) {
+            log.debug("Falling back to UTC for delayed action time formatting: {}", e.getMessage());
+        }
+        return ZoneOffset.UTC;
+    }
+
+    private String payloadString(DelayedSessionAction action, String key) {
+        if (action == null || action.getPayload() == null) {
+            return null;
+        }
+        Object value = action.getPayload().get(key);
+        return value instanceof String stringValue && !stringValue.isBlank() ? stringValue.trim() : null;
     }
 }

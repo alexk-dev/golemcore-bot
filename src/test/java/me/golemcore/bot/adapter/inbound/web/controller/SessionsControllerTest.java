@@ -5,17 +5,32 @@ import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
+import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSnapshotDto;
+import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceSnapshot;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.model.trace.TraceStorageStats;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.test.StepVerifier;
 
+import java.lang.reflect.Method;
 import java.security.Principal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -23,6 +38,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -32,20 +48,19 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import reactor.test.StepVerifier;
-import org.mockito.ArgumentCaptor;
-
 class SessionsControllerTest {
 
     private SessionPort sessionPort;
     private ActiveSessionPointerService pointerService;
+    private TraceSnapshotCompressionService compressionService;
     private SessionsController controller;
 
     @BeforeEach
     void setUp() {
         sessionPort = mock(SessionPort.class);
         pointerService = mock(ActiveSessionPointerService.class);
-        controller = new SessionsController(sessionPort, pointerService);
+        compressionService = new TraceSnapshotCompressionService();
+        controller = new SessionsController(sessionPort, pointerService, compressionService);
     }
 
     @Test
@@ -87,6 +102,29 @@ class SessionsControllerTest {
     }
 
     @Test
+    void shouldResolveSessionByChatIdAlias() {
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .chatId("legacy-chat-id")
+                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-1"))
+                .createdAt(Instant.now())
+                .messages(List.of())
+                .build();
+        when(sessionPort.listByChannelType("web")).thenReturn(List.of(session));
+
+        StepVerifier.create(controller.resolveSession("web", "legacy-chat-id"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionSummaryDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("web:conv-1", body.getId());
+                    assertEquals("conv-1", body.getConversationKey());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldGetSessionById() {
         Message msg = Message.builder()
                 .id("m1").role("user").content("hello")
@@ -104,6 +142,605 @@ class SessionsControllerTest {
                     assertEquals("s1", body.getId());
                     assertEquals(1, body.getMessages().size());
                     assertEquals("hello", body.getMessages().get(0).getContent());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeSessionTraceDetail() {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-1")
+                .role("request")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(
+                        compressionService.compress("{\"prompt\":\"hello\"}".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(18L)
+                .compressedSize(26L)
+                .build();
+        TraceSpanRecord rootSpan = TraceSpanRecord.builder()
+                .spanId("span-root")
+                .name("web.request")
+                .kind(TraceSpanKind.INGRESS)
+                .statusCode(TraceStatusCode.OK)
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .attributes(Map.of("channel", "web"))
+                .snapshots(List.of(snapshot))
+                .build();
+        TraceSpanRecord llmSpan = TraceSpanRecord.builder()
+                .spanId("span-llm")
+                .parentSpanId("span-root")
+                .name("llm.chat")
+                .kind(TraceSpanKind.LLM)
+                .statusCode(TraceStatusCode.OK)
+                .startedAt(Instant.parse("2026-03-20T10:00:00.200Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:00.900Z"))
+                .attributes(Map.of("attempt", 1))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-trace")
+                .channelType("web")
+                .chatId("chat-1")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-1")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .compressedSnapshotBytes(26L)
+                        .uncompressedSnapshotBytes(18L)
+                        .spans(List.of(rootSpan, llmSpan))
+                        .build()))
+                .traceStorageStats(TraceStorageStats.builder()
+                        .compressedSnapshotBytes(26L)
+                        .uncompressedSnapshotBytes(18L)
+                        .build())
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-trace")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSessionTrace("s-trace"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("s-trace", response.getBody().getSessionId());
+                    assertEquals(1, response.getBody().getTraces().size());
+                    assertEquals("trace-1", response.getBody().getTraces().get(0).getTraceId());
+                    assertEquals(2, response.getBody().getTraces().get(0).getSpans().size());
+                    assertEquals(1, response.getBody().getTraces().get(0).getSpans().get(0).getSnapshots().size());
+                    assertEquals(26L, response.getBody().getStorageStats().getCompressedSnapshotBytes());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeSessionTraceSummaryForSparseTraceData() {
+        TraceSpanRecord timedSpan = TraceSpanRecord.builder()
+                .spanId("span-timed")
+                .name("tool.run")
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:05Z"))
+                .build();
+        TraceRecord timedTrace = TraceRecord.builder()
+                .traceId("trace-early")
+                .rootSpanId("missing-root")
+                .traceName("tool.trace")
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:05Z"))
+                .spans(List.of(timedSpan))
+                .build();
+        TraceRecord sparseTrace = TraceRecord.builder()
+                .traceId("trace-late")
+                .rootSpanId("missing-root")
+                .traceName("sparse.trace")
+                .startedAt(null)
+                .endedAt(null)
+                .truncated(true)
+                .spans(Arrays.asList((TraceSpanRecord) null))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-summary")
+                .channelType("web")
+                .chatId("chat-summary")
+                .traces(Arrays.asList(sparseTrace, null, timedTrace))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-summary")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSessionTraceSummary("s-summary"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionTraceSummaryDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("s-summary", body.getSessionId());
+                    assertEquals(2, body.getTraceCount());
+                    assertEquals(2, body.getSpanCount());
+                    assertEquals(0, body.getSnapshotCount());
+                    assertEquals("trace-early", body.getTraces().get(0).getTraceId());
+                    assertEquals("trace-late", body.getTraces().get(1).getTraceId());
+                    assertEquals("missing-root", body.getTraces().get(0).getRootSpanId());
+                    assertEquals(5000L, body.getTraces().get(0).getDurationMs());
+                    assertNull(body.getTraces().get(1).getRootKind());
+                    assertNull(body.getTraces().get(1).getRootStatusCode());
+                    assertNull(body.getTraces().get(1).getStartedAt());
+                    assertNull(body.getTraces().get(1).getEndedAt());
+                    assertNull(body.getTraces().get(1).getDurationMs());
+                    assertTrue(body.getTraces().get(1).isTruncated());
+                    assertEquals(0L, body.getStorageStats().getCompressedSnapshotBytes());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldThrowNotFoundWhenTraceSummarySessionMissing() {
+        when(sessionPort.get("missing")).thenReturn(Optional.empty());
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.getSessionTraceSummary("missing"));
+
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+    }
+
+    @Test
+    void shouldExposeTraceDetailAndExportForSparseSnapshots() {
+        String longPayload = "x".repeat(5000);
+        byte[] compressedPayload = compressionService.compress(longPayload.getBytes(StandardCharsets.UTF_8));
+        TraceSnapshot previewableSnapshot = TraceSnapshot.builder()
+                .snapshotId("snap-preview")
+                .role("request")
+                .contentType("text/plain")
+                .encoding("zstd")
+                .compressedPayload(compressedPayload)
+                .originalSize((long) longPayload.length())
+                .compressedSize((long) compressedPayload.length)
+                .build();
+        TraceSnapshot missingPayloadSnapshot = TraceSnapshot.builder()
+                .snapshotId("snap-empty")
+                .role("response")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(null)
+                .originalSize(0L)
+                .compressedSize(0L)
+                .build();
+        TraceSpanRecord rootSpan = TraceSpanRecord.builder()
+                .spanId("span-root")
+                .name("web.request")
+                .kind(TraceSpanKind.INGRESS)
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .events(List.of(me.golemcore.bot.domain.model.trace.TraceEventRecord.builder()
+                        .name("request.received")
+                        .timestamp(Instant.parse("2026-03-20T10:00:00.500Z"))
+                        .attributes(Map.of("channel", "web"))
+                        .build()))
+                .snapshots(List.of(previewableSnapshot))
+                .build();
+        TraceSpanRecord childSpan = TraceSpanRecord.builder()
+                .spanId("span-child")
+                .parentSpanId("span-root")
+                .name("response.route")
+                .kind(null)
+                .statusCode(null)
+                .startedAt(Instant.parse("2026-03-20T10:00:02Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:02.500Z"))
+                .events(null)
+                .snapshots(List.of(missingPayloadSnapshot))
+                .build();
+        TraceRecord trace = TraceRecord.builder()
+                .traceId("trace-detail")
+                .rootSpanId("missing-root")
+                .traceName("web.message")
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:03Z"))
+                .spans(Arrays.asList(childSpan, null, rootSpan))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-detail")
+                .channelType("web")
+                .chatId("chat-detail")
+                .traces(List.of(trace))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-detail")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSessionTrace("s-detail"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals(2, response.getBody().getTraces().get(0).getSpans().size());
+                    assertEquals("span-root", response.getBody().getTraces().get(0).getSpans().get(0).getSpanId());
+                    assertEquals("span-child", response.getBody().getTraces().get(0).getSpans().get(1).getSpanId());
+                    assertEquals("request.received", response.getBody().getTraces().get(0).getSpans().get(0)
+                            .getEvents().get(0).getName());
+                    assertTrue(response.getBody().getTraces().get(0).getSpans().get(0)
+                            .getSnapshots().get(0).isPayloadAvailable());
+                    assertTrue(response.getBody().getTraces().get(0).getSpans().get(0)
+                            .getSnapshots().get(0).isPayloadPreviewTruncated());
+                    assertFalse(response.getBody().getTraces().get(0).getSpans().get(1)
+                            .getSnapshots().get(0).isPayloadAvailable());
+                    assertNull(response.getBody().getTraces().get(0).getSpans().get(1)
+                            .getSnapshots().get(0).getPayloadPreview());
+                })
+                .verifyComplete();
+
+        StepVerifier.create(controller.exportSessionTrace("s-detail"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> traces = (List<Map<String, Object>>) response.getBody().get("traces");
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> spans = (List<Map<String, Object>>) traces.get(0).get("spans");
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> firstSnapshots = (List<Map<String, Object>>) spans.get(0)
+                            .get("snapshots");
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> secondSnapshots = (List<Map<String, Object>>) spans.get(1)
+                            .get("snapshots");
+                    assertEquals(longPayload, firstSnapshots.get(0).get("payloadText"));
+                    assertNotNull(firstSnapshots.get(0).get("payloadBase64"));
+                    assertNull(secondSnapshots.get(0).get("payloadText"));
+                    assertNull(secondSnapshots.get(0).get("payloadBase64"));
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> events = (List<Map<String, Object>>) spans.get(0).get("events");
+                    assertEquals("request.received", events.get(0).get("name"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+    void shouldHideSnapshotPreviewWhenPreviewDisabled() throws Exception {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-hidden")
+                .role("request")
+                .contentType("text/plain")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress("hidden".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(6L)
+                .compressedSize(18L)
+                .build();
+
+        Method method = SessionsController.class.getDeclaredMethod(
+                "toTraceSnapshotDto", TraceSnapshot.class, boolean.class);
+        method.setAccessible(true);
+        SessionTraceSnapshotDto dto = (SessionTraceSnapshotDto) method.invoke(controller, snapshot, false);
+
+        assertFalse(dto.isPayloadAvailable());
+        assertNull(dto.getPayloadPreview());
+        assertFalse(dto.isPayloadPreviewTruncated());
+    }
+
+    @Test
+    void shouldExportSessionTraceSnapshotPayloads() {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-1")
+                .role("response")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress("{\"answer\":\"ok\"}".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(15L)
+                .compressedSize(24L)
+                .build();
+        TraceSpanRecord span = TraceSpanRecord.builder()
+                .spanId("span-root")
+                .name("response.route")
+                .kind(TraceSpanKind.OUTBOUND)
+                .statusCode(TraceStatusCode.OK)
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .snapshots(List.of(snapshot))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-export")
+                .channelType("web")
+                .chatId("chat-2")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-export")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(span))
+                        .build()))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-export")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.exportSessionTrace("s-export"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("s-export", response.getBody().get("sessionId"));
+                    assertTrue(response.getBody().containsKey("traces"));
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> traces = (List<Map<String, Object>>) response.getBody().get("traces");
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> spans = (List<Map<String, Object>>) traces.get(0).get("spans");
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> snapshots = (List<Map<String, Object>>) spans.get(0).get("snapshots");
+                    assertEquals("{\"answer\":\"ok\"}", snapshots.get(0).get("payloadText"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeAssistantAttachmentsInSessionDetail() {
+        Message msg = Message.builder()
+                .id("m-image")
+                .role("assistant")
+                .content("Here is the screenshot")
+                .metadata(Map.of(
+                        "attachments", List.of(Map.of(
+                                "type", "image",
+                                "name", "capture.png",
+                                "mimeType", "image/png",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/tool/capture.png",
+                                "thumbnailBase64", "thumb-base64"))))
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-image")
+                .channelType("web")
+                .chatId("123")
+                .createdAt(Instant.now())
+                .messages(List.of(msg))
+                .build();
+        when(sessionPort.get("s-image")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSession("s-image"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionDetailDto.MessageDto message = response.getBody().getMessages().get(0);
+                    assertNotNull(message.getAttachments());
+                    assertEquals(1, message.getAttachments().size());
+                    assertEquals("capture.png", message.getAttachments().get(0).getName());
+                    assertEquals(".golemcore/tool-artifacts/session/tool/capture.png",
+                            message.getAttachments().get(0).getInternalFilePath());
+                    assertEquals("thumb-base64", message.getAttachments().get(0).getThumbnailBase64());
+                    assertTrue(message.getAttachments().get(0).getUrl().contains("/api/files/download?path="));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldHideInternalMessagesFromSessionDetailAndPaging() {
+        Message visibleUser = Message.builder()
+                .id("m-visible")
+                .role("user")
+                .content("hello")
+                .timestamp(Instant.now())
+                .build();
+        Message internalUser = Message.builder()
+                .id("m-internal")
+                .role("user")
+                .content("internal continue")
+                .metadata(Map.of(ContextAttributes.MESSAGE_INTERNAL, true))
+                .timestamp(Instant.now())
+                .build();
+        Message assistant = Message.builder()
+                .id("m-assistant")
+                .role("assistant")
+                .content("reply")
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-hidden")
+                .channelType("web")
+                .chatId("chat-hidden")
+                .createdAt(Instant.now())
+                .messages(List.of(visibleUser, internalUser, assistant))
+                .build();
+        when(sessionPort.get("s-hidden")).thenReturn(Optional.of(session));
+        when(sessionPort.listAll()).thenReturn(List.of(session));
+
+        StepVerifier.create(controller.getSession("s-hidden"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionDetailDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(2, body.getMessages().size());
+                    assertEquals("m-visible", body.getMessages().get(0).getId());
+                    assertEquals("m-assistant", body.getMessages().get(1).getId());
+                })
+                .verifyComplete();
+
+        StepVerifier.create(controller.getSessionMessages("s-hidden", 10, null))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(2, response.getBody().getMessages().size());
+                })
+                .verifyComplete();
+
+        StepVerifier.create(controller.listSessions(null))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(2, response.getBody().get(0).getMessageCount());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldPageVisibleMessagesAndKeepAttachmentOnlyEntries() {
+        Message attachmentOnly = Message.builder()
+                .id("m-1")
+                .role("user")
+                .content("")
+                .metadata(Map.of(
+                        "attachments", List.of(Map.of("type", "image", "name", "diagram.png")),
+                        "clientMessageId", "client-msg-1"))
+                .timestamp(Instant.now())
+                .build();
+        Message assistant = Message.builder()
+                .id("m-2")
+                .role("assistant")
+                .content("Reasoned reply")
+                .metadata(Map.of(
+                        "model", "openai/o3-mini",
+                        "modelTier", "smart",
+                        "reasoning", "high"))
+                .timestamp(Instant.now())
+                .build();
+        Message finalAssistant = Message.builder()
+                .id("m-3")
+                .role("assistant")
+                .content("Final answer")
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-page")
+                .channelType("web")
+                .chatId("chat-page")
+                .createdAt(Instant.now())
+                .messages(List.of(attachmentOnly, assistant, finalAssistant))
+                .build();
+        when(sessionPort.get("s-page")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSessionMessages("s-page", 2, null))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(2, response.getBody().getMessages().size());
+                    assertTrue(response.getBody().isHasMore());
+                    assertEquals("m-2", response.getBody().getOldestMessageId());
+                    assertEquals("high", response.getBody().getMessages().get(0).getReasoning());
+                    assertEquals("Final answer", response.getBody().getMessages().get(1).getContent());
+                })
+                .verifyComplete();
+
+        StepVerifier.create(controller.getSessionMessages("s-page", 2, "m-2"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(1, response.getBody().getMessages().size());
+                    SessionDetailDto.MessageDto message = response.getBody().getMessages().get(0);
+                    assertEquals("[1 attachment]", message.getContent());
+                    assertEquals("client-msg-1", message.getClientMessageId());
+                    assertFalse(response.getBody().isHasMore());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldRejectUnknownBeforeMessageIdWhenPagingMessages() {
+        AgentSession session = AgentSession.builder()
+                .id("s-page")
+                .channelType("web")
+                .chatId("chat-page")
+                .createdAt(Instant.now())
+                .messages(List.of(Message.builder()
+                        .id("m-1")
+                        .role("user")
+                        .content("hello")
+                        .timestamp(Instant.now())
+                        .build()))
+                .build();
+        when(sessionPort.get("s-page")).thenReturn(Optional.of(session));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.getSessionMessages("s-page", 50, "missing-message"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("beforeMessageId not found", exception.getReason());
+    }
+
+    @Test
+    void shouldKeepAssistantTierNullWhenHistoryMetadataIsMissing() {
+        Message msg = Message.builder()
+                .id("m1")
+                .role("assistant")
+                .content("hello")
+                .metadata(Map.of("model", "deepseek-coder-v2-lite"))
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("web")
+                .chatId("123")
+                .createdAt(Instant.now())
+                .messages(List.of(msg))
+                .build();
+        when(sessionPort.get("s1")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSession("s1"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionDetailDto body = response.getBody();
+                    assertNotNull(body);
+                    assertNull(body.getMessages().get(0).getModelTier());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeSkillMetadataWhenPresent() {
+        Message msg = Message.builder()
+                .id("m-skill")
+                .role("assistant")
+                .content("hello")
+                .metadata(
+                        Map.of(ContextAttributes.ACTIVE_SKILL_NAME, "golemcore/superpowers/superpowers-code-reviewer"))
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-skill")
+                .channelType("web")
+                .chatId("123")
+                .createdAt(Instant.now())
+                .messages(List.of(msg))
+                .build();
+        when(sessionPort.get("s-skill")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSession("s-skill"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionDetailDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(
+                            "golemcore/superpowers/superpowers-code-reviewer",
+                            body.getMessages().get(0).getSkill());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeAutoRunMetadataInSessionDetail() {
+        Message msg = Message.builder()
+                .id("m-auto")
+                .role("assistant")
+                .content("auto result")
+                .metadata(Map.of(
+                        ContextAttributes.AUTO_MODE, true,
+                        ContextAttributes.AUTO_RUN_ID, "run-1",
+                        ContextAttributes.AUTO_SCHEDULE_ID, "sched-1",
+                        ContextAttributes.AUTO_GOAL_ID, "goal-1",
+                        ContextAttributes.AUTO_TASK_ID, "task-1"))
+                .timestamp(Instant.now())
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-auto")
+                .channelType("web")
+                .chatId("123")
+                .createdAt(Instant.now())
+                .messages(List.of(msg))
+                .build();
+        when(sessionPort.get("s-auto")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.getSession("s-auto"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SessionDetailDto body = response.getBody();
+                    assertNotNull(body);
+                    SessionDetailDto.MessageDto detailMessage = body.getMessages().get(0);
+                    assertTrue(detailMessage.isAutoMode());
+                    assertEquals("run-1", detailMessage.getAutoRunId());
+                    assertEquals("sched-1", detailMessage.getAutoScheduleId());
+                    assertEquals("goal-1", detailMessage.getAutoGoalId());
+                    assertEquals("task-1", detailMessage.getAutoTaskId());
                 })
                 .verifyComplete();
     }

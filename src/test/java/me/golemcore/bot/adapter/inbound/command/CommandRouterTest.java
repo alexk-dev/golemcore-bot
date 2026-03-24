@@ -4,9 +4,10 @@ import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.CompactionReason;
+import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
-import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ScheduleEntry;
@@ -15,16 +16,16 @@ import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.CompactionService;
+import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
@@ -33,8 +34,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.ApplicationEventPublisher;
-
-import java.util.Properties;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -45,10 +44,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.RETURNS_DEFAULTS;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyString;
@@ -57,7 +58,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.RETURNS_DEFAULTS;
 
 @SuppressWarnings({ "PMD.AvoidDuplicateLiterals", "unchecked" })
 class CommandRouterTest {
@@ -93,12 +93,14 @@ class CommandRouterTest {
     private SessionPort sessionService;
     private UsageTrackingPort usageTracker;
     private UserPreferencesService preferencesService;
-    private CompactionService compactionService;
+    private CompactionOrchestrationService compactionService;
     private AutoModeService autoModeService;
     private ModelSelectionService modelSelectionService;
     private PlanService planService;
     private PlanExecutionService planExecutionService;
+    private RuntimeConfigService runtimeConfigService;
     private ScheduleService scheduleService;
+    private DelayedActionPolicyService delayedActionPolicyService;
     private SessionRunCoordinator runCoordinator;
     private ApplicationEventPublisher eventPublisher;
     private ObjectProvider<BuildProperties> buildPropertiesProvider;
@@ -112,7 +114,7 @@ class CommandRouterTest {
         skillComponent = mock(SkillComponent.class);
         sessionService = mock(SessionPort.class);
         usageTracker = mock(UsageTrackingPort.class);
-        compactionService = mock(CompactionService.class);
+        compactionService = mock(CompactionOrchestrationService.class);
 
         // Default: pass through message key + args for easy assertion.
         preferencesService = mock(UserPreferencesService.class, inv -> {
@@ -123,8 +125,9 @@ class CommandRouterTest {
                     StringBuilder sb = new StringBuilder(key);
                     Object vararg = allArgs[1];
                     if (vararg instanceof Object[] arr) {
-                        for (Object a : arr)
+                        for (Object a : arr) {
                             sb.append(" ").append(a);
+                        }
                     } else {
                         for (int i = 1; i < allArgs.length; i++) {
                             sb.append(" ").append(allArgs[i]);
@@ -142,7 +145,9 @@ class CommandRouterTest {
         modelSelectionService = mock(ModelSelectionService.class);
         planService = mock(PlanService.class);
         planExecutionService = mock(PlanExecutionService.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         scheduleService = mock(ScheduleService.class);
+        delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         runCoordinator = mock(SessionRunCoordinator.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
 
@@ -150,7 +155,7 @@ class CommandRouterTest {
         ToolComponent tool2 = mockTool(TOOL_SHELL, "Shell command execution", true);
         ToolComponent tool3 = mockTool("disabled-tool", "Disabled tool", false);
 
-        BotProperties properties = new BotProperties();
+        when(runtimeConfigService.getPlanMaxPlans()).thenReturn(5);
 
         buildPropertiesProvider = mock(ObjectProvider.class);
 
@@ -166,10 +171,11 @@ class CommandRouterTest {
                 planService,
                 planExecutionService,
                 scheduleService,
+                delayedActionPolicyService,
+                null,
                 runCoordinator,
                 eventPublisher,
-                properties,
-                mock(RuntimeConfigService.class),
+                runtimeConfigService,
                 buildPropertiesProvider);
     }
 
@@ -323,58 +329,42 @@ class CommandRouterTest {
 
     @Test
     void compactWithSummary() throws Exception {
-        List<Message> oldMessages = List.of(
-                Message.builder().role("user").content("Hello").timestamp(Instant.now()).build(),
-                Message.builder().role("assistant").content("Hi there!").timestamp(Instant.now()).build());
-        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(oldMessages);
-
-        when(compactionService.summarize(oldMessages)).thenReturn("User greeted the bot.");
-        Message summaryMsg = Message.builder().role("system").content("[Conversation summary]\nUser greeted the bot.")
-                .build();
-        when(compactionService.createSummaryMessage("User greeted the bot.")).thenReturn(summaryMsg);
-        when(sessionService.compactWithSummary(SESSION_ID, 10, summaryMsg)).thenReturn(20);
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10))
+                .thenReturn(CompactionResult.builder().removed(20).usedSummary(true).build());
 
         CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("20"));
         assertTrue(result.output().contains("command.compact.done.summary"));
-        verify(compactionService).summarize(oldMessages);
-        verify(sessionService).compactWithSummary(SESSION_ID, 10, summaryMsg);
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10);
     }
 
     @Test
     void compactFallbackWhenLlmUnavailable() throws Exception {
-        List<Message> oldMessages = List.of(
-                Message.builder().role("user").content("Hello").timestamp(Instant.now()).build());
-        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(oldMessages);
-
-        when(compactionService.summarize(oldMessages)).thenReturn(null);
-        when(sessionService.compactMessages(SESSION_ID, 10)).thenReturn(15);
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10))
+                .thenReturn(CompactionResult.builder().removed(15).usedSummary(false).build());
 
         CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of(), CTX).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("15"));
-        assertTrue(result.output().contains("command.compact.done "));
-        verify(sessionService).compactMessages(SESSION_ID, 10);
-        verify(sessionService, never()).compactWithSummary(anyString(), anyInt(), any());
+        assertTrue(result.output().contains("command.compact.done"));
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10);
     }
 
     @Test
     void compactCommandWithArg() throws Exception {
-        List<Message> oldMessages = List.of(
-                Message.builder().role("user").content("Hi").timestamp(Instant.now()).build());
-        when(sessionService.getMessagesToCompact(SESSION_ID, 5)).thenReturn(oldMessages);
-        when(compactionService.summarize(oldMessages)).thenReturn(null);
-        when(sessionService.compactMessages(SESSION_ID, 5)).thenReturn(15);
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 5))
+                .thenReturn(CompactionResult.builder().removed(15).usedSummary(false).build());
 
         CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of("5"), CTX).get();
         assertTrue(result.success());
-        verify(sessionService).compactMessages(SESSION_ID, 5);
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 5);
     }
 
     @Test
     void compactCommandNothingToCompact() throws Exception {
-        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(List.of());
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
         when(sessionService.getMessageCount(SESSION_ID)).thenReturn(5);
 
         CommandPort.CommandResult result = router.execute(CMD_COMPACT, List.of(), CTX).get();
@@ -618,30 +608,32 @@ class CommandRouterTest {
 
     @Test
     void compactClampsKeepToMinOne() throws Exception {
-        when(sessionService.getMessagesToCompact(SESSION_ID, 1)).thenReturn(List.of());
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 1))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
         when(sessionService.getMessageCount(SESSION_ID)).thenReturn(3);
 
         router.execute(CMD_COMPACT, List.of("0"), CTX).get();
-        verify(sessionService).getMessagesToCompact(SESSION_ID, 1);
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 1);
     }
 
     @Test
     void compactClampsKeepToMax100() throws Exception {
-        when(sessionService.getMessagesToCompact(SESSION_ID, 100)).thenReturn(List.of());
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 100))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
         when(sessionService.getMessageCount(SESSION_ID)).thenReturn(3);
 
         router.execute(CMD_COMPACT, List.of("999"), CTX).get();
-        verify(sessionService).getMessagesToCompact(SESSION_ID, 100);
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 100);
     }
 
     @Test
     void compactIgnoresNonNumericArg() throws Exception {
-        when(sessionService.getMessagesToCompact(SESSION_ID, 10)).thenReturn(List.of());
+        when(compactionService.compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
         when(sessionService.getMessageCount(SESSION_ID)).thenReturn(3);
 
         router.execute(CMD_COMPACT, List.of("abc"), CTX).get();
-        // Falls back to default 10
-        verify(sessionService).getMessagesToCompact(SESSION_ID, 10);
+        verify(compactionService).compact(SESSION_ID, CompactionReason.MANUAL_COMMAND, 10);
     }
 
     // ===== listCommands includes auto when enabled =====
@@ -1159,7 +1151,16 @@ class CommandRouterTest {
 
     @Test
     void tierAcceptsAllValidTiers() throws Exception {
-        for (String tier : List.of(TIER_BALANCED, TIER_SMART, TIER_CODING, "deep")) {
+        for (String tier : List.of(
+                TIER_BALANCED,
+                TIER_SMART,
+                "deep",
+                TIER_CODING,
+                "special1",
+                "special2",
+                "special3",
+                "special4",
+                "special5")) {
             UserPreferences prefs = UserPreferences.builder().build();
             when(preferencesService.getPreferences()).thenReturn(prefs);
 
@@ -1422,7 +1423,16 @@ class CommandRouterTest {
     void modelShowCommand() throws Exception {
         when(preferencesService.getPreferences()).thenReturn(
                 UserPreferences.builder().tierOverrides(new HashMap<>()).build());
-        for (String tier : List.of(TIER_BALANCED, TIER_SMART, TIER_CODING, "deep")) {
+        for (String tier : List.of(
+                TIER_BALANCED,
+                TIER_SMART,
+                "deep",
+                TIER_CODING,
+                "special1",
+                "special2",
+                "special3",
+                "special4",
+                "special5")) {
             when(modelSelectionService.resolveForTier(tier))
                     .thenReturn(new ModelSelectionService.ModelSelection("some-model", "medium"));
         }
@@ -1433,13 +1443,47 @@ class CommandRouterTest {
     }
 
     @Test
+    void modelShowCommandIncludesSpecialTiers() throws Exception {
+        when(preferencesService.getPreferences()).thenReturn(
+                UserPreferences.builder().tierOverrides(new HashMap<>()).build());
+        for (String tier : List.of(
+                TIER_BALANCED,
+                TIER_SMART,
+                "deep",
+                TIER_CODING,
+                "special1",
+                "special2",
+                "special3",
+                "special4",
+                "special5")) {
+            when(modelSelectionService.resolveForTier(tier))
+                    .thenReturn(new ModelSelectionService.ModelSelection("model-for-" + tier, "medium"));
+        }
+
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of(), CTX).get();
+
+        assertTrue(result.success());
+        assertTrue(result.output().contains("special1"));
+        assertTrue(result.output().contains("special5"));
+    }
+
+    @Test
     void modelShowCommandWithOverride() throws Exception {
         when(preferencesService.getPreferences()).thenReturn(
                 UserPreferences.builder()
                         .tierOverrides(new HashMap<>(Map.of(TIER_CODING,
                                 new UserPreferences.TierOverride("openai/gpt-5.1", "high"))))
                         .build());
-        for (String tier : List.of(TIER_BALANCED, TIER_SMART, TIER_CODING, "deep")) {
+        for (String tier : List.of(
+                TIER_BALANCED,
+                TIER_SMART,
+                "deep",
+                TIER_CODING,
+                "special1",
+                "special2",
+                "special3",
+                "special4",
+                "special5")) {
             when(modelSelectionService.resolveForTier(tier))
                     .thenReturn(new ModelSelectionService.ModelSelection("some-model", "medium"));
         }
@@ -1454,7 +1498,7 @@ class CommandRouterTest {
         Map<String, List<ModelSelectionService.AvailableModel>> grouped = new LinkedHashMap<>();
         grouped.put("openai", List.of(
                 new ModelSelectionService.AvailableModel("gpt-5.1", "openai", "GPT-5.1",
-                        true, List.of("low", "medium", "high"))));
+                        true, List.of("low", "medium", "high"), true)));
         when(modelSelectionService.getAvailableModelsGrouped()).thenReturn(grouped);
 
         CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("list"), CTX).get();
@@ -1489,6 +1533,14 @@ class CommandRouterTest {
     }
 
     @Test
+    void modelTierNoSubcommandAcceptsSpecialTier() throws Exception {
+        CommandPort.CommandResult result = router.execute(CMD_MODEL,
+                List.of("special3"), CTX).get();
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.model.usage"));
+    }
+
+    @Test
     void modelSetCommand() throws Exception {
         when(modelSelectionService.validateModel("openai/gpt-5.1"))
                 .thenReturn(new ModelSelectionService.ValidationResult(true, null));
@@ -1496,7 +1548,7 @@ class CommandRouterTest {
                 UserPreferences.builder().tierOverrides(new HashMap<>()).build());
         when(modelSelectionService.getAvailableModels()).thenReturn(List.of(
                 new ModelSelectionService.AvailableModel("gpt-5.1", "openai", "GPT-5.1",
-                        true, List.of("low", "medium", "high"))));
+                        true, List.of("low", "medium", "high"), true)));
 
         CommandPort.CommandResult result = router.execute(CMD_MODEL,
                 List.of(TIER_CODING, "openai/gpt-5.1"), CTX).get();
@@ -1597,7 +1649,7 @@ class CommandRouterTest {
                 .thenReturn(new ModelSelectionService.ValidationResult(false, "level.not.available"));
         when(modelSelectionService.getAvailableModels()).thenReturn(List.of(
                 new ModelSelectionService.AvailableModel("gpt-5.1", "openai", "GPT-5.1",
-                        true, List.of("low", "medium", "high"))));
+                        true, List.of("low", "medium", "high"), true)));
 
         CommandPort.CommandResult result = router.execute(CMD_MODEL,
                 List.of(TIER_CODING, "reasoning", "xhigh"), CTX).get();

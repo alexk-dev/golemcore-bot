@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.model;
 
 import lombok.Builder;
 import lombok.Data;
+import me.golemcore.bot.domain.model.trace.TraceContext;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -53,12 +54,12 @@ public class AgentContext {
     private List<Skill> activeSkills = new ArrayList<>();
 
     /**
-     * The skill selected by routing (if skill matcher is enabled).
+     * The active skill for the current turn.
      */
     private Skill activeSkill;
 
     /**
-     * Recommended model tier from skill routing: balanced, smart, coding, deep.
+     * Recommended model tier from explicit selection or the active skill.
      */
     private String modelTier;
 
@@ -67,6 +68,9 @@ public class AgentContext {
 
     @Builder.Default
     private Map<String, Object> attributes = new HashMap<>();
+
+    @Builder.Default
+    private TraceContext traceContext = null;
 
     private int currentIteration;
     private int maxIterations;
@@ -89,6 +93,12 @@ public class AgentContext {
             attributes = new HashMap<>();
         }
         attributes.put(key, value);
+        if (ContextAttributes.TRACE_ID.equals(key)
+                || ContextAttributes.TRACE_SPAN_ID.equals(key)
+                || ContextAttributes.TRACE_PARENT_SPAN_ID.equals(key)
+                || ContextAttributes.TRACE_ROOT_KIND.equals(key)) {
+            syncTraceContextFromAttributes();
+        }
     }
 
     /**
@@ -97,6 +107,33 @@ public class AgentContext {
     @SuppressWarnings("unchecked")
     public <T> T getAttribute(String key) {
         return attributes != null ? (T) attributes.get(key) : null;
+    }
+
+    public TraceContext getTraceContext() {
+        return traceContext;
+    }
+
+    public void setTraceContext(TraceContext traceContext) {
+        this.traceContext = traceContext;
+        if (traceContext == null) {
+            if (attributes != null) {
+                attributes.remove(ContextAttributes.TRACE_ID);
+                attributes.remove(ContextAttributes.TRACE_SPAN_ID);
+                attributes.remove(ContextAttributes.TRACE_PARENT_SPAN_ID);
+                attributes.remove(ContextAttributes.TRACE_ROOT_KIND);
+            }
+            return;
+        }
+        setAttribute(ContextAttributes.TRACE_ID, traceContext.getTraceId());
+        setAttribute(ContextAttributes.TRACE_SPAN_ID, traceContext.getSpanId());
+        if (traceContext.getParentSpanId() != null) {
+            setAttribute(ContextAttributes.TRACE_PARENT_SPAN_ID, traceContext.getParentSpanId());
+        } else if (attributes != null) {
+            attributes.remove(ContextAttributes.TRACE_PARENT_SPAN_ID);
+        }
+        if (traceContext.getRootKind() != null) {
+            setAttribute(ContextAttributes.TRACE_ROOT_KIND, traceContext.getRootKind());
+        }
     }
 
     // --- Typed transient attributes (preferred over string keys for control-flow
@@ -202,4 +239,23 @@ public class AgentContext {
         this.routingOutcome = routingOutcome;
     }
 
+    @SuppressWarnings("PMD.NullAssignment")
+    private void syncTraceContextFromAttributes() {
+        if (attributes == null) {
+            traceContext = null;
+            return;
+        }
+        String traceId = getAttribute(ContextAttributes.TRACE_ID);
+        String spanId = getAttribute(ContextAttributes.TRACE_SPAN_ID);
+        if (traceId == null || traceId.isBlank() || spanId == null || spanId.isBlank()) {
+            traceContext = null;
+            return;
+        }
+        traceContext = TraceContext.builder()
+                .traceId(traceId)
+                .spanId(spanId)
+                .parentSpanId(getAttribute(ContextAttributes.TRACE_PARENT_SPAN_ID))
+                .rootKind(getAttribute(ContextAttributes.TRACE_ROOT_KIND))
+                .build();
+    }
 }

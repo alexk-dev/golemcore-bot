@@ -18,18 +18,25 @@ package me.golemcore.bot.auto;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AutoRunKind;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.service.SessionRunCoordinator;
+import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.service.TraceContextSupport;
+import me.golemcore.bot.domain.service.TraceNamingSupport;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -44,7 +51,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -62,7 +68,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <ul>
  * <li>Ticks at a configurable interval (default 30 seconds)</li>
  * <li>Checks for due schedules via {@link ScheduleService}</li>
- * <li>Sends synthetic messages to the agent loop for due goals/tasks</li>
+ * <li>Submits synthetic messages through {@link SessionRunCoordinator} for due
+ * goals/tasks</li>
  * <li>Sends milestone notifications to configured channels</li>
  * </ul>
  *
@@ -83,10 +90,12 @@ public class AutoModeScheduler {
 
     private final AutoModeService autoModeService;
     private final ScheduleService scheduleService;
-    private final AgentLoop agentLoop;
+    private final SessionRunCoordinator sessionRunCoordinator;
     private final RuntimeConfigService runtimeConfigService;
     private final GoalManagementTool goalManagementTool;
-    private final Map<String, ChannelPort> channelRegistry = new ConcurrentHashMap<>();
+    private final ChannelRegistry channelRegistry;
+    private final SessionPort sessionPort;
+    private final me.golemcore.bot.domain.component.SkillComponent skillComponent;
     private final AtomicBoolean executing = new AtomicBoolean(false);
 
     // Single channel info for milestone notifications
@@ -96,30 +105,27 @@ public class AutoModeScheduler {
     private ScheduledFuture<?> tickTask;
 
     public AutoModeScheduler(AutoModeService autoModeService, ScheduleService scheduleService,
-            AgentLoop agentLoop, RuntimeConfigService runtimeConfigService,
-            GoalManagementTool goalManagementTool, List<ChannelPort> channelPorts) {
+            SessionRunCoordinator sessionRunCoordinator, RuntimeConfigService runtimeConfigService,
+            GoalManagementTool goalManagementTool, ChannelRegistry channelRegistry, SessionPort sessionPort,
+            me.golemcore.bot.domain.component.SkillComponent skillComponent) {
         this.autoModeService = autoModeService;
         this.scheduleService = scheduleService;
-        this.agentLoop = agentLoop;
+        this.sessionRunCoordinator = sessionRunCoordinator;
         this.runtimeConfigService = runtimeConfigService;
         this.goalManagementTool = goalManagementTool;
-        for (ChannelPort port : channelPorts) {
-            channelRegistry.put(port.getChannelType(), port);
-        }
+        this.channelRegistry = channelRegistry;
+        this.sessionPort = sessionPort;
+        this.skillComponent = skillComponent;
     }
 
     @PostConstruct
     public void init() {
-        if (!runtimeConfigService.isAutoModeEnabled()) {
-            log.info("[AutoScheduler] Auto mode disabled");
-            return;
-        }
-
         goalManagementTool.setMilestoneCallback(event -> sendMilestoneNotification(event.message()));
 
         autoModeService.loadState();
 
-        if (runtimeConfigService.isAutoStartEnabled() && !autoModeService.isAutoModeEnabled()) {
+        boolean featureEnabled = runtimeConfigService.isAutoModeEnabled();
+        if (featureEnabled && runtimeConfigService.isAutoStartEnabled() && !autoModeService.isAutoModeEnabled()) {
             autoModeService.enableAutoMode();
             log.info("[AutoScheduler] Auto-started auto mode");
         }
@@ -138,6 +144,9 @@ public class AutoModeScheduler {
                 TimeUnit.SECONDS);
 
         log.info("[AutoScheduler] Started with tick interval: {}s", tickIntervalSeconds);
+        if (!featureEnabled) {
+            log.info("[AutoScheduler] Auto mode feature disabled in runtime config; scheduler is idle");
+        }
     }
 
     @PreDestroy
@@ -172,6 +181,10 @@ public class AutoModeScheduler {
                 channelType, sessionChatId, transportChatId);
     }
 
+    public boolean isExecuting() {
+        return executing.get();
+    }
+
     @EventListener
     public void onChannelRegistered(AutoModeChannelRegisteredEvent event) {
         registerChannel(event.channelType(), event.sessionChatId(), event.transportChatId());
@@ -191,7 +204,7 @@ public class AutoModeScheduler {
             return;
         }
 
-        ChannelPort channel = channelRegistry.get(info.channelType());
+        ChannelPort channel = channelRegistry.get(info.channelType()).orElse(null);
         if (channel == null) {
             log.warn("[AutoScheduler] Channel '{}' not found for notification", info.channelType());
             return;
@@ -210,6 +223,10 @@ public class AutoModeScheduler {
 
     void tick() {
         try {
+            if (!runtimeConfigService.isAutoModeEnabled()) {
+                return;
+            }
+
             if (!autoModeService.isAutoModeEnabled()) {
                 return;
             }
@@ -242,53 +259,271 @@ public class AutoModeScheduler {
     }
 
     private void processSchedule(ScheduleEntry schedule, int timeoutMinutes) {
+        ScheduleMessage scheduleMessage = buildMessageForSchedule(schedule);
+        if (scheduleMessage == null) {
+            log.debug("[AutoScheduler] No action for schedule {}", schedule.getId());
+            return;
+        }
+
+        ChannelInfo info = channelInfo;
+        String sessionChatId = info != null ? info.sessionChatId() : "auto";
+        String transportChatId = info != null ? info.transportChatId() : sessionChatId;
+        String channelType = info != null ? info.channelType() : "auto";
+        String runId = UUID.randomUUID().toString();
+        if (schedule.isClearContextBeforeRun()) {
+            clearSessionContext(channelType, sessionChatId, schedule.getId());
+        }
+
         try {
-            ScheduleMessage scheduleMessage = buildMessageForSchedule(schedule);
-            if (scheduleMessage == null) {
-                log.debug("[AutoScheduler] No action for schedule {}", schedule.getId());
-                return;
-            }
-
             log.info("[AutoScheduler] Processing schedule {}: {}", schedule.getId(), scheduleMessage.content());
-
-            ChannelInfo info = channelInfo;
-            String sessionChatId = info != null ? info.sessionChatId() : "auto";
-            String transportChatId = info != null ? info.transportChatId() : sessionChatId;
-            String channelType = info != null ? info.channelType() : "auto";
-            String runId = UUID.randomUUID().toString();
-
-            Map<String, Object> metadata = new LinkedHashMap<>();
-            metadata.put("auto.mode", true);
-            metadata.put(ContextAttributes.AUTO_RUN_KIND, scheduleMessage.runKind().name());
-            metadata.put(ContextAttributes.AUTO_RUN_ID, runId);
-            metadata.put(ContextAttributes.CONVERSATION_KEY, sessionChatId);
-            metadata.put(ContextAttributes.TRANSPORT_CHAT_ID, transportChatId);
-            if (scheduleMessage.goalId() != null && !scheduleMessage.goalId().isBlank()) {
-                metadata.put(ContextAttributes.AUTO_GOAL_ID, scheduleMessage.goalId());
-            }
-            if (scheduleMessage.taskId() != null && !scheduleMessage.taskId().isBlank()) {
-                metadata.put(ContextAttributes.AUTO_TASK_ID, scheduleMessage.taskId());
-            }
-
-            Message syntheticMessage = Message.builder()
-                    .role("user")
-                    .content(scheduleMessage.content())
-                    .channelType(channelType)
-                    .chatId(sessionChatId)
-                    .senderId("auto")
-                    .metadata(metadata)
-                    .timestamp(Instant.now())
-                    .build();
-
-            CompletableFuture.runAsync(() -> agentLoop.processMessage(syntheticMessage))
-                    .get(timeoutMinutes, TimeUnit.MINUTES);
+            submitAndAwait(scheduleMessage, schedule, timeoutMinutes, channelType, sessionChatId, transportChatId,
+                    runId);
         } catch (TimeoutException e) {
+            recordFailureAndMaybeReflect(scheduleMessage, schedule, timeoutMinutes, channelType, sessionChatId,
+                    transportChatId,
+                    "Run timed out after " + timeoutMinutes + " minutes",
+                    "timeout",
+                    null);
             log.error("[AutoScheduler] Schedule {} timed out after {} minutes",
                     schedule.getId(), timeoutMinutes);
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            recordFailureAndMaybeReflect(scheduleMessage, schedule, timeoutMinutes, channelType, sessionChatId,
+                    transportChatId,
+                    e.getMessage(),
+                    "interrupted",
+                    null);
+            log.error("[AutoScheduler] Schedule {} interrupted: {}",
+                    schedule.getId(), e.getMessage(), e);
+        } catch (ExecutionException e) {
+            recordFailureAndMaybeReflect(scheduleMessage, schedule, timeoutMinutes, channelType, sessionChatId,
+                    transportChatId,
+                    e.getMessage(),
+                    "execution_exception",
+                    null);
             log.error("[AutoScheduler] Failed to process schedule {}: {}",
                     schedule.getId(), e.getMessage(), e);
         }
+    }
+
+    private void submitAndAwait(ScheduleMessage scheduleMessage, ScheduleEntry schedule, int timeoutMinutes,
+            String channelType, String sessionChatId, String transportChatId, String runId)
+            throws InterruptedException, ExecutionException, TimeoutException {
+        Message syntheticMessage = buildSyntheticMessage(scheduleMessage, schedule, channelType, sessionChatId,
+                transportChatId, runId);
+        CompletableFuture<Void> completion = sessionRunCoordinator.submit(syntheticMessage);
+        completion.get(timeoutMinutes, TimeUnit.MINUTES);
+
+        String runStatus = readStatus(syntheticMessage);
+        String activeSkillName = readActiveSkillName(syntheticMessage);
+        if ("FAILED".equals(runStatus)) {
+            recordFailureAndMaybeReflect(scheduleMessage, schedule, timeoutMinutes, channelType, sessionChatId,
+                    transportChatId,
+                    readFailureSummary(syntheticMessage),
+                    readFailureFingerprint(syntheticMessage),
+                    activeSkillName);
+            return;
+        }
+
+        if (scheduleMessage.reflectionActive()) {
+            autoModeService.applyReflectionResult(scheduleMessage.goalId(), scheduleMessage.taskId(),
+                    readAssistantText(syntheticMessage));
+            return;
+        }
+
+        handleRunSuccess(scheduleMessage, activeSkillName);
+    }
+
+    private void recordFailureAndMaybeReflect(ScheduleMessage scheduleMessage, ScheduleEntry schedule,
+            int timeoutMinutes, String channelType, String sessionChatId, String transportChatId,
+            String summary, String fingerprint, String activeSkillName) {
+        recordFailedRunState(scheduleMessage, summary, fingerprint, activeSkillName);
+        if (!shouldRunReflection(scheduleMessage)) {
+            return;
+        }
+
+        try {
+            runReflection(scheduleMessage, schedule, timeoutMinutes, channelType, sessionChatId, transportChatId);
+        } catch (TimeoutException e) {
+            recordFailedRunState(scheduleMessage,
+                    "Reflection timed out after " + timeoutMinutes + " minutes",
+                    "reflection_timeout",
+                    null);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            recordFailedRunState(scheduleMessage, e.getMessage(), "reflection_interrupted", null);
+        } catch (ExecutionException e) {
+            recordFailedRunState(scheduleMessage, e.getMessage(), "reflection_execution_exception", null);
+        }
+    }
+
+    private void runReflection(ScheduleMessage scheduleMessage, ScheduleEntry schedule, int timeoutMinutes,
+            String channelType, String sessionChatId, String transportChatId)
+            throws InterruptedException, ExecutionException, TimeoutException {
+        ScheduleMessage reflectionMessage = buildReflectionMessage(scheduleMessage, schedule.getId());
+        if (reflectionMessage == null) {
+            return;
+        }
+
+        Message syntheticMessage = buildSyntheticMessage(reflectionMessage, schedule, channelType, sessionChatId,
+                transportChatId, UUID.randomUUID().toString());
+        CompletableFuture<Void> completion = sessionRunCoordinator.submit(syntheticMessage);
+        completion.get(timeoutMinutes, TimeUnit.MINUTES);
+
+        String runStatus = readStatus(syntheticMessage);
+        if ("FAILED".equals(runStatus)) {
+            recordFailedRunState(reflectionMessage,
+                    readFailureSummary(syntheticMessage),
+                    readFailureFingerprint(syntheticMessage),
+                    readActiveSkillName(syntheticMessage));
+            return;
+        }
+
+        autoModeService.applyReflectionResult(reflectionMessage.goalId(), reflectionMessage.taskId(),
+                readAssistantText(syntheticMessage));
+    }
+
+    private Message buildSyntheticMessage(ScheduleMessage scheduleMessage, ScheduleEntry schedule,
+            String channelType, String sessionChatId, String transportChatId, String runId) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.AUTO_MODE, true);
+        metadata.put(ContextAttributes.AUTO_RUN_KIND, scheduleMessage.runKind().name());
+        metadata.put(ContextAttributes.AUTO_RUN_ID, runId);
+        metadata.put(ContextAttributes.AUTO_SCHEDULE_ID, schedule.getId());
+        metadata.put(ContextAttributes.CONVERSATION_KEY, sessionChatId);
+        metadata.put(ContextAttributes.TRANSPORT_CHAT_ID, transportChatId);
+        if (scheduleMessage.goalId() != null && !scheduleMessage.goalId().isBlank()) {
+            metadata.put(ContextAttributes.AUTO_GOAL_ID, scheduleMessage.goalId());
+        }
+        if (scheduleMessage.taskId() != null && !scheduleMessage.taskId().isBlank()) {
+            metadata.put(ContextAttributes.AUTO_TASK_ID, scheduleMessage.taskId());
+        }
+        if (scheduleMessage.reflectionActive()) {
+            metadata.put(ContextAttributes.AUTO_REFLECTION_ACTIVE, true);
+        }
+        if (scheduleMessage.reflectionTier() != null && !scheduleMessage.reflectionTier().isBlank()) {
+            metadata.put(ContextAttributes.AUTO_REFLECTION_TIER, scheduleMessage.reflectionTier());
+        }
+        metadata.put(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, scheduleMessage.reflectionTierPriority());
+        metadata = TraceContextSupport.ensureRootMetadata(
+                metadata,
+                TraceSpanKind.INTERNAL,
+                TraceNamingSupport.autoSchedule(schedule));
+
+        return Message.builder()
+                .role("user")
+                .content(scheduleMessage.content())
+                .channelType(channelType)
+                .chatId(sessionChatId)
+                .senderId("auto")
+                .metadata(metadata)
+                .timestamp(Instant.now())
+                .build();
+    }
+
+    private void handleRunSuccess(ScheduleMessage scheduleMessage, String activeSkillName) {
+        if (!scheduleMessage.reflectionActive() && !StringValueSupport.isBlank(scheduleMessage.goalId())) {
+            autoModeService.recordAutoRunSuccess(scheduleMessage.goalId(), scheduleMessage.taskId(), activeSkillName);
+        }
+    }
+
+    private void recordFailedRunState(ScheduleMessage scheduleMessage, String summary, String fingerprint,
+            String activeSkillName) {
+        if (StringValueSupport.isBlank(scheduleMessage.goalId())) {
+            return;
+        }
+        autoModeService.recordAutoRunFailure(scheduleMessage.goalId(), scheduleMessage.taskId(), summary, fingerprint,
+                activeSkillName);
+    }
+
+    private boolean shouldRunReflection(ScheduleMessage scheduleMessage) {
+        if (scheduleMessage.reflectionActive()) {
+            return false;
+        }
+        if (!runtimeConfigService.isAutoReflectionEnabled()) {
+            return false;
+        }
+        if (StringValueSupport.isBlank(scheduleMessage.goalId())) {
+            return false;
+        }
+        return autoModeService.shouldTriggerReflection(scheduleMessage.goalId(), scheduleMessage.taskId());
+    }
+
+    private ScheduleMessage buildReflectionMessage(ScheduleMessage source, String scheduleId) {
+        if (StringValueSupport.isBlank(source.goalId())) {
+            return null;
+        }
+        AutoModeService.TaskReflectionState reflectionState = autoModeService.resolveTaskReflectionState(
+                source.goalId(), source.taskId());
+        Skill reflectedSkill = resolveReflectedSkill(reflectionState.lastUsedSkillName());
+        String tier = autoModeService.resolveReflectionTier(source.goalId(), source.taskId(), reflectedSkill);
+        boolean priority = autoModeService.isReflectionTierPriority(source.goalId(), source.taskId());
+        StringBuilder prompt = new StringBuilder();
+        if (!StringValueSupport.isBlank(source.taskId())) {
+            prompt.append("[AUTO][REFLECTION] Analyze the repeated failure for task '")
+                    .append(source.taskTitle() != null ? source.taskTitle() : source.taskId())
+                    .append("' and propose an alternative strategy for the next run.");
+        } else {
+            prompt.append("[AUTO][REFLECTION] Analyze the repeated failure while planning goal '")
+                    .append(source.goalTitle() != null ? source.goalTitle() : source.goalId())
+                    .append("' and propose an alternative strategy for the next run.");
+        }
+        if (!StringValueSupport.isBlank(reflectionState.lastFailureSummary())) {
+            prompt.append(" Latest failure: ").append(reflectionState.lastFailureSummary()).append('.');
+        }
+        if (!StringValueSupport.isBlank(reflectionState.lastFailureFingerprint())) {
+            prompt.append(" Failure fingerprint: ").append(reflectionState.lastFailureFingerprint()).append('.');
+        }
+        prompt.append(" Schedule: ").append(scheduleId).append('.');
+        prompt.append(" Return a concise recovery strategy that changes the next approach.");
+
+        return new ScheduleMessage(
+                prompt.toString(),
+                source.runKind(),
+                source.goalId(),
+                source.taskId(),
+                source.goalTitle(),
+                source.taskTitle(),
+                true,
+                tier,
+                priority);
+    }
+
+    private String readStatus(Message syntheticMessage) {
+        return syntheticMessage.getMetadata() != null
+                ? (String) syntheticMessage.getMetadata().get(ContextAttributes.AUTO_RUN_STATUS)
+                : null;
+    }
+
+    private String readFailureSummary(Message syntheticMessage) {
+        return syntheticMessage.getMetadata() != null
+                ? (String) syntheticMessage.getMetadata().get(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY)
+                : null;
+    }
+
+    private String readFailureFingerprint(Message syntheticMessage) {
+        return syntheticMessage.getMetadata() != null
+                ? (String) syntheticMessage.getMetadata().get(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT)
+                : null;
+    }
+
+    private String readAssistantText(Message syntheticMessage) {
+        return syntheticMessage.getMetadata() != null
+                ? (String) syntheticMessage.getMetadata().get(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT)
+                : null;
+    }
+
+    private String readActiveSkillName(Message syntheticMessage) {
+        return syntheticMessage.getMetadata() != null
+                ? (String) syntheticMessage.getMetadata().get(ContextAttributes.AUTO_RUN_ACTIVE_SKILL)
+                : null;
+    }
+
+    private void clearSessionContext(String channelType, String sessionChatId, String scheduleId) {
+        String sessionId = sessionPort.getOrCreate(channelType, sessionChatId).getId();
+        sessionPort.clearMessages(sessionId);
+        log.info("[AutoScheduler] Cleared session context before schedule run: scheduleId={}, sessionId={}",
+                scheduleId, sessionId);
     }
 
     private ScheduleMessage buildMessageForSchedule(ScheduleEntry schedule) {
@@ -314,26 +549,37 @@ public class AutoModeScheduler {
         }
 
         Optional<AutoTask> nextTask = goal.getTasks().stream()
-                .filter(t -> t.getStatus() == AutoTask.TaskStatus.PENDING)
+                .filter(t -> t.getStatus() == AutoTask.TaskStatus.PENDING
+                        || t.getStatus() == AutoTask.TaskStatus.IN_PROGRESS
+                        || t.getStatus() == AutoTask.TaskStatus.FAILED)
                 .min(java.util.Comparator.comparingInt(AutoTask::getOrder));
 
         if (nextTask.isPresent()) {
             AutoTask task = nextTask.get();
             return new ScheduleMessage(
-                    "[AUTO] Continue working on task: " + task.getTitle()
-                            + " (goal: " + goal.getTitle() + ", goal_id: " + goalId + ")",
+                    buildTaskPrompt("Continue working on task", task.getExecutionPrompt(), goal.getTitle(),
+                            goalId, task.getId()),
                     AutoRunKind.GOAL_RUN,
                     goalId,
-                    task.getId());
+                    task.getId(),
+                    goal.getTitle(),
+                    task.getTitle(),
+                    false,
+                    resolveReflectionTier(goal, task),
+                    resolveReflectionTierPriority(goal, task));
         }
 
         if (goal.getTasks().isEmpty()) {
             return new ScheduleMessage(
-                    "[AUTO] Plan tasks for goal: " + goal.getTitle()
-                            + " (goal_id: " + goalId + ")",
+                    buildGoalPrompt("Plan tasks for goal", goal.getExecutionPrompt(), goalId),
                     AutoRunKind.GOAL_RUN,
                     goalId,
-                    goalId);
+                    null,
+                    goal.getTitle(),
+                    null,
+                    false,
+                    goal.getReflectionModelTier(),
+                    goal.isReflectionTierPriority());
         }
 
         log.debug("[AutoScheduler] All tasks for goal {} are done, skipping", goalId);
@@ -364,16 +610,58 @@ public class AutoModeScheduler {
         }
 
         return new ScheduleMessage(
-                "[AUTO] Work on task: " + task.getTitle()
-                        + " (goal: " + goal.getTitle() + ", task_id: " + taskId + ")",
+                buildTaskPrompt("Work on task", task.getExecutionPrompt(), goal.getTitle(), goal.getId(), taskId),
                 AutoRunKind.GOAL_RUN,
                 goal.getId(),
-                taskId);
+                taskId,
+                goal.getTitle(),
+                task.getTitle(),
+                false,
+                resolveReflectionTier(goal, task),
+                resolveReflectionTierPriority(goal, task));
+    }
+
+    private String resolveReflectionTier(Goal goal, AutoTask task) {
+        if (task != null && task.getReflectionModelTier() != null && !task.getReflectionModelTier().isBlank()) {
+            return task.getReflectionModelTier();
+        }
+        if (goal != null && goal.getReflectionModelTier() != null && !goal.getReflectionModelTier().isBlank()) {
+            return goal.getReflectionModelTier();
+        }
+        return runtimeConfigService.getAutoReflectionModelTier();
+    }
+
+    private boolean resolveReflectionTierPriority(Goal goal, AutoTask task) {
+        if (task != null && task.getReflectionModelTier() != null && !task.getReflectionModelTier().isBlank()) {
+            return task.isReflectionTierPriority();
+        }
+        if (goal != null && goal.getReflectionModelTier() != null && !goal.getReflectionModelTier().isBlank()) {
+            return goal.isReflectionTierPriority();
+        }
+        return runtimeConfigService.isAutoReflectionTierPriority();
+    }
+
+    private Skill resolveReflectedSkill(String skillName) {
+        if (skillName == null || skillName.isBlank()) {
+            return null;
+        }
+        return skillComponent.findByName(skillName).orElse(null);
+    }
+
+    private String buildGoalPrompt(String prefix, String prompt, String goalId) {
+        return "[AUTO] " + prefix + ": " + prompt + " (goal_id: " + goalId + ")";
+    }
+
+    private String buildTaskPrompt(String prefix, String prompt, String goalTitle, String goalId, String taskId) {
+        return "[AUTO] " + prefix + ": " + prompt + " (goal: " + goalTitle
+                + ", goal_id: " + goalId + ", task_id: " + taskId + ")";
     }
 
     public record ChannelInfo(String channelType, String sessionChatId, String transportChatId) {
     }
 
-    private record ScheduleMessage(String content, AutoRunKind runKind, String goalId, String taskId) {
+    private record ScheduleMessage(String content, AutoRunKind runKind, String goalId, String taskId,
+            String goalTitle, String taskTitle, boolean reflectionActive, String reflectionTier,
+            boolean reflectionTierPriority) {
     }
 }

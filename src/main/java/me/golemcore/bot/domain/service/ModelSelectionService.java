@@ -20,6 +20,10 @@ package me.golemcore.bot.domain.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.springframework.stereotype.Service;
@@ -49,26 +53,42 @@ public class ModelSelectionService {
      * reasoning-required models.
      */
     public ModelSelection resolveForTier(String tier) {
-        String effectiveTier = tier != null ? tier : "balanced";
-        UserPreferences prefs = preferencesService.getPreferences();
+        if (isImplicitDefaultTier(tier)) {
+            return resolveForImplicitTier(tier);
+        }
+        return resolveForExplicitTier(tier);
+    }
 
-        // 1) Check user override
-        if (prefs.getTierOverrides() != null) {
-            UserPreferences.TierOverride override = prefs.getTierOverrides().get(effectiveTier);
-            if (override != null && override.getModel() != null) {
-                String reasoning = override.getReasoning();
-                // Auto-fill lowest reasoning level for reasoning-required models if not set
-                if (reasoning == null && modelConfigService.isReasoningRequired(override.getModel())) {
-                    reasoning = modelConfigService.getLowestReasoningLevel(override.getModel());
-                }
-                log.debug("[ModelSelection] Using user override for tier {}: model={}, reasoning={}",
-                        effectiveTier, override.getModel(), reasoning);
-                return new ModelSelection(override.getModel(), reasoning);
-            }
+    public ModelSelection resolveForExplicitTier(String tier) {
+        if (tier == null || tier.isBlank()) {
+            throw new IllegalArgumentException("Model tier must not be blank");
+        }
+        if (!ModelTierCatalog.isKnownTier(tier)) {
+            throw new IllegalArgumentException("Unknown model tier: " + tier);
         }
 
-        // 2) Fall back to router config
-        return resolveFromRouter(effectiveTier);
+        ModelSelection override = resolveOverrideSelection(tier);
+        if (override != null) {
+            return validateResolvedSelection(tier, override);
+        }
+        return validateResolvedSelection(tier, resolveFromRouter(tier));
+    }
+
+    public ModelSelection resolveForImplicitTier(String tier) {
+        String effectiveTier = normalizeImplicitTier(tier);
+        ModelSelection override = resolveOverrideSelection(effectiveTier);
+        if (override != null) {
+            return validateResolvedSelection(effectiveTier, override);
+        }
+        return validateResolvedSelection(effectiveTier, resolveFromRouter(effectiveTier));
+    }
+
+    public ModelSelection resolveForContext(AgentContext context) {
+        String effectiveTier = resolveEffectiveTier(context);
+        if (isImplicitDefaultTier(effectiveTier)) {
+            return resolveForImplicitTier(effectiveTier);
+        }
+        return resolveForExplicitTier(effectiveTier);
     }
 
     /**
@@ -83,8 +103,24 @@ public class ModelSelectionService {
      * and per-reasoning-level limits.
      */
     public int resolveMaxInputTokens(String tier) {
-        ModelSelection selection = resolveForTier(tier);
-        if (selection.model() == null) {
+        ModelSelection selection;
+        try {
+            selection = resolveForTier(tier);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return runtimeConfigService.getCompactionMaxContextTokens();
+        }
+        return modelConfigService.getMaxInputTokens(selection.model(), selection.reasoning());
+    }
+
+    /**
+     * Resolve the maximum input tokens for the effective model that would be used
+     * for the provided context.
+     */
+    public int resolveMaxInputTokensForContext(AgentContext context) {
+        ModelSelection selection;
+        try {
+            selection = resolveForContext(context);
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return runtimeConfigService.getCompactionMaxContextTokens();
         }
         return modelConfigService.getMaxInputTokens(selection.model(), selection.reasoning());
@@ -108,7 +144,7 @@ public class ModelSelectionService {
                     ? modelConfigService.getAvailableReasoningLevels(entry.getKey())
                     : List.of();
             result.add(new AvailableModel(entry.getKey(), settings.getProvider(), displayName,
-                    hasReasoning, reasoningLevels));
+                    hasReasoning, reasoningLevels, settings.isSupportsVision()));
         }
         return result;
     }
@@ -129,29 +165,37 @@ public class ModelSelectionService {
      * allowed.
      */
     public ValidationResult validateModel(String modelSpec) {
+        return validateModel(modelSpec, runtimeConfigService.getConfiguredLlmProviders());
+    }
+
+    public ValidationResult validateModel(String modelSpec, List<String> configuredProviders) {
         if (modelSpec == null || modelSpec.isBlank()) {
             return new ValidationResult(false, "model.empty");
         }
 
-        ModelConfigService.ModelSettings settings = modelConfigService.getModelSettings(modelSpec);
-        // Check that we got an actual model match, not just defaults
-        Map<String, ModelConfigService.ModelSettings> allModels = modelConfigService.getAllModels();
-        String name = modelSpec.contains("/") ? modelSpec.substring(modelSpec.indexOf('/') + 1) : modelSpec;
-        boolean exactMatch = allModels.containsKey(modelSpec) || allModels.containsKey(name);
-        if (!exactMatch) {
-            // Check prefix match
-            boolean prefixMatch = allModels.keySet().stream().anyMatch(name::startsWith);
-            if (!prefixMatch) {
-                return new ValidationResult(false, "model.not.found");
-            }
+        String provider = resolveProviderForModel(modelSpec);
+        if (provider == null) {
+            return new ValidationResult(false, "model.not.found");
         }
 
-        List<String> configuredProviders = runtimeConfigService.getConfiguredLlmProviders();
-        if (!configuredProviders.contains(settings.getProvider())) {
+        List<String> allowedProviders = configuredProviders != null ? configuredProviders : List.of();
+        if (!allowedProviders.contains(provider)) {
             return new ValidationResult(false, "provider.not.configured");
         }
 
         return new ValidationResult(true, null);
+    }
+
+    public String resolveProviderForModel(String modelSpec) {
+        if (modelSpec == null || modelSpec.isBlank()) {
+            return null;
+        }
+
+        String normalizedSpec = modelSpec.trim();
+        if (!hasKnownModelMatch(normalizedSpec)) {
+            return null;
+        }
+        return modelConfigService.getModelSettings(normalizedSpec).getProvider();
     }
 
     /**
@@ -172,21 +216,120 @@ public class ModelSelectionService {
         ModelSelection selected = switch (tier) {
         case "routing" ->
             new ModelSelection(runtimeConfigService.getRoutingModel(), runtimeConfigService.getRoutingModelReasoning());
+        case "balanced" ->
+            new ModelSelection(runtimeConfigService.getBalancedModel(),
+                    runtimeConfigService.getBalancedModelReasoning());
         case "deep" ->
             new ModelSelection(runtimeConfigService.getDeepModel(), runtimeConfigService.getDeepModelReasoning());
         case "coding" ->
             new ModelSelection(runtimeConfigService.getCodingModel(), runtimeConfigService.getCodingModelReasoning());
         case "smart" ->
             new ModelSelection(runtimeConfigService.getSmartModel(), runtimeConfigService.getSmartModelReasoning());
-        default -> new ModelSelection(runtimeConfigService.getBalancedModel(),
-                runtimeConfigService.getBalancedModelReasoning());
+        default -> resolveSpecialBinding(tier);
         };
+        return selected;
+    }
 
-        String reasoning = selected.reasoning();
-        if (reasoning == null && selected.model() != null && modelConfigService.isReasoningRequired(selected.model())) {
-            reasoning = modelConfigService.getLowestReasoningLevel(selected.model());
+    private String resolveEffectiveTier(AgentContext context) {
+        if (context != null && context.getModelTier() != null) {
+            return context.getModelTier();
         }
-        return new ModelSelection(selected.model(), reasoning);
+
+        UserPreferences prefs = preferencesService.getPreferences();
+        String userTier = prefs.getModelTier();
+        if (prefs.isTierForce() && userTier != null) {
+            return userTier;
+        }
+
+        Skill activeSkill = context != null ? context.getActiveSkill() : null;
+        if (activeSkill != null && activeSkill.getModelTier() != null) {
+            return activeSkill.getModelTier();
+        }
+
+        return userTier;
+    }
+
+    private boolean isImplicitDefaultTier(String tier) {
+        return tier == null || tier.isBlank() || "default".equalsIgnoreCase(tier);
+    }
+
+    private String normalizeImplicitTier(String tier) {
+        if (isImplicitDefaultTier(tier)) {
+            return "balanced";
+        }
+        return ModelTierCatalog.isImplicitRoutingTier(tier) ? tier : "balanced";
+    }
+
+    private ModelSelection resolveOverrideSelection(String tier) {
+        UserPreferences prefs = preferencesService.getPreferences();
+        if (prefs.getTierOverrides() == null) {
+            return null;
+        }
+        UserPreferences.TierOverride override = prefs.getTierOverrides().get(tier);
+        if (override == null || override.getModel() == null || override.getModel().isBlank()) {
+            return null;
+        }
+        return new ModelSelection(override.getModel(), override.getReasoning());
+    }
+
+    private ModelSelection resolveSpecialBinding(String tier) {
+        RuntimeConfig.TierBinding binding = runtimeConfigService.getModelTierBinding(tier);
+        if (binding == null) {
+            return new ModelSelection(null, null);
+        }
+        return new ModelSelection(binding.getModel(), binding.getReasoning());
+    }
+
+    private ModelSelection validateResolvedSelection(String tier, ModelSelection selection) {
+        if (selection == null || selection.model() == null || selection.model().isBlank()) {
+            throw new IllegalStateException("Tier '" + tier + "' is not configured");
+        }
+
+        ValidationResult modelValidation = validateModel(selection.model());
+        if (!modelValidation.valid()) {
+            throw switch (modelValidation.error()) {
+            case "model.not.found" ->
+                new IllegalStateException("Tier '" + tier + "' points to unknown model '" + selection.model() + "'");
+            case "provider.not.configured" ->
+                new IllegalStateException("Tier '" + tier + "' points to model '" + selection.model()
+                        + "' whose provider is not configured");
+            default ->
+                new IllegalStateException("Tier '" + tier + "' is invalid: " + modelValidation.error());
+            };
+        }
+
+        String reasoning = selection.reasoning();
+        if (reasoning == null && modelConfigService.isReasoningRequired(selection.model())) {
+            reasoning = modelConfigService.getLowestReasoningLevel(selection.model());
+        } else if (reasoning != null && modelConfigService.isReasoningRequired(selection.model())) {
+            ValidationResult reasoningValidation = validateReasoning(selection.model(), reasoning);
+            if (!reasoningValidation.valid()) {
+                throw new IllegalStateException("Tier '" + tier + "' uses unsupported reasoning '" + reasoning
+                        + "' for model '" + selection.model() + "'");
+            }
+        }
+
+        log.debug("[ModelSelection] Resolved tier {}: model={}, reasoning={}",
+                tier, selection.model(), reasoning);
+        return new ModelSelection(selection.model(), reasoning);
+    }
+
+    private boolean hasKnownModelMatch(String modelSpec) {
+        Map<String, ModelConfigService.ModelSettings> allModels = modelConfigService.getAllModels();
+        String name = normalizeModelName(modelSpec);
+        if (allModels.containsKey(modelSpec) || allModels.containsKey(name)) {
+            return true;
+        }
+        return allModels.keySet().stream()
+                .map(this::normalizeModelName)
+                .anyMatch(name::startsWith);
+    }
+
+    private String normalizeModelName(String modelSpec) {
+        if (modelSpec == null) {
+            return "";
+        }
+        return modelSpec.contains("/") ? modelSpec.substring(modelSpec.indexOf('/') + 1) : modelSpec;
     }
 
     /** Resolved model + reasoning for a tier. */
@@ -195,7 +338,7 @@ public class ModelSelectionService {
 
     /** Available model for display in /model list. */
     public record AvailableModel(String id, String provider, String displayName,
-            boolean hasReasoning, List<String> reasoningLevels) {
+            boolean hasReasoning, List<String> reasoningLevels, boolean supportsVision) {
     }
 
     /** Validation result for model/reasoning checks. */

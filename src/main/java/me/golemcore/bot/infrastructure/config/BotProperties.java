@@ -66,9 +66,11 @@ public class BotProperties {
     private AutoCompactProperties autoCompact = new AutoCompactProperties();
     private TurnProperties turn = new TurnProperties();
     private ToolLoopProperties toolLoop = new ToolLoopProperties();
-    private PlanProperties plan = new PlanProperties();
     private DashboardProperties dashboard = new DashboardProperties();
+    private WebhooksProperties webhooks = new WebhooksProperties();
     private UpdateProperties update = new UpdateProperties();
+    private PluginsProperties plugins = new PluginsProperties();
+    private HiveProperties hive = new HiveProperties();
 
     @Data
     public static class LlmProperties {
@@ -110,6 +112,14 @@ public class BotProperties {
         private String directory = "skills";
         private String workspacePath = "workspace/skills";
         private String builtinPath = "classpath:skills/";
+        private boolean marketplaceEnabled = true;
+        private String marketplaceRepositoryDirectory = "";
+        private String marketplaceSandboxPath = "";
+        private String marketplaceRepositoryUrl = "https://github.com/alexk-dev/golemcore-skills";
+        private String marketplaceBranch = "main";
+        private String marketplaceApiBaseUrl = "https://api.github.com";
+        private String marketplaceRawBaseUrl = "https://raw.githubusercontent.com";
+        private java.time.Duration marketplaceRemoteCacheTtl = java.time.Duration.ofMinutes(5);
     }
 
     @Data
@@ -132,11 +142,8 @@ public class BotProperties {
         private FileSystemToolProperties filesystem = new FileSystemToolProperties();
         private ShellToolProperties shell = new ShellToolProperties();
         private SkillManagementToolProperties skillManagement = new SkillManagementToolProperties();
-        private BraveSearchToolProperties braveSearch = new BraveSearchToolProperties();
         private SkillTransitionToolProperties skillTransition = new SkillTransitionToolProperties();
         private TierToolProperties tier = new TierToolProperties();
-        private ImapToolProperties imap = new ImapToolProperties();
-        private SmtpToolProperties smtp = new SmtpToolProperties();
     }
 
     @Data
@@ -157,44 +164,11 @@ public class BotProperties {
     }
 
     @Data
-    public static class BraveSearchToolProperties {
-        private int defaultCount = 5;
-    }
-
-    @Data
     public static class SkillTransitionToolProperties {
     }
 
     @Data
     public static class TierToolProperties {
-    }
-
-    @Data
-    public static class ImapToolProperties {
-        private boolean enabled = false;
-        private String host = "";
-        private int port = 993;
-        private String username = "";
-        private String password = "";
-        private String security = "ssl";
-        private String sslTrust = "";
-        private int connectTimeout = 10000;
-        private int readTimeout = 30000;
-        private int maxBodyLength = 50000;
-        private int defaultMessageLimit = 20;
-    }
-
-    @Data
-    public static class SmtpToolProperties {
-        private boolean enabled = false;
-        private String host = "";
-        private int port = 587;
-        private String username = "";
-        private String password = "";
-        private String security = "starttls";
-        private String sslTrust = "";
-        private int connectTimeout = 10000;
-        private int readTimeout = 30000;
     }
 
     // ==================== RAG (LightRAG) ====================
@@ -249,16 +223,6 @@ public class BotProperties {
         private boolean stopOnToolPolicyDenied = false;
     }
 
-    // ==================== PLAN MODE ====================
-
-    @Data
-    public static class PlanProperties {
-        private boolean enabled = false;
-        private int maxPlans = 5;
-        private int maxStepsPerPlan = 50;
-        private boolean stopOnFailure = true;
-    }
-
     // ==================== DASHBOARD ====================
 
     @Data
@@ -269,6 +233,7 @@ public class BotProperties {
         private int jwtExpirationMinutes = 30;
         private int refreshExpirationDays = 7;
         private String corsAllowedOrigins = "";
+        private int webSocketMaxFramePayloadLength = 80 * 1024 * 1024;
         private LogsProperties logs = new LogsProperties();
     }
 
@@ -282,6 +247,13 @@ public class BotProperties {
         private int maxExceptionChars = 16000;
     }
 
+    // ==================== WEBHOOKS ====================
+
+    @Data
+    public static class WebhooksProperties {
+        private int deliveryHistoryMaxEntries = 500;
+    }
+
     // ==================== SELF-UPDATE ====================
 
     @Data
@@ -290,6 +262,38 @@ public class BotProperties {
         private String updatesPath = "${bot.storage.local.base-path}/updates";
         private int maxKeptVersions = 3;
         private java.time.Duration checkInterval = java.time.Duration.ofHours(1);
+    }
+
+    @Data
+    public static class HiveProperties {
+        private Boolean enabled;
+        private String joinCode = "";
+        private String displayName = "";
+        private String hostLabel = "";
+        private Boolean autoConnectOnStartup;
+    }
+
+    // ==================== PLUGINS ====================
+
+    @Data
+    public static class PluginsProperties {
+        private boolean enabled = true;
+        private boolean autoStart = true;
+        private boolean autoReload = true;
+        private String directory = "${bot.storage.local.base-path}/plugins";
+        private java.time.Duration pollInterval = java.time.Duration.ofSeconds(5);
+        private MarketplaceProperties marketplace = new MarketplaceProperties();
+    }
+
+    @Data
+    public static class MarketplaceProperties {
+        private boolean enabled = true;
+        private String repositoryDirectory = "";
+        private String repositoryUrl = "https://github.com/alexk-dev/golemcore-plugins";
+        private String branch = "main";
+        private String apiBaseUrl = "https://api.github.com";
+        private String rawBaseUrl = "https://raw.githubusercontent.com";
+        private java.time.Duration remoteCacheTtl = java.time.Duration.ofMinutes(5);
     }
 
     // ==================== PROMPTS (system prompt sections) ====================

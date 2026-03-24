@@ -51,7 +51,6 @@ public class CompactionService {
     private final RuntimeConfigService runtimeConfigService;
     private final Clock clock;
 
-    private static final long SUMMARY_TIMEOUT_MS = 15_000;
     private static final int MAX_SUMMARY_TOKENS = 500;
 
     /**
@@ -112,7 +111,8 @@ public class CompactionService {
 
         try {
             long start = clock.millis();
-            LlmResponse response = llmPort.chat(request).get(SUMMARY_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            long summaryTimeoutMs = runtimeConfigService.getCompactionSummaryTimeoutMs();
+            LlmResponse response = llmPort.chat(request).get(summaryTimeoutMs, TimeUnit.MILLISECONDS);
             long elapsed = clock.millis() - start;
 
             String summary = response.getContent();

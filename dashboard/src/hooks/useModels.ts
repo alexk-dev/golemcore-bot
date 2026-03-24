@@ -1,8 +1,11 @@
 import { type UseMutationResult, type UseQueryResult, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   type ModelSettings,
+  type ResolveModelRegistryRequest,
+  discoverProviderModels,
   getModelsConfig,
   getAvailableModels,
+  resolveModelRegistryDefaults,
   saveModel,
   deleteModel,
   reloadModels,
@@ -16,6 +19,17 @@ export function useAvailableModels(): UseQueryResult<Awaited<ReturnType<typeof g
   return useQuery({ queryKey: ['models-available'], queryFn: getAvailableModels });
 }
 
+export function useDiscoveredProviderModels(
+  providerName: string,
+  enabled = true,
+): UseQueryResult<Awaited<ReturnType<typeof discoverProviderModels>>, unknown> {
+  return useQuery({
+    queryKey: ['models-discover', providerName],
+    queryFn: () => discoverProviderModels(providerName),
+    enabled: enabled && providerName.trim().length > 0,
+  });
+}
+
 export function useSaveModel(): UseMutationResult<Awaited<ReturnType<typeof saveModel>>, unknown, { id: string; settings: ModelSettings }> {
   const qc = useQueryClient();
   return useMutation({
@@ -24,6 +38,16 @@ export function useSaveModel(): UseMutationResult<Awaited<ReturnType<typeof save
       void qc.invalidateQueries({ queryKey: ['models-config'] });
       void qc.invalidateQueries({ queryKey: ['models-available'] });
     },
+  });
+}
+
+export function useResolveModelRegistry(): UseMutationResult<
+  Awaited<ReturnType<typeof resolveModelRegistryDefaults>>,
+  unknown,
+  ResolveModelRegistryRequest
+> {
+  return useMutation({
+    mutationFn: (request: ResolveModelRegistryRequest) => resolveModelRegistryDefaults(request),
   });
 }
 

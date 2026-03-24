@@ -20,11 +20,15 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FailureEvent;
+import me.golemcore.bot.domain.model.FailureKind;
+import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.TurnLimitReason;
+import me.golemcore.bot.domain.service.InternalTurnService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -32,6 +36,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -56,6 +61,7 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
+    private final InternalTurnService internalTurnService;
 
     @Override
     public String getName() {
@@ -81,7 +87,10 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         }
 
         LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        return llmResponse != null;
+        if (llmResponse != null) {
+            return true;
+        }
+        return Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY));
     }
 
     @Override
@@ -94,13 +103,28 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         // Error path: convert LLM_ERROR into a user-facing OutgoingResponse.
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         if (llmError != null) {
+            if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED))) {
+                return context;
+            }
+            String reasonCode = resolveLlmErrorCode(context, llmError);
+            context.setAttribute(ContextAttributes.LLM_ERROR_CODE, reasonCode);
+            context.setAttribute(ContextAttributes.LLM_ERROR, LlmErrorClassifier.withCode(reasonCode, llmError));
+            if (shouldScheduleInternalRetry(context, reasonCode)
+                    && internalTurnService.scheduleAutoContinueRetry(context, reasonCode)) {
+                context.setAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED, true);
+                return context;
+            }
             String errorMessage = preferencesService.getMessage("system.error.llm");
             setOutgoingResponse(context, OutgoingResponse.textOnly(errorMessage));
             return context;
         }
 
         LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        boolean finalAnswerReady = Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY));
         if (response == null) {
+            if (finalAnswerReady) {
+                return classifyEmptyFinalResponse(context, null);
+            }
             return context;
         }
         String text = response.getContent();
@@ -153,6 +177,9 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         }
 
         if (!hasText && !hasVoice) {
+            if (finalAnswerReady) {
+                return classifyEmptyFinalResponse(context, response);
+            }
             return context;
         }
 
@@ -164,6 +191,51 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
 
         setOutgoingResponse(context, outgoing);
         return context;
+    }
+
+    private AgentContext classifyEmptyFinalResponse(AgentContext context, LlmResponse response) {
+        String reasonCode = LlmErrorClassifier.classifyEmptyFinalResponse(response);
+        String model = context.getAttribute(ContextAttributes.LLM_MODEL);
+        String finishReason = response != null ? response.getFinishReason() : null;
+        String diagnostic = LlmErrorClassifier.withCode(reasonCode, String.format(
+                "empty final LLM response (model=%s, finishReason=%s)",
+                model != null ? model : "unknown",
+                finishReason != null ? finishReason : "unknown"));
+
+        log.warn("[ResponsePrep] {}", diagnostic);
+        context.setAttribute(ContextAttributes.LLM_ERROR, diagnostic);
+        context.setAttribute(ContextAttributes.LLM_ERROR_CODE, reasonCode);
+        context.addFailure(new FailureEvent(
+                FailureSource.LLM,
+                getName(),
+                FailureKind.VALIDATION,
+                diagnostic,
+                Instant.now()));
+
+        String errorMessage = preferencesService.getMessage("system.error.llm");
+        setOutgoingResponse(context, OutgoingResponse.textOnly(errorMessage));
+        return context;
+    }
+
+    private String resolveLlmErrorCode(AgentContext context, String llmError) {
+        String existing = context.getAttribute(ContextAttributes.LLM_ERROR_CODE);
+        if (existing != null && !existing.isBlank()) {
+            return existing;
+        }
+        return LlmErrorClassifier.classifyFromDiagnostic(llmError);
+    }
+
+    private boolean shouldScheduleInternalRetry(AgentContext context, String reasonCode) {
+        if (context == null) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INPUT_INTERNAL))) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.AUTO_MODE))) {
+            return false;
+        }
+        return LlmErrorClassifier.isTransientCode(reasonCode);
     }
 
     private void setOutgoingResponse(AgentContext context, OutgoingResponse outgoing) {
@@ -196,6 +268,14 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
             hints.put("reasoning", reasoning);
         }
 
+        String activeSkillName = context.getAttribute(ContextAttributes.ACTIVE_SKILL_NAME);
+        if (activeSkillName == null && context.getActiveSkill() != null) {
+            activeSkillName = context.getActiveSkill().getName();
+        }
+        if (activeSkillName != null && !activeSkillName.isBlank()) {
+            hints.put("skill", activeSkillName);
+        }
+
         String tier = context.getModelTier();
         hints.put("tier", tier != null ? tier : "balanced");
 
@@ -213,6 +293,11 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         String effectiveTier = tier != null ? tier : "balanced";
         int maxContextTokens = modelSelectionService.resolveMaxInputTokens(effectiveTier);
         hints.put("maxContextTokens", maxContextTokens);
+
+        Object fileChanges = context.getAttribute(ContextAttributes.TURN_FILE_CHANGES);
+        if (fileChanges != null) {
+            hints.put("fileChanges", fileChanges);
+        }
 
         return hints;
     }
@@ -261,7 +346,7 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         }
         for (int i = context.getMessages().size() - 1; i >= 0; i--) {
             Message msg = context.getMessages().get(i);
-            if (msg.isUserMessage()) {
+            if (msg.isUserMessage() && !msg.isInternalMessage()) {
                 return msg.hasVoice();
             }
         }

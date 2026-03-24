@@ -94,10 +94,11 @@ Full reference (runtime config fields, storage layout, browser/sandbox notes): *
 2. **[Skills](docs/SKILLS.md)** (SKILL.md format, variables, pipelines, MCP)
 3. **[Model Routing](docs/MODEL_ROUTING.md)** (tiers)
 4. **[Auto Mode](docs/AUTO_MODE.md)**
-5. **[Memory](docs/MEMORY.md)** + **[RAG](docs/RAG.md)**
-6. **[Webhooks](docs/WEBHOOKS.md)** (HTTP triggers, custom mappings, callbacks)
-7. **[Deployment](docs/DEPLOYMENT.md)**
-8. **[Dashboard](docs/DASHBOARD.md)**
+5. **[Delayed Actions Design](docs/DELAYED_ACTIONS.md)**
+6. **[Memory](docs/MEMORY.md)** + **[RAG](docs/RAG.md)**
+7. **[Webhooks](docs/WEBHOOKS.md)** (HTTP triggers, custom mappings, callbacks)
+8. **[Deployment](docs/DEPLOYMENT.md)**
+9. **[Dashboard](docs/DASHBOARD.md)**
 
 ---
 

@@ -53,6 +53,7 @@ import java.util.regex.Pattern;
 public class PromptSectionService {
 
     static final String PROMPTS_DIR = "prompts";
+    private static final Set<String> PROTECTED_SECTION_NAMES = Set.of("identity", "rules");
 
     private static final Pattern FRONTMATTER_PATTERN = Pattern.compile(
             "^---\\s*\\n(.*?)\\n---\\s*\\n(.*)$", Pattern.DOTALL);
@@ -84,6 +85,7 @@ public class PromptSectionService {
             4. When you have tools available, use them proactively. Do not ask for permission unless the action is destructive.
             5. Be thorough but avoid unnecessary verbosity. Match depth to question complexity.
             6. Reference memory context when relevant to the conversation.
+            7. When an available skill clearly matches the user's task, activate it with `skill_transition` before doing the work.
             """;
 
     private static final String DEFAULT_VOICE_CONTENT = """
@@ -110,6 +112,27 @@ public class PromptSectionService {
 
             When using voice, write naturally as spoken language. No markdown, no bullet points, no code blocks.
             You are NOT a "text-only assistant". You CAN produce audio.
+            """;
+
+    private static final String DEFAULT_WAITING_AND_FOLLOWUPS_CONTENT = """
+            ---
+            description: Waiting and follow-up behavior
+            order: 25
+            ---
+            ## Waiting And Follow-Ups
+
+            When a result will not be available during the current normal response flow, do not ask the user to come back manually.
+            Instead, use delayed follow-ups so you can return later on your own.
+
+            For delayed follow-ups:
+            1. Explain what you are waiting for.
+            2. Schedule the next check or reminder explicitly.
+            3. Confirm the next local check time for the user.
+            4. If the result is still not ready later, schedule the next delayed check with reasonable spacing.
+            5. Avoid stale follow-ups when the user has already continued the conversation.
+
+            Do not ask the user to come back manually when a delayed follow-up is the better workflow.
+            Confirm the next local check time whenever you schedule a delayed follow-up.
             """;
 
     private final StoragePort storagePort;
@@ -153,17 +176,27 @@ public class PromptSectionService {
     }
 
     /**
+     * Returns all sections sorted by order (ascending), then by name.
+     *
+     * @return ordered list of all prompt sections
+     */
+    public List<PromptSection> getAllSections() {
+        return sectionRegistry.values().stream()
+                .sorted(Comparator.comparingInt(PromptSection::getOrder)
+                        .thenComparing(PromptSection::getName))
+                .toList();
+    }
+
+    /**
      * Returns all enabled sections sorted by order (ascending), then by name.
      *
      * @return ordered list of enabled prompt sections
      */
     public List<PromptSection> getEnabledSections() {
         boolean voiceEnabled = runtimeConfigService.isVoiceEnabled();
-        return sectionRegistry.values().stream()
+        return getAllSections().stream()
                 .filter(PromptSection::isEnabled)
                 .filter(s -> voiceEnabled || !"voice".equals(s.getName()))
-                .sorted(Comparator.comparingInt(PromptSection::getOrder)
-                        .thenComparing(PromptSection::getName))
                 .toList();
     }
 
@@ -175,7 +208,16 @@ public class PromptSectionService {
      * @return an Optional containing the section if found
      */
     public Optional<PromptSection> getSection(String name) {
-        return Optional.ofNullable(sectionRegistry.get(name));
+        String normalizedName = normalizeSectionName(name);
+        if (normalizedName == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(sectionRegistry.get(normalizedName));
+    }
+
+    public boolean isProtectedSection(String name) {
+        String normalizedName = normalizeSectionName(name);
+        return normalizedName != null && PROTECTED_SECTION_NAMES.contains(normalizedName);
     }
 
     /**
@@ -231,6 +273,7 @@ public class PromptSectionService {
     void ensureDefaults() {
         ensureDefault("IDENTITY.md", DEFAULT_IDENTITY_CONTENT);
         ensureDefault("RULES.md", DEFAULT_RULES_CONTENT);
+        ensureDefault("WAITING_AND_FOLLOWUPS.md", DEFAULT_WAITING_AND_FOLLOWUPS_CONTENT);
         if (runtimeConfigService.isVoiceEnabled()) {
             ensureDefault("VOICE.md", DEFAULT_VOICE_CONTENT);
         }
@@ -311,5 +354,13 @@ public class PromptSectionService {
             filename = filename.substring(0, filename.length() - 3);
         }
         return filename.toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeSectionName(String name) {
+        if (name == null) {
+            return null;
+        }
+        String normalized = name.trim().toLowerCase(Locale.ROOT);
+        return normalized.isBlank() ? null : normalized;
     }
 }

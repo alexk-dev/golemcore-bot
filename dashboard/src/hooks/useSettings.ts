@@ -1,28 +1,29 @@
 import { type UseMutationResult, type UseQueryResult, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  type TelegramConfig,
   type ModelRouterConfig,
   type LlmConfig,
   type LlmProviderConfig,
   type ToolsConfig,
   type VoiceConfig,
+  type RuntimeConfig,
   type MemoryConfig,
   type MemoryPreset,
   type SkillsConfig,
   type TurnConfig,
   type UsageConfig,
-  type RagConfig,
   type McpConfig,
+  type HiveConfig,
+  type PlanConfig,
   type AutoModeConfig,
+  type TracingConfig,
   type RateLimitConfig,
   type SecurityConfig,
   type CompactionConfig,
-  type WebhookConfig,
   getSettings,
   updatePreferences,
   getModels,
   getRuntimeConfig,
-  updateTelegramConfig,
+  updateRuntimeConfig,
   updateModelRouterConfig,
   updateLlmConfig,
   addLlmProvider,
@@ -35,15 +36,12 @@ import {
   updateSkillsConfig,
   updateTurnConfig,
   updateUsageConfig,
-  updateRagConfig,
   updateMcpConfig,
-  updateWebhooksConfig,
+  updateHiveConfig,
+  updatePlanConfig,
   updateAutoConfig,
+  updateTracingConfig,
   updateAdvancedConfig,
-  generateInviteCode,
-  deleteInviteCode,
-  deleteTelegramAllowedUser,
-  restartTelegram,
 } from '../api/settings';
 
 export function useSettings(): UseQueryResult<Awaited<ReturnType<typeof getSettings>>, unknown> {
@@ -68,10 +66,10 @@ export function useRuntimeConfig(): UseQueryResult<Awaited<ReturnType<typeof get
   return useQuery({ queryKey: ['runtime-config'], queryFn: getRuntimeConfig });
 }
 
-export function useUpdateTelegram(): UseMutationResult<Awaited<ReturnType<typeof updateTelegramConfig>>, unknown, TelegramConfig> {
+export function useUpdateRuntimeConfig(): UseMutationResult<Awaited<ReturnType<typeof updateRuntimeConfig>>, unknown, RuntimeConfig> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (config: TelegramConfig) => updateTelegramConfig(config),
+    mutationFn: (config: RuntimeConfig) => updateRuntimeConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }
@@ -148,7 +146,10 @@ export function useUpdateSkills(): UseMutationResult<Awaited<ReturnType<typeof u
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: SkillsConfig) => updateSkillsConfig(config),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+      qc.invalidateQueries({ queryKey: ['skill-marketplace'] }),
+    ]),
   });
 }
 
@@ -168,14 +169,6 @@ export function useUpdateUsage(): UseMutationResult<Awaited<ReturnType<typeof up
   });
 }
 
-export function useUpdateRag(): UseMutationResult<Awaited<ReturnType<typeof updateRagConfig>>, unknown, RagConfig> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (config: RagConfig) => updateRagConfig(config),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
-}
-
 export function useUpdateMcp(): UseMutationResult<Awaited<ReturnType<typeof updateMcpConfig>>, unknown, McpConfig> {
   const qc = useQueryClient();
   return useMutation({
@@ -184,10 +177,18 @@ export function useUpdateMcp(): UseMutationResult<Awaited<ReturnType<typeof upda
   });
 }
 
-export function useUpdateWebhooks(): UseMutationResult<Awaited<ReturnType<typeof updateWebhooksConfig>>, unknown, WebhookConfig> {
+export function useUpdateHive(): UseMutationResult<Awaited<ReturnType<typeof updateHiveConfig>>, unknown, HiveConfig> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (config: WebhookConfig) => updateWebhooksConfig(config),
+    mutationFn: (config: HiveConfig) => updateHiveConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdatePlan(): UseMutationResult<Awaited<ReturnType<typeof updatePlanConfig>>, unknown, PlanConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: PlanConfig) => updatePlanConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }
@@ -196,6 +197,14 @@ export function useUpdateAuto(): UseMutationResult<Awaited<ReturnType<typeof upd
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: AutoModeConfig) => updateAutoConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateTracing(): UseMutationResult<Awaited<ReturnType<typeof updateTracingConfig>>, unknown, TracingConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: TracingConfig) => updateTracingConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }
@@ -211,36 +220,4 @@ export function useUpdateAdvanced(): UseMutationResult<
       updateAdvancedConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
-}
-
-export function useGenerateInviteCode(): UseMutationResult<Awaited<ReturnType<typeof generateInviteCode>>, unknown, void> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => generateInviteCode(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
-}
-
-export function useDeleteInviteCode(): UseMutationResult<Awaited<ReturnType<typeof deleteInviteCode>>, unknown, string> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (code: string) => deleteInviteCode(code),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
-}
-
-export function useDeleteTelegramAllowedUser(): UseMutationResult<
-  Awaited<ReturnType<typeof deleteTelegramAllowedUser>>,
-  unknown,
-  string
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (userId: string) => deleteTelegramAllowedUser(userId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
-}
-
-export function useRestartTelegram(): UseMutationResult<Awaited<ReturnType<typeof restartTelegram>>, unknown, void> {
-  return useMutation({ mutationFn: restartTelegram });
 }

@@ -11,9 +11,13 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const PromptsPage = lazy(() => import('./pages/PromptsPage'));
 const SkillsPage = lazy(() => import('./pages/SkillsPage'));
 const SessionsPage = lazy(() => import('./pages/SessionsPage'));
+const SessionDetailsPage = lazy(() => import('./pages/SessionDetailsPage'));
 const DiagnosticsPage = lazy(() => import('./pages/DiagnosticsPage'));
 const IdePage = lazy(() => import('./pages/IdePage'));
 const LogsPage = lazy(() => import('./pages/LogsPage'));
+const GoalsPage = lazy(() => import('./pages/GoalsPage'));
+const SchedulerPage = lazy(() => import('./pages/SchedulerPage'));
+const WebhooksPage = lazy(() => import('./pages/WebhooksPage'));
 
 function RouteFallback() {
   return <div className="dashboard-main text-secondary">Loading...</div>;
@@ -52,9 +56,14 @@ export default function App() {
                   <Route path="/prompts" element={<PromptsPage />} />
                   <Route path="/skills" element={<SkillsPage />} />
                   <Route path="/sessions" element={<SessionsPage />} />
+                  <Route path="/sessions/:sessionId" element={<SessionDetailsPage />} />
+                  <Route path="/sessions/:sessionId/:tab" element={<SessionDetailsPage />} />
+                  <Route path="/goals" element={<GoalsPage />} />
                   <Route path="/diagnostics" element={<DiagnosticsPage />} />
                   <Route path="/ide" element={<IdePage />} />
                   <Route path="/logs" element={<LogsPage />} />
+                  <Route path="/scheduler" element={<SchedulerPage />} />
+                  <Route path="/webhooks" element={<WebhooksPage />} />
                 </Routes>
               </Suspense>
             </DashboardLayout>

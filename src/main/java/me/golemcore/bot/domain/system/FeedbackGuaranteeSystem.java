@@ -20,8 +20,10 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -70,6 +72,12 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
         if (context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null) {
             return false;
         }
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED))) {
+            return false;
+        }
+        if (hasPendingTransition(context)) {
+            return false;
+        }
         return !isAutoModeContext(context);
     }
 
@@ -78,14 +86,37 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
         if (context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null) {
             return context;
         }
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED))) {
+            return context;
+        }
+        if (hasPendingTransition(context)) {
+            return context;
+        }
         if (isAutoModeContext(context)) {
             return context;
         }
 
         String message = preferencesService.getMessage("system.error.generic.feedback");
-        log.info("[FeedbackGuarantee] Producing fallback OutgoingResponse (no response prepared upstream)");
+        String reasonCode = classifyFallbackReason(context);
+        LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        String llmErrorCode = context.getAttribute(ContextAttributes.LLM_ERROR_CODE);
+        log.warn(
+                "[FeedbackGuarantee] Producing fallback OutgoingResponse "
+                        + "(reason={}, failures={}, llmErrorCode={}, llmErrorPresent={}, finalAnswerReady={}, llmResponse={})",
+                reasonCode,
+                context.getFailures().size(),
+                llmErrorCode,
+                llmError != null && !llmError.isBlank(),
+                Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY)),
+                describeLlmResponse(llmResponse));
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(message));
         return context;
+    }
+
+    private boolean hasPendingTransition(AgentContext context) {
+        SkillTransitionRequest transition = context.getSkillTransitionRequest();
+        return transition != null && transition.targetSkill() != null;
     }
 
     private boolean isAutoModeContext(AgentContext context) {
@@ -93,6 +124,51 @@ public class FeedbackGuaranteeSystem implements AgentSystem {
             return false;
         }
         Message last = context.getMessages().get(context.getMessages().size() - 1);
-        return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get("auto.mode"));
+        return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get(ContextAttributes.AUTO_MODE));
+    }
+
+    private String describeLlmResponse(LlmResponse response) {
+        if (response == null) {
+            return "<null>";
+        }
+
+        String content = response.getContent();
+        int contentLength = content != null ? content.length() : 0;
+        String finishReason = response.getFinishReason();
+        return String.format("contentLength=%d,hasToolCalls=%s,finishReason=%s",
+                contentLength,
+                response.hasToolCalls(),
+                finishReason != null ? finishReason : "unknown");
+    }
+
+    private String classifyFallbackReason(AgentContext context) {
+        String llmErrorCode = context.getAttribute(ContextAttributes.LLM_ERROR_CODE);
+        if (llmErrorCode != null && !llmErrorCode.isBlank()) {
+            return llmErrorCode;
+        }
+
+        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
+        if (llmError != null && !llmError.isBlank()) {
+            return LlmErrorClassifier.classifyFromDiagnostic(llmError);
+        }
+
+        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        if (response != null) {
+            if (response.hasToolCalls()) {
+                return "tool_calls_without_final_answer";
+            }
+            if (response.getContent() == null || response.getContent().isBlank()) {
+                return LlmErrorClassifier.classifyEmptyFinalResponse(response);
+            }
+            return "llm_response_present_but_not_routed";
+        }
+
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY))) {
+            return LlmErrorClassifier.NO_ASSISTANT_MESSAGE;
+        }
+        if (!context.getFailures().isEmpty()) {
+            return "pipeline_failures_without_outgoing_response";
+        }
+        return "missing_outgoing_response";
     }
 }

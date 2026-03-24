@@ -10,11 +10,15 @@ import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
+import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
+import me.golemcore.plugin.api.extension.spi.SttProvider;
+import me.golemcore.plugin.api.extension.spi.TtsProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.context.ApplicationEventPublisher;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -22,13 +26,17 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,7 +49,8 @@ class SettingsControllerTest {
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
     private MemoryPresetService memoryPresetService;
-    private ApplicationEventPublisher eventPublisher;
+    private SttProviderRegistry sttProviderRegistry;
+    private TtsProviderRegistry ttsProviderRegistry;
     private SettingsController controller;
 
     @BeforeEach
@@ -50,11 +59,26 @@ class SettingsControllerTest {
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         memoryPresetService = mock(MemoryPresetService.class);
-        eventPublisher = mock(ApplicationEventPublisher.class);
+        sttProviderRegistry = new SttProviderRegistry();
+        ttsProviderRegistry = new TtsProviderRegistry();
+        registerSttProvider("golemcore/elevenlabs", "elevenlabs");
+        registerSttProvider("golemcore/whisper", "whisper");
+        registerTtsProvider("golemcore/elevenlabs", "elevenlabs");
+        registerTtsProvider("golemcore/whisper", "whisper");
         controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
-                memoryPresetService,
-                eventPublisher);
+                memoryPresetService, sttProviderRegistry, ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
+        when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(false);
+        when(modelSelectionService.validateModel(anyString(), anyList()))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        when(modelSelectionService.resolveProviderForModel(anyString())).thenAnswer(invocation -> {
+            String model = invocation.getArgument(0);
+            if (model == null) {
+                return null;
+            }
+            int delimiterIndex = model.indexOf('/');
+            return delimiterIndex > 0 ? model.substring(0, delimiterIndex) : null;
+        });
     }
 
     @Test
@@ -63,7 +87,7 @@ class SettingsControllerTest {
         prefs.setLanguage("en");
         prefs.setTimezone("UTC");
         prefs.setNotificationsEnabled(true);
-        prefs.setModelTier("standard");
+        prefs.setModelTier("balanced");
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
         StepVerifier.create(controller.getSettings())
@@ -73,7 +97,7 @@ class SettingsControllerTest {
                     assertNotNull(body);
                     assertEquals("en", body.getLanguage());
                     assertEquals("UTC", body.getTimezone());
-                    assertEquals("standard", body.getModelTier());
+                    assertEquals("balanced", body.getModelTier());
                 })
                 .verifyComplete();
     }
@@ -83,7 +107,7 @@ class SettingsControllerTest {
         UserPreferences prefs = new UserPreferences();
         prefs.setLanguage("en");
         Map<String, UserPreferences.TierOverride> overrides = new LinkedHashMap<>();
-        overrides.put("standard", new UserPreferences.TierOverride("gpt-4o", "medium"));
+        overrides.put("special1", new UserPreferences.TierOverride("gpt-4o", "medium"));
         prefs.setTierOverrides(overrides);
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
@@ -92,7 +116,38 @@ class SettingsControllerTest {
                     SettingsResponse body = response.getBody();
                     assertNotNull(body);
                     assertNotNull(body.getTierOverrides());
-                    assertEquals("gpt-4o", body.getTierOverrides().get("standard").getModel());
+                    assertEquals("gpt-4o", body.getTierOverrides().get("special1").getModel());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldGetSettingsWithWebhookTokensExposed() {
+        UserPreferences prefs = new UserPreferences();
+        prefs.setWebhooks(UserPreferences.WebhookConfig.builder()
+                .enabled(true)
+                .token(Secret.of("bearer-secret"))
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("github-push")
+                        .action("agent")
+                        .authMode("hmac")
+                        .hmacSecret(Secret.of("hmac-secret"))
+                        .messageTemplate("Push to {repository.name}")
+                        .build()))
+                .build());
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        StepVerifier.create(controller.getSettings())
+                .assertNext(response -> {
+                    SettingsResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertNotNull(body.getWebhooks());
+                    assertTrue(body.getWebhooks().isEnabled());
+                    assertNotNull(body.getWebhooks().getToken());
+                    assertEquals("bearer-secret", body.getWebhooks().getToken().getValue());
+                    assertEquals(1, body.getWebhooks().getMappings().size());
+                    assertNotNull(body.getWebhooks().getMappings().get(0).getHmacSecret());
+                    assertEquals("hmac-secret", body.getWebhooks().getMappings().get(0).getHmacSecret().getValue());
                 })
                 .verifyComplete();
     }
@@ -102,7 +157,7 @@ class SettingsControllerTest {
         MemoryPreset preset = MemoryPreset.builder()
                 .id("coding_balanced")
                 .label("Coding Balanced")
-                .comment("Универсальный дефолт для большинства разработчиков.")
+                .comment("Balanced default for most developers.")
                 .memory(RuntimeConfig.MemoryConfig.builder()
                         .softPromptBudgetTokens(1800)
                         .maxPromptBudgetTokens(3500)
@@ -153,12 +208,12 @@ class SettingsControllerTest {
     void shouldUpdatePartialPreferences() {
         UserPreferences prefs = new UserPreferences();
         prefs.setLanguage("en");
-        prefs.setModelTier("standard");
+        prefs.setModelTier("balanced");
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
         PreferencesUpdateRequest request = new PreferencesUpdateRequest();
         request.setNotificationsEnabled(true);
-        request.setModelTier("premium");
+        request.setModelTier("special3");
         request.setTierForce(true);
 
         StepVerifier.create(controller.updatePreferences(request))
@@ -166,60 +221,108 @@ class SettingsControllerTest {
                 .verifyComplete();
 
         assertEquals("en", prefs.getLanguage()); // unchanged
-        assertEquals("premium", prefs.getModelTier());
+        assertEquals("special3", prefs.getModelTier());
         assertTrue(prefs.isTierForce());
         assertTrue(prefs.isNotificationsEnabled());
     }
 
     @Test
-    void shouldAllowInviteOnlyTelegramConfigWithRegisteredUsers() {
+    void shouldNormalizeAutoModeDefaultTierToNull() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .telegram(RuntimeConfig.TelegramConfig.builder()
-                        .authMode("invite_only")
-                        .allowedUsers(List.of("1001"))
-                        .token(Secret.of("saved-token"))
-                        .build())
+                .autoMode(RuntimeConfig.AutoModeConfig.builder().build())
                 .build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
-        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(runtimeConfig);
 
-        RuntimeConfig.TelegramConfig incoming = RuntimeConfig.TelegramConfig.builder()
+        RuntimeConfig.AutoModeConfig update = RuntimeConfig.AutoModeConfig.builder()
                 .enabled(true)
-                .authMode("user")
-                .allowedUsers(List.of("1001"))
-                .inviteCodes(List.of())
+                .modelTier("default")
+                .reflectionModelTier("special2")
+                .reflectionTierPriority(true)
                 .build();
 
-        StepVerifier.create(controller.updateTelegramConfig(incoming))
+        StepVerifier.create(controller.updateAutoConfig(update))
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
 
-        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
-        assertEquals(List.of("1001"), runtimeConfig.getTelegram().getAllowedUsers());
-        assertEquals("invite_only", runtimeConfig.getTelegram().getAuthMode());
-        assertEquals("saved-token", Secret.valueOrEmpty(runtimeConfig.getTelegram().getToken()));
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertNull(captor.getValue().getAutoMode().getModelTier());
+        assertEquals("special2", captor.getValue().getAutoMode().getReflectionModelTier());
+        assertTrue(Boolean.TRUE.equals(captor.getValue().getAutoMode().getReflectionTierPriority()));
     }
 
     @Test
-    void shouldRejectTelegramConfigWithMultipleAllowedUsers() {
+    void shouldRejectAutoModeConfigWithUnknownReflectionTier() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .telegram(RuntimeConfig.TelegramConfig.builder()
-                        .authMode("invite_only")
-                        .token(Secret.of("saved-token"))
-                        .build())
+                .autoMode(RuntimeConfig.AutoModeConfig.builder().build())
                 .build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
 
-        RuntimeConfig.TelegramConfig incoming = RuntimeConfig.TelegramConfig.builder()
+        RuntimeConfig.AutoModeConfig update = RuntimeConfig.AutoModeConfig.builder()
                 .enabled(true)
-                .authMode("invite_only")
-                .allowedUsers(List.of("1001", "1002"))
-                .inviteCodes(List.of())
+                .reflectionModelTier("turbo")
                 .build();
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> controller.updateTelegramConfig(incoming));
-        assertTrue(error.getMessage().contains("supports only one invited user"));
+                () -> controller.updateAutoConfig(update));
+
+        assertTrue(error.getMessage().contains("autoMode.reflectionModelTier"));
+    }
+
+    @Test
+    void shouldUpdateTracingConfigWhenValid() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tracing(RuntimeConfig.TracingConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.TracingConfig tracingConfig = RuntimeConfig.TracingConfig.builder()
+                .enabled(true)
+                .payloadSnapshotsEnabled(true)
+                .sessionTraceBudgetMb(256)
+                .maxSnapshotSizeKb(512)
+                .maxSnapshotsPerSpan(5)
+                .maxTracesPerSession(30)
+                .captureInboundPayloads(true)
+                .captureOutboundPayloads(false)
+                .captureToolPayloads(true)
+                .captureLlmPayloads(true)
+                .build();
+
+        StepVerifier.create(controller.updateTracingConfig(tracingConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig.TracingConfig saved = captor.getValue().getTracing();
+        assertTrue(saved.getEnabled());
+        assertTrue(saved.getPayloadSnapshotsEnabled());
+        assertEquals(256, saved.getSessionTraceBudgetMb());
+        assertEquals(512, saved.getMaxSnapshotSizeKb());
+        assertEquals(5, saved.getMaxSnapshotsPerSpan());
+        assertEquals(30, saved.getMaxTracesPerSession());
+        assertTrue(saved.getCaptureInboundPayloads());
+        assertFalse(saved.getCaptureOutboundPayloads());
+        assertTrue(saved.getCaptureToolPayloads());
+        assertTrue(saved.getCaptureLlmPayloads());
+    }
+
+    @Test
+    void shouldRejectTracingBudgetBelowOneMegabyte() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .tracing(RuntimeConfig.TracingConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.TracingConfig tracingConfig = RuntimeConfig.TracingConfig.builder()
+                .enabled(true)
+                .sessionTraceBudgetMb(0)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateTracingConfig(tracingConfig));
+        assertEquals("tracing.sessionTraceBudgetMb must be between 1 and 1024", error.getMessage());
     }
 
     @Test
@@ -240,28 +343,146 @@ class SettingsControllerTest {
     }
 
     @Test
-    void shouldRemoveTelegramAllowedUser() {
-        when(runtimeConfigService.removeTelegramAllowedUser("123")).thenReturn(true);
+    void shouldUpdateHiveConfigWhenWritable() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder().build();
+        RuntimeConfig responseConfig = RuntimeConfig.builder()
+                .hive(RuntimeConfig.HiveConfig.builder()
+                        .enabled(true)
+                        .serverUrl("https://hive.example.com")
+                        .displayName("Builder")
+                        .hostLabel("lab-a")
+                        .autoConnect(true)
+                        .managedByProperties(false)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(responseConfig);
 
-        StepVerifier.create(controller.removeTelegramAllowedUser("123"))
+        RuntimeConfig.HiveConfig update = RuntimeConfig.HiveConfig.builder()
+                .enabled(true)
+                .serverUrl("https://hive.example.com")
+                .displayName("Builder")
+                .hostLabel("lab-a")
+                .autoConnect(true)
+                .managedByProperties(false)
+                .build();
+
+        StepVerifier.create(controller.updateHiveConfig(update))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    RuntimeConfig body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("https://hive.example.com", body.getHive().getServerUrl());
+                })
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertEquals("https://hive.example.com", captor.getValue().getHive().getServerUrl());
+        assertTrue(captor.getValue().getHive().getAutoConnect());
+    }
+
+    @Test
+    void shouldMergeAndNormalizeModelRegistryConfigWhenUpdatingRuntimeConfig() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .modelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                        .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                        .branch("main")
+                        .build())
+                .build();
+        RuntimeConfig responseConfig = RuntimeConfig.builder()
+                .modelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                        .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                        .branch("main")
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(responseConfig);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .modelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                        .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                        .branch("  ")
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertEquals("https://github.com/alexk-dev/golemcore-models",
+                captor.getValue().getModelRegistry().getRepositoryUrl());
+        assertEquals("main", captor.getValue().getModelRegistry().getBranch());
     }
 
     @Test
-    void shouldRejectNonNumericTelegramAllowedUserId() {
+    void shouldPreserveCurrentModelRegistryConfigWhenIncomingSectionIsEmpty() {
+        RuntimeConfig.ModelRegistryConfig currentModelRegistry = RuntimeConfig.ModelRegistryConfig.builder()
+                .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                .branch("main")
+                .build();
+        RuntimeConfig current = RuntimeConfig.builder()
+                .modelRegistry(currentModelRegistry)
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .modelRegistry(new RuntimeConfig.ModelRegistryConfig())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertEquals(currentModelRegistry, captor.getValue().getModelRegistry());
+    }
+
+    @Test
+    void shouldRejectRuntimeConfigWhenModelRegistryRepositoryUrlIsInvalid() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .modelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                        .repositoryUrl("not-a-url")
+                        .branch("main")
+                        .build())
+                .build();
+
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> controller.removeTelegramAllowedUser("abc"));
-        assertTrue(error.getMessage().contains("telegram.userId must be numeric"));
+                () -> controller.updateRuntimeConfig(incoming));
+        assertEquals("modelRegistry.repositoryUrl must be a valid http(s) URL", error.getMessage());
     }
 
     @Test
-    void shouldReturnNotFoundWhenRemovingMissingTelegramAllowedUser() {
-        when(runtimeConfigService.removeTelegramAllowedUser("123")).thenReturn(false);
+    void shouldRejectHiveUpdatesWhenManagedByProperties() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .hive(RuntimeConfig.HiveConfig.builder()
+                        .enabled(true)
+                        .serverUrl("https://managed.example.com")
+                        .managedByProperties(true)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(true);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .hive(RuntimeConfig.HiveConfig.builder()
+                        .enabled(false)
+                        .serverUrl("https://other.example.com")
+                        .managedByProperties(false)
+                        .build())
+                .build();
 
         ResponseStatusException error = assertThrows(ResponseStatusException.class,
-                () -> controller.removeTelegramAllowedUser("123"));
-        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+                () -> controller.updateRuntimeConfig(incoming).block());
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        assertTrue(error.getReason().contains("Hive settings are managed"));
     }
 
     @Test
@@ -270,7 +491,7 @@ class SettingsControllerTest {
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
         Map<String, SettingsResponse.TierOverrideDto> overrides = Map.of(
-                "standard", SettingsResponse.TierOverrideDto.builder()
+                "special2", SettingsResponse.TierOverrideDto.builder()
                         .model("gpt-4o")
                         .reasoning("medium")
                         .build());
@@ -281,7 +502,26 @@ class SettingsControllerTest {
 
         verify(preferencesService).savePreferences(prefs);
         assertNotNull(prefs.getTierOverrides());
-        assertEquals("gpt-4o", prefs.getTierOverrides().get("standard").getModel());
+        assertEquals("gpt-4o", prefs.getTierOverrides().get("special2").getModel());
+    }
+
+    @Test
+    void shouldRejectWebhookConfigWithUnknownModelTier() {
+        UserPreferences prefs = new UserPreferences();
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .enabled(true)
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("deploy")
+                        .action("agent")
+                        .model("turbo")
+                        .build()))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateWebhooksConfig(webhookConfig));
+        assertEquals("webhooks.mapping.model must be a known tier id", error.getMessage());
     }
 
     @Test
@@ -306,6 +546,106 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateLlmConfig(update));
         assertTrue(error.getMessage().contains("Cannot remove provider 'openai'"));
+    }
+
+    @Test
+    void shouldRejectLlmProviderRemovalWhenUsedBySpecialTier() {
+        RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder().build();
+        modelRouter.setTierBinding("special2", RuntimeConfig.TierBinding.builder()
+                .model("openai/special2-model")
+                .reasoning("none")
+                .build());
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRouter(modelRouter)
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build(),
+                                "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.LlmConfig update = RuntimeConfig.LlmConfig.builder()
+                .providers(new LinkedHashMap<>(Map.of(
+                        "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateLlmConfig(update));
+        assertTrue(error.getMessage().contains("Cannot remove provider 'openai'"));
+    }
+
+    @Test
+    void shouldRejectLlmProviderRemovalWhenAliasOnlyModelIsUsedByRouter() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder()
+                        .balancedModel("gpt-5.1")
+                        .build())
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build(),
+                                "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(modelSelectionService.resolveProviderForModel("gpt-5.1")).thenReturn("openai");
+
+        RuntimeConfig.LlmConfig update = RuntimeConfig.LlmConfig.builder()
+                .providers(new LinkedHashMap<>(Map.of(
+                        "anthropic", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("y")).build())))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateLlmConfig(update));
+        assertTrue(error.getMessage().contains("Cannot remove provider 'openai'"));
+    }
+
+    @Test
+    void shouldRejectModelRouterUpdateWhenTierModelIsUnknown() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder().build();
+        modelRouter.setTierBinding("special1", RuntimeConfig.TierBinding.builder()
+                .model("custom/ghost-model")
+                .reasoning("none")
+                .build());
+        when(modelSelectionService.validateModel("custom/ghost-model", List.of("openai")))
+                .thenReturn(new ModelSelectionService.ValidationResult(false, "model.not.found"));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateModelRouterConfig(modelRouter));
+        assertTrue(error.getMessage().contains("special1"));
+        assertTrue(error.getMessage().contains("custom/ghost-model"));
+    }
+
+    @Test
+    void shouldRejectModelRouterUpdateWhenTierProviderIsNotConfigured() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder().build();
+        modelRouter.setTierBinding("special2", RuntimeConfig.TierBinding.builder()
+                .model("anthropic/claude-sonnet-4")
+                .reasoning("none")
+                .build());
+        when(modelSelectionService.validateModel("anthropic/claude-sonnet-4", List.of("openai")))
+                .thenReturn(new ModelSelectionService.ValidationResult(false, "provider.not.configured"));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateModelRouterConfig(modelRouter));
+        assertTrue(error.getMessage().contains("special2"));
+        assertTrue(error.getMessage().contains("provider"));
     }
 
     @Test
@@ -692,6 +1032,134 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldInitializeTelegramSectionWhenBaselineRuntimeConfigIsNull() {
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(null);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertNotNull(saved.getTelegram());
+        assertEquals("invite_only", saved.getTelegram().getAuthMode());
+        assertNotNull(saved.getLlm());
+        assertNotNull(saved.getModelRouter());
+    }
+
+    @Test
+    void shouldPreserveExistingToolsSectionWhenIncomingToolsSectionIsEmpty() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .filesystemEnabled(true)
+                        .shellEnabled(true)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .tools(RuntimeConfig.ToolsConfig.builder().build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals(Boolean.TRUE, saved.getTools().getFilesystemEnabled());
+        assertEquals(Boolean.TRUE, saved.getTools().getShellEnabled());
+    }
+
+    @Test
+    void shouldPreserveUnspecifiedRuntimeSectionsDuringPartialRuntimeUpdate() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder().apiKey(Secret.of("x")).build())))
+                        .build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder()
+                        .balancedModel("openai/gpt-5.1")
+                        .build())
+                .tools(RuntimeConfig.ToolsConfig.builder()
+                        .filesystemEnabled(true)
+                        .build())
+                .turn(RuntimeConfig.TurnConfig.builder()
+                        .maxLlmCalls(9)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .turn(RuntimeConfig.TurnConfig.builder()
+                        .maxLlmCalls(12)
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals(12, saved.getTurn().getMaxLlmCalls());
+        assertEquals(Boolean.TRUE, saved.getTools().getFilesystemEnabled());
+        assertEquals("openai/gpt-5.1", saved.getModelRouter().getBalancedModel());
+        assertTrue(saved.getLlm().getProviders().containsKey("openai"));
+    }
+
+    @Test
+    void shouldRejectInvalidTurnProgressBatchSize() {
+        RuntimeConfig.TurnConfig turnConfig = RuntimeConfig.TurnConfig.builder()
+                .progressBatchSize(0)
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder().build());
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateTurnConfig(turnConfig));
+
+        assertEquals("turn.progressBatchSize must be between 1 and 50", error.getMessage());
+    }
+
+    @Test
+    void shouldUpdateTurnConfigWithProgressSettings() {
+        RuntimeConfig current = RuntimeConfig.builder().turn(new RuntimeConfig.TurnConfig()).build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig.TurnConfig turnConfig = RuntimeConfig.TurnConfig.builder()
+                .maxLlmCalls(10)
+                .maxToolExecutions(20)
+                .deadline("PT30M")
+                .progressUpdatesEnabled(true)
+                .progressIntentEnabled(true)
+                .progressBatchSize(7)
+                .progressMaxSilenceSeconds(12)
+                .progressSummaryTimeoutMs(9000)
+                .build();
+
+        StepVerifier.create(controller.updateTurnConfig(turnConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals(7, saved.getTurn().getProgressBatchSize());
+        assertEquals(12, saved.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(9000, saved.getTurn().getProgressSummaryTimeoutMs());
+    }
+
+    @Test
     void shouldGetShellEnvironmentVariablesFromRuntimeConfigForApi() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .tools(RuntimeConfig.ToolsConfig.builder()
@@ -1047,7 +1515,7 @@ class SettingsControllerTest {
     }
 
     @Test
-    void shouldRejectWhisperSttWithoutUrl() {
+    void shouldAllowWhisperAsBothSttAndTtsWithoutLegacyUrl() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder().build())
                 .build();
@@ -1055,11 +1523,17 @@ class SettingsControllerTest {
 
         RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
                 .sttProvider("whisper")
+                .ttsProvider("whisper")
                 .build();
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> controller.updateVoiceConfig(incoming));
-        assertTrue(error.getMessage().contains("voice.whisperSttUrl is required"));
+        StepVerifier.create(controller.updateVoiceConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
+        assertEquals("golemcore/whisper", saved.getSttProvider());
+        assertEquals("golemcore/whisper", saved.getTtsProvider());
+        assertNull(saved.getWhisperSttUrl());
     }
 
     @Test
@@ -1071,12 +1545,36 @@ class SettingsControllerTest {
 
         RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
                 .sttProvider("elevenlabs")
-                .ttsProvider("whisper")
+                .ttsProvider("google")
                 .build();
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateVoiceConfig(incoming));
-        assertTrue(error.getMessage().contains("voice.ttsProvider must be 'elevenlabs'"));
+        assertTrue(error.getMessage().contains("voice.ttsProvider must resolve to a loaded TTS provider"));
+    }
+
+    @Test
+    void shouldRejectUnloadedVoiceProvidersEvenWhenCanonicalIdsAreUsed() {
+        SettingsController unloadedController = new SettingsController(
+                preferencesService,
+                modelSelectionService,
+                runtimeConfigService,
+                memoryPresetService,
+                new SttProviderRegistry(),
+                new TtsProviderRegistry());
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
+                .sttProvider("golemcore/elevenlabs")
+                .ttsProvider("golemcore/elevenlabs")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> unloadedController.updateVoiceConfig(incoming));
+        assertTrue(error.getMessage().contains("voice.sttProvider must resolve to a loaded STT provider"));
     }
 
     @Test
@@ -1102,8 +1600,8 @@ class SettingsControllerTest {
 
         RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
         assertEquals("whisper-secret", saved.getWhisperSttApiKey().getValue());
-        assertEquals("whisper", saved.getSttProvider());
-        assertEquals("elevenlabs", saved.getTtsProvider());
+        assertEquals("golemcore/whisper", saved.getSttProvider());
+        assertEquals("golemcore/elevenlabs", saved.getTtsProvider());
         verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
     }
 
@@ -1118,8 +1616,7 @@ class SettingsControllerTest {
 
         RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
                 .sttProvider("  WHISPER  ")
-                .ttsProvider("  ELEVENLABS  ")
-                .whisperSttUrl("http://localhost:5092")
+                .ttsProvider("  WHISPER  ")
                 .build();
 
         StepVerifier.create(controller.updateVoiceConfig(incoming))
@@ -1127,8 +1624,8 @@ class SettingsControllerTest {
                 .verifyComplete();
 
         RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
-        assertEquals("whisper", saved.getSttProvider());
-        assertEquals("elevenlabs", saved.getTtsProvider());
+        assertEquals("golemcore/whisper", saved.getSttProvider());
+        assertEquals("golemcore/whisper", saved.getTtsProvider());
     }
 
     @Test
@@ -1145,25 +1642,34 @@ class SettingsControllerTest {
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateVoiceConfig(incoming));
-        assertTrue(error.getMessage().contains("voice.sttProvider must be one of"));
+        assertTrue(error.getMessage().contains("voice.sttProvider must resolve to a loaded STT provider"));
     }
 
     @Test
-    void shouldRejectWhisperSttWithInvalidUrl() {
+    void shouldAllowRuntimeConfigUpdateWhenLegacyWhisperUrlIsInvalid() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .voice(RuntimeConfig.VoiceConfig.builder().build())
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .whisperSttUrl("ftp://localhost:5092")
+                        .build())
                 .build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
 
-        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
-                .sttProvider("whisper")
-                .ttsProvider("elevenlabs")
-                .whisperSttUrl("ftp://localhost:5092")
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .sttProvider("whisper")
+                        .ttsProvider("whisper")
+                        .build())
                 .build();
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> controller.updateVoiceConfig(incoming));
-        assertTrue(error.getMessage().contains("voice.whisperSttUrl must be a valid http(s) URL"));
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("golemcore/whisper", saved.getVoice().getSttProvider());
+        assertEquals("golemcore/whisper", saved.getVoice().getTtsProvider());
     }
 
     @Test
@@ -1187,13 +1693,51 @@ class SettingsControllerTest {
 
         RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
         assertNull(saved.getWhisperSttUrl());
-        assertEquals("elevenlabs", saved.getSttProvider());
-        assertEquals("elevenlabs", saved.getTtsProvider());
+        assertEquals("golemcore/elevenlabs", saved.getSttProvider());
+        assertEquals("golemcore/elevenlabs", saved.getTtsProvider());
+    }
+
+    @Test
+    void shouldAllowDisabledVoiceConfigWhenNoVoiceProvidersAreLoaded() {
+        SettingsController unloadedController = new SettingsController(
+                preferencesService,
+                modelSelectionService,
+                runtimeConfigService,
+                memoryPresetService,
+                new SttProviderRegistry(),
+                new TtsProviderRegistry());
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .voice(RuntimeConfig.VoiceConfig.builder()
+                        .enabled(false)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.VoiceConfig incoming = RuntimeConfig.VoiceConfig.builder()
+                .enabled(false)
+                .build();
+
+        StepVerifier.create(unloadedController.updateVoiceConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        RuntimeConfig.VoiceConfig saved = runtimeConfig.getVoice();
+        assertNull(saved.getSttProvider());
+        assertNull(saved.getTtsProvider());
     }
 
     @Test
     void shouldPreserveWhisperApiKeyDuringRuntimeUpdateWhenNotProvided() {
         RuntimeConfig current = RuntimeConfig.builder()
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder()
+                        .balancedModel("openai/gpt-5.1")
+                        .build())
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "openai", RuntimeConfig.LlmProviderConfig.builder()
+                                        .apiKey(Secret.of("openai-secret"))
+                                        .build())))
+                        .build())
                 .voice(RuntimeConfig.VoiceConfig.builder()
                         .sttProvider("whisper")
                         .ttsProvider("elevenlabs")
@@ -1214,12 +1758,16 @@ class SettingsControllerTest {
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
 
-        assertEquals("whisper-secret", incoming.getVoice().getWhisperSttApiKey().getValue());
-        verify(runtimeConfigService).updateRuntimeConfig(incoming);
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("whisper-secret", saved.getVoice().getWhisperSttApiKey().getValue());
+        assertEquals("openai/gpt-5.1", saved.getModelRouter().getBalancedModel());
+        assertEquals("openai-secret", saved.getLlm().getProviders().get("openai").getApiKey().getValue());
     }
 
     @Test
-    void shouldValidateVoiceConfigInRuntimeUpdate() {
+    void shouldAllowWhisperVoiceConfigInRuntimeUpdate() {
         RuntimeConfig current = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder().build())
                 .build();
@@ -1227,13 +1775,202 @@ class SettingsControllerTest {
 
         RuntimeConfig incoming = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder()
-                        .sttProvider("elevenlabs")
+                        .sttProvider("whisper")
                         .ttsProvider("whisper")
                         .build())
                 .build();
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("golemcore/whisper", saved.getVoice().getSttProvider());
+        assertEquals("golemcore/whisper", saved.getVoice().getTtsProvider());
+    }
+
+    @Test
+    void shouldRejectInvalidCompactionTriggerMode() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .triggerMode("magic")
+                        .build())
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateRuntimeConfig(incoming));
-        assertTrue(error.getMessage().contains("voice.ttsProvider must be 'elevenlabs'"));
+        assertTrue(exception.getMessage().contains("compaction.triggerMode must be one of"));
+        assertTrue(exception.getMessage().contains("model_ratio"));
+        assertTrue(exception.getMessage().contains("token_threshold"));
+    }
+
+    @Test
+    void shouldRejectInvalidCompactionModelThresholdRatio() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .modelThresholdRatio(1.2d)
+                        .build())
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertEquals("compaction.modelThresholdRatio must be between 0 and 1", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectZeroCompactionModelThresholdRatio() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .modelThresholdRatio(0.0d)
+                        .build())
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateRuntimeConfig(incoming));
+        assertEquals("compaction.modelThresholdRatio must be between 0 and 1", exception.getMessage());
+    }
+
+    @Test
+    void shouldNormalizeBlankCompactionModeAndMissingRatioToDefaults() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .triggerMode("   ")
+                        .modelThresholdRatio(null)
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("model_ratio", saved.getCompaction().getTriggerMode());
+        assertEquals(0.95d, saved.getCompaction().getModelThresholdRatio(), 0.0001d);
+    }
+
+    @Test
+    void shouldNormalizeCompactionTriggerModeCaseAndWhitespace() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .compaction(RuntimeConfig.CompactionConfig.builder()
+                        .triggerMode(" Token_Threshold ")
+                        .modelThresholdRatio(0.8d)
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals("token_threshold", saved.getCompaction().getTriggerMode());
+        assertEquals(0.8d, saved.getCompaction().getModelThresholdRatio(), 0.0001d);
+    }
+
+    @Test
+    void shouldUpdatePlanConfigWhenValid() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .plan(RuntimeConfig.PlanConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.PlanConfig planConfig = RuntimeConfig.PlanConfig.builder()
+                .enabled(true)
+                .maxPlans(8)
+                .maxStepsPerPlan(120)
+                .stopOnFailure(false)
+                .build();
+
+        StepVerifier.create(controller.updatePlanConfig(planConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
+        assertEquals(8, runtimeConfig.getPlan().getMaxPlans());
+        assertEquals(120, runtimeConfig.getPlan().getMaxStepsPerPlan());
+        assertEquals(Boolean.FALSE, runtimeConfig.getPlan().getStopOnFailure());
+    }
+
+    @Test
+    void shouldRejectPlanConfigWhenMaxPlansOutOfRange() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .plan(RuntimeConfig.PlanConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.PlanConfig planConfig = RuntimeConfig.PlanConfig.builder()
+                .enabled(true)
+                .maxPlans(0)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updatePlanConfig(planConfig));
+        assertTrue(error.getMessage().contains("plan.maxPlans"));
+    }
+
+    @Test
+    void shouldPreserveExistingPlanSectionDuringPartialRuntimeUpdate() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .plan(RuntimeConfig.PlanConfig.builder()
+                        .enabled(true)
+                        .maxPlans(9)
+                        .maxStepsPerPlan(70)
+                        .stopOnFailure(false)
+                        .build())
+                .turn(RuntimeConfig.TurnConfig.builder().maxLlmCalls(9).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .turn(RuntimeConfig.TurnConfig.builder().maxLlmCalls(12).build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        RuntimeConfig saved = captor.getValue();
+        assertEquals(Boolean.TRUE, saved.getPlan().getEnabled());
+        assertEquals(9, saved.getPlan().getMaxPlans());
+        assertEquals(70, saved.getPlan().getMaxStepsPerPlan());
+        assertEquals(Boolean.FALSE, saved.getPlan().getStopOnFailure());
+    }
+
+    private void registerSttProvider(String providerId, String alias) {
+        SttProvider provider = mock(SttProvider.class);
+        when(provider.getProviderId()).thenReturn(providerId);
+        when(provider.getAliases()).thenReturn(Set.of(alias));
+        when(provider.isAvailable()).thenReturn(true);
+        sttProviderRegistry.replaceProviders(providerId, List.of(provider));
+    }
+
+    private void registerTtsProvider(String providerId, String alias) {
+        TtsProvider provider = mock(TtsProvider.class);
+        when(provider.getProviderId()).thenReturn(providerId);
+        when(provider.getAliases()).thenReturn(Set.of(alias));
+        when(provider.isAvailable()).thenReturn(true);
+        ttsProviderRegistry.replaceProviders(providerId, List.of(provider));
     }
 }

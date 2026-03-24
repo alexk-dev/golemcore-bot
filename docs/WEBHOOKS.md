@@ -334,6 +334,46 @@ Route the agent response to a Telegram chat:
 
 ---
 
+## Delivery Tracking (Dashboard)
+
+For `/agent` runs with `callbackUrl`, callback delivery attempts are tracked in memory and exposed to the dashboard.
+
+### Delivery Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/webhooks/deliveries` | GET | List delivery attempts (supports `status`, `limit`) |
+| `/api/webhooks/deliveries/{deliveryId}` | GET | Inspect single delivery timeline and payload snapshot |
+| `/api/webhooks/deliveries/{deliveryId}/retry` | POST | Retry last stored callback payload |
+| `/api/webhooks/deliveries/test` | POST | Trigger and track a test callback payload |
+
+### Delivery States
+
+- `PENDING`
+- `IN_PROGRESS`
+- `SUCCESS`
+- `FAILED`
+
+### Timeline Events
+
+Each tracked delivery stores an ordered timeline:
+
+- `REGISTERED`
+- `ATTEMPT`
+- `SUCCESS`
+- `FAILURE`
+- `RETRY_REQUESTED`
+
+### Retention
+
+Delivery history is bounded by:
+
+- property: `bot.webhooks.delivery-history-max-entries`
+- env var: `BOT_WEBHOOKS_DELIVERY_HISTORY_MAX_ENTRIES`
+- default: `500`
+
+---
+
 ## Security
 
 ### Safety Wrapping
@@ -389,6 +429,12 @@ All webhook configuration is stored in `UserPreferences` (not application.proper
 | `defaultTimeoutSeconds` | int | `300` | Default timeout for `/agent` runs |
 | `mappings` | array | `[]` | Custom hook mappings (see above) |
 
+### Delivery Tracking Config
+
+| Property | Env Var | Default | Description |
+|---|---|---|---|
+| `bot.webhooks.delivery-history-max-entries` | `BOT_WEBHOOKS_DELIVERY_HISTORY_MAX_ENTRIES` | `500` | Max in-memory delivery entries retained for dashboard timeline |
+
 ---
 
 ## Error Responses
@@ -397,7 +443,7 @@ All webhook configuration is stored in `UserPreferences` (not application.proper
 |--------|-----------|
 | `200 OK` | Wake accepted |
 | `202 Accepted` | Agent run accepted |
-| `400 Bad Request` | Missing required field (`text` or `message`) |
+| `400 Bad Request` | Missing required field (`text` or `message`) or invalid callback URL |
 | `401 Unauthorized` | Invalid or missing authentication |
 | `404 Not Found` | Webhooks disabled or unknown mapping name |
 | `413 Payload Too Large` | Body exceeds `maxPayloadSize` |
@@ -435,7 +481,8 @@ InboundMessageEvent --> SessionRunCoordinator --> AgentLoop pipeline
      |
      v
 WebhookChannelAdapter      ChannelPort implementation
-     +-- WebhookCallbackSender    Reactive WebClient POST with retry
+     +-- WebhookDeliveryTracker     in-memory delivery timeline + retry state
+     +-- WebhookCallbackSender      Reactive WebClient POST with retry
 ```
 
 ### Package Structure
@@ -445,13 +492,17 @@ adapter/inbound/webhook/
 ├── WebhookController.java          # REST endpoints
 ├── WebhookAuthenticator.java       # Auth (Bearer + HMAC)
 ├── WebhookChannelAdapter.java      # ChannelPort impl
-├── WebhookCallbackSender.java      # Callback delivery
+├── WebhookDeliveryTracker.java     # Delivery timeline + retry model
+├── WebhookCallbackSender.java      # Callback delivery transport
 ├── WebhookPayloadTransformer.java  # Template resolution
 └── dto/
     ├── WakeRequest.java
     ├── AgentRequest.java
     ├── WebhookResponse.java
     └── CallbackPayload.java
+
+adapter/inbound/web/controller/
+└── WebhookDeliveriesController.java # Authenticated dashboard APIs for delivery timeline
 ```
 
 ### Message Flow
@@ -462,6 +513,7 @@ adapter/inbound/webhook/
 4. A `Message` is built and published via `ApplicationEventPublisher`
 5. `SessionRunCoordinator` picks up the event and runs the `AgentLoop` pipeline
 6. Response is captured by `WebhookChannelAdapter` and delivered via callback
+7. `WebhookDeliveryTracker` records callback attempts, result, and retry timeline for dashboard inspection
 
 ---
 

@@ -1,0 +1,38 @@
+import type { ReactElement } from 'react';
+import { Badge } from 'react-bootstrap';
+import { FiGlobe } from 'react-icons/fi';
+
+export interface WebhookSummary {
+  total: number;
+  agent: number;
+  hmac: number;
+}
+
+interface WebhooksPageHeaderProps {
+  enabled: boolean;
+  summary: WebhookSummary;
+}
+
+export function WebhooksPageHeader({ enabled, summary }: WebhooksPageHeaderProps): ReactElement {
+  return (
+    <div className="page-header d-flex flex-wrap align-items-start justify-content-between gap-3">
+      <div>
+        <h4 className="mb-1 d-flex align-items-center gap-2">
+          <FiGlobe size={18} />
+          Webhooks
+        </h4>
+        <p className="text-body-secondary mb-0">
+          Configure inbound HTTP hooks, authentication, templates, and delivery routes.
+        </p>
+      </div>
+      <div className="d-flex flex-wrap gap-2">
+        <Badge bg={enabled ? 'success' : 'secondary'}>
+          {enabled ? 'Enabled' : 'Disabled'}
+        </Badge>
+        <Badge bg="secondary">{summary.total} hooks</Badge>
+        <Badge bg="primary">{summary.agent} agent</Badge>
+        <Badge bg="info">{summary.hmac} hmac</Badge>
+      </div>
+    </div>
+  );
+}

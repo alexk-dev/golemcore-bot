@@ -1,12 +1,15 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UpdateActionResult;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.domain.service.UpdateService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
@@ -25,6 +28,12 @@ public class UpdateController {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
+    @GetMapping("/config")
+    public Mono<ResponseEntity<RuntimeConfig.UpdateConfig>> getConfig() {
+        return Mono.fromCallable(() -> ResponseEntity.ok(updateService.getConfig()))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
     @PostMapping("/check")
     public Mono<ResponseEntity<UpdateActionResult>> check() {
         return Mono.fromCallable(() -> ResponseEntity.ok(updateService.check()))
@@ -34,6 +43,13 @@ public class UpdateController {
     @PostMapping("/update-now")
     public Mono<ResponseEntity<UpdateActionResult>> updateNow() {
         return Mono.fromCallable(() -> ResponseEntity.ok(updateService.updateNow()))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @PutMapping("/config")
+    public Mono<ResponseEntity<RuntimeConfig.UpdateConfig>> updateConfig(
+            @RequestBody RuntimeConfig.UpdateConfig config) {
+        return Mono.fromCallable(() -> ResponseEntity.ok(updateService.updateConfig(config)))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 }

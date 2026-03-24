@@ -19,7 +19,10 @@
 package me.golemcore.bot.adapter.outbound.llm;
 
 import me.golemcore.bot.domain.component.LlmComponent;
-import me.golemcore.bot.domain.model.*;
+import me.golemcore.bot.domain.model.LlmChunk;
+import me.golemcore.bot.domain.model.LlmRequest;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.port.outbound.LlmPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

@@ -5,9 +5,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.domain.service.ConversationKeyValidator;
 import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.service.TraceContextSupport;
+import me.golemcore.bot.domain.service.TraceNamingSupport;
 import me.golemcore.bot.port.inbound.CommandPort;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
@@ -41,6 +44,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
     private static final int MAX_IMAGE_ATTACHMENTS = 6;
     private static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
     private static final String CHANNEL_TYPE = "web";
+    private static final String MESSAGE_TYPE_BIND = "bind";
 
     private final JwtTokenProvider jwtTokenProvider;
     private final WebChannelAdapter webChannelAdapter;
@@ -64,6 +68,10 @@ public class WebSocketChatHandler implements WebSocketHandler {
 
         return session.receive()
                 .doOnNext(wsMessage -> handleIncoming(wsMessage, connectionId, username))
+                .doOnError(error -> log.warn(
+                        "[WebSocket] Connection error: connectionId={}, message={}",
+                        connectionId,
+                        error.getMessage()))
                 .doFinally(signal -> {
                     log.info("[WebSocket] Connection closed: connectionId={}, signal={}", connectionId, signal);
                     webChannelAdapter.deregisterSession(connectionId);
@@ -77,12 +85,18 @@ public class WebSocketChatHandler implements WebSocketHandler {
             @SuppressWarnings("unchecked")
             Map<String, Object> json = objectMapper.readValue(payload, Map.class);
 
+            String messageType = asString(json.get("type"));
             String text = (String) json.get("text");
             String sessionId = normalizeSessionId((String) json.get("sessionId"), connectionId);
             String clientInstanceId = normalizeClientInstanceId((String) json.get("clientInstanceId"));
+            String clientMessageId = normalizeClientMessageId(asString(json.get("clientMessageId")));
             List<Map<String, Object>> attachments = extractImageAttachments(json.get("attachments"));
             webChannelAdapter.bindConnectionToChatId(connectionId, sessionId);
             bindWebPointer(username, clientInstanceId, sessionId);
+
+            if (MESSAGE_TYPE_BIND.equals(messageType)) {
+                return;
+            }
 
             if ((text == null || text.isBlank()) && attachments.isEmpty()) {
                 return;
@@ -96,8 +110,19 @@ public class WebSocketChatHandler implements WebSocketHandler {
 
             Map<String, Object> metadata = null;
             if (!attachments.isEmpty()) {
-                metadata = Map.of("attachments", attachments);
+                metadata = new LinkedHashMap<>();
+                metadata.put("attachments", attachments);
             }
+            if (clientMessageId != null) {
+                if (metadata == null) {
+                    metadata = new LinkedHashMap<>();
+                }
+                metadata.put("clientMessageId", clientMessageId);
+            }
+            metadata = TraceContextSupport.ensureRootMetadata(
+                    metadata,
+                    TraceSpanKind.INGRESS,
+                    TraceNamingSupport.WEBSOCKET_MESSAGE);
 
             Message message = Message.builder()
                     .id(UUID.randomUUID().toString())
@@ -234,6 +259,14 @@ public class WebSocketChatHandler implements WebSocketHandler {
             return null;
         }
         String candidate = clientInstanceId.trim();
+        return candidate.isEmpty() ? null : candidate;
+    }
+
+    private String normalizeClientMessageId(String clientMessageId) {
+        if (StringValueSupport.isBlank(clientMessageId)) {
+            return null;
+        }
+        String candidate = clientMessageId.trim();
         return candidate.isEmpty() ? null : candidate;
     }
 

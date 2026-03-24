@@ -62,7 +62,7 @@ class GoalManagementToolTest {
                 .updatedAt(Instant.now())
                 .build();
 
-        when(autoModeService.createGoal(LEARN_JAVA, STUDY_JAVA))
+        when(autoModeService.createGoal(LEARN_JAVA, STUDY_JAVA, null, null, false))
                 .thenReturn(goal);
 
         ToolResult result = tool.execute(Map.of(
@@ -73,7 +73,7 @@ class GoalManagementToolTest {
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains(LEARN_JAVA));
         assertTrue(result.getOutput().contains(GOAL_ID_G1));
-        verify(autoModeService).createGoal(LEARN_JAVA, STUDY_JAVA);
+        verify(autoModeService).createGoal(LEARN_JAVA, STUDY_JAVA, null, null, false);
     }
 
     @Test
@@ -88,7 +88,7 @@ class GoalManagementToolTest {
 
     @Test
     void createGoalLimitReached() throws Exception {
-        when(autoModeService.createGoal(anyString(), any()))
+        when(autoModeService.createGoal(anyString(), any(), any(), any(), anyBoolean()))
                 .thenThrow(new IllegalStateException("Maximum active goals reached: 3"));
 
         ToolResult result = tool.execute(Map.of(
@@ -97,6 +97,40 @@ class GoalManagementToolTest {
 
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Maximum active goals reached"));
+    }
+
+    @Test
+    void createGoalShouldAcceptSpecialReflectionTier() throws Exception {
+        Goal goal = Goal.builder()
+                .id(GOAL_ID_G1)
+                .title(LEARN_JAVA)
+                .status(Goal.GoalStatus.ACTIVE)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+        when(autoModeService.createGoal(LEARN_JAVA, null, null, "special2", true))
+                .thenReturn(goal);
+
+        ToolResult result = tool.execute(Map.of(
+                OPERATION, CREATE_GOAL,
+                TITLE, LEARN_JAVA,
+                "reflection_model_tier", "special2",
+                "reflection_tier_priority", true)).get();
+
+        assertTrue(result.isSuccess());
+        verify(autoModeService).createGoal(LEARN_JAVA, null, null, "special2", true);
+    }
+
+    @Test
+    void createGoalShouldRejectUnknownReflectionTier() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                OPERATION, CREATE_GOAL,
+                TITLE, LEARN_JAVA,
+                "reflection_model_tier", "turbo")).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("reflection_model_tier must be a known tier id"));
+        verifyNoInteractions(autoModeService);
     }
 
     @Test

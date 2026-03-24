@@ -42,7 +42,7 @@ feat(tools): add BrowserTool screenshot mode
 
 fix(llm): handle empty response from Anthropic API
 
-refactor(routing): extract MessageContextAggregator from SkillRoutingSystem
+refactor(routing): extract MessageContextAggregator from ContextBuildingSystem
 
 test(mcp): add McpClient lifecycle tests
 
@@ -490,6 +490,49 @@ void shouldDetectPromptInjection(String input) {
     assertTrue(guard.detectPromptInjection(input));
 }
 ```
+
+---
+
+## Frontend UI
+
+### Tailwind-First UI in New Work
+
+For new or substantially reworked dashboard UI, prefer the project `ui/*` primitives and tailwind utility classes over `react-bootstrap`.
+
+This keeps interaction patterns and spacing consistent with the newer dashboard surfaces and avoids mixed component stacks inside the same workflow.
+
+### Inputs With Leading Icons
+
+Inputs with a leading search or status icon must reserve a dedicated icon slot. Do not place an absolutely positioned icon on top of a standard input and assume the default input padding will be enough.
+
+This bug repeats easily:
+- the icon visually overlaps the placeholder
+- typed text starts underneath the icon
+- the issue can appear only on certain font sizes or responsive breakpoints
+
+Use these rules:
+- wrap the input in a `relative` container
+- position the icon with an explicit slot, for example `absolute left-3 top-1/2 -translate-y-1/2`
+- increase left padding on the input to clear the icon, typically `pl-11`
+- keep the icon `pointer-events-none`
+- verify both placeholder text and typed text, not just the empty field
+
+Recommended pattern:
+
+```tsx
+<label className="relative block">
+  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+    <FiSearch size={14} />
+  </span>
+  <Input
+    className="h-10 pl-11 pr-3"
+    placeholder="Search files"
+    aria-label="Search files"
+  />
+</label>
+```
+
+Avoid patterns where the icon container stretches across the full height using only `inset-y-0 left-0` plus small input padding like `pl-8` or `pl-9`. That spacing is too fragile and tends to regress.
 
 ---
 

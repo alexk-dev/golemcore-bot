@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,6 +25,7 @@ import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Prompt section management endpoints.
@@ -35,6 +37,7 @@ import java.util.Optional;
 public class PromptsController {
 
     private static final String PROMPTS_DIR = "prompts";
+    private static final Pattern VALID_NAME = Pattern.compile("^[a-z0-9][a-z0-9-]*$");
 
     private final PromptSectionService promptSectionService;
     private final UserPreferencesService preferencesService;
@@ -42,7 +45,7 @@ public class PromptsController {
 
     @GetMapping
     public Mono<ResponseEntity<List<PromptSectionDto>>> listSections() {
-        List<PromptSectionDto> sections = promptSectionService.getEnabledSections().stream()
+        List<PromptSectionDto> sections = promptSectionService.getAllSections().stream()
                 .map(this::toDto)
                 .toList();
         return Mono.just(ResponseEntity.ok(sections));
@@ -57,33 +60,79 @@ public class PromptsController {
         return Mono.just(ResponseEntity.ok(toDto(section.get())));
     }
 
-    @PutMapping("/{name}")
-    public Mono<ResponseEntity<PromptSectionDto>> updateSection(
-            @PathVariable String name, @RequestBody PromptCreateRequest request) {
-        String filename = name.toUpperCase(Locale.ROOT) + ".md";
+    @PostMapping
+    public Mono<ResponseEntity<PromptSectionDto>> createSection(@RequestBody PromptCreateRequest request) {
+        String normalizedName = requireValidName(request.getName());
+        if (promptSectionService.getSection(normalizedName).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Prompt section '" + normalizedName + "' already exists");
+        }
+        String filename = filenameFor(normalizedName);
         String fileContent = buildFileContent(request);
         return Mono.fromFuture(storagePort.putText(PROMPTS_DIR, filename, fileContent))
                 .then(Mono.fromRunnable(promptSectionService::reload))
                 .then(Mono.defer(() -> {
-                    Optional<PromptSection> updated = promptSectionService.getSection(name);
+                    Optional<PromptSection> created = promptSectionService.getSection(normalizedName);
+                    if (created.isEmpty()) {
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                "Prompt section '" + normalizedName + "' not found after create");
+                    }
+                    return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toDto(created.get())));
+                }));
+    }
+
+    @PutMapping("/{name}")
+    public Mono<ResponseEntity<PromptSectionDto>> updateSection(
+            @PathVariable String name, @RequestBody PromptCreateRequest request) {
+        String normalizedName = requireValidName(name);
+        if (promptSectionService.getSection(normalizedName).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Prompt section '" + normalizedName + "' not found");
+        }
+        String filename = filenameFor(normalizedName);
+        String fileContent = buildFileContent(request);
+        return Mono.fromFuture(storagePort.putText(PROMPTS_DIR, filename, fileContent))
+                .then(Mono.fromRunnable(promptSectionService::reload))
+                .then(Mono.defer(() -> {
+                    Optional<PromptSection> updated = promptSectionService.getSection(normalizedName);
                     if (updated.isEmpty()) {
                         throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                                "Prompt section '" + name + "' not found after update");
+                                "Prompt section '" + normalizedName + "' not found after update");
                     }
                     return Mono.just(ResponseEntity.ok(toDto(updated.get())));
                 }));
     }
 
     @PostMapping("/{name}/preview")
-    public Mono<ResponseEntity<Map<String, String>>> previewSection(@PathVariable String name) {
-        Optional<PromptSection> section = promptSectionService.getSection(name);
+    public Mono<ResponseEntity<Map<String, String>>> previewSection(
+            @PathVariable String name,
+            @RequestBody(required = false) PromptCreateRequest request) {
+        String normalizedName = requireValidName(name);
+        Optional<PromptSection> section = promptSectionService.getSection(normalizedName);
         if (section.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Prompt section '" + name + "' not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Prompt section '" + normalizedName + "' not found");
         }
         Map<String, String> vars = promptSectionService.buildTemplateVariables(
                 preferencesService.getPreferences());
-        String rendered = promptSectionService.renderSection(section.get(), vars);
+        String rendered = promptSectionService.renderSection(resolvePreviewSection(section.get(), request), vars);
         return Mono.just(ResponseEntity.ok(Map.of("rendered", rendered)));
+    }
+
+    @DeleteMapping("/{name}")
+    public Mono<ResponseEntity<Void>> deleteSection(@PathVariable String name) {
+        String normalizedName = requireValidName(name);
+        if (promptSectionService.getSection(normalizedName).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Prompt section '" + normalizedName + "' not found");
+        }
+        if (promptSectionService.isProtectedSection(normalizedName)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Prompt section '" + normalizedName + "' cannot be deleted");
+        }
+        return Mono.fromFuture(storagePort.deleteObject(PROMPTS_DIR, filenameFor(normalizedName)))
+                .then(Mono.fromRunnable(promptSectionService::reload))
+                .then(Mono.just(ResponseEntity.noContent().<Void>build()));
     }
 
     @PostMapping("/reload")
@@ -98,7 +147,21 @@ public class PromptsController {
                 .description(section.getDescription())
                 .order(section.getOrder())
                 .enabled(section.isEnabled())
+                .deletable(!promptSectionService.isProtectedSection(section.getName()))
                 .content(section.getContent())
+                .build();
+    }
+
+    private PromptSection resolvePreviewSection(PromptSection section, PromptCreateRequest request) {
+        if (request == null || request.getContent() == null) {
+            return section;
+        }
+        return PromptSection.builder()
+                .name(section.getName())
+                .description(request.getDescription())
+                .order(request.getOrder())
+                .enabled(request.isEnabled())
+                .content(request.getContent())
                 .build();
     }
 
@@ -113,5 +176,22 @@ public class PromptsController {
         sb.append("---\n");
         sb.append(request.getContent() != null ? request.getContent() : "");
         return sb.toString();
+    }
+
+    private String requireValidName(String name) {
+        if (name == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Prompt name is required and must match [a-z0-9][a-z0-9-]*");
+        }
+        String normalizedName = name.trim().toLowerCase(Locale.ROOT);
+        if (!VALID_NAME.matcher(normalizedName).matches()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Prompt name is required and must match [a-z0-9][a-z0-9-]*");
+        }
+        return normalizedName;
+    }
+
+    private String filenameFor(String normalizedName) {
+        return normalizedName.toUpperCase(Locale.ROOT) + ".md";
     }
 }

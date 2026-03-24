@@ -1,5 +1,8 @@
 package me.golemcore.bot.domain.service;
 
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +25,7 @@ class ModelSelectionServiceTest {
     private ModelSelectionService service;
 
     private UserPreferences userPreferences;
+    private Map<String, ModelConfigService.ModelSettings> modelRegistry;
 
     @BeforeEach
     void setUp() {
@@ -37,8 +41,40 @@ class ModelSelectionServiceTest {
         when(runtimeConfigService.getCodingModelReasoning()).thenReturn("medium");
         when(runtimeConfigService.getDeepModel()).thenReturn("openai/gpt-5.2");
         when(runtimeConfigService.getDeepModelReasoning()).thenReturn("xhigh");
+        when(runtimeConfigService.getRoutingModel()).thenReturn("openai/gpt-5.2-codex");
+        when(runtimeConfigService.getRoutingModelReasoning()).thenReturn("none");
         when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(50000);
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openai", "anthropic"));
+        when(runtimeConfigService.getModelTierBinding("special1"))
+                .thenReturn(RuntimeConfig.TierBinding.builder().build());
+        when(runtimeConfigService.getModelTierBinding("special2"))
+                .thenReturn(RuntimeConfig.TierBinding.builder().build());
+        when(runtimeConfigService.getModelTierBinding("special3"))
+                .thenReturn(RuntimeConfig.TierBinding.builder().build());
+        when(runtimeConfigService.getModelTierBinding("special4"))
+                .thenReturn(RuntimeConfig.TierBinding.builder().build());
+        when(runtimeConfigService.getModelTierBinding("special5"))
+                .thenReturn(RuntimeConfig.TierBinding.builder().build());
+
+        modelRegistry = new LinkedHashMap<>();
+        modelRegistry.put("openai/gpt-5.1", modelSettings("openai"));
+        modelRegistry.put("openai/gpt-5.2", modelSettings("openai"));
+        modelRegistry.put("openai/gpt-5.2-codex", modelSettings("openai"));
+        modelRegistry.put("openai/gpt-4o", modelSettings("openai"));
+        modelRegistry.put("anthropic/claude-sonnet-4", modelSettings("anthropic"));
+        when(modelConfigService.getAllModels()).thenReturn(modelRegistry);
+        when(modelConfigService.getModelSettings(anyString())).thenAnswer(invocation -> {
+            String model = invocation.getArgument(0);
+            ModelConfigService.ModelSettings settings = modelRegistry.get(model);
+            return settings != null ? settings : modelSettings("openai");
+        });
+        when(modelConfigService.isReasoningRequired(anyString())).thenReturn(false);
+        when(modelConfigService.isReasoningRequired("openai/gpt-5.1")).thenReturn(true);
+        when(modelConfigService.isReasoningRequired("openai/gpt-5.2")).thenReturn(true);
+        when(modelConfigService.isReasoningRequired("openai/gpt-5.2-codex")).thenReturn(true);
+        when(modelConfigService.getLowestReasoningLevel(anyString())).thenReturn("none");
+        when(modelConfigService.getAvailableReasoningLevels(anyString()))
+                .thenReturn(List.of("none", "low", "medium", "high", "xhigh"));
 
         userPreferences = UserPreferences.builder().build();
         when(preferencesService.getPreferences()).thenReturn(userPreferences);
@@ -166,13 +202,85 @@ class ModelSelectionServiceTest {
     }
 
     @Test
-    void shouldDefaultToBalancedTierWhenTierIsUnknown() {
+    void shouldRejectUnknownExplicitTier() {
         // Act
-        ModelSelectionService.ModelSelection result = service.resolveForTier("unknown-tier");
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.resolveForTier("unknown-tier"));
 
-        // Assert — falls through switch default to balanced
-        assertEquals("openai/gpt-5.1", result.model());
-        assertEquals("medium", result.reasoning());
+        // Assert
+        assertTrue(error.getMessage().contains("unknown-tier"));
+    }
+
+    @Test
+    void shouldResolveExplicitSpecialTierWhenConfigured() {
+        when(runtimeConfigService.getModelTierBinding("special1"))
+                .thenReturn(RuntimeConfig.TierBinding.builder()
+                        .model("anthropic/claude-sonnet-4")
+                        .reasoning("high")
+                        .build());
+
+        ModelSelectionService.ModelSelection result = service.resolveForTier("special1");
+
+        assertEquals("anthropic/claude-sonnet-4", result.model());
+        assertEquals("high", result.reasoning());
+    }
+
+    @Test
+    void shouldRejectExplicitSpecialTierWhenUnconfigured() {
+        when(runtimeConfigService.getModelTierBinding("special3"))
+                .thenReturn(RuntimeConfig.TierBinding.builder()
+                        .model(null)
+                        .reasoning("none")
+                        .build());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.resolveForTier("special3"));
+
+        assertTrue(error.getMessage().contains("special3"));
+    }
+
+    @Test
+    void shouldRejectExplicitSpecialTierWhenModelIsUnknown() {
+        when(runtimeConfigService.getModelTierBinding("special2"))
+                .thenReturn(RuntimeConfig.TierBinding.builder()
+                        .model("custom/ghost-model")
+                        .reasoning("none")
+                        .build());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.resolveForTier("special2"));
+
+        assertTrue(error.getMessage().contains("custom/ghost-model"));
+    }
+
+    @Test
+    void shouldRejectExplicitSpecialTierWhenProviderIsNotConfigured() {
+        modelRegistry.put("custom/special4-model", modelSettings("custom"));
+        when(runtimeConfigService.getModelTierBinding("special4"))
+                .thenReturn(RuntimeConfig.TierBinding.builder()
+                        .model("custom/special4-model")
+                        .reasoning("none")
+                        .build());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.resolveForTier("special4"));
+
+        assertTrue(error.getMessage().contains("special4"));
+        assertTrue(error.getMessage().contains("provider"));
+    }
+
+    @Test
+    void shouldResolveProviderForAliasOnlyModelName() {
+        String provider = service.resolveProviderForModel("gpt-5.1");
+
+        assertEquals("openai", provider);
+    }
+
+    @Test
+    void shouldReturnNullProviderForUnknownModelName() {
+        String provider = service.resolveProviderForModel("ghost-model");
+
+        assertNull(provider);
     }
 
     @Test
@@ -270,6 +378,61 @@ class ModelSelectionServiceTest {
     }
 
     @Test
+    void shouldResolveContextTokenLimitFromActiveSkillTier() {
+        when(modelConfigService.getMaxInputTokens("openai/gpt-5.2", "xhigh")).thenReturn(320000);
+
+        AgentContext context = AgentContext.builder()
+                .activeSkill(Skill.builder().name("reviewer").modelTier("deep").build())
+                .build();
+
+        int result = service.resolveMaxInputTokensForContext(context);
+
+        assertEquals(320000, result);
+    }
+
+    @Test
+    void shouldPreferForcedUserTierOverActiveSkillWhenResolvingContextTokenLimit() {
+        userPreferences.setTierForce(true);
+        userPreferences.setModelTier("smart");
+        when(modelConfigService.getMaxInputTokens("openai/gpt-5.1", "high")).thenReturn(210000);
+
+        AgentContext context = AgentContext.builder()
+                .activeSkill(Skill.builder().name("reviewer").modelTier("deep").build())
+                .build();
+
+        int result = service.resolveMaxInputTokensForContext(context);
+
+        assertEquals(210000, result);
+    }
+
+    @Test
+    void shouldPreferContextModelTierOverForcedUserTierAndActiveSkillForContextResolution() {
+        userPreferences.setTierForce(true);
+        userPreferences.setModelTier("smart");
+        when(modelConfigService.getMaxInputTokens("openai/gpt-5.2", "medium")).thenReturn(180000);
+
+        AgentContext context = AgentContext.builder()
+                .modelTier("coding")
+                .activeSkill(Skill.builder().name("reviewer").modelTier("deep").build())
+                .build();
+
+        int result = service.resolveMaxInputTokensForContext(context);
+
+        assertEquals(180000, result);
+        verify(modelConfigService).getMaxInputTokens("openai/gpt-5.2", "medium");
+    }
+
+    @Test
+    void shouldReturnCompactionFallbackWhenContextResolutionFindsNoModel() {
+        when(runtimeConfigService.getBalancedModel()).thenReturn(null);
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn(null);
+
+        int result = service.resolveMaxInputTokensForContext(null);
+
+        assertEquals(50000, result);
+    }
+
+    @Test
     void shouldUseUserOverrideModelForTokenResolution() {
         // Arrange
         Map<String, UserPreferences.TierOverride> overrides = new HashMap<>();
@@ -319,6 +482,7 @@ class ModelSelectionServiceTest {
         assertEquals("GPT-4o", result.get(0).displayName());
         assertFalse(result.get(0).hasReasoning());
         assertTrue(result.get(0).reasoningLevels().isEmpty());
+        assertTrue(result.get(0).supportsVision());
     }
 
     @Test
@@ -342,6 +506,7 @@ class ModelSelectionServiceTest {
         assertEquals(1, result.size());
         assertTrue(result.get(0).hasReasoning());
         assertEquals(List.of("low", "medium", "high"), result.get(0).reasoningLevels());
+        assertTrue(result.get(0).supportsVision());
     }
 
     @Test
@@ -671,5 +836,15 @@ class ModelSelectionServiceTest {
         // Assert — the service preserves the user-specified reasoning as-is
         assertEquals("openai/gpt-4o", result.model());
         assertEquals("high", result.reasoning());
+    }
+
+    private ModelConfigService.ModelSettings modelSettings(String provider) {
+        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        settings.setProvider(provider);
+        settings.setDisplayName(provider + " model");
+        settings.setSupportsTemperature(true);
+        settings.setSupportsVision(true);
+        settings.setMaxInputTokens(128000);
+        return settings;
     }
 }

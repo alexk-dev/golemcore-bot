@@ -25,6 +25,8 @@ message AgentSessionRecord {
   SessionState state = 6;                          // alive? sleeping? gone? mood.
   google.protobuf.Timestamp created_at = 7;        // the moment it all began
   google.protobuf.Timestamp updated_at = 8;        // last sign of life
+  repeated TraceRecord traces = 9;                 // request traces for the curious and the sleep-deprived
+  TraceStorageStats trace_stats = 10;              // snapshot budget bookkeeping
 }
 
 // a single message — could be human wisdom, bot rambling, or a tool doing its thing
@@ -54,6 +56,57 @@ message ToolCallRecord {
   string id = 1;                                   // call id so we can match request -> response
   string name = 2;                                 // tool name — shell, filesystem, browser, etc.
   map<string, JsonValue> arguments = 3;            // whatever the tool needs to do its thing
+}
+
+message TraceStorageStats {
+  uint64 compressed_snapshot_bytes = 1;
+  uint64 uncompressed_snapshot_bytes = 2;
+  uint64 evicted_snapshots = 3;
+  uint64 evicted_traces = 4;
+  uint64 truncated_traces = 5;
+}
+
+message TraceRecord {
+  string trace_id = 1;
+  string root_span_id = 2;
+  string trace_name = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp ended_at = 5;
+  repeated SpanRecord spans = 6;
+  bool truncated = 7;
+  uint64 compressed_snapshot_bytes = 8;
+  uint64 uncompressed_snapshot_bytes = 9;
+}
+
+message SpanRecord {
+  string span_id = 1;
+  string parent_span_id = 2;
+  string name = 3;
+  TraceSpanKind kind = 4;
+  TraceStatusCode status_code = 5;
+  string status_message = 6;
+  google.protobuf.Timestamp started_at = 7;
+  google.protobuf.Timestamp ended_at = 8;
+  map<string, JsonValue> attributes = 9;
+  repeated SpanEventRecord events = 10;
+  repeated SnapshotRecord snapshots = 11;
+}
+
+message SpanEventRecord {
+  string name = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  map<string, JsonValue> attributes = 3;
+}
+
+message SnapshotRecord {
+  string snapshot_id = 1;
+  string role = 2;
+  string content_type = 3;
+  string encoding = 4;
+  bytes compressed_payload = 5;
+  uint64 original_size = 6;
+  uint64 compressed_size = 7;
+  bool truncated = 8;
 }
 
 // ---- generic JSON-in-protobuf machinery ----
@@ -92,6 +145,22 @@ enum SessionState {
   SESSION_STATE_ACTIVE = 1;                        // alive and chatting
   SESSION_STATE_PAUSED = 2;                        // brb
   SESSION_STATE_TERMINATED = 3;                    // gone but not forgotten (we keep the data)
+}
+
+enum TraceSpanKind {
+  TRACE_SPAN_KIND_UNSPECIFIED = 0;
+  TRACE_SPAN_KIND_INGRESS = 1;
+  TRACE_SPAN_KIND_INTERNAL = 2;
+  TRACE_SPAN_KIND_LLM = 3;
+  TRACE_SPAN_KIND_TOOL = 4;
+  TRACE_SPAN_KIND_STORAGE = 5;
+  TRACE_SPAN_KIND_OUTBOUND = 6;
+}
+
+enum TraceStatusCode {
+  TRACE_STATUS_CODE_UNSPECIFIED = 0;
+  TRACE_STATUS_CODE_OK = 1;
+  TRACE_STATUS_CODE_ERROR = 2;
 }
 
 // supported audio formats — for when text just isn't enough

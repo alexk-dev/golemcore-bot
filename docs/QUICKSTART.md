@@ -50,13 +50,18 @@ See: [Dashboard Guide](DASHBOARD.md)
 Useful routes after login:
 
 - Chat: `http://localhost:8080/dashboard/chat`
+- Setup: `http://localhost:8080/dashboard/setup`
+- Settings: `http://localhost:8080/dashboard/settings`
+- Scheduler: `http://localhost:8080/dashboard/scheduler`
 - Embedded IDE: `http://localhost:8080/dashboard/ide`
 - Sessions: `http://localhost:8080/dashboard/sessions`
 - Logs: `http://localhost:8080/dashboard/logs`
 
 ### 4. Configure LLM Providers
 
-In the dashboard Settings, set at least one provider API key and API type (stored in `preferences/runtime-config.json`).
+Open `http://localhost:8080/dashboard/setup` or go directly to `Settings -> LLM Providers`.
+
+Set at least one provider API key and API type (stored in `preferences/runtime-config.json`).
 
 Example runtime config snippet:
 
@@ -71,6 +76,20 @@ Example runtime config snippet:
   }
 }
 ```
+
+Then finish the routing flow:
+
+1. `Settings -> Model Catalog` if you want to edit or discover model definitions from a provider API
+2. `Settings -> Model Router` to assign the routing/tier models the bot will actually use
+
+Optional next steps in Settings:
+
+- `Plugin Marketplace` to install official integrations such as browser, search, mail, weather, LightRAG, and voice providers
+- `Auto Mode` plus `/dashboard/scheduler` to create cron-based autonomous runs for goals/tasks
+
+Optional next steps outside Settings:
+
+- `Skills -> Marketplace` to install standalone skills or packs from a local `golemcore-skills` checkout, a direct `registry/` path, or the default remote repository
 
 ## Your First Conversation
 

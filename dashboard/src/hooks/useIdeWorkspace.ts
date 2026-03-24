@@ -14,14 +14,23 @@ import { useBeforeUnloadGuard, useGlobalIdeShortcuts, useSyncContentToTabs } fro
 import { useIdeTreeActions, type TreeActionState } from './useIdeTreeActions';
 import { useResizableSidebar } from './useResizableSidebar';
 import { type IdeTabState, useIdeStore } from '../store/ideStore';
+import { buildIdeTabLabels, getFilename } from '../components/ide/ideTabLabels';
 
 const SIDEBAR_WIDTH_CSS_VARIABLE = '--ide-sidebar-width';
 
 export interface UseIdeWorkspaceResult {
   openedTabs: IdeTabState[];
+  editorTabs: {
+    path: string;
+    title: string;
+    context: string | null;
+    fullTitle: string;
+    dirty: boolean;
+  }[];
   activePath: string | null;
   activeTab: IdeTabState | null;
   closeCandidate: IdeTabState | null;
+  closeCandidateLabel: string;
   treeAction: TreeActionState | null;
   treeQuery: ReturnType<typeof useFileTree>;
   contentQuery: ReturnType<typeof useFileContent>;
@@ -81,6 +90,37 @@ function findTabByPath(tabs: IdeTabState[], path: string | null): IdeTabState | 
   return tabs.find((tab) => tab.path === path) ?? null;
 }
 
+function buildEditorTabs(
+  openedTabs: IdeTabState[],
+  tabLabels: Map<string, { title: string; context: string | null; fullTitle: string }>,
+): Array<{ path: string; title: string; context: string | null; fullTitle: string; dirty: boolean }> {
+  return openedTabs.map((tab) => {
+    const label = tabLabels.get(tab.path);
+    return {
+      path: tab.path,
+      title: label?.title ?? tab.title,
+      context: label?.context ?? null,
+      fullTitle: label?.fullTitle ?? tab.title,
+      dirty: tab.isDirty,
+    };
+  });
+}
+
+function buildDirtyPathSet(openedTabs: IdeTabState[]): Set<string> {
+  return new Set(openedTabs.filter((tab) => tab.isDirty).map((tab) => tab.path));
+}
+
+function resolveActiveUpdatedAt(
+  contentData: { path: string; updatedAt?: string | null } | undefined,
+  activePath: string | undefined,
+): string | null {
+  if (contentData == null || contentData.path !== activePath) {
+    return null;
+  }
+
+  return contentData.updatedAt ?? null;
+}
+
 function resolveLanguage(filePath: string | null): string {
   if (filePath == null) {
     return 'plain';
@@ -115,11 +155,6 @@ function resolveLanguage(filePath: string | null): string {
   };
 
   return aliases[extension] ?? (extension.length > 0 ? extension : 'plain');
-}
-
-function getFilename(path: string): string {
-  const parts = path.split('/');
-  return parts[parts.length - 1] ?? path;
 }
 
 export function useIdeWorkspace(): UseIdeWorkspaceResult {
@@ -165,29 +200,17 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
   );
 
   const activeTab = useMemo(() => findTabByPath(openedTabs, activePath), [openedTabs, activePath]);
-
+  const tabLabels = useMemo(() => buildIdeTabLabels(openedTabs.map((tab) => tab.path)), [openedTabs]);
+  const editorTabs = useMemo(() => buildEditorTabs(openedTabs, tabLabels), [openedTabs, tabLabels]);
   const hasDirtyTabs = useMemo(() => openedTabs.some((tab) => tab.isDirty), [openedTabs]);
   const dirtyTabsCount = useMemo(() => openedTabs.filter((tab) => tab.isDirty).length, [openedTabs]);
-  const dirtyPaths = useMemo(() => {
-    return new Set(openedTabs.filter((tab) => tab.isDirty).map((tab) => tab.path));
-  }, [openedTabs]);
-
-  const activeLanguage = useMemo(() => resolveLanguage(activeTab?.path ?? null), [activeTab?.path]);
-  const activeFileSize = useMemo(() => {
-    if (activeTab == null) {
-      return 0;
-    }
-    return new Blob([activeTab.content]).size;
-  }, [activeTab]);
-
-  const activeUpdatedAt = useMemo(() => {
-    if (contentQuery.data?.path !== activeTab?.path) {
-      return null;
-    }
-
-    return contentQuery.data?.updatedAt ?? null;
-  }, [activeTab?.path, contentQuery.data]);
-
+  const dirtyPaths = useMemo(() => buildDirtyPathSet(openedTabs), [openedTabs]);
+  const activeLanguage = resolveLanguage(activeTab?.path ?? null);
+  const activeFileSize = activeTab == null ? 0 : new Blob([activeTab.content]).size;
+  const activeUpdatedAt = useMemo(
+    () => resolveActiveUpdatedAt(contentQuery.data, activeTab?.path),
+    [activeTab?.path, contentQuery.data],
+  );
   const saveTab = useCallback(async (tab: IdeTabState): Promise<boolean> => {
     try {
       const saved = await saveMutation.mutateAsync({ path: tab.path, content: tab.content });
@@ -206,6 +229,14 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     closeTab,
     saveTab,
   });
+  const closeCandidateLabel = useMemo(() => {
+    const closeCandidate = closeWorkflow.closeCandidate;
+    if (closeCandidate == null) {
+      return '';
+    }
+
+    return tabLabels.get(closeCandidate.path)?.fullTitle ?? closeCandidate.title;
+  }, [closeWorkflow.closeCandidate, tabLabels]);
 
   const canSaveActiveTab = activeTab != null
     && activeTab.isDirty
@@ -280,14 +311,15 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
 
   useBeforeUnloadGuard(hasDirtyTabs);
 
-  const isFileOpening = activePath != null && activeTab == null && contentQuery.isLoading;
-  const hasFileLoadError = activePath != null && activeTab == null && contentQuery.isError;
+  const isFileOpening = activePath != null && activeTab == null && contentQuery.isLoading; const hasFileLoadError = activePath != null && activeTab == null && contentQuery.isError;
 
   return {
     openedTabs,
+    editorTabs,
     activePath,
     activeTab,
     closeCandidate: closeWorkflow.closeCandidate,
+    closeCandidateLabel,
     treeAction: treeActions.treeAction,
     treeQuery,
     contentQuery,

@@ -287,6 +287,124 @@ class ToolLoopSystemBddTest {
     }
 
     @Test
+    void scenarioA3_geminiThinkingSignature_shouldPersistAcrossMultipleToolIterations() {
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
+                .messages(new ArrayList<>())
+                .build();
+
+        Message user = Message.builder()
+                .role(ROLE_USER)
+                .content("Research and summarize")
+                .timestamp(NOW)
+                .channelType(CHANNEL_TELEGRAM)
+                .chatId(CHAT_1)
+                .build();
+        session.addMessage(user);
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        LlmPort llmPort = mock(LlmPort.class);
+        AtomicInteger llmCalls = new AtomicInteger();
+        List<LlmRequest> capturedRequests = new ArrayList<>();
+
+        LlmResponse first = LlmResponse.builder()
+                .content("Searching first source")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id(TOOL_CALL_ID_1)
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "echo first"))
+                        .build()))
+                .providerMetadata(Map.of("thinking_signature", "sig-1"))
+                .build();
+
+        LlmResponse second = LlmResponse.builder()
+                .content("Searching second source")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("tc2")
+                        .name(TOOL_SHELL)
+                        .arguments(Map.of(ARG_COMMAND, "echo second"))
+                        .build()))
+                .providerMetadata(Map.of("thinking_signature", "sig-2"))
+                .build();
+
+        LlmResponse third = LlmResponse.builder()
+                .content("Done")
+                .toolCalls(List.of())
+                .finishReason("stop")
+                .build();
+
+        when(llmPort.chat(any(LlmRequest.class))).thenAnswer(inv -> {
+            capturedRequests.add(inv.getArgument(0));
+            int n = llmCalls.incrementAndGet();
+            if (n == 1) {
+                return CompletableFuture.completedFuture(first);
+            }
+            if (n == 2) {
+                return CompletableFuture.completedFuture(second);
+            }
+            return CompletableFuture.completedFuture(third);
+        });
+
+        ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
+        AtomicInteger toolCalls = new AtomicInteger();
+        when(toolExecutor.execute(any(AgentContext.class), any(Message.ToolCall.class)))
+                .thenAnswer(inv -> {
+                    Message.ToolCall toolCall = inv.getArgument(1);
+                    int n = toolCalls.incrementAndGet();
+                    return new ToolExecutionOutcome(
+                            toolCall.getId(),
+                            toolCall.getName(),
+                            ToolResult.success("result-" + n),
+                            "result-" + n,
+                            false,
+                            null);
+                });
+
+        DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
+        BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
+        BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any())).thenReturn(
+                new ModelSelectionService.ModelSelection("google/gemini-3.1-preview", null));
+
+        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
+                llmPort,
+                toolExecutor,
+                historyWriter,
+                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
+                turn,
+                settings,
+                modelSelectionService,
+                null,
+                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+
+        ToolLoopTurnResult result = toolLoop.processTurn(ctx);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(3, llmCalls.get());
+        assertEquals(3, capturedRequests.size());
+
+        Message secondRequestAssistant = capturedRequests.get(1).getMessages().get(1);
+        assertEquals("sig-1", secondRequestAssistant.getMetadata().get("thinking_signature"));
+
+        Message thirdRequestFirstAssistant = capturedRequests.get(2).getMessages().get(1);
+        Message thirdRequestSecondAssistant = capturedRequests.get(2).getMessages().get(3);
+        assertEquals("sig-1", thirdRequestFirstAssistant.getMetadata().get("thinking_signature"));
+        assertEquals("sig-2", thirdRequestSecondAssistant.getMetadata().get("thinking_signature"));
+
+        List<Message> history = session.getMessages();
+        assertEquals("sig-1", history.get(1).getMetadata().get("thinking_signature"));
+        assertEquals("sig-2", history.get(3).getMetadata().get("thinking_signature"));
+    }
+
+    @Test
     void scenarioStop_maxLlmCalls_shouldProduceFinalAssistantFeedback() {
         // GIVEN: an LLM that always requests the same tool call (never reaches a final
         // answer)

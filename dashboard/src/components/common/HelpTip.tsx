@@ -1,5 +1,4 @@
-import { type ReactElement, useId } from 'react';
-import { OverlayTrigger, Tooltip } from 'react-bootstrap';
+import type { ReactElement } from 'react';
 import { FiHelpCircle } from 'react-icons/fi';
 
 interface HelpTipProps {
@@ -7,14 +6,8 @@ interface HelpTipProps {
 }
 
 export default function HelpTip({ text }: HelpTipProps): ReactElement {
-  const tooltipId = useId();
-
   return (
-    <OverlayTrigger
-      placement="top"
-      trigger={['hover', 'focus']}
-      overlay={<Tooltip id={tooltipId}>{text}</Tooltip>}
-    >
+    <span className="group relative inline-flex">
       <button
         type="button"
         className="setting-tip setting-tip-btn"
@@ -22,6 +15,12 @@ export default function HelpTip({ text }: HelpTipProps): ReactElement {
       >
         <FiHelpCircle aria-hidden="true" focusable="false" />
       </button>
-    </OverlayTrigger>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-[calc(100%+0.5rem)] left-1/2 z-30 hidden w-56 -translate-x-1/2 rounded-2xl border border-border/80 bg-card/95 px-3 py-2 text-xs leading-5 text-card-foreground shadow-2xl backdrop-blur-sm group-hover:block group-focus-within:block"
+      >
+        {text}
+      </span>
+    </span>
   );
 }

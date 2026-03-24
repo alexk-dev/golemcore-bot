@@ -22,6 +22,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Response from LLM provider containing generated text, tool calls, usage
@@ -36,6 +37,7 @@ public class LlmResponse {
     private LlmUsage usage;
     private String model;
     private String finishReason;
+    private Map<String, Object> providerMetadata;
 
     @Builder.Default
     private boolean compatibilityFlatteningApplied = false;

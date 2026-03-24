@@ -58,6 +58,11 @@ public class Skill {
     /** Recommended model tier from YAML frontmatter "model_tier" */
     private String modelTier;
 
+    /**
+     * Recommended recovery/reflection tier from YAML frontmatter "reflection_tier"
+     */
+    private String reflectionTier;
+
     // Pipeline support
     private String nextSkill;
 
