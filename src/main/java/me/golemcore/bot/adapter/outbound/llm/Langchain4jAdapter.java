@@ -58,6 +58,7 @@ import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
+import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -1157,14 +1158,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             log.trace("Parsed {} tool calls from response", toolCalls.size());
         }
 
-        LlmUsage usage = null;
-        if (response.tokenUsage() != null) {
-            usage = LlmUsage.builder()
-                    .inputTokens(response.tokenUsage().inputTokenCount())
-                    .outputTokens(response.tokenUsage().outputTokenCount())
-                    .totalTokens(response.tokenUsage().totalTokenCount())
-                    .build();
-        }
+        LlmUsage usage = toLlmUsage(response.tokenUsage());
 
         Map<String, Object> providerMetadata = extractProviderMetadata(aiMessage, geminiApiType);
 
@@ -1199,6 +1193,33 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .providerMetadata(merged)
                 .compatibilityFlatteningApplied(response.isCompatibilityFlatteningApplied())
                 .build();
+    }
+
+    private LlmUsage toLlmUsage(TokenUsage tokenUsage) {
+        if (tokenUsage == null) {
+            return null;
+        }
+
+        Integer inputTokens = tokenUsage.inputTokenCount();
+        Integer outputTokens = tokenUsage.outputTokenCount();
+        Integer totalTokens = tokenUsage.totalTokenCount();
+        if (inputTokens == null && outputTokens == null && totalTokens == null) {
+            return null;
+        }
+
+        int safeInputTokens = safeTokenCount(inputTokens);
+        int safeOutputTokens = safeTokenCount(outputTokens);
+        int safeTotalTokens = totalTokens != null ? totalTokens : safeInputTokens + safeOutputTokens;
+
+        return LlmUsage.builder()
+                .inputTokens(safeInputTokens)
+                .outputTokens(safeOutputTokens)
+                .totalTokens(safeTotalTokens)
+                .build();
+    }
+
+    private int safeTokenCount(Integer value) {
+        return value != null ? value : 0;
     }
 
     private Map<String, Object> extractProviderMetadata(AiMessage aiMessage, boolean geminiApiType) {
