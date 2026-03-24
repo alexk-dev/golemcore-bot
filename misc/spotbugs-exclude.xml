@@ -133,4 +133,13 @@
         <Bug pattern="DM_EXIT" />
         <Class name="me.golemcore.bot.domain.service.JvmExitService" />
     </Match>
+    <!--
+        DefaultToolLoopSystem.planService is reserved for future use by the
+        Builder API. The field is stored for forward compatibility.
+    -->
+    <Match>
+        <Bug pattern="URF_UNREAD_FIELD" />
+        <Class name="me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem" />
+        <Field name="planService" />
+    </Match>
 </FindBugsFilter>

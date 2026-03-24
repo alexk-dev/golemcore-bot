@@ -74,24 +74,34 @@ public class DefaultHistoryWriter implements HistoryWriter {
         }
     }
 
+    /**
+     * Appends an internal recovery hint as a {@code user} message.
+     *
+     * <p>
+     * Uses {@code role("user")} rather than {@code role("assistant")} so that the
+     * LLM perceives the hint as an external instruction (not its own prior output)
+     * and strict turn alternation is preserved. The message is marked with
+     * {@link ContextAttributes#MESSAGE_INTERNAL} so downstream systems can
+     * distinguish it from real user input.
+     */
     @Override
     public void appendInternalRecoveryHint(AgentContext context, String hint) {
-        Map<String, Object> metadata = buildAssistantMetadata(context);
+        Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
                 ContextAttributes.MESSAGE_INTERNAL_KIND_TOOL_RECOVERY);
 
-        Message assistant = Message.builder()
+        Message recoveryMessage = Message.builder()
                 .id(UUID.randomUUID().toString())
-                .role("assistant")
+                .role("user")
                 .content(hint)
                 .metadata(metadata)
                 .timestamp(now())
                 .build();
 
-        context.getMessages().add(assistant);
+        context.getMessages().add(recoveryMessage);
         if (context.getSession() != null) {
-            context.getSession().addMessage(assistant);
+            context.getSession().addMessage(recoveryMessage);
         }
     }
 

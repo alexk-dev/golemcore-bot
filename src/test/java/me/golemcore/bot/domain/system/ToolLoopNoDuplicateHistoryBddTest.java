@@ -97,17 +97,17 @@ class ToolLoopNoDuplicateHistoryBddTest {
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)),
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                new BotProperties.TurnProperties(),
-                new BotProperties.ToolLoopProperties(),
-                modelSelectionService,
-                null,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)))
+                .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .turnSettings(new BotProperties.TurnProperties())
+                .settings(new BotProperties.ToolLoopProperties())
+                .modelSelectionService(modelSelectionService)
+                .clock(Clock.fixed(NOW, ZoneOffset.UTC))
+                .build();
 
         // WHEN: ToolLoop runs
         toolLoop.processTurn(ctx);

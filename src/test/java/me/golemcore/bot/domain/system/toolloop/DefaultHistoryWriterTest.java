@@ -186,7 +186,7 @@ class DefaultHistoryWriterTest {
 
         assertEquals(1, context.getMessages().size());
         Message message = context.getMessages().get(0);
-        assertEquals(ROLE_ASSISTANT, message.getRole());
+        assertEquals("user", message.getRole());
         assertEquals("Shell recovery note", message.getContent());
         assertEquals(Boolean.TRUE, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
         assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_TOOL_RECOVERY,

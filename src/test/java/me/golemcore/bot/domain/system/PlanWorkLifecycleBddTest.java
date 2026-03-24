@@ -147,16 +147,17 @@ class PlanWorkLifecycleBddTest {
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)),
-                new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
-                new BotProperties.TurnProperties(),
-                new BotProperties.ToolLoopProperties(),
-                modelSelectionService,
-                planService,
-                Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)))
+                .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
+                .turnSettings(new BotProperties.TurnProperties())
+                .settings(new BotProperties.ToolLoopProperties())
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .clock(Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneOffset.UTC))
+                .build();
 
         // WHEN: ToolLoop processes the turn
         ToolLoopTurnResult turnResult = toolLoop.processTurn(context);

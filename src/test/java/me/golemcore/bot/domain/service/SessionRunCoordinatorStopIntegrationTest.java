@@ -143,19 +143,18 @@ class SessionRunCoordinatorStopIntegrationTest {
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
 
-        return new DefaultToolLoopSystem(
-                llmPort,
-                mock(ToolExecutorPort.class),
-                new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)),
-                new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
-                turnProperties,
-                toolLoopProperties,
-                modelSelectionService,
-                null,
-                runtimeConfigService,
-                null,
-                new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC)),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+        return DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(mock(ToolExecutorPort.class))
+                .historyWriter(new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)))
+                .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
+                .turnSettings(turnProperties)
+                .settings(toolLoopProperties)
+                .modelSelectionService(modelSelectionService)
+                .runtimeConfigService(runtimeConfigService)
+                .runtimeEventService(new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC)))
+                .clock(Clock.fixed(NOW, ZoneOffset.UTC))
+                .build();
     }
 
     private static Message user(String content) {
