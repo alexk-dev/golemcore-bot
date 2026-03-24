@@ -125,15 +125,16 @@ class ToolLoopPlanModeInterceptionTest {
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection("gpt-4o", null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
-                settings,
-                modelSelectionService,
-                planService,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
 
@@ -196,15 +197,16 @@ class ToolLoopPlanModeInterceptionTest {
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection("gpt-4o", null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
-                settings,
-                modelSelectionService,
-                planService,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
 

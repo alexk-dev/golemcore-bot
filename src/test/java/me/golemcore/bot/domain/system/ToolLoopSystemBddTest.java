@@ -120,17 +120,17 @@ class ToolLoopSystemBddTest {
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                turn,
-                settings,
-                modelSelectionService,
-                null,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .turnSettings(turn)
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         // WHEN: we process one turn
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -243,17 +243,17 @@ class ToolLoopSystemBddTest {
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                turn,
-                settings,
-                modelSelectionService,
-                null,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .turnSettings(turn)
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -373,17 +373,17 @@ class ToolLoopSystemBddTest {
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection("google/gemini-3.1-preview", null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                turn,
-                settings,
-                modelSelectionService,
-                null,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .turnSettings(turn)
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
 
@@ -457,17 +457,17 @@ class ToolLoopSystemBddTest {
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                turn,
-                settings,
-                modelSelectionService,
-                null,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .turnSettings(turn)
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -548,17 +548,17 @@ class ToolLoopSystemBddTest {
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                turn,
-                settings,
-                modelSelectionService,
-                null,
-                fastClock);
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .turnSettings(turn)
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .clock(fastClock)
+                .build();
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -616,17 +616,17 @@ class ToolLoopSystemBddTest {
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                turn,
-                settings,
-                modelSelectionService,
-                null,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .turnSettings(turn)
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -700,17 +700,17 @@ class ToolLoopSystemBddTest {
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                turn,
-                settings,
-                modelSelectionService,
-                null,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .turnSettings(turn)
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -770,17 +770,17 @@ class ToolLoopSystemBddTest {
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                turn,
-                settings,
-                modelSelectionService,
-                null,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .turnSettings(turn)
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -840,17 +840,17 @@ class ToolLoopSystemBddTest {
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                turn,
-                settings,
-                modelSelectionService,
-                null,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .turnSettings(turn)
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
@@ -936,17 +936,17 @@ class ToolLoopSystemBddTest {
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                turn,
-                settings,
-                modelSelectionService,
-                null,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .turnSettings(turn)
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);

@@ -196,6 +196,12 @@ public final class ContextAttributes {
      */
     public static final String MESSAGE_INTERNAL_KIND_DELAYED_ACTION = "delayed_action";
 
+    /**
+     * String value for {@link #MESSAGE_INTERNAL_KIND}: internal tool recovery
+     * guidance.
+     */
+    public static final String MESSAGE_INTERNAL_KIND_TOOL_RECOVERY = "tool_recovery";
+
     /** Boolean ? current inbound message is an internal runtime-only message. */
     public static final String TURN_INPUT_INTERNAL = "turn.input.internal";
 

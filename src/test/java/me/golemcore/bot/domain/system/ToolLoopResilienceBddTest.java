@@ -758,18 +758,18 @@ class ToolLoopResilienceBddTest {
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
         RuntimeEventService runtimeEventService = new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC));
 
-        return new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)),
-                new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
-                turnProperties,
-                toolLoopProperties,
-                modelSelectionService,
-                null,
-                runtimeConfigService,
-                compactionOrchestrationService,
-                runtimeEventService,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+        return DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)))
+                .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
+                .turnSettings(turnProperties)
+                .settings(toolLoopProperties)
+                .modelSelectionService(modelSelectionService)
+                .runtimeConfigService(runtimeConfigService)
+                .compactionOrchestrationService(compactionOrchestrationService)
+                .runtimeEventService(runtimeEventService)
+                .clock(Clock.fixed(NOW, ZoneOffset.UTC))
+                .build();
     }
 }

@@ -67,6 +67,7 @@ class ToolLoopConfigurationTest {
         RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
         TurnProgressService turnProgressService = mock(TurnProgressService.class);
         TraceService traceService = mock(TraceService.class);
+        ToolFailureRecoveryService toolFailureRecoveryService = mock(ToolFailureRecoveryService.class);
 
         ToolLoopSystem system = configuration.toolLoopSystem(
                 llmPort,
@@ -81,7 +82,8 @@ class ToolLoopConfigurationTest {
                 compactionOrchestrationService,
                 runtimeEventService,
                 turnProgressService,
-                traceService);
+                traceService,
+                toolFailureRecoveryService);
 
         assertNotNull(system);
         assertInstanceOf(DefaultToolLoopSystem.class, system);

@@ -62,16 +62,16 @@ class ToolLoopModelTierSelectionTest {
 
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new DefaultConversationViewBuilder(
-                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()),
-                settings,
-                modelSelectionService,
-                null,
-                Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new DefaultConversationViewBuilder(
+                        new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
+                .settings(settings)
+                .modelSelectionService(modelSelectionService)
+                .clock(Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC))
+                .build();
 
         // WHEN
         toolLoop.processTurn(ctx);
