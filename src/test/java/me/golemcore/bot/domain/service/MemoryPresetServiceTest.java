@@ -86,4 +86,15 @@ class MemoryPresetServiceTest {
         assertEquals(Boolean.FALSE, disabled.get().getMemory().getEnabled());
         assertEquals(21, disabled.get().getMemory().getRetrievalLookbackDays());
     }
+
+    @Test
+    void shouldExposeDisclosureDefaultsOnBalancedPreset() {
+        Optional<MemoryPreset> codingBalanced = service.findById("coding_balanced");
+
+        assertTrue(codingBalanced.isPresent());
+        assertEquals("summary", codingBalanced.get().getMemory().getDisclosure().getMode());
+        assertEquals("balanced", codingBalanced.get().getMemory().getDisclosure().getPromptStyle());
+        assertEquals(Boolean.TRUE, codingBalanced.get().getMemory().getDisclosure().getToolExpansionEnabled());
+        assertEquals("basic", codingBalanced.get().getMemory().getDiagnostics().getVerbosity());
+    }
 }

@@ -2,6 +2,10 @@ package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import me.golemcore.bot.domain.memory.retrieval.MemoryCandidateCollector;
+import me.golemcore.bot.domain.memory.retrieval.MemoryCandidateScorer;
+import me.golemcore.bot.domain.memory.retrieval.MemoryCandidateSelector;
+import me.golemcore.bot.domain.memory.retrieval.MemoryRetrievalPlanner;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.MemoryScoredItem;
@@ -47,7 +51,12 @@ class MemoryRetrievalServiceTest {
         BotProperties properties = new BotProperties();
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
-        service = new MemoryRetrievalService(storagePort, properties, runtimeConfigService, objectMapper);
+        service = new MemoryRetrievalService(
+                runtimeConfigService,
+                new MemoryRetrievalPlanner(runtimeConfigService),
+                new MemoryCandidateCollector(storagePort, properties, runtimeConfigService, objectMapper),
+                new MemoryCandidateScorer(),
+                new MemoryCandidateSelector());
 
         when(storagePort.getText(anyString(), anyString()))
                 .thenAnswer(invocation -> CompletableFuture.completedFuture(

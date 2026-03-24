@@ -49,7 +49,13 @@ public class MemoryPresetService {
                     true,
                     21,
                     14,
-                    true),
+                    true,
+                    "summary",
+                    "compact",
+                    true,
+                    true,
+                    0.82,
+                    "basic"),
             createPreset(
                     "coding_balanced",
                     "Coding Balanced",
@@ -66,7 +72,13 @@ public class MemoryPresetService {
                     true,
                     30,
                     21,
-                    true),
+                    true,
+                    "summary",
+                    "balanced",
+                    true,
+                    true,
+                    0.80,
+                    "basic"),
             createPreset(
                     "coding_deep",
                     "Coding Deep Autonomous",
@@ -83,7 +95,13 @@ public class MemoryPresetService {
                     true,
                     60,
                     30,
-                    true),
+                    true,
+                    "selective_detail",
+                    "rich",
+                    true,
+                    true,
+                    0.72,
+                    "detailed"),
             createPreset(
                     "general_chat",
                     "General Chat",
@@ -100,7 +118,13 @@ public class MemoryPresetService {
                     true,
                     14,
                     14,
-                    false),
+                    false,
+                    "index",
+                    "compact",
+                    false,
+                    true,
+                    0.90,
+                    "basic"),
             createPreset(
                     "research_analyst",
                     "Research Analyst",
@@ -117,7 +141,13 @@ public class MemoryPresetService {
                     true,
                     90,
                     21,
-                    false),
+                    false,
+                    "summary",
+                    "balanced",
+                    true,
+                    true,
+                    0.85,
+                    "basic"),
             createPreset(
                     "ops_support",
                     "Ops / Support",
@@ -134,7 +164,13 @@ public class MemoryPresetService {
                     true,
                     45,
                     21,
-                    true),
+                    true,
+                    "selective_detail",
+                    "balanced",
+                    true,
+                    true,
+                    0.75,
+                    "detailed"),
             createPreset(
                     "disabled",
                     "Memory Disabled",
@@ -151,7 +187,13 @@ public class MemoryPresetService {
                     true,
                     30,
                     21,
-                    true));
+                    true,
+                    "index",
+                    "compact",
+                    false,
+                    false,
+                    0.80,
+                    "off"));
 
     public List<MemoryPreset> getPresets() {
         return presets.stream()
@@ -186,7 +228,13 @@ public class MemoryPresetService {
             boolean decayEnabled,
             int decayDays,
             int retrievalLookbackDays,
-            boolean codeAwareExtractionEnabled) {
+            boolean codeAwareExtractionEnabled,
+            String disclosureMode,
+            String promptStyle,
+            boolean toolExpansionEnabled,
+            boolean disclosureHintsEnabled,
+            double detailMinScore,
+            String diagnosticsVerbosity) {
         RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder()
                 .enabled(enabled)
                 .softPromptBudgetTokens(softBudget)
@@ -201,6 +249,16 @@ public class MemoryPresetService {
                 .decayDays(decayDays)
                 .retrievalLookbackDays(retrievalLookbackDays)
                 .codeAwareExtractionEnabled(codeAwareExtractionEnabled)
+                .disclosure(RuntimeConfig.MemoryDisclosureConfig.builder()
+                        .mode(disclosureMode)
+                        .promptStyle(promptStyle)
+                        .toolExpansionEnabled(toolExpansionEnabled)
+                        .disclosureHintsEnabled(disclosureHintsEnabled)
+                        .detailMinScore(detailMinScore)
+                        .build())
+                .diagnostics(RuntimeConfig.MemoryDiagnosticsConfig.builder()
+                        .verbosity(diagnosticsVerbosity)
+                        .build())
                 .build();
 
         return MemoryPreset.builder()
@@ -227,6 +285,8 @@ public class MemoryPresetService {
                 .decayDays(source.getDecayDays())
                 .retrievalLookbackDays(source.getRetrievalLookbackDays())
                 .codeAwareExtractionEnabled(source.getCodeAwareExtractionEnabled())
+                .disclosure(copyDisclosure(source.getDisclosure()))
+                .diagnostics(copyDiagnostics(source.getDiagnostics()))
                 .build();
 
         return MemoryPreset.builder()
@@ -234,6 +294,28 @@ public class MemoryPresetService {
                 .label(preset.getLabel())
                 .comment(preset.getComment())
                 .memory(memoryCopy)
+                .build();
+    }
+
+    private RuntimeConfig.MemoryDisclosureConfig copyDisclosure(RuntimeConfig.MemoryDisclosureConfig disclosure) {
+        if (disclosure == null) {
+            return RuntimeConfig.MemoryDisclosureConfig.builder().build();
+        }
+        return RuntimeConfig.MemoryDisclosureConfig.builder()
+                .mode(disclosure.getMode())
+                .promptStyle(disclosure.getPromptStyle())
+                .toolExpansionEnabled(disclosure.getToolExpansionEnabled())
+                .disclosureHintsEnabled(disclosure.getDisclosureHintsEnabled())
+                .detailMinScore(disclosure.getDetailMinScore())
+                .build();
+    }
+
+    private RuntimeConfig.MemoryDiagnosticsConfig copyDiagnostics(RuntimeConfig.MemoryDiagnosticsConfig diagnostics) {
+        if (diagnostics == null) {
+            return RuntimeConfig.MemoryDiagnosticsConfig.builder().build();
+        }
+        return RuntimeConfig.MemoryDiagnosticsConfig.builder()
+                .verbosity(diagnostics.getVerbosity())
                 .build();
     }
 }

@@ -1,10 +1,10 @@
 package me.golemcore.bot.domain.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -326,6 +326,76 @@ public class RuntimeConfig {
         private Integer retrievalLookbackDays = 21;
         @Builder.Default
         private Boolean codeAwareExtractionEnabled = true;
+        /**
+         * Controls how memory is disclosed into the prompt before on-demand expansion
+         * is required.
+         */
+        @Builder.Default
+        private MemoryDisclosureConfig disclosure = new MemoryDisclosureConfig();
+        /**
+         * Controls how much memory pack telemetry is surfaced in diagnostics.
+         */
+        @Builder.Default
+        private MemoryDiagnosticsConfig diagnostics = new MemoryDiagnosticsConfig();
+    }
+
+    /**
+     * Prompt-facing disclosure policy for structured memory assembly.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MemoryDisclosureConfig {
+        /**
+         * Disclosure mode. Supported values: {@code index}, {@code summary},
+         * {@code selective_detail}, {@code full_pack}.
+         */
+        @Builder.Default
+        private String mode = "summary";
+        /**
+         * Prompt rendering density. Supported values: {@code compact},
+         * {@code balanced}, {@code rich}.
+         */
+        @Builder.Default
+        private String promptStyle = "balanced";
+        /**
+         * Whether prompt assembly should encourage the agent to expand memory via tools
+         * when needed.
+         */
+        @Builder.Default
+        private Boolean toolExpansionEnabled = true;
+        /**
+         * Whether prompt assembly should mention that more memory detail is available
+         * on demand.
+         */
+        @Builder.Default
+        private Boolean disclosureHintsEnabled = true;
+        /**
+         * Minimum score required before detail snippets can be disclosed in
+         * selective-detail mode.
+         */
+        @Builder.Default
+        private Double detailMinScore = 0.80;
+    }
+
+    /**
+     * Controls how much structured memory telemetry is exposed to diagnostics
+     * consumers.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MemoryDiagnosticsConfig {
+        /**
+         * Diagnostics verbosity. Supported values: {@code off}, {@code basic},
+         * {@code detailed}.
+         */
+        @Builder.Default
+        private String verbosity = "basic";
     }
 
     @Data

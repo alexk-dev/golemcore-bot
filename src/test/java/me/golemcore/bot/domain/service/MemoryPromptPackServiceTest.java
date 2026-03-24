@@ -1,5 +1,11 @@
 package me.golemcore.bot.domain.service;
 
+import me.golemcore.bot.domain.memory.disclosure.MemoryDisclosurePlanner;
+import me.golemcore.bot.domain.memory.disclosure.MemoryDisclosurePolicy;
+import me.golemcore.bot.domain.memory.disclosure.MemoryPackRenderer;
+import me.golemcore.bot.domain.memory.disclosure.MemorySectionAssembler;
+import me.golemcore.bot.domain.memory.model.MemoryPackSection;
+import me.golemcore.bot.domain.memory.model.MemoryPackSectionType;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.MemoryQuery;
@@ -9,18 +15,33 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class MemoryPromptPackServiceTest {
 
+    private RuntimeConfigService runtimeConfigService;
     private MemoryPromptPackService service;
 
     @BeforeEach
     void setUp() {
-        service = new MemoryPromptPackService();
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getMemoryDisclosureMode()).thenReturn("summary");
+        when(runtimeConfigService.getMemoryPromptStyle()).thenReturn("balanced");
+        when(runtimeConfigService.isMemoryToolExpansionEnabled()).thenReturn(true);
+        when(runtimeConfigService.isMemoryDisclosureHintsEnabled()).thenReturn(true);
+        when(runtimeConfigService.getMemoryDetailMinScore()).thenReturn(0.80);
+
+        service = new MemoryPromptPackService(
+                runtimeConfigService,
+                new MemoryDisclosurePlanner(new MemoryDisclosurePolicy()),
+                new MemorySectionAssembler(),
+                new MemoryPackRenderer());
     }
 
     @Test
@@ -28,6 +49,8 @@ class MemoryPromptPackServiceTest {
         MemoryPack pack = service.build(MemoryQuery.builder().build(), List.of());
 
         assertTrue(pack.getItems().isEmpty());
+        assertTrue(pack.getSections().isEmpty());
+        assertEquals("summary", pack.getDisclosureMode());
         assertEquals("", pack.getRenderedContext());
         assertEquals(0, asInt(pack.getDiagnostics(), "candidateCount"));
         assertEquals(0, asInt(pack.getDiagnostics(), "selectedCount"));
@@ -58,7 +81,9 @@ class MemoryPromptPackServiceTest {
     }
 
     @Test
-    void shouldRenderLayersInCanonicalOrderAndUseFallbackValues() {
+    void shouldRenderFullPackLayersInCanonicalOrderWhenConfigured() {
+        when(runtimeConfigService.getMemoryDisclosureMode()).thenReturn("full_pack");
+
         String longContent = "x".repeat(500) + "\nline2";
         List<MemoryScoredItem> candidates = List.of(
                 scored("semantic", "Semantic", "semantic content", MemoryItem.Layer.SEMANTIC, 1.0),
@@ -107,6 +132,54 @@ class MemoryPromptPackServiceTest {
 
         assertEquals(1800, asInt(pack.getDiagnostics(), "softBudgetTokens"));
         assertEquals(1800, asInt(pack.getDiagnostics(), "maxBudgetTokens"));
+    }
+
+    @Test
+    void shouldExposeSummarySectionsAndDisclosureMetadata() {
+        MemoryPack pack = service.build(
+                MemoryQuery.builder()
+                        .softPromptBudgetTokens(2000)
+                        .maxPromptBudgetTokens(2000)
+                        .build(),
+                List.of(
+                        scored("s-1", "Cache Policy", "Use redis for hot reads", MemoryItem.Layer.SEMANTIC, 0.91),
+                        scored("p-1", "Recovery", "Restart cache worker after schema drift",
+                                MemoryItem.Layer.PROCEDURAL, 0.93)));
+
+        assertEquals("summary", pack.getDisclosureMode());
+        Set<MemoryPackSectionType> sectionTypes = pack.getSections().stream()
+                .map(MemoryPackSection::getType)
+                .collect(java.util.stream.Collectors.toSet());
+        assertTrue(sectionTypes.contains(MemoryPackSectionType.SEMANTIC_MEMORY));
+        assertTrue(sectionTypes.contains(MemoryPackSectionType.PROCEDURAL_MEMORY));
+        assertTrue(sectionTypes.contains(MemoryPackSectionType.FOLLOWUP_HINTS));
+        assertTrue(pack.getRenderedContext().contains("## Relevant Facts"));
+        assertTrue(pack.getRenderedContext().contains("## Applicable Procedures"));
+        assertEquals("summary", pack.getDiagnostics().get("disclosureMode"));
+    }
+
+    @Test
+    void shouldIncludeDetailSnippetsOnlyForHighConfidenceItemsInSelectiveDetailMode() {
+        when(runtimeConfigService.getMemoryDisclosureMode()).thenReturn("selective_detail");
+        when(runtimeConfigService.getMemoryDetailMinScore()).thenReturn(0.90);
+
+        MemoryPack pack = service.build(
+                MemoryQuery.builder()
+                        .softPromptBudgetTokens(2000)
+                        .maxPromptBudgetTokens(2000)
+                        .build(),
+                List.of(
+                        scored("s-1", "High", "high confidence fact", MemoryItem.Layer.SEMANTIC, 0.95),
+                        scored("s-2", "Low", "low confidence fact", MemoryItem.Layer.SEMANTIC, 0.82)));
+
+        MemoryPackSection detailSection = pack.getSections().stream()
+                .filter(section -> section.getType() == MemoryPackSectionType.DETAIL_SNIPPETS)
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(1, detailSection.getLines().size());
+        assertTrue(detailSection.getLines().get(0).contains("High"));
+        assertFalse(detailSection.getLines().get(0).contains("Low"));
     }
 
     private int asInt(Map<String, Object> diagnostics, String key) {

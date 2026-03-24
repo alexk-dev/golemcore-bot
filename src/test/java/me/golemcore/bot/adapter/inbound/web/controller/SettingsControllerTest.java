@@ -910,6 +910,39 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldUpdateMemoryConfigWhenDisclosureSettingsValid() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .memory(RuntimeConfig.MemoryConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder()
+                .enabled(true)
+                .softPromptBudgetTokens(1800)
+                .maxPromptBudgetTokens(3500)
+                .disclosure(RuntimeConfig.MemoryDisclosureConfig.builder()
+                        .mode("summary")
+                        .promptStyle("balanced")
+                        .toolExpansionEnabled(true)
+                        .disclosureHintsEnabled(true)
+                        .detailMinScore(0.88)
+                        .build())
+                .diagnostics(RuntimeConfig.MemoryDiagnosticsConfig.builder()
+                        .verbosity("basic")
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateMemoryConfig(memoryConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
+        assertEquals("summary", runtimeConfig.getMemory().getDisclosure().getMode());
+        assertEquals("balanced", runtimeConfig.getMemory().getDisclosure().getPromptStyle());
+        assertEquals("basic", runtimeConfig.getMemory().getDiagnostics().getVerbosity());
+    }
+
+    @Test
     void shouldRejectMemoryConfigWhenMaxBudgetIsLessThanSoftBudget() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .memory(RuntimeConfig.MemoryConfig.builder().build())
@@ -972,6 +1005,26 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateMemoryConfig(memoryConfig));
         assertTrue(error.getMessage().contains("memory.retrievalLookbackDays"));
+    }
+
+    @Test
+    void shouldRejectMemoryConfigWhenDisclosureDetailMinScoreOutOfRange() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .memory(RuntimeConfig.MemoryConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder()
+                .disclosure(RuntimeConfig.MemoryDisclosureConfig.builder()
+                        .mode("summary")
+                        .promptStyle("balanced")
+                        .detailMinScore(1.5)
+                        .build())
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateMemoryConfig(memoryConfig));
+        assertTrue(error.getMessage().contains("memory.disclosure.detailMinScore"));
     }
 
     @Test
