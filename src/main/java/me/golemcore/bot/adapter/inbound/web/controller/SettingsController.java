@@ -73,6 +73,7 @@ public class SettingsController {
             "selective_detail",
             "full_pack");
     private static final Set<String> VALID_MEMORY_PROMPT_STYLES = Set.of("compact", "balanced", "rich");
+    private static final Set<String> VALID_MEMORY_RERANKING_PROFILES = Set.of("balanced", "aggressive");
     private static final Set<String> VALID_MEMORY_DIAGNOSTICS_VERBOSITY = Set.of("off", "basic", "detailed");
     private static final int TURN_PROGRESS_BATCH_SIZE_MIN = 1;
     private static final int TURN_PROGRESS_BATCH_SIZE_MAX = 50;
@@ -723,6 +724,9 @@ public class SettingsController {
         if (memoryConfig.getDisclosure() == null) {
             memoryConfig.setDisclosure(RuntimeConfig.MemoryDisclosureConfig.builder().build());
         }
+        if (memoryConfig.getReranking() == null) {
+            memoryConfig.setReranking(RuntimeConfig.MemoryRerankingConfig.builder().build());
+        }
         if (memoryConfig.getDiagnostics() == null) {
             memoryConfig.setDiagnostics(RuntimeConfig.MemoryDiagnosticsConfig.builder().build());
         }
@@ -754,6 +758,7 @@ public class SettingsController {
         }
 
         normalizeAndValidateMemoryDisclosureConfig(memoryConfig.getDisclosure());
+        normalizeAndValidateMemoryRerankingConfig(memoryConfig.getReranking());
         normalizeAndValidateMemoryDiagnosticsConfig(memoryConfig.getDiagnostics());
     }
 
@@ -791,6 +796,21 @@ public class SettingsController {
                 "basic",
                 VALID_MEMORY_DIAGNOSTICS_VERBOSITY,
                 "memory.diagnostics.verbosity"));
+    }
+
+    private void normalizeAndValidateMemoryRerankingConfig(
+            RuntimeConfig.MemoryRerankingConfig rerankingConfig) {
+        if (rerankingConfig == null) {
+            return;
+        }
+        rerankingConfig.setProfile(normalizeAndValidateMemoryOption(
+                rerankingConfig.getProfile(),
+                "balanced",
+                VALID_MEMORY_RERANKING_PROFILES,
+                "memory.reranking.profile"));
+        if (rerankingConfig.getEnabled() == null) {
+            rerankingConfig.setEnabled(true);
+        }
     }
 
     private void validateCompactionConfig(RuntimeConfig.CompactionConfig compactionConfig) {

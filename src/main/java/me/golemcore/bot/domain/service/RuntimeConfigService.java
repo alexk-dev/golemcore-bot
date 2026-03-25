@@ -138,6 +138,8 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_MEMORY_TOOL_EXPANSION_ENABLED = true;
     private static final boolean DEFAULT_MEMORY_DISCLOSURE_HINTS_ENABLED = true;
     private static final double DEFAULT_MEMORY_DISCLOSURE_DETAIL_MIN_SCORE = 0.80;
+    private static final boolean DEFAULT_MEMORY_RERANKING_ENABLED = true;
+    private static final String DEFAULT_MEMORY_RERANKING_PROFILE = "balanced";
     private static final String DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY = "basic";
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
@@ -1300,6 +1302,18 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_MEMORY_DISCLOSURE_DETAIL_MIN_SCORE;
     }
 
+    public boolean isMemoryRerankingEnabled() {
+        RuntimeConfig.MemoryRerankingConfig rerankingConfig = getMemoryRerankingConfig();
+        Boolean val = rerankingConfig.getEnabled();
+        return val != null ? val : DEFAULT_MEMORY_RERANKING_ENABLED;
+    }
+
+    public String getMemoryRerankingProfile() {
+        RuntimeConfig.MemoryRerankingConfig rerankingConfig = getMemoryRerankingConfig();
+        String val = rerankingConfig.getProfile();
+        return val != null ? val : DEFAULT_MEMORY_RERANKING_PROFILE;
+    }
+
     public String getMemoryDiagnosticsVerbosity() {
         RuntimeConfig.MemoryDiagnosticsConfig diagnosticsConfig = getMemoryDiagnosticsConfig();
         String val = diagnosticsConfig.getVerbosity();
@@ -1907,9 +1921,20 @@ public class RuntimeConfigService {
         return memoryConfig.getDiagnostics();
     }
 
+    private RuntimeConfig.MemoryRerankingConfig getMemoryRerankingConfig() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null || memoryConfig.getReranking() == null) {
+            return RuntimeConfig.MemoryRerankingConfig.builder().build();
+        }
+        return memoryConfig.getReranking();
+    }
+
     private void normalizeMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
         if (memoryConfig.getDisclosure() == null) {
             memoryConfig.setDisclosure(RuntimeConfig.MemoryDisclosureConfig.builder().build());
+        }
+        if (memoryConfig.getReranking() == null) {
+            memoryConfig.setReranking(RuntimeConfig.MemoryRerankingConfig.builder().build());
         }
         if (memoryConfig.getDiagnostics() == null) {
             memoryConfig.setDiagnostics(RuntimeConfig.MemoryDiagnosticsConfig.builder().build());
@@ -1929,6 +1954,13 @@ public class RuntimeConfigService {
         }
         if (disclosureConfig.getDetailMinScore() == null) {
             disclosureConfig.setDetailMinScore(DEFAULT_MEMORY_DISCLOSURE_DETAIL_MIN_SCORE);
+        }
+        RuntimeConfig.MemoryRerankingConfig rerankingConfig = memoryConfig.getReranking();
+        if (rerankingConfig.getEnabled() == null) {
+            rerankingConfig.setEnabled(DEFAULT_MEMORY_RERANKING_ENABLED);
+        }
+        if (rerankingConfig.getProfile() == null || rerankingConfig.getProfile().isBlank()) {
+            rerankingConfig.setProfile(DEFAULT_MEMORY_RERANKING_PROFILE);
         }
         RuntimeConfig.MemoryDiagnosticsConfig diagnosticsConfig = memoryConfig.getDiagnostics();
         if (diagnosticsConfig.getVerbosity() == null || diagnosticsConfig.getVerbosity().isBlank()) {

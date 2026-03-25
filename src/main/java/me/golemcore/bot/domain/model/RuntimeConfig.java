@@ -617,6 +617,12 @@ public class RuntimeConfig {
         @Builder.Default
         private MemoryDisclosureConfig disclosure = new MemoryDisclosureConfig();
         /**
+         * Controls the deterministic second-pass reranking that refines candidate
+         * ordering before layer caps and prompt budgeting are applied.
+         */
+        @Builder.Default
+        private MemoryRerankingConfig reranking = new MemoryRerankingConfig();
+        /**
          * Controls how much memory pack telemetry is surfaced in diagnostics.
          */
         @Builder.Default
@@ -662,6 +668,29 @@ public class RuntimeConfig {
          */
         @Builder.Default
         private Double detailMinScore = 0.80;
+    }
+
+    /**
+     * Retrieval-facing reranking policy applied after the first-pass score has
+     * already ordered candidates.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MemoryRerankingConfig {
+        /**
+         * Enables the deterministic reranking pass between scoring and selection.
+         */
+        @Builder.Default
+        private Boolean enabled = true;
+        /**
+         * Reranking intensity profile. Supported values: {@code balanced},
+         * {@code aggressive}.
+         */
+        @Builder.Default
+        private String profile = "balanced";
     }
 
     /**

@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.memory.model.MemoryRetrievalPlan;
 import me.golemcore.bot.domain.memory.retrieval.MemoryCandidateCollector;
+import me.golemcore.bot.domain.memory.retrieval.MemoryCandidateReranker;
 import me.golemcore.bot.domain.memory.retrieval.MemoryCandidateScorer;
 import me.golemcore.bot.domain.memory.retrieval.MemoryCandidateSelector;
 import me.golemcore.bot.domain.memory.retrieval.MemoryRetrievalPlanner;
@@ -39,6 +40,7 @@ public class MemoryRetrievalService {
     private final MemoryRetrievalPlanner memoryRetrievalPlanner;
     private final MemoryCandidateCollector memoryCandidateCollector;
     private final MemoryCandidateScorer memoryCandidateScorer;
+    private final MemoryCandidateReranker memoryCandidateReranker;
     private final MemoryCandidateSelector memoryCandidateSelector;
 
     public MemoryRetrievalService(
@@ -46,11 +48,13 @@ public class MemoryRetrievalService {
             MemoryRetrievalPlanner memoryRetrievalPlanner,
             MemoryCandidateCollector memoryCandidateCollector,
             MemoryCandidateScorer memoryCandidateScorer,
+            MemoryCandidateReranker memoryCandidateReranker,
             MemoryCandidateSelector memoryCandidateSelector) {
         this.runtimeConfigService = runtimeConfigService;
         this.memoryRetrievalPlanner = memoryRetrievalPlanner;
         this.memoryCandidateCollector = memoryCandidateCollector;
         this.memoryCandidateScorer = memoryCandidateScorer;
+        this.memoryCandidateReranker = memoryCandidateReranker;
         this.memoryCandidateSelector = memoryCandidateSelector;
     }
 
@@ -69,6 +73,7 @@ public class MemoryRetrievalService {
         MemoryRetrievalPlan plan = memoryRetrievalPlanner.plan(query);
         List<me.golemcore.bot.domain.model.MemoryItem> candidates = memoryCandidateCollector.collect(plan);
         List<MemoryScoredItem> scored = memoryCandidateScorer.score(plan, candidates);
-        return memoryCandidateSelector.select(plan, scored);
+        List<MemoryScoredItem> reranked = memoryCandidateReranker.rerank(plan, scored);
+        return memoryCandidateSelector.select(plan, reranked);
     }
 }

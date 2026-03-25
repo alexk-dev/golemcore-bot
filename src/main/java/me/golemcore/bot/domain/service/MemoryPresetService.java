@@ -55,6 +55,8 @@ public class MemoryPresetService {
                     true,
                     true,
                     0.82,
+                    true,
+                    "balanced",
                     "basic"),
             createPreset(
                     "coding_balanced",
@@ -78,6 +80,8 @@ public class MemoryPresetService {
                     true,
                     true,
                     0.80,
+                    true,
+                    "balanced",
                     "basic"),
             createPreset(
                     "coding_deep",
@@ -101,6 +105,8 @@ public class MemoryPresetService {
                     true,
                     true,
                     0.72,
+                    true,
+                    "aggressive",
                     "detailed"),
             createPreset(
                     "general_chat",
@@ -124,6 +130,8 @@ public class MemoryPresetService {
                     false,
                     true,
                     0.90,
+                    true,
+                    "balanced",
                     "basic"),
             createPreset(
                     "research_analyst",
@@ -147,6 +155,8 @@ public class MemoryPresetService {
                     true,
                     true,
                     0.85,
+                    true,
+                    "aggressive",
                     "basic"),
             createPreset(
                     "ops_support",
@@ -170,6 +180,8 @@ public class MemoryPresetService {
                     true,
                     true,
                     0.75,
+                    true,
+                    "aggressive",
                     "detailed"),
             createPreset(
                     "disabled",
@@ -193,6 +205,8 @@ public class MemoryPresetService {
                     false,
                     false,
                     0.80,
+                    false,
+                    "balanced",
                     "off"));
 
     public List<MemoryPreset> getPresets() {
@@ -234,6 +248,8 @@ public class MemoryPresetService {
             boolean toolExpansionEnabled,
             boolean disclosureHintsEnabled,
             double detailMinScore,
+            boolean rerankingEnabled,
+            String rerankingProfile,
             String diagnosticsVerbosity) {
         RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder()
                 .enabled(enabled)
@@ -255,6 +271,10 @@ public class MemoryPresetService {
                         .toolExpansionEnabled(toolExpansionEnabled)
                         .disclosureHintsEnabled(disclosureHintsEnabled)
                         .detailMinScore(detailMinScore)
+                        .build())
+                .reranking(RuntimeConfig.MemoryRerankingConfig.builder()
+                        .enabled(rerankingEnabled)
+                        .profile(rerankingProfile)
                         .build())
                 .diagnostics(RuntimeConfig.MemoryDiagnosticsConfig.builder()
                         .verbosity(diagnosticsVerbosity)
@@ -286,6 +306,7 @@ public class MemoryPresetService {
                 .retrievalLookbackDays(source.getRetrievalLookbackDays())
                 .codeAwareExtractionEnabled(source.getCodeAwareExtractionEnabled())
                 .disclosure(copyDisclosure(source.getDisclosure()))
+                .reranking(copyReranking(source.getReranking()))
                 .diagnostics(copyDiagnostics(source.getDiagnostics()))
                 .build();
 
@@ -316,6 +337,16 @@ public class MemoryPresetService {
         }
         return RuntimeConfig.MemoryDiagnosticsConfig.builder()
                 .verbosity(diagnostics.getVerbosity())
+                .build();
+    }
+
+    private RuntimeConfig.MemoryRerankingConfig copyReranking(RuntimeConfig.MemoryRerankingConfig reranking) {
+        if (reranking == null) {
+            return RuntimeConfig.MemoryRerankingConfig.builder().build();
+        }
+        return RuntimeConfig.MemoryRerankingConfig.builder()
+                .enabled(reranking.getEnabled())
+                .profile(reranking.getProfile())
                 .build();
     }
 }

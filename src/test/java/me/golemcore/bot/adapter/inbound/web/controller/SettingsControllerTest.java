@@ -1395,6 +1395,10 @@ class SettingsControllerTest {
                         .disclosureHintsEnabled(true)
                         .detailMinScore(0.88)
                         .build())
+                .reranking(RuntimeConfig.MemoryRerankingConfig.builder()
+                        .enabled(true)
+                        .profile("aggressive")
+                        .build())
                 .diagnostics(RuntimeConfig.MemoryDiagnosticsConfig.builder()
                         .verbosity("basic")
                         .build())
@@ -1407,6 +1411,7 @@ class SettingsControllerTest {
         verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
         assertEquals("summary", runtimeConfig.getMemory().getDisclosure().getMode());
         assertEquals("balanced", runtimeConfig.getMemory().getDisclosure().getPromptStyle());
+        assertEquals("aggressive", runtimeConfig.getMemory().getReranking().getProfile());
         assertEquals("basic", runtimeConfig.getMemory().getDiagnostics().getVerbosity());
     }
 
@@ -1493,6 +1498,25 @@ class SettingsControllerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> controller.updateMemoryConfig(memoryConfig));
         assertTrue(error.getMessage().contains("memory.disclosure.detailMinScore"));
+    }
+
+    @Test
+    void shouldRejectMemoryConfigWhenRerankingProfileInvalid() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .memory(RuntimeConfig.MemoryConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder()
+                .reranking(RuntimeConfig.MemoryRerankingConfig.builder()
+                        .enabled(true)
+                        .profile("turbo")
+                        .build())
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updateMemoryConfig(memoryConfig));
+        assertTrue(error.getMessage().contains("memory.reranking.profile"));
     }
 
     @Test
