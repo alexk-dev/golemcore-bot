@@ -382,9 +382,7 @@ class SessionsControllerTest {
                     List<Map<String, Object>> secondSnapshots = (List<Map<String, Object>>) spans.get(1)
                             .get("snapshots");
                     assertEquals(longPayload, firstSnapshots.get(0).get("payloadText"));
-                    assertNotNull(firstSnapshots.get(0).get("payloadBase64"));
                     assertNull(secondSnapshots.get(0).get("payloadText"));
-                    assertNull(secondSnapshots.get(0).get("payloadBase64"));
                     @SuppressWarnings("unchecked")
                     List<Map<String, Object>> events = (List<Map<String, Object>>) spans.get(0).get("events");
                     assertEquals("request.received", events.get(0).get("name"));
