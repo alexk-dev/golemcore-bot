@@ -67,6 +67,14 @@ public class SettingsController {
     private static final int MEMORY_DECAY_DAYS_MAX = 3650;
     private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN = 1;
     private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX = 90;
+    private static final Set<String> VALID_MEMORY_DISCLOSURE_MODES = Set.of(
+            "index",
+            "summary",
+            "selective_detail",
+            "full_pack");
+    private static final Set<String> VALID_MEMORY_PROMPT_STYLES = Set.of("compact", "balanced", "rich");
+    private static final Set<String> VALID_MEMORY_RERANKING_PROFILES = Set.of("balanced", "aggressive");
+    private static final Set<String> VALID_MEMORY_DIAGNOSTICS_VERBOSITY = Set.of("off", "basic", "detailed");
     private static final int TURN_PROGRESS_BATCH_SIZE_MIN = 1;
     private static final int TURN_PROGRESS_BATCH_SIZE_MAX = 50;
     private static final int TURN_PROGRESS_MAX_SILENCE_SECONDS_MIN = 1;
@@ -713,6 +721,15 @@ public class SettingsController {
         if (memoryConfig == null) {
             throw new IllegalArgumentException("memory config is required");
         }
+        if (memoryConfig.getDisclosure() == null) {
+            memoryConfig.setDisclosure(RuntimeConfig.MemoryDisclosureConfig.builder().build());
+        }
+        if (memoryConfig.getReranking() == null) {
+            memoryConfig.setReranking(RuntimeConfig.MemoryRerankingConfig.builder().build());
+        }
+        if (memoryConfig.getDiagnostics() == null) {
+            memoryConfig.setDiagnostics(RuntimeConfig.MemoryDiagnosticsConfig.builder().build());
+        }
 
         validateNullableInteger(memoryConfig.getSoftPromptBudgetTokens(), MEMORY_SOFT_BUDGET_MIN,
                 MEMORY_SOFT_BUDGET_MAX,
@@ -738,6 +755,61 @@ public class SettingsController {
         if (softBudget != null && maxBudget != null && maxBudget < softBudget) {
             throw new IllegalArgumentException(
                     "memory.maxPromptBudgetTokens must be greater than or equal to memory.softPromptBudgetTokens");
+        }
+
+        normalizeAndValidateMemoryDisclosureConfig(memoryConfig.getDisclosure());
+        normalizeAndValidateMemoryRerankingConfig(memoryConfig.getReranking());
+        normalizeAndValidateMemoryDiagnosticsConfig(memoryConfig.getDiagnostics());
+    }
+
+    private void normalizeAndValidateMemoryDisclosureConfig(
+            RuntimeConfig.MemoryDisclosureConfig disclosureConfig) {
+        if (disclosureConfig == null) {
+            return;
+        }
+        disclosureConfig.setMode(normalizeAndValidateMemoryOption(
+                disclosureConfig.getMode(),
+                "summary",
+                VALID_MEMORY_DISCLOSURE_MODES,
+                "memory.disclosure.mode"));
+        disclosureConfig.setPromptStyle(normalizeAndValidateMemoryOption(
+                disclosureConfig.getPromptStyle(),
+                "balanced",
+                VALID_MEMORY_PROMPT_STYLES,
+                "memory.disclosure.promptStyle"));
+        validateNullableDouble(disclosureConfig.getDetailMinScore(), 0.0, 1.0, "memory.disclosure.detailMinScore");
+        if (disclosureConfig.getToolExpansionEnabled() == null) {
+            disclosureConfig.setToolExpansionEnabled(true);
+        }
+        if (disclosureConfig.getDisclosureHintsEnabled() == null) {
+            disclosureConfig.setDisclosureHintsEnabled(true);
+        }
+    }
+
+    private void normalizeAndValidateMemoryDiagnosticsConfig(
+            RuntimeConfig.MemoryDiagnosticsConfig diagnosticsConfig) {
+        if (diagnosticsConfig == null) {
+            return;
+        }
+        diagnosticsConfig.setVerbosity(normalizeAndValidateMemoryOption(
+                diagnosticsConfig.getVerbosity(),
+                "basic",
+                VALID_MEMORY_DIAGNOSTICS_VERBOSITY,
+                "memory.diagnostics.verbosity"));
+    }
+
+    private void normalizeAndValidateMemoryRerankingConfig(
+            RuntimeConfig.MemoryRerankingConfig rerankingConfig) {
+        if (rerankingConfig == null) {
+            return;
+        }
+        rerankingConfig.setProfile(normalizeAndValidateMemoryOption(
+                rerankingConfig.getProfile(),
+                "balanced",
+                VALID_MEMORY_RERANKING_PROFILES,
+                "memory.reranking.profile"));
+        if (rerankingConfig.getEnabled() == null) {
+            rerankingConfig.setEnabled(true);
         }
     }
 
@@ -792,6 +864,20 @@ public class SettingsController {
         if (value < min || value > max) {
             throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
         }
+    }
+
+    private String normalizeAndValidateMemoryOption(
+            String value,
+            String defaultValue,
+            Set<String> allowedValues,
+            String fieldName) {
+        String normalized = value == null || value.isBlank()
+                ? defaultValue
+                : value.trim().toLowerCase(Locale.ROOT);
+        if (!allowedValues.contains(normalized)) {
+            throw new IllegalArgumentException(fieldName + " must be one of " + allowedValues);
+        }
+        return normalized;
     }
 
     private void validateVoiceConfig(RuntimeConfig.VoiceConfig voiceConfig) {

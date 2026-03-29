@@ -22,6 +22,9 @@ import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.MemoryItem;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Promotion policy for Memory V2 layer transitions.
  */
@@ -33,6 +36,24 @@ public class MemoryPromotionService {
 
     public boolean isPromotionEnabled() {
         return runtimeConfigService.isMemoryPromotionEnabled();
+    }
+
+    /**
+     * Determine durable target layers for a candidate episodic item.
+     *
+     * @param item
+     *            source item to inspect
+     * @return target layers allowed by promotion policy
+     */
+    public List<MemoryItem.Layer> determinePromotionLayers(MemoryItem item) {
+        List<MemoryItem.Layer> layers = new ArrayList<>();
+        if (shouldPromoteToSemantic(item)) {
+            layers.add(MemoryItem.Layer.SEMANTIC);
+        }
+        if (shouldPromoteToProcedural(item)) {
+            layers.add(MemoryItem.Layer.PROCEDURAL);
+        }
+        return layers;
     }
 
     public boolean shouldPromoteToSemantic(MemoryItem item) {

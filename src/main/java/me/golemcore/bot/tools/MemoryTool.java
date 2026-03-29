@@ -49,7 +49,9 @@ public class MemoryTool implements ToolComponent {
     public static final String TOOL_NAME = "memory";
 
     private static final String OP_ADD = "memory_add";
+    private static final String OP_READ = "memory_read";
     private static final String OP_SEARCH = "memory_search";
+    private static final String OP_EXPAND_SECTION = "memory_expand_section";
     private static final String OP_UPDATE = "memory_update";
     private static final String OP_PROMOTE = "memory_promote";
     private static final String OP_FORGET = "memory_forget";
@@ -58,6 +60,7 @@ public class MemoryTool implements ToolComponent {
     private static final String PARAM_QUERY = "query";
     private static final String PARAM_ID = "id";
     private static final String PARAM_FINGERPRINT = "fingerprint";
+    private static final String PARAM_SECTION = "section";
     private static final String PARAM_LAYER = "layer";
     private static final String PARAM_TYPE = "type";
     private static final String PARAM_TITLE = "title";
@@ -77,11 +80,15 @@ public class MemoryTool implements ToolComponent {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put(PARAM_OPERATION, Map.of(
                 "type", "string",
-                "enum", List.of(OP_ADD, OP_SEARCH, OP_UPDATE, OP_PROMOTE, OP_FORGET),
+                "enum", List.of(OP_ADD, OP_READ, OP_SEARCH, OP_EXPAND_SECTION, OP_UPDATE, OP_PROMOTE, OP_FORGET),
                 "description", "Memory operation to perform"));
         properties.put(PARAM_QUERY, Map.of("type", "string", "description", "Search text for memory lookup"));
         properties.put(PARAM_ID, Map.of("type", "string", "description", "Memory item id"));
         properties.put(PARAM_FINGERPRINT, Map.of("type", "string", "description", "Memory item fingerprint"));
+        properties.put(PARAM_SECTION, Map.of(
+                "type", "string",
+                "description",
+                "Section alias for memory_expand_section, for example semantic_facts or recent_episodes"));
         properties.put(PARAM_LAYER, Map.of(
                 "type", "string",
                 "enum", List.of("semantic", "procedural"),
@@ -119,11 +126,11 @@ public class MemoryTool implements ToolComponent {
                 "type", "integer",
                 "minimum", 1,
                 "maximum", 50,
-                "description", "Result limit for search/promote/forget"));
+                "description", "Result limit for search/read/promote/forget/expand"));
 
         return ToolDefinition.builder()
                 .name(TOOL_NAME)
-                .description("Structured memory operations: add, search, update, promote, forget.")
+                .description("Structured memory operations: add, read, search, expand, update, promote, forget.")
                 .inputSchema(Map.of(
                         "type", "object",
                         "properties", properties,
@@ -148,7 +155,9 @@ public class MemoryTool implements ToolComponent {
         try {
             ToolResult result = switch (operation) {
             case OP_ADD -> addMemory(parameters);
+            case OP_READ -> readMemory(parameters);
             case OP_SEARCH -> searchMemory(parameters);
+            case OP_EXPAND_SECTION -> expandMemorySection(parameters);
             case OP_UPDATE -> updateMemory(parameters);
             case OP_PROMOTE -> promoteMemory(parameters);
             case OP_FORGET -> forgetMemory(parameters);
@@ -292,6 +301,68 @@ public class MemoryTool implements ToolComponent {
         return ToolResult.success(sb.toString().trim(), Map.of("items", rows));
     }
 
+    private ToolResult readMemory(Map<String, Object> params) {
+        String query = normalizeNonBlank(toStringValue(params.get(PARAM_QUERY)));
+        String id = normalizeNonBlank(toStringValue(params.get(PARAM_ID)));
+        String fingerprint = normalizeNonBlank(toStringValue(params.get(PARAM_FINGERPRINT)));
+        if (query == null && id == null && fingerprint == null) {
+            return ToolResult.failure("memory_read requires id, fingerprint, or query");
+        }
+
+        int limit = clampLimit(toInteger(params.get(PARAM_LIMIT)), 1);
+        List<MemoryItem> candidates = searchCandidates(query != null ? query : idOrFingerprintQuery(id, fingerprint),
+                limit);
+        List<MemoryItem> matches = new ArrayList<>();
+        for (MemoryItem candidate : candidates) {
+            if (candidate == null) {
+                continue;
+            }
+            if (id != null && !id.equals(candidate.getId())) {
+                continue;
+            }
+            if (fingerprint != null && !fingerprint.equals(candidate.getFingerprint())) {
+                continue;
+            }
+            matches.add(candidate);
+            if (matches.size() >= limit) {
+                break;
+            }
+        }
+
+        if (matches.isEmpty() && id == null && fingerprint == null && !candidates.isEmpty()) {
+            matches.add(candidates.get(0));
+        }
+        if (matches.isEmpty()) {
+            return ToolResult.failure("No memory item found for read");
+        }
+
+        return ToolResult.success(renderReadOutput(matches), Map.of("items", toRows(matches)));
+    }
+
+    private ToolResult expandMemorySection(Map<String, Object> params) {
+        if (!runtimeConfigService.isMemoryToolExpansionEnabled()) {
+            return ToolResult.failure("Memory tool expansion is disabled");
+        }
+
+        String section = normalizeNonBlank(toStringValue(params.get(PARAM_SECTION)));
+        String canonicalSection = canonicalSection(section);
+        if (canonicalSection == null) {
+            return ToolResult.failure("Invalid memory section: " + section);
+        }
+
+        String query = normalizeNonBlank(toStringValue(params.get(PARAM_QUERY)));
+        int limit = clampLimit(toInteger(params.get(PARAM_LIMIT)), 5);
+        List<MemoryItem> items = expandSectionCandidates(canonicalSection, query, limit);
+        if (items.isEmpty()) {
+            return ToolResult.success("No memory items found for section: " + canonicalSection,
+                    Map.of(PARAM_SECTION, canonicalSection, "items", List.of()));
+        }
+
+        return ToolResult.success(
+                renderExpandedSectionOutput(canonicalSection, items),
+                Map.of(PARAM_SECTION, canonicalSection, "items", toRows(items)));
+    }
+
     private ToolResult promoteMemory(Map<String, Object> params) {
         MemoryItem.Layer targetLayer = resolveWritableLayer(params.get(PARAM_LAYER), MemoryItem.Layer.SEMANTIC);
         if (targetLayer == null) {
@@ -429,16 +500,37 @@ public class MemoryTool implements ToolComponent {
 
     private List<MemoryItem> searchCandidates(String queryText, int limit) {
         int topK = clampLimit(limit, 8);
-        MemoryQuery query = MemoryQuery.builder()
+        return runQuery(buildQuery(queryText, 0, topK, topK, topK));
+    }
+
+    private List<MemoryItem> expandSectionCandidates(String section, String queryText, int limit) {
+        int topK = clampLimit(limit, 5);
+        return switch (section) {
+        case "index" -> runQuery(buildQuery(queryText, topK, topK, topK, topK));
+        case "working_memory" -> runQuery(buildQuery(queryText, topK, 0, 0, 0));
+        case "recent_episodes" -> runQuery(buildQuery(queryText, 0, topK, 0, 0));
+        case "semantic_facts" -> runQuery(buildQuery(queryText, 0, 0, topK, 0));
+        case "procedural_guidance" -> runQuery(buildQuery(queryText, 0, 0, 0, topK));
+        case "detail_snippets" -> runQuery(buildQuery(queryText, 0, topK, topK, topK));
+        default -> List.of();
+        };
+    }
+
+    private List<MemoryItem> runQuery(MemoryQuery query) {
+        return memoryComponent.queryItems(query);
+    }
+
+    private MemoryQuery buildQuery(String queryText, int workingTopK, int episodicTopK, int semanticTopK,
+            int proceduralTopK) {
+        return MemoryQuery.builder()
                 .queryText(queryText)
                 .softPromptBudgetTokens(runtimeConfigService.getMemorySoftPromptBudgetTokens())
                 .maxPromptBudgetTokens(runtimeConfigService.getMemoryMaxPromptBudgetTokens())
-                .workingTopK(0)
-                .episodicTopK(topK)
-                .semanticTopK(topK)
-                .proceduralTopK(topK)
+                .workingTopK(workingTopK)
+                .episodicTopK(episodicTopK)
+                .semanticTopK(semanticTopK)
+                .proceduralTopK(proceduralTopK)
                 .build();
-        return memoryComponent.queryItems(query);
     }
 
     private MemoryItem buildItem(Map<String, Object> params, MemoryItem.Layer layer, MemoryItem.Type type,
@@ -628,5 +720,98 @@ public class MemoryTool implements ToolComponent {
             return text;
         }
         return text.substring(0, Math.max(0, maxLen - 3)) + "...";
+    }
+
+    private String canonicalSection(String section) {
+        String normalized = normalizeNonBlank(section);
+        if (normalized == null) {
+            return null;
+        }
+
+        String value = normalized.toLowerCase(Locale.ROOT);
+        if ("index".equals(value)) {
+            return "index";
+        }
+        if ("working_memory".equals(value) || "working_snapshot".equals(value)) {
+            return "working_memory";
+        }
+        if ("episodic_memory".equals(value) || "recent_episodes".equals(value)) {
+            return "recent_episodes";
+        }
+        if ("semantic_memory".equals(value) || "semantic_facts".equals(value)) {
+            return "semantic_facts";
+        }
+        if ("procedural_memory".equals(value) || "procedural_guidance".equals(value)) {
+            return "procedural_guidance";
+        }
+        if ("detail_snippets".equals(value)) {
+            return "detail_snippets";
+        }
+        return null;
+    }
+
+    private String renderReadOutput(List<MemoryItem> items) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Read ").append(items.size()).append(" memory item(s):\n");
+        for (int i = 0; i < items.size(); i++) {
+            MemoryItem item = items.get(i);
+            sb.append(i + 1)
+                    .append(". [")
+                    .append(item.getLayer() != null ? item.getLayer().name() : "EPISODIC")
+                    .append('/')
+                    .append(item.getType() != null ? item.getType().name() : "ITEM")
+                    .append("] ")
+                    .append(normalizeNonBlank(item.getTitle()) != null ? item.getTitle() : "Untitled")
+                    .append('\n')
+                    .append(truncate(normalizeNonBlank(item.getContent()), 500));
+            if (item.getReferences() != null && !item.getReferences().isEmpty()) {
+                sb.append("\nReferences: ").append(String.join(", ", item.getReferences()));
+            }
+            if (i + 1 < items.size()) {
+                sb.append("\n");
+            }
+            sb.append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private String renderExpandedSectionOutput(String section, List<MemoryItem> items) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Expanded ").append(section).append(" section with ")
+                .append(items.size()).append(" item(s):\n");
+        for (int i = 0; i < items.size(); i++) {
+            MemoryItem item = items.get(i);
+            sb.append(i + 1)
+                    .append(". [")
+                    .append(item.getLayer() != null ? item.getLayer().name() : "EPISODIC")
+                    .append('/')
+                    .append(item.getType() != null ? item.getType().name() : "ITEM")
+                    .append("] ");
+            if (normalizeNonBlank(item.getTitle()) != null) {
+                sb.append(item.getTitle()).append(" - ");
+            }
+            sb.append(truncate(normalizeNonBlank(item.getContent()), 240)).append('\n');
+        }
+        return sb.toString().trim();
+    }
+
+    private List<Map<String, Object>> toRows(List<MemoryItem> items) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (MemoryItem item : items) {
+            if (item == null) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put(PARAM_ID, item.getId());
+            row.put(PARAM_FINGERPRINT, item.getFingerprint());
+            row.put(PARAM_LAYER, item.getLayer() != null ? item.getLayer().name().toLowerCase(Locale.ROOT) : null);
+            row.put(PARAM_TYPE, item.getType() != null ? item.getType().name().toLowerCase(Locale.ROOT) : null);
+            row.put(PARAM_TITLE, item.getTitle());
+            row.put(PARAM_CONTENT, item.getContent());
+            row.put(PARAM_TAGS, item.getTags() != null ? item.getTags() : List.of());
+            row.put(PARAM_REFERENCES, item.getReferences() != null ? item.getReferences() : List.of());
+            rows.add(row);
+        }
+        return rows;
     }
 }

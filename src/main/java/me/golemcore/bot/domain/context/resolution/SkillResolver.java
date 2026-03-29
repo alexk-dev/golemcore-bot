@@ -25,7 +25,6 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
-import me.golemcore.bot.domain.service.AutoRunContextSupport;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;

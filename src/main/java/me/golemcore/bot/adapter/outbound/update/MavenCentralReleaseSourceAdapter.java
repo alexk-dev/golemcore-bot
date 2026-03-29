@@ -184,9 +184,9 @@ public class MavenCentralReleaseSourceAdapter implements ReleaseSourcePort {
             throw new IllegalStateException("Download URI host is missing: " + uri);
         }
         String normalizedHost = host.toLowerCase(Locale.ROOT);
-        if (!normalizedHost.equals("repo1.maven.org")
-                && !normalizedHost.equals("repo.maven.apache.org")
-                && !normalizedHost.equals("search.maven.org")) {
+        if (!"repo1.maven.org".equals(normalizedHost)
+                && !"repo.maven.apache.org".equals(normalizedHost)
+                && !"search.maven.org".equals(normalizedHost)) {
             throw new IllegalStateException("Download URI host is not trusted: " + normalizedHost);
         }
     }

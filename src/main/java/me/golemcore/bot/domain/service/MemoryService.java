@@ -18,31 +18,26 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.component.MemoryComponent;
+import me.golemcore.bot.domain.memory.orchestrator.MemoryOrchestratorService;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.MemoryQuery;
-import me.golemcore.bot.domain.model.MemoryScoredItem;
 import me.golemcore.bot.domain.model.TurnMemoryEvent;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * Service for managing structured Memory V2 across conversations.
+ * Compatibility bridge that preserves the existing {@link MemoryComponent}
+ * contract while delegating memory work to the new orchestration layer.
  */
 @Service
 @RequiredArgsConstructor
 public class MemoryService implements MemoryComponent {
 
-    private final RuntimeConfigService runtimeConfigService;
-    private final MemoryWriteService memoryWriteService;
-    private final MemoryRetrievalService memoryRetrievalService;
-    private final MemoryPromptPackService memoryPromptPackService;
+    private final MemoryOrchestratorService memoryOrchestratorService;
 
     @Override
     public String getComponentType() {
@@ -51,64 +46,26 @@ public class MemoryService implements MemoryComponent {
 
     @Override
     public MemoryPack buildMemoryPack(MemoryQuery query) {
-        if (!runtimeConfigService.isMemoryEnabled()) {
-            return MemoryPack.builder()
-                    .items(List.of())
-                    .diagnostics(Map.of("enabled", false))
-                    .renderedContext("")
-                    .build();
-        }
-
-        MemoryQuery normalized = query != null ? query
-                : MemoryQuery.builder()
-                        .softPromptBudgetTokens(runtimeConfigService.getMemorySoftPromptBudgetTokens())
-                        .maxPromptBudgetTokens(runtimeConfigService.getMemoryMaxPromptBudgetTokens())
-                        .workingTopK(runtimeConfigService.getMemoryWorkingTopK())
-                        .episodicTopK(runtimeConfigService.getMemoryEpisodicTopK())
-                        .semanticTopK(runtimeConfigService.getMemorySemanticTopK())
-                        .proceduralTopK(runtimeConfigService.getMemoryProceduralTopK())
-                        .build();
-
-        List<MemoryScoredItem> scoredItems = memoryRetrievalService.retrieve(normalized);
-        MemoryPack structuredPack = memoryPromptPackService.build(normalized, scoredItems);
-
-        Map<String, Object> diagnostics = new LinkedHashMap<>();
-        if (structuredPack.getDiagnostics() != null) {
-            diagnostics.putAll(structuredPack.getDiagnostics());
-        }
-        diagnostics.put("structuredCandidates", scoredItems.size());
-
-        return MemoryPack.builder()
-                .items(structuredPack.getItems())
-                .diagnostics(diagnostics)
-                .renderedContext(structuredPack.getRenderedContext() != null ? structuredPack.getRenderedContext() : "")
-                .build();
+        return memoryOrchestratorService.buildMemoryPack(query);
     }
 
     @Override
     public void persistTurnMemory(TurnMemoryEvent event) {
-        memoryWriteService.persistTurnMemory(event);
+        memoryOrchestratorService.persistTurnMemory(event);
     }
 
     @Override
     public List<MemoryItem> queryItems(MemoryQuery query) {
-        List<MemoryScoredItem> scoredItems = memoryRetrievalService.retrieve(query);
-        List<MemoryItem> items = new ArrayList<>();
-        for (MemoryScoredItem scoredItem : scoredItems) {
-            if (scoredItem.getItem() != null) {
-                items.add(scoredItem.getItem());
-            }
-        }
-        return items;
+        return memoryOrchestratorService.queryItems(query);
     }
 
     @Override
     public void upsertSemanticItem(MemoryItem item) {
-        memoryWriteService.upsertSemanticItem(item);
+        memoryOrchestratorService.upsertSemanticItem(item);
     }
 
     @Override
     public void upsertProceduralItem(MemoryItem item) {
-        memoryWriteService.upsertProceduralItem(item);
+        memoryOrchestratorService.upsertProceduralItem(item);
     }
 }

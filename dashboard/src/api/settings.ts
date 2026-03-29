@@ -250,6 +250,8 @@ export interface MemoryConfig {
   decayDays: number | null;
   retrievalLookbackDays: number | null;
   codeAwareExtractionEnabled: boolean | null;
+  disclosure?: MemoryDisclosureConfig | null;
+  diagnostics?: MemoryDiagnosticsConfig | null;
 }
 
 export interface MemoryPreset {
@@ -257,6 +259,24 @@ export interface MemoryPreset {
   label: string;
   comment: string;
   memory: MemoryConfig;
+}
+
+export type MemoryDisclosureMode = 'index' | 'summary' | 'selective_detail' | 'full_pack';
+
+export type MemoryPromptStyle = 'compact' | 'balanced' | 'rich';
+
+export type MemoryDiagnosticsVerbosity = 'off' | 'basic' | 'detailed';
+
+export interface MemoryDisclosureConfig {
+  mode: MemoryDisclosureMode | null;
+  promptStyle: MemoryPromptStyle | null;
+  toolExpansionEnabled: boolean | null;
+  disclosureHintsEnabled: boolean | null;
+  detailMinScore: number | null;
+}
+
+export interface MemoryDiagnosticsConfig {
+  verbosity: MemoryDiagnosticsVerbosity | null;
 }
 
 export interface SkillsConfig {

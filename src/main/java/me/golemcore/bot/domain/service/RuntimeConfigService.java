@@ -133,6 +133,14 @@ public class RuntimeConfigService {
     private static final int DEFAULT_MEMORY_DECAY_DAYS = 30;
     private static final int DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS = 21;
     private static final boolean DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED = true;
+    private static final String DEFAULT_MEMORY_DISCLOSURE_MODE = "summary";
+    private static final String DEFAULT_MEMORY_PROMPT_STYLE = "balanced";
+    private static final boolean DEFAULT_MEMORY_TOOL_EXPANSION_ENABLED = true;
+    private static final boolean DEFAULT_MEMORY_DISCLOSURE_HINTS_ENABLED = true;
+    private static final double DEFAULT_MEMORY_DISCLOSURE_DETAIL_MIN_SCORE = 0.80;
+    private static final boolean DEFAULT_MEMORY_RERANKING_ENABLED = true;
+    private static final String DEFAULT_MEMORY_RERANKING_PROFILE = "balanced";
+    private static final String DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY = "basic";
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
     private static final Duration DEFAULT_TURN_DEADLINE = Duration.ofHours(1);
@@ -1264,6 +1272,54 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED;
     }
 
+    public String getMemoryDisclosureMode() {
+        RuntimeConfig.MemoryDisclosureConfig disclosureConfig = getMemoryDisclosureConfig();
+        String val = disclosureConfig.getMode();
+        return val != null ? val : DEFAULT_MEMORY_DISCLOSURE_MODE;
+    }
+
+    public String getMemoryPromptStyle() {
+        RuntimeConfig.MemoryDisclosureConfig disclosureConfig = getMemoryDisclosureConfig();
+        String val = disclosureConfig.getPromptStyle();
+        return val != null ? val : DEFAULT_MEMORY_PROMPT_STYLE;
+    }
+
+    public boolean isMemoryToolExpansionEnabled() {
+        RuntimeConfig.MemoryDisclosureConfig disclosureConfig = getMemoryDisclosureConfig();
+        Boolean val = disclosureConfig.getToolExpansionEnabled();
+        return val != null ? val : DEFAULT_MEMORY_TOOL_EXPANSION_ENABLED;
+    }
+
+    public boolean isMemoryDisclosureHintsEnabled() {
+        RuntimeConfig.MemoryDisclosureConfig disclosureConfig = getMemoryDisclosureConfig();
+        Boolean val = disclosureConfig.getDisclosureHintsEnabled();
+        return val != null ? val : DEFAULT_MEMORY_DISCLOSURE_HINTS_ENABLED;
+    }
+
+    public double getMemoryDetailMinScore() {
+        RuntimeConfig.MemoryDisclosureConfig disclosureConfig = getMemoryDisclosureConfig();
+        Double val = disclosureConfig.getDetailMinScore();
+        return val != null ? val : DEFAULT_MEMORY_DISCLOSURE_DETAIL_MIN_SCORE;
+    }
+
+    public boolean isMemoryRerankingEnabled() {
+        RuntimeConfig.MemoryRerankingConfig rerankingConfig = getMemoryRerankingConfig();
+        Boolean val = rerankingConfig.getEnabled();
+        return val != null ? val : DEFAULT_MEMORY_RERANKING_ENABLED;
+    }
+
+    public String getMemoryRerankingProfile() {
+        RuntimeConfig.MemoryRerankingConfig rerankingConfig = getMemoryRerankingConfig();
+        String val = rerankingConfig.getProfile();
+        return val != null ? val : DEFAULT_MEMORY_RERANKING_PROFILE;
+    }
+
+    public String getMemoryDiagnosticsVerbosity() {
+        RuntimeConfig.MemoryDiagnosticsConfig diagnosticsConfig = getMemoryDiagnosticsConfig();
+        String val = diagnosticsConfig.getVerbosity();
+        return val != null ? val : DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY;
+    }
+
     // ==================== Skills ====================
 
     public boolean isSkillsEnabled() {
@@ -1845,7 +1901,71 @@ public class RuntimeConfigService {
         if (progressSummaryTimeoutMs == null || progressSummaryTimeoutMs < 1000) {
             cfg.getTurn().setProgressSummaryTimeoutMs(DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS);
         }
+        normalizeMemoryConfig(cfg.getMemory());
         normalizeSecretFlags(cfg);
+    }
+
+    private RuntimeConfig.MemoryDisclosureConfig getMemoryDisclosureConfig() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null || memoryConfig.getDisclosure() == null) {
+            return RuntimeConfig.MemoryDisclosureConfig.builder().build();
+        }
+        return memoryConfig.getDisclosure();
+    }
+
+    private RuntimeConfig.MemoryDiagnosticsConfig getMemoryDiagnosticsConfig() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null || memoryConfig.getDiagnostics() == null) {
+            return RuntimeConfig.MemoryDiagnosticsConfig.builder().build();
+        }
+        return memoryConfig.getDiagnostics();
+    }
+
+    private RuntimeConfig.MemoryRerankingConfig getMemoryRerankingConfig() {
+        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
+        if (memoryConfig == null || memoryConfig.getReranking() == null) {
+            return RuntimeConfig.MemoryRerankingConfig.builder().build();
+        }
+        return memoryConfig.getReranking();
+    }
+
+    private void normalizeMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
+        if (memoryConfig.getDisclosure() == null) {
+            memoryConfig.setDisclosure(RuntimeConfig.MemoryDisclosureConfig.builder().build());
+        }
+        if (memoryConfig.getReranking() == null) {
+            memoryConfig.setReranking(RuntimeConfig.MemoryRerankingConfig.builder().build());
+        }
+        if (memoryConfig.getDiagnostics() == null) {
+            memoryConfig.setDiagnostics(RuntimeConfig.MemoryDiagnosticsConfig.builder().build());
+        }
+        RuntimeConfig.MemoryDisclosureConfig disclosureConfig = memoryConfig.getDisclosure();
+        if (disclosureConfig.getMode() == null || disclosureConfig.getMode().isBlank()) {
+            disclosureConfig.setMode(DEFAULT_MEMORY_DISCLOSURE_MODE);
+        }
+        if (disclosureConfig.getPromptStyle() == null || disclosureConfig.getPromptStyle().isBlank()) {
+            disclosureConfig.setPromptStyle(DEFAULT_MEMORY_PROMPT_STYLE);
+        }
+        if (disclosureConfig.getToolExpansionEnabled() == null) {
+            disclosureConfig.setToolExpansionEnabled(DEFAULT_MEMORY_TOOL_EXPANSION_ENABLED);
+        }
+        if (disclosureConfig.getDisclosureHintsEnabled() == null) {
+            disclosureConfig.setDisclosureHintsEnabled(DEFAULT_MEMORY_DISCLOSURE_HINTS_ENABLED);
+        }
+        if (disclosureConfig.getDetailMinScore() == null) {
+            disclosureConfig.setDetailMinScore(DEFAULT_MEMORY_DISCLOSURE_DETAIL_MIN_SCORE);
+        }
+        RuntimeConfig.MemoryRerankingConfig rerankingConfig = memoryConfig.getReranking();
+        if (rerankingConfig.getEnabled() == null) {
+            rerankingConfig.setEnabled(DEFAULT_MEMORY_RERANKING_ENABLED);
+        }
+        if (rerankingConfig.getProfile() == null || rerankingConfig.getProfile().isBlank()) {
+            rerankingConfig.setProfile(DEFAULT_MEMORY_RERANKING_PROFILE);
+        }
+        RuntimeConfig.MemoryDiagnosticsConfig diagnosticsConfig = memoryConfig.getDiagnostics();
+        if (diagnosticsConfig.getVerbosity() == null || diagnosticsConfig.getVerbosity().isBlank()) {
+            diagnosticsConfig.setVerbosity(DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY);
+        }
     }
 
     private void normalizeModelRouterConfig(RuntimeConfig.ModelRouterConfig modelRouter) {

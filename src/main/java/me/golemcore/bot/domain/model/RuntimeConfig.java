@@ -610,6 +610,105 @@ public class RuntimeConfig {
         private Integer retrievalLookbackDays = 21;
         @Builder.Default
         private Boolean codeAwareExtractionEnabled = true;
+        /**
+         * Controls how memory is disclosed into the prompt before on-demand expansion
+         * is required.
+         */
+        @Builder.Default
+        private MemoryDisclosureConfig disclosure = new MemoryDisclosureConfig();
+        /**
+         * Controls the deterministic second-pass reranking that refines candidate
+         * ordering before layer caps and prompt budgeting are applied.
+         */
+        @Builder.Default
+        private MemoryRerankingConfig reranking = new MemoryRerankingConfig();
+        /**
+         * Controls how much memory pack telemetry is surfaced in diagnostics.
+         */
+        @Builder.Default
+        private MemoryDiagnosticsConfig diagnostics = new MemoryDiagnosticsConfig();
+    }
+
+    /**
+     * Prompt-facing disclosure policy for structured memory assembly.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MemoryDisclosureConfig {
+        /**
+         * Disclosure mode. Supported values: {@code index}, {@code summary},
+         * {@code selective_detail}, {@code full_pack}.
+         */
+        @Builder.Default
+        private String mode = "summary";
+        /**
+         * Prompt rendering density. Supported values: {@code compact},
+         * {@code balanced}, {@code rich}.
+         */
+        @Builder.Default
+        private String promptStyle = "balanced";
+        /**
+         * Whether prompt assembly should encourage the agent to expand memory via tools
+         * when needed.
+         */
+        @Builder.Default
+        private Boolean toolExpansionEnabled = true;
+        /**
+         * Whether prompt assembly should mention that more memory detail is available
+         * on demand.
+         */
+        @Builder.Default
+        private Boolean disclosureHintsEnabled = true;
+        /**
+         * Minimum score required before detail snippets can be disclosed in
+         * selective-detail mode.
+         */
+        @Builder.Default
+        private Double detailMinScore = 0.80;
+    }
+
+    /**
+     * Retrieval-facing reranking policy applied after the first-pass score has
+     * already ordered candidates.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MemoryRerankingConfig {
+        /**
+         * Enables the deterministic reranking pass between scoring and selection.
+         */
+        @Builder.Default
+        private Boolean enabled = true;
+        /**
+         * Reranking intensity profile. Supported values: {@code balanced},
+         * {@code aggressive}.
+         */
+        @Builder.Default
+        private String profile = "balanced";
+    }
+
+    /**
+     * Controls how much structured memory telemetry is exposed to diagnostics
+     * consumers.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MemoryDiagnosticsConfig {
+        /**
+         * Diagnostics verbosity. Supported values: {@code off}, {@code basic},
+         * {@code detailed}.
+         */
+        @Builder.Default
+        private String verbosity = "basic";
     }
 
     @Data

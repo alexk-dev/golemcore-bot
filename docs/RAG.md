@@ -322,13 +322,14 @@ The bot has two memory layers that work together:
 
 | Layer | Mechanism | Scope | Survives `/new`? |
 |-------|-----------|-------|------------------|
-| **Short-term** ([Memory](MEMORY.md)) | Structured memory pack (`items/*.jsonl`) | Configurable top-k + budget | Yes (separate from session) |
+| **Short-term** ([Memory](MEMORY.md)) | Structured memory pack (`items/*.jsonl`) | Configurable top-k + budget + disclosure policy | Yes (separate from session) |
 | **Long-term** (RAG) | Knowledge graph via LightRAG | All indexed conversations | Yes (external storage) |
 
 **Short-term memory** (`# Memory` section in prompt) provides:
 - selected episodic events from recent work
 - semantic project facts and constraints
 - procedural patterns (failures/fixes/commands)
+- a summary-first view when progressive disclosure is enabled
 
 **RAG** (`# Relevant Memory` section in prompt) provides:
 - Semantically relevant context from any past conversation

@@ -22,6 +22,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import me.golemcore.bot.domain.memory.model.MemoryPackSection;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -42,6 +43,11 @@ public class MemoryPack {
 
     @Builder.Default
     private Map<String, Object> diagnostics = new LinkedHashMap<>();
+
+    @Builder.Default
+    private List<MemoryPackSection> sections = new ArrayList<>();
+
+    private String disclosureMode;
 
     private String renderedContext;
 }

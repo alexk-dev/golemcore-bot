@@ -4,8 +4,18 @@ import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useMemoryPresets, useUpdateMemory } from '../../hooks/useSettings';
-import type { MemoryConfig, MemoryPreset } from '../../api/settings';
+import type {
+  MemoryConfig,
+  MemoryDiagnosticsConfig,
+  MemoryDiagnosticsVerbosity,
+  MemoryDisclosureConfig,
+  MemoryDisclosureMode,
+  MemoryPreset,
+  MemoryPromptStyle,
+} from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
+import { MemoryDisclosureFields } from './MemoryDisclosureFields';
+import { MemoryPresetPicker } from './MemoryPresetPicker';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -29,16 +39,24 @@ function withBooleanFallback(value: boolean | null | undefined, fallback: boolea
   return value == null ? fallback : value;
 }
 
+const DEFAULT_MEMORY_DISCLOSURE: MemoryDisclosureConfig = {
+  mode: 'summary',
+  promptStyle: 'balanced',
+  toolExpansionEnabled: true,
+  disclosureHintsEnabled: true,
+  detailMinScore: 0.8,
+};
+
+const DEFAULT_MEMORY_DIAGNOSTICS: MemoryDiagnosticsConfig = {
+  verbosity: 'basic',
+};
+
+const DEFAULT_MEMORY_DISCLOSURE_MODE: MemoryDisclosureMode = 'summary';
+const DEFAULT_MEMORY_PROMPT_STYLE: MemoryPromptStyle = 'balanced';
+const DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY: MemoryDiagnosticsVerbosity = 'basic';
+
 interface MemoryTabProps {
   config: MemoryConfig;
-}
-
-interface MemoryPresetPickerProps {
-  presets: MemoryPreset[];
-  presetsLoading: boolean;
-  selectedPreset: MemoryPreset | null;
-  onSelectPreset: (id: string) => void;
-  onApplyPreset: () => void;
 }
 
 interface MemoryFieldsEditorProps {
@@ -50,67 +68,22 @@ interface MemoryFieldsEditorProps {
 
 const DEFAULT_MEMORY_PRESET_ID = 'coding_balanced';
 
-function MemoryPresetPicker({
-  presets,
-  presetsLoading,
-  selectedPreset,
-  onSelectPreset,
-  onApplyPreset,
-}: MemoryPresetPickerProps): ReactElement {
-  const hasPresets = presets.length > 0;
-  const canApplyPreset = !presetsLoading && selectedPreset != null;
-
-  return (
-    <Form.Group className="mb-3">
-      <Form.Label className="small fw-medium">
-        Memory Preset <HelpTip text="Preset profiles tuned for different workloads. Select one, then click Apply Preset to copy values into the local form." />
-      </Form.Label>
-      {presetsLoading && <div className="small text-body-secondary">Loading memory presets...</div>}
-      {!presetsLoading && !hasPresets && <div className="small text-body-secondary">No memory presets available.</div>}
-      {!presetsLoading && hasPresets && (
-        <>
-          <div className="memory-preset-grid" role="radiogroup" aria-label="Memory preset choices">
-            {presets.map((preset) => {
-              const isSelected = selectedPreset?.id === preset.id;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={isSelected}
-                  className={`memory-preset-option${isSelected ? ' is-selected' : ''}`}
-                  onClick={() => onSelectPreset(preset.id)}
-                >
-                  <span className="memory-preset-option-title-row">
-                    <span className="memory-preset-option-title">{preset.label}</span>
-                    <span className="memory-preset-option-id">{preset.id}</span>
-                  </span>
-                  <span className="memory-preset-option-comment">{preset.comment}</span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="memory-preset-actions">
-            <div className="small text-body-secondary">
-              Selected: <strong>{selectedPreset?.label ?? 'None'}</strong>
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={onApplyPreset}
-              disabled={!canApplyPreset}
-            >
-              Apply Preset
-            </Button>
-          </div>
-        </>
-      )}
-      <div className="small text-body-secondary mt-2">
-        Tip: preset values are staged locally. Use <strong>Save</strong> to persist.
-      </div>
-    </Form.Group>
-  );
+function normalizeMemoryConfig(config: MemoryConfig): MemoryConfig {
+  const disclosure = config.disclosure;
+  const diagnostics = config.diagnostics;
+  return {
+    ...config,
+    disclosure: {
+      mode: disclosure?.mode ?? DEFAULT_MEMORY_DISCLOSURE_MODE,
+      promptStyle: disclosure?.promptStyle ?? DEFAULT_MEMORY_PROMPT_STYLE,
+      toolExpansionEnabled: disclosure?.toolExpansionEnabled ?? DEFAULT_MEMORY_DISCLOSURE.toolExpansionEnabled,
+      disclosureHintsEnabled: disclosure?.disclosureHintsEnabled ?? DEFAULT_MEMORY_DISCLOSURE.disclosureHintsEnabled,
+      detailMinScore: disclosure?.detailMinScore ?? DEFAULT_MEMORY_DISCLOSURE.detailMinScore,
+    },
+    diagnostics: {
+      verbosity: diagnostics?.verbosity ?? DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY,
+    },
+  };
 }
 
 function MemoryFieldsEditor({
@@ -267,9 +240,10 @@ function MemoryFieldsEditor({
 export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
   const updateMemory = useUpdateMemory();
   const { data: presets = [], isLoading: presetsLoading } = useMemoryPresets();
-  const [form, setForm] = useState<MemoryConfig>({ ...config });
+  const normalizedConfig = useMemo(() => normalizeMemoryConfig(config), [config]);
+  const [form, setForm] = useState<MemoryConfig>(normalizedConfig);
   const [selectedPresetId, setSelectedPresetId] = useState<string>(DEFAULT_MEMORY_PRESET_ID);
-  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const isDirty = useMemo(() => hasDiff(form, normalizedConfig), [form, normalizedConfig]);
   const selectedPreset = useMemo<MemoryPreset | null>(() => {
     if (presets.length === 0) {
       return null;
@@ -280,8 +254,8 @@ export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
 
   // Keep the editable form in sync when server config changes (reload/navigation).
   useEffect(() => {
-    setForm({ ...config });
-  }, [config]);
+    setForm(normalizedConfig);
+  }, [normalizedConfig]);
 
   const handleSave = async (): Promise<void> => {
     await updateMemory.mutateAsync(form);
@@ -293,7 +267,7 @@ export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
       toast.error('Memory presets are unavailable');
       return;
     }
-    setForm({ ...selectedPreset.memory });
+    setForm(normalizeMemoryConfig(selectedPreset.memory));
     toast.success(`Preset "${selectedPreset.label}" applied. Click Save to persist.`);
   };
 
@@ -308,6 +282,32 @@ export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
   const setBoolField = (key: keyof MemoryConfig, value: boolean): void => {
     setForm({ ...form, [key]: value });
   };
+
+  const setDisclosureField = (
+    key: keyof MemoryDisclosureConfig,
+    value: MemoryDisclosureMode | MemoryPromptStyle | boolean | number | null,
+  ): void => {
+    setForm({
+      ...form,
+      disclosure: {
+        ...(form.disclosure ?? DEFAULT_MEMORY_DISCLOSURE),
+        [key]: value,
+      },
+    });
+  };
+
+  const setDiagnosticsVerbosity = (value: MemoryDiagnosticsVerbosity): void => {
+    setForm({
+      ...form,
+      diagnostics: {
+        ...(form.diagnostics ?? DEFAULT_MEMORY_DIAGNOSTICS),
+        verbosity: value,
+      },
+    });
+  };
+
+  const disclosure = form.disclosure ?? DEFAULT_MEMORY_DISCLOSURE;
+  const diagnostics = form.diagnostics ?? DEFAULT_MEMORY_DIAGNOSTICS;
 
   return (
     <Card className="settings-card">
@@ -332,6 +332,20 @@ export default function MemoryTab({ config }: MemoryTabProps): ReactElement {
           onIntFieldChange={setIntField}
           onFloatFieldChange={setFloatField}
           onBoolFieldChange={setBoolField}
+        />
+        <MemoryDisclosureFields
+          disclosureMode={disclosure.mode ?? DEFAULT_MEMORY_DISCLOSURE_MODE}
+          promptStyle={disclosure.promptStyle ?? DEFAULT_MEMORY_PROMPT_STYLE}
+          toolExpansionEnabled={withBooleanFallback(disclosure.toolExpansionEnabled, true)}
+          disclosureHintsEnabled={withBooleanFallback(disclosure.disclosureHintsEnabled, true)}
+          detailMinScore={withNumberFallback(disclosure.detailMinScore, 0.8)}
+          diagnosticsVerbosity={diagnostics.verbosity ?? DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY}
+          onDisclosureModeChange={(value) => setDisclosureField('mode', value)}
+          onPromptStyleChange={(value) => setDisclosureField('promptStyle', value)}
+          onToolExpansionChange={(value) => setDisclosureField('toolExpansionEnabled', value)}
+          onDisclosureHintsChange={(value) => setDisclosureField('disclosureHintsEnabled', value)}
+          onDetailMinScoreChange={(value) => setDisclosureField('detailMinScore', toNullableFloat(value))}
+          onDiagnosticsVerbosityChange={setDiagnosticsVerbosity}
         />
         <SettingsSaveBar>
           <Button
