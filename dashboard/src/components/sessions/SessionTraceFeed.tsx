@@ -7,6 +7,7 @@ import {
   type SessionTraceFeedMeta,
   type SessionTraceFeedSpanItem,
 } from '../../lib/sessionTraceFeed';
+import { formatTraceTimestamp } from '../../lib/traceFormat';
 import { SessionTraceBubble } from './SessionTraceBubble';
 import { SessionTraceMetaModal } from './SessionTraceMetaModal';
 import { SessionTracePayloadModal } from './SessionTracePayloadModal';
@@ -39,7 +40,7 @@ export function SessionTraceFeed({ messages, trace }: SessionTraceFeedProps): Re
                 <div>
                   <h3 className="h6 mb-1">{turn.title} {index + 1}</h3>
                   {turn.timestamp != null && turn.timestamp.length > 0 && (
-                    <div className="small text-body-secondary">{new Date(turn.timestamp).toLocaleString()}</div>
+                    <div className="small text-body-secondary">{formatTraceTimestamp(turn.timestamp)}</div>
                   )}
                 </div>
                 <div className="d-flex flex-wrap gap-2">

@@ -6,18 +6,12 @@ import type {
   SessionTraceFeedMessageItem,
   SessionTraceFeedSpanItem,
 } from '../../lib/sessionTraceFeed';
+import { formatTraceTimestamp } from '../../lib/traceFormat';
 
 export interface SessionTraceBubbleProps {
   item: SessionTraceFeedItem;
   onOpenMeta: (item: SessionTraceFeedSpanItem) => void;
   onOpenPayload: (item: SessionTraceFeedSpanItem) => void;
-}
-
-function formatTimestamp(value: string | null): string {
-  if (value == null || value.length === 0) {
-    return '';
-  }
-  return new Date(value).toLocaleString();
 }
 
 function getBubbleClass(item: SessionTraceFeedItem): string {
@@ -79,7 +73,7 @@ export function SessionTraceBubble({
         <div>
           <div className="fw-semibold">{item.title}</div>
           {item.timestamp != null && item.timestamp.length > 0 && (
-            <div className="session-trace-bubble-meta">{formatTimestamp(item.timestamp)}</div>
+            <div className="session-trace-bubble-meta">{formatTraceTimestamp(item.timestamp)}</div>
           )}
         </div>
       </div>

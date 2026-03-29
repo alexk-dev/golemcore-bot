@@ -649,9 +649,6 @@ public class SessionsController {
         snapshotMap.put("compressedSize", snapshot.getCompressedSize());
         snapshotMap.put("truncated", snapshot.isTruncated());
         snapshotMap.put("payloadText", decompressSnapshotPayload(snapshot));
-        snapshotMap.put("payloadBase64", snapshot.getCompressedPayload() != null
-                ? Base64.getEncoder().encodeToString(snapshot.getCompressedPayload())
-                : null);
         return snapshotMap;
     }
 

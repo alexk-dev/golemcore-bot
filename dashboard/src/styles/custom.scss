@@ -2301,6 +2301,160 @@ textarea:focus-visible,
   overflow-wrap: anywhere;
 }
 
+// ==================== Trace Waterfall ====================
+
+.trace-waterfall-header {
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+.trace-waterfall-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+.trace-waterfall-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 28%) 1fr;
+  align-items: center;
+  height: 32px;
+  border-bottom: 1px solid rgba(var(--bs-border-color-rgb), 0.4);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.1s ease;
+
+  &:hover {
+    background-color: rgba(var(--bs-primary-rgb), 0.06);
+  }
+}
+
+.trace-waterfall-row-selected {
+  background-color: rgba(var(--bs-primary-rgb), 0.12);
+
+  &:hover {
+    background-color: rgba(var(--bs-primary-rgb), 0.16);
+  }
+}
+
+.trace-waterfall-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+  overflow: hidden;
+  font-size: 0.78rem;
+}
+
+.trace-waterfall-span-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.trace-waterfall-kind-badge {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  padding: 0.12em 0.4em;
+}
+
+.trace-waterfall-toggle {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: var(--bs-secondary-color);
+  line-height: 1;
+
+  &:hover {
+    color: var(--bs-emphasis-color);
+  }
+}
+
+.trace-waterfall-toggle-spacer {
+  flex-shrink: 0;
+  width: 16px;
+}
+
+.trace-waterfall-bar-container {
+  position: relative;
+  height: 18px;
+  margin-right: 8px;
+}
+
+.trace-waterfall-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 3px;
+  min-width: 3px;
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  overflow: hidden;
+}
+
+.trace-waterfall-bar-label {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.95);
+  white-space: nowrap;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.3);
+}
+
+.trace-waterfall-bar-system {
+  background-color: rgba(var(--bs-secondary-rgb), 0.55);
+}
+
+.trace-waterfall-bar-llm {
+  background-color: rgba(var(--bs-primary-rgb), 0.7);
+}
+
+.trace-waterfall-bar-tool {
+  background-color: rgba(var(--bs-warning-rgb), 0.75);
+}
+
+.trace-waterfall-bar-outbound {
+  background-color: rgba(var(--bs-success-rgb), 0.65);
+}
+
+.trace-waterfall-bar-error {
+  background-color: rgba(var(--bs-danger-rgb), 0.7);
+}
+
+.trace-waterfall-detail {
+  border-top: 2px solid rgba(var(--bs-primary-rgb), 0.4);
+}
+
+.trace-waterfall-detail-body {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.trace-view-tabs {
+  border-bottom: 1px solid var(--bs-border-color);
+  padding-bottom: 0;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 767.98px) {
+  .trace-waterfall-row {
+    grid-template-columns: minmax(120px, 35%) 1fr;
+    height: 28px;
+  }
+
+  .trace-waterfall-label {
+    font-size: 0.72rem;
+  }
+
+  .trace-waterfall-bar-label {
+    font-size: 0.6rem;
+  }
+}
+
 .webhook-editor-card,
 .provider-editor-card {
   background-color: var(--bs-tertiary-bg);

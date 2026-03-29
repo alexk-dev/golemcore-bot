@@ -483,13 +483,13 @@ public class RuntimeConfig {
         @Builder.Default
         private Integer maxTracesPerSession = 100;
         @Builder.Default
-        private Boolean captureInboundPayloads = false;
+        private Boolean captureInboundPayloads = true;
         @Builder.Default
-        private Boolean captureOutboundPayloads = false;
+        private Boolean captureOutboundPayloads = true;
         @Builder.Default
-        private Boolean captureToolPayloads = false;
+        private Boolean captureToolPayloads = true;
         @Builder.Default
-        private Boolean captureLlmPayloads = false;
+        private Boolean captureLlmPayloads = true;
     }
 
     @Data

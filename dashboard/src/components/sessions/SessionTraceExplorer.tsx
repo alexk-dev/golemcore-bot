@@ -1,9 +1,11 @@
-import type { ReactElement } from 'react';
-import { Alert, Badge, Button, Card, Spinner } from 'react-bootstrap';
+import { useState, type ReactElement } from 'react';
+import { Alert, Badge, Button, ButtonGroup, Card, Spinner } from 'react-bootstrap';
 
 import type { MessageInfo, SessionTrace, SessionTraceSummary, SessionTraceSummaryItem } from '../../api/sessions';
-import { formatTraceBytes, formatTraceDuration, getTraceStatusVariant } from '../../lib/traceFormat';
+import { formatTraceBytes, formatTraceDuration, formatTraceTimestamp, getTraceStatusVariant } from '../../lib/traceFormat';
 import { SessionTraceFeed } from './SessionTraceFeed';
+import { SessionTraceTimeline } from './SessionTraceTimeline';
+import { SessionTraceWaterfall } from './SessionTraceWaterfall';
 
 export interface SessionTraceExplorerProps {
   summary: SessionTraceSummary | null;
@@ -16,6 +18,8 @@ export interface SessionTraceExplorerProps {
   onExport: () => void;
   isExporting?: boolean;
 }
+
+type TraceViewMode = 'waterfall' | 'feed' | 'timeline';
 
 interface TraceSummaryCardProps {
   summary: SessionTraceSummary;
@@ -69,6 +73,7 @@ function TraceSummaryCard({
               <div className="d-flex flex-column gap-1">
                 <div className="fw-semibold">{item.traceName ?? item.traceId}</div>
                 <div className="small text-body-secondary d-flex flex-wrap align-items-center gap-2">
+                  {item.startedAt != null && <span>{formatTraceTimestamp(item.startedAt)}</span>}
                   <span>{item.spanCount} spans</span>
                   <span>{item.snapshotCount} snapshots</span>
                   <span>{formatTraceDuration(item.durationMs)}</span>
@@ -92,6 +97,81 @@ function TraceSummaryCard({
   );
 }
 
+interface TraceViewTabsProps {
+  activeMode: TraceViewMode;
+  onChangeMode: (mode: TraceViewMode) => void;
+}
+
+function TraceViewTabs({ activeMode, onChangeMode }: TraceViewTabsProps): ReactElement {
+  const modes: Array<{ key: TraceViewMode; label: string }> = [
+    { key: 'waterfall', label: 'Waterfall' },
+    { key: 'feed', label: 'Feed' },
+    { key: 'timeline', label: 'Timeline' },
+  ];
+
+  return (
+    <ButtonGroup size="sm">
+      {modes.map((mode) => (
+        <Button
+          key={mode.key}
+          type="button"
+          variant={activeMode === mode.key ? 'primary' : 'secondary'}
+          onClick={() => onChangeMode(mode.key)}
+        >
+          {mode.label}
+        </Button>
+      ))}
+    </ButtonGroup>
+  );
+}
+
+interface TraceContentProps {
+  viewMode: TraceViewMode;
+  trace: SessionTrace;
+  messages: MessageInfo[];
+  activeSpanId: string | null;
+  onSelectSpan: (spanId: string) => void;
+}
+
+function WaterfallAccordion({ trace }: { trace: SessionTrace }): ReactElement {
+  const [expandedTraceId, setExpandedTraceId] = useState<string | null>(
+    () => trace.traces.length > 0 ? trace.traces[0].traceId : null,
+  );
+
+  const handleToggle = (traceId: string): void => {
+    setExpandedTraceId((prev) => (prev === traceId ? null : traceId));
+  };
+
+  return (
+    <div className="d-flex flex-column gap-3">
+      {trace.traces.map((record) => (
+        <Card key={record.traceId} className="settings-card">
+          <Card.Body>
+            <SessionTraceWaterfall
+              record={record}
+              isExpanded={expandedTraceId === record.traceId}
+              onToggleExpand={() => handleToggle(record.traceId)}
+            />
+          </Card.Body>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function TraceContent({ viewMode, trace, messages, activeSpanId, onSelectSpan }: TraceContentProps): ReactElement {
+  if (viewMode === 'feed') {
+    return <SessionTraceFeed messages={messages} trace={trace} />;
+  }
+
+  if (viewMode === 'timeline') {
+    const allSpans = trace.traces.flatMap((record) => record.spans);
+    return <SessionTraceTimeline spans={allSpans} activeSpanId={activeSpanId} onSelectSpan={onSelectSpan} />;
+  }
+
+  return <WaterfallAccordion trace={trace} />;
+}
+
 export function SessionTraceExplorer({
   summary,
   trace,
@@ -103,6 +183,9 @@ export function SessionTraceExplorer({
   onExport,
   isExporting = false,
 }: SessionTraceExplorerProps): ReactElement {
+  const [viewMode, setViewMode] = useState<TraceViewMode>('waterfall');
+  const [activeSpanId, setActiveSpanId] = useState<string | null>(null);
+
   if (errorMessage != null) {
     return (
       <Card className="settings-card">
@@ -161,9 +244,12 @@ export function SessionTraceExplorer({
                 {trace.traces.length} trace{trace.traces.length === 1 ? '' : 's'} mapped into a turn-based feed
               </div>
             </div>
-            <Button type="button" size="sm" variant="primary" onClick={onExport} disabled={isExporting}>
-              {isExporting ? 'Exporting...' : 'Export JSON'}
-            </Button>
+            <div className="d-flex flex-wrap gap-2">
+              <TraceViewTabs activeMode={viewMode} onChangeMode={setViewMode} />
+              <Button type="button" size="sm" variant="primary" onClick={onExport} disabled={isExporting}>
+                {isExporting ? 'Exporting...' : 'Export JSON'}
+              </Button>
+            </div>
           </div>
           <div className="d-flex flex-wrap gap-2">
             <Badge bg="secondary">{formatTraceBytes(trace.storageStats.compressedSnapshotBytes)} compressed</Badge>
@@ -175,7 +261,13 @@ export function SessionTraceExplorer({
           </div>
         </Card.Body>
       </Card>
-      <SessionTraceFeed messages={messages} trace={trace} />
+      <TraceContent
+        viewMode={viewMode}
+        trace={trace}
+        messages={messages}
+        activeSpanId={activeSpanId}
+        onSelectSpan={setActiveSpanId}
+      />
     </div>
   );
 }
