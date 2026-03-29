@@ -1,5 +1,6 @@
 import { useState, type ReactElement } from 'react';
 import { Badge, Button, Card, Table } from 'react-bootstrap';
+import toast from 'react-hot-toast';
 
 import type { SessionTraceSpan } from '../../api/sessions';
 import { formatTraceBytes, formatTraceDuration, formatTraceTimestamp, getTraceStatusVariant } from '../../lib/traceFormat';
@@ -70,6 +71,24 @@ function EventsSection({ span }: { span: SessionTraceSpan }): ReactElement {
   );
 }
 
+function exportPayloadAsJson(payload: string, role: string | null, spanName: string | null): void {
+  let formatted: string;
+  try {
+    const parsed: unknown = JSON.parse(payload);
+    formatted = JSON.stringify(parsed, null, 2);
+  } catch {
+    formatted = payload;
+  }
+  const blob = new Blob([formatted], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `payload-${spanName ?? 'span'}-${role ?? 'snapshot'}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  toast.success('Payload exported');
+}
+
 function SnapshotsSection({ span }: { span: SessionTraceSpan }): ReactElement {
   if (span.snapshots.length === 0) {
     return <div className="small text-body-secondary">No snapshots stored.</div>;
@@ -86,6 +105,22 @@ function SnapshotsSection({ span }: { span: SessionTraceSpan }): ReactElement {
               {formatTraceBytes(snapshot.compressedSize)} / {formatTraceBytes(snapshot.originalSize)}
             </span>
             {snapshot.payloadPreviewTruncated && <Badge bg="warning">truncated</Badge>}
+            {snapshot.payloadAvailable && snapshot.payloadPreview != null && (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="py-0 px-2"
+                onClick={() => {
+                  const preview = snapshot.payloadPreview;
+                  if (preview != null) {
+                    exportPayloadAsJson(preview, snapshot.role, span.name);
+                  }
+                }}
+              >
+                Export JSON
+              </Button>
+            )}
           </div>
           {snapshot.payloadAvailable && snapshot.payloadPreview != null ? (
             <pre className="logs-detail-pre small mb-0 session-trace-payload-pre">{snapshot.payloadPreview}</pre>

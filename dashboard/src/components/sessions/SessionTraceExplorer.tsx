@@ -133,6 +133,32 @@ interface TraceContentProps {
   onSelectSpan: (spanId: string) => void;
 }
 
+function WaterfallAccordion({ trace }: { trace: SessionTrace }): ReactElement {
+  const [expandedTraceId, setExpandedTraceId] = useState<string | null>(
+    () => trace.traces.length > 0 ? trace.traces[0].traceId : null,
+  );
+
+  const handleToggle = (traceId: string): void => {
+    setExpandedTraceId((prev) => (prev === traceId ? null : traceId));
+  };
+
+  return (
+    <div className="d-flex flex-column gap-3">
+      {trace.traces.map((record) => (
+        <Card key={record.traceId} className="settings-card">
+          <Card.Body>
+            <SessionTraceWaterfall
+              record={record}
+              isExpanded={expandedTraceId === record.traceId}
+              onToggleExpand={() => handleToggle(record.traceId)}
+            />
+          </Card.Body>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 function TraceContent({ viewMode, trace, messages, activeSpanId, onSelectSpan }: TraceContentProps): ReactElement {
   if (viewMode === 'feed') {
     return <SessionTraceFeed messages={messages} trace={trace} />;
@@ -143,17 +169,7 @@ function TraceContent({ viewMode, trace, messages, activeSpanId, onSelectSpan }:
     return <SessionTraceTimeline spans={allSpans} activeSpanId={activeSpanId} onSelectSpan={onSelectSpan} />;
   }
 
-  return (
-    <div className="d-flex flex-column gap-3">
-      {trace.traces.map((record) => (
-        <Card key={record.traceId} className="settings-card">
-          <Card.Body>
-            <SessionTraceWaterfall record={record} />
-          </Card.Body>
-        </Card>
-      ))}
-    </div>
-  );
+  return <WaterfallAccordion trace={trace} />;
 }
 
 export function SessionTraceExplorer({

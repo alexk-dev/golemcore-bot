@@ -13,6 +13,8 @@ import { SessionTraceSpanDetail } from './SessionTraceSpanDetail';
 
 export interface SessionTraceWaterfallProps {
   record: SessionTraceRecord;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
 }
 
 interface WaterfallRow {
@@ -85,7 +87,7 @@ function getBarColorClass(kind: string | null, statusCode: string | null): strin
 }
 
 
-export function SessionTraceWaterfall({ record }: SessionTraceWaterfallProps): ReactElement {
+export function SessionTraceWaterfall({ record, isExpanded, onToggleExpand }: SessionTraceWaterfallProps): ReactElement {
   const rows = useMemo(() => computeWaterfallRows(record), [record]);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [collapsedSpans, setCollapsedSpans] = useState<Set<string>>(() => new Set());
@@ -150,7 +152,14 @@ export function SessionTraceWaterfall({ record }: SessionTraceWaterfallProps): R
 
   return (
     <div className="d-flex flex-column gap-0">
-      <div className="trace-waterfall-header d-flex align-items-center gap-2 px-2 py-2 mb-2">
+      <div
+        className="trace-waterfall-header d-flex align-items-center gap-2 px-2 py-2"
+        onClick={onToggleExpand}
+        role="button"
+      >
+        <span className="trace-waterfall-toggle" style={{ fontSize: '0.8rem' }}>
+          {isExpanded ? '\u25BE' : '\u25B8'}
+        </span>
         <span className="fw-semibold">{record.traceName ?? record.traceId}</span>
         <Badge bg="secondary">{record.spans.length} spans</Badge>
         <Badge bg="secondary">{totalDuration}</Badge>
@@ -159,62 +168,66 @@ export function SessionTraceWaterfall({ record }: SessionTraceWaterfallProps): R
         )}
       </div>
 
-      <div className="trace-waterfall-grid">
-        {visibleRows.map((row) => {
-          const isSelected = row.span.spanId === selectedSpanId;
-          const isParent = hasChildren.has(row.span.spanId);
-          const isCollapsed = collapsedSpans.has(row.span.spanId);
+      {isExpanded && (
+        <>
+          <div className="trace-waterfall-grid mt-2">
+            {visibleRows.map((row) => {
+              const isSelected = row.span.spanId === selectedSpanId;
+              const isParent = hasChildren.has(row.span.spanId);
+              const isCollapsed = collapsedSpans.has(row.span.spanId);
 
-          return (
-            <div
-              key={row.span.spanId}
-              className={`trace-waterfall-row ${isSelected ? 'trace-waterfall-row-selected' : ''}`}
-              onClick={() => setSelectedSpanId(row.span.spanId)}
-            >
-              <div className="trace-waterfall-label" style={{ paddingLeft: `${row.depth * 16 + 4}px` }}>
-                {isParent ? (
-                  <button
-                    type="button"
-                    className="trace-waterfall-toggle"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleCollapse(row.span.spanId);
-                    }}
-                  >
-                    {isCollapsed ? '\u25B8' : '\u25BE'}
-                  </button>
-                ) : (
-                  <span className="trace-waterfall-toggle-spacer" />
-                )}
-                <span className="trace-waterfall-span-name text-truncate">
-                  {row.span.name ?? row.span.spanId}
-                </span>
-                <Badge bg={getTraceStatusVariant(row.span.statusCode)} className="trace-waterfall-kind-badge">
-                  {row.span.kind ?? '?'}
-                </Badge>
-              </div>
-
-              <div className="trace-waterfall-bar-container">
+              return (
                 <div
-                  className={`trace-waterfall-bar ${getBarColorClass(row.span.kind, row.span.statusCode)}`}
-                  style={{ left: `${row.offsetPct}%`, width: `${row.widthPct}%` }}
+                  key={row.span.spanId}
+                  className={`trace-waterfall-row ${isSelected ? 'trace-waterfall-row-selected' : ''}`}
+                  onClick={() => setSelectedSpanId(row.span.spanId)}
                 >
-                  <span className="trace-waterfall-bar-label">
-                    {formatTraceDuration(row.span.durationMs)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                  <div className="trace-waterfall-label" style={{ paddingLeft: `${row.depth * 16 + 4}px` }}>
+                    {isParent ? (
+                      <button
+                        type="button"
+                        className="trace-waterfall-toggle"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleCollapse(row.span.spanId);
+                        }}
+                      >
+                        {isCollapsed ? '\u25B8' : '\u25BE'}
+                      </button>
+                    ) : (
+                      <span className="trace-waterfall-toggle-spacer" />
+                    )}
+                    <span className="trace-waterfall-span-name text-truncate">
+                      {row.span.name ?? row.span.spanId}
+                    </span>
+                    <Badge bg={getTraceStatusVariant(row.span.statusCode)} className="trace-waterfall-kind-badge">
+                      {row.span.kind ?? '?'}
+                    </Badge>
+                  </div>
 
-      {selectedSpan != null && (
-        <SessionTraceSpanDetail
-          span={selectedSpan}
-          traceId={record.traceId}
-          onClose={() => setSelectedSpanId(null)}
-        />
+                  <div className="trace-waterfall-bar-container">
+                    <div
+                      className={`trace-waterfall-bar ${getBarColorClass(row.span.kind, row.span.statusCode)}`}
+                      style={{ left: `${row.offsetPct}%`, width: `${row.widthPct}%` }}
+                    >
+                      <span className="trace-waterfall-bar-label">
+                        {formatTraceDuration(row.span.durationMs)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {selectedSpan != null && (
+            <SessionTraceSpanDetail
+              span={selectedSpan}
+              traceId={record.traceId}
+              onClose={() => setSelectedSpanId(null)}
+            />
+          )}
+        </>
       )}
     </div>
   );
