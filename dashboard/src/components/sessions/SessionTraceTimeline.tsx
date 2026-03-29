@@ -2,19 +2,12 @@ import type { ReactElement } from 'react';
 import { Badge, Card, Table } from 'react-bootstrap';
 
 import type { SessionTraceSpan } from '../../api/sessions';
-import { formatTraceDuration, getTraceStatusVariant } from '../../lib/traceFormat';
+import { formatTraceDuration, formatTraceTime, getTraceStatusVariant } from '../../lib/traceFormat';
 
 interface SessionTraceTimelineProps {
   spans: SessionTraceSpan[];
   activeSpanId: string | null;
   onSelectSpan: (spanId: string) => void;
-}
-
-function formatTimestamp(value: string | null): string {
-  if (value == null || value.length === 0) {
-    return '-';
-  }
-  return new Date(value).toLocaleTimeString();
 }
 
 export function SessionTraceTimeline({
@@ -45,7 +38,7 @@ export function SessionTraceTimeline({
               >
                 <td>{span.name ?? span.spanId}</td>
                 <td>{span.kind ?? '-'}</td>
-                <td>{formatTimestamp(span.startedAt)}</td>
+                <td>{formatTraceTime(span.startedAt)}</td>
                 <td>{formatTraceDuration(span.durationMs)}</td>
                 <td><Badge bg={getTraceStatusVariant(span.statusCode)}>{span.statusCode ?? 'UNKNOWN'}</Badge></td>
               </tr>

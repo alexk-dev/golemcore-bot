@@ -10,6 +10,41 @@ export interface TraceTreeNode {
   children: TraceTreeNode[];
 }
 
+export function formatTraceTimestamp(value: string | null): string {
+  if (value == null || value.length === 0) {
+    return '';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
+export function formatTraceTime(value: string | null): string {
+  if (value == null || value.length === 0) {
+    return '';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return date.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
 export function formatTraceDuration(durationMs: number | null): string {
   if (durationMs == null) {
     return '-';

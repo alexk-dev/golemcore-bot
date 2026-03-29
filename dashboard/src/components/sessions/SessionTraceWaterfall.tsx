@@ -6,6 +6,7 @@ import {
   buildTraceTree,
   flattenTraceTree,
   formatTraceDuration,
+  formatTraceTime,
   getTraceStatusVariant,
 } from '../../lib/traceFormat';
 import { SessionTraceSpanDetail } from './SessionTraceSpanDetail';
@@ -83,12 +84,6 @@ function getBarColorClass(kind: string | null, statusCode: string | null): strin
   }
 }
 
-function formatTime(value: string | null): string {
-  if (value == null || value.length === 0) {
-    return '';
-  }
-  return new Date(value).toLocaleTimeString();
-}
 
 export function SessionTraceWaterfall({ record }: SessionTraceWaterfallProps): ReactElement {
   const rows = useMemo(() => computeWaterfallRows(record), [record]);
@@ -160,7 +155,7 @@ export function SessionTraceWaterfall({ record }: SessionTraceWaterfallProps): R
         <Badge bg="secondary">{record.spans.length} spans</Badge>
         <Badge bg="secondary">{totalDuration}</Badge>
         {record.startedAt != null && (
-          <span className="small text-body-secondary">{formatTime(record.startedAt)}</span>
+          <span className="small text-body-secondary">{formatTraceTime(record.startedAt)}</span>
         )}
       </div>
 

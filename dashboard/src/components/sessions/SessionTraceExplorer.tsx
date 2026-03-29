@@ -2,7 +2,7 @@ import { useState, type ReactElement } from 'react';
 import { Alert, Badge, Button, ButtonGroup, Card, Spinner } from 'react-bootstrap';
 
 import type { MessageInfo, SessionTrace, SessionTraceSummary, SessionTraceSummaryItem } from '../../api/sessions';
-import { formatTraceBytes, formatTraceDuration, getTraceStatusVariant } from '../../lib/traceFormat';
+import { formatTraceBytes, formatTraceDuration, formatTraceTimestamp, getTraceStatusVariant } from '../../lib/traceFormat';
 import { SessionTraceFeed } from './SessionTraceFeed';
 import { SessionTraceTimeline } from './SessionTraceTimeline';
 import { SessionTraceWaterfall } from './SessionTraceWaterfall';
@@ -73,6 +73,7 @@ function TraceSummaryCard({
               <div className="d-flex flex-column gap-1">
                 <div className="fw-semibold">{item.traceName ?? item.traceId}</div>
                 <div className="small text-body-secondary d-flex flex-wrap align-items-center gap-2">
+                  {item.startedAt != null && <span>{formatTraceTimestamp(item.startedAt)}</span>}
                   <span>{item.spanCount} spans</span>
                   <span>{item.snapshotCount} snapshots</span>
                   <span>{formatTraceDuration(item.durationMs)}</span>

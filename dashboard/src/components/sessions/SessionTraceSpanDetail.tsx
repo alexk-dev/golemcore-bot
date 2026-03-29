@@ -2,7 +2,7 @@ import { useState, type ReactElement } from 'react';
 import { Badge, Button, Card, Table } from 'react-bootstrap';
 
 import type { SessionTraceSpan } from '../../api/sessions';
-import { formatTraceBytes, formatTraceDuration, getTraceStatusVariant } from '../../lib/traceFormat';
+import { formatTraceBytes, formatTraceDuration, formatTraceTimestamp, getTraceStatusVariant } from '../../lib/traceFormat';
 
 export interface SessionTraceSpanDetailProps {
   span: SessionTraceSpan;
@@ -11,13 +11,6 @@ export interface SessionTraceSpanDetailProps {
 }
 
 type DetailTab = 'attributes' | 'events' | 'snapshots';
-
-function formatTimestamp(value: string | null): string {
-  if (value == null || value.length === 0) {
-    return '-';
-  }
-  return new Date(value).toLocaleString();
-}
 
 function AttributesSection({ span }: { span: SessionTraceSpan }): ReactElement {
   const entries = Object.entries(span.attributes).filter(
@@ -60,7 +53,7 @@ function EventsSection({ span }: { span: SessionTraceSpan }): ReactElement {
           <div className="d-flex align-items-center gap-2">
             <Badge bg="secondary">{event.name ?? 'event'}</Badge>
             {event.timestamp != null && (
-              <span className="small text-body-secondary">{formatTimestamp(event.timestamp)}</span>
+              <span className="small text-body-secondary">{formatTraceTimestamp(event.timestamp)}</span>
             )}
           </div>
           {Object.entries(event.attributes).length > 0 && (
@@ -129,7 +122,7 @@ export function SessionTraceSpanDetail({ span, traceId, onClose }: SessionTraceS
               <span>span: <code>{span.spanId}</code></span>
               {span.parentSpanId != null && <span>parent: <code>{span.parentSpanId}</code></span>}
               <span>trace: <code>{traceId}</code></span>
-              <span>{formatTimestamp(span.startedAt)} &mdash; {formatTimestamp(span.endedAt)}</span>
+              <span>{formatTraceTimestamp(span.startedAt)} &mdash; {formatTraceTimestamp(span.endedAt)}</span>
             </div>
           </div>
           <Button type="button" size="sm" variant="secondary" onClick={onClose} className="flex-shrink-0">
