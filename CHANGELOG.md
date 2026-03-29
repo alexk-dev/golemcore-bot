@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.48.0 - 2026-03-29
+#### Features
+- (**dashboard**) add classical waterfall trace view (#216) - (994bbfd) - Alex Kuleshov
+#### Miscellaneous
+- (**deps**) bump picomatch in /dashboard (#215) - (ceac23d) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
