@@ -25,14 +25,11 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -173,7 +170,6 @@ public class PluginMarketplaceService {
                     "plugin temp artifact");
             try {
                 copyArtifactTo(selectedVersion.artifactReference(), tempFile);
-                verifyChecksum(tempFile, selectedVersion.versionMetadata().getChecksumSha256());
                 moveAtomically(tempFile, destination);
             } finally {
                 Files.deleteIfExists(tempFile);
@@ -181,7 +177,6 @@ public class PluginMarketplaceService {
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to install plugin artifact for " + normalizedPluginId, ex);
         }
-        verifyChecksum(destination, selectedVersion.versionMetadata().getChecksumSha256());
 
         boolean loaded = pluginManager.reloadPlugin(trustedPluginId);
         PluginMarketplaceItem plugin = getCatalog().getItems().stream()
@@ -1167,35 +1162,6 @@ public class PluginMarketplaceService {
             }
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to delete " + label + " " + containedDirectory, ex);
-        }
-    }
-
-    private void verifyChecksum(Path artifactPath, String expectedChecksum) {
-        if (expectedChecksum == null || expectedChecksum.isBlank()) {
-            return;
-        }
-        String actual = sha256(artifactPath);
-        if (!expectedChecksum.equalsIgnoreCase(actual)) {
-            throw new IllegalStateException("Checksum mismatch for " + artifactPath.getFileName()
-                    + ": expected " + expectedChecksum + ", actual " + actual);
-        }
-    }
-
-    private String sha256(Path path) {
-        try {
-            if (path == null) {
-                throw new IllegalArgumentException("Checksum path is required");
-            }
-            Path safePath = path.toAbsolutePath().normalize();
-            Path checksumRoot = safePath.resolve("..").normalize();
-            Path containedPath = ensureContainedInRoot(checksumRoot, safePath, "checksum input");
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update(Files.readAllBytes(containedPath));
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to read " + path + " for checksum verification", ex);
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 digest is unavailable", ex);
         }
     }
 

@@ -134,6 +134,41 @@ class PluginMarketplaceServiceTest {
     }
 
     @Test
+    void shouldInstallPluginWhenRegistryChecksumDoesNotMatchArtifact(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath,
+                "1.0.0.yaml",
+                "dist/golemcore/browser/1.0.0/golemcore-browser-plugin-1.0.0.jar",
+                "deadbeef");
+
+        PluginManager pluginManager = mock(PluginManager.class);
+        when(pluginManager.reloadPlugin("golemcore/browser")).thenReturn(true);
+        when(pluginManager.listPlugins()).thenReturn(List.of(PluginRuntimeInfo.builder()
+                .id("golemcore/browser")
+                .name("browser")
+                .provider("golemcore")
+                .version("1.0.0")
+                .loaded(true)
+                .build()));
+
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("0.0.0-SNAPSHOT"),
+                pluginManager,
+                mock(PluginSettingsRegistry.class));
+
+        PluginInstallResult result = service.install("golemcore/browser", null);
+
+        Path installedJar = installRoot.resolve("golemcore/browser/1.0.0/golemcore-browser-plugin-1.0.0.jar");
+        assertTrue(Files.isRegularFile(installedJar));
+        assertEquals("installed", result.getStatus());
+        verify(pluginManager).reloadPlugin("golemcore/browser");
+    }
+
+    @Test
     void shouldUninstallPluginArtifactsAndUnloadRuntime(@TempDir Path tempDir) throws Exception {
         Path repositoryRoot = tempDir.resolve("golemcore-plugins");
         Path installRoot = tempDir.resolve("installed-plugins");
@@ -590,6 +625,18 @@ class PluginMarketplaceServiceTest {
             Path artifactPath,
             String versionMetadataFileName,
             String artifactUrl) throws IOException {
+        writeRegistryEntry(repositoryRoot, pluginId, version, artifactPath, versionMetadataFileName, artifactUrl,
+                sha256(artifactPath));
+    }
+
+    private void writeRegistryEntry(
+            Path repositoryRoot,
+            String pluginId,
+            String version,
+            Path artifactPath,
+            String versionMetadataFileName,
+            String artifactUrl,
+            String checksumSha256) throws IOException {
         String[] parts = pluginId.split("/", 2);
         Path pluginRegistryDir = repositoryRoot.resolve("registry").resolve(parts[0]).resolve(parts[1]);
         Files.createDirectories(pluginRegistryDir.resolve("versions"));
@@ -621,7 +668,7 @@ class PluginMarketplaceServiceTest {
                 pluginId,
                 version,
                 artifactUrl,
-                sha256(artifactPath),
+                checksumSha256,
                 parts[0],
                 parts[1],
                 parts[0],

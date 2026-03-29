@@ -47,7 +47,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
