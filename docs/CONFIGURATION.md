@@ -370,18 +370,44 @@ Memory behavior is configured under `memory`:
     "decayEnabled": true,
     "decayDays": 30,
     "retrievalLookbackDays": 21,
-    "codeAwareExtractionEnabled": true
+    "codeAwareExtractionEnabled": true,
+    "disclosure": {
+      "mode": "summary",
+      "promptStyle": "balanced",
+      "toolExpansionEnabled": true,
+      "disclosureHintsEnabled": true,
+      "detailMinScore": 0.80
+    },
+    "reranking": {
+      "enabled": true,
+      "profile": "balanced"
+    },
+    "diagnostics": {
+      "verbosity": "basic"
+    }
   }
 }
 ```
 
 Field notes:
 
-1. `softPromptBudgetTokens` / `maxPromptBudgetTokens`: memory injection budget for prompt packing.
-2. `*TopK`: per-layer candidate limits for retrieval.
+1. `softPromptBudgetTokens` / `maxPromptBudgetTokens`: target and hard limit for prompt memory budget.
+2. `*TopK`: per-layer recall limits before budget trimming.
 3. `promotion*`: controls promotion from episodic records into semantic/procedural stores.
 4. `decay*`: stale item pruning window for stored memory.
-5. `retrievalLookbackDays`: episodic retrieval window (how many recent day-files are read per request).
+5. `retrievalLookbackDays`: episodic retrieval window.
+6. `disclosure.*`: controls **progressive disclosure**. This decides whether memory is shown as a tiny index, a compact summary, or selective raw detail.
+7. `reranking.*`: second-pass candidate reordering after normal scoring. Useful when recall is relevant but not precise enough.
+8. `diagnostics.verbosity`: how much memory telemetry is exposed for tuning/debugging.
+
+Quick guidance:
+
+- `summary` is the recommended default for most coding sessions.
+- `selective_detail` is better for long autonomous or deep-focus work.
+- `index` keeps chat lightweight.
+- `full_pack` is mostly for debugging or compatibility.
+
+For a fuller explanation of these fields and the built-in presets, see [Memory Guide](MEMORY.md).
 
 ### Telegram
 

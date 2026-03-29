@@ -160,9 +160,17 @@ Structured memory operations for autonomous workflows.
 
 Operations:
 
-- `memory_add`, `memory_search`, `memory_update`, `memory_promote`, `memory_forget`
+- `memory_search`: search memory by query
+- `memory_read`: read specific items by id, fingerprint, or query
+- `memory_expand_section`: ask for more detail from a compact prompt section such as semantic facts or recent episodes
+- `memory_add`: write a semantic/procedural memory item
+- `memory_update`: update an existing semantic/procedural memory item
+- `memory_promote`: promote matching memories into a longer-lived layer
+- `memory_forget`: forget matching memories by id, fingerprint, or query
 
 This tool uses Memory V2 APIs (no direct filesystem assumptions for memory writes).
+
+When progressive disclosure is enabled, `memory_read` and `memory_expand_section` are the main "show me more" operations.
 
 ### `imap` / `smtp`
 
