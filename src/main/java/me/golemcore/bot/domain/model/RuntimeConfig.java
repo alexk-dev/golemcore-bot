@@ -753,6 +753,27 @@ public class RuntimeConfig {
         private Boolean enabled;
         private Integer defaultStartupTimeout;
         private Integer defaultIdleTimeout;
+        @Builder.Default
+        private List<McpCatalogEntry> catalog = new ArrayList<>();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class McpCatalogEntry {
+        private String name;
+        private String description;
+        private String command;
+        @Builder.Default
+        private Map<String, String> env = new LinkedHashMap<>();
+        @Builder.Default
+        private Integer startupTimeoutSeconds = 30;
+        @Builder.Default
+        private Integer idleTimeoutMinutes = 5;
+        @Builder.Default
+        private Boolean enabled = true;
     }
 
     @Data

@@ -462,9 +462,85 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateMcpConfig(
             @RequestBody RuntimeConfig.McpConfig mcpConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        // Preserve existing catalog when updating global MCP settings
+        RuntimeConfig.McpConfig existing = config.getMcp();
+        if (existing != null && mcpConfig.getCatalog() == null) {
+            mcpConfig.setCatalog(existing.getCatalog());
+        }
         config.setMcp(mcpConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    // ==================== MCP Catalog CRUD ====================
+
+    @GetMapping("/runtime/mcp/catalog")
+    public Mono<ResponseEntity<List<RuntimeConfig.McpCatalogEntry>>> getMcpCatalog() {
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getMcpCatalog()));
+    }
+
+    @PostMapping("/runtime/mcp/catalog")
+    public Mono<ResponseEntity<RuntimeConfig>> addMcpCatalogEntry(
+            @RequestBody RuntimeConfig.McpCatalogEntry entry) {
+        validateMcpCatalogEntry(entry);
+        String normalizedName = entry.getName().toLowerCase(Locale.ROOT).trim();
+        entry.setName(normalizedName);
+        List<RuntimeConfig.McpCatalogEntry> catalog = runtimeConfigService.getMcpCatalog();
+        boolean exists = catalog.stream().anyMatch(e -> normalizedName.equals(e.getName()));
+        if (exists) {
+            throw new IllegalArgumentException("MCP catalog entry '" + normalizedName + "' already exists");
+        }
+        runtimeConfigService.addMcpCatalogEntry(entry);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @PutMapping("/runtime/mcp/catalog/{name}")
+    public Mono<ResponseEntity<RuntimeConfig>> updateMcpCatalogEntry(
+            @PathVariable String name,
+            @RequestBody RuntimeConfig.McpCatalogEntry entry) {
+        String normalizedName = name.toLowerCase(Locale.ROOT).trim();
+        validateMcpCatalogEntry(entry);
+        boolean updated = runtimeConfigService.updateMcpCatalogEntry(normalizedName, entry);
+        if (!updated) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "MCP catalog entry '" + normalizedName + "' not found");
+        }
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @DeleteMapping("/runtime/mcp/catalog/{name}")
+    public Mono<ResponseEntity<Void>> removeMcpCatalogEntry(@PathVariable String name) {
+        String normalizedName = name.toLowerCase(Locale.ROOT).trim();
+        boolean removed = runtimeConfigService.removeMcpCatalogEntry(normalizedName);
+        if (!removed) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "MCP catalog entry '" + normalizedName + "' not found");
+        }
+        return Mono.just(ResponseEntity.ok().build());
+    }
+
+    private void validateMcpCatalogEntry(RuntimeConfig.McpCatalogEntry entry) {
+        if (entry == null) {
+            throw new IllegalArgumentException("MCP catalog entry is required");
+        }
+        if (entry.getName() == null || entry.getName().isBlank()) {
+            throw new IllegalArgumentException("MCP catalog entry name is required");
+        }
+        String name = entry.getName().toLowerCase(Locale.ROOT).trim();
+        if (!name.matches("[a-z0-9][a-z0-9_-]*")) {
+            throw new IllegalArgumentException("MCP catalog entry name must match [a-z0-9][a-z0-9_-]*");
+        }
+        if (entry.getCommand() == null || entry.getCommand().isBlank()) {
+            throw new IllegalArgumentException("MCP catalog entry command is required");
+        }
+        Integer startupTimeout = entry.getStartupTimeoutSeconds();
+        if (startupTimeout != null && (startupTimeout < 1 || startupTimeout > 300)) {
+            throw new IllegalArgumentException("startupTimeoutSeconds must be between 1 and 300");
+        }
+        Integer idleTimeout = entry.getIdleTimeoutMinutes();
+        if (idleTimeout != null && (idleTimeout < 1 || idleTimeout > 120)) {
+            throw new IllegalArgumentException("idleTimeoutMinutes must be between 1 and 120");
+        }
     }
 
     @PutMapping("/runtime/hive")

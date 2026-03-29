@@ -357,6 +357,83 @@ public class RuntimeConfigService {
         return false;
     }
 
+    // ==================== MCP Catalog CRUD ====================
+
+    /**
+     * Get the MCP catalog entries.
+     */
+    public List<RuntimeConfig.McpCatalogEntry> getMcpCatalog() {
+        RuntimeConfig.McpConfig mcp = getRuntimeConfig().getMcp();
+        if (mcp == null || mcp.getCatalog() == null) {
+            return List.of();
+        }
+        return mcp.getCatalog();
+    }
+
+    /**
+     * Add a new MCP catalog entry.
+     */
+    public void addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry entry) {
+        RuntimeConfig cfg = getRuntimeConfig();
+        RuntimeConfig.McpConfig mcp = ensureMcpConfig(cfg);
+        List<RuntimeConfig.McpCatalogEntry> catalog = ensureMcpCatalog(mcp);
+        catalog.add(entry);
+        updateRuntimeConfig(cfg);
+        log.info("[RuntimeConfig] Added MCP catalog entry: {}", entry.getName());
+    }
+
+    /**
+     * Update an existing MCP catalog entry by name.
+     */
+    public boolean updateMcpCatalogEntry(String name, RuntimeConfig.McpCatalogEntry newEntry) {
+        RuntimeConfig cfg = getRuntimeConfig();
+        RuntimeConfig.McpConfig mcp = ensureMcpConfig(cfg);
+        List<RuntimeConfig.McpCatalogEntry> catalog = ensureMcpCatalog(mcp);
+        for (int i = 0; i < catalog.size(); i++) {
+            if (name.equals(catalog.get(i).getName())) {
+                newEntry.setName(name);
+                catalog.set(i, newEntry);
+                updateRuntimeConfig(cfg);
+                log.info("[RuntimeConfig] Updated MCP catalog entry: {}", name);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Remove an MCP catalog entry by name.
+     */
+    public boolean removeMcpCatalogEntry(String name) {
+        RuntimeConfig cfg = getRuntimeConfig();
+        RuntimeConfig.McpConfig mcp = ensureMcpConfig(cfg);
+        List<RuntimeConfig.McpCatalogEntry> catalog = ensureMcpCatalog(mcp);
+        boolean removed = catalog.removeIf(entry -> name.equals(entry.getName()));
+        if (removed) {
+            updateRuntimeConfig(cfg);
+            log.info("[RuntimeConfig] Removed MCP catalog entry: {}", name);
+        }
+        return removed;
+    }
+
+    private RuntimeConfig.McpConfig ensureMcpConfig(RuntimeConfig cfg) {
+        RuntimeConfig.McpConfig mcp = cfg.getMcp();
+        if (mcp == null) {
+            mcp = new RuntimeConfig.McpConfig();
+            cfg.setMcp(mcp);
+        }
+        return mcp;
+    }
+
+    private List<RuntimeConfig.McpCatalogEntry> ensureMcpCatalog(RuntimeConfig.McpConfig mcp) {
+        List<RuntimeConfig.McpCatalogEntry> catalog = mcp.getCatalog();
+        if (catalog == null) {
+            catalog = new ArrayList<>();
+            mcp.setCatalog(catalog);
+        }
+        return catalog;
+    }
+
     private RuntimeConfig.LlmProviderConfig getRuntimeLlmProviderConfig(String providerName) {
         RuntimeConfig.LlmConfig llm = getRuntimeConfig().getLlm();
         if (llm == null || providerName == null) {
