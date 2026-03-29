@@ -19,7 +19,15 @@ package me.golemcore.bot.domain.service;
  */
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.memory.disclosure.MemoryDisclosurePlanner;
+import me.golemcore.bot.domain.memory.disclosure.MemoryPackRenderer;
+import me.golemcore.bot.domain.memory.disclosure.MemorySectionAssembler;
+import me.golemcore.bot.domain.memory.model.MemoryDisclosureInput;
+import me.golemcore.bot.domain.memory.model.MemoryDisclosureMode;
+import me.golemcore.bot.domain.memory.model.MemoryDisclosurePlan;
+import me.golemcore.bot.domain.memory.model.MemoryPackSection;
+import me.golemcore.bot.domain.memory.model.MemoryPromptStyle;
+import me.golemcore.bot.domain.memory.model.MemorySelectionResult;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.MemoryQuery;
@@ -27,36 +35,86 @@ import me.golemcore.bot.domain.model.MemoryScoredItem;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Builds prompt-ready memory context from scored memory items using token
- * budgets.
+ * Builds prompt-ready memory packs using budget selection followed by
+ * progressive disclosure.
  */
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class MemoryPromptPackService {
 
+    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryDisclosurePlanner memoryDisclosurePlanner;
+    private final MemorySectionAssembler memorySectionAssembler;
+    private final MemoryPackRenderer memoryPackRenderer;
+
     public MemoryPack build(MemoryQuery query, List<MemoryScoredItem> candidates) {
+        MemoryDisclosureMode disclosureMode = MemoryDisclosureMode
+                .fromConfig(runtimeConfigService.getMemoryDisclosureMode());
+        MemoryPromptStyle promptStyle = MemoryPromptStyle.fromConfig(runtimeConfigService.getMemoryPromptStyle());
+
         if (candidates == null || candidates.isEmpty()) {
             return MemoryPack.builder()
                     .items(List.of())
-                    .diagnostics(Map.of("candidateCount", 0, "selectedCount", 0))
+                    .sections(List.of())
+                    .disclosureMode(disclosureMode.getConfigValue())
+                    .diagnostics(Map.of("candidateCount", 0, "selectedCount", 0, "disclosureMode",
+                            disclosureMode.getConfigValue()))
                     .renderedContext("")
                     .build();
         }
 
+        MemorySelectionResult selectionResult = selectCandidates(query, candidates);
+        MemoryDisclosureInput disclosureInput = MemoryDisclosureInput.builder()
+                .selectionResult(selectionResult)
+                .disclosureMode(disclosureMode)
+                .promptStyle(promptStyle)
+                .toolExpansionEnabled(runtimeConfigService.isMemoryToolExpansionEnabled())
+                .disclosureHintsEnabled(runtimeConfigService.isMemoryDisclosureHintsEnabled())
+                .detailMinScore(runtimeConfigService.getMemoryDetailMinScore())
+                .build();
+
+        MemoryDisclosurePlan disclosurePlan = memoryDisclosurePlanner.plan(disclosureInput);
+        List<MemoryPackSection> sections = memorySectionAssembler.assemble(disclosurePlan);
+        String rendered = memoryPackRenderer.render(sections, disclosurePlan.getPromptStyle());
+
+        Map<String, Object> diagnostics = new LinkedHashMap<>();
+        diagnostics.put("candidateCount", selectionResult.getCandidateCount());
+        diagnostics.put("selectedCount", selectionResult.getSelectedCount());
+        diagnostics.put("droppedByBudget", selectionResult.getDroppedByBudget());
+        diagnostics.put("estimatedTokens", selectionResult.getEstimatedTokens());
+        diagnostics.put("softBudgetTokens", selectionResult.getSoftBudgetTokens());
+        diagnostics.put("maxBudgetTokens", selectionResult.getMaxBudgetTokens());
+        diagnostics.put("disclosureMode", disclosureMode.getConfigValue());
+        diagnostics.put("promptStyle", promptStyle.getConfigValue());
+        diagnostics.put("sectionCount", sections.size());
+
+        List<MemoryItem> selectedItems = selectionResult.getSelectedCandidates().stream()
+                .map(MemoryScoredItem::getItem)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        return MemoryPack.builder()
+                .items(selectedItems)
+                .sections(sections)
+                .disclosureMode(disclosureMode.getConfigValue())
+                .diagnostics(diagnostics)
+                .renderedContext(rendered)
+                .build();
+    }
+
+    private MemorySelectionResult selectCandidates(MemoryQuery query, List<MemoryScoredItem> candidates) {
         int softBudget = normalizeBudget(query != null ? query.getSoftPromptBudgetTokens() : null, 1800);
         int maxBudget = normalizeBudget(query != null ? query.getMaxPromptBudgetTokens() : null, 3500);
         if (maxBudget < softBudget) {
             maxBudget = softBudget;
         }
 
-        List<MemoryItem> selected = new ArrayList<>();
+        List<MemoryScoredItem> selected = new ArrayList<>();
         int usedTokens = 0;
         int droppedByBudget = 0;
 
@@ -68,14 +126,14 @@ public class MemoryPromptPackService {
 
             int itemTokens = estimateTokens(item);
             if (usedTokens + itemTokens <= softBudget) {
-                selected.add(item);
+                selected.add(candidate);
                 usedTokens += itemTokens;
                 continue;
             }
 
             boolean allowBeyondSoft = candidate.getScore() >= 0.85;
             if (allowBeyondSoft && usedTokens + itemTokens <= maxBudget) {
-                selected.add(item);
+                selected.add(candidate);
                 usedTokens += itemTokens;
                 continue;
             }
@@ -83,59 +141,15 @@ public class MemoryPromptPackService {
             droppedByBudget++;
         }
 
-        String rendered = render(selected);
-        Map<String, Object> diagnostics = new LinkedHashMap<>();
-        diagnostics.put("candidateCount", candidates.size());
-        diagnostics.put("selectedCount", selected.size());
-        diagnostics.put("droppedByBudget", droppedByBudget);
-        diagnostics.put("estimatedTokens", usedTokens);
-        diagnostics.put("softBudgetTokens", softBudget);
-        diagnostics.put("maxBudgetTokens", maxBudget);
-
-        return MemoryPack.builder()
-                .items(selected)
-                .diagnostics(diagnostics)
-                .renderedContext(rendered)
+        return MemorySelectionResult.builder()
+                .selectedCandidates(selected)
+                .candidateCount(candidates.size())
+                .selectedCount(selected.size())
+                .droppedByBudget(droppedByBudget)
+                .estimatedTokens(usedTokens)
+                .softBudgetTokens(softBudget)
+                .maxBudgetTokens(maxBudget)
                 .build();
-    }
-
-    private String render(List<MemoryItem> items) {
-        if (items == null || items.isEmpty()) {
-            return "";
-        }
-
-        Map<MemoryItem.Layer, List<MemoryItem>> grouped = new EnumMap<>(MemoryItem.Layer.class);
-        for (MemoryItem item : items) {
-            MemoryItem.Layer layer = item.getLayer() != null ? item.getLayer() : MemoryItem.Layer.EPISODIC;
-            grouped.computeIfAbsent(layer, k -> new ArrayList<>()).add(item);
-        }
-
-        StringBuilder sb = new StringBuilder();
-        appendLayer(sb, grouped, MemoryItem.Layer.WORKING, "## Working Memory");
-        appendLayer(sb, grouped, MemoryItem.Layer.EPISODIC, "## Episodic Memory");
-        appendLayer(sb, grouped, MemoryItem.Layer.SEMANTIC, "## Semantic Memory");
-        appendLayer(sb, grouped, MemoryItem.Layer.PROCEDURAL, "## Procedural Memory");
-        return sb.toString().trim();
-    }
-
-    private void appendLayer(StringBuilder sb, Map<MemoryItem.Layer, List<MemoryItem>> grouped, MemoryItem.Layer layer,
-            String heading) {
-        List<MemoryItem> layerItems = grouped.get(layer);
-        if (layerItems == null || layerItems.isEmpty()) {
-            return;
-        }
-
-        sb.append(heading).append("\n");
-        for (MemoryItem item : layerItems) {
-            sb.append("- [")
-                    .append(item.getType() != null ? item.getType() : "ITEM")
-                    .append("] ");
-            if (item.getTitle() != null && !item.getTitle().isBlank()) {
-                sb.append(item.getTitle()).append(": ");
-            }
-            sb.append(truncate(item.getContent(), 420)).append("\n");
-        }
-        sb.append("\n");
     }
 
     private int estimateTokens(MemoryItem item) {
@@ -159,16 +173,5 @@ public class MemoryPromptPackService {
             return fallback;
         }
         return value;
-    }
-
-    private String truncate(String text, int maxLen) {
-        if (text == null) {
-            return "";
-        }
-        String normalized = text.replace('\r', ' ').replace('\n', ' ').trim();
-        if (normalized.length() <= maxLen) {
-            return normalized;
-        }
-        return normalized.substring(0, Math.max(0, maxLen - 3)) + "...";
     }
 }

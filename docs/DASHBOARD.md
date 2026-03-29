@@ -87,6 +87,21 @@ The Settings page is now organized into catalog blocks instead of a flat tab lis
 
 Plugin settings pages are discovered dynamically from `/api/plugins/settings/catalog`.
 
+### Memory Settings
+
+The `Runtime -> Memory` section is where you tune how much memory the model sees and how aggressively it is recalled.
+
+Important controls:
+
+- presets for common profiles such as fast coding, balanced coding, deep coding, research, ops, or disabled memory
+- prompt budget and per-layer recall limits
+- progressive disclosure mode: `index`, `summary`, `selective_detail`, `full_pack`
+- prompt style: `compact`, `balanced`, `rich`
+- reranking profile and diagnostics verbosity
+
+Practical rule:
+If memory feels noisy, start by switching to `summary`, lowering `*TopK`, or raising `detailMinScore`. If memory feels too vague, try `selective_detail` or a stronger preset such as `coding_deep`.
+
 ### LLM Providers
 
 The `LLM Providers` section manages provider profiles under `llm.providers` in runtime config:

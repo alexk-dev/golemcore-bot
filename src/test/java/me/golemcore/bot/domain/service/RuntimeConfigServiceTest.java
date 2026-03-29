@@ -847,6 +847,8 @@ class RuntimeConfigServiceTest {
         assertEquals(6, service.getMemorySemanticTopK());
         assertEquals(4, service.getMemoryProceduralTopK());
         assertEquals(21, service.getMemoryRetrievalLookbackDays());
+        assertTrue(service.isMemoryRerankingEnabled());
+        assertEquals("balanced", service.getMemoryRerankingProfile());
     }
 
     @Test
@@ -1151,6 +1153,21 @@ class RuntimeConfigServiceTest {
         assertNotNull(config.getMemory());
         assertEquals(2, config.getMemory().getVersion());
         assertEquals(2, service.getMemoryVersion());
+    }
+
+    @Test
+    void shouldNormalizeMissingMemoryRerankingConfigToDefaults() throws Exception {
+        persistedSections.put(
+                "memory.json",
+                "{\"version\":2,\"enabled\":true,\"reranking\":{\"enabled\":null,\"profile\":\"  \"}}");
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getMemory().getReranking());
+        assertTrue(config.getMemory().getReranking().getEnabled());
+        assertEquals("balanced", config.getMemory().getReranking().getProfile());
+        assertTrue(service.isMemoryRerankingEnabled());
+        assertEquals("balanced", service.getMemoryRerankingProfile());
     }
 
     @Test

@@ -2,6 +2,11 @@ package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import me.golemcore.bot.domain.memory.retrieval.MemoryCandidateCollector;
+import me.golemcore.bot.domain.memory.retrieval.MemoryCandidateReranker;
+import me.golemcore.bot.domain.memory.retrieval.MemoryCandidateScorer;
+import me.golemcore.bot.domain.memory.retrieval.MemoryCandidateSelector;
+import me.golemcore.bot.domain.memory.retrieval.MemoryRetrievalPlanner;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.MemoryScoredItem;
@@ -47,7 +52,13 @@ class MemoryRetrievalServiceTest {
         BotProperties properties = new BotProperties();
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
-        service = new MemoryRetrievalService(storagePort, properties, runtimeConfigService, objectMapper);
+        service = new MemoryRetrievalService(
+                runtimeConfigService,
+                new MemoryRetrievalPlanner(runtimeConfigService),
+                new MemoryCandidateCollector(storagePort, properties, runtimeConfigService, objectMapper),
+                new MemoryCandidateScorer(),
+                new MemoryCandidateReranker(runtimeConfigService),
+                new MemoryCandidateSelector());
 
         when(storagePort.getText(anyString(), anyString()))
                 .thenAnswer(invocation -> CompletableFuture.completedFuture(
@@ -62,6 +73,8 @@ class MemoryRetrievalServiceTest {
         when(runtimeConfigService.getMemoryRetrievalLookbackDays()).thenReturn(3);
         when(runtimeConfigService.isMemoryDecayEnabled()).thenReturn(false);
         when(runtimeConfigService.getMemoryDecayDays()).thenReturn(30);
+        when(runtimeConfigService.isMemoryRerankingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getMemoryRerankingProfile()).thenReturn("balanced");
     }
 
     @Test
@@ -232,6 +245,38 @@ class MemoryRetrievalServiceTest {
 
         assertEquals(2, result.size());
         assertEquals("p-skill", result.get(0).getItem().getId());
+    }
+
+    @Test
+    void shouldApplySecondPassRerankingBeforeLayerSelection() throws Exception {
+        when(runtimeConfigService.getMemoryRetrievalLookbackDays()).thenReturn(1);
+
+        Instant now = Instant.now();
+        MemoryItem recentBroadMatch = item("broad", MemoryItem.Layer.PROCEDURAL, MemoryItem.Type.FIX,
+                "redis connection issue notes",
+                now.minus(1, ChronoUnit.HOURS), now.minus(1, ChronoUnit.HOURS), "broad-fp", null, List.of("ops"));
+        recentBroadMatch.setConfidence(0.95);
+        recentBroadMatch.setSalience(0.95);
+
+        MemoryItem exactMatch = item("exact", MemoryItem.Layer.PROCEDURAL, MemoryItem.Type.FIX,
+                "redis connection reset recovery checklist",
+                now.minus(25, ChronoUnit.DAYS), now.minus(25, ChronoUnit.DAYS), "exact-fp", null, List.of("ops"));
+        exactMatch.setTitle("redis connection reset playbook");
+        exactMatch.setConfidence(0.40);
+        exactMatch.setSalience(0.40);
+
+        putJsonl("items/procedural.jsonl", List.of(recentBroadMatch, exactMatch));
+
+        List<MemoryScoredItem> result = service.retrieve(MemoryQuery.builder()
+                .queryText("redis connection reset")
+                .workingTopK(0)
+                .episodicTopK(0)
+                .semanticTopK(0)
+                .proceduralTopK(1)
+                .build());
+
+        assertEquals(1, result.size());
+        assertEquals("exact", result.get(0).getItem().getId());
     }
 
     @Test
