@@ -423,10 +423,21 @@ export interface SecurityConfig {
   toolConfirmationTimeoutSeconds: number | null;
 }
 
+export interface McpCatalogEntry {
+  name: string;
+  description: string | null;
+  command: string;
+  env: Record<string, string>;
+  startupTimeoutSeconds: number | null;
+  idleTimeoutMinutes: number | null;
+  enabled: boolean | null;
+}
+
 export interface McpConfig {
   enabled: boolean | null;
   defaultStartupTimeout: number | null;
   defaultIdleTimeout: number | null;
+  catalog: McpCatalogEntry[];
 }
 
 export interface CompactionConfig {
@@ -541,6 +552,20 @@ export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeCon
 export async function updateMcpConfig(config: McpConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/mcp', config);
   return toUiRuntimeConfig(data);
+}
+
+export async function addMcpCatalogEntry(entry: McpCatalogEntry): Promise<RuntimeConfig> {
+  const { data } = await client.post<RuntimeConfigUiRecord>('/settings/runtime/mcp/catalog', entry);
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateMcpCatalogEntry(name: string, entry: McpCatalogEntry): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/mcp/catalog/${name}`, entry);
+  return toUiRuntimeConfig(data);
+}
+
+export async function removeMcpCatalogEntry(name: string): Promise<void> {
+  await client.delete(`/settings/runtime/mcp/catalog/${name}`);
 }
 
 export async function updateHiveConfig(config: HiveConfig): Promise<RuntimeConfig> {

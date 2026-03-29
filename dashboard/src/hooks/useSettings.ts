@@ -12,6 +12,7 @@ import {
   type TurnConfig,
   type UsageConfig,
   type McpConfig,
+  type McpCatalogEntry,
   type HiveConfig,
   type PlanConfig,
   type AutoModeConfig,
@@ -37,6 +38,9 @@ import {
   updateTurnConfig,
   updateUsageConfig,
   updateMcpConfig,
+  addMcpCatalogEntry,
+  updateMcpCatalogEntry,
+  removeMcpCatalogEntry,
   updateHiveConfig,
   updatePlanConfig,
   updateAutoConfig,
@@ -173,6 +177,30 @@ export function useUpdateMcp(): UseMutationResult<Awaited<ReturnType<typeof upda
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: McpConfig) => updateMcpConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useAddMcpCatalogEntry(): UseMutationResult<Awaited<ReturnType<typeof addMcpCatalogEntry>>, unknown, McpCatalogEntry> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (entry: McpCatalogEntry) => addMcpCatalogEntry(entry),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateMcpCatalogEntry(): UseMutationResult<Awaited<ReturnType<typeof updateMcpCatalogEntry>>, unknown, { name: string; entry: McpCatalogEntry }> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, entry }: { name: string; entry: McpCatalogEntry }) => updateMcpCatalogEntry(name, entry),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useRemoveMcpCatalogEntry(): UseMutationResult<Awaited<ReturnType<typeof removeMcpCatalogEntry>>, unknown, string> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => removeMcpCatalogEntry(name),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }
