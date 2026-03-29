@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.DynamicSkillFactory;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -208,6 +210,125 @@ class DiscoverMcpServerToolTest {
     void shouldBeDisabledWhenMcpDisabled() {
         when(runtimeConfigService.isMcpEnabled()).thenReturn(false);
         assertFalse(tool.isEnabled());
+    }
+
+    @Test
+    void shouldActivateManualSkillCoveringServer() {
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().chatId("test").build())
+                .messages(new ArrayList<>())
+                .build();
+        AgentContextHolder.set(context);
+
+        Skill manualSkill = Skill.builder()
+                .name("github-assistant")
+                .available(true)
+                .mcpConfig(McpConfig.builder().command("npx github-mcp-server").build())
+                .build();
+        when(skillComponent.findByName("mcp-github")).thenReturn(Optional.empty());
+        when(skillComponent.getAvailableSkills()).thenReturn(List.of(manualSkill));
+        when(runtimeConfigService.getMcpCatalog()).thenReturn(List.of());
+
+        ToolResult result = tool.execute(Map.of("action", "activate", "server_name", "github")).join();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("Activating"));
+        verify(skillComponent, never()).registerDynamicSkill(any());
+    }
+
+    @Test
+    void shouldHandleCaseInsensitiveServerName() {
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().chatId("test").build())
+                .messages(new ArrayList<>())
+                .build();
+        AgentContextHolder.set(context);
+
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx github")
+                .enabled(true)
+                .build();
+        when(runtimeConfigService.getMcpCatalog()).thenReturn(List.of(entry));
+        when(skillComponent.findByName("mcp-github")).thenReturn(Optional.empty());
+        when(skillComponent.getAvailableSkills()).thenReturn(List.of());
+        when(skillComponent.registerDynamicSkill(any(Skill.class))).thenReturn(true);
+
+        ToolResult result = tool.execute(Map.of("action", "activate", "server_name", "GitHub")).join();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("Activating"));
+    }
+
+    @Test
+    void shouldReturnToolNameAndDefinition() {
+        assertEquals("discover_mcp_server", tool.getToolName());
+        assertNotNull(tool.getDefinition());
+        assertEquals("discover_mcp_server", tool.getDefinition().getName());
+    }
+
+    @Test
+    void shouldSearchByDescription() {
+        List<RuntimeConfig.McpCatalogEntry> catalog = List.of(
+                RuntimeConfig.McpCatalogEntry.builder()
+                        .name("server1")
+                        .description("Manages pull requests and issues")
+                        .command("npx server1")
+                        .enabled(true)
+                        .build());
+        when(runtimeConfigService.getMcpCatalog()).thenReturn(catalog);
+
+        ToolResult result = tool.execute(Map.of("action", "search", "query", "pull requests")).join();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("server1"));
+    }
+
+    @Test
+    void shouldSearchByCommand() {
+        List<RuntimeConfig.McpCatalogEntry> catalog = List.of(
+                RuntimeConfig.McpCatalogEntry.builder()
+                        .name("myserver")
+                        .command("npx @special/unique-server")
+                        .enabled(true)
+                        .build());
+        when(runtimeConfigService.getMcpCatalog()).thenReturn(catalog);
+
+        ToolResult result = tool.execute(Map.of("action", "search", "query", "unique-server")).join();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("myserver"));
+    }
+
+    @Test
+    void shouldShowAvailableServersWhenNoMatch() {
+        List<RuntimeConfig.McpCatalogEntry> catalog = List.of(
+                RuntimeConfig.McpCatalogEntry.builder()
+                        .name("github")
+                        .command("npx github")
+                        .enabled(true)
+                        .build());
+        when(runtimeConfigService.getMcpCatalog()).thenReturn(catalog);
+
+        ToolResult result = tool.execute(Map.of("action", "search", "query", "nonexistent")).join();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("github"));
+        assertTrue(result.getOutput().contains("No servers match"));
+    }
+
+    @Test
+    void shouldHandleBlankAction() {
+        ToolResult result = tool.execute(Map.of("action", "  ")).join();
+
+        assertFalse(result.isSuccess());
+    }
+
+    @Test
+    void shouldHandleBlankServerName() {
+        ToolResult result = tool.execute(Map.of("action", "activate", "server_name", "  ")).join();
+
+        assertFalse(result.isSuccess());
     }
 
     @Test

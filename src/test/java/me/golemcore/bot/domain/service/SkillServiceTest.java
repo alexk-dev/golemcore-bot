@@ -641,6 +641,87 @@ class SkillServiceTest {
         assertTrue(skill.get().getConditionalNextSkills().isEmpty());
     }
 
+    // ==================== Dynamic Skill Registration ====================
+
+    @Test
+    void registerDynamicSkillShouldSucceedForNewSkill() {
+        Skill skill = Skill.builder()
+                .name("mcp-github")
+                .description("GitHub MCP")
+                .available(true)
+                .build();
+
+        boolean result = service.registerDynamicSkill(skill);
+
+        assertTrue(result);
+        Optional<Skill> found = service.findByName("mcp-github");
+        assertTrue(found.isPresent());
+        assertEquals("GitHub MCP", found.get().getDescription());
+    }
+
+    @Test
+    void registerDynamicSkillShouldNotOverrideExisting() {
+        Skill first = Skill.builder()
+                .name("mcp-github")
+                .description("First")
+                .available(true)
+                .build();
+        Skill second = Skill.builder()
+                .name("mcp-github")
+                .description("Second")
+                .available(true)
+                .build();
+
+        assertTrue(service.registerDynamicSkill(first));
+        assertFalse(service.registerDynamicSkill(second));
+
+        Optional<Skill> found = service.findByName("mcp-github");
+        assertTrue(found.isPresent());
+        assertEquals("First", found.get().getDescription());
+    }
+
+    @Test
+    void registerDynamicSkillShouldReturnFalseForNullSkill() {
+        assertFalse(service.registerDynamicSkill(null));
+    }
+
+    @Test
+    void registerDynamicSkillShouldReturnFalseForNullName() {
+        Skill skill = Skill.builder().name(null).build();
+        assertFalse(service.registerDynamicSkill(skill));
+    }
+
+    @Test
+    void registerDynamicSkillShouldAppearInAvailableSkills() {
+        Skill skill = Skill.builder()
+                .name("mcp-slack")
+                .description("Slack MCP")
+                .available(true)
+                .build();
+
+        service.registerDynamicSkill(skill);
+
+        List<Skill> available = service.getAvailableSkills();
+        assertTrue(available.stream().anyMatch(s -> "mcp-slack".equals(s.getName())));
+    }
+
+    @Test
+    void registerDynamicSkillUnavailableShouldNotAppearInAvailable() {
+        Skill skill = Skill.builder()
+                .name("mcp-broken")
+                .description("Broken MCP")
+                .available(false)
+                .build();
+
+        service.registerDynamicSkill(skill);
+
+        List<Skill> available = service.getAvailableSkills();
+        assertFalse(available.stream().anyMatch(s -> "mcp-broken".equals(s.getName())));
+        // But should appear in all skills
+        List<Skill> all = service.getAllSkills();
+        assertTrue(all.stream().anyMatch(s -> "mcp-broken".equals(s.getName())));
+    }
+
     @Test
     void getSkillsSummaryIncludesAvailableSkills() {
         loadSkillAndFind("s1", """

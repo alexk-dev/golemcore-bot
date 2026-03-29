@@ -132,6 +132,89 @@ class DynamicSkillFactoryTest {
     }
 
     @Test
+    void shouldResolveEnvPlaceholdersFromSystemEnv() {
+        // PATH is always available
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("test")
+                .command("npx test")
+                .env(Map.of("MY_PATH", "${PATH}"))
+                .build();
+
+        Skill skill = factory.materialize(entry);
+
+        String resolvedPath = skill.getMcpConfig().getEnv().get("MY_PATH");
+        assertNotNull(resolvedPath);
+        assertFalse(resolvedPath.contains("${"));
+    }
+
+    @Test
+    void shouldPreservePlaceholderWhenEnvVarMissing() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("test")
+                .command("npx test")
+                .env(Map.of("TOKEN", "${UNLIKELY_NONEXISTENT_VAR_XYZ_123}"))
+                .build();
+
+        Skill skill = factory.materialize(entry);
+
+        assertEquals("${UNLIKELY_NONEXISTENT_VAR_XYZ_123}", skill.getMcpConfig().getEnv().get("TOKEN"));
+    }
+
+    @Test
+    void shouldHandleNullEnvMap() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("test")
+                .command("npx test")
+                .env(null)
+                .build();
+
+        Skill skill = factory.materialize(entry);
+
+        assertNotNull(skill.getMcpConfig().getEnv());
+        assertTrue(skill.getMcpConfig().getEnv().isEmpty());
+    }
+
+    @Test
+    void shouldHandleEmptyEnvMap() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("test")
+                .command("npx test")
+                .env(Map.of())
+                .build();
+
+        Skill skill = factory.materialize(entry);
+
+        assertNotNull(skill.getMcpConfig().getEnv());
+        assertTrue(skill.getMcpConfig().getEnv().isEmpty());
+    }
+
+    @Test
+    void shouldPassThroughPlainEnvValues() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("test")
+                .command("npx test")
+                .env(Map.of("KEY", "plain-value"))
+                .build();
+
+        Skill skill = factory.materialize(entry);
+
+        assertEquals("plain-value", skill.getMcpConfig().getEnv().get("KEY"));
+    }
+
+    @Test
+    void shouldSetSkillAsAvailable() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("test")
+                .command("npx test")
+                .build();
+
+        Skill skill = factory.materialize(entry);
+
+        assertTrue(skill.isAvailable());
+        assertTrue(skill.hasMcp());
+    }
+
+    @Test
     void shouldUseDefaultTimeoutsWhenNull() {
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("test")

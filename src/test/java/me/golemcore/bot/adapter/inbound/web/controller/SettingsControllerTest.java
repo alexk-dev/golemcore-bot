@@ -1982,6 +1982,302 @@ class SettingsControllerTest {
         assertEquals(Boolean.FALSE, saved.getPlan().getStopOnFailure());
     }
 
+    // ==================== MCP Catalog CRUD ====================
+
+    @Test
+    void shouldGetMcpCatalog() {
+        List<RuntimeConfig.McpCatalogEntry> catalog = List.of(
+                RuntimeConfig.McpCatalogEntry.builder().name("github").command("npx github").build());
+        when(runtimeConfigService.getMcpCatalog()).thenReturn(catalog);
+
+        StepVerifier.create(controller.getMcpCatalog())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals(1, response.getBody().size());
+                    assertEquals("github", response.getBody().get(0).getName());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldAddMcpCatalogEntry() {
+        when(runtimeConfigService.getMcpCatalog()).thenReturn(new ArrayList<>());
+
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx github-mcp")
+                .build();
+
+        StepVerifier.create(controller.addMcpCatalogEntry(entry))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(runtimeConfigService).addMcpCatalogEntry(entry);
+    }
+
+    @Test
+    void shouldNormalizeNameOnAdd() {
+        when(runtimeConfigService.getMcpCatalog()).thenReturn(new ArrayList<>());
+
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("  GitHub  ")
+                .command("npx github-mcp")
+                .build();
+
+        StepVerifier.create(controller.addMcpCatalogEntry(entry))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        assertEquals("github", entry.getName());
+    }
+
+    @Test
+    void shouldRejectDuplicateCatalogEntryName() {
+        List<RuntimeConfig.McpCatalogEntry> existing = List.of(
+                RuntimeConfig.McpCatalogEntry.builder().name("github").command("npx github").build());
+        when(runtimeConfigService.getMcpCatalog()).thenReturn(existing);
+
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx another-github")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.addMcpCatalogEntry(entry));
+        assertTrue(error.getMessage().contains("already exists"));
+    }
+
+    @Test
+    void shouldRejectCatalogEntryWithNullName() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .command("npx test")
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> controller.addMcpCatalogEntry(entry));
+    }
+
+    @Test
+    void shouldRejectCatalogEntryWithBlankName() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("   ")
+                .command("npx test")
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> controller.addMcpCatalogEntry(entry));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "-invalid", "_bad", "has spaces", "special!chars" })
+    void shouldRejectCatalogEntryWithInvalidNamePattern(String name) {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name(name)
+                .command("npx test")
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> controller.addMcpCatalogEntry(entry));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "github", "slack-mcp", "my-server-2", "0test" })
+    void shouldAcceptCatalogEntryWithValidNamePattern(String name) {
+        when(runtimeConfigService.getMcpCatalog()).thenReturn(new ArrayList<>());
+
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name(name)
+                .command("npx test")
+                .build();
+
+        assertDoesNotThrow(() -> controller.addMcpCatalogEntry(entry));
+    }
+
+    @Test
+    void shouldRejectCatalogEntryWithNullCommand() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> controller.addMcpCatalogEntry(entry));
+    }
+
+    @Test
+    void shouldRejectCatalogEntryWithBlankCommand() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("   ")
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> controller.addMcpCatalogEntry(entry));
+    }
+
+    @Test
+    void shouldRejectCatalogEntryWithStartupTimeoutOutOfRange() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx test")
+                .startupTimeoutSeconds(0)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.addMcpCatalogEntry(entry));
+        assertTrue(error.getMessage().contains("startupTimeoutSeconds"));
+    }
+
+    @Test
+    void shouldRejectCatalogEntryWithStartupTimeoutAboveMax() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx test")
+                .startupTimeoutSeconds(301)
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> controller.addMcpCatalogEntry(entry));
+    }
+
+    @Test
+    void shouldRejectCatalogEntryWithIdleTimeoutOutOfRange() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx test")
+                .idleTimeoutMinutes(0)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.addMcpCatalogEntry(entry));
+        assertTrue(error.getMessage().contains("idleTimeoutMinutes"));
+    }
+
+    @Test
+    void shouldRejectCatalogEntryWithIdleTimeoutAboveMax() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx test")
+                .idleTimeoutMinutes(121)
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> controller.addMcpCatalogEntry(entry));
+    }
+
+    @Test
+    void shouldAcceptCatalogEntryWithNullTimeouts() {
+        when(runtimeConfigService.getMcpCatalog()).thenReturn(new ArrayList<>());
+
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx test")
+                .startupTimeoutSeconds(null)
+                .idleTimeoutMinutes(null)
+                .build();
+
+        assertDoesNotThrow(() -> controller.addMcpCatalogEntry(entry));
+    }
+
+    @Test
+    void shouldUpdateMcpCatalogEntry() {
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
+                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(true);
+
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx updated-github")
+                .build();
+
+        StepVerifier.create(controller.updateMcpCatalogEntry("github", entry))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenUpdatingNonexistentCatalogEntry() {
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
+                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(false);
+
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("nonexistent")
+                .command("npx test")
+                .build();
+
+        assertThrows(ResponseStatusException.class,
+                () -> controller.updateMcpCatalogEntry("nonexistent", entry));
+    }
+
+    @Test
+    void shouldNormalizeNameOnUpdate() {
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
+                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(true);
+
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx updated")
+                .build();
+
+        StepVerifier.create(controller.updateMcpCatalogEntry("  GitHub  ", entry))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(runtimeConfigService).updateMcpCatalogEntry(org.mockito.ArgumentMatchers.eq("github"),
+                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class));
+    }
+
+    @Test
+    void shouldDeleteMcpCatalogEntry() {
+        when(runtimeConfigService.removeMcpCatalogEntry("github")).thenReturn(true);
+
+        StepVerifier.create(controller.removeMcpCatalogEntry("github"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenDeletingNonexistentCatalogEntry() {
+        when(runtimeConfigService.removeMcpCatalogEntry("nonexistent")).thenReturn(false);
+
+        assertThrows(ResponseStatusException.class,
+                () -> controller.removeMcpCatalogEntry("nonexistent"));
+    }
+
+    @Test
+    void shouldNormalizeNameOnDelete() {
+        when(runtimeConfigService.removeMcpCatalogEntry("github")).thenReturn(true);
+
+        StepVerifier.create(controller.removeMcpCatalogEntry("  GitHub  "))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(runtimeConfigService).removeMcpCatalogEntry("github");
+    }
+
+    @Test
+    void shouldPreserveCatalogWhenUpdatingGlobalMcpSettings() {
+        List<RuntimeConfig.McpCatalogEntry> existingCatalog = new ArrayList<>();
+        existingCatalog.add(RuntimeConfig.McpCatalogEntry.builder()
+                .name("github").command("npx github").build());
+
+        RuntimeConfig.McpConfig existingMcp = new RuntimeConfig.McpConfig();
+        existingMcp.setEnabled(true);
+        existingMcp.setCatalog(existingCatalog);
+
+        RuntimeConfig current = RuntimeConfig.builder().mcp(existingMcp).build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig.McpConfig incomingMcp = new RuntimeConfig.McpConfig();
+        incomingMcp.setEnabled(false);
+        incomingMcp.setCatalog(null);
+
+        StepVerifier.create(controller.updateMcpConfig(incomingMcp))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        assertNotNull(incomingMcp.getCatalog());
+        assertEquals(1, incomingMcp.getCatalog().size());
+        assertEquals("github", incomingMcp.getCatalog().get(0).getName());
+    }
+
+    @Test
+    void shouldRejectNullCatalogEntry() {
+        assertThrows(IllegalArgumentException.class, () -> controller.addMcpCatalogEntry(null));
+    }
+
     private void registerSttProvider(String providerId, String alias) {
         SttProvider provider = mock(SttProvider.class);
         when(provider.getProviderId()).thenReturn(providerId);

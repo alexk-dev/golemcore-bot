@@ -1579,6 +1579,179 @@ class RuntimeConfigServiceTest {
         assertTrue(persistedSections.containsKey("hive.json"));
     }
 
+    // ==================== MCP Catalog CRUD ====================
+
+    @Test
+    void shouldReturnEmptyCatalogWhenMcpConfigIsNull() {
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertNotNull(catalog);
+        assertTrue(catalog.isEmpty());
+    }
+
+    @Test
+    void shouldReturnEmptyCatalogWhenCatalogListIsNull() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.McpConfig mcp = new RuntimeConfig.McpConfig();
+        mcp.setCatalog(null);
+        config.setMcp(mcp);
+        setCachedConfig(config);
+
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertNotNull(catalog);
+        assertTrue(catalog.isEmpty());
+    }
+
+    @Test
+    void shouldAddMcpCatalogEntry() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .description("GitHub API")
+                .command("npx github-mcp")
+                .enabled(true)
+                .build();
+
+        service.addMcpCatalogEntry(entry);
+
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertEquals(1, catalog.size());
+        assertEquals("github", catalog.get(0).getName());
+        assertEquals("npx github-mcp", catalog.get(0).getCommand());
+        verify(storagePort, atLeast(1)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+    }
+
+    @Test
+    void shouldAddMcpCatalogEntryWhenMcpConfigIsNull() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setMcp(null);
+
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("slack")
+                .command("npx slack-mcp")
+                .build();
+
+        service.addMcpCatalogEntry(entry);
+
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertEquals(1, catalog.size());
+        assertEquals("slack", catalog.get(0).getName());
+    }
+
+    @Test
+    void shouldAddMultipleMcpCatalogEntries() {
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("github").command("npx github").build());
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("slack").command("npx slack").build());
+
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertEquals(2, catalog.size());
+    }
+
+    @Test
+    void shouldUpdateExistingMcpCatalogEntry() {
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("github").command("npx old-github").build());
+
+        RuntimeConfig.McpCatalogEntry updated = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx new-github")
+                .description("Updated GitHub")
+                .build();
+
+        boolean result = service.updateMcpCatalogEntry("github", updated);
+
+        assertTrue(result);
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertEquals(1, catalog.size());
+        assertEquals("npx new-github", catalog.get(0).getCommand());
+        assertEquals("github", catalog.get(0).getName());
+    }
+
+    @Test
+    void shouldPreserveOriginalNameOnUpdate() {
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("github").command("npx github").build());
+
+        RuntimeConfig.McpCatalogEntry updated = RuntimeConfig.McpCatalogEntry.builder()
+                .name("different-name")
+                .command("npx updated")
+                .build();
+
+        boolean result = service.updateMcpCatalogEntry("github", updated);
+
+        assertTrue(result);
+        assertEquals("github", service.getMcpCatalog().get(0).getName());
+    }
+
+    @Test
+    void shouldReturnFalseWhenUpdatingNonexistentEntry() {
+        boolean result = service.updateMcpCatalogEntry("nonexistent",
+                RuntimeConfig.McpCatalogEntry.builder().name("nonexistent").command("npx test").build());
+        assertFalse(result);
+    }
+
+    @Test
+    void shouldRemoveMcpCatalogEntry() {
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("github").command("npx github").build());
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("slack").command("npx slack").build());
+
+        boolean result = service.removeMcpCatalogEntry("github");
+
+        assertTrue(result);
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertEquals(1, catalog.size());
+        assertEquals("slack", catalog.get(0).getName());
+    }
+
+    @Test
+    void shouldReturnFalseWhenRemovingNonexistentEntry() {
+        boolean result = service.removeMcpCatalogEntry("nonexistent");
+        assertFalse(result);
+    }
+
+    @Test
+    void shouldNotCallUpdateWhenRemoveFindsNoMatch() {
+        // Trigger initial load to establish baseline
+        service.getRuntimeConfig();
+        int sectionCountBefore = persistedSections.size();
+
+        boolean result = service.removeMcpCatalogEntry("nonexistent");
+
+        assertFalse(result);
+        // No additional persistence should happen when nothing was removed
+        assertEquals(sectionCountBefore, persistedSections.size());
+    }
+
+    @Test
+    void shouldEnsureMcpConfigCreatesNewConfigWhenNull() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setMcp(null);
+
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("test").command("npx test").build());
+
+        assertNotNull(config.getMcp());
+        assertNotNull(config.getMcp().getCatalog());
+        assertEquals(1, config.getMcp().getCatalog().size());
+    }
+
+    @Test
+    void shouldEnsureMcpCatalogCreatesNewListWhenNull() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.McpConfig mcp = new RuntimeConfig.McpConfig();
+        mcp.setCatalog(null);
+        config.setMcp(mcp);
+        setCachedConfig(config);
+
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("test").command("npx test").build());
+
+        assertNotNull(mcp.getCatalog());
+        assertEquals(1, mcp.getCatalog().size());
+    }
+
     @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })
     private void setCachedConfig(RuntimeConfig config) throws Exception {
         java.lang.reflect.Field field = RuntimeConfigService.class.getDeclaredField("configRef");
