@@ -137,6 +137,20 @@ public class SkillService implements SkillComponent {
     }
 
     @Override
+    public boolean registerDynamicSkill(Skill skill) {
+        if (skill == null || skill.getName() == null) {
+            return false;
+        }
+        Skill existing = skillRegistry.putIfAbsent(skill.getName(), skill);
+        if (existing == null) {
+            log.info("Registered dynamic skill: {}", skill.getName());
+            return true;
+        }
+        log.debug("Dynamic skill '{}' already exists, skipping registration", skill.getName());
+        return false;
+    }
+
+    @Override
     public void reload() {
         if (!runtimeConfigService.isSkillsEnabled()) {
             skillRegistry.clear();
