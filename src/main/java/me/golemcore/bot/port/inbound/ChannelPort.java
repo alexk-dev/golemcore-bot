@@ -78,6 +78,14 @@ public interface ChannelPort {
     CompletableFuture<Void> sendVoice(String chatId, byte[] voiceData);
 
     /**
+     * Returns whether this channel currently allows voice responses to be sent.
+     * Default is disabled; channels opt in explicitly.
+     */
+    default boolean isVoiceResponseEnabled() {
+        return false;
+    }
+
+    /**
      * Sends structured runtime event updates for live channels. Default
      * implementation is a no-op.
      */

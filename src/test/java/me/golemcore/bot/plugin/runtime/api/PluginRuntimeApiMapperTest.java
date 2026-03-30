@@ -26,6 +26,13 @@ class PluginRuntimeApiMapperTest {
                         .enabled(true)
                         .token(me.golemcore.bot.domain.model.Secret.of("token"))
                         .authMode("invite_only")
+                        .transportMode("webhook")
+                        .webhookSecretToken("webhook-secret")
+                        .conversationScope("thread")
+                        .aggregateIncomingMessages(false)
+                        .aggregationDelayMs(750)
+                        .mergeForwardedMessages(false)
+                        .mergeSequentialFragments(false)
                         .allowedUsers(List.of("alice"))
                         .inviteCodes(List.of(me.golemcore.bot.domain.model.RuntimeConfig.InviteCode.builder()
                                 .code("invite-1")
@@ -52,11 +59,25 @@ class PluginRuntimeApiMapperTest {
         me.golemcore.plugin.api.runtime.model.RuntimeConfig pluginConfig = mapper.toPluginRuntimeConfig(runtimeConfig);
         assertEquals("token", pluginConfig.getTelegram().getToken().getValue());
         assertEquals("invite-1", pluginConfig.getTelegram().getInviteCodes().getFirst().getCode());
+        assertEquals("webhook", pluginConfig.getTelegram().getTransportMode());
+        assertEquals("webhook-secret", pluginConfig.getTelegram().getWebhookSecretToken());
+        assertEquals("thread", pluginConfig.getTelegram().getConversationScope());
+        assertEquals(false, pluginConfig.getTelegram().getAggregateIncomingMessages());
+        assertEquals(750, pluginConfig.getTelegram().getAggregationDelayMs());
+        assertEquals(false, pluginConfig.getTelegram().getMergeForwardedMessages());
+        assertEquals(false, pluginConfig.getTelegram().getMergeSequentialFragments());
         assertEquals("golemcore/whisper", pluginConfig.getVoice().getSttProvider());
 
         me.golemcore.bot.domain.model.RuntimeConfig mappedBack = mapper.toHostRuntimeConfig(pluginConfig);
         assertEquals("voice-1", mappedBack.getVoice().getVoiceId());
         assertEquals("alice", mappedBack.getTelegram().getAllowedUsers().getFirst());
+        assertEquals("webhook", mappedBack.getTelegram().getTransportMode());
+        assertEquals("webhook-secret", mappedBack.getTelegram().getWebhookSecretToken());
+        assertEquals("thread", mappedBack.getTelegram().getConversationScope());
+        assertEquals(false, mappedBack.getTelegram().getAggregateIncomingMessages());
+        assertEquals(750, mappedBack.getTelegram().getAggregationDelayMs());
+        assertEquals(false, mappedBack.getTelegram().getMergeForwardedMessages());
+        assertEquals(false, mappedBack.getTelegram().getMergeSequentialFragments());
         assertEquals("whisper-key", mappedBack.getVoice().getWhisperSttApiKey().getValue());
     }
 

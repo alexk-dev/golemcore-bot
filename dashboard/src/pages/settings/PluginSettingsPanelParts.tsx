@@ -77,6 +77,17 @@ function renderFieldDescription(description: string | null | undefined): ReactEl
   return <Form.Text className="text-muted d-block">{description}</Form.Text>;
 }
 
+function resolveFieldDisplayValue(field: PluginSettingsField, value: unknown): string {
+  const stringValue = fieldValueAsString(value);
+  if (field.type === 'url'
+    && stringValue.startsWith('/')
+    && typeof window !== 'undefined'
+    && window.location?.origin != null) {
+    return `${window.location.origin}${stringValue}`;
+  }
+  return stringValue;
+}
+
 export function PluginActionConfirmModal({
   request,
   isPending,
@@ -122,6 +133,18 @@ export function PluginSettingsFieldRenderer({
   }
 
   if (field.type === 'secret') {
+    return renderSecretField({
+      field,
+      value,
+      isSecretRevealed,
+      isReadOnly,
+      description,
+      onChange,
+      onToggleSecret,
+    });
+  }
+
+  if (field.masked === true) {
     return renderSecretField({
       field,
       value,
@@ -296,30 +319,50 @@ function renderTextField(
   description: ReactElement | null,
   onChange: (value: unknown) => void,
 ): ReactElement {
+  const displayValue = resolveFieldDisplayValue(field, value);
   const inputType = field.type === 'number'
     ? 'number'
     : field.type === 'url'
       ? 'url'
       : 'text';
 
+  const control = (
+    <Form.Control
+      size="sm"
+      type={inputType}
+      inputMode={field.type === 'number' ? 'decimal' : undefined}
+      value={displayValue}
+      readOnly={isReadOnly}
+      placeholder={field.placeholder ?? undefined}
+      min={field.min ?? undefined}
+      max={field.max ?? undefined}
+      step={field.step ?? undefined}
+      autoCapitalize={field.type === 'url' ? 'off' : undefined}
+      autoCorrect={field.type === 'url' ? 'off' : undefined}
+      spellCheck={field.type === 'url' ? false : undefined}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
+
   return (
     <Form.Group key={field.key} className="mb-3">
       <Form.Label className="small fw-medium">{field.label}</Form.Label>
-      <Form.Control
-        size="sm"
-        type={inputType}
-        inputMode={field.type === 'number' ? 'decimal' : undefined}
-        value={fieldValueAsString(value)}
-        readOnly={isReadOnly}
-        placeholder={field.placeholder ?? undefined}
-        min={field.min ?? undefined}
-        max={field.max ?? undefined}
-        step={field.step ?? undefined}
-        autoCapitalize={field.type === 'url' ? 'off' : undefined}
-        autoCorrect={field.type === 'url' ? 'off' : undefined}
-        spellCheck={field.type === 'url' ? false : undefined}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {field.copyable === true ? (
+        <InputGroup size="sm">
+          {control}
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              if (typeof navigator !== 'undefined' && navigator.clipboard != null) {
+                void navigator.clipboard.writeText(displayValue);
+              }
+            }}
+          >
+            Copy
+          </Button>
+        </InputGroup>
+      ) : control}
       {description}
     </Form.Group>
   );

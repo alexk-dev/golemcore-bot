@@ -74,6 +74,20 @@ public class ResponseRoutingSystem implements AgentSystem {
     private static final String WEBHOOK_DELIVER_CHANNEL = "webhook.deliver.channel";
     private static final String WEBHOOK_DELIVER_TO = "webhook.deliver.to";
 
+    private record VoiceRoutingResult(boolean sentVoice, boolean sentTextFallback, String errorMessage) {
+        private static VoiceRoutingResult none() {
+            return new VoiceRoutingResult(false, false, null);
+        }
+
+        private static VoiceRoutingResult voiceSent() {
+            return new VoiceRoutingResult(true, false, null);
+        }
+
+        private static VoiceRoutingResult textFallback(String errorMessage) {
+            return new VoiceRoutingResult(false, errorMessage == null, errorMessage);
+        }
+    }
+
     private final ChannelRegistry channelRegistry;
     private final Map<String, ChannelPort> overrides = new ConcurrentHashMap<>();
     private final UserPreferencesService preferencesService;
@@ -154,8 +168,15 @@ public class ResponseRoutingSystem implements AgentSystem {
                 }
                 sentAttachments = sendOutgoingAttachments(context, outgoing);
             }
-            if (sendOutgoingVoiceIfRequested(context, outgoing)) {
+            VoiceRoutingResult voiceResult = sendOutgoingVoiceIfRequested(context, outgoing);
+            if (voiceResult.sentVoice()) {
                 sentVoice = true;
+            }
+            if (voiceResult.sentTextFallback()) {
+                sentText = true;
+            }
+            if (errorMessage == null) {
+                errorMessage = voiceResult.errorMessage();
             }
         }
 
@@ -386,35 +407,63 @@ public class ResponseRoutingSystem implements AgentSystem {
     /**
      * Returns true if voice was successfully sent.
      */
-    private boolean sendOutgoingVoiceIfRequested(AgentContext context, OutgoingResponse outgoing) {
+    private VoiceRoutingResult sendOutgoingVoiceIfRequested(AgentContext context, OutgoingResponse outgoing) {
         if (outgoing == null || !outgoing.isVoiceRequested()) {
-            return false;
+            return VoiceRoutingResult.none();
         }
 
         String voiceText = outgoing.getVoiceText();
         String responseText = outgoing.getText();
         String textToSpeak = (voiceText != null && !voiceText.isBlank()) ? voiceText : responseText;
         if (textToSpeak == null || textToSpeak.isBlank()) {
-            return false;
+            return VoiceRoutingResult.none();
         }
 
         AgentSession session = context.getSession();
         CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
         ChannelPort channel = crossChannelDelivery != null ? crossChannelDelivery.channel() : resolveChannel(session);
         if (channel == null) {
-            return false;
+            return VoiceRoutingResult.none();
         }
 
         String chatId = crossChannelDelivery != null
                 ? crossChannelDelivery.chatId()
                 : SessionIdentitySupport.resolveTransportChatId(session);
+        if (!channel.isVoiceResponseEnabled()) {
+            if (responseText != null && !responseText.isBlank()) {
+                return VoiceRoutingResult.none();
+            }
+            return VoiceRoutingResult.textFallback(sendVoiceTextFallback(context, channel, chatId, textToSpeak,
+                    outgoing));
+        }
         log.debug("[Response] Sending voice for OutgoingResponse: {} chars, chatId={}", textToSpeak.length(), chatId);
         VoiceSendResult result = voiceHandler.trySendVoice(channel, chatId, textToSpeak);
         if (result == VoiceSendResult.QUOTA_EXCEEDED) {
             sendVoiceQuotaNotification(channel, chatId);
-            return false;
+            return VoiceRoutingResult.none();
         }
-        return result == VoiceSendResult.SUCCESS;
+        return result == VoiceSendResult.SUCCESS ? VoiceRoutingResult.voiceSent() : VoiceRoutingResult.none();
+    }
+
+    private String sendVoiceTextFallback(AgentContext context, ChannelPort channel, String chatId, String textToSpeak,
+            OutgoingResponse outgoing) {
+        try {
+            channel.sendMessage(chatId, textToSpeak, buildTransportHints(context, outgoing))
+                    .get(30, TimeUnit.SECONDS);
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[Response] Voice text fallback interrupted: {}", e.getMessage());
+            return e.getMessage();
+        } catch (ExecutionException | TimeoutException e) {
+            log.warn("[Response] Voice text fallback failed: {}", e.getMessage());
+            log.debug("[Response] Voice text fallback failure", e);
+            return e.getMessage();
+        } catch (Exception e) {
+            log.warn("[Response] Voice text fallback failed: {}", e.getMessage());
+            log.debug("[Response] Voice text fallback failure", e);
+            return e.getMessage();
+        }
     }
 
     /**
