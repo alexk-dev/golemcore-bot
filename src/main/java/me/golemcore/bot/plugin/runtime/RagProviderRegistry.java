@@ -1,10 +1,13 @@
 package me.golemcore.bot.plugin.runtime;
 
 import me.golemcore.plugin.api.extension.spi.RagProvider;
+import me.golemcore.plugin.api.runtime.RagProviderDiscoveryService;
+import me.golemcore.plugin.api.runtime.model.RagProviderDescriptor;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -12,7 +15,7 @@ import java.util.Optional;
  * Dynamic registry for RAG providers contributed by plugins.
  */
 @Component
-public class RagProviderRegistry {
+public class RagProviderRegistry implements RagProviderDiscoveryService {
 
     private final Map<String, Map<String, RagProvider>> providersByPlugin = new LinkedHashMap<>();
 
@@ -33,5 +36,17 @@ public class RagProviderRegistry {
                 .flatMap(map -> map.values().stream())
                 .filter(RagProvider::isAvailable)
                 .findFirst();
+    }
+
+    @Override
+    public synchronized List<RagProviderDescriptor> listInstalledProviders() {
+        return providersByPlugin.entrySet().stream()
+                .flatMap(entry -> entry.getValue().values().stream()
+                        .map(provider -> new RagProviderDescriptor(
+                                provider.getProviderId(),
+                                entry.getKey(),
+                                provider.getProviderId())))
+                .sorted((left, right) -> left.providerId().compareTo(right.providerId()))
+                .toList();
     }
 }
