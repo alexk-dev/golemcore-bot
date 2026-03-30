@@ -9,6 +9,7 @@ import {
   getSessionTrace,
   getSessionTraceSummary,
   exportSessionTrace,
+  exportSessionTraceSnapshotPayload,
   deleteSession,
   compactSession,
   clearSession,
@@ -112,6 +113,17 @@ export function useDeleteSession(): UseMutationResult<Awaited<ReturnType<typeof 
 export function useExportSessionTrace(): UseMutationResult<Awaited<ReturnType<typeof exportSessionTrace>>, unknown, string> {
   return useMutation({
     mutationFn: exportSessionTrace,
+  });
+}
+
+export function useExportSessionTraceSnapshot(): UseMutationResult<
+  Awaited<ReturnType<typeof exportSessionTraceSnapshotPayload>>,
+  unknown,
+  { sessionId: string; snapshotId: string }
+> {
+  return useMutation({
+    mutationFn: ({ sessionId, snapshotId }: { sessionId: string; snapshotId: string }) =>
+      exportSessionTraceSnapshotPayload(sessionId, snapshotId),
   });
 }
 

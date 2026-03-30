@@ -469,6 +469,55 @@ class SessionsControllerTest {
     }
 
     @Test
+    void shouldExportFullSessionTraceSnapshotPayloadWhenPreviewWouldBeTruncated() {
+        String payloadText = "{\"payload\":\"" + "x".repeat(4096) + "\"}";
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-full")
+                .role("response")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress(payloadText.getBytes(StandardCharsets.UTF_8)))
+                .originalSize((long) payloadText.length())
+                .compressedSize(128L)
+                .build();
+        TraceSpanRecord span = TraceSpanRecord.builder()
+                .spanId("span-root")
+                .name("response.route")
+                .kind(TraceSpanKind.OUTBOUND)
+                .statusCode(TraceStatusCode.OK)
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .snapshots(List.of(snapshot))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-snapshot-export")
+                .channelType("web")
+                .chatId("chat-3")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-export")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(span))
+                        .build()))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-snapshot-export")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.exportSessionTraceSnapshotPayload("s-snapshot-export", "snap-full"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(payloadText, response.getBody());
+                    assertNotNull(response.getHeaders().getContentDisposition());
+                    assertEquals("application/json", response.getHeaders().getContentType().toString());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldExposeAssistantAttachmentsInSessionDetail() {
         Message msg = Message.builder()
                 .id("m-image")

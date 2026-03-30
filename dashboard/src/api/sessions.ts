@@ -241,6 +241,16 @@ export async function exportSessionTrace(id: string): Promise<SessionTraceExport
   return data;
 }
 
+export async function exportSessionTraceSnapshotPayload(sessionId: string, snapshotId: string): Promise<string> {
+  const { data } = await client.get<string>(
+    `/sessions/${encodeURIComponent(sessionId)}/trace/snapshots/${encodeURIComponent(snapshotId)}/payload`,
+    {
+      responseType: 'text',
+    },
+  );
+  return data;
+}
+
 export async function deleteSession(id: string): Promise<void> {
   await client.delete(`/sessions/${encodeURIComponent(id)}`);
 }
