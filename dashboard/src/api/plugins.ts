@@ -28,6 +28,8 @@ export interface PluginSettingsField {
   placeholder?: string | null;
   required?: boolean | null;
   readOnly?: boolean | null;
+  masked?: boolean | null;
+  copyable?: boolean | null;
   min?: number | null;
   max?: number | null;
   step?: number | null;

@@ -47,11 +47,6 @@ public class PluginEventBridge implements ApplicationListener<ApplicationEvent> 
         if (event instanceof me.golemcore.bot.domain.model.TelegramRestartEvent telegramRestartEvent) {
             return pluginApiMapper.toPluginTelegramRestartEvent(telegramRestartEvent);
         }
-        if (event instanceof me.golemcore.plugin.api.extension.model.PlanReadyEvent
-                || event instanceof me.golemcore.plugin.api.extension.model.PlanExecutionCompletedEvent
-                || event instanceof me.golemcore.plugin.api.extension.model.TelegramRestartEvent) {
-            return event;
-        }
         return null;
     }
 }

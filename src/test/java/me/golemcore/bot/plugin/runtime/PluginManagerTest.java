@@ -37,6 +37,7 @@ class PluginManagerTest {
     private AnnotationConfigApplicationContext applicationContext;
     private PluginManager manager;
     private RagIngestionProviderRegistry ragIngestionRegistry;
+    private TelegramWebhookUpdateConsumerRegistry telegramWebhookUpdateConsumerRegistry;
 
     @AfterEach
     void tearDown() {
@@ -163,6 +164,26 @@ class PluginManagerTest {
                         .toList());
     }
 
+    @Test
+    void shouldRegisterTelegramWebhookUpdateConsumerFromPlugin(@TempDir Path tempDir) throws Exception {
+        Path pluginsDir = tempDir.resolve("plugins");
+        Path captureFile = tempDir.resolve("telegram-update.json");
+        createPluginJarWithTelegramWebhookUpdateConsumer(
+                pluginsDir,
+                "golemcore/telegram",
+                "1.0.0",
+                ">=1.0.0 <2.0.0",
+                "telegram-webhook-consumer",
+                captureFile);
+        manager = createManager(pluginsDir, "1.0.0");
+
+        manager.reloadAll();
+        telegramWebhookUpdateConsumerRegistry.dispatch("{\"update_id\":42}").join();
+
+        assertTrue(Files.isRegularFile(captureFile));
+        assertEquals("{\"update_id\":42}", Files.readString(captureFile));
+    }
+
     private PluginManager createManager(Path pluginsDir, String hostVersion) {
         BotProperties properties = new BotProperties();
         properties.getPlugins().setEnabled(true);
@@ -175,6 +196,8 @@ class PluginManagerTest {
 
         RagIngestionProviderRegistry ragIngestionRegistry = new RagIngestionProviderRegistry();
         this.ragIngestionRegistry = ragIngestionRegistry;
+        TelegramWebhookUpdateConsumerRegistry telegramWebhookUpdateConsumerRegistry = new TelegramWebhookUpdateConsumerRegistry();
+        this.telegramWebhookUpdateConsumerRegistry = telegramWebhookUpdateConsumerRegistry;
 
         return new PluginManager(
                 properties,
@@ -187,6 +210,7 @@ class PluginManagerTest {
                 new RagProviderRegistry(),
                 ragIngestionRegistry,
                 new PluginSettingsRegistry(),
+                telegramWebhookUpdateConsumerRegistry,
                 mock(ToolCallExecutionService.class),
                 new PluginExtensionApiMapper());
     }
@@ -214,6 +238,16 @@ class PluginManagerTest {
         return createPluginJar(pluginsDir, pluginId, version, engineVersion, providerId, providerId);
     }
 
+    private Path createPluginJarWithTelegramWebhookUpdateConsumer(
+            Path pluginsDir,
+            String pluginId,
+            String version,
+            String engineVersion,
+            String beanName,
+            Path captureFile) throws Exception {
+        return createPluginJar(pluginsDir, pluginId, version, engineVersion, null, beanName, captureFile);
+    }
+
     private Path createPluginJar(
             Path pluginsDir,
             String pluginId,
@@ -221,6 +255,18 @@ class PluginManagerTest {
             String engineVersion,
             String ragIngestionProviderId,
             String beanName)
+            throws Exception {
+        return createPluginJar(pluginsDir, pluginId, version, engineVersion, ragIngestionProviderId, beanName, null);
+    }
+
+    private Path createPluginJar(
+            Path pluginsDir,
+            String pluginId,
+            String version,
+            String engineVersion,
+            String ragIngestionProviderId,
+            String beanName,
+            Path telegramCaptureFile)
             throws Exception {
         String[] coordinates = pluginId.split("/", 2);
         String packageSuffix = pluginId.replace('/', '.').replace('-', '_') + ".v" + version.replace('.', '_')
@@ -236,7 +282,8 @@ class PluginManagerTest {
         Path packageDir = sourceRoot.resolve(packageName.replace('.', '/'));
         Files.createDirectories(packageDir);
         Files.writeString(packageDir.resolve(configurationClassName + ".java"),
-                configurationSource(packageName, configurationClassName, ragIngestionProviderId, beanName),
+                configurationSource(packageName, configurationClassName, ragIngestionProviderId, beanName,
+                        telegramCaptureFile),
                 StandardCharsets.UTF_8);
         Files.writeString(packageDir.resolve(bootstrapClassName + ".java"),
                 bootstrapSource(packageName, bootstrapClassName, configurationClassName, pluginId, coordinates[0],
@@ -308,17 +355,48 @@ class PluginManagerTest {
             String packageName,
             String configurationClassName,
             String ragIngestionProviderId,
-            String beanName) {
+            String beanName,
+            Path telegramCaptureFile) {
         if (ragIngestionProviderId == null) {
+            if (telegramCaptureFile == null) {
+                return """
+                        package %s;
+
+                        import org.springframework.context.annotation.Configuration;
+
+                        @Configuration
+                        public class %s {
+                        }
+                        """.formatted(packageName, configurationClassName);
+            }
+            String capturePath = telegramCaptureFile.toAbsolutePath().toString().replace("\\", "\\\\");
             return """
                     package %s;
 
+                    import me.golemcore.plugin.api.extension.spi.TelegramWebhookUpdateConsumer;
+                    import org.springframework.context.annotation.Bean;
                     import org.springframework.context.annotation.Configuration;
+                    import java.io.IOException;
+                    import java.nio.charset.StandardCharsets;
+                    import java.nio.file.Files;
+                    import java.nio.file.Path;
+                    import java.util.concurrent.CompletableFuture;
 
                     @Configuration
                     public class %s {
+                        @Bean("%s")
+                        public TelegramWebhookUpdateConsumer telegramWebhookUpdateConsumer() {
+                            return update -> {
+                                try {
+                                    Files.writeString(Path.of("%s"), update, StandardCharsets.UTF_8);
+                                } catch (IOException ex) {
+                                    throw new RuntimeException(ex);
+                                }
+                                return CompletableFuture.completedFuture(null);
+                            };
+                        }
                     }
-                    """.formatted(packageName, configurationClassName);
+                    """.formatted(packageName, configurationClassName, beanName, capturePath);
         }
         return """
                 package %s;

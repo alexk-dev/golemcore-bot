@@ -18,6 +18,7 @@ import me.golemcore.plugin.api.extension.spi.PluginDescriptor;
 import me.golemcore.plugin.api.extension.spi.RagIngestionProvider;
 import me.golemcore.plugin.api.extension.spi.PluginSettingsContributor;
 import me.golemcore.plugin.api.extension.spi.RagProvider;
+import me.golemcore.plugin.api.extension.spi.TelegramWebhookUpdateConsumer;
 import me.golemcore.plugin.api.extension.spi.SttProvider;
 import me.golemcore.plugin.api.extension.spi.TtsProvider;
 import me.golemcore.plugin.api.extension.spi.ToolProvider;
@@ -75,6 +76,7 @@ public class PluginManager {
     private final RagProviderRegistry ragProviderRegistry;
     private final RagIngestionProviderRegistry ragIngestionProviderRegistry;
     private final PluginSettingsRegistry pluginSettingsRegistry;
+    private final TelegramWebhookUpdateConsumerRegistry telegramWebhookUpdateConsumerRegistry;
     private final ToolCallExecutionService toolCallExecutionService;
     private final PluginExtensionApiMapper pluginApiMapper;
 
@@ -251,6 +253,8 @@ public class PluginManager {
             Collection<ToolProvider> toolProviders = pluginContext.getBeansOfType(ToolProvider.class).values();
             Collection<PluginSettingsContributor> settingsContributors = pluginContext
                     .getBeansOfType(PluginSettingsContributor.class).values();
+            Collection<TelegramWebhookUpdateConsumer> telegramWebhookUpdateConsumers = pluginContext
+                    .getBeansOfType(TelegramWebhookUpdateConsumer.class).values();
             List<ChannelPort> channelPorts = pluginChannelPorts.stream()
                     .map(port -> new PluginChannelPortAdapter(port, pluginApiMapper))
                     .map(ChannelPort.class::cast)
@@ -274,7 +278,7 @@ public class PluginManager {
             return new LoadedPlugin(descriptor, jarPath, classLoader, pluginContext,
                     channelPorts, confirmationPorts, List.copyOf(sttProviders),
                     List.copyOf(ttsProviders), List.copyOf(ragProviders), List.copyOf(ragIngestionProviders), tools,
-                    List.copyOf(settingsContributors));
+                    List.copyOf(settingsContributors), List.copyOf(telegramWebhookUpdateConsumers));
         } catch (IOException | RuntimeException | ServiceConfigurationError | LinkageError ex) {
             closeFailedPluginContext(jarPath, pluginContext);
             closeFailedPluginClassLoader(jarPath, classLoader);
@@ -313,6 +317,7 @@ public class PluginManager {
         ttsProviderRegistry.replaceProviders(pluginId, plugin.ttsProviders());
         ragProviderRegistry.replaceProviders(pluginId, plugin.ragProviders());
         ragIngestionProviderRegistry.replaceProviders(pluginId, plugin.ragIngestionProviders());
+        telegramWebhookUpdateConsumerRegistry.replaceConsumers(pluginId, plugin.telegramWebhookUpdateConsumers());
         plugin.tools().forEach(toolCallExecutionService::registerTool);
         pluginSettingsRegistry.replaceContributors(plugin.descriptor(), plugin.settingsContributors());
         if (botProperties.getPlugins().isAutoStart()) {
@@ -332,6 +337,7 @@ public class PluginManager {
         ttsProviderRegistry.removeProviders(pluginId);
         ragProviderRegistry.removeProviders(pluginId);
         ragIngestionProviderRegistry.removeProviders(pluginId);
+        telegramWebhookUpdateConsumerRegistry.removeConsumers(pluginId);
         toolCallExecutionService.unregisterTools(plugin.tools().stream()
                 .map(ToolComponent::getToolName)
                 .toList());
@@ -742,7 +748,8 @@ public class PluginManager {
             List<RagProvider> ragProviders,
             List<RagIngestionProvider> ragIngestionProviders,
             List<ToolComponent> tools,
-            List<PluginSettingsContributor> settingsContributors) {
+            List<PluginSettingsContributor> settingsContributors,
+            List<TelegramWebhookUpdateConsumer> telegramWebhookUpdateConsumers) {
     }
 
     private record SemVer(int major, int minor, int patch, String preRelease) {

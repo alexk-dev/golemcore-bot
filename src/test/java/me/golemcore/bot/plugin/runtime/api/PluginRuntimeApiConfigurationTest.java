@@ -36,6 +36,13 @@ class PluginRuntimeApiConfigurationTest {
                 .telegram(RuntimeConfig.TelegramConfig.builder()
                         .enabled(true)
                         .token(Secret.of("telegram-token"))
+                        .transportMode("webhook")
+                        .webhookSecretToken("webhook-secret")
+                        .conversationScope("thread")
+                        .aggregateIncomingMessages(false)
+                        .aggregationDelayMs(750)
+                        .mergeForwardedMessages(false)
+                        .mergeSequentialFragments(false)
                         .allowedUsers(List.of("123"))
                         .build())
                 .modelRouter(RuntimeConfig.ModelRouterConfig.builder()
@@ -75,6 +82,13 @@ class PluginRuntimeApiConfigurationTest {
         assertEquals("openai/gpt-5.1", saved.getModelRouter().getBalancedModel());
         assertEquals("openai-secret", saved.getLlm().getProviders().get("openai").getApiKey().getValue());
         assertEquals("telegram-token", saved.getTelegram().getToken().getValue());
+        assertEquals("webhook", saved.getTelegram().getTransportMode());
+        assertEquals("webhook-secret", saved.getTelegram().getWebhookSecretToken());
+        assertEquals("thread", saved.getTelegram().getConversationScope());
+        assertEquals(false, saved.getTelegram().getAggregateIncomingMessages());
+        assertEquals(750, saved.getTelegram().getAggregationDelayMs());
+        assertEquals(false, saved.getTelegram().getMergeForwardedMessages());
+        assertEquals(false, saved.getTelegram().getMergeSequentialFragments());
         assertTrue(saved.getTelegram().getAllowedUsers().contains("123"));
         assertEquals("golemcore/whisper", saved.getVoice().getSttProvider());
         assertEquals("http://localhost:5092", saved.getVoice().getWhisperSttUrl());
@@ -91,6 +105,13 @@ class PluginRuntimeApiConfigurationTest {
                 .telegram(RuntimeConfig.TelegramConfig.builder()
                         .enabled(true)
                         .token(Secret.of("telegram-token"))
+                        .transportMode("webhook")
+                        .webhookSecretToken("webhook-secret")
+                        .conversationScope("thread")
+                        .aggregateIncomingMessages(false)
+                        .aggregationDelayMs(750)
+                        .mergeForwardedMessages(false)
+                        .mergeSequentialFragments(false)
                         .allowedUsers(List.of("123"))
                         .build())
                 .voice(RuntimeConfig.VoiceConfig.builder()
@@ -112,6 +133,13 @@ class PluginRuntimeApiConfigurationTest {
         verify(delegate, times(2)).updateRuntimeConfig(captor.capture());
         for (RuntimeConfig saved : captor.getAllValues()) {
             assertEquals("telegram-token", saved.getTelegram().getToken().getValue());
+            assertEquals("webhook", saved.getTelegram().getTransportMode());
+            assertEquals("webhook-secret", saved.getTelegram().getWebhookSecretToken());
+            assertEquals("thread", saved.getTelegram().getConversationScope());
+            assertEquals(false, saved.getTelegram().getAggregateIncomingMessages());
+            assertEquals(750, saved.getTelegram().getAggregationDelayMs());
+            assertEquals(false, saved.getTelegram().getMergeForwardedMessages());
+            assertEquals(false, saved.getTelegram().getMergeSequentialFragments());
             assertTrue(saved.getTelegram().getAllowedUsers().contains("123"));
             assertEquals("golemcore/whisper", saved.getVoice().getSttProvider());
             assertEquals("http://localhost:5092", saved.getVoice().getWhisperSttUrl());

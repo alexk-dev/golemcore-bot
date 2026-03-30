@@ -5,7 +5,6 @@ import me.golemcore.bot.domain.model.PlanReadyEvent;
 import me.golemcore.bot.domain.model.TelegramRestartEvent;
 import me.golemcore.bot.plugin.runtime.extension.PluginExtensionApiMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.ApplicationEvent;
 import org.springframework.context.PayloadApplicationEvent;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
@@ -53,23 +52,23 @@ class PluginEventBridgeTest {
     }
 
     @Test
-    void shouldPassThroughPluginNativeEvents() {
+    void shouldIgnorePluginNativeEvents() {
         PluginManager pluginManager = mock(PluginManager.class);
         PluginEventBridge bridge = new PluginEventBridge(pluginManager, new PluginExtensionApiMapper());
         me.golemcore.plugin.api.extension.model.TelegramRestartEvent pluginEvent = new me.golemcore.plugin.api.extension.model.TelegramRestartEvent();
 
         bridge.onApplicationEvent(new PayloadApplicationEvent<>(this, pluginEvent));
 
-        verify(pluginManager).publishToPlugins(pluginEvent);
+        verify(pluginManager, never()).publishToPlugins(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
-    void shouldIgnoreChildContextEvents() {
+    void shouldIgnoreChildContextPayloadEvents() {
         PluginManager pluginManager = mock(PluginManager.class);
         PluginEventBridge bridge = new PluginEventBridge(pluginManager, new PluginExtensionApiMapper());
         try (AnnotationConfigApplicationContext childContext = new AnnotationConfigApplicationContext()) {
-            ApplicationEvent event = new ApplicationEvent(childContext) {
-            };
+            PayloadApplicationEvent<PlanReadyEvent> event = new PayloadApplicationEvent<>(childContext,
+                    new PlanReadyEvent("plan-1", "chat-1"));
 
             bridge.onApplicationEvent(event);
 
