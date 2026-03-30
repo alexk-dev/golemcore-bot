@@ -34,6 +34,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -160,7 +161,7 @@ public class DiscoverMcpServerTool implements ToolComponent {
                     ToolResult.failure("server_name is required for action=activate"));
         }
 
-        String normalizedName = serverName.toLowerCase().trim();
+        String normalizedName = serverName.toLowerCase(Locale.ROOT).trim();
 
         // Check if already registered as a skill (manual or previously materialized)
         String skillName = dynamicSkillFactory.toSkillName(normalizedName);
@@ -224,10 +225,10 @@ public class DiscoverMcpServerTool implements ToolComponent {
         if (query == null || query.isBlank()) {
             return true;
         }
-        String lowerQuery = query.toLowerCase();
-        String name = entry.getName() != null ? entry.getName().toLowerCase() : "";
-        String description = entry.getDescription() != null ? entry.getDescription().toLowerCase() : "";
-        String command = entry.getCommand() != null ? entry.getCommand().toLowerCase() : "";
+        String lowerQuery = query.toLowerCase(Locale.ROOT);
+        String name = entry.getName() != null ? entry.getName().toLowerCase(Locale.ROOT) : "";
+        String description = entry.getDescription() != null ? entry.getDescription().toLowerCase(Locale.ROOT) : "";
+        String command = entry.getCommand() != null ? entry.getCommand().toLowerCase(Locale.ROOT) : "";
         return name.contains(lowerQuery) || description.contains(lowerQuery) || command.contains(lowerQuery);
     }
 
