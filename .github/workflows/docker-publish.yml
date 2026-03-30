@@ -13,7 +13,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  PLUGIN_API_REPO_REF: 3ac0142aa5a7e369e5598768daaa5ab02a0f3e8b
+  PLUGIN_API_REPO_REF: 67cd0d1
 
 jobs:
   test:
@@ -52,13 +52,30 @@ jobs:
       - name: Build and run tests
         run: ./mvnw clean verify -DskipGitHooks=true
 
-      - name: Upload coverage to Codecov
+      - name: Check Codecov token availability
         if: always() && matrix.arch == 'amd64'
+        id: codecov-token
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [[ -n "${CODECOV_TOKEN}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Upload coverage to Codecov
+        if: always() && matrix.arch == 'amd64' && steps.codecov-token.outputs.available == 'true'
         uses: codecov/codecov-action@v6
         with:
           files: ./target/site/jacoco/jacoco.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
           handle_no_reports_found: true
+
+      - name: Skip Codecov upload (missing CODECOV_TOKEN)
+        if: always() && matrix.arch == 'amd64' && steps.codecov-token.outputs.available != 'true'
+        run: echo "Skipping Codecov upload because CODECOV_TOKEN is unavailable for this event."
 
   code-quality:
     name: Code Quality
