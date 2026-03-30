@@ -12,12 +12,12 @@ import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSnapshotDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
-import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.trace.TraceSnapshot;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.domain.service.ConversationKeyValidator;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SessionInspectionService;
+import me.golemcore.bot.domain.service.SessionPresentationSupport;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.domain.service.TelemetrySupport;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -50,17 +50,12 @@ import java.util.UUID;
 @Slf4j
 public class SessionsController {
 
-    private static final String ROLE_ASSISTANT = "assistant";
     private static final String CHANNEL_WEB = "web";
     private static final String CHANNEL_TELEGRAM = "telegram";
     private static final int MAX_RECENT_LIMIT = 20;
-    private static final int TITLE_MAX_LEN = 64;
-    private static final int PREVIEW_MAX_LEN = 160;
-    private static final int START_WITH_INDEX = 0;
     private static final String POINTER_SOURCE = "pointer";
     private static final String DEFAULT_SOURCE = "default";
     private static final String REPAIRED_SOURCE = "repaired";
-    private static final String DEFAULT_SESSION_TITLE = "New session";
 
     private final SessionPort sessionPort;
     private final ActiveSessionPointerService pointerService;
@@ -74,7 +69,7 @@ public class SessionsController {
                 : sessionPort.listByChannelType(channel.trim());
         List<SessionSummaryDto> dtos = sessions.stream()
                 .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> toSummary(session, false))
+                .map(session -> SessionPresentationSupport.toSummary(session, false))
                 .toList();
         return Mono.just(ResponseEntity.ok(dtos));
     }
@@ -95,7 +90,7 @@ public class SessionsController {
         if (match.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
         }
-        return Mono.just(ResponseEntity.ok(toSummary(match.get(), false)));
+        return Mono.just(ResponseEntity.ok(SessionPresentationSupport.toSummary(match.get(), false)));
     }
 
     @GetMapping("/recent")
@@ -111,7 +106,8 @@ public class SessionsController {
 
         List<SessionSummaryDto> dtos = listRecentSessionsByOwner(channel, transportChatId).stream()
                 .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> toSummary(session, isActiveSession(session, activeConversation.orElse(null))))
+                .map(session -> SessionPresentationSupport.toSummary(
+                        session, isActiveSession(session, activeConversation.orElse(null))))
                 .limit(normalizedLimit)
                 .toList();
 
@@ -235,7 +231,8 @@ public class SessionsController {
             pointerService.setActiveConversationKey(pointerKey, conversationKey);
         }
 
-        return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toSummary(session, shouldActivate)));
+        return Mono.just(ResponseEntity.status(HttpStatus.CREATED)
+                .body(SessionPresentationSupport.toSummary(session, shouldActivate)));
     }
 
     @GetMapping("/{id}")
@@ -301,27 +298,6 @@ public class SessionsController {
         return Mono.just(ResponseEntity.noContent().build());
     }
 
-    private SessionSummaryDto toSummary(AgentSession session, boolean active) {
-        String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
-        String transportChatId = SessionIdentitySupport.resolveTransportChatId(session);
-        String preview = buildPreview(session);
-        String title = buildTitle(session, conversationKey);
-        return SessionSummaryDto.builder()
-                .id(session.getId())
-                .channelType(session.getChannelType())
-                .chatId(session.getChatId())
-                .conversationKey(conversationKey)
-                .transportChatId(transportChatId)
-                .messageCount(getVisibleMessages(session).size())
-                .state(session.getState() != null ? session.getState().name() : "ACTIVE")
-                .createdAt(session.getCreatedAt() != null ? session.getCreatedAt().toString() : null)
-                .updatedAt(session.getUpdatedAt() != null ? session.getUpdatedAt().toString() : null)
-                .title(title)
-                .preview(preview)
-                .active(active)
-                .build();
-    }
-
     private ActiveSessionResponse toActiveResponse(
             String channel,
             String clientInstanceId,
@@ -348,39 +324,6 @@ public class SessionsController {
         }
         String resolvedConversationKey = SessionIdentitySupport.resolveConversationKey(session);
         return conversationKey.equals(resolvedConversationKey) || conversationKey.equals(session.getChatId());
-    }
-
-    private List<Message> getVisibleMessages(AgentSession session) {
-        if (session == null || session.getMessages() == null) {
-            return List.of();
-        }
-        return session.getMessages().stream()
-                .filter(message -> message != null
-                        && ("user".equals(message.getRole()) || ROLE_ASSISTANT.equals(message.getRole()))
-                        && isHistoryVisibleMessage(message))
-                .toList();
-    }
-
-    private boolean isHistoryVisibleMessage(Message message) {
-        if (message == null || message.isInternalMessage()) {
-            return false;
-        }
-        return hasVisibleContent(message.getContent()) || resolveAttachmentCount(message) > START_WITH_INDEX;
-    }
-
-    private boolean hasVisibleContent(String content) {
-        return content != null && !content.trim().isEmpty();
-    }
-
-    private int resolveAttachmentCount(Message message) {
-        if (message == null || message.getMetadata() == null) {
-            return START_WITH_INDEX;
-        }
-        Object attachmentsValue = message.getMetadata().get("attachments");
-        if (!(attachmentsValue instanceof List<?> attachments)) {
-            return START_WITH_INDEX;
-        }
-        return attachments.size();
     }
 
     private String resolvePointerKey(
@@ -491,44 +434,6 @@ public class SessionsController {
         sessionPort.save(session);
     }
 
-    private String buildTitle(AgentSession session, String conversationKey) {
-        if (session == null || session.getMessages() == null || session.getMessages().isEmpty()) {
-            return DEFAULT_SESSION_TITLE;
-        }
-
-        for (Message message : session.getMessages()) {
-            if (message == null || !"user".equals(message.getRole()) || message.isInternalMessage()) {
-                continue;
-            }
-            String content = message.getContent();
-            if (!StringValueSupport.isBlank(content)) {
-                return truncate(content.trim(), TITLE_MAX_LEN);
-            }
-        }
-
-        if (!StringValueSupport.isBlank(conversationKey)) {
-            return "Session " + truncate(conversationKey, 12);
-        }
-        return DEFAULT_SESSION_TITLE;
-    }
-
-    private String buildPreview(AgentSession session) {
-        if (session == null || session.getMessages() == null || session.getMessages().isEmpty()) {
-            return null;
-        }
-
-        String preview = null;
-        for (int index = START_WITH_INDEX; index < session.getMessages().size(); index++) {
-            Message message = session.getMessages().get(index);
-            if (message == null || message.isInternalMessage() || StringValueSupport.isBlank(message.getContent())) {
-                continue;
-            }
-            preview = truncate(message.getContent().trim(), PREVIEW_MAX_LEN);
-        }
-
-        return preview;
-    }
-
     private String normalizeConversationKeyForCreation(String value) {
         try {
             return ConversationKeyValidator.normalizeStrictOrThrow(value);
@@ -552,16 +457,6 @@ public class SessionsController {
             return defaultValue;
         }
         return value.trim();
-    }
-
-    private String truncate(String value, int maxLength) {
-        if (value == null || value.length() <= maxLength) {
-            return value;
-        }
-        if (maxLength <= 3) {
-            return value.substring(0, maxLength);
-        }
-        return value.substring(0, maxLength - 3) + "...";
     }
 
     private String resolveTelemetryTransport(String channel, String clientInstanceId, String transportChatId) {

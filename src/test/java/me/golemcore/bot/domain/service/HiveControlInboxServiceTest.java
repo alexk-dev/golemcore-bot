@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,6 +43,11 @@ class HiveControlInboxServiceTest {
         when(storagePort.getText(anyString(), anyString()))
                 .thenAnswer(
                         invocation -> CompletableFuture.completedFuture(persistedFiles.get(invocation.getArgument(1))));
+        when(storagePort.deleteObject(anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    persistedFiles.remove(invocation.getArgument(1));
+                    return CompletableFuture.completedFuture(null);
+                });
 
         service = new HiveControlInboxService(storagePort, objectMapper);
     }
@@ -124,6 +130,30 @@ class HiveControlInboxServiceTest {
                 () -> service.recordReceived(HiveControlCommandEnvelope.builder().threadId("thread-1").build()));
 
         assertEquals("Hive control command commandId is required", error.getMessage());
+    }
+
+    @Test
+    void shouldNotMarkProcessedCommandAsFailedWhenOnlyPendingCommandsAreAllowed() {
+        service.recordReceived(command("cmd-1", "thread-1", "run-1"));
+        service.markProcessed("cmd-1");
+
+        service.markFailedIfPending("cmd-1", new IllegalStateException("should be ignored"));
+
+        assertEquals(0, service.getSummary().pendingCommandCount());
+        assertEquals(0, service.drainPending(envelope -> {
+        }));
+    }
+
+    @Test
+    void shouldClearPersistedInboxState() {
+        service.recordReceived(command("cmd-1", "thread-1", "run-1"));
+
+        service.clear();
+
+        assertEquals(0, service.getSummary().receivedCommandCount());
+        assertEquals(0, service.getSummary().bufferedCommandCount());
+        assertEquals(0, service.getSummary().pendingCommandCount());
+        verify(storagePort).deleteObject("preferences", "hive-control-inbox.json");
     }
 
     private HiveControlCommandEnvelope command(String commandId, String threadId, String runId) {

@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -127,5 +128,85 @@ class HiveControlCommandDispatcherTest {
         verify(inboxService).markProcessed("req-1");
         verify(coordinator, never()).submit(any(Message.class), any(Runnable.class));
         verify(publisher, never()).publishCommandAcknowledged(envelope);
+    }
+
+    @Test
+    void shouldRejectUnsupportedEventType() {
+        SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
+                coordinator,
+                inboxService,
+                publisher,
+                inspectionCommandHandler,
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> dispatcher.dispatch(HiveControlCommandEnvelope.builder()
+                        .eventType("unknown")
+                        .commandId("cmd-1")
+                        .threadId("thread-1")
+                        .body("hello")
+                        .build()));
+
+        assertEquals("Unsupported Hive control command eventType: unknown", error.getMessage());
+    }
+
+    @Test
+    void shouldMarkInspectionRequestFailedWhenHandlerThrows() {
+        SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        RuntimeException failure = new IllegalStateException("inspection failed");
+        org.mockito.Mockito.doThrow(failure).when(inspectionCommandHandler)
+                .handle(any(HiveControlCommandEnvelope.class));
+        HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
+                coordinator,
+                inboxService,
+                publisher,
+                inspectionCommandHandler,
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+        HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
+                .eventType("inspection.request")
+                .requestId("req-2")
+                .threadId("thread-1")
+                .inspection(HiveInspectionRequestBody.builder().operation("sessions.list").build())
+                .build();
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> dispatcher.dispatch(envelope));
+
+        assertEquals("inspection failed", error.getMessage());
+        verify(inboxService).markFailedIfPending("req-2", failure);
+        verify(publisher, never()).publishCommandAcknowledged(envelope);
+    }
+
+    @Test
+    void shouldMarkCancelledCommandProcessedWhenRunIsAlreadyStopped() {
+        SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        when(coordinator.submit(any(Message.class), any(Runnable.class))).thenReturn(
+                CompletableFuture.failedFuture(new IllegalStateException("Cancelled by Hive control command")));
+        HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
+                coordinator,
+                inboxService,
+                publisher,
+                inspectionCommandHandler,
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+        HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
+                .commandId("cmd-3")
+                .threadId("thread-1")
+                .body("cancelled")
+                .build();
+
+        dispatcher.dispatch(envelope);
+
+        verify(inboxService).markProcessed("cmd-3");
+        verify(publisher).publishCommandAcknowledged(envelope);
     }
 }

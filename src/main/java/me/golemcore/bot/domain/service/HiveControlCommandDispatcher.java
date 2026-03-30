@@ -52,7 +52,7 @@ public class HiveControlCommandDispatcher {
     public void dispatch(HiveControlCommandEnvelope envelope) {
         String eventType = validateEnvelope(envelope);
         String trackingId = resolveTrackingId(envelope);
-        if (EVENT_TYPE_COMMAND_STOP.equals(eventType) || EVENT_TYPE_COMMAND_CANCEL.equals(eventType)) {
+        if (isStopEvent(eventType)) {
             sessionRunCoordinator.requestStop("hive", envelope.getThreadId(), envelope.getRunId(),
                     envelope.getCommandId());
             hiveEventBatchPublisher.publishCommandAcknowledged(envelope);
@@ -81,6 +81,10 @@ public class HiveControlCommandDispatcher {
         hiveEventBatchPublisher.publishCommandAcknowledged(envelope);
         log.info("[Hive] Enqueued control command: commandId={}, threadId={}, runId={}",
                 envelope.getCommandId(), envelope.getThreadId(), envelope.getRunId());
+    }
+
+    private boolean isStopEvent(String eventType) {
+        return EVENT_TYPE_COMMAND_STOP.equals(eventType) || EVENT_TYPE_COMMAND_CANCEL.equals(eventType);
     }
 
     private void finalizeCommandDispatch(HiveControlCommandEnvelope envelope, Throwable failure) {
@@ -125,35 +129,71 @@ public class HiveControlCommandDispatcher {
     }
 
     private String validateEnvelope(HiveControlCommandEnvelope envelope) {
+        requireEnvelope(envelope);
+        requireThreadId(envelope);
+        String eventType = normalizeEventType(envelope.getEventType());
+        requireTrackingId(envelope);
+        requireSupportedEventType(eventType);
+        requireEventPayload(eventType, envelope);
+        return eventType;
+    }
+
+    private void requireEnvelope(HiveControlCommandEnvelope envelope) {
         if (envelope == null) {
             throw new IllegalArgumentException("Hive control command is required");
         }
+    }
+
+    private void requireThreadId(HiveControlCommandEnvelope envelope) {
         if (envelope.getThreadId() == null || envelope.getThreadId().isBlank()) {
             throw new IllegalArgumentException("Hive control command threadId is required");
         }
-        String eventType = normalizeEventType(envelope.getEventType());
+    }
+
+    private void requireTrackingId(HiveControlCommandEnvelope envelope) {
         String trackingId = resolveTrackingId(envelope);
         if (trackingId == null || trackingId.isBlank()) {
             throw new IllegalArgumentException("Hive control command commandId is required");
         }
-        if (!EVENT_TYPE_COMMAND.equals(eventType)
-                && !EVENT_TYPE_COMMAND_STOP.equals(eventType)
-                && !EVENT_TYPE_COMMAND_CANCEL.equals(eventType)
-                && !EVENT_TYPE_INSPECTION_REQUEST.equals(eventType)) {
-            throw new IllegalArgumentException("Unsupported Hive control command eventType: " + eventType);
+    }
+
+    private void requireSupportedEventType(String eventType) {
+        if (EVENT_TYPE_COMMAND.equals(eventType)
+                || EVENT_TYPE_COMMAND_STOP.equals(eventType)
+                || EVENT_TYPE_COMMAND_CANCEL.equals(eventType)
+                || EVENT_TYPE_INSPECTION_REQUEST.equals(eventType)) {
+            return;
         }
-        if (!EVENT_TYPE_INSPECTION_REQUEST.equals(eventType)
-                && (envelope.getCommandId() == null || envelope.getCommandId().isBlank())) {
+        throw new IllegalArgumentException("Unsupported Hive control command eventType: " + eventType);
+    }
+
+    private void requireEventPayload(String eventType, HiveControlCommandEnvelope envelope) {
+        if (EVENT_TYPE_INSPECTION_REQUEST.equals(eventType)) {
+            requireInspectionRequestId(envelope);
+            return;
+        }
+        requireCommandId(envelope);
+        if (EVENT_TYPE_COMMAND.equals(eventType)) {
+            requireCommandBody(envelope);
+        }
+    }
+
+    private void requireCommandId(HiveControlCommandEnvelope envelope) {
+        if (envelope.getCommandId() == null || envelope.getCommandId().isBlank()) {
             throw new IllegalArgumentException("Hive control command commandId is required");
         }
-        if (EVENT_TYPE_COMMAND.equals(eventType) && (envelope.getBody() == null || envelope.getBody().isBlank())) {
+    }
+
+    private void requireCommandBody(HiveControlCommandEnvelope envelope) {
+        if (envelope.getBody() == null || envelope.getBody().isBlank()) {
             throw new IllegalArgumentException("Hive control command body is required");
         }
-        if (EVENT_TYPE_INSPECTION_REQUEST.equals(eventType)
-                && (envelope.getRequestId() == null || envelope.getRequestId().isBlank())) {
+    }
+
+    private void requireInspectionRequestId(HiveControlCommandEnvelope envelope) {
+        if (envelope.getRequestId() == null || envelope.getRequestId().isBlank()) {
             throw new IllegalArgumentException("Hive inspection requestId is required");
         }
-        return eventType;
     }
 
     private String resolveTrackingId(HiveControlCommandEnvelope envelope) {

@@ -3,11 +3,13 @@ package me.golemcore.bot.domain.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.Map;
 import java.util.List;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
 import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
@@ -88,5 +90,81 @@ class HiveInspectionCommandHandlerTest {
         assertFalse(response.success());
         assertEquals("NOT_FOUND", response.errorCode());
         assertEquals("Session not found", response.errorMessage());
+    }
+
+    @Test
+    void shouldPublishSnapshotExportAndSessionMutationResponses() {
+        SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(sessionInspectionService, publisher);
+        when(sessionInspectionService.exportSessionTraceSnapshotPayload("web:conv-1", "snap-1"))
+                .thenReturn(new SessionInspectionService.SnapshotPayloadExport(
+                        "{\"ok\":true}",
+                        org.springframework.http.MediaType.APPLICATION_JSON,
+                        ".json"));
+        when(sessionInspectionService.compactSession("web:conv-1", 5)).thenReturn(7);
+
+        handler.handle(inspection("req-snapshot", "session.trace.snapshot.payload", body -> {
+            body.sessionId("web:conv-1");
+            body.snapshotId("snap-1");
+        }));
+        handler.handle(inspection("req-compact", "session.compact", body -> {
+            body.sessionId("web:conv-1");
+            body.keepLast(5);
+        }));
+        handler.handle(inspection("req-clear", "session.clear", body -> body.sessionId("web:conv-1")));
+        handler.handle(inspection("req-delete", "session.delete", body -> body.sessionId("web:conv-1")));
+
+        ArgumentCaptor<HiveInspectionResponse> responseCaptor = ArgumentCaptor.forClass(HiveInspectionResponse.class);
+        verify(publisher, org.mockito.Mockito.times(4)).publishInspectionResponse(responseCaptor.capture());
+        List<HiveInspectionResponse> responses = responseCaptor.getAllValues();
+        assertEquals("req-snapshot", responses.get(0).requestId());
+        assertTrue(responses.get(0).success());
+        assertEquals(
+                Map.of(
+                        "payloadText", "{\"ok\":true}",
+                        "contentType", "application/json",
+                        "fileExtension", ".json"),
+                responses.get(0).payload());
+        assertEquals("req-compact", responses.get(1).requestId());
+        assertEquals(Map.of("removed", 7), responses.get(1).payload());
+        assertEquals("req-clear", responses.get(2).requestId());
+        assertEquals(Map.of(), responses.get(2).payload());
+        assertEquals("req-delete", responses.get(3).requestId());
+        assertEquals(Map.of(), responses.get(3).payload());
+    }
+
+    @Test
+    void shouldPublishInvalidRequestErrorForUnsupportedOperation() {
+        SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(sessionInspectionService, publisher);
+
+        handler.handle(inspection("req-bad", "unknown.operation", body -> {
+        }));
+
+        ArgumentCaptor<HiveInspectionResponse> responseCaptor = ArgumentCaptor.forClass(HiveInspectionResponse.class);
+        verify(publisher).publishInspectionResponse(responseCaptor.capture());
+        HiveInspectionResponse response = responseCaptor.getValue();
+        assertEquals("req-bad", response.requestId());
+        assertFalse(response.success());
+        assertEquals("INVALID_REQUEST", response.errorCode());
+        assertEquals("Unsupported inspection operation: unknown.operation", response.errorMessage());
+        assertNull(response.payload());
+    }
+
+    private HiveControlCommandEnvelope inspection(
+            String requestId,
+            String operation,
+            java.util.function.Consumer<HiveInspectionRequestBody.HiveInspectionRequestBodyBuilder> customizer) {
+        HiveInspectionRequestBody.HiveInspectionRequestBodyBuilder inspection = HiveInspectionRequestBody.builder()
+                .operation(operation);
+        customizer.accept(inspection);
+        return HiveControlCommandEnvelope.builder()
+                .eventType("inspection.request")
+                .requestId(requestId)
+                .threadId("thread-1")
+                .inspection(inspection.build())
+                .build();
     }
 }

@@ -26,12 +26,12 @@ import org.springframework.web.server.ResponseStatusException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,14 +39,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SessionInspectionService {
 
-    private static final String ROLE_ASSISTANT = "assistant";
     private static final String CHANNEL_TELEGRAM = "telegram";
     private static final int MAX_PAGE_LIMIT = 100;
-    private static final int TITLE_MAX_LEN = 64;
-    private static final int PREVIEW_MAX_LEN = 160;
     private static final int SNAPSHOT_PREVIEW_MAX_CHARS = 4096;
     private static final int START_WITH_INDEX = 0;
-    private static final String DEFAULT_SESSION_TITLE = "New session";
 
     private final SessionPort sessionPort;
     private final ActiveSessionPointerService pointerService;
@@ -58,7 +54,7 @@ public class SessionInspectionService {
                 : sessionPort.listByChannelType(channel.trim());
         return sessions.stream()
                 .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> toSummary(session, false))
+                .map(session -> SessionPresentationSupport.toSummary(session, false))
                 .toList();
     }
 
@@ -68,8 +64,8 @@ public class SessionInspectionService {
 
     public SessionMessagesPageDto getSessionMessages(String sessionId, int limit, String beforeMessageId) {
         AgentSession session = requireSession(sessionId);
-        int normalizedLimit = Math.max(1, Math.min(limit, MAX_PAGE_LIMIT));
-        List<Message> visibleMessages = getVisibleMessages(session);
+        int normalizedLimit = Math.clamp(limit, 1, MAX_PAGE_LIMIT);
+        List<Message> visibleMessages = SessionPresentationSupport.getVisibleMessages(session);
         int endExclusive = resolvePageEndExclusive(visibleMessages, beforeMessageId);
         int startInclusive = Math.max(START_WITH_INDEX, endExclusive - normalizedLimit);
         List<SessionDetailDto.MessageDto> page = visibleMessages.subList(startInclusive, endExclusive).stream()
@@ -141,27 +137,6 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private SessionSummaryDto toSummary(AgentSession session, boolean active) {
-        String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
-        String transportChatId = SessionIdentitySupport.resolveTransportChatId(session);
-        String preview = buildPreview(session);
-        String title = buildTitle(session, conversationKey);
-        return SessionSummaryDto.builder()
-                .id(session.getId())
-                .channelType(session.getChannelType())
-                .chatId(session.getChatId())
-                .conversationKey(conversationKey)
-                .transportChatId(transportChatId)
-                .messageCount(getVisibleMessages(session).size())
-                .state(session.getState() != null ? session.getState().name() : "ACTIVE")
-                .createdAt(session.getCreatedAt() != null ? session.getCreatedAt().toString() : null)
-                .updatedAt(session.getUpdatedAt() != null ? session.getUpdatedAt().toString() : null)
-                .title(title)
-                .preview(preview)
-                .active(active)
-                .build();
-    }
-
     private AgentSession requireSession(String sessionId) {
         return sessionPort.get(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
@@ -173,7 +148,7 @@ public class SessionInspectionService {
         List<SessionDetailDto.MessageDto> messages = List.of();
         if (session.getMessages() != null) {
             messages = session.getMessages().stream()
-                    .filter(this::isHistoryVisibleMessage)
+                    .filter(SessionPresentationSupport::isHistoryVisibleMessage)
                     .map(this::toMessageDto)
                     .toList();
         }
@@ -191,71 +166,63 @@ public class SessionInspectionService {
     }
 
     private SessionDetailDto.MessageDto toMessageDto(Message message) {
-        String model = null;
-        String modelTier = null;
-        String skill = null;
-        String reasoning = null;
-        String clientMessageId = null;
-        boolean autoMode = false;
-        String autoRunId = null;
-        String autoScheduleId = null;
-        String autoGoalId = null;
-        String autoTaskId = null;
-        if (message.getMetadata() != null) {
-            Object modelValue = message.getMetadata().get("model");
-            if (modelValue instanceof String) {
-                model = (String) modelValue;
-            }
-            Object tierValue = message.getMetadata().get("modelTier");
-            if (tierValue instanceof String) {
-                modelTier = (String) tierValue;
-            }
-            Object reasoningValue = message.getMetadata().get("reasoning");
-            if (reasoningValue instanceof String) {
-                reasoning = (String) reasoningValue;
-            }
-            Object skillValue = message.getMetadata().get(ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
-            if (skillValue instanceof String) {
-                skill = (String) skillValue;
-            }
-            if (skill == null || skill.isBlank()) {
-                Object activeSkillValue = message.getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME);
-                if (activeSkillValue instanceof String) {
-                    skill = (String) activeSkillValue;
-                }
-            }
-            Object clientMessageIdValue = message.getMetadata().get("clientMessageId");
-            if (clientMessageIdValue instanceof String) {
-                clientMessageId = (String) clientMessageIdValue;
-            }
-            autoMode = AutoRunContextSupport.isAutoMetadata(message.getMetadata());
-            autoRunId = AutoRunContextSupport.readMetadataString(message.getMetadata(), ContextAttributes.AUTO_RUN_ID);
-            autoScheduleId = AutoRunContextSupport.readMetadataString(
-                    message.getMetadata(), ContextAttributes.AUTO_SCHEDULE_ID);
-            autoGoalId = AutoRunContextSupport.readMetadataString(message.getMetadata(),
-                    ContextAttributes.AUTO_GOAL_ID);
-            autoTaskId = AutoRunContextSupport.readMetadataString(message.getMetadata(),
-                    ContextAttributes.AUTO_TASK_ID);
-        }
+        MessageMetadataView metadata = resolveMetadataView(message);
         return SessionDetailDto.MessageDto.builder()
                 .id(message.getId())
                 .role(message.getRole())
-                .content(resolveMessageContent(message))
+                .content(SessionPresentationSupport.resolveMessageContent(message))
                 .timestamp(message.getTimestamp() != null ? message.getTimestamp().toString() : null)
                 .hasToolCalls(message.hasToolCalls())
                 .hasVoice(message.hasVoice())
-                .model(model)
-                .modelTier(modelTier)
-                .skill(skill)
-                .reasoning(reasoning)
-                .clientMessageId(clientMessageId)
-                .autoMode(autoMode)
-                .autoRunId(autoRunId)
-                .autoScheduleId(autoScheduleId)
-                .autoGoalId(autoGoalId)
-                .autoTaskId(autoTaskId)
+                .model(metadata.model())
+                .modelTier(metadata.modelTier())
+                .skill(metadata.skill())
+                .reasoning(metadata.reasoning())
+                .clientMessageId(metadata.clientMessageId())
+                .autoMode(metadata.autoMode())
+                .autoRunId(metadata.autoRunId())
+                .autoScheduleId(metadata.autoScheduleId())
+                .autoGoalId(metadata.autoGoalId())
+                .autoTaskId(metadata.autoTaskId())
                 .attachments(resolveAttachments(message))
                 .build();
+    }
+
+    private MessageMetadataView resolveMetadataView(Message message) {
+        if (message == null || message.getMetadata() == null) {
+            return MessageMetadataView.empty();
+        }
+        Map<String, Object> metadata = message.getMetadata();
+        String skill = firstNonBlank(
+                readMetadataString(metadata, ContextAttributes.AUTO_RUN_ACTIVE_SKILL),
+                readMetadataString(metadata, ContextAttributes.ACTIVE_SKILL_NAME));
+        return new MessageMetadataView(
+                readMetadataString(metadata, "model"),
+                readMetadataString(metadata, "modelTier"),
+                skill,
+                readMetadataString(metadata, "reasoning"),
+                readMetadataString(metadata, "clientMessageId"),
+                AutoRunContextSupport.isAutoMetadata(metadata),
+                AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_RUN_ID),
+                AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_SCHEDULE_ID),
+                AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_GOAL_ID),
+                AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_TASK_ID));
+    }
+
+    private String readMetadataString(Map<String, Object> metadata, String key) {
+        if (metadata == null) {
+            return null;
+        }
+        Object value = metadata.get(key);
+        if (!(value instanceof String stringValue)) {
+            return null;
+        }
+        String normalized = stringValue.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private String firstNonBlank(String primary, String fallback) {
+        return !StringValueSupport.isBlank(primary) ? primary : fallback;
     }
 
     private SessionTraceSummaryDto toTraceSummary(AgentSession session) {
@@ -462,7 +429,7 @@ public class SessionInspectionService {
             return List.of();
         }
         return session.getTraces().stream()
-                .filter(trace -> trace != null)
+                .filter(Objects::nonNull)
                 .sorted(Comparator.comparing(TraceRecord::getStartedAt,
                         Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
@@ -480,7 +447,7 @@ public class SessionInspectionService {
             }
         }
         return trace.getSpans().stream()
-                .filter(span -> span != null)
+                .filter(Objects::nonNull)
                 .sorted(Comparator
                         .comparing((TraceSpanRecord span) -> span.getStartedAt(),
                                 Comparator.nullsLast(Comparator.naturalOrder()))
@@ -564,7 +531,7 @@ public class SessionInspectionService {
         }
         try {
             return MediaType.parseMediaType(snapshot.getContentType());
-        } catch (IllegalArgumentException exception) {
+        } catch (IllegalArgumentException _) {
             return MediaType.APPLICATION_OCTET_STREAM;
         }
     }
@@ -572,17 +539,6 @@ public class SessionInspectionService {
     private String resolveSnapshotFileExtension(TraceSnapshot snapshot) {
         MediaType contentType = resolveSnapshotContentType(snapshot);
         return MediaType.APPLICATION_JSON.includes(contentType) ? ".json" : ".txt";
-    }
-
-    private List<Message> getVisibleMessages(AgentSession session) {
-        if (session == null || session.getMessages() == null) {
-            return List.of();
-        }
-        return session.getMessages().stream()
-                .filter(message -> message != null
-                        && ("user".equals(message.getRole()) || ROLE_ASSISTANT.equals(message.getRole()))
-                        && isHistoryVisibleMessage(message))
-                .toList();
     }
 
     private int resolvePageEndExclusive(List<Message> messages, String beforeMessageId) {
@@ -602,84 +558,6 @@ public class SessionInspectionService {
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "beforeMessageId not found");
     }
 
-    private boolean isHistoryVisibleMessage(Message message) {
-        if (message == null || message.isInternalMessage()) {
-            return false;
-        }
-        return hasVisibleContent(message.getContent()) || resolveAttachmentCount(message) > START_WITH_INDEX;
-    }
-
-    private boolean hasVisibleContent(String content) {
-        return content != null && !content.trim().isEmpty();
-    }
-
-    private String resolveMessageContent(Message message) {
-        if (message == null) {
-            return null;
-        }
-        if (hasVisibleContent(message.getContent())) {
-            return message.getContent();
-        }
-
-        int attachmentCount = resolveAttachmentCount(message);
-        if (attachmentCount <= START_WITH_INDEX) {
-            return message.getContent();
-        }
-
-        return attachmentCount == 1
-                ? "[1 attachment]"
-                : "[" + attachmentCount + " attachments]";
-    }
-
-    private String buildTitle(AgentSession session, String conversationKey) {
-        if (session == null || session.getMessages() == null || session.getMessages().isEmpty()) {
-            return DEFAULT_SESSION_TITLE;
-        }
-
-        for (Message message : session.getMessages()) {
-            if (message == null || !"user".equals(message.getRole()) || message.isInternalMessage()) {
-                continue;
-            }
-            String content = message.getContent();
-            if (!StringValueSupport.isBlank(content)) {
-                return truncate(content.trim(), TITLE_MAX_LEN);
-            }
-        }
-
-        if (!StringValueSupport.isBlank(conversationKey)) {
-            return "Session " + truncate(conversationKey, 12);
-        }
-        return DEFAULT_SESSION_TITLE;
-    }
-
-    private String buildPreview(AgentSession session) {
-        if (session == null || session.getMessages() == null || session.getMessages().isEmpty()) {
-            return null;
-        }
-
-        String preview = null;
-        for (int index = START_WITH_INDEX; index < session.getMessages().size(); index++) {
-            Message message = session.getMessages().get(index);
-            if (message == null || message.isInternalMessage() || StringValueSupport.isBlank(message.getContent())) {
-                continue;
-            }
-            preview = truncate(message.getContent().trim(), PREVIEW_MAX_LEN);
-        }
-
-        return preview;
-    }
-
-    private int resolveAttachmentCount(Message message) {
-        if (message == null || message.getMetadata() == null) {
-            return START_WITH_INDEX;
-        }
-        Object attachmentsValue = message.getMetadata().get("attachments");
-        if (!(attachmentsValue instanceof List<?> attachments)) {
-            return START_WITH_INDEX;
-        }
-        return attachments.size();
-    }
-
     @SuppressWarnings("unchecked")
     private List<SessionDetailDto.AttachmentDto> resolveAttachments(Message message) {
         if (message == null || message.getMetadata() == null) {
@@ -690,32 +568,36 @@ public class SessionInspectionService {
             return List.of();
         }
 
-        List<SessionDetailDto.AttachmentDto> result = new ArrayList<>();
-        for (Object attachmentObj : attachments) {
-            if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
-                continue;
-            }
-            Map<String, Object> normalized = new LinkedHashMap<>((Map<String, Object>) attachmentMap);
-            String type = readAttachmentString(normalized, "type");
-            String name = readAttachmentString(normalized, "name");
-            String mimeType = readAttachmentString(normalized, "mimeType");
-            String url = readAttachmentUrl(normalized);
-            String internalFilePath = readAttachmentString(normalized, "internalFilePath");
-            String thumbnailBase64 = readAttachmentString(normalized, "thumbnailBase64");
-            if (type == null && name == null && mimeType == null && url == null
-                    && internalFilePath == null && thumbnailBase64 == null) {
-                continue;
-            }
-            result.add(SessionDetailDto.AttachmentDto.builder()
-                    .type(type)
-                    .name(name)
-                    .mimeType(mimeType)
-                    .url(url)
-                    .internalFilePath(internalFilePath)
-                    .thumbnailBase64(thumbnailBase64)
-                    .build());
+        return attachments.stream()
+                .map(this::toAttachmentDto)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private SessionDetailDto.AttachmentDto toAttachmentDto(Object attachmentObj) {
+        if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
+            return null;
         }
-        return result;
+        Map<String, Object> normalized = new LinkedHashMap<>((Map<String, Object>) attachmentMap);
+        String type = readAttachmentString(normalized, "type");
+        String name = readAttachmentString(normalized, "name");
+        String mimeType = readAttachmentString(normalized, "mimeType");
+        String url = readAttachmentUrl(normalized);
+        String internalFilePath = readAttachmentString(normalized, "internalFilePath");
+        String thumbnailBase64 = readAttachmentString(normalized, "thumbnailBase64");
+        if (type == null && name == null && mimeType == null && url == null
+                && internalFilePath == null && thumbnailBase64 == null) {
+            return null;
+        }
+        return SessionDetailDto.AttachmentDto.builder()
+                .type(type)
+                .name(name)
+                .mimeType(mimeType)
+                .url(url)
+                .internalFilePath(internalFilePath)
+                .thumbnailBase64(thumbnailBase64)
+                .build();
     }
 
     private String readAttachmentUrl(Map<String, Object> attachment) {
@@ -738,16 +620,6 @@ public class SessionInspectionService {
         }
         String normalized = stringValue.trim();
         return normalized.isEmpty() ? null : normalized;
-    }
-
-    private String truncate(String value, int maxLength) {
-        if (value == null || value.length() <= maxLength) {
-            return value;
-        }
-        if (maxLength <= 3) {
-            return value.substring(0, maxLength);
-        }
-        return value.substring(0, maxLength - 3) + "...";
     }
 
     private void repairPointersAfterDelete(String deletedSessionId, AgentSession deletedSession) {
@@ -888,6 +760,23 @@ public class SessionInspectionService {
     private record SnapshotPreview(boolean payloadAvailable, String payloadPreview, boolean previewTruncated) {
         private static SnapshotPreview empty() {
             return new SnapshotPreview(false, null, false);
+        }
+    }
+
+    private record MessageMetadataView(
+            String model,
+            String modelTier,
+            String skill,
+            String reasoning,
+            String clientMessageId,
+            boolean autoMode,
+            String autoRunId,
+            String autoScheduleId,
+            String autoGoalId,
+            String autoTaskId) {
+
+        private static MessageMetadataView empty() {
+            return new MessageMetadataView(null, null, null, null, null, false, null, null, null, null);
         }
     }
 
