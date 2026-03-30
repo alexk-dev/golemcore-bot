@@ -13,7 +13,7 @@ permissions:
   actions: write
 
 env:
-  PLUGIN_API_REPO_REF: 5901f7b3926cdc6970b86d2f42241ed2ad82340c
+  PLUGIN_API_REPO_REF: c7f17d0b0740e65fbedf3e614b0621bad3eb22a9
 
 jobs:
   release:
