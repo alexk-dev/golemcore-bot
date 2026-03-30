@@ -474,6 +474,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void sendsVoiceWhenOutgoingResponseHasVoiceRequested() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
@@ -490,6 +491,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void sendsVoiceWithCustomVoiceText() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
@@ -505,7 +507,23 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
+    void telegramVoiceDisabledSkipsExplicitVoiceAndSendsTextOnly() {
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("Full response with details")
+                .voiceRequested(true)
+                .voiceText("Short spoken version")
+                .build());
+
+        system.process(context);
+
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Full response with details"), any());
+        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
+    }
+
+    @Test
     void voiceOnlyOutgoingResponseSendsVoice() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
@@ -520,7 +538,53 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
+    void telegramVoiceDisabledFallsBackToTextForVoiceOnlyOutgoingResponse() {
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                OutgoingResponse.voiceOnly("Hello from OutgoingResponse"));
+
+        system.process(context);
+
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello from OutgoingResponse"), any());
+        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
+    }
+
+    @Test
+    void nonTelegramChannelsAlwaysFallBackToTextForVoiceOnlyOutgoingResponse() {
+        ChannelPort hiveChannel = mock(ChannelPort.class);
+        when(hiveChannel.getChannelType()).thenReturn("hive");
+        when(hiveChannel.sendMessage(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
+        when(hiveChannel.sendMessage(anyString(), anyString(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        ResponseRoutingSystem hiveSystem = new ResponseRoutingSystem(
+                new ChannelRegistry(List.of(hiveChannel)),
+                preferencesService,
+                voiceHandler,
+                runtimeConfigService,
+                traceService);
+
+        AgentSession session = AgentSession.builder()
+                .id("hive-session")
+                .chatId("hive-chat")
+                .channelType("hive")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.voiceOnly("Hello from hive"));
+
+        hiveSystem.process(context);
+
+        verify(hiveChannel).sendMessage(eq("hive-chat"), eq("Hello from hive"), any());
+        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
+    }
+
+    @Test
     void voiceAndAttachmentsTogether() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
@@ -552,6 +616,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void voiceOnlyWithAttachments() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
@@ -580,6 +645,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void voiceQuotaExceededSendsNotification() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
         when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
 
@@ -599,6 +665,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void voiceOnlyQuotaExceededSendsNotification() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
         when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
 
@@ -773,6 +840,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void shouldRecordRoutingOutcomeWithVoiceAndAttachments() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
