@@ -31,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
+import me.golemcore.bot.domain.model.HiveInspectionResponse;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
@@ -46,6 +47,7 @@ public class HiveEventBatchPublisher {
     private static final Integer SCHEMA_VERSION = 1;
     private static final String EVENT_TYPE_RUNTIME_EVENT = "runtime_event";
     private static final String EVENT_TYPE_CARD_LIFECYCLE_SIGNAL = "card_lifecycle_signal";
+    private static final String EVENT_TYPE_INSPECTION_RESPONSE = "inspection_response";
     private static final String CONTROL_EVENT_TYPE_STOP = "command.stop";
     private static final String CONTROL_EVENT_TYPE_CANCEL = "command.cancel";
     private static final int SUMMARY_MAX_LENGTH = 240;
@@ -74,6 +76,29 @@ public class HiveEventBatchPublisher {
                 null,
                 null,
                 envelope.getCreatedAt());
+        publishBatch(List.of(event));
+    }
+
+    public void publishInspectionResponse(HiveInspectionResponse response) {
+        if (response == null || isBlank(response.threadId()) || isBlank(response.requestId())) {
+            return;
+        }
+        HiveEventPayload event = HiveEventPayload.builder()
+                .schemaVersion(SCHEMA_VERSION)
+                .eventType(EVENT_TYPE_INSPECTION_RESPONSE)
+                .threadId(response.threadId())
+                .cardId(response.cardId())
+                .commandId(null)
+                .requestId(response.requestId())
+                .runId(response.runId())
+                .golemId(response.golemId())
+                .operation(response.operation())
+                .success(response.success())
+                .errorCode(response.errorCode())
+                .errorMessage(response.errorMessage())
+                .payload(response.payload())
+                .createdAt(response.createdAt() != null ? response.createdAt() : Instant.now())
+                .build();
         publishBatch(List.of(event));
     }
 

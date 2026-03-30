@@ -471,9 +471,10 @@ public class HiveConnectionService {
 
     private void recordControlCommand(HiveControlCommandEnvelope envelope) {
         HiveControlInboxService.RecordResult result = hiveControlInboxService.recordReceived(envelope);
+        String trackingId = hiveControlInboxService.resolveTrackingId(envelope);
         drainPendingControlCommands();
-        log.info("[Hive] Received control command: commandId={}, threadId={}, buffered={}, duplicate={}",
-                envelope.getCommandId(),
+        log.info("[Hive] Received control command: trackingId={}, threadId={}, buffered={}, duplicate={}",
+                trackingId,
                 envelope.getThreadId(),
                 result.summary().bufferedCommandCount(),
                 result.duplicate());

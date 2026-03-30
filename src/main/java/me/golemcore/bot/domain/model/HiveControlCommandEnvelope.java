@@ -19,10 +19,12 @@ public class HiveControlCommandEnvelope {
 
     private String eventType;
     private String commandId;
+    private String requestId;
     private String threadId;
     private String cardId;
     private String golemId;
     private String runId;
     private String body;
+    private HiveInspectionRequestBody inspection;
     private Instant createdAt;
 }

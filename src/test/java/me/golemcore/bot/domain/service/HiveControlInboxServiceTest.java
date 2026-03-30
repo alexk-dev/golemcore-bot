@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
+import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -70,6 +71,19 @@ class HiveControlInboxServiceTest {
     }
 
     @Test
+    void shouldDeduplicateInspectionRequestByRequestId() {
+        service.recordReceived(inspection("req-1", "thread-1", "sessions.list"));
+
+        HiveControlInboxService.RecordResult duplicate = service
+                .recordReceived(inspection("req-1", "thread-1", "sessions.list"));
+
+        assertEquals(1, duplicate.summary().receivedCommandCount());
+        assertEquals(1, duplicate.summary().bufferedCommandCount());
+        assertEquals(1, duplicate.summary().pendingCommandCount());
+        assertEquals("req-1", duplicate.summary().lastReceivedCommandId());
+    }
+
+    @Test
     void shouldReplayFailedCommandOnNextDrain() {
         service.recordReceived(command("cmd-1", "thread-1", "run-1"));
         List<String> dispatched = new ArrayList<>();
@@ -117,6 +131,18 @@ class HiveControlInboxServiceTest {
                 .commandId(commandId)
                 .threadId(threadId)
                 .runId(runId)
+                .createdAt(Instant.parse("2026-03-18T00:00:00Z"))
+                .build();
+    }
+
+    private HiveControlCommandEnvelope inspection(String requestId, String threadId, String operation) {
+        return HiveControlCommandEnvelope.builder()
+                .eventType("inspection.request")
+                .requestId(requestId)
+                .threadId(threadId)
+                .inspection(HiveInspectionRequestBody.builder()
+                        .operation(operation)
+                        .build())
                 .createdAt(Instant.parse("2026-03-18T00:00:00Z"))
                 .build();
     }

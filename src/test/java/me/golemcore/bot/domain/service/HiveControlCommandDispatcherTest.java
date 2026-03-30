@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +16,7 @@ import org.mockito.ArgumentCaptor;
 import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
+import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.Message;
 
 class HiveControlCommandDispatcherTest {
@@ -24,6 +26,7 @@ class HiveControlCommandDispatcherTest {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
         HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
         when(coordinator.submit(any(Message.class), any(Runnable.class))).thenAnswer(invocation -> {
             Runnable onStart = invocation.getArgument(1);
             if (onStart != null) {
@@ -35,6 +38,7 @@ class HiveControlCommandDispatcherTest {
                 coordinator,
                 inboxService,
                 publisher,
+                inspectionCommandHandler,
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
 
         HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
@@ -71,10 +75,12 @@ class HiveControlCommandDispatcherTest {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
         HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
         HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
                 coordinator,
                 inboxService,
                 publisher,
+                inspectionCommandHandler,
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
 
         HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
@@ -90,5 +96,36 @@ class HiveControlCommandDispatcherTest {
 
         verify(coordinator).requestStop("hive", "thread-1", "run-1", "cmd-2");
         verify(publisher).publishCommandAcknowledged(envelope);
+    }
+
+    @Test
+    void shouldRouteInspectionRequestToDedicatedHandler() {
+        SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
+                coordinator,
+                inboxService,
+                publisher,
+                inspectionCommandHandler,
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+
+        HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
+                .eventType("inspection.request")
+                .requestId("req-1")
+                .threadId("thread-1")
+                .inspection(HiveInspectionRequestBody.builder()
+                        .operation("sessions.list")
+                        .channel("web")
+                        .build())
+                .build();
+
+        dispatcher.dispatch(envelope);
+
+        verify(inspectionCommandHandler).handle(envelope);
+        verify(inboxService).markProcessed("req-1");
+        verify(coordinator, never()).submit(any(Message.class), any(Runnable.class));
+        verify(publisher, never()).publishCommandAcknowledged(envelope);
     }
 }
