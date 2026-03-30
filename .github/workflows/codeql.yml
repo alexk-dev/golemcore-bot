@@ -9,7 +9,7 @@ on:
     - cron: '0 6 * * 1'  # every Monday at 06:00 UTC
 
 env:
-  PLUGIN_API_REPO_REF: 67cd0d1
+  PLUGIN_API_REPO_REF: 67cd0d10a997f494dcaf4686438e5c6bcfc8ac65
 
 jobs:
   analyze:
