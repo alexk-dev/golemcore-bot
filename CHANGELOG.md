@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.49.2 - 2026-03-30
+#### Bug Fixes
+- (**web**) export full trace snapshot payload (#224) - (ee72cd7) - Alex Kuleshov
+#### Miscellaneous
+- (**deps**) bump the spring-boot group with 2 updates (#220) - (8de63f1) - dependabot[bot]
+- (**deps**) bump codecov/codecov-action from 5 to 6 (#219) - (a3f67c2) - dependabot[bot]
+- (**deps**) bump com.github.spotbugs:spotbugs-maven-plugin from 4.9.8.2 to 4.9.8.3 (#222) - (bca2ba7) - dependabot[bot]
+- (**deps-dev**) bump org.sonatype.central:central-publishing-maven-plugin from 0.9.0 to 0.10.0 (#221) - (92688d4) - dependabot[bot]
+- (**deps-dev**) bump io.github.git-commit-id:git-commit-id-maven-plugin from 9.0.2 to 9.1.0 (#223) - (d2becaa) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
