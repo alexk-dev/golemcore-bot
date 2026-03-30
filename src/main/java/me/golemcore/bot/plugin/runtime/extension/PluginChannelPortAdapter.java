@@ -62,6 +62,11 @@ public final class PluginChannelPortAdapter implements ChannelPort {
     }
 
     @Override
+    public boolean isVoiceResponseEnabled() {
+        return delegate.isVoiceResponseEnabled();
+    }
+
+    @Override
     public CompletableFuture<Void> sendProgressUpdate(String chatId, ProgressUpdate update) {
         return delegate.sendProgressUpdate(chatId, mapper.toPluginProgressUpdate(update));
     }
