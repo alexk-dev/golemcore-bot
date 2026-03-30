@@ -33,7 +33,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -648,7 +647,8 @@ public class SessionInspectionService {
             String pointerTransportChatId = CHANNEL_TELEGRAM.equals(channel)
                     ? extractTelegramTransportChatId(pointerKey)
                     : null;
-            String replacement = resolveOrCreateConversationKey(channel, pointerTransportChatId, null);
+            String replacement = SessionConversationSupport.resolveOrCreateConversationKey(
+                    sessionPort, channel, pointerTransportChatId, null);
             pointerService.setActiveConversationKey(pointerKey, replacement);
         }
     }
@@ -691,70 +691,6 @@ public class SessionInspectionService {
             return null;
         }
         return sessionId.substring(separator + 1);
-    }
-
-    private String resolveOrCreateConversationKey(
-            String channel,
-            String transportChatId,
-            String preferredConversation) {
-        if (!StringValueSupport.isBlank(preferredConversation)
-                && isConversationResolvable(channel, transportChatId, preferredConversation)) {
-            return preferredConversation;
-        }
-
-        String fallbackConversation = findLatestConversationKey(channel, transportChatId, preferredConversation)
-                .orElseGet(this::generateConversationKey);
-
-        if (!isConversationResolvable(channel, transportChatId, fallbackConversation)) {
-            ensureSessionExists(channel, transportChatId, fallbackConversation);
-        }
-        return fallbackConversation;
-    }
-
-    private Optional<String> findLatestConversationKey(
-            String channel,
-            String transportChatId,
-            String excludedConversation) {
-        return listRecentSessionsByOwner(channel, transportChatId).stream()
-                .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(SessionIdentitySupport::resolveConversationKey)
-                .filter(value -> !StringValueSupport.isBlank(value) && !value.equals(excludedConversation))
-                .findFirst();
-    }
-
-    private boolean isConversationResolvable(String channel, String transportChatId, String conversationKey) {
-        if (StringValueSupport.isBlank(channel) || StringValueSupport.isBlank(conversationKey)) {
-            return false;
-        }
-
-        Optional<AgentSession> session = sessionPort.get(channel + ":" + conversationKey);
-        if (session.isEmpty()) {
-            return false;
-        }
-
-        if (!CHANNEL_TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
-            return true;
-        }
-        return transportChatId.equals(SessionIdentitySupport.resolveTransportChatId(session.get()));
-    }
-
-    private void ensureSessionExists(String channel, String transportChatId, String conversationKey) {
-        AgentSession session = sessionPort.getOrCreate(channel, conversationKey);
-        if (CHANNEL_TELEGRAM.equals(channel)) {
-            SessionIdentitySupport.bindTransportAndConversation(session, transportChatId, conversationKey);
-        }
-        sessionPort.save(session);
-    }
-
-    private List<AgentSession> listRecentSessionsByOwner(String channel, String transportChatId) {
-        if (!CHANNEL_TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
-            return sessionPort.listByChannelType(channel);
-        }
-        return sessionPort.listByChannelTypeAndTransportChatId(channel, transportChatId);
-    }
-
-    private String generateConversationKey() {
-        return UUID.randomUUID().toString();
     }
 
     private record SnapshotPreview(boolean payloadAvailable, String payloadPreview, boolean previewTruncated) {

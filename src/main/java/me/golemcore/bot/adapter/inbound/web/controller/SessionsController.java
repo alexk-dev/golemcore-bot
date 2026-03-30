@@ -15,6 +15,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.trace.TraceSnapshot;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.domain.service.ConversationKeyValidator;
+import me.golemcore.bot.domain.service.SessionConversationSupport;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SessionInspectionService;
 import me.golemcore.bot.domain.service.SessionPresentationSupport;
@@ -104,7 +105,9 @@ public class SessionsController {
         Optional<String> activeConversation = pointerService.getActiveConversationKey(pointerKey);
         int normalizedLimit = Math.max(1, Math.min(limit, MAX_RECENT_LIMIT));
 
-        List<SessionSummaryDto> dtos = listRecentSessionsByOwner(channel, transportChatId).stream()
+        List<SessionSummaryDto> dtos = SessionConversationSupport.listRecentSessionsByOwner(
+                sessionPort, channel, transportChatId)
+                .stream()
                 .sorted(ConversationKeyValidator.byRecentActivity())
                 .map(session -> SessionPresentationSupport.toSummary(
                         session, isActiveSession(session, activeConversation.orElse(null))))
@@ -125,7 +128,8 @@ public class SessionsController {
 
         if (activeConversation.isPresent()) {
             String currentConversation = activeConversation.get();
-            if (isConversationResolvable(channel, transportChatId, currentConversation)) {
+            if (SessionConversationSupport.isConversationResolvable(
+                    sessionPort, channel, transportChatId, currentConversation)) {
                 return Mono.just(ResponseEntity.ok(toActiveResponse(
                         channel,
                         clientInstanceId,
@@ -139,7 +143,8 @@ public class SessionsController {
                     channel,
                     TelemetrySupport.shortHash(resolveTelemetryTransport(channel, clientInstanceId, transportChatId)),
                     currentConversation);
-            String repairedConversation = resolveOrCreateConversationKey(channel, transportChatId, currentConversation);
+            String repairedConversation = SessionConversationSupport.resolveOrCreateConversationKey(
+                    sessionPort, channel, transportChatId, currentConversation);
             pointerService.setActiveConversationKey(pointerKey, repairedConversation);
             if (CHANNEL_TELEGRAM.equals(channel)) {
                 ensureTelegramSessionBinding(transportChatId, repairedConversation);
@@ -154,7 +159,8 @@ public class SessionsController {
 
         log.info("[SessionMetrics] metric=sessions.active.pointer.miss.count channel={} transportHash={}", channel,
                 TelemetrySupport.shortHash(resolveTelemetryTransport(channel, clientInstanceId, transportChatId)));
-        String fallbackConversation = resolveOrCreateConversationKey(channel, transportChatId, null);
+        String fallbackConversation = SessionConversationSupport.resolveOrCreateConversationKey(
+                sessionPort, channel, transportChatId, null);
         pointerService.setActiveConversationKey(pointerKey, fallbackConversation);
         if (CHANNEL_TELEGRAM.equals(channel)) {
             ensureTelegramSessionBinding(transportChatId, fallbackConversation);
@@ -363,66 +369,6 @@ public class SessionsController {
 
     private String generateConversationKey() {
         return UUID.randomUUID().toString();
-    }
-
-    private String resolveOrCreateConversationKey(
-            String channel,
-            String transportChatId,
-            String preferredConversation) {
-        if (!StringValueSupport.isBlank(preferredConversation)
-                && isConversationResolvable(channel, transportChatId, preferredConversation)) {
-            return preferredConversation;
-        }
-
-        String fallbackConversation = findLatestConversationKey(channel, transportChatId, preferredConversation)
-                .orElseGet(this::generateConversationKey);
-
-        if (!isConversationResolvable(channel, transportChatId, fallbackConversation)) {
-            ensureSessionExists(channel, transportChatId, fallbackConversation);
-        }
-        return fallbackConversation;
-    }
-
-    private Optional<String> findLatestConversationKey(
-            String channel,
-            String transportChatId,
-            String excludedConversation) {
-        return listRecentSessionsByOwner(channel, transportChatId).stream()
-                .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(SessionIdentitySupport::resolveConversationKey)
-                .filter(value -> !StringValueSupport.isBlank(value) && !value.equals(excludedConversation))
-                .findFirst();
-    }
-
-    private boolean isConversationResolvable(String channel, String transportChatId, String conversationKey) {
-        if (StringValueSupport.isBlank(channel) || StringValueSupport.isBlank(conversationKey)) {
-            return false;
-        }
-
-        Optional<AgentSession> session = sessionPort.get(channel + ":" + conversationKey);
-        if (session.isEmpty()) {
-            return false;
-        }
-
-        if (!CHANNEL_TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
-            return true;
-        }
-        return transportChatId.equals(SessionIdentitySupport.resolveTransportChatId(session.get()));
-    }
-
-    private void ensureSessionExists(String channel, String transportChatId, String conversationKey) {
-        AgentSession session = sessionPort.getOrCreate(channel, conversationKey);
-        if (CHANNEL_TELEGRAM.equals(channel)) {
-            SessionIdentitySupport.bindTransportAndConversation(session, transportChatId, conversationKey);
-        }
-        sessionPort.save(session);
-    }
-
-    private List<AgentSession> listRecentSessionsByOwner(String channel, String transportChatId) {
-        if (!CHANNEL_TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
-            return sessionPort.listByChannelType(channel);
-        }
-        return sessionPort.listByChannelTypeAndTransportChatId(channel, transportChatId);
     }
 
     private void ensureTelegramSessionBinding(String transportChatId, String conversationKey) {
