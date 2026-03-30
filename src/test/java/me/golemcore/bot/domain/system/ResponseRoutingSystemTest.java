@@ -550,6 +550,25 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
+    void telegramVoiceDisabledFallbackFailureRecordsRoutingError() {
+        when(channelPort.sendMessage(anyString(), anyString(), any()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("fallback failed")));
+
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                OutgoingResponse.voiceOnly("Hello from OutgoingResponse"));
+
+        system.process(context);
+
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello from OutgoingResponse"), any());
+        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
+        RoutingOutcome outcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
+        assertNotNull(outcome);
+        assertFalse(outcome.isSentText());
+        assertNotNull(outcome.getErrorMessage());
+    }
+
+    @Test
     void nonTelegramChannelsAlwaysFallBackToTextForVoiceOnlyOutgoingResponse() {
         ChannelPort hiveChannel = mock(ChannelPort.class);
         when(hiveChannel.getChannelType()).thenReturn("hive");
