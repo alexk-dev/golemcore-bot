@@ -176,7 +176,7 @@ const summary: SessionTraceSummary = {
 };
 
 describe('SessionTraceExplorer', () => {
-  it('renders trace overview, span tree, and snapshot preview', () => {
+  it('renders trace overview and waterfall summary', () => {
     const html = renderToStaticMarkup(
       <SessionTraceExplorer
         summary={summary}
@@ -187,17 +187,16 @@ describe('SessionTraceExplorer', () => {
         errorMessage={null}
         onLoadTrace={vi.fn()}
         onExport={vi.fn()}
+        onExportSnapshotPayload={vi.fn()}
       />,
     );
 
     expect(html).toContain('Conversation + trace');
-    expect(html).toContain('Analyze the trace');
-    expect(html).toContain('I found the issue.');
+    expect(html).toContain('web.message');
     expect(html).toContain('llm.chat');
-    expect(html).toContain('Trace meta');
-    expect(html).toContain('Payload inspect');
-    expect(html).toContain('skill executor');
-    expect(html).toContain('model gpt-5-smart');
+    expect(html).toContain('tool.run');
+    expect(html).toContain('3 spans');
+    expect(html).toContain('2 messages');
   });
 
   it('renders summary-only state before full trace details are loaded', () => {
@@ -211,6 +210,7 @@ describe('SessionTraceExplorer', () => {
         errorMessage={null}
         onLoadTrace={vi.fn()}
         onExport={vi.fn()}
+        onExportSnapshotPayload={vi.fn()}
       />,
     );
 
@@ -230,6 +230,7 @@ describe('SessionTraceExplorer', () => {
         errorMessage="Failed to load trace details: boom"
         onLoadTrace={vi.fn()}
         onExport={vi.fn()}
+        onExportSnapshotPayload={vi.fn()}
       />,
     );
 

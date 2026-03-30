@@ -1,6 +1,5 @@
 import { useState, type ReactElement } from 'react';
 import { Badge, Button, Card, Table } from 'react-bootstrap';
-import toast from 'react-hot-toast';
 
 import type { SessionTraceSpan } from '../../api/sessions';
 import { formatTraceBytes, formatTraceDuration, formatTraceTimestamp, getTraceStatusVariant } from '../../lib/traceFormat';
@@ -8,6 +7,8 @@ import { formatTraceBytes, formatTraceDuration, formatTraceTimestamp, getTraceSt
 export interface SessionTraceSpanDetailProps {
   span: SessionTraceSpan;
   traceId: string;
+  onExportSnapshotPayload: (snapshotId: string, role: string | null, spanName: string | null) => Promise<void>;
+  isExportingSnapshot: boolean;
   onClose: () => void;
 }
 
@@ -71,25 +72,17 @@ function EventsSection({ span }: { span: SessionTraceSpan }): ReactElement {
   );
 }
 
-function exportPayloadAsJson(payload: string, role: string | null, spanName: string | null): void {
-  let formatted: string;
-  try {
-    const parsed: unknown = JSON.parse(payload);
-    formatted = JSON.stringify(parsed, null, 2);
-  } catch {
-    formatted = payload;
-  }
-  const blob = new Blob([formatted], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `payload-${spanName ?? 'span'}-${role ?? 'snapshot'}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
-  toast.success('Payload exported');
+interface SnapshotsSectionProps {
+  span: SessionTraceSpan;
+  onExportSnapshotPayload: (snapshotId: string, role: string | null, spanName: string | null) => Promise<void>;
+  isExportingSnapshot: boolean;
 }
 
-function SnapshotsSection({ span }: { span: SessionTraceSpan }): ReactElement {
+function SnapshotsSection({
+  span,
+  onExportSnapshotPayload,
+  isExportingSnapshot,
+}: SnapshotsSectionProps): ReactElement {
   if (span.snapshots.length === 0) {
     return <div className="small text-body-secondary">No snapshots stored.</div>;
   }
@@ -111,14 +104,12 @@ function SnapshotsSection({ span }: { span: SessionTraceSpan }): ReactElement {
                 size="sm"
                 variant="secondary"
                 className="py-0 px-2"
+                disabled={isExportingSnapshot}
                 onClick={() => {
-                  const preview = snapshot.payloadPreview;
-                  if (preview != null) {
-                    exportPayloadAsJson(preview, snapshot.role, span.name);
-                  }
+                  void onExportSnapshotPayload(snapshot.snapshotId, snapshot.role, span.name);
                 }}
               >
-                Export JSON
+                {isExportingSnapshot ? 'Exporting...' : 'Export JSON'}
               </Button>
             )}
           </div>
@@ -133,7 +124,13 @@ function SnapshotsSection({ span }: { span: SessionTraceSpan }): ReactElement {
   );
 }
 
-export function SessionTraceSpanDetail({ span, traceId, onClose }: SessionTraceSpanDetailProps): ReactElement {
+export function SessionTraceSpanDetail({
+  span,
+  traceId,
+  onExportSnapshotPayload,
+  isExportingSnapshot,
+  onClose,
+}: SessionTraceSpanDetailProps): ReactElement {
   const [activeTab, setActiveTab] = useState<DetailTab>('attributes');
 
   const tabs: Array<{ key: DetailTab; label: string; count: number }> = [
@@ -182,7 +179,13 @@ export function SessionTraceSpanDetail({ span, traceId, onClose }: SessionTraceS
         <div className="trace-waterfall-detail-body">
           {activeTab === 'attributes' && <AttributesSection span={span} />}
           {activeTab === 'events' && <EventsSection span={span} />}
-          {activeTab === 'snapshots' && <SnapshotsSection span={span} />}
+          {activeTab === 'snapshots' && (
+            <SnapshotsSection
+              span={span}
+              onExportSnapshotPayload={onExportSnapshotPayload}
+              isExportingSnapshot={isExportingSnapshot}
+            />
+          )}
         </div>
       </Card.Body>
     </Card>

@@ -14,6 +14,8 @@ import { SessionTraceSpanDetail } from './SessionTraceSpanDetail';
 export interface SessionTraceWaterfallProps {
   record: SessionTraceRecord;
   isExpanded: boolean;
+  onExportSnapshotPayload: (snapshotId: string, role: string | null, spanName: string | null) => Promise<void>;
+  isExportingSnapshot: boolean;
   onToggleExpand: () => void;
 }
 
@@ -87,7 +89,13 @@ function getBarColorClass(kind: string | null, statusCode: string | null): strin
 }
 
 
-export function SessionTraceWaterfall({ record, isExpanded, onToggleExpand }: SessionTraceWaterfallProps): ReactElement {
+export function SessionTraceWaterfall({
+  record,
+  isExpanded,
+  onExportSnapshotPayload,
+  isExportingSnapshot,
+  onToggleExpand,
+}: SessionTraceWaterfallProps): ReactElement {
   const rows = useMemo(() => computeWaterfallRows(record), [record]);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [collapsedSpans, setCollapsedSpans] = useState<Set<string>>(() => new Set());
@@ -224,6 +232,8 @@ export function SessionTraceWaterfall({ record, isExpanded, onToggleExpand }: Se
             <SessionTraceSpanDetail
               span={selectedSpan}
               traceId={record.traceId}
+              onExportSnapshotPayload={onExportSnapshotPayload}
+              isExportingSnapshot={isExportingSnapshot}
               onClose={() => setSelectedSpanId(null)}
             />
           )}

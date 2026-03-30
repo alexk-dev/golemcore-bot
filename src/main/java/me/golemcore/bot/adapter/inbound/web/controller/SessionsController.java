@@ -31,6 +31,7 @@ import me.golemcore.bot.domain.model.trace.TraceStorageStats;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -309,6 +310,25 @@ public class SessionsController {
         return Mono.just(ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
                 .body(toTraceExport(session)));
+    }
+
+    @GetMapping("/{id}/trace/snapshots/{snapshotId}/payload")
+    public Mono<ResponseEntity<String>> exportSessionTraceSnapshotPayload(
+            @PathVariable String id,
+            @PathVariable String snapshotId) {
+        AgentSession session = requireSession(id);
+        TraceSnapshot snapshot = findTraceSnapshot(session, snapshotId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Trace snapshot not found"));
+        String payloadText = decompressSnapshotPayload(snapshot);
+        if (payloadText == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Trace snapshot payload not found");
+        }
+        String fileName = "session-trace-" + sanitizeExportName(id) + "-snapshot-"
+                + sanitizeExportName(snapshotId) + resolveSnapshotFileExtension(snapshot);
+        return Mono.just(ResponseEntity.ok()
+                .contentType(resolveSnapshotContentType(snapshot))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                .body(payloadText));
     }
 
     @DeleteMapping("/{id}")
@@ -752,6 +772,35 @@ public class SessionsController {
 
     private String sanitizeExportName(String id) {
         return id.replaceAll("[^a-zA-Z0-9._-]", "_");
+    }
+
+    private Optional<TraceSnapshot> findTraceSnapshot(AgentSession session, String snapshotId) {
+        if (session == null || StringValueSupport.isBlank(snapshotId) || session.getTraces() == null) {
+            return Optional.empty();
+        }
+        return session.getTraces().stream()
+                .filter(trace -> trace != null && trace.getSpans() != null)
+                .flatMap(trace -> trace.getSpans().stream())
+                .filter(span -> span != null && span.getSnapshots() != null)
+                .flatMap(span -> span.getSnapshots().stream())
+                .filter(snapshot -> snapshot != null && snapshotId.equals(snapshot.getSnapshotId()))
+                .findFirst();
+    }
+
+    private MediaType resolveSnapshotContentType(TraceSnapshot snapshot) {
+        if (snapshot == null || StringValueSupport.isBlank(snapshot.getContentType())) {
+            return MediaType.APPLICATION_JSON;
+        }
+        try {
+            return MediaType.parseMediaType(snapshot.getContentType());
+        } catch (IllegalArgumentException exception) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+    }
+
+    private String resolveSnapshotFileExtension(TraceSnapshot snapshot) {
+        MediaType contentType = resolveSnapshotContentType(snapshot);
+        return MediaType.APPLICATION_JSON.includes(contentType) ? ".json" : ".txt";
     }
 
     private record SnapshotPreview(boolean payloadAvailable, String payloadPreview, boolean previewTruncated) {

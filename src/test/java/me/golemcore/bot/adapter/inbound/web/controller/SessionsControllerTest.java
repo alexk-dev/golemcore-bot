@@ -22,6 +22,7 @@ import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.test.StepVerifier;
@@ -464,6 +465,250 @@ class SessionsControllerTest {
                     @SuppressWarnings("unchecked")
                     List<Map<String, Object>> snapshots = (List<Map<String, Object>>) spans.get(0).get("snapshots");
                     assertEquals("{\"answer\":\"ok\"}", snapshots.get(0).get("payloadText"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExportFullSessionTraceSnapshotPayloadWhenPreviewWouldBeTruncated() {
+        String payloadText = "{\"payload\":\"" + "x".repeat(4096) + "\"}";
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-full")
+                .role("response")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress(payloadText.getBytes(StandardCharsets.UTF_8)))
+                .originalSize((long) payloadText.length())
+                .compressedSize(128L)
+                .build();
+        TraceSpanRecord span = TraceSpanRecord.builder()
+                .spanId("span-root")
+                .name("response.route")
+                .kind(TraceSpanKind.OUTBOUND)
+                .statusCode(TraceStatusCode.OK)
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .snapshots(List.of(snapshot))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-snapshot-export")
+                .channelType("web")
+                .chatId("chat-3")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-export")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(span))
+                        .build()))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-snapshot-export")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.exportSessionTraceSnapshotPayload("s-snapshot-export", "snap-full"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(payloadText, response.getBody());
+                    assertNotNull(response.getHeaders().getContentDisposition());
+                    assertEquals("application/json", response.getHeaders().getContentType().toString());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenTraceSnapshotIsMissing() {
+        AgentSession session = AgentSession.builder()
+                .id("s-missing-snapshot")
+                .channelType("web")
+                .chatId("chat-4")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-missing")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(TraceSpanRecord.builder()
+                                .spanId("span-root")
+                                .name("response.route")
+                                .kind(TraceSpanKind.OUTBOUND)
+                                .statusCode(TraceStatusCode.OK)
+                                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                                .snapshots(List.of())
+                                .build()))
+                        .build()))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-missing-snapshot")).thenReturn(Optional.of(session));
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.exportSessionTraceSnapshotPayload("s-missing-snapshot", "snap-404"));
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+        assertEquals("Trace snapshot not found", error.getReason());
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenTraceSnapshotPayloadIsMissing() {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-empty")
+                .role("response")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(null)
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-empty-payload")
+                .channelType("web")
+                .chatId("chat-5")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-empty")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(TraceSpanRecord.builder()
+                                .spanId("span-root")
+                                .name("response.route")
+                                .kind(TraceSpanKind.OUTBOUND)
+                                .statusCode(TraceStatusCode.OK)
+                                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                                .snapshots(List.of(snapshot))
+                                .build()))
+                        .build()))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-empty-payload")).thenReturn(Optional.of(session));
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.exportSessionTraceSnapshotPayload("s-empty-payload", "snap-empty"));
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+        assertEquals("Trace snapshot payload not found", error.getReason());
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenSessionTraceListIsMissing() {
+        AgentSession session = AgentSession.builder()
+                .id("s-no-traces")
+                .channelType("web")
+                .chatId("chat-6")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(null)
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-no-traces")).thenReturn(Optional.of(session));
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.exportSessionTraceSnapshotPayload("s-no-traces", "snap-missing"));
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+        assertEquals("Trace snapshot not found", error.getReason());
+    }
+
+    @Test
+    void shouldExportSnapshotPayloadAsTextWhenContentTypeIsInvalid() {
+        String payloadText = "plain text payload";
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-text")
+                .role("response")
+                .contentType("not a media type")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress(payloadText.getBytes(StandardCharsets.UTF_8)))
+                .originalSize((long) payloadText.length())
+                .compressedSize(32L)
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-text-payload")
+                .channelType("web")
+                .chatId("chat-6")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-text")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(TraceSpanRecord.builder()
+                                .spanId("span-root")
+                                .name("response.route")
+                                .kind(TraceSpanKind.OUTBOUND)
+                                .statusCode(TraceStatusCode.OK)
+                                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                                .snapshots(List.of(snapshot))
+                                .build()))
+                        .build()))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-text-payload")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.exportSessionTraceSnapshotPayload("s-text-payload", "snap-text"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(payloadText, response.getBody());
+                    assertEquals("application/octet-stream", response.getHeaders().getContentType().toString());
+                    assertTrue(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION)
+                            .endsWith("snap-text.txt\""));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldDefaultSnapshotPayloadExportToJsonWhenContentTypeIsBlank() {
+        String payloadText = "{\"answer\":\"ok\"}";
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-json-default")
+                .role("response")
+                .contentType(" ")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress(payloadText.getBytes(StandardCharsets.UTF_8)))
+                .originalSize((long) payloadText.length())
+                .compressedSize(24L)
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-default-json")
+                .channelType("web")
+                .chatId("chat-7")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-default-json")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(TraceSpanRecord.builder()
+                                .spanId("span-root")
+                                .name("response.route")
+                                .kind(TraceSpanKind.OUTBOUND)
+                                .statusCode(TraceStatusCode.OK)
+                                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                                .snapshots(List.of(snapshot))
+                                .build()))
+                        .build()))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-default-json")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.exportSessionTraceSnapshotPayload("s-default-json", "snap-json-default"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(payloadText, response.getBody());
+                    assertEquals("application/json", response.getHeaders().getContentType().toString());
+                    assertTrue(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION)
+                            .endsWith("snap-json-default.json\""));
                 })
                 .verifyComplete();
     }

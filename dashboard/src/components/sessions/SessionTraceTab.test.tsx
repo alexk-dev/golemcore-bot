@@ -7,12 +7,23 @@ const sessionHookMocks = vi.hoisted(() => ({
   useSessionTraceSummary: vi.fn(),
   useSessionTrace: vi.fn(),
   useExportSessionTrace: vi.fn(),
+  useExportSessionTraceSnapshot: vi.fn(),
+}));
+
+const exportPayloadAsJsonMock = vi.hoisted(() => vi.fn());
+const explorerPropsRef = vi.hoisted(() => ({
+  current: null as Record<string, unknown> | null,
 }));
 
 vi.mock('../../hooks/useSessions', () => ({
   useSessionTraceSummary: sessionHookMocks.useSessionTraceSummary,
   useSessionTrace: sessionHookMocks.useSessionTrace,
   useExportSessionTrace: sessionHookMocks.useExportSessionTrace,
+  useExportSessionTraceSnapshot: sessionHookMocks.useExportSessionTraceSnapshot,
+}));
+
+vi.mock('../../lib/tracePayloadExport', () => ({
+  exportPayloadAsJson: exportPayloadAsJsonMock,
 }));
 
 vi.mock('react-hot-toast', () => ({
@@ -23,14 +34,46 @@ vi.mock('react-hot-toast', () => ({
 }));
 
 vi.mock('./SessionTraceExplorer', () => ({
-  SessionTraceExplorer: () => null,
+  SessionTraceExplorer: (props: Record<string, unknown>) => {
+    explorerPropsRef.current = props;
+    return null;
+  },
 }));
 
 describe('SessionTraceTab', () => {
+  it('exports a full snapshot payload instead of the truncated preview', async () => {
+    const exportSnapshotPayloadMock = vi.fn().mockResolvedValue('{"full":"payload"}');
+    sessionHookMocks.useSessionTraceSummary.mockReturnValue({ data: null, isLoading: false, error: null });
+    sessionHookMocks.useSessionTrace.mockReturnValue({ data: null, isLoading: false, error: null });
+    sessionHookMocks.useExportSessionTrace.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
+    sessionHookMocks.useExportSessionTraceSnapshot.mockReturnValue({
+      isPending: false,
+      mutateAsync: exportSnapshotPayloadMock,
+    });
+
+    renderToStaticMarkup(<SessionTraceTab sessionId="session-1" messages={[]} />);
+
+    const onExportSnapshotPayload = explorerPropsRef.current == null
+      ? undefined
+      : Reflect.get(explorerPropsRef.current, 'onExportSnapshotPayload');
+
+    expect(typeof onExportSnapshotPayload).toBe('function');
+
+    if (typeof onExportSnapshotPayload !== 'function') {
+      return;
+    }
+
+    await onExportSnapshotPayload('snap-1', 'response', 'response.route');
+
+    expect(exportSnapshotPayloadMock).toHaveBeenCalledWith({ sessionId: 'session-1', snapshotId: 'snap-1' });
+    expect(exportPayloadAsJsonMock).toHaveBeenCalledWith('{"full":"payload"}', 'response', 'response.route');
+  });
+
   it('does not enable trace detail loading while session id is absent', () => {
     sessionHookMocks.useSessionTraceSummary.mockReturnValue({ data: null, isLoading: false, error: null });
     sessionHookMocks.useSessionTrace.mockReturnValue({ data: null, isLoading: false, error: null });
     sessionHookMocks.useExportSessionTrace.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
+    sessionHookMocks.useExportSessionTraceSnapshot.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
 
     renderToStaticMarkup(<SessionTraceTab sessionId={null} messages={[]} />);
 
@@ -59,6 +102,7 @@ describe('SessionTraceTab', () => {
     });
     sessionHookMocks.useSessionTrace.mockReturnValue({ data: null, isLoading: false, error: null });
     sessionHookMocks.useExportSessionTrace.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
+    sessionHookMocks.useExportSessionTraceSnapshot.mockReturnValue({ isPending: false, mutateAsync: vi.fn() });
 
     renderToStaticMarkup(<SessionTraceTab sessionId="session-1" messages={[]} />);
 

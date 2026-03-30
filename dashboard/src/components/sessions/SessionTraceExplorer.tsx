@@ -16,7 +16,9 @@ export interface SessionTraceExplorerProps {
   errorMessage: string | null;
   onLoadTrace: (traceId: string) => void;
   onExport: () => void;
+  onExportSnapshotPayload: (snapshotId: string, role: string | null, spanName: string | null) => Promise<void>;
   isExporting?: boolean;
+  isExportingSnapshot?: boolean;
 }
 
 type TraceViewMode = 'waterfall' | 'feed' | 'timeline';
@@ -130,10 +132,22 @@ interface TraceContentProps {
   trace: SessionTrace;
   messages: MessageInfo[];
   activeSpanId: string | null;
+  onExportSnapshotPayload: (snapshotId: string, role: string | null, spanName: string | null) => Promise<void>;
+  isExportingSnapshot: boolean;
   onSelectSpan: (spanId: string) => void;
 }
 
-function WaterfallAccordion({ trace }: { trace: SessionTrace }): ReactElement {
+interface WaterfallAccordionProps {
+  trace: SessionTrace;
+  onExportSnapshotPayload: (snapshotId: string, role: string | null, spanName: string | null) => Promise<void>;
+  isExportingSnapshot: boolean;
+}
+
+function WaterfallAccordion({
+  trace,
+  onExportSnapshotPayload,
+  isExportingSnapshot,
+}: WaterfallAccordionProps): ReactElement {
   const [expandedTraceId, setExpandedTraceId] = useState<string | null>(
     () => trace.traces.length > 0 ? trace.traces[0].traceId : null,
   );
@@ -150,6 +164,8 @@ function WaterfallAccordion({ trace }: { trace: SessionTrace }): ReactElement {
             <SessionTraceWaterfall
               record={record}
               isExpanded={expandedTraceId === record.traceId}
+              onExportSnapshotPayload={onExportSnapshotPayload}
+              isExportingSnapshot={isExportingSnapshot}
               onToggleExpand={() => handleToggle(record.traceId)}
             />
           </Card.Body>
@@ -159,7 +175,15 @@ function WaterfallAccordion({ trace }: { trace: SessionTrace }): ReactElement {
   );
 }
 
-function TraceContent({ viewMode, trace, messages, activeSpanId, onSelectSpan }: TraceContentProps): ReactElement {
+function TraceContent({
+  viewMode,
+  trace,
+  messages,
+  activeSpanId,
+  onExportSnapshotPayload,
+  isExportingSnapshot,
+  onSelectSpan,
+}: TraceContentProps): ReactElement {
   if (viewMode === 'feed') {
     return <SessionTraceFeed messages={messages} trace={trace} />;
   }
@@ -169,7 +193,13 @@ function TraceContent({ viewMode, trace, messages, activeSpanId, onSelectSpan }:
     return <SessionTraceTimeline spans={allSpans} activeSpanId={activeSpanId} onSelectSpan={onSelectSpan} />;
   }
 
-  return <WaterfallAccordion trace={trace} />;
+  return (
+    <WaterfallAccordion
+      trace={trace}
+      onExportSnapshotPayload={onExportSnapshotPayload}
+      isExportingSnapshot={isExportingSnapshot}
+    />
+  );
 }
 
 export function SessionTraceExplorer({
@@ -181,7 +211,9 @@ export function SessionTraceExplorer({
   errorMessage,
   onLoadTrace,
   onExport,
+  onExportSnapshotPayload,
   isExporting = false,
+  isExportingSnapshot = false,
 }: SessionTraceExplorerProps): ReactElement {
   const [viewMode, setViewMode] = useState<TraceViewMode>('waterfall');
   const [activeSpanId, setActiveSpanId] = useState<string | null>(null);
@@ -266,6 +298,8 @@ export function SessionTraceExplorer({
         trace={trace}
         messages={messages}
         activeSpanId={activeSpanId}
+        onExportSnapshotPayload={onExportSnapshotPayload}
+        isExportingSnapshot={isExportingSnapshot}
         onSelectSpan={setActiveSpanId}
       />
     </div>
