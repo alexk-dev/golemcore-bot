@@ -21,6 +21,10 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
+import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.service.DeterministicJudgeService;
+import me.golemcore.bot.domain.service.EvolutionCandidateService;
+import me.golemcore.bot.domain.service.LlmJudgeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SelfEvolvingRunService;
 import org.springframework.stereotype.Component;
@@ -33,11 +37,20 @@ public class PostRunAnalysisSystem implements AgentSystem {
 
     private final RuntimeConfigService runtimeConfigService;
     private final SelfEvolvingRunService selfEvolvingRunService;
+    private final DeterministicJudgeService deterministicJudgeService;
+    private final LlmJudgeService llmJudgeService;
+    private final EvolutionCandidateService evolutionCandidateService;
 
     public PostRunAnalysisSystem(RuntimeConfigService runtimeConfigService,
-            SelfEvolvingRunService selfEvolvingRunService) {
+            SelfEvolvingRunService selfEvolvingRunService,
+            DeterministicJudgeService deterministicJudgeService,
+            LlmJudgeService llmJudgeService,
+            EvolutionCandidateService evolutionCandidateService) {
         this.runtimeConfigService = runtimeConfigService;
         this.selfEvolvingRunService = selfEvolvingRunService;
+        this.deterministicJudgeService = deterministicJudgeService;
+        this.llmJudgeService = llmJudgeService;
+        this.evolutionCandidateService = evolutionCandidateService;
     }
 
     @Override
@@ -73,6 +86,9 @@ public class PostRunAnalysisSystem implements AgentSystem {
         }
         RunRecord startedRun = selfEvolvingRunService.startRun(context);
         RunRecord completedRun = selfEvolvingRunService.completeRun(startedRun, context);
+        RunVerdict deterministicVerdict = deterministicJudgeService.evaluate(completedRun, null);
+        RunVerdict llmVerdict = llmJudgeService.judge(completedRun, null, deterministicVerdict);
+        evolutionCandidateService.deriveCandidates(completedRun, llmVerdict);
         context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, completedRun.getId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, completedRun.getArtifactBundleId());
         return context;

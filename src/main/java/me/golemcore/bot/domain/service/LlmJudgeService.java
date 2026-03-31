@@ -1,0 +1,374 @@
+package me.golemcore.bot.domain.service;
+
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.LlmRequest;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.selfevolving.RunRecord;
+import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.port.outbound.LlmPort;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+
+/**
+ * Runs outcome and process judges on top of the existing LLM port and model
+ * tier routing.
+ */
+@Service
+@Slf4j
+public class LlmJudgeService {
+
+    private static final String OUTCOME_SYSTEM_PROMPT = """
+            You are the outcome judge for a golem SelfEvolving run.
+            Return only JSON matching the RunVerdict schema fields you can justify.
+            Always include evidenceRefs when evidence anchors are required.
+            Score completion, correctness, and rollout recommendation from the supplied trace evidence.
+            """;
+    private static final String PROCESS_SYSTEM_PROMPT = """
+            You are the process judge for a golem SelfEvolving run.
+            Return only JSON matching the RunVerdict schema fields you can justify.
+            Focus on skill choice, tier switching, tool churn, and process findings.
+            Always include evidenceRefs when evidence anchors are required.
+            """;
+    private static final String TIEBREAKER_SYSTEM_PROMPT = """
+            You are the arbitration judge for a golem SelfEvolving run.
+            Return only JSON matching the RunVerdict schema fields you can justify.
+            Resolve disagreements from prior judges and keep evidenceRefs anchored to the trace.
+            """;
+
+    private final LlmPort llmPort;
+    private final JudgeTierResolver judgeTierResolver;
+    private final RuntimeConfigService runtimeConfigService;
+    private final ObjectMapper objectMapper;
+
+    public LlmJudgeService(
+            LlmPort llmPort,
+            JudgeTierResolver judgeTierResolver,
+            RuntimeConfigService runtimeConfigService) {
+        this.llmPort = llmPort;
+        this.judgeTierResolver = judgeTierResolver;
+        this.runtimeConfigService = runtimeConfigService;
+        this.objectMapper = new ObjectMapper();
+        this.objectMapper.findAndRegisterModules();
+    }
+
+    public RunVerdict judge(RunRecord runRecord, TraceRecord traceRecord, RunVerdict deterministicVerdict) {
+        if (!isJudgeEnabled() || llmPort == null || !llmPort.isAvailable()) {
+            return deterministicVerdict;
+        }
+
+        try {
+            ModelSelectionService.ModelSelection primarySelection = judgeTierResolver.resolveSelection("primary");
+            RunVerdict outcomeVerdict = requestJudgeVerdict(
+                    "outcome",
+                    primarySelection,
+                    runRecord,
+                    traceRecord,
+                    deterministicVerdict);
+            RunVerdict processVerdict = requestJudgeVerdict(
+                    "process",
+                    primarySelection,
+                    runRecord,
+                    traceRecord,
+                    deterministicVerdict);
+            RunVerdict mergedVerdict = mergeVerdicts(deterministicVerdict, outcomeVerdict, processVerdict);
+            if (shouldEscalate(mergedVerdict)) {
+                ModelSelectionService.ModelSelection tiebreakerSelection = judgeTierResolver.resolveSelection(
+                        "tiebreaker");
+                RunVerdict tiebreakerVerdict = requestJudgeVerdict(
+                        "tiebreaker",
+                        tiebreakerSelection,
+                        runRecord,
+                        traceRecord,
+                        mergedVerdict);
+                mergedVerdict = applyOverride(mergedVerdict, tiebreakerVerdict);
+            }
+            return mergedVerdict;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return deterministicVerdict;
+        } catch (ExecutionException | RuntimeException e) {
+            log.debug("[SelfEvolving] Falling back to deterministic verdict: {}", e.getMessage());
+            return deterministicVerdict;
+        }
+    }
+
+    public void validate(RunVerdict verdict) {
+        if (verdict == null) {
+            throw new IllegalArgumentException("Judge verdict must not be null");
+        }
+        if (requireEvidenceAnchors() && (verdict.getEvidenceRefs() == null || verdict.getEvidenceRefs().isEmpty())) {
+            throw new IllegalArgumentException("Judge verdict must include evidence refs");
+        }
+    }
+
+    private RunVerdict requestJudgeVerdict(
+            String judgeType,
+            ModelSelectionService.ModelSelection selection,
+            RunRecord runRecord,
+            TraceRecord traceRecord,
+            RunVerdict seedVerdict) throws InterruptedException, ExecutionException {
+        LlmRequest request = LlmRequest.builder()
+                .model(selection.model())
+                .reasoningEffort(selection.reasoning())
+                .systemPrompt(resolveSystemPrompt(judgeType))
+                .messages(List.of(Message.builder()
+                        .role("user")
+                        .content(buildPrompt(judgeType, runRecord, traceRecord, seedVerdict))
+                        .build()))
+                .temperature(0.1)
+                .sessionId(runRecord != null ? runRecord.getSessionId() : null)
+                .traceId(runRecord != null ? runRecord.getTraceId() : null)
+                .build();
+
+        LlmResponse response = llmPort.chat(request).get();
+        if (response == null || StringValueSupport.isBlank(response.getContent())) {
+            throw new IllegalArgumentException("Judge returned empty response");
+        }
+        RunVerdict parsedVerdict = parseVerdict(response.getContent(), runRecord);
+        validate(parsedVerdict);
+        return parsedVerdict;
+    }
+
+    private RunVerdict parseVerdict(String rawContent, RunRecord runRecord) {
+        try {
+            RunVerdict verdict = objectMapper.readValue(rawContent, RunVerdict.class);
+            if (StringValueSupport.isBlank(verdict.getId())) {
+                verdict.setId(UUID.randomUUID().toString());
+            }
+            if (StringValueSupport.isBlank(verdict.getRunId()) && runRecord != null) {
+                verdict.setRunId(runRecord.getId());
+            }
+            if (verdict.getCreatedAt() == null) {
+                verdict.setCreatedAt(Instant.now());
+            }
+            return verdict;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Unable to parse judge verdict", e);
+        }
+    }
+
+    private RunVerdict mergeVerdicts(RunVerdict deterministicVerdict, RunVerdict outcomeVerdict,
+            RunVerdict processVerdict) {
+        RunVerdict mergedVerdict = deterministicVerdict != null ? cloneVerdict(deterministicVerdict)
+                : RunVerdict.builder()
+                        .build();
+        mergedVerdict = applyOverride(mergedVerdict, outcomeVerdict);
+        mergedVerdict = applyOverride(mergedVerdict, processVerdict);
+        mergedVerdict.setConfidence(resolveConfidence(outcomeVerdict, processVerdict, mergedVerdict));
+        mergedVerdict.setEvidenceRefs(mergeEvidenceRefs(
+                deterministicVerdict != null ? deterministicVerdict.getEvidenceRefs() : null,
+                outcomeVerdict != null ? outcomeVerdict.getEvidenceRefs() : null,
+                processVerdict != null ? processVerdict.getEvidenceRefs() : null));
+        mergedVerdict.setProcessFindings(mergeProcessFindings(
+                deterministicVerdict != null ? deterministicVerdict.getProcessFindings() : null,
+                outcomeVerdict != null ? outcomeVerdict.getProcessFindings() : null,
+                processVerdict != null ? processVerdict.getProcessFindings() : null));
+        return mergedVerdict;
+    }
+
+    private RunVerdict applyOverride(RunVerdict baseVerdict, RunVerdict overrideVerdict) {
+        if (overrideVerdict == null) {
+            return baseVerdict;
+        }
+        RunVerdict mergedVerdict = cloneVerdict(baseVerdict);
+        if (!StringValueSupport.isBlank(overrideVerdict.getOutcomeStatus())) {
+            mergedVerdict.setOutcomeStatus(overrideVerdict.getOutcomeStatus());
+        }
+        if (!StringValueSupport.isBlank(overrideVerdict.getProcessStatus())) {
+            mergedVerdict.setProcessStatus(overrideVerdict.getProcessStatus());
+        }
+        if (!StringValueSupport.isBlank(overrideVerdict.getOutcomeSummary())) {
+            mergedVerdict.setOutcomeSummary(overrideVerdict.getOutcomeSummary());
+        }
+        if (!StringValueSupport.isBlank(overrideVerdict.getProcessSummary())) {
+            mergedVerdict.setProcessSummary(overrideVerdict.getProcessSummary());
+        }
+        if (!StringValueSupport.isBlank(overrideVerdict.getPromotionRecommendation())) {
+            mergedVerdict.setPromotionRecommendation(overrideVerdict.getPromotionRecommendation());
+        }
+        if (overrideVerdict.getConfidence() != null) {
+            mergedVerdict.setConfidence(overrideVerdict.getConfidence());
+        }
+        if (!StringValueSupport.isBlank(overrideVerdict.getUncertaintyReason())) {
+            mergedVerdict.setUncertaintyReason(overrideVerdict.getUncertaintyReason());
+        }
+        if (overrideVerdict.getDimensionScores() != null && !overrideVerdict.getDimensionScores().isEmpty()) {
+            mergedVerdict.setDimensionScores(new ArrayList<>(overrideVerdict.getDimensionScores()));
+        }
+        if (overrideVerdict.getEvidenceRefs() != null && !overrideVerdict.getEvidenceRefs().isEmpty()) {
+            mergedVerdict.setEvidenceRefs(
+                    mergeEvidenceRefs(mergedVerdict.getEvidenceRefs(), overrideVerdict.getEvidenceRefs()));
+        }
+        if (overrideVerdict.getProcessFindings() != null && !overrideVerdict.getProcessFindings().isEmpty()) {
+            mergedVerdict.setProcessFindings(
+                    mergeProcessFindings(mergedVerdict.getProcessFindings(), overrideVerdict.getProcessFindings()));
+        }
+        return mergedVerdict;
+    }
+
+    private RunVerdict cloneVerdict(RunVerdict sourceVerdict) {
+        if (sourceVerdict == null) {
+            return RunVerdict.builder().build();
+        }
+        return RunVerdict.builder()
+                .id(sourceVerdict.getId())
+                .runId(sourceVerdict.getRunId())
+                .baselineVerdictId(sourceVerdict.getBaselineVerdictId())
+                .outcomeStatus(sourceVerdict.getOutcomeStatus())
+                .processStatus(sourceVerdict.getProcessStatus())
+                .outcomeSummary(sourceVerdict.getOutcomeSummary())
+                .processSummary(sourceVerdict.getProcessSummary())
+                .confidence(sourceVerdict.getConfidence())
+                .uncertaintyReason(sourceVerdict.getUncertaintyReason())
+                .promotionRecommendation(sourceVerdict.getPromotionRecommendation())
+                .createdAt(sourceVerdict.getCreatedAt())
+                .dimensionScores(sourceVerdict.getDimensionScores() != null
+                        ? new ArrayList<>(sourceVerdict.getDimensionScores())
+                        : new ArrayList<>())
+                .evidenceRefs(sourceVerdict.getEvidenceRefs() != null
+                        ? new ArrayList<>(sourceVerdict.getEvidenceRefs())
+                        : new ArrayList<>())
+                .processFindings(sourceVerdict.getProcessFindings() != null
+                        ? new ArrayList<>(sourceVerdict.getProcessFindings())
+                        : new ArrayList<>())
+                .build();
+    }
+
+    private Double resolveConfidence(RunVerdict outcomeVerdict, RunVerdict processVerdict, RunVerdict mergedVerdict) {
+        Double outcomeConfidence = outcomeVerdict != null ? outcomeVerdict.getConfidence() : null;
+        Double processConfidence = processVerdict != null ? processVerdict.getConfidence() : null;
+        if (outcomeConfidence != null && processConfidence != null) {
+            return Math.min(outcomeConfidence, processConfidence);
+        }
+        if (processConfidence != null) {
+            return processConfidence;
+        }
+        if (outcomeConfidence != null) {
+            return outcomeConfidence;
+        }
+        return mergedVerdict.getConfidence();
+    }
+
+    private List<VerdictEvidenceRef> mergeEvidenceRefs(List<VerdictEvidenceRef>... groups) {
+        List<VerdictEvidenceRef> mergedRefs = new ArrayList<>();
+        for (List<VerdictEvidenceRef> group : groups) {
+            if (group == null) {
+                continue;
+            }
+            for (VerdictEvidenceRef evidenceRef : group) {
+                if (evidenceRef == null || containsEvidenceRef(mergedRefs, evidenceRef)) {
+                    continue;
+                }
+                mergedRefs.add(evidenceRef);
+            }
+        }
+        return mergedRefs;
+    }
+
+    private boolean containsEvidenceRef(List<VerdictEvidenceRef> refs, VerdictEvidenceRef candidateRef) {
+        return refs.stream().anyMatch(existingRef -> Objects.equals(existingRef.getTraceId(), candidateRef.getTraceId())
+                && Objects.equals(existingRef.getSpanId(), candidateRef.getSpanId())
+                && Objects.equals(existingRef.getSnapshotId(), candidateRef.getSnapshotId())
+                && Objects.equals(existingRef.getMetricName(), candidateRef.getMetricName()));
+    }
+
+    private List<String> mergeProcessFindings(List<String>... groups) {
+        List<String> mergedFindings = new ArrayList<>();
+        for (List<String> group : groups) {
+            if (group == null) {
+                continue;
+            }
+            for (String finding : group) {
+                if (StringValueSupport.isBlank(finding) || mergedFindings.contains(finding)) {
+                    continue;
+                }
+                mergedFindings.add(finding);
+            }
+        }
+        return mergedFindings;
+    }
+
+    private boolean shouldEscalate(RunVerdict mergedVerdict) {
+        RuntimeConfig.SelfEvolvingConfig config = runtimeConfigService.getSelfEvolvingConfig();
+        Double threshold = config != null && config.getJudge() != null ? config.getJudge().getUncertaintyThreshold()
+                : null;
+        return mergedVerdict != null
+                && mergedVerdict.getConfidence() != null
+                && threshold != null
+                && mergedVerdict.getConfidence() < threshold;
+    }
+
+    private boolean isJudgeEnabled() {
+        RuntimeConfig.SelfEvolvingConfig config = runtimeConfigService.getSelfEvolvingConfig();
+        return config != null && config.getJudge() != null && Boolean.TRUE.equals(config.getJudge().getEnabled());
+    }
+
+    private boolean requireEvidenceAnchors() {
+        RuntimeConfig.SelfEvolvingConfig config = runtimeConfigService.getSelfEvolvingConfig();
+        return config == null
+                || config.getJudge() == null
+                || Boolean.TRUE.equals(config.getJudge().getRequireEvidenceAnchors());
+    }
+
+    private String resolveSystemPrompt(String judgeType) {
+        return switch (judgeType) {
+        case "outcome" -> OUTCOME_SYSTEM_PROMPT;
+        case "process" -> PROCESS_SYSTEM_PROMPT;
+        case "tiebreaker" -> TIEBREAKER_SYSTEM_PROMPT;
+        default -> OUTCOME_SYSTEM_PROMPT;
+        };
+    }
+
+    private String buildPrompt(String judgeType, RunRecord runRecord, TraceRecord traceRecord, RunVerdict seedVerdict) {
+        StringBuilder promptBuilder = new StringBuilder();
+        promptBuilder.append("judgeType=").append(judgeType).append('\n');
+        if (runRecord != null) {
+            promptBuilder.append("runId=").append(runRecord.getId()).append('\n');
+            promptBuilder.append("runStatus=").append(runRecord.getStatus()).append('\n');
+            promptBuilder.append("golemId=").append(runRecord.getGolemId()).append('\n');
+        }
+        if (traceRecord != null) {
+            promptBuilder.append("traceId=").append(traceRecord.getTraceId()).append('\n');
+            promptBuilder.append("traceTruncated=").append(traceRecord.isTruncated()).append('\n');
+            promptBuilder.append("spanCount=")
+                    .append(traceRecord.getSpans() != null ? traceRecord.getSpans().size() : 0)
+                    .append('\n');
+        }
+        if (seedVerdict != null) {
+            promptBuilder.append("seedOutcomeStatus=").append(seedVerdict.getOutcomeStatus()).append('\n');
+            promptBuilder.append("seedProcessStatus=").append(seedVerdict.getProcessStatus()).append('\n');
+            promptBuilder.append("seedProcessFindings=").append(seedVerdict.getProcessFindings()).append('\n');
+        }
+        promptBuilder.append("Return strict JSON only.");
+        return promptBuilder.toString();
+    }
+}

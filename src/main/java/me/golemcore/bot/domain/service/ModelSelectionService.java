@@ -74,6 +74,14 @@ public class ModelSelectionService {
         return validateResolvedSelection(tier, resolveFromRouter(tier));
     }
 
+    /**
+     * Alias used by judge and evolution subsystems to make explicit tier resolution
+     * intent obvious at call sites.
+     */
+    public ModelSelection resolveExplicitTier(String tier) {
+        return resolveForExplicitTier(tier);
+    }
+
     public ModelSelection resolveForImplicitTier(String tier) {
         String effectiveTier = normalizeImplicitTier(tier);
         ModelSelection override = resolveOverrideSelection(effectiveTier);
