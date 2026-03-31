@@ -79,6 +79,7 @@ interface RuntimeConfigUiRecord extends UnknownRecord {
   tools?: UnknownRecord;
   voice?: UnknownRecord;
   hive?: UnknownRecord;
+  selfEvolving?: unknown;
   modelRegistry?: unknown;
 }
 
@@ -126,6 +127,7 @@ function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
     };
   }
   cfg.modelRouter = toModelRouterConfig(cfg.modelRouter);
+  cfg.selfEvolving = toSelfEvolvingConfig(cfg.selfEvolving);
   cfg.modelRegistry = toModelRegistryConfig(cfg.modelRegistry);
   return cfg as unknown as RuntimeConfig;
 }
@@ -210,6 +212,7 @@ export interface RuntimeConfig {
   mcp: McpConfig;
   plan: PlanConfig;
   hive: HiveConfig;
+  selfEvolving: SelfEvolvingConfig;
   autoMode: AutoModeConfig;
   tracing: TracingConfig;
   rateLimit: RateLimitConfig;
@@ -377,6 +380,60 @@ export interface HiveConfig {
   hostLabel: string | null;
   autoConnect: boolean | null;
   managedByProperties: boolean | null;
+}
+
+export interface SelfEvolvingConfig {
+  enabled: boolean | null;
+  tracePayloadOverride: boolean | null;
+  capture: SelfEvolvingCaptureConfig;
+  judge: SelfEvolvingJudgeConfig;
+  evolution: SelfEvolvingEvolutionConfig;
+  promotion: SelfEvolvingPromotionConfig;
+  benchmark: SelfEvolvingBenchmarkConfig;
+  hive: SelfEvolvingHiveConfig;
+}
+
+export interface SelfEvolvingCaptureConfig {
+  llm: string | null;
+  tool: string | null;
+  context: string | null;
+  skill: string | null;
+  tier: string | null;
+  infra: string | null;
+}
+
+export interface SelfEvolvingJudgeConfig {
+  enabled: boolean | null;
+  primaryTier: string | null;
+  tiebreakerTier: string | null;
+  evolutionTier: string | null;
+  requireEvidenceAnchors: boolean | null;
+  uncertaintyThreshold: number | null;
+}
+
+export interface SelfEvolvingEvolutionConfig {
+  enabled: boolean | null;
+  modes: string[];
+  artifactTypes: string[];
+}
+
+export interface SelfEvolvingPromotionConfig {
+  mode: 'approval_gate' | 'auto_accept' | null;
+  allowAutoAccept: boolean | null;
+  shadowRequired: boolean | null;
+  canaryRequired: boolean | null;
+  hiveApprovalPreferred: boolean | null;
+}
+
+export interface SelfEvolvingBenchmarkConfig {
+  enabled: boolean | null;
+  harvestProductionRuns: boolean | null;
+  autoCreateRegressionCases: boolean | null;
+}
+
+export interface SelfEvolvingHiveConfig {
+  publishInspectionProjection: boolean | null;
+  readonlyInspection: boolean | null;
 }
 
 export interface AutoModeConfig {
@@ -610,6 +667,82 @@ function toModelRegistryConfig(value: unknown): ModelRegistryConfig {
   return {
     repositoryUrl: toNullableString(record.repositoryUrl),
     branch: toNullableString(record.branch) ?? 'main',
+  };
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
+  const record = value != null && typeof value === 'object' ? value as UnknownRecord : {};
+  const capture = record.capture != null && typeof record.capture === 'object'
+    ? record.capture as UnknownRecord
+    : {};
+  const judge = record.judge != null && typeof record.judge === 'object'
+    ? record.judge as UnknownRecord
+    : {};
+  const evolution = record.evolution != null && typeof record.evolution === 'object'
+    ? record.evolution as UnknownRecord
+    : {};
+  const promotion = record.promotion != null && typeof record.promotion === 'object'
+    ? record.promotion as UnknownRecord
+    : {};
+  const benchmark = record.benchmark != null && typeof record.benchmark === 'object'
+    ? record.benchmark as UnknownRecord
+    : {};
+  const hive = record.hive != null && typeof record.hive === 'object'
+    ? record.hive as UnknownRecord
+    : {};
+
+  return {
+    enabled: typeof record.enabled === 'boolean' ? record.enabled : false,
+    tracePayloadOverride: typeof record.tracePayloadOverride === 'boolean' ? record.tracePayloadOverride : true,
+    capture: {
+      llm: toNullableString(capture.llm) ?? 'full',
+      tool: toNullableString(capture.tool) ?? 'full',
+      context: toNullableString(capture.context) ?? 'full',
+      skill: toNullableString(capture.skill) ?? 'full',
+      tier: toNullableString(capture.tier) ?? 'full',
+      infra: toNullableString(capture.infra) ?? 'meta_only',
+    },
+    judge: {
+      enabled: typeof judge.enabled === 'boolean' ? judge.enabled : true,
+      primaryTier: toNullableString(judge.primaryTier) ?? 'standard',
+      tiebreakerTier: toNullableString(judge.tiebreakerTier) ?? 'premium',
+      evolutionTier: toNullableString(judge.evolutionTier) ?? 'premium',
+      requireEvidenceAnchors: typeof judge.requireEvidenceAnchors === 'boolean' ? judge.requireEvidenceAnchors : true,
+      uncertaintyThreshold: typeof judge.uncertaintyThreshold === 'number' ? judge.uncertaintyThreshold : 0.22,
+    },
+    evolution: {
+      enabled: typeof evolution.enabled === 'boolean' ? evolution.enabled : true,
+      modes: toStringArray(evolution.modes),
+      artifactTypes: toStringArray(evolution.artifactTypes),
+    },
+    promotion: {
+      mode: toNullableString(promotion.mode) as 'approval_gate' | 'auto_accept' | null ?? 'approval_gate',
+      allowAutoAccept: typeof promotion.allowAutoAccept === 'boolean' ? promotion.allowAutoAccept : true,
+      shadowRequired: typeof promotion.shadowRequired === 'boolean' ? promotion.shadowRequired : true,
+      canaryRequired: typeof promotion.canaryRequired === 'boolean' ? promotion.canaryRequired : true,
+      hiveApprovalPreferred: typeof promotion.hiveApprovalPreferred === 'boolean' ? promotion.hiveApprovalPreferred : true,
+    },
+    benchmark: {
+      enabled: typeof benchmark.enabled === 'boolean' ? benchmark.enabled : true,
+      harvestProductionRuns: typeof benchmark.harvestProductionRuns === 'boolean' ? benchmark.harvestProductionRuns : true,
+      autoCreateRegressionCases: typeof benchmark.autoCreateRegressionCases === 'boolean' ? benchmark.autoCreateRegressionCases : true,
+    },
+    hive: {
+      publishInspectionProjection: typeof hive.publishInspectionProjection === 'boolean'
+        ? hive.publishInspectionProjection
+        : true,
+      readonlyInspection: typeof hive.readonlyInspection === 'boolean' ? hive.readonlyInspection : true,
+    },
   };
 }
 

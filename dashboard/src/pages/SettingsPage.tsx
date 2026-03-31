@@ -25,6 +25,7 @@ import McpTab from './settings/McpTab';
 import HiveTab from './settings/HiveTab';
 import AutoModeTab from './settings/AutoModeTab';
 import PlanModeTab from './settings/PlanModeTab';
+import SelfEvolvingTab from './settings/SelfEvolvingTab';
 import TracingTab from './settings/TracingTab';
 import { UpdatesTab } from './settings/UpdatesTab';
 import PluginSettingsPanel from './settings/PluginSettingsPanel';
@@ -335,6 +336,18 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
       {staticSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
       {staticSection === 'hive' && rc != null && <HiveTab config={rc.hive} />}
+      {staticSection === 'self-evolving' && rc != null && (
+        <SelfEvolvingTab
+          config={rc.selfEvolving}
+          isSaving={updateRuntimeConfig.isPending}
+          onSave={async (selfEvolving) => {
+            await updateRuntimeConfig.mutateAsync({
+              ...rc,
+              selfEvolving,
+            });
+          }}
+        />
+      )}
       {staticSection === 'plan' && rc != null && <PlanModeTab config={rc.plan} />}
       {staticSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
       {staticSection === 'tracing' && rc != null && <TracingTab config={rc.tracing} />}
