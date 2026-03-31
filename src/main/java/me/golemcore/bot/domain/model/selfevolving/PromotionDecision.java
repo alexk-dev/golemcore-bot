@@ -39,6 +39,7 @@ public class PromotionDecision {
     private String id;
     private String candidateId;
     private String bundleId;
+    private String state;
     private String fromState;
     private String toState;
     private String mode;

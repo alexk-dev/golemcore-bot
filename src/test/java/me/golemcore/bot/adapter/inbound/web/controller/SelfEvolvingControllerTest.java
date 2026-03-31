@@ -3,6 +3,8 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingCandidateDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunSummaryDto;
+import me.golemcore.bot.domain.service.BenchmarkLabService;
+import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.SelfEvolvingProjectionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,12 +23,16 @@ import static org.mockito.Mockito.when;
 class SelfEvolvingControllerTest {
 
     private SelfEvolvingProjectionService projectionService;
+    private PromotionWorkflowService promotionWorkflowService;
+    private BenchmarkLabService benchmarkLabService;
     private SelfEvolvingController controller;
 
     @BeforeEach
     void setUp() {
         projectionService = mock(SelfEvolvingProjectionService.class);
-        controller = new SelfEvolvingController(projectionService);
+        promotionWorkflowService = mock(PromotionWorkflowService.class);
+        benchmarkLabService = mock(BenchmarkLabService.class);
+        controller = new SelfEvolvingController(projectionService, promotionWorkflowService, benchmarkLabService);
     }
 
     @Test

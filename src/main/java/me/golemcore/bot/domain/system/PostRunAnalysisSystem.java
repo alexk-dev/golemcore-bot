@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.service.DeterministicJudgeService;
 import me.golemcore.bot.domain.service.EvolutionCandidateService;
 import me.golemcore.bot.domain.service.LlmJudgeService;
+import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SelfEvolvingRunService;
 import org.springframework.stereotype.Component;
@@ -40,17 +41,20 @@ public class PostRunAnalysisSystem implements AgentSystem {
     private final DeterministicJudgeService deterministicJudgeService;
     private final LlmJudgeService llmJudgeService;
     private final EvolutionCandidateService evolutionCandidateService;
+    private final PromotionWorkflowService promotionWorkflowService;
 
     public PostRunAnalysisSystem(RuntimeConfigService runtimeConfigService,
             SelfEvolvingRunService selfEvolvingRunService,
             DeterministicJudgeService deterministicJudgeService,
             LlmJudgeService llmJudgeService,
-            EvolutionCandidateService evolutionCandidateService) {
+            EvolutionCandidateService evolutionCandidateService,
+            PromotionWorkflowService promotionWorkflowService) {
         this.runtimeConfigService = runtimeConfigService;
         this.selfEvolvingRunService = selfEvolvingRunService;
         this.deterministicJudgeService = deterministicJudgeService;
         this.llmJudgeService = llmJudgeService;
         this.evolutionCandidateService = evolutionCandidateService;
+        this.promotionWorkflowService = promotionWorkflowService;
     }
 
     @Override
@@ -88,7 +92,8 @@ public class PostRunAnalysisSystem implements AgentSystem {
         RunRecord completedRun = selfEvolvingRunService.completeRun(startedRun, context);
         RunVerdict deterministicVerdict = deterministicJudgeService.evaluate(completedRun, null);
         RunVerdict llmVerdict = llmJudgeService.judge(completedRun, null, deterministicVerdict);
-        evolutionCandidateService.deriveCandidates(completedRun, llmVerdict);
+        promotionWorkflowService.registerAndPlanCandidates(
+                evolutionCandidateService.deriveCandidates(completedRun, llmVerdict));
         context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, completedRun.getId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, completedRun.getArtifactBundleId());
         return context;

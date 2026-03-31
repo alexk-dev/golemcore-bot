@@ -19,11 +19,14 @@ package me.golemcore.bot.domain.service;
  */
 
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingCampaignDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingCandidateDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
+import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
@@ -45,6 +48,8 @@ public class SelfEvolvingProjectionService {
     private final SelfEvolvingRunService selfEvolvingRunService;
     private final ArtifactBundleService artifactBundleService;
     private final DeterministicJudgeService deterministicJudgeService;
+    private final PromotionWorkflowService promotionWorkflowService;
+    private final BenchmarkLabService benchmarkLabService;
     private final SessionPort sessionPort;
 
     public List<SelfEvolvingRunSummaryDto> listRuns() {
@@ -64,7 +69,15 @@ public class SelfEvolvingProjectionService {
     }
 
     public List<SelfEvolvingCandidateDto> listCandidates() {
-        return List.of();
+        return promotionWorkflowService.getCandidates().stream()
+                .map(this::toCandidateDto)
+                .toList();
+    }
+
+    public List<SelfEvolvingCampaignDto> listCampaigns() {
+        return benchmarkLabService.getCampaigns().stream()
+                .map(this::toCampaignDto)
+                .toList();
     }
 
     private SelfEvolvingRunSummaryDto toSummaryDto(RunRecord runRecord) {
@@ -109,6 +122,31 @@ public class SelfEvolvingProjectionService {
                 .promotionRecommendation(verdict.getPromotionRecommendation())
                 .confidence(verdict.getConfidence())
                 .processFindings(verdict.getProcessFindings())
+                .build();
+    }
+
+    private SelfEvolvingCandidateDto toCandidateDto(EvolutionCandidate candidate) {
+        return SelfEvolvingCandidateDto.builder()
+                .id(candidate.getId())
+                .goal(candidate.getGoal())
+                .artifactType(candidate.getArtifactType())
+                .status(candidate.getStatus())
+                .riskLevel(candidate.getRiskLevel())
+                .expectedImpact(candidate.getExpectedImpact())
+                .sourceRunIds(candidate.getSourceRunIds())
+                .build();
+    }
+
+    private SelfEvolvingCampaignDto toCampaignDto(BenchmarkCampaign campaign) {
+        return SelfEvolvingCampaignDto.builder()
+                .id(campaign.getId())
+                .suiteId(campaign.getSuiteId())
+                .baselineBundleId(campaign.getBaselineBundleId())
+                .candidateBundleId(campaign.getCandidateBundleId())
+                .status(campaign.getStatus())
+                .startedAt(formatInstant(campaign.getStartedAt()))
+                .completedAt(formatInstant(campaign.getCompletedAt()))
+                .runIds(campaign.getRunIds())
                 .build();
     }
 

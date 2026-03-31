@@ -4,6 +4,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunDeta
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
@@ -27,6 +28,8 @@ class SelfEvolvingProjectionServiceTest {
     private SelfEvolvingRunService runService;
     private ArtifactBundleService artifactBundleService;
     private DeterministicJudgeService deterministicJudgeService;
+    private PromotionWorkflowService promotionWorkflowService;
+    private BenchmarkLabService benchmarkLabService;
     private SessionPort sessionPort;
     private SelfEvolvingProjectionService projectionService;
 
@@ -35,11 +38,15 @@ class SelfEvolvingProjectionServiceTest {
         runService = mock(SelfEvolvingRunService.class);
         artifactBundleService = mock(ArtifactBundleService.class);
         deterministicJudgeService = mock(DeterministicJudgeService.class);
+        promotionWorkflowService = mock(PromotionWorkflowService.class);
+        benchmarkLabService = mock(BenchmarkLabService.class);
         sessionPort = mock(SessionPort.class);
         projectionService = new SelfEvolvingProjectionService(
                 runService,
                 artifactBundleService,
                 deterministicJudgeService,
+                promotionWorkflowService,
+                benchmarkLabService,
                 sessionPort);
     }
 
@@ -120,7 +127,16 @@ class SelfEvolvingProjectionServiceTest {
     }
 
     @Test
-    void shouldExposeEmptyCandidateQueueUntilCandidateWorkflowExists() {
-        assertTrue(projectionService.listCandidates().isEmpty());
+    void shouldProjectCandidateQueueFromPromotionWorkflow() {
+        when(promotionWorkflowService.getCandidates()).thenReturn(List.of(EvolutionCandidate.builder()
+                .id("candidate-1")
+                .goal("fix")
+                .artifactType("tool_policy")
+                .status("approved_pending")
+                .sourceRunIds(List.of("run-1"))
+                .build()));
+
+        assertEquals(1, projectionService.listCandidates().size());
+        assertEquals("candidate-1", projectionService.listCandidates().getFirst().getId());
     }
 }
