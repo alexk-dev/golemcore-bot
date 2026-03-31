@@ -31,8 +31,10 @@ import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjec
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactNormalizedRevisionProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionDiffProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionEvidenceProjection;
+import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionRecord;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionDiffProjection;
+import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionEvidenceProjection;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -203,6 +205,23 @@ public class ArtifactWorkspaceProjectionService {
                 .build();
     }
 
+    public List<ArtifactRevisionProjection> listRevisions(String artifactStreamId) {
+        return sortRevisions(revisionsByStream().getOrDefault(artifactStreamId, List.of())).stream()
+                .map(revision -> ArtifactRevisionProjection.builder()
+                        .artifactStreamId(revision.getArtifactStreamId())
+                        .originArtifactStreamId(revision.getOriginArtifactStreamId())
+                        .artifactKey(revision.getArtifactKey())
+                        .artifactType(revision.getArtifactType())
+                        .artifactSubtype(revision.getArtifactSubtype())
+                        .contentRevisionId(revision.getContentRevisionId())
+                        .baseContentRevisionId(revision.getBaseContentRevisionId())
+                        .rawContent(revision.getRawContent())
+                        .sourceRunIds(resolveRunIdsForRevision(artifactStreamId, revision))
+                        .createdAt(revision.getCreatedAt())
+                        .build())
+                .toList();
+    }
+
     public ArtifactRevisionDiffProjection getRevisionDiff(String artifactStreamId, String fromRevisionId,
             String toRevisionId) {
         ArtifactRevisionRecord fromRevision = findRevision(artifactStreamId, fromRevisionId)
@@ -329,6 +348,46 @@ public class ArtifactWorkspaceProjectionService {
                 .promotionDecisionIds(new ArrayList<>(promotionDecisionIds))
                 .approvalRequestIds(new ArrayList<>(approvalRequestIds))
                 .findings(List.of("compare_evidence"))
+                .projectionSchemaVersion(PROJECTION_SCHEMA_VERSION)
+                .projectedAt(Instant.now(clock))
+                .build();
+    }
+
+    public ArtifactTransitionEvidenceProjection getTransitionEvidence(
+            String artifactStreamId,
+            String fromNodeId,
+            String toNodeId) {
+        ArtifactLineageProjection lineage = getLineage(artifactStreamId);
+        ArtifactLineageNode fromNode = lineage.getNodes().stream()
+                .filter(node -> node != null && fromNodeId.equals(node.getNodeId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Node not found: " + fromNodeId));
+        ArtifactLineageNode toNode = lineage.getNodes().stream()
+                .filter(node -> node != null && toNodeId.equals(node.getNodeId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Node not found: " + toNodeId));
+        Set<String> runIds = new LinkedHashSet<>();
+        Set<String> campaignIds = new LinkedHashSet<>();
+        Set<String> promotionDecisionIds = new LinkedHashSet<>();
+        Set<String> approvalRequestIds = new LinkedHashSet<>();
+        collectTransitionNodeEvidence(fromNode, runIds, campaignIds, promotionDecisionIds, approvalRequestIds);
+        collectTransitionNodeEvidence(toNode, runIds, campaignIds, promotionDecisionIds, approvalRequestIds);
+        return ArtifactTransitionEvidenceProjection.builder()
+                .artifactStreamId(artifactStreamId)
+                .artifactKey(findRevision(artifactStreamId, toNode.getContentRevisionId())
+                        .map(ArtifactRevisionRecord::getArtifactKey)
+                        .orElse(null))
+                .fromNodeId(fromNodeId)
+                .toNodeId(toNodeId)
+                .fromRevisionId(fromNode.getContentRevisionId())
+                .toRevisionId(toNode.getContentRevisionId())
+                .runIds(new ArrayList<>(runIds))
+                .traceIds(List.of())
+                .spanIds(List.of())
+                .campaignIds(new ArrayList<>(campaignIds))
+                .promotionDecisionIds(new ArrayList<>(promotionDecisionIds))
+                .approvalRequestIds(new ArrayList<>(approvalRequestIds))
+                .findings(List.of("transition_evidence"))
                 .projectionSchemaVersion(PROJECTION_SCHEMA_VERSION)
                 .projectedAt(Instant.now(clock))
                 .build();
@@ -466,6 +525,30 @@ public class ArtifactWorkspaceProjectionService {
             }
         }
         return campaignIds.stream().distinct().toList();
+    }
+
+    private void collectTransitionNodeEvidence(
+            ArtifactLineageNode node,
+            Set<String> runIds,
+            Set<String> campaignIds,
+            Set<String> promotionDecisionIds,
+            Set<String> approvalRequestIds) {
+        if (node == null) {
+            return;
+        }
+        if (node.getSourceRunIds() != null) {
+            runIds.addAll(node.getSourceRunIds());
+        }
+        if (node.getCampaignIds() != null) {
+            campaignIds.addAll(node.getCampaignIds());
+        }
+        if (!StringValueSupport.isBlank(node.getPromotionDecisionId())) {
+            promotionDecisionIds.add(node.getPromotionDecisionId());
+            findDecisionById(node.getPromotionDecisionId())
+                    .map(PromotionDecision::getApprovalRequestId)
+                    .filter(value -> !StringValueSupport.isBlank(value))
+                    .ifPresent(approvalRequestIds::add);
+        }
     }
 
     private String resolveTransitionBaseRevisionId(ArtifactLineageNode node) {

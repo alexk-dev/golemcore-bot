@@ -6,6 +6,13 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingCampaig
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingCandidateDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunSummaryDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactCatalogEntryDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactCompareOptionsDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactEvidenceDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactLineageDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactRevisionDiffDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactTransitionDiffDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactWorkspaceSummaryDto;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.service.BenchmarkLabService;
@@ -16,6 +23,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -69,6 +77,116 @@ public class SelfEvolvingController {
         return Mono.just(ResponseEntity.ok(projectionService.listCandidates()));
     }
 
+    @GetMapping("/artifacts")
+    public Mono<ResponseEntity<List<SelfEvolvingArtifactCatalogEntryDto>>> listArtifacts(
+            @RequestParam(required = false) String artifactType,
+            @RequestParam(required = false) String artifactSubtype,
+            @RequestParam(required = false) String lifecycleState,
+            @RequestParam(required = false) String rolloutStage,
+            @RequestParam(required = false) Boolean hasPendingApproval,
+            @RequestParam(required = false) Boolean hasRegression,
+            @RequestParam(required = false) Boolean benchmarked,
+            @RequestParam(name = "q", required = false) String query) {
+        return Mono.just(ResponseEntity.ok(projectionService.listArtifacts(
+                artifactType,
+                artifactSubtype,
+                lifecycleState,
+                rolloutStage,
+                hasPendingApproval,
+                hasRegression,
+                benchmarked,
+                query)));
+    }
+
+    @GetMapping("/artifacts/{artifactStreamId}")
+    public Mono<ResponseEntity<SelfEvolvingArtifactWorkspaceSummaryDto>> getArtifactWorkspaceSummary(
+            @PathVariable String artifactStreamId) {
+        SelfEvolvingArtifactWorkspaceSummaryDto summary = projectionService
+                .getArtifactWorkspaceSummary(artifactStreamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+        return Mono.just(ResponseEntity.ok(summary));
+    }
+
+    @GetMapping("/artifacts/{artifactStreamId}/lineage")
+    public Mono<ResponseEntity<SelfEvolvingArtifactLineageDto>> getArtifactLineage(
+            @PathVariable String artifactStreamId) {
+        SelfEvolvingArtifactLineageDto lineage = projectionService.getArtifactLineage(artifactStreamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+        return Mono.just(ResponseEntity.ok(lineage));
+    }
+
+    @GetMapping("/artifacts/{artifactStreamId}/diff")
+    public Mono<ResponseEntity<SelfEvolvingArtifactRevisionDiffDto>> getArtifactRevisionDiff(
+            @PathVariable String artifactStreamId,
+            @RequestParam(required = false) String fromRevisionId,
+            @RequestParam(required = false) String toRevisionId) {
+        requireQueryParam("fromRevisionId", fromRevisionId);
+        requireQueryParam("toRevisionId", toRevisionId);
+        SelfEvolvingArtifactRevisionDiffDto diff = projectionService
+                .getArtifactRevisionDiff(artifactStreamId, fromRevisionId, toRevisionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+        return Mono.just(ResponseEntity.ok(diff));
+    }
+
+    @GetMapping("/artifacts/{artifactStreamId}/transition-diff")
+    public Mono<ResponseEntity<SelfEvolvingArtifactTransitionDiffDto>> getArtifactTransitionDiff(
+            @PathVariable String artifactStreamId,
+            @RequestParam(required = false) String fromNodeId,
+            @RequestParam(required = false) String toNodeId) {
+        requireQueryParam("fromNodeId", fromNodeId);
+        requireQueryParam("toNodeId", toNodeId);
+        SelfEvolvingArtifactTransitionDiffDto diff = projectionService
+                .getArtifactTransitionDiff(artifactStreamId, fromNodeId, toNodeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+        return Mono.just(ResponseEntity.ok(diff));
+    }
+
+    @GetMapping("/artifacts/{artifactStreamId}/evidence")
+    public Mono<ResponseEntity<SelfEvolvingArtifactEvidenceDto>> getArtifactRevisionEvidence(
+            @PathVariable String artifactStreamId,
+            @RequestParam(required = false) String revisionId) {
+        requireQueryParam("revisionId", revisionId);
+        SelfEvolvingArtifactEvidenceDto evidence = projectionService
+                .getArtifactRevisionEvidence(artifactStreamId, revisionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+        return Mono.just(ResponseEntity.ok(evidence));
+    }
+
+    @GetMapping("/artifacts/{artifactStreamId}/compare-evidence")
+    public Mono<ResponseEntity<SelfEvolvingArtifactEvidenceDto>> getArtifactCompareEvidence(
+            @PathVariable String artifactStreamId,
+            @RequestParam(required = false) String fromRevisionId,
+            @RequestParam(required = false) String toRevisionId) {
+        requireQueryParam("fromRevisionId", fromRevisionId);
+        requireQueryParam("toRevisionId", toRevisionId);
+        SelfEvolvingArtifactEvidenceDto evidence = projectionService
+                .getArtifactCompareEvidence(artifactStreamId, fromRevisionId, toRevisionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+        return Mono.just(ResponseEntity.ok(evidence));
+    }
+
+    @GetMapping("/artifacts/{artifactStreamId}/transition-evidence")
+    public Mono<ResponseEntity<SelfEvolvingArtifactEvidenceDto>> getArtifactTransitionEvidence(
+            @PathVariable String artifactStreamId,
+            @RequestParam(required = false) String fromNodeId,
+            @RequestParam(required = false) String toNodeId) {
+        requireQueryParam("fromNodeId", fromNodeId);
+        requireQueryParam("toNodeId", toNodeId);
+        SelfEvolvingArtifactEvidenceDto evidence = projectionService
+                .getArtifactTransitionEvidence(artifactStreamId, fromNodeId, toNodeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+        return Mono.just(ResponseEntity.ok(evidence));
+    }
+
+    @GetMapping("/artifacts/{artifactStreamId}/compare-options")
+    public Mono<ResponseEntity<SelfEvolvingArtifactCompareOptionsDto>> getArtifactCompareOptions(
+            @PathVariable String artifactStreamId) {
+        SelfEvolvingArtifactCompareOptionsDto compareOptions = projectionService
+                .getArtifactCompareOptions(artifactStreamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+        return Mono.just(ResponseEntity.ok(compareOptions));
+    }
+
     @PostMapping("/candidates/{candidateId}/promotion")
     public Mono<ResponseEntity<PromotionDecision>> planPromotion(@PathVariable String candidateId) {
         return Mono.just(ResponseEntity.ok(promotionWorkflowService.planPromotion(candidateId)));
@@ -107,6 +225,12 @@ public class SelfEvolvingController {
             hiveEventBatchPublisher.publishSelfEvolvingCampaignProjection(null, campaign);
         } catch (RuntimeException exception) {
             log.debug("[Hive] Skipping SelfEvolving campaign projection publish: {}", exception.getMessage());
+        }
+    }
+
+    private void requireQueryParam(String name, String value) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing required query param: " + name);
         }
     }
 }

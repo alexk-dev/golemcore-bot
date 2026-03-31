@@ -30,6 +30,7 @@ class SelfEvolvingProjectionServiceTest {
     private DeterministicJudgeService deterministicJudgeService;
     private PromotionWorkflowService promotionWorkflowService;
     private BenchmarkLabService benchmarkLabService;
+    private ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService;
     private SessionPort sessionPort;
     private SelfEvolvingProjectionService projectionService;
 
@@ -40,6 +41,7 @@ class SelfEvolvingProjectionServiceTest {
         deterministicJudgeService = mock(DeterministicJudgeService.class);
         promotionWorkflowService = mock(PromotionWorkflowService.class);
         benchmarkLabService = mock(BenchmarkLabService.class);
+        artifactWorkspaceProjectionService = mock(ArtifactWorkspaceProjectionService.class);
         sessionPort = mock(SessionPort.class);
         projectionService = new SelfEvolvingProjectionService(
                 runService,
@@ -47,6 +49,7 @@ class SelfEvolvingProjectionServiceTest {
                 deterministicJudgeService,
                 promotionWorkflowService,
                 benchmarkLabService,
+                artifactWorkspaceProjectionService,
                 sessionPort);
     }
 
