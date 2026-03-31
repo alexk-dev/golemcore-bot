@@ -18,6 +18,7 @@
 
 package me.golemcore.bot.adapter.outbound.llm;
 
+import me.golemcore.bot.adapter.outbound.llm.openai.OpenAiResponsesClient;
 import me.golemcore.bot.domain.component.LlmComponent;
 import me.golemcore.bot.domain.model.LlmChunk;
 import me.golemcore.bot.domain.model.LlmProviderMetadataKeys;
@@ -143,6 +144,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private ChatModel chatModel;
     private String currentModel;
     private volatile boolean initialized = false;
+    private final Map<String, OpenAiResponsesClient> responsesClients = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Override
     public synchronized void initialize() {
@@ -187,6 +189,25 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             throw new IllegalStateException("Provider not configured in runtime config: " + providerName);
         }
         return config;
+    }
+
+    private boolean isResponsesApiRequest(LlmRequest request) {
+        String model = request.getModel() != null ? request.getModel() : currentModel;
+        if (model == null) {
+            return false;
+        }
+        String provider = getProvider(model);
+        RuntimeConfig.LlmProviderConfig config = getProviderConfig(provider);
+        String apiType = getApiType(config);
+        return API_TYPE_OPENAI.equals(apiType) && !Boolean.TRUE.equals(config.getLegacyApi());
+    }
+
+    private OpenAiResponsesClient getResponsesClient(String providerName) {
+        return responsesClients.computeIfAbsent(providerName, name -> {
+            RuntimeConfig.LlmProviderConfig config = getProviderConfig(name);
+            log.info("[LLM] Creating OpenAI Responses API client for provider: {}", name);
+            return new OpenAiResponsesClient(config, objectMapper);
+        });
     }
 
     private String stripProviderPrefix(String model) {
@@ -307,6 +328,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     public CompletableFuture<LlmResponse> chat(LlmRequest request) {
         return CompletableFuture.supplyAsync(() -> {
             ensureInitialized();
+
+            // Route OpenAI non-legacy requests through the Responses API client
+            if (isResponsesApiRequest(request)) {
+                String provider = getProvider(request.getModel() != null ? request.getModel() : currentModel);
+                OpenAiResponsesClient client = getResponsesClient(provider);
+                return client.chat(request);
+            }
+
             if (chatModel == null) {
                 throw new RuntimeException("Langchain4j adapter not available");
             }
@@ -490,7 +519,15 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     @Override
     public Flux<LlmChunk> chatStream(LlmRequest request) {
         ensureInitialized();
-        // Basic implementation - langchain4j streaming support varies by model
+
+        // Real SSE streaming for OpenAI Responses API (non-legacy)
+        if (isResponsesApiRequest(request)) {
+            String provider = getProvider(request.getModel() != null ? request.getModel() : currentModel);
+            OpenAiResponsesClient client = getResponsesClient(provider);
+            return client.chatStream(request);
+        }
+
+        // Wrapped sync fallback for legacy OpenAI, Anthropic, Gemini
         return Flux.create(sink -> {
             chat(request).whenComplete((response, error) -> {
                 if (error != null) {

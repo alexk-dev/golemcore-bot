@@ -36,6 +36,7 @@ const llmConfig: LlmConfig = {
       baseUrl: null,
       requestTimeoutSeconds: null,
       apiType: 'openai',
+      legacyApi: null,
     },
     anthropic: {
       apiKey: null,
@@ -43,6 +44,7 @@ const llmConfig: LlmConfig = {
       baseUrl: null,
       requestTimeoutSeconds: null,
       apiType: 'anthropic',
+      legacyApi: null,
     },
   },
 };

@@ -98,7 +98,7 @@ class Langchain4jAdapterTest {
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of());
         when(runtimeConfigService.hasLlmProviderApiKey(anyString())).thenReturn(false);
         when(runtimeConfigService.getLlmProviderConfig(anyString()))
-                .thenReturn(RuntimeConfig.LlmProviderConfig.builder().build());
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder().legacyApi(true).build());
 
         adapter = new Langchain4jAdapter(runtimeConfigService, modelConfig, toolArtifactService) {
             @Override
@@ -1197,6 +1197,7 @@ class Langchain4jAdapterTest {
         when(runtimeConfigService.getLlmProviderConfig(OPENAI))
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
                         .apiType(OPENAI)
+                        .legacyApi(true)
                         .build());
 
         Message assistantMsg = Message.builder()
@@ -1296,6 +1297,7 @@ class Langchain4jAdapterTest {
         when(runtimeConfigService.getLlmProviderConfig(OPENAI))
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
                         .apiType(OPENAI)
+                        .legacyApi(true)
                         .build());
 
         Message assistantMsg = Message.builder()
@@ -1684,6 +1686,7 @@ class Langchain4jAdapterTest {
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
                         .apiKey(Secret.of("openai-key"))
                         .apiType("unknown")
+                        .legacyApi(true)
                         .build());
 
         ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, "medium");

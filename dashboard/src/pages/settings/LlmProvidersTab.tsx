@@ -102,6 +102,7 @@ function buildDefaultProviderConfig(name: string): LlmProviderConfig {
     baseUrl: getSuggestedBaseUrl(name, defaultApiType),
     requestTimeoutSeconds: 300,
     apiType: defaultApiType,
+    legacyApi: null,
   };
 }
 
@@ -227,6 +228,25 @@ function ProviderEditor({
               )}
             </Form.Group>
           </Col>
+          {apiType === 'openai' && (
+            <Col md={3}>
+              <Form.Group className="mb-2">
+                <Form.Label className="small fw-medium">Legacy API</Form.Label>
+                <Form.Check
+                  type="switch"
+                  id={`legacy-api-${name}`}
+                  label="Use /v1/chat/completions"
+                  checked={form.legacyApi === true}
+                  onChange={(e) => onFormChange({ ...form, legacyApi: e.target.checked || null })}
+                />
+                <Form.Text className="text-body-secondary d-block">
+                  {form.legacyApi === true
+                    ? 'Legacy mode: requests use /v1/chat/completions.'
+                    : 'Default: requests use the new /v1/responses endpoint.'}
+                </Form.Text>
+              </Form.Group>
+            </Col>
+          )}
           <Col md={3}>
             <Form.Group className="mb-2">
               <Form.Label className="small fw-medium">Timeout (s)</Form.Label>
@@ -332,7 +352,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
       return;
     }
     setEditingName(name);
-    setEditForm({ ...provider, apiKey: null, apiType: normalizeApiType(provider.apiType) });
+    setEditForm({ ...provider, apiKey: null, apiType: normalizeApiType(provider.apiType), legacyApi: provider.legacyApi ?? null });
     setIsNewProvider(false);
     setShowKey(false);
   };
