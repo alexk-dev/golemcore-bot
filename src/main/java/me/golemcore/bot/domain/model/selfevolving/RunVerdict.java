@@ -41,6 +41,8 @@ public class RunVerdict {
     private String id;
     private String runId;
     private String baselineVerdictId;
+    private String outcomeStatus;
+    private String processStatus;
     private String outcomeSummary;
     private String processSummary;
     private Double confidence;
