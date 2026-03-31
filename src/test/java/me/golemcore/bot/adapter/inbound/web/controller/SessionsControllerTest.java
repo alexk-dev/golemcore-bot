@@ -11,6 +11,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
+import me.golemcore.bot.domain.service.SessionInspectionService;
 import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSnapshot;
@@ -61,7 +62,9 @@ class SessionsControllerTest {
         sessionPort = mock(SessionPort.class);
         pointerService = mock(ActiveSessionPointerService.class);
         compressionService = new TraceSnapshotCompressionService();
-        controller = new SessionsController(sessionPort, pointerService, compressionService);
+        SessionInspectionService inspectionService = new SessionInspectionService(sessionPort, pointerService,
+                compressionService);
+        controller = new SessionsController(sessionPort, pointerService, inspectionService);
     }
 
     @Test

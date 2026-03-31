@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -17,6 +18,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
+import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,11 @@ class HiveControlInboxServiceTest {
         when(storagePort.getText(anyString(), anyString()))
                 .thenAnswer(
                         invocation -> CompletableFuture.completedFuture(persistedFiles.get(invocation.getArgument(1))));
+        when(storagePort.deleteObject(anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    persistedFiles.remove(invocation.getArgument(1));
+                    return CompletableFuture.completedFuture(null);
+                });
 
         service = new HiveControlInboxService(storagePort, objectMapper);
     }
@@ -67,6 +74,19 @@ class HiveControlInboxServiceTest {
         assertEquals(1, duplicate.summary().bufferedCommandCount());
         assertEquals(1, duplicate.summary().pendingCommandCount());
         assertEquals("cmd-1", duplicate.summary().lastReceivedCommandId());
+    }
+
+    @Test
+    void shouldDeduplicateInspectionRequestByRequestId() {
+        service.recordReceived(inspection("req-1", "thread-1", "sessions.list"));
+
+        HiveControlInboxService.RecordResult duplicate = service
+                .recordReceived(inspection("req-1", "thread-1", "sessions.list"));
+
+        assertEquals(1, duplicate.summary().receivedCommandCount());
+        assertEquals(1, duplicate.summary().bufferedCommandCount());
+        assertEquals(1, duplicate.summary().pendingCommandCount());
+        assertEquals("req-1", duplicate.summary().lastReceivedCommandId());
     }
 
     @Test
@@ -112,11 +132,47 @@ class HiveControlInboxServiceTest {
         assertEquals("Hive control command commandId is required", error.getMessage());
     }
 
+    @Test
+    void shouldNotMarkProcessedCommandAsFailedWhenOnlyPendingCommandsAreAllowed() {
+        service.recordReceived(command("cmd-1", "thread-1", "run-1"));
+        service.markProcessed("cmd-1");
+
+        service.markFailedIfPending("cmd-1", new IllegalStateException("should be ignored"));
+
+        assertEquals(0, service.getSummary().pendingCommandCount());
+        assertEquals(0, service.drainPending(envelope -> {
+        }));
+    }
+
+    @Test
+    void shouldClearPersistedInboxState() {
+        service.recordReceived(command("cmd-1", "thread-1", "run-1"));
+
+        service.clear();
+
+        assertEquals(0, service.getSummary().receivedCommandCount());
+        assertEquals(0, service.getSummary().bufferedCommandCount());
+        assertEquals(0, service.getSummary().pendingCommandCount());
+        verify(storagePort).deleteObject("preferences", "hive-control-inbox.json");
+    }
+
     private HiveControlCommandEnvelope command(String commandId, String threadId, String runId) {
         return HiveControlCommandEnvelope.builder()
                 .commandId(commandId)
                 .threadId(threadId)
                 .runId(runId)
+                .createdAt(Instant.parse("2026-03-18T00:00:00Z"))
+                .build();
+    }
+
+    private HiveControlCommandEnvelope inspection(String requestId, String threadId, String operation) {
+        return HiveControlCommandEnvelope.builder()
+                .eventType("inspection.request")
+                .requestId(requestId)
+                .threadId(threadId)
+                .inspection(HiveInspectionRequestBody.builder()
+                        .operation(operation)
+                        .build())
                 .createdAt(Instant.parse("2026-03-18T00:00:00Z"))
                 .build();
     }

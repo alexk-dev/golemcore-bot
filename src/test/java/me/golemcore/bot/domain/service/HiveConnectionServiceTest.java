@@ -19,10 +19,13 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import me.golemcore.bot.adapter.outbound.hive.HiveApiClient;
 import me.golemcore.bot.adapter.outbound.hive.HiveControlChannelClient;
 import me.golemcore.bot.adapter.outbound.hive.HiveControlChannelStatus;
 import me.golemcore.bot.adapter.outbound.hive.HiveEventOutboxService;
+import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
+import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -46,6 +49,7 @@ class HiveConnectionServiceTest {
     private ChannelPort webPort;
     private AtomicReference<Optional<HiveSessionState>> storedSession;
     private AtomicReference<HiveControlChannelStatus> controlChannelStatus;
+    private AtomicReference<Consumer<HiveControlCommandEnvelope>> controlCommandConsumer;
     private HiveConnectionService service;
 
     @BeforeEach
@@ -62,6 +66,7 @@ class HiveConnectionServiceTest {
         webPort = mock(ChannelPort.class);
         storedSession = new AtomicReference<>(Optional.empty());
         controlChannelStatus = new AtomicReference<>(HiveControlChannelStatus.disconnected());
+        controlCommandConsumer = new AtomicReference<>();
 
         when(webPort.getChannelType()).thenReturn("web");
         when(runtimeConfigService.getHiveConfig()).thenReturn(RuntimeConfig.HiveConfig.builder()
@@ -86,6 +91,10 @@ class HiveConnectionServiceTest {
         }).when(hiveSessionStateStore).save(any(HiveSessionState.class));
         when(hiveControlInboxService.getSummary())
                 .thenReturn(new HiveControlInboxService.InboxSummary(0, 0, 0, null, null));
+        when(hiveControlInboxService.recordReceived(any(HiveControlCommandEnvelope.class)))
+                .thenReturn(new HiveControlInboxService.RecordResult(
+                        false,
+                        new HiveControlInboxService.InboxSummary(1, 1, 1, "req-1", "2026-03-18T00:00:00Z")));
         when(hiveEventOutboxService.getSummary())
                 .thenReturn(new HiveEventOutboxService.OutboxSummary(0, 0, null));
         when(hiveControlChannelClient.getStatus()).thenAnswer(invocation -> controlChannelStatus.get());
@@ -97,6 +106,7 @@ class HiveConnectionServiceTest {
                     null,
                     null,
                     0));
+            controlCommandConsumer.set(invocation.getArgument(1));
             return null;
         }).when(hiveControlChannelClient).connect(any(HiveSessionState.class), any());
         doAnswer(invocation -> {
@@ -361,6 +371,44 @@ class HiveConnectionServiceTest {
 
         verify(hiveControlChannelClient).connect(any(HiveSessionState.class), any());
         assertEquals("CONNECTED", service.getStatus().state());
+    }
+
+    @Test
+    void shouldRecordReceivedControlCommandFromChannelCallback() {
+        when(hiveApiClient.register(
+                eq("https://hive.example.com"),
+                eq("token-id.secret"),
+                eq("Builder"),
+                eq("lab-a"),
+                eq("dev"),
+                eq("dev"),
+                anySet())).thenReturn(new HiveApiClient.GolemAuthResponse(
+                        "golem-1",
+                        "access",
+                        "refresh",
+                        Instant.parse("2026-03-18T00:10:00Z"),
+                        Instant.parse("2026-03-19T00:10:00Z"),
+                        "hive",
+                        "golems",
+                        "/ws/golems/control",
+                        30,
+                        List.of("golems:heartbeat")));
+        when(hiveControlInboxService.resolveTrackingId(any(HiveControlCommandEnvelope.class))).thenAnswer(
+                invocation -> invocation.<HiveControlCommandEnvelope>getArgument(0).getRequestId());
+
+        service.join("token-id.secret:https://hive.example.com/");
+        Consumer<HiveControlCommandEnvelope> consumer = controlCommandConsumer.get();
+        assertNotNull(consumer);
+
+        consumer.accept(HiveControlCommandEnvelope.builder()
+                .eventType("inspection.request")
+                .requestId("req-1")
+                .threadId("thread-1")
+                .inspection(HiveInspectionRequestBody.builder().operation("sessions.list").build())
+                .build());
+
+        verify(hiveControlInboxService).recordReceived(any(HiveControlCommandEnvelope.class));
+        verify(hiveControlInboxService, org.mockito.Mockito.times(2)).drainPending(any());
     }
 
     private <T> ObjectProvider<T> objectProvider(T value) {

@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
+import me.golemcore.bot.domain.model.HiveInspectionResponse;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.ProgressUpdateType;
@@ -203,6 +204,31 @@ class HiveEventBatchPublisherTest {
         assertEquals("missing_credentials", event.blockerCode());
         assertEquals(1, event.evidenceRefs().size());
         assertEquals("run_log", event.evidenceRefs().get(0).kind());
+    }
+
+    @Test
+    void shouldPublishInspectionResponseEvent() {
+        publisher.publishInspectionResponse(HiveInspectionResponse.builder()
+                .requestId("req-1")
+                .threadId("thread-1")
+                .cardId("card-1")
+                .runId("run-1")
+                .golemId("golem-1")
+                .operation("sessions.list")
+                .success(true)
+                .payload(List.of(Map.of("id", "web:conv-1")))
+                .createdAt(Instant.parse("2026-03-18T00:05:00Z"))
+                .build());
+
+        ArgumentCaptor<List<HiveEventPayload>> eventsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(hiveApiClient).publishEventsBatch(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
+                eventsCaptor.capture());
+        HiveEventPayload event = eventsCaptor.getValue().get(0);
+        assertEquals("inspection_response", event.eventType());
+        assertEquals("req-1", event.requestId());
+        assertEquals("sessions.list", event.operation());
+        assertEquals(Boolean.TRUE, event.success());
+        assertEquals(List.of(Map.of("id", "web:conv-1")), event.payload());
     }
 
     @Test

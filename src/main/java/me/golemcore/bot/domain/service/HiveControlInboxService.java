@@ -33,11 +33,12 @@ public class HiveControlInboxService {
 
     public RecordResult recordReceived(HiveControlCommandEnvelope envelope) {
         validateEnvelope(envelope);
+        String trackingId = resolveTrackingId(envelope);
         synchronized (lock) {
             InboxState state = getLoadedStateLocked();
-            StoredCommand existing = findByCommandId(state, envelope.getCommandId());
+            StoredCommand existing = findByTrackingId(state, trackingId);
             if (existing != null) {
-                state.setLastReceivedCommandId(envelope.getCommandId());
+                state.setLastReceivedCommandId(trackingId);
                 state.setLastReceivedAt(Instant.now().toString());
                 touch(state);
                 saveStateLocked(state);
@@ -54,7 +55,7 @@ public class HiveControlInboxService {
                     null));
             state.setUpdatedAt(Instant.now().toString());
             state.setReceivedCommandCount(state.getReceivedCommandCount() + 1);
-            state.setLastReceivedCommandId(envelope.getCommandId());
+            state.setLastReceivedCommandId(trackingId);
             state.setLastReceivedAt(Instant.now().toString());
             trimProcessedCommandsLocked(state);
             saveStateLocked(state);
@@ -76,10 +77,23 @@ public class HiveControlInboxService {
                 commandHandler.handle(command.getEnvelope());
                 processedCount++;
             } catch (RuntimeException exception) {
-                markFailed(command.getEnvelope().getCommandId(), exception);
+                markFailed(resolveTrackingId(command.getEnvelope()), exception);
                 return processedCount;
             }
         }
+    }
+
+    public String resolveTrackingId(HiveControlCommandEnvelope envelope) {
+        if (envelope == null) {
+            return null;
+        }
+        if (envelope.getRequestId() != null && !envelope.getRequestId().isBlank()) {
+            return envelope.getRequestId().trim();
+        }
+        if (envelope.getCommandId() != null && !envelope.getCommandId().isBlank()) {
+            return envelope.getCommandId().trim();
+        }
+        return null;
     }
 
     public InboxSummary getSummary() {
@@ -91,7 +105,7 @@ public class HiveControlInboxService {
     public void markProcessed(String commandId) {
         synchronized (lock) {
             InboxState state = getLoadedStateLocked();
-            StoredCommand command = findByCommandId(state, commandId);
+            StoredCommand command = findByTrackingId(state, commandId);
             if (command == null) {
                 return;
             }
@@ -115,7 +129,7 @@ public class HiveControlInboxService {
     private void markFailed(String commandId, Throwable failure, boolean onlyIfPending) {
         synchronized (lock) {
             InboxState state = getLoadedStateLocked();
-            StoredCommand command = findByCommandId(state, commandId);
+            StoredCommand command = findByTrackingId(state, commandId);
             if (command == null) {
                 return;
             }
@@ -232,17 +246,17 @@ public class HiveControlInboxService {
         if (envelope == null) {
             throw new IllegalArgumentException("Hive control command is required");
         }
-        if (envelope.getCommandId() == null || envelope.getCommandId().isBlank()) {
+        if (resolveTrackingId(envelope) == null) {
             throw new IllegalArgumentException("Hive control command commandId is required");
         }
     }
 
-    private StoredCommand findByCommandId(InboxState state, String commandId) {
-        if (commandId == null || commandId.isBlank()) {
+    private StoredCommand findByTrackingId(InboxState state, String trackingId) {
+        if (trackingId == null || trackingId.isBlank()) {
             return null;
         }
         for (StoredCommand command : state.getCommands()) {
-            if (command.getEnvelope() != null && commandId.equals(command.getEnvelope().getCommandId())) {
+            if (command.getEnvelope() != null && trackingId.equals(resolveTrackingId(command.getEnvelope()))) {
                 return command;
             }
         }

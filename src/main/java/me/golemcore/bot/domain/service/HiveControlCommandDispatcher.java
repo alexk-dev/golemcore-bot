@@ -40,16 +40,19 @@ public class HiveControlCommandDispatcher {
     private static final String EVENT_TYPE_COMMAND = "command";
     private static final String EVENT_TYPE_COMMAND_STOP = "command.stop";
     private static final String EVENT_TYPE_COMMAND_CANCEL = "command.cancel";
+    private static final String EVENT_TYPE_INSPECTION_REQUEST = "inspection.request";
     private static final String CANCELLED_BY_HIVE_MESSAGE = "Cancelled by Hive control command";
 
     private final SessionRunCoordinator sessionRunCoordinator;
     private final HiveControlInboxService hiveControlInboxService;
     private final HiveEventBatchPublisher hiveEventBatchPublisher;
+    private final HiveInspectionCommandHandler hiveInspectionCommandHandler;
     private final Clock clock;
 
     public void dispatch(HiveControlCommandEnvelope envelope) {
         String eventType = validateEnvelope(envelope);
-        if (EVENT_TYPE_COMMAND_STOP.equals(eventType) || EVENT_TYPE_COMMAND_CANCEL.equals(eventType)) {
+        String trackingId = resolveTrackingId(envelope);
+        if (isStopEvent(eventType)) {
             sessionRunCoordinator.requestStop("hive", envelope.getThreadId(), envelope.getRunId(),
                     envelope.getCommandId());
             hiveEventBatchPublisher.publishCommandAcknowledged(envelope);
@@ -57,17 +60,36 @@ public class HiveControlCommandDispatcher {
                     envelope.getCommandId(), envelope.getThreadId(), envelope.getRunId(), eventType);
             return;
         }
+        if (EVENT_TYPE_INSPECTION_REQUEST.equals(eventType)) {
+            try {
+                hiveInspectionCommandHandler.handle(envelope);
+                hiveControlInboxService.markProcessed(trackingId);
+            } catch (RuntimeException exception) {
+                hiveControlInboxService.markFailedIfPending(trackingId, exception);
+                throw exception;
+            }
+            log.info("[Hive] Handled inspection request: requestId={}, threadId={}, operation={}",
+                    envelope.getRequestId(),
+                    envelope.getThreadId(),
+                    envelope.getInspection() != null ? envelope.getInspection().getOperation() : null);
+            return;
+        }
 
         Message inbound = buildInboundMessage(envelope);
-        sessionRunCoordinator.submit(inbound, () -> hiveControlInboxService.markProcessed(envelope.getCommandId()))
+        sessionRunCoordinator.submit(inbound, () -> hiveControlInboxService.markProcessed(trackingId))
                 .whenComplete((ignored, failure) -> finalizeCommandDispatch(envelope, failure));
         hiveEventBatchPublisher.publishCommandAcknowledged(envelope);
         log.info("[Hive] Enqueued control command: commandId={}, threadId={}, runId={}",
                 envelope.getCommandId(), envelope.getThreadId(), envelope.getRunId());
     }
 
+    private boolean isStopEvent(String eventType) {
+        return EVENT_TYPE_COMMAND_STOP.equals(eventType) || EVENT_TYPE_COMMAND_CANCEL.equals(eventType);
+    }
+
     private void finalizeCommandDispatch(HiveControlCommandEnvelope envelope, Throwable failure) {
-        if (envelope == null || envelope.getCommandId() == null || envelope.getCommandId().isBlank()) {
+        String trackingId = resolveTrackingId(envelope);
+        if (trackingId == null || trackingId.isBlank()) {
             return;
         }
         if (failure == null) {
@@ -75,10 +97,10 @@ public class HiveControlCommandDispatcher {
         }
         Throwable rootCause = unwrap(failure);
         if (isResolvedCancellation(rootCause)) {
-            hiveControlInboxService.markProcessed(envelope.getCommandId());
+            hiveControlInboxService.markProcessed(trackingId);
             return;
         }
-        hiveControlInboxService.markFailedIfPending(envelope.getCommandId(), rootCause);
+        hiveControlInboxService.markFailedIfPending(trackingId, rootCause);
     }
 
     private Message buildInboundMessage(HiveControlCommandEnvelope envelope) {
@@ -107,25 +129,88 @@ public class HiveControlCommandDispatcher {
     }
 
     private String validateEnvelope(HiveControlCommandEnvelope envelope) {
+        requireEnvelope(envelope);
+        requireThreadId(envelope);
+        String eventType = normalizeEventType(envelope.getEventType());
+        requireTrackingId(envelope);
+        requireSupportedEventType(eventType);
+        requireEventPayload(eventType, envelope);
+        return eventType;
+    }
+
+    private void requireEnvelope(HiveControlCommandEnvelope envelope) {
         if (envelope == null) {
             throw new IllegalArgumentException("Hive control command is required");
         }
+    }
+
+    private void requireThreadId(HiveControlCommandEnvelope envelope) {
         if (envelope.getThreadId() == null || envelope.getThreadId().isBlank()) {
             throw new IllegalArgumentException("Hive control command threadId is required");
         }
+    }
+
+    private void requireTrackingId(HiveControlCommandEnvelope envelope) {
+        String trackingId = resolveTrackingId(envelope);
+        if (trackingId == null || trackingId.isBlank()) {
+            throw new IllegalArgumentException("Hive control command commandId is required");
+        }
+    }
+
+    private void requireSupportedEventType(String eventType) {
+        if (EVENT_TYPE_COMMAND.equals(eventType)
+                || EVENT_TYPE_COMMAND_STOP.equals(eventType)
+                || EVENT_TYPE_COMMAND_CANCEL.equals(eventType)
+                || EVENT_TYPE_INSPECTION_REQUEST.equals(eventType)) {
+            return;
+        }
+        throw new IllegalArgumentException("Unsupported Hive control command eventType: " + eventType);
+    }
+
+    private void requireEventPayload(String eventType, HiveControlCommandEnvelope envelope) {
+        if (EVENT_TYPE_INSPECTION_REQUEST.equals(eventType)) {
+            requireInspectionRequestId(envelope);
+            return;
+        }
+        requireCommandId(envelope);
+        if (EVENT_TYPE_COMMAND.equals(eventType)) {
+            requireCommandBody(envelope);
+        }
+    }
+
+    private void requireCommandId(HiveControlCommandEnvelope envelope) {
         if (envelope.getCommandId() == null || envelope.getCommandId().isBlank()) {
             throw new IllegalArgumentException("Hive control command commandId is required");
         }
-        String eventType = normalizeEventType(envelope.getEventType());
-        if (!EVENT_TYPE_COMMAND.equals(eventType)
-                && !EVENT_TYPE_COMMAND_STOP.equals(eventType)
-                && !EVENT_TYPE_COMMAND_CANCEL.equals(eventType)) {
-            throw new IllegalArgumentException("Unsupported Hive control command eventType: " + eventType);
-        }
-        if (EVENT_TYPE_COMMAND.equals(eventType) && (envelope.getBody() == null || envelope.getBody().isBlank())) {
+    }
+
+    private void requireCommandBody(HiveControlCommandEnvelope envelope) {
+        if (envelope.getBody() == null || envelope.getBody().isBlank()) {
             throw new IllegalArgumentException("Hive control command body is required");
         }
-        return eventType;
+    }
+
+    private void requireInspectionRequestId(HiveControlCommandEnvelope envelope) {
+        if (envelope.getRequestId() == null || envelope.getRequestId().isBlank()) {
+            throw new IllegalArgumentException("Hive inspection requestId is required");
+        }
+    }
+
+    private String resolveTrackingId(HiveControlCommandEnvelope envelope) {
+        String trackingId = hiveControlInboxService.resolveTrackingId(envelope);
+        if (trackingId != null && !trackingId.isBlank()) {
+            return trackingId;
+        }
+        if (envelope == null) {
+            return null;
+        }
+        if (envelope.getRequestId() != null && !envelope.getRequestId().isBlank()) {
+            return envelope.getRequestId().trim();
+        }
+        if (envelope.getCommandId() != null && !envelope.getCommandId().isBlank()) {
+            return envelope.getCommandId().trim();
+        }
+        return null;
     }
 
     private void putIfPresent(Map<String, Object> metadata, String key, String value) {
