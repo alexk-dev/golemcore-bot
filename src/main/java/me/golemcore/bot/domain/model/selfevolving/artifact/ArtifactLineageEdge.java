@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.domain.model.selfevolving.artifact;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -18,19 +18,27 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.Instant;
+
 /**
- * Shared string helpers to avoid duplicated null/blank checks across modules.
+ * Typed edge between two artifact lineage nodes.
  */
-public final class StringValueSupport {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class ArtifactLineageEdge {
 
-    private StringValueSupport() {
-    }
-
-    public static boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
-
-    public static String nullSafe(String value) {
-        return value != null ? value : "";
-    }
+    private String edgeId;
+    private String fromNodeId;
+    private String toNodeId;
+    private String edgeType;
+    private Instant createdAt;
 }
