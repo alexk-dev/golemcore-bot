@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.system;
 
+import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -34,6 +35,7 @@ class PostRunAnalysisSystemTest {
     private LlmJudgeService llmJudgeService;
     private EvolutionCandidateService evolutionCandidateService;
     private PromotionWorkflowService promotionWorkflowService;
+    private HiveEventBatchPublisher hiveEventBatchPublisher;
     private PostRunAnalysisSystem system;
 
     @BeforeEach
@@ -44,13 +46,15 @@ class PostRunAnalysisSystemTest {
         llmJudgeService = mock(LlmJudgeService.class);
         evolutionCandidateService = mock(EvolutionCandidateService.class);
         promotionWorkflowService = mock(PromotionWorkflowService.class);
+        hiveEventBatchPublisher = mock(HiveEventBatchPublisher.class);
         system = new PostRunAnalysisSystem(
                 runtimeConfigService,
                 selfEvolvingRunService,
                 deterministicJudgeService,
                 llmJudgeService,
                 evolutionCandidateService,
-                promotionWorkflowService);
+                promotionWorkflowService,
+                hiveEventBatchPublisher);
     }
 
     @Test
@@ -99,6 +103,7 @@ class PostRunAnalysisSystemTest {
         verify(llmJudgeService).judge(completedRun, null, deterministicVerdict);
         verify(evolutionCandidateService).deriveCandidates(completedRun, llmVerdict);
         verify(promotionWorkflowService).registerAndPlanCandidates(candidates);
+        verify(hiveEventBatchPublisher).publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
         assertEquals("run-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
         assertEquals("bundle-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
     }

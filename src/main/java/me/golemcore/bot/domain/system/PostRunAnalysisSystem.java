@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import me.golemcore.bot.domain.service.DeterministicJudgeService;
 import me.golemcore.bot.domain.service.EvolutionCandidateService;
 import me.golemcore.bot.domain.service.LlmJudgeService;
@@ -29,11 +30,15 @@ import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SelfEvolvingRunService;
 import org.springframework.stereotype.Component;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.List;
 
 /**
  * Minimal post-turn hook that materializes a SelfEvolving run record.
  */
 @Component
+@Slf4j
 public class PostRunAnalysisSystem implements AgentSystem {
 
     private final RuntimeConfigService runtimeConfigService;
@@ -42,19 +47,22 @@ public class PostRunAnalysisSystem implements AgentSystem {
     private final LlmJudgeService llmJudgeService;
     private final EvolutionCandidateService evolutionCandidateService;
     private final PromotionWorkflowService promotionWorkflowService;
+    private final HiveEventBatchPublisher hiveEventBatchPublisher;
 
     public PostRunAnalysisSystem(RuntimeConfigService runtimeConfigService,
             SelfEvolvingRunService selfEvolvingRunService,
             DeterministicJudgeService deterministicJudgeService,
             LlmJudgeService llmJudgeService,
             EvolutionCandidateService evolutionCandidateService,
-            PromotionWorkflowService promotionWorkflowService) {
+            PromotionWorkflowService promotionWorkflowService,
+            HiveEventBatchPublisher hiveEventBatchPublisher) {
         this.runtimeConfigService = runtimeConfigService;
         this.selfEvolvingRunService = selfEvolvingRunService;
         this.deterministicJudgeService = deterministicJudgeService;
         this.llmJudgeService = llmJudgeService;
         this.evolutionCandidateService = evolutionCandidateService;
         this.promotionWorkflowService = promotionWorkflowService;
+        this.hiveEventBatchPublisher = hiveEventBatchPublisher;
     }
 
     @Override
@@ -92,8 +100,14 @@ public class PostRunAnalysisSystem implements AgentSystem {
         RunRecord completedRun = selfEvolvingRunService.completeRun(startedRun, context);
         RunVerdict deterministicVerdict = deterministicJudgeService.evaluate(completedRun, null);
         RunVerdict llmVerdict = llmJudgeService.judge(completedRun, null, deterministicVerdict);
-        promotionWorkflowService.registerAndPlanCandidates(
-                evolutionCandidateService.deriveCandidates(completedRun, llmVerdict));
+        List<me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate> candidates = evolutionCandidateService
+                .deriveCandidates(completedRun, llmVerdict);
+        promotionWorkflowService.registerAndPlanCandidates(candidates);
+        try {
+            hiveEventBatchPublisher.publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
+        } catch (RuntimeException exception) {
+            log.debug("[Hive] Skipping SelfEvolving projection publish: {}", exception.getMessage());
+        }
         context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, completedRun.getId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, completedRun.getArtifactBundleId());
         return context;
