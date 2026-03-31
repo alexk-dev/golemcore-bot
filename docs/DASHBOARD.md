@@ -104,11 +104,21 @@ The Settings page is now organized into catalog blocks instead of a flat tab lis
 It shows:
 
 - overview cards for runs, candidates, campaigns, and approval pressure
-- readonly run list with verdict summaries
-- candidate queue and current promotion states
-- benchmark lab campaigns harvested from production or curated suites
+- a workspace-first artifact browser where `artifactStreamId` is the canonical identity for deep links, compare flows, and evidence joins
+- an artifact catalog left rail for evolved `skills`, `prompts`, `routing policies`, `tool policies`, `memory policies`, `context policies`, and `governance policies`
+- a lineage rail that shows the full `candidate -> approved -> active -> reverted` history as rollout nodes over immutable content revisions
+- diff, evidence, and impact tabs that combine semantic diff, raw diff fallback, benchmark impact, promotion history, and run-level evidence
+- readonly run list with verdict summaries as supporting context
+- candidate queue and current promotion states as supporting context
+- benchmark lab campaigns harvested from production or curated suites, with selection wired back into the chosen artifact stream
 
-The workspace is bot-local. Hive adds the fleet-level readonly inspection and approval view when the golem is connected.
+The workspace is bot-local and remains the primary working screen. Hive mirrors the same artifact workspace as a readonly inspection view when the golem is connected.
+
+Diff behavior is split deliberately:
+
+- bounded rollout and default compare pairs are precomputed for fast navigation
+- arbitrary revision compare is computed on demand and cached by normalized content hash pair
+- transition compare remains node-aware, so rollout metadata and evidence do not get flattened into plain revision diff output
 
 Plugin settings pages are discovered dynamically from `/api/plugins/settings/catalog`.
 
