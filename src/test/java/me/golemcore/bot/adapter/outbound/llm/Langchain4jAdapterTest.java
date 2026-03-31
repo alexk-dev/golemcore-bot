@@ -1646,6 +1646,118 @@ class Langchain4jAdapterTest {
         assertEquals("anthropic", result);
     }
 
+    // ===== isResponsesApiRequest routing =====
+
+    @Test
+    void shouldRouteToResponsesApiWhenLegacyApiIsNull() {
+        injectChatModel(mock(ChatModel.class), OPENAI + "/gpt-5.4");
+        when(modelConfig.getProvider(OPENAI + "/gpt-5.4")).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("key"))
+                        .apiType(OPENAI)
+                        .build());
+
+        LlmRequest request = LlmRequest.builder()
+                .model(OPENAI + "/gpt-5.4")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        Boolean result = ReflectionTestUtils.invokeMethod(adapter, "isResponsesApiRequest", request);
+        assertTrue(result);
+    }
+
+    @Test
+    void shouldRouteToResponsesApiWhenLegacyApiIsFalse() {
+        injectChatModel(mock(ChatModel.class), OPENAI + "/gpt-5.4");
+        when(modelConfig.getProvider(OPENAI + "/gpt-5.4")).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("key"))
+                        .apiType(OPENAI)
+                        .legacyApi(false)
+                        .build());
+
+        LlmRequest request = LlmRequest.builder()
+                .model(OPENAI + "/gpt-5.4")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        Boolean result = ReflectionTestUtils.invokeMethod(adapter, "isResponsesApiRequest", request);
+        assertTrue(result);
+    }
+
+    @Test
+    void shouldNotRouteToResponsesApiWhenLegacyApiIsTrue() {
+        injectChatModel(mock(ChatModel.class), OPENAI + "/gpt-5.1");
+        when(modelConfig.getProvider(OPENAI + "/gpt-5.1")).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("key"))
+                        .apiType(OPENAI)
+                        .legacyApi(true)
+                        .build());
+
+        LlmRequest request = LlmRequest.builder()
+                .model(OPENAI + "/gpt-5.1")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        Boolean result = ReflectionTestUtils.invokeMethod(adapter, "isResponsesApiRequest", request);
+        assertFalse(result);
+    }
+
+    @Test
+    void shouldNotRouteToResponsesApiForAnthropicProvider() {
+        injectChatModel(mock(ChatModel.class), "anthropic/claude-opus-4-1");
+        when(modelConfig.getProvider("anthropic/claude-opus-4-1")).thenReturn("anthropic");
+        when(runtimeConfigService.getLlmProviderConfig("anthropic"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("key"))
+                        .apiType("anthropic")
+                        .build());
+
+        LlmRequest request = LlmRequest.builder()
+                .model("anthropic/claude-opus-4-1")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        Boolean result = ReflectionTestUtils.invokeMethod(adapter, "isResponsesApiRequest", request);
+        assertFalse(result);
+    }
+
+    @Test
+    void shouldNotRouteToResponsesApiForGeminiProvider() {
+        injectChatModel(mock(ChatModel.class), "google/gemini-3.1-preview");
+        when(modelConfig.getProvider("google/gemini-3.1-preview")).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("key"))
+                        .apiType("gemini")
+                        .build());
+
+        LlmRequest request = LlmRequest.builder()
+                .model("google/gemini-3.1-preview")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        Boolean result = ReflectionTestUtils.invokeMethod(adapter, "isResponsesApiRequest", request);
+        assertFalse(result);
+    }
+
+    @Test
+    void shouldFallbackToCurrentModelWhenRequestModelIsNull() {
+        injectChatModel(mock(ChatModel.class), OPENAI + "/gpt-5.1");
+        // Default mock returns legacyApi=true from setUp
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        Boolean result = ReflectionTestUtils.invokeMethod(adapter, "isResponsesApiRequest", request);
+        assertFalse(result);
+    }
+
     // ===== createModel dispatch by apiType =====
 
     @Test
