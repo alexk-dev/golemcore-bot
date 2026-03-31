@@ -300,6 +300,14 @@ public final class ContextAttributes {
     /** String ? Hive golem identifier for the active control-plane session. */
     public static final String HIVE_GOLEM_ID = "hive.golem.id";
 
+    /** String ? SelfEvolving run identifier bound to the current turn. */
+    public static final String SELF_EVOLVING_RUN_ID = "selfevolving.run.id";
+
+    /**
+     * String ? SelfEvolving artifact bundle identifier bound to the current turn.
+     */
+    public static final String SELF_EVOLVING_ARTIFACT_BUNDLE_ID = "selfevolving.artifact.bundle.id";
+
     /** Map<String,Object> ? latest structured compaction details. */
     public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";
 
