@@ -59,7 +59,10 @@ import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.output.TokenUsage;
+import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiResponsesStreamingChatModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -143,6 +146,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private ChatModel chatModel;
     private String currentModel;
     private volatile boolean initialized = false;
+    private final Map<String, StreamingChatModel> responsesStreamingModels = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Override
     public synchronized void initialize() {
@@ -187,6 +191,56 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             throw new IllegalStateException("Provider not configured in runtime config: " + providerName);
         }
         return config;
+    }
+
+    private boolean isResponsesApiRequest(LlmRequest request) {
+        String model = request.getModel() != null ? request.getModel() : currentModel;
+        if (model == null) {
+            return false;
+        }
+        String provider = getProvider(model);
+        RuntimeConfig.LlmProviderConfig config = getProviderConfig(provider);
+        String apiType = getApiType(config);
+        return API_TYPE_OPENAI.equals(apiType) && !Boolean.TRUE.equals(config.getLegacyApi());
+    }
+
+    private StreamingChatModel getResponsesStreamingModel(String model, String reasoningEffort) {
+        String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "");
+        return responsesStreamingModels.computeIfAbsent(cacheKey, key -> {
+            String provider = getProvider(model);
+            RuntimeConfig.LlmProviderConfig config = getProviderConfig(provider);
+            String modelName = stripProviderPrefix(model);
+            log.info("[LLM] Creating OpenAI Responses streaming model for: {} (reasoning: {})",
+                    modelName, reasoningEffort);
+            return createResponsesStreamingModel(modelName, reasoningEffort, config);
+        });
+    }
+
+    private StreamingChatModel createResponsesStreamingModel(String modelName, String reasoningEffort,
+            RuntimeConfig.LlmProviderConfig config) {
+        String apiKey = Secret.valueOrEmpty(config.getApiKey());
+        if (apiKey.isBlank()) {
+            throw new IllegalStateException("Missing apiKey for OpenAI Responses provider in runtime config");
+        }
+        OpenAiResponsesStreamingChatModel.Builder builder = OpenAiResponsesStreamingChatModel.builder()
+                .apiKey(apiKey)
+                .modelName(modelName)
+                .logRequests(true)
+                .logResponses(true);
+
+        if (config.getBaseUrl() != null) {
+            builder.baseUrl(config.getBaseUrl());
+        }
+
+        if (reasoningEffort != null && !reasoningEffort.isBlank()) {
+            builder.reasoningEffort(reasoningEffort);
+        }
+
+        if (supportsTemperature(modelName)) {
+            builder.temperature((double) runtimeConfigService.getTemperature());
+        }
+
+        return builder.build();
     }
 
     private String stripProviderPrefix(String model) {
@@ -307,13 +361,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     public CompletableFuture<LlmResponse> chat(LlmRequest request) {
         return CompletableFuture.supplyAsync(() -> {
             ensureInitialized();
-            if (chatModel == null) {
+
+            if (chatModel == null && !isResponsesApiRequest(request)) {
                 throw new RuntimeException("Langchain4j adapter not available");
             }
 
-            // Handle per-request model/reasoning override
-            ChatModel modelToUse = getModelForRequest(request);
-            boolean geminiApiType = isGeminiRequest(request);
+            boolean useResponsesApi = isResponsesApiRequest(request);
+            ChatModel modelToUse = useResponsesApi ? null : getModelForRequest(request);
+            boolean geminiApiType = !useResponsesApi && isGeminiRequest(request);
             LlmRequest requestToUse = request;
             MessageConversionResult conversionResult = buildChatMessages(requestToUse);
             List<ChatMessage> messages = conversionResult.messages();
@@ -325,7 +380,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             while (attempt <= MAX_RETRIES) {
                 try {
                     ChatResponse response;
-                    if (tools != null && !tools.isEmpty()) {
+                    if (useResponsesApi) {
+                        String effectiveModel = requestToUse.getModel() != null
+                                ? requestToUse.getModel()
+                                : currentModel;
+                        StreamingChatModel streamingModel = getResponsesStreamingModel(
+                                effectiveModel, requestToUse.getReasoningEffort());
+                        response = chatViaStreaming(streamingModel, messages, tools);
+                    } else if (tools != null && !tools.isEmpty()) {
                         log.trace("Calling LLM with {} tools", tools.size());
                         ChatRequest chatRequest = ChatRequest.builder()
                                 .messages(messages)
@@ -490,7 +552,19 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     @Override
     public Flux<LlmChunk> chatStream(LlmRequest request) {
         ensureInitialized();
-        // Basic implementation - langchain4j streaming support varies by model
+
+        // Real SSE streaming for OpenAI Responses API (non-legacy)
+        if (isResponsesApiRequest(request)) {
+            String effectiveModel = request.getModel() != null ? request.getModel() : currentModel;
+            StreamingChatModel streamingModel = getResponsesStreamingModel(
+                    effectiveModel, request.getReasoningEffort());
+            MessageConversionResult conversionResult = buildChatMessages(request);
+            List<ChatMessage> messages = conversionResult.messages();
+            List<ToolSpecification> tools = convertTools(request);
+            return streamViaResponsesApi(streamingModel, messages, tools);
+        }
+
+        // Wrapped sync fallback for legacy OpenAI, Anthropic, Gemini
         return Flux.create(sink -> {
             chat(request).whenComplete((response, error) -> {
                 if (error != null) {
@@ -502,6 +576,77 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                             .usage(response.getUsage())
                             .build());
                     sink.complete();
+                }
+            });
+        });
+    }
+
+    /**
+     * Execute a chat request via a streaming model, blocking until the full
+     * response is available. This bridges {@link StreamingChatModel} into the sync
+     * retry loop.
+     */
+    private ChatResponse chatViaStreaming(StreamingChatModel model,
+            List<ChatMessage> messages, List<ToolSpecification> tools) {
+        CompletableFuture<ChatResponse> future = new CompletableFuture<>();
+        ChatRequest.Builder requestBuilder = ChatRequest.builder().messages(messages);
+        if (tools != null && !tools.isEmpty()) {
+            log.trace("Calling Responses API with {} tools", tools.size());
+            requestBuilder.toolSpecifications(tools);
+        }
+        model.chat(requestBuilder.build(), new StreamingChatResponseHandler() {
+            @Override
+            public void onCompleteResponse(ChatResponse chatResponse) {
+                future.complete(chatResponse);
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                future.completeExceptionally(error);
+            }
+        });
+        return future.join();
+    }
+
+    /**
+     * Stream a chat request via the Responses API, emitting incremental
+     * {@link LlmChunk} objects.
+     */
+    private Flux<LlmChunk> streamViaResponsesApi(StreamingChatModel model,
+            List<ChatMessage> messages, List<ToolSpecification> tools) {
+        return Flux.create(sink -> {
+            ChatRequest.Builder requestBuilder = ChatRequest.builder().messages(messages);
+            if (tools != null && !tools.isEmpty()) {
+                requestBuilder.toolSpecifications(tools);
+            }
+            model.chat(requestBuilder.build(), new StreamingChatResponseHandler() {
+                @Override
+                public void onPartialResponse(String partialResponse) {
+                    if (!sink.isCancelled()) {
+                        sink.next(LlmChunk.builder()
+                                .text(partialResponse)
+                                .done(false)
+                                .build());
+                    }
+                }
+
+                @Override
+                public void onCompleteResponse(ChatResponse chatResponse) {
+                    if (!sink.isCancelled()) {
+                        LlmResponse llmResponse = convertResponse(chatResponse, false, false);
+                        sink.next(LlmChunk.builder()
+                                .text(llmResponse.getContent())
+                                .done(true)
+                                .usage(llmResponse.getUsage())
+                                .finishReason(llmResponse.getFinishReason())
+                                .build());
+                    }
+                    sink.complete();
+                }
+
+                @Override
+                public void onError(Throwable error) {
+                    sink.error(error);
                 }
             });
         });
