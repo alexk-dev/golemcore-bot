@@ -21,6 +21,7 @@ How to use the built-in web dashboard for chat, setup, settings, scheduler manag
 - `/dashboard/skills` - skill library
 - `/dashboard/prompts` - prompt configuration
 - `/dashboard/analytics` - analytics view
+- `/dashboard/self-evolving` - SelfEvolving workspace
 - `/dashboard/diagnostics` - diagnostics utilities
 
 ## Authentication
@@ -83,7 +84,31 @@ The Settings page is now organized into catalog blocks instead of a flat tab lis
 - `Extensions` - Plugin Marketplace plus plugin-contributed settings pages
 - `Tools` - filesystem, shell, automation, goal management, voice routing
 - `Runtime` - memory, skills, turn budget, usage, MCP, auto mode, updates
+- `Runtime` also includes `SelfEvolving` for judge tiers, promotion policy, benchmark harvesting, and trace payload override
 - `Advanced` - rate limiting, security, compaction
+
+### SelfEvolving Settings
+
+`Settings -> SelfEvolving` controls the native eval and promotion runtime:
+
+- enable or disable the `SelfEvolving` pipeline
+- choose judge tiers for primary, tiebreaker, and evolution passes
+- configure approval-gated or automatic promotion behavior
+- enable benchmark harvesting from production runs
+- force trace payload capture for evaluation-relevant spans while keeping redaction active
+
+### SelfEvolving Workspace
+
+`/dashboard/self-evolving` is the operator workspace for bot-local `SelfEvolving` state.
+
+It shows:
+
+- overview cards for runs, candidates, campaigns, and approval pressure
+- readonly run list with verdict summaries
+- candidate queue and current promotion states
+- benchmark lab campaigns harvested from production or curated suites
+
+The workspace is bot-local. Hive adds the fleet-level readonly inspection and approval view when the golem is connected.
 
 Plugin settings pages are discovered dynamically from `/api/plugins/settings/catalog`.
 

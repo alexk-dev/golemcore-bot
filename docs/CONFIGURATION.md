@@ -58,6 +58,54 @@ Notable runtime sections:
 - `mcp.json`
 - `plan.json`
 - `hive.json`
+- `self-evolving.json`
+
+### SelfEvolving
+
+`SelfEvolving` is the native observe, judge, evolve, and promote runtime plane for the bot.
+
+Configuration lives in `preferences/self-evolving.json` and is also available in the dashboard under `Settings -> SelfEvolving`.
+
+Important behaviors:
+
+- `enabled=true` turns on the `SelfEvolving` pipeline in post-run analysis.
+- When enabled, `SelfEvolving` forces trace payload capture for evaluation-relevant spans even if normal trace payload logging is reduced.
+- Judge model selection is tier-based, not model-id based:
+  - `judge.primaryTier`
+  - `judge.tiebreakerTier`
+  - `judge.evolutionTier`
+- Promotion policy defaults to `approval_gate`.
+- Promotion policy can be relaxed to automatic rollout modes through runtime config.
+- Benchmark harvesting can promote production runs into offline regression suites.
+
+Representative shape:
+
+```json
+{
+  "selfEvolving": {
+    "enabled": true,
+    "tracePayloadOverride": true,
+    "judge": {
+      "enabled": true,
+      "primaryTier": "balanced",
+      "tiebreakerTier": "deep",
+      "evolutionTier": "deep",
+      "requireEvidenceAnchors": true
+    },
+    "promotion": {
+      "mode": "approval_gate",
+      "shadowRequired": true,
+      "canaryRequired": true,
+      "hiveApprovalPreferred": true
+    },
+    "benchmark": {
+      "enabled": true,
+      "harvestProductionRuns": true,
+      "autoCreateRegressionCases": true
+    }
+  }
+}
+```
 
 ### LLM Providers
 
