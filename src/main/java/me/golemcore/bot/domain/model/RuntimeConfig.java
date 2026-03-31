@@ -87,6 +87,9 @@ public class RuntimeConfig {
     @Builder.Default
     private HiveConfig hive = new HiveConfig();
 
+    @Builder.Default
+    private SelfEvolvingConfig selfEvolving = new SelfEvolvingConfig();
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -810,6 +813,129 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingConfig {
+        @Builder.Default
+        private Boolean enabled = false;
+        @Builder.Default
+        private Boolean tracePayloadOverride = true;
+        @Builder.Default
+        private SelfEvolvingCaptureConfig capture = new SelfEvolvingCaptureConfig();
+        @Builder.Default
+        private SelfEvolvingJudgeConfig judge = new SelfEvolvingJudgeConfig();
+        @Builder.Default
+        private SelfEvolvingEvolutionConfig evolution = new SelfEvolvingEvolutionConfig();
+        @Builder.Default
+        private SelfEvolvingPromotionConfig promotion = new SelfEvolvingPromotionConfig();
+        @Builder.Default
+        private SelfEvolvingBenchmarkConfig benchmark = new SelfEvolvingBenchmarkConfig();
+        @Builder.Default
+        private SelfEvolvingHiveConfig hive = new SelfEvolvingHiveConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingCaptureConfig {
+        @Builder.Default
+        private String llm = "full";
+        @Builder.Default
+        private String tool = "full";
+        @Builder.Default
+        private String context = "full";
+        @Builder.Default
+        private String skill = "full";
+        @Builder.Default
+        private String tier = "full";
+        @Builder.Default
+        private String infra = "meta_only";
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingJudgeConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private String primaryTier = "standard";
+        @Builder.Default
+        private String tiebreakerTier = "premium";
+        @Builder.Default
+        private String evolutionTier = "premium";
+        @Builder.Default
+        private Boolean requireEvidenceAnchors = true;
+        @Builder.Default
+        private Double uncertaintyThreshold = 0.22d;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingEvolutionConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private List<String> modes = new ArrayList<>(List.of("fix", "derive", "tune"));
+        @Builder.Default
+        private List<String> artifactTypes = new ArrayList<>(
+                List.of("skill", "prompt", "routing_policy", "tool_policy", "memory_policy"));
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingPromotionConfig {
+        @Builder.Default
+        private String mode = "approval_gate";
+        @Builder.Default
+        private Boolean allowAutoAccept = true;
+        @Builder.Default
+        private Boolean shadowRequired = true;
+        @Builder.Default
+        private Boolean canaryRequired = true;
+        @Builder.Default
+        private Boolean hiveApprovalPreferred = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingBenchmarkConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private Boolean harvestProductionRuns = true;
+        @Builder.Default
+        private Boolean autoCreateRegressionCases = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingHiveConfig {
+        @Builder.Default
+        private Boolean publishInspectionProjection = true;
+        @Builder.Default
+        private Boolean readonlyInspection = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class PlanConfig {
         @Builder.Default
         private Boolean enabled = false;
@@ -872,7 +998,9 @@ public class RuntimeConfig {
                                                                                                         "delayed-actions",
                                                                                                         DelayedActionsConfig.class), HIVE(
                                                                                                                 "hive",
-                                                                                                                HiveConfig.class);
+                                                                                                                HiveConfig.class), SELF_EVOLVING(
+                                                                                                                        "self-evolving",
+                                                                                                                        SelfEvolvingConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

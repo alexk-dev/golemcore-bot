@@ -180,6 +180,34 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_HIVE_ENABLED = false;
     private static final boolean DEFAULT_HIVE_AUTO_CONNECT = false;
     private static final boolean DEFAULT_HIVE_MANAGED_BY_PROPERTIES = false;
+    private static final boolean DEFAULT_SELF_EVOLVING_ENABLED = false;
+    private static final boolean DEFAULT_SELF_EVOLVING_TRACE_PAYLOAD_OVERRIDE = true;
+    private static final String DEFAULT_SELF_EVOLVING_CAPTURE_MODE_FULL = "full";
+    private static final String DEFAULT_SELF_EVOLVING_CAPTURE_MODE_META_ONLY = "meta_only";
+    private static final boolean DEFAULT_SELF_EVOLVING_JUDGE_ENABLED = true;
+    private static final String DEFAULT_SELF_EVOLVING_JUDGE_PRIMARY_TIER = "standard";
+    private static final String DEFAULT_SELF_EVOLVING_JUDGE_TIEBREAKER_TIER = "premium";
+    private static final String DEFAULT_SELF_EVOLVING_JUDGE_EVOLUTION_TIER = "premium";
+    private static final boolean DEFAULT_SELF_EVOLVING_REQUIRE_EVIDENCE_ANCHORS = true;
+    private static final double DEFAULT_SELF_EVOLVING_UNCERTAINTY_THRESHOLD = 0.22d;
+    private static final boolean DEFAULT_SELF_EVOLVING_EVOLUTION_ENABLED = true;
+    private static final List<String> DEFAULT_SELF_EVOLVING_MODES = List.of("fix", "derive", "tune");
+    private static final List<String> DEFAULT_SELF_EVOLVING_ARTIFACT_TYPES = List.of(
+            "skill",
+            "prompt",
+            "routing_policy",
+            "tool_policy",
+            "memory_policy");
+    private static final String DEFAULT_SELF_EVOLVING_PROMOTION_MODE = "approval_gate";
+    private static final boolean DEFAULT_SELF_EVOLVING_ALLOW_AUTO_ACCEPT = true;
+    private static final boolean DEFAULT_SELF_EVOLVING_SHADOW_REQUIRED = true;
+    private static final boolean DEFAULT_SELF_EVOLVING_CANARY_REQUIRED = true;
+    private static final boolean DEFAULT_SELF_EVOLVING_HIVE_APPROVAL_PREFERRED = true;
+    private static final boolean DEFAULT_SELF_EVOLVING_BENCHMARK_ENABLED = true;
+    private static final boolean DEFAULT_SELF_EVOLVING_HARVEST_PRODUCTION_RUNS = true;
+    private static final boolean DEFAULT_SELF_EVOLVING_AUTO_CREATE_REGRESSION_CASES = true;
+    private static final boolean DEFAULT_SELF_EVOLVING_PUBLISH_INSPECTION_PROJECTION = true;
+    private static final boolean DEFAULT_SELF_EVOLVING_READONLY_INSPECTION = true;
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
 
@@ -263,6 +291,41 @@ public class RuntimeConfigService {
     public boolean isHiveManagedByProperties() {
         Boolean managedByProperties = getHiveConfig().getManagedByProperties();
         return managedByProperties != null && managedByProperties;
+    }
+
+    public RuntimeConfig.SelfEvolvingConfig getSelfEvolvingConfig() {
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = getRuntimeConfig().getSelfEvolving();
+        return selfEvolvingConfig != null ? selfEvolvingConfig : RuntimeConfig.SelfEvolvingConfig.builder().build();
+    }
+
+    public boolean isSelfEvolvingEnabled() {
+        Boolean enabled = getSelfEvolvingConfig().getEnabled();
+        return enabled != null ? enabled : DEFAULT_SELF_EVOLVING_ENABLED;
+    }
+
+    public boolean isSelfEvolvingTracePayloadOverrideEnabled() {
+        Boolean tracePayloadOverride = getSelfEvolvingConfig().getTracePayloadOverride();
+        return tracePayloadOverride != null ? tracePayloadOverride : DEFAULT_SELF_EVOLVING_TRACE_PAYLOAD_OVERRIDE;
+    }
+
+    public String getSelfEvolvingJudgePrimaryTier() {
+        String primaryTier = getSelfEvolvingConfig().getJudge().getPrimaryTier();
+        return primaryTier != null ? primaryTier : DEFAULT_SELF_EVOLVING_JUDGE_PRIMARY_TIER;
+    }
+
+    public String getSelfEvolvingJudgeTiebreakerTier() {
+        String tiebreakerTier = getSelfEvolvingConfig().getJudge().getTiebreakerTier();
+        return tiebreakerTier != null ? tiebreakerTier : DEFAULT_SELF_EVOLVING_JUDGE_TIEBREAKER_TIER;
+    }
+
+    public String getSelfEvolvingJudgeEvolutionTier() {
+        String evolutionTier = getSelfEvolvingConfig().getJudge().getEvolutionTier();
+        return evolutionTier != null ? evolutionTier : DEFAULT_SELF_EVOLVING_JUDGE_EVOLUTION_TIER;
+    }
+
+    public String getSelfEvolvingPromotionMode() {
+        String promotionMode = getSelfEvolvingConfig().getPromotion().getMode();
+        return promotionMode != null ? promotionMode : DEFAULT_SELF_EVOLVING_PROMOTION_MODE;
     }
 
     // ==================== Telegram ====================
@@ -1606,6 +1669,8 @@ public class RuntimeConfigService {
 
         persistSection(RuntimeConfig.ConfigSection.HIVE, cfg.getHive(),
                 RuntimeConfig.HiveConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.SELF_EVOLVING, cfg.getSelfEvolving(),
+                RuntimeConfig.SelfEvolvingConfig::new);
 
         log.debug("[RuntimeConfig] Persisted all config sections");
     }
@@ -1685,6 +1750,8 @@ public class RuntimeConfigService {
 
         RuntimeConfig.HiveConfig hive = loadSection(RuntimeConfig.ConfigSection.HIVE,
                 RuntimeConfig.HiveConfig.class, RuntimeConfig.HiveConfig::new);
+        RuntimeConfig.SelfEvolvingConfig selfEvolving = loadSection(RuntimeConfig.ConfigSection.SELF_EVOLVING,
+                RuntimeConfig.SelfEvolvingConfig.class, RuntimeConfig.SelfEvolvingConfig::new);
 
         RuntimeConfig config = RuntimeConfig.builder()
                 .telegram(telegram)
@@ -1706,9 +1773,8 @@ public class RuntimeConfigService {
                 .mcp(mcp)
                 .plan(plan)
                 .delayedActions(delayedActions)
-
                 .hive(hive)
-                .delayedActions(delayedActions)
+                .selfEvolving(selfEvolving)
                 .build();
 
         log.info("[RuntimeConfig] Loaded runtime config from {} section files",
@@ -1935,6 +2001,7 @@ public class RuntimeConfigService {
         if (cfg.getHive().getManagedByProperties() == null) {
             cfg.getHive().setManagedByProperties(DEFAULT_HIVE_MANAGED_BY_PROPERTIES);
         }
+        normalizeSelfEvolvingConfig(cfg);
         if (!Integer.valueOf(DEFAULT_MEMORY_VERSION).equals(cfg.getMemory().getVersion())) {
             cfg.getMemory().setVersion(DEFAULT_MEMORY_VERSION);
         }
@@ -1980,6 +2047,147 @@ public class RuntimeConfigService {
         }
         normalizeMemoryConfig(cfg.getMemory());
         normalizeSecretFlags(cfg);
+    }
+
+    private void normalizeSelfEvolvingConfig(RuntimeConfig cfg) {
+        if (cfg.getSelfEvolving() == null) {
+            cfg.setSelfEvolving(new RuntimeConfig.SelfEvolvingConfig());
+        }
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = cfg.getSelfEvolving();
+        if (selfEvolvingConfig.getEnabled() == null) {
+            selfEvolvingConfig.setEnabled(DEFAULT_SELF_EVOLVING_ENABLED);
+        }
+        if (selfEvolvingConfig.getTracePayloadOverride() == null) {
+            selfEvolvingConfig.setTracePayloadOverride(DEFAULT_SELF_EVOLVING_TRACE_PAYLOAD_OVERRIDE);
+        }
+        if (selfEvolvingConfig.getCapture() == null) {
+            selfEvolvingConfig.setCapture(new RuntimeConfig.SelfEvolvingCaptureConfig());
+        }
+        RuntimeConfig.SelfEvolvingCaptureConfig captureConfig = selfEvolvingConfig.getCapture();
+        captureConfig.setLlm(normalizeCaptureMode(captureConfig.getLlm(), DEFAULT_SELF_EVOLVING_CAPTURE_MODE_FULL));
+        captureConfig.setTool(normalizeCaptureMode(captureConfig.getTool(), DEFAULT_SELF_EVOLVING_CAPTURE_MODE_FULL));
+        captureConfig.setContext(
+                normalizeCaptureMode(captureConfig.getContext(), DEFAULT_SELF_EVOLVING_CAPTURE_MODE_FULL));
+        captureConfig.setSkill(normalizeCaptureMode(captureConfig.getSkill(), DEFAULT_SELF_EVOLVING_CAPTURE_MODE_FULL));
+        captureConfig.setTier(normalizeCaptureMode(captureConfig.getTier(), DEFAULT_SELF_EVOLVING_CAPTURE_MODE_FULL));
+        captureConfig.setInfra(
+                normalizeCaptureMode(captureConfig.getInfra(), DEFAULT_SELF_EVOLVING_CAPTURE_MODE_META_ONLY));
+
+        if (selfEvolvingConfig.getJudge() == null) {
+            selfEvolvingConfig.setJudge(new RuntimeConfig.SelfEvolvingJudgeConfig());
+        }
+        RuntimeConfig.SelfEvolvingJudgeConfig judgeConfig = selfEvolvingConfig.getJudge();
+        if (judgeConfig.getEnabled() == null) {
+            judgeConfig.setEnabled(DEFAULT_SELF_EVOLVING_JUDGE_ENABLED);
+        }
+        judgeConfig.setPrimaryTier(normalizeNonBlankString(
+                judgeConfig.getPrimaryTier(),
+                DEFAULT_SELF_EVOLVING_JUDGE_PRIMARY_TIER));
+        judgeConfig.setTiebreakerTier(normalizeNonBlankString(
+                judgeConfig.getTiebreakerTier(),
+                DEFAULT_SELF_EVOLVING_JUDGE_TIEBREAKER_TIER));
+        judgeConfig.setEvolutionTier(normalizeNonBlankString(
+                judgeConfig.getEvolutionTier(),
+                DEFAULT_SELF_EVOLVING_JUDGE_EVOLUTION_TIER));
+        if (judgeConfig.getRequireEvidenceAnchors() == null) {
+            judgeConfig.setRequireEvidenceAnchors(DEFAULT_SELF_EVOLVING_REQUIRE_EVIDENCE_ANCHORS);
+        }
+        Double uncertaintyThreshold = judgeConfig.getUncertaintyThreshold();
+        if (uncertaintyThreshold == null || uncertaintyThreshold < 0.0d || uncertaintyThreshold > 1.0d) {
+            judgeConfig.setUncertaintyThreshold(DEFAULT_SELF_EVOLVING_UNCERTAINTY_THRESHOLD);
+        }
+
+        if (selfEvolvingConfig.getEvolution() == null) {
+            selfEvolvingConfig.setEvolution(new RuntimeConfig.SelfEvolvingEvolutionConfig());
+        }
+        RuntimeConfig.SelfEvolvingEvolutionConfig evolutionConfig = selfEvolvingConfig.getEvolution();
+        if (evolutionConfig.getEnabled() == null) {
+            evolutionConfig.setEnabled(DEFAULT_SELF_EVOLVING_EVOLUTION_ENABLED);
+        }
+        evolutionConfig.setModes(normalizeStringList(evolutionConfig.getModes(), DEFAULT_SELF_EVOLVING_MODES));
+        evolutionConfig.setArtifactTypes(
+                normalizeStringList(evolutionConfig.getArtifactTypes(), DEFAULT_SELF_EVOLVING_ARTIFACT_TYPES));
+
+        if (selfEvolvingConfig.getPromotion() == null) {
+            selfEvolvingConfig.setPromotion(new RuntimeConfig.SelfEvolvingPromotionConfig());
+        }
+        RuntimeConfig.SelfEvolvingPromotionConfig promotionConfig = selfEvolvingConfig.getPromotion();
+        promotionConfig.setMode(normalizeNonBlankString(
+                promotionConfig.getMode(),
+                DEFAULT_SELF_EVOLVING_PROMOTION_MODE));
+        if (promotionConfig.getAllowAutoAccept() == null) {
+            promotionConfig.setAllowAutoAccept(DEFAULT_SELF_EVOLVING_ALLOW_AUTO_ACCEPT);
+        }
+        if (promotionConfig.getShadowRequired() == null) {
+            promotionConfig.setShadowRequired(DEFAULT_SELF_EVOLVING_SHADOW_REQUIRED);
+        }
+        if (promotionConfig.getCanaryRequired() == null) {
+            promotionConfig.setCanaryRequired(DEFAULT_SELF_EVOLVING_CANARY_REQUIRED);
+        }
+        if (promotionConfig.getHiveApprovalPreferred() == null) {
+            promotionConfig.setHiveApprovalPreferred(DEFAULT_SELF_EVOLVING_HIVE_APPROVAL_PREFERRED);
+        }
+
+        if (selfEvolvingConfig.getBenchmark() == null) {
+            selfEvolvingConfig.setBenchmark(new RuntimeConfig.SelfEvolvingBenchmarkConfig());
+        }
+        RuntimeConfig.SelfEvolvingBenchmarkConfig benchmarkConfig = selfEvolvingConfig.getBenchmark();
+        if (benchmarkConfig.getEnabled() == null) {
+            benchmarkConfig.setEnabled(DEFAULT_SELF_EVOLVING_BENCHMARK_ENABLED);
+        }
+        if (benchmarkConfig.getHarvestProductionRuns() == null) {
+            benchmarkConfig.setHarvestProductionRuns(DEFAULT_SELF_EVOLVING_HARVEST_PRODUCTION_RUNS);
+        }
+        if (benchmarkConfig.getAutoCreateRegressionCases() == null) {
+            benchmarkConfig.setAutoCreateRegressionCases(DEFAULT_SELF_EVOLVING_AUTO_CREATE_REGRESSION_CASES);
+        }
+
+        if (selfEvolvingConfig.getHive() == null) {
+            selfEvolvingConfig.setHive(new RuntimeConfig.SelfEvolvingHiveConfig());
+        }
+        RuntimeConfig.SelfEvolvingHiveConfig hiveConfig = selfEvolvingConfig.getHive();
+        if (hiveConfig.getPublishInspectionProjection() == null) {
+            hiveConfig.setPublishInspectionProjection(DEFAULT_SELF_EVOLVING_PUBLISH_INSPECTION_PROJECTION);
+        }
+        if (hiveConfig.getReadonlyInspection() == null) {
+            hiveConfig.setReadonlyInspection(DEFAULT_SELF_EVOLVING_READONLY_INSPECTION);
+        }
+    }
+
+    private List<String> normalizeStringList(List<String> values, List<String> defaultValues) {
+        if (values == null || values.isEmpty()) {
+            return new ArrayList<>(defaultValues);
+        }
+        List<String> normalized = new ArrayList<>();
+        for (String value : values) {
+            String normalizedValue = normalizeNonBlankString(value, null);
+            if (normalizedValue != null && !normalized.contains(normalizedValue)) {
+                normalized.add(normalizedValue);
+            }
+        }
+        if (normalized.isEmpty()) {
+            return new ArrayList<>(defaultValues);
+        }
+        return normalized;
+    }
+
+    private String normalizeCaptureMode(String value, String defaultValue) {
+        String normalizedValue = normalizeNonBlankString(value, defaultValue);
+        if (normalizedValue == null) {
+            return defaultValue;
+        }
+        if (DEFAULT_SELF_EVOLVING_CAPTURE_MODE_FULL.equals(normalizedValue)
+                || DEFAULT_SELF_EVOLVING_CAPTURE_MODE_META_ONLY.equals(normalizedValue)) {
+            return normalizedValue;
+        }
+        return defaultValue;
+    }
+
+    private String normalizeNonBlankString(String value, String defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        return value.trim();
     }
 
     private RuntimeConfig.MemoryDisclosureConfig getMemoryDisclosureConfig() {
