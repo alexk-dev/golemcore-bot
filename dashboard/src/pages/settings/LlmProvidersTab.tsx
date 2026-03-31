@@ -231,18 +231,22 @@ function ProviderEditor({
           {apiType === 'openai' && (
             <Col md={3}>
               <Form.Group className="mb-2">
-                <Form.Label className="small fw-medium">Legacy API</Form.Label>
-                <Form.Check
-                  type="switch"
-                  id={`legacy-api-${name}`}
-                  label="Use /v1/chat/completions"
-                  checked={form.legacyApi === true}
-                  onChange={(e) => onFormChange({ ...form, legacyApi: e.target.checked || null })}
-                />
+                <Form.Label className="small fw-medium">API Endpoint</Form.Label>
+                <Form.Select
+                  size="sm"
+                  value={form.legacyApi === true ? 'legacy' : 'responses'}
+                  onChange={(e) => onFormChange({ ...form, legacyApi: e.target.value === 'legacy' || null })}
+                  title={form.legacyApi === true
+                    ? 'Legacy: /v1/chat/completions — for proxies that do not support the Responses API'
+                    : 'Default: /v1/responses — supports reasoning + tools on reasoning models'}
+                >
+                  <option value="responses">/v1/responses</option>
+                  <option value="legacy">/v1/chat/completions</option>
+                </Form.Select>
                 <Form.Text className="text-body-secondary d-block">
                   {form.legacyApi === true
-                    ? 'Legacy mode: requests use /v1/chat/completions.'
-                    : 'Default: requests use the new /v1/responses endpoint.'}
+                    ? 'For proxies without Responses API support.'
+                    : 'Supports reasoning + function tools.'}
                 </Form.Text>
               </Form.Group>
             </Col>

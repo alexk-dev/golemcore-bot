@@ -19,8 +19,10 @@ import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.output.FinishReason;
@@ -49,6 +51,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -1817,6 +1820,314 @@ class Langchain4jAdapterTest {
         IllegalStateException error = assertThrows(IllegalStateException.class,
                 () -> ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null));
         assertTrue(error.getMessage().contains("Missing apiKey for Gemini provider"));
+    }
+
+    // ===== Responses API streaming integration =====
+
+    @Test
+    void shouldRouteSyncChatThroughResponsesStreamingModel() throws Exception {
+        String model = OPENAI + "/gpt-5.4";
+        StreamingChatModel streamingModel = mockStreamingModel("Hello from Responses API");
+        injectResponsesStreamingModel(model, null, streamingModel);
+        setupResponsesApiProvider(model);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(model)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+
+        assertNotNull(response);
+        assertEquals("Hello from Responses API", response.getContent());
+    }
+
+    @Test
+    void shouldRouteSyncChatWithToolsThroughResponsesStreamingModel() throws Exception {
+        String model = OPENAI + "/gpt-5.4";
+        StreamingChatModel streamingModel = mockStreamingModelWithToolCall("get_weather", "{\"city\":\"NYC\"}");
+        injectResponsesStreamingModel(model, null, streamingModel);
+        setupResponsesApiProvider(model);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(model)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Weather?").build()))
+                .tools(List.of(ToolDefinition.builder()
+                        .name("get_weather")
+                        .description("Get weather")
+                        .inputSchema(Map.of(TYPE, OBJECT, PROPERTIES, Map.of("city", Map.of(TYPE, STRING))))
+                        .build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+
+        assertNotNull(response);
+        assertTrue(response.hasToolCalls());
+        assertEquals("get_weather", response.getToolCalls().get(0).getName());
+    }
+
+    @Test
+    void shouldRouteSyncChatWithReasoningEffortThroughResponsesModel() throws Exception {
+        String model = OPENAI + "/gpt-5.4";
+        String reasoning = "high";
+        StreamingChatModel streamingModel = mockStreamingModel("Reasoned response");
+        injectResponsesStreamingModel(model, reasoning, streamingModel);
+        setupResponsesApiProvider(model);
+        when(modelConfig.isReasoningRequired(model)).thenReturn(true);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(model)
+                .reasoningEffort(reasoning)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Think hard").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+
+        assertEquals("Reasoned response", response.getContent());
+    }
+
+    @Test
+    void shouldStreamThroughResponsesApiModel() {
+        String model = OPENAI + "/gpt-5.4";
+        StreamingChatModel streamingModel = mockStreamingModelWithPartials("Hello ", "world!");
+        injectResponsesStreamingModel(model, null, streamingModel);
+        setupResponsesApiProvider(model);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(model)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        List<LlmChunk> chunks = adapter.chatStream(request).collectList().block();
+
+        assertNotNull(chunks);
+        assertTrue(chunks.size() >= 2);
+        assertEquals("Hello ", chunks.get(0).getText());
+        assertFalse(chunks.get(0).isDone());
+        // Last chunk should be done
+        assertTrue(chunks.get(chunks.size() - 1).isDone());
+    }
+
+    @Test
+    void shouldStreamWithToolCallsThroughResponsesApi() {
+        String model = OPENAI + "/gpt-5.4";
+        StreamingChatModel streamingModel = mockStreamingModelWithToolCall("search", "{\"q\":\"test\"}");
+        injectResponsesStreamingModel(model, null, streamingModel);
+        setupResponsesApiProvider(model);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(model)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Search").build()))
+                .tools(List.of(ToolDefinition.builder()
+                        .name("search")
+                        .description("Search")
+                        .inputSchema(Map.of(TYPE, OBJECT))
+                        .build()))
+                .build();
+
+        List<LlmChunk> chunks = adapter.chatStream(request).collectList().block();
+
+        assertNotNull(chunks);
+        // Should have final done chunk with tool calls in the response
+        assertTrue(chunks.get(chunks.size() - 1).isDone());
+    }
+
+    @Test
+    void shouldPropagateStreamingErrorInChatStream() {
+        String model = OPENAI + "/gpt-5.4";
+        StreamingChatModel streamingModel = mockStreamingModelWithError(new RuntimeException("API error"));
+        injectResponsesStreamingModel(model, null, streamingModel);
+        setupResponsesApiProvider(model);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(model)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        assertThrows(RuntimeException.class,
+                () -> adapter.chatStream(request).collectList().block());
+    }
+
+    @Test
+    void shouldPropagateStreamingErrorInSyncChat() {
+        String model = OPENAI + "/gpt-5.4";
+        StreamingChatModel streamingModel = mockStreamingModelWithError(new RuntimeException("API timeout"));
+        injectResponsesStreamingModel(model, null, streamingModel);
+        setupResponsesApiProvider(model);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(model)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        ExecutionException ex = assertThrows(ExecutionException.class,
+                () -> adapter.chat(request).get());
+        assertTrue(ex.getCause().getMessage().contains("API timeout"));
+    }
+
+    @Test
+    void shouldFallToLegacyPathWhenLegacyApiIsTrue() throws Exception {
+        String model = OPENAI + "/gpt-5.1";
+        ChatModel chatModel = mock(ChatModel.class);
+        when(chatModel.chat(any(List.class))).thenReturn(
+                ChatResponse.builder()
+                        .aiMessage(AiMessage.from("Legacy response"))
+                        .tokenUsage(new TokenUsage(10, 5))
+                        .finishReason(FinishReason.STOP)
+                        .build());
+        injectChatModel(chatModel, model);
+
+        when(modelConfig.getProvider(model)).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of(KEY))
+                        .apiType(OPENAI)
+                        .legacyApi(true)
+                        .build());
+
+        LlmRequest request = LlmRequest.builder()
+                .model(model)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+
+        assertEquals("Legacy response", response.getContent());
+        verify(chatModel).chat(any(List.class));
+    }
+
+    @Test
+    void shouldCacheResponsesStreamingModelsPerModelAndReasoning() {
+        String model = OPENAI + "/gpt-5.4";
+        setupResponsesApiProvider(model);
+
+        @SuppressWarnings(SUPPRESS_UNCHECKED)
+        Map<String, StreamingChatModel> cache = (Map<String, StreamingChatModel>) ReflectionTestUtils.getField(adapter,
+                "responsesStreamingModels");
+        assertNotNull(cache);
+        assertTrue(cache.isEmpty());
+
+        // Inject two different models
+        StreamingChatModel model1 = mockStreamingModel("r1");
+        StreamingChatModel model2 = mockStreamingModel("r2");
+        cache.put(model + ":", model1);
+        cache.put(model + ":high", model2);
+
+        assertEquals(2, cache.size());
+        assertSame(model1, cache.get(model + ":"));
+        assertSame(model2, cache.get(model + ":high"));
+    }
+
+    @Test
+    void shouldUseCurrentModelForResponsesApiWhenRequestModelIsNull() throws Exception {
+        String model = OPENAI + "/gpt-5.4";
+        StreamingChatModel streamingModel = mockStreamingModel("default model response");
+        injectResponsesStreamingModel(model, null, streamingModel);
+        injectChatModel(null, model);
+
+        when(modelConfig.getProvider(model)).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of(KEY))
+                        .apiType(OPENAI)
+                        .build());
+
+        LlmRequest request = LlmRequest.builder()
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        LlmResponse response = adapter.chat(request).get();
+
+        assertEquals("default model response", response.getContent());
+    }
+
+    // ===== Responses streaming model helpers =====
+
+    private void setupResponsesApiProvider(String model) {
+        injectChatModel(null, model);
+        when(modelConfig.getProvider(model)).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of(KEY))
+                        .apiType(OPENAI)
+                        .build());
+    }
+
+    @SuppressWarnings(SUPPRESS_UNCHECKED)
+    private void injectResponsesStreamingModel(String model, String reasoningEffort,
+            StreamingChatModel streamingModel) {
+        injectChatModel(null, model);
+        Map<String, StreamingChatModel> cache = (Map<String, StreamingChatModel>) ReflectionTestUtils.getField(adapter,
+                "responsesStreamingModels");
+        String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "");
+        cache.put(cacheKey, streamingModel);
+    }
+
+    private StreamingChatModel mockStreamingModel(String responseText) {
+        StreamingChatModel model = mock(StreamingChatModel.class);
+        doAnswer(invocation -> {
+            StreamingChatResponseHandler handler = invocation.getArgument(1);
+            ChatResponse response = ChatResponse.builder()
+                    .aiMessage(AiMessage.from(responseText))
+                    .tokenUsage(new TokenUsage(10, 5))
+                    .finishReason(FinishReason.STOP)
+                    .build();
+            handler.onCompleteResponse(response);
+            return null;
+        }).when(model).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
+        return model;
+    }
+
+    private StreamingChatModel mockStreamingModelWithPartials(String... partials) {
+        StreamingChatModel model = mock(StreamingChatModel.class);
+        doAnswer(invocation -> {
+            StreamingChatResponseHandler handler = invocation.getArgument(1);
+            for (String partial : partials) {
+                handler.onPartialResponse(partial);
+            }
+            StringBuilder full = new StringBuilder();
+            for (String p : partials) {
+                full.append(p);
+            }
+            ChatResponse response = ChatResponse.builder()
+                    .aiMessage(AiMessage.from(full.toString()))
+                    .tokenUsage(new TokenUsage(10, 5))
+                    .finishReason(FinishReason.STOP)
+                    .build();
+            handler.onCompleteResponse(response);
+            return null;
+        }).when(model).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
+        return model;
+    }
+
+    private StreamingChatModel mockStreamingModelWithToolCall(String toolName, String argsJson) {
+        StreamingChatModel model = mock(StreamingChatModel.class);
+        doAnswer(invocation -> {
+            StreamingChatResponseHandler handler = invocation.getArgument(1);
+            ToolExecutionRequest toolRequest = ToolExecutionRequest.builder()
+                    .id("call_test_123")
+                    .name(toolName)
+                    .arguments(argsJson)
+                    .build();
+            ChatResponse response = ChatResponse.builder()
+                    .aiMessage(AiMessage.from(List.of(toolRequest)))
+                    .tokenUsage(new TokenUsage(20, 10))
+                    .finishReason(FinishReason.TOOL_EXECUTION)
+                    .build();
+            handler.onCompleteResponse(response);
+            return null;
+        }).when(model).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
+        return model;
+    }
+
+    private StreamingChatModel mockStreamingModelWithError(Throwable error) {
+        StreamingChatModel model = mock(StreamingChatModel.class);
+        doAnswer(invocation -> {
+            StreamingChatResponseHandler handler = invocation.getArgument(1);
+            handler.onError(error);
+            return null;
+        }).when(model).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
+        return model;
     }
 
     // ===== Helpers =====
