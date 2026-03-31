@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.53.0 - 2026-03-31
+#### Features
+- (**llm**) add OpenAI Responses API with legacy fallback (#230) - (38dec48) - Alex Kuleshov
+#### Documentation
+- reposition README for GolemCore ecosystem runtime (#229) - (a814778) - Alex Kuleshov
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
