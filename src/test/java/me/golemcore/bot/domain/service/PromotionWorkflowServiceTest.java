@@ -22,6 +22,7 @@ class PromotionWorkflowServiceTest {
 
     private StoragePort storagePort;
     private RuntimeConfigService runtimeConfigService;
+    private EvolutionCandidateService evolutionCandidateService;
     private PromotionWorkflowService promotionWorkflowService;
 
     @BeforeEach
@@ -32,9 +33,12 @@ class PromotionWorkflowServiceTest {
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("approval_gate");
+        evolutionCandidateService = new EvolutionCandidateService(storagePort, Clock.fixed(
+                Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
         promotionWorkflowService = new PromotionWorkflowService(
                 storagePort,
                 runtimeConfigService,
+                evolutionCandidateService,
                 Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
     }
 

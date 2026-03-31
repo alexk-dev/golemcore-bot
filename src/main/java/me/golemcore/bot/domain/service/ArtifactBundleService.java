@@ -128,6 +128,9 @@ public class ArtifactBundleService {
                 .status("SNAPSHOT")
                 .createdAt(Instant.now(clock))
                 .skillVersions(resolveSkillVersions(context))
+                .artifactKeyBindings(resolveArtifactKeyBindings(context))
+                .artifactTypeBindings(resolveArtifactTypeBindings(context))
+                .artifactSubtypeBindings(resolveArtifactSubtypeBindings(context))
                 .tierBindings(resolveTierBindings(context))
                 .configSnapshot(buildConfigSnapshot(context))
                 .build();
@@ -193,6 +196,42 @@ public class ArtifactBundleService {
         snapshot.put("promotionMode", runtimeConfigService.getSelfEvolvingPromotionMode());
         snapshot.put("conversationKey", context.getAttribute(ContextAttributes.CONVERSATION_KEY));
         return snapshot;
+    }
+
+    private Map<String, String> resolveArtifactKeyBindings(AgentContext context) {
+        Map<String, String> bindings = new LinkedHashMap<>();
+        List<String> skillVersions = resolveSkillVersions(context);
+        if (skillVersions.isEmpty()) {
+            bindings.put("skill:default", "skill:default");
+        } else {
+            for (String skillVersion : skillVersions) {
+                bindings.put("skill:" + skillVersion, "skill:" + skillVersion);
+            }
+        }
+        bindings.put("prompt:section", "prompt:section");
+        bindings.put("routing_policy:tier", "routing_policy:tier");
+        bindings.put("tool_policy:usage", "tool_policy:usage");
+        bindings.put("memory_policy:retrieval", "memory_policy:retrieval");
+        bindings.put("context_policy:assembly", "context_policy:assembly");
+        bindings.put("governance_policy:approval", "governance_policy:approval");
+        return bindings;
+    }
+
+    private Map<String, String> resolveArtifactTypeBindings(AgentContext context) {
+        Map<String, String> bindings = new LinkedHashMap<>();
+        for (String artifactKey : resolveArtifactKeyBindings(context).keySet()) {
+            bindings.put(artifactKey, artifactKey.contains(":") ? artifactKey.substring(0, artifactKey.indexOf(':'))
+                    : artifactKey);
+        }
+        return bindings;
+    }
+
+    private Map<String, String> resolveArtifactSubtypeBindings(AgentContext context) {
+        Map<String, String> bindings = new LinkedHashMap<>();
+        for (String artifactKey : resolveArtifactKeyBindings(context).keySet()) {
+            bindings.put(artifactKey, artifactKey.startsWith("skill:") ? "skill" : artifactKey);
+        }
+        return bindings;
     }
 
     private String resolveGolemId(AgentContext context) {

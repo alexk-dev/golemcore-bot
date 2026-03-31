@@ -42,15 +42,26 @@ public class EvolutionCandidate {
     private String golemId;
     private String goal;
     private String artifactType;
+    private String artifactSubtype;
+    private String artifactStreamId;
+    private String originArtifactStreamId;
+    private String artifactKey;
+    private String contentRevisionId;
+    private String baseContentRevisionId;
     private String baseVersion;
     private String proposedDiff;
     private String expectedImpact;
     private String riskLevel;
     private String status;
+    private String lifecycleState;
+    private String rolloutStage;
     private Instant createdAt;
 
     @Builder.Default
     private List<String> sourceRunIds = new ArrayList<>();
+
+    @Builder.Default
+    private List<String> artifactAliases = new ArrayList<>();
 
     @Builder.Default
     private List<VerdictEvidenceRef> evidenceRefs = new ArrayList<>();

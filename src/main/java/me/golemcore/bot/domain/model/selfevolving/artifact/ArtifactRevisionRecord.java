@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.model.selfevolving;
+package me.golemcore.bot.domain.model.selfevolving.artifact;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -25,38 +25,30 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Governed transition for candidate rollout state.
+ * Immutable source-of-truth record for one artifact content revision.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class PromotionDecision {
+public class ArtifactRevisionRecord {
 
-    private String id;
-    private String candidateId;
-    private String bundleId;
-    private String originBundleId;
-    private String state;
-    private String fromState;
-    private String toState;
-    private String artifactType;
-    private String artifactSubtype;
     private String artifactStreamId;
     private String originArtifactStreamId;
     private String artifactKey;
+    private String artifactType;
+    private String artifactSubtype;
     private String contentRevisionId;
     private String baseContentRevisionId;
-    private String fromLifecycleState;
-    private String toLifecycleState;
-    private String fromRolloutStage;
-    private String toRolloutStage;
-    private String mode;
-    private String approvalRequestId;
-    private String actorId;
-    private String reason;
-    private Instant decidedAt;
+    private String rawContent;
+
+    @Builder.Default
+    private List<String> sourceRunIds = new ArrayList<>();
+
+    private Instant createdAt;
 }

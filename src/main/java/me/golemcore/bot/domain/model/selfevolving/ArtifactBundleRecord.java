@@ -58,6 +58,18 @@ public class ArtifactBundleRecord {
     private List<String> policyVersions = new ArrayList<>();
 
     @Builder.Default
+    private Map<String, String> artifactRevisionBindings = new LinkedHashMap<>();
+
+    @Builder.Default
+    private Map<String, String> artifactKeyBindings = new LinkedHashMap<>();
+
+    @Builder.Default
+    private Map<String, String> artifactTypeBindings = new LinkedHashMap<>();
+
+    @Builder.Default
+    private Map<String, String> artifactSubtypeBindings = new LinkedHashMap<>();
+
+    @Builder.Default
     private Map<String, String> tierBindings = new LinkedHashMap<>();
 
     @Builder.Default

@@ -53,18 +53,27 @@ public class PromotionWorkflowService {
 
     private final StoragePort storagePort;
     private final RuntimeConfigService runtimeConfigService;
+    private final EvolutionCandidateService evolutionCandidateService;
     private final Clock clock;
     private final ObjectMapper objectMapper;
     private final AtomicReference<List<EvolutionCandidate>> candidateCache = new AtomicReference<>();
     private final AtomicReference<List<PromotionDecision>> decisionCache = new AtomicReference<>();
 
-    public PromotionWorkflowService(StoragePort storagePort, RuntimeConfigService runtimeConfigService) {
-        this(storagePort, runtimeConfigService, Clock.systemUTC());
+    public PromotionWorkflowService(
+            StoragePort storagePort,
+            RuntimeConfigService runtimeConfigService,
+            EvolutionCandidateService evolutionCandidateService) {
+        this(storagePort, runtimeConfigService, evolutionCandidateService, Clock.systemUTC());
     }
 
-    PromotionWorkflowService(StoragePort storagePort, RuntimeConfigService runtimeConfigService, Clock clock) {
+    PromotionWorkflowService(
+            StoragePort storagePort,
+            RuntimeConfigService runtimeConfigService,
+            EvolutionCandidateService evolutionCandidateService,
+            Clock clock) {
         this.storagePort = storagePort;
         this.runtimeConfigService = runtimeConfigService;
+        this.evolutionCandidateService = evolutionCandidateService;
         this.clock = clock;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -79,7 +88,9 @@ public class PromotionWorkflowService {
             if (candidate == null || StringValueSupport.isBlank(candidate.getId())) {
                 continue;
             }
-            upsertCandidate(storedCandidates, candidate);
+            EvolutionCandidate normalizedCandidate = evolutionCandidateService
+                    .ensureArtifactIdentity(cloneCandidate(candidate));
+            upsertCandidate(storedCandidates, normalizedCandidate);
         }
         saveCandidates(storedCandidates);
         return new ArrayList<>(candidates);
@@ -113,22 +124,37 @@ public class PromotionWorkflowService {
         registerCandidates(List.of(candidate));
 
         EvolutionCandidate storedCandidate = findCandidate(candidate.getId()).orElse(candidate);
-        String nextState = resolveNextState();
+        PromotionTarget target = resolvePromotionTarget();
         PromotionDecision decision = PromotionDecision.builder()
                 .id(UUID.randomUUID().toString())
                 .candidateId(storedCandidate.getId())
                 .bundleId(storedCandidate.getBaseVersion())
-                .state(nextState)
+                .originBundleId(storedCandidate.getBaseVersion())
+                .state(target.legacyState())
                 .fromState(storedCandidate.getStatus())
-                .toState(nextState)
+                .toState(target.legacyState())
+                .artifactType(storedCandidate.getArtifactType())
+                .artifactSubtype(storedCandidate.getArtifactSubtype())
+                .artifactStreamId(storedCandidate.getArtifactStreamId())
+                .originArtifactStreamId(storedCandidate.getOriginArtifactStreamId())
+                .artifactKey(storedCandidate.getArtifactKey())
+                .contentRevisionId(storedCandidate.getContentRevisionId())
+                .baseContentRevisionId(storedCandidate.getBaseContentRevisionId())
+                .fromLifecycleState(storedCandidate.getLifecycleState())
+                .toLifecycleState(target.lifecycleState())
+                .fromRolloutStage(storedCandidate.getRolloutStage())
+                .toRolloutStage(target.rolloutStage())
                 .mode(runtimeConfigService.getSelfEvolvingPromotionMode())
-                .approvalRequestId("approved_pending".equals(nextState) ? storedCandidate.getId() + "-approval" : null)
-                .reason(buildReason(nextState))
+                .approvalRequestId(
+                        "approved_pending".equals(target.legacyState()) ? storedCandidate.getId() + "-approval" : null)
+                .reason(buildReason(target.legacyState()))
                 .decidedAt(Instant.now(clock))
                 .build();
 
         EvolutionCandidate updatedCandidate = cloneCandidate(storedCandidate);
-        updatedCandidate.setStatus(nextState);
+        updatedCandidate.setStatus(target.legacyState());
+        updatedCandidate.setLifecycleState(target.lifecycleState());
+        updatedCandidate.setRolloutStage(target.rolloutStage());
         saveCandidate(updatedCandidate);
         saveDecision(decision);
         return decision;
@@ -158,11 +184,11 @@ public class PromotionWorkflowService {
                 .findFirst();
     }
 
-    private String resolveNextState() {
+    private PromotionTarget resolvePromotionTarget() {
         String promotionMode = runtimeConfigService.getSelfEvolvingPromotionMode();
         return switch (promotionMode) {
-        case "approval_gate" -> "approved_pending";
-        case "auto_accept" -> "shadowed";
+        case "approval_gate" -> new PromotionTarget("approved_pending", "approved", "approved");
+        case "auto_accept" -> new PromotionTarget("shadowed", "candidate", "shadowed");
         default -> throw new IllegalArgumentException("Unsupported promotion mode: " + promotionMode);
         };
     }
@@ -205,7 +231,25 @@ public class PromotionWorkflowService {
                 return new ArrayList<>();
             }
             List<EvolutionCandidate> candidates = objectMapper.readValue(json, CANDIDATE_LIST_TYPE);
-            return candidates != null ? new ArrayList<>(candidates) : new ArrayList<>();
+            List<EvolutionCandidate> normalizedCandidates = candidates != null ? new ArrayList<>(candidates)
+                    : new ArrayList<>();
+            boolean mutated = false;
+            for (EvolutionCandidate candidate : normalizedCandidates) {
+                if (candidate == null) {
+                    continue;
+                }
+                if (StringValueSupport.isBlank(candidate.getArtifactStreamId())
+                        || StringValueSupport.isBlank(candidate.getContentRevisionId())
+                        || StringValueSupport.isBlank(candidate.getLifecycleState())
+                        || StringValueSupport.isBlank(candidate.getRolloutStage())) {
+                    mutated = true;
+                }
+                evolutionCandidateService.ensureArtifactIdentity(candidate);
+            }
+            if (mutated) {
+                saveCandidates(normalizedCandidates);
+            }
+            return normalizedCandidates;
         } catch (IOException | RuntimeException e) { // NOSONAR - storage fallback
             log.debug("[SelfEvolving] Failed to load candidates: {}", e.getMessage());
             return new ArrayList<>();
@@ -219,7 +263,22 @@ public class PromotionWorkflowService {
                 return new ArrayList<>();
             }
             List<PromotionDecision> decisions = objectMapper.readValue(json, DECISION_LIST_TYPE);
-            return decisions != null ? new ArrayList<>(decisions) : new ArrayList<>();
+            List<PromotionDecision> normalizedDecisions = decisions != null ? new ArrayList<>(decisions)
+                    : new ArrayList<>();
+            boolean mutated = false;
+            for (PromotionDecision decision : normalizedDecisions) {
+                if (decision == null) {
+                    continue;
+                }
+                EvolutionCandidate candidate = findCandidate(decision.getCandidateId()).orElse(null);
+                if (hydrateDecisionFromCandidate(decision, candidate)) {
+                    mutated = true;
+                }
+            }
+            if (mutated) {
+                saveDecisions(normalizedDecisions);
+            }
+            return normalizedDecisions;
         } catch (IOException | RuntimeException e) { // NOSONAR - storage fallback
             log.debug("[SelfEvolving] Failed to load promotion decisions: {}", e.getMessage());
             return new ArrayList<>();
@@ -252,16 +311,112 @@ public class PromotionWorkflowService {
                 .golemId(candidate.getGolemId())
                 .goal(candidate.getGoal())
                 .artifactType(candidate.getArtifactType())
+                .artifactSubtype(candidate.getArtifactSubtype())
+                .artifactStreamId(candidate.getArtifactStreamId())
+                .originArtifactStreamId(candidate.getOriginArtifactStreamId())
+                .artifactKey(candidate.getArtifactKey())
+                .contentRevisionId(candidate.getContentRevisionId())
+                .baseContentRevisionId(candidate.getBaseContentRevisionId())
                 .baseVersion(candidate.getBaseVersion())
                 .proposedDiff(candidate.getProposedDiff())
                 .expectedImpact(candidate.getExpectedImpact())
                 .riskLevel(candidate.getRiskLevel())
                 .status(candidate.getStatus())
+                .lifecycleState(candidate.getLifecycleState())
+                .rolloutStage(candidate.getRolloutStage())
                 .createdAt(candidate.getCreatedAt())
                 .sourceRunIds(candidate.getSourceRunIds() != null ? new ArrayList<>(candidate.getSourceRunIds())
                         : new ArrayList<>())
+                .artifactAliases(
+                        candidate.getArtifactAliases() != null ? new ArrayList<>(candidate.getArtifactAliases())
+                                : new ArrayList<>())
                 .evidenceRefs(candidate.getEvidenceRefs() != null ? new ArrayList<>(candidate.getEvidenceRefs())
                         : new ArrayList<>())
                 .build();
+    }
+
+    private boolean hydrateDecisionFromCandidate(PromotionDecision decision, EvolutionCandidate candidate) {
+        boolean mutated = false;
+        if (candidate != null) {
+            if (StringValueSupport.isBlank(decision.getArtifactType())) {
+                decision.setArtifactType(candidate.getArtifactType());
+                mutated = true;
+            }
+            if (StringValueSupport.isBlank(decision.getArtifactSubtype())) {
+                decision.setArtifactSubtype(candidate.getArtifactSubtype());
+                mutated = true;
+            }
+            if (StringValueSupport.isBlank(decision.getArtifactStreamId())) {
+                decision.setArtifactStreamId(candidate.getArtifactStreamId());
+                mutated = true;
+            }
+            if (StringValueSupport.isBlank(decision.getOriginArtifactStreamId())) {
+                decision.setOriginArtifactStreamId(candidate.getOriginArtifactStreamId());
+                mutated = true;
+            }
+            if (StringValueSupport.isBlank(decision.getArtifactKey())) {
+                decision.setArtifactKey(candidate.getArtifactKey());
+                mutated = true;
+            }
+            if (StringValueSupport.isBlank(decision.getContentRevisionId())) {
+                decision.setContentRevisionId(candidate.getContentRevisionId());
+                mutated = true;
+            }
+            if (StringValueSupport.isBlank(decision.getBaseContentRevisionId())) {
+                decision.setBaseContentRevisionId(candidate.getBaseContentRevisionId());
+                mutated = true;
+            }
+            if (StringValueSupport.isBlank(decision.getOriginBundleId())) {
+                decision.setOriginBundleId(candidate.getBaseVersion());
+                mutated = true;
+            }
+            if (StringValueSupport.isBlank(decision.getFromLifecycleState())) {
+                decision.setFromLifecycleState(candidate.getLifecycleState());
+                mutated = true;
+            }
+            if (StringValueSupport.isBlank(decision.getFromRolloutStage())) {
+                decision.setFromRolloutStage(candidate.getRolloutStage());
+                mutated = true;
+            }
+        }
+        if (StringValueSupport.isBlank(decision.getToLifecycleState())) {
+            decision.setToLifecycleState(resolveLifecycleState(decision.getToState()));
+            mutated = true;
+        }
+        if (StringValueSupport.isBlank(decision.getToRolloutStage())) {
+            decision.setToRolloutStage(resolveRolloutStage(decision.getToState()));
+            mutated = true;
+        }
+        return mutated;
+    }
+
+    private String resolveLifecycleState(String state) {
+        if (StringValueSupport.isBlank(state)) {
+            return "candidate";
+        }
+        return switch (state) {
+        case "approved", "approved_pending" -> "approved";
+        case "active" -> "active";
+        case "reverted" -> "reverted";
+        default -> "candidate";
+        };
+    }
+
+    private String resolveRolloutStage(String state) {
+        if (StringValueSupport.isBlank(state)) {
+            return "proposed";
+        }
+        return switch (state) {
+        case "replayed" -> "replayed";
+        case "shadowed" -> "shadowed";
+        case "canary" -> "canary";
+        case "approved", "approved_pending" -> "approved";
+        case "active" -> "active";
+        case "reverted" -> "reverted";
+        default -> "proposed";
+        };
+    }
+
+    private record PromotionTarget(String legacyState, String lifecycleState, String rolloutStage) {
     }
 }
