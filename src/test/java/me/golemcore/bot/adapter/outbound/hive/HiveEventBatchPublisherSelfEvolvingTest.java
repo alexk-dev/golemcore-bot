@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
@@ -91,5 +92,25 @@ class HiveEventBatchPublisherSelfEvolvingTest {
         assertEquals("golem-1", payload.golemId());
         assertInstanceOf(Map.class, payload.payload());
         assertEquals("candidate-1", ((Map<?, ?>) payload.payload()).get("id"));
+    }
+
+    @Test
+    void shouldBuildSelfEvolvingBenchmarkCampaignProjectionEvent() {
+        HiveEventPayload payload = publisher.buildSelfEvolvingCampaignProjection(
+                "golem-1",
+                BenchmarkCampaign.builder()
+                        .id("campaign-1")
+                        .suiteId("suite-1")
+                        .baselineBundleId("bundle-a")
+                        .candidateBundleId("bundle-b")
+                        .status("created")
+                        .startedAt(Instant.parse("2026-03-31T16:00:00Z"))
+                        .runIds(List.of("run-1"))
+                        .build());
+
+        assertEquals("selfevolving.campaign.upserted", payload.eventType());
+        assertEquals("golem-1", payload.golemId());
+        assertInstanceOf(Map.class, payload.payload());
+        assertEquals("campaign-1", ((Map<?, ?>) payload.payload()).get("id"));
     }
 }

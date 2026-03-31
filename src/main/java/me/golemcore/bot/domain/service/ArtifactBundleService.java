@@ -70,17 +70,29 @@ public class ArtifactBundleService {
     }
 
     public ArtifactBundleRecord snapshot(AgentContext context) {
-        ArtifactBundleRecord bundle = ArtifactBundleRecord.builder()
-                .id(UUID.randomUUID().toString())
-                .golemId(resolveGolemId(context))
-                .status("SNAPSHOT")
-                .createdAt(Instant.now(clock))
-                .skillVersions(resolveSkillVersions(context))
-                .tierBindings(resolveTierBindings(context))
-                .configSnapshot(buildConfigSnapshot(context))
-                .build();
+        ArtifactBundleRecord bundle = buildSnapshot(UUID.randomUUID().toString(), context);
         save(bundle);
         return bundle;
+    }
+
+    public ArtifactBundleRecord refresh(String bundleId, AgentContext context) {
+        if (StringValueSupport.isBlank(bundleId)) {
+            return snapshot(context);
+        }
+        ArtifactBundleRecord existing = getBundles().stream()
+                .filter(bundle -> bundle != null && bundleId.equals(bundle.getId()))
+                .findFirst()
+                .orElse(null);
+        ArtifactBundleRecord updated = buildSnapshot(bundleId, context);
+        if (existing != null) {
+            updated.setCreatedAt(existing.getCreatedAt());
+            updated.setActivatedAt(existing.getActivatedAt());
+            updated.setSourceCandidateId(existing.getSourceCandidateId());
+            updated.setSourceRunId(existing.getSourceRunId());
+            updated.setStatus(existing.getStatus());
+        }
+        save(updated);
+        return updated;
     }
 
     public List<ArtifactBundleRecord> getBundles() {
@@ -94,8 +106,31 @@ public class ArtifactBundleService {
 
     public void save(ArtifactBundleRecord bundle) {
         List<ArtifactBundleRecord> bundles = new ArrayList<>(getBundles());
-        bundles.add(bundle);
+        boolean updated = false;
+        for (int index = 0; index < bundles.size(); index++) {
+            ArtifactBundleRecord existing = bundles.get(index);
+            if (existing != null && bundle.getId().equals(existing.getId())) {
+                bundles.set(index, bundle);
+                updated = true;
+                break;
+            }
+        }
+        if (!updated) {
+            bundles.add(bundle);
+        }
         saveBundles(bundles);
+    }
+
+    private ArtifactBundleRecord buildSnapshot(String bundleId, AgentContext context) {
+        return ArtifactBundleRecord.builder()
+                .id(bundleId)
+                .golemId(resolveGolemId(context))
+                .status("SNAPSHOT")
+                .createdAt(Instant.now(clock))
+                .skillVersions(resolveSkillVersions(context))
+                .tierBindings(resolveTierBindings(context))
+                .configSnapshot(buildConfigSnapshot(context))
+                .build();
     }
 
     private List<ArtifactBundleRecord> loadBundles() {

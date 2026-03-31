@@ -10,12 +10,14 @@ import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SelfEvolvingRunService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.McpPort;
@@ -29,9 +31,11 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ContextBuildingSystemTest {
@@ -191,6 +195,33 @@ class ContextBuildingSystemTest {
 
         assertTrue(context.getAvailableTools().stream()
                 .anyMatch(t -> ScheduleSessionActionTool.TOOL_NAME.equals(t.getName())));
+    }
+
+    @Test
+    void shouldStartSelfEvolvingRunDuringContextAssemblyWhenEnabled() {
+        ContextAssembler assembler = mock(ContextAssembler.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
+        ContextBuildingSystem system = new ContextBuildingSystem(
+                assembler,
+                runtimeConfigService,
+                selfEvolvingRunService);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-1").chatId("chat-1").build())
+                .build();
+        when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        when(selfEvolvingRunService.startRun(context)).thenReturn(
+                me.golemcore.bot.domain.model.selfevolving.RunRecord.builder()
+                        .id("run-1")
+                        .artifactBundleId("bundle-1")
+                        .build());
+
+        AgentContext result = system.process(context);
+
+        verify(selfEvolvingRunService).startRun(context);
+        assertEquals("run-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
+        assertEquals("bundle-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
     }
 
     private ContextAssembler buildAssembler(SkillComponent skillComponent, ToolLayer toolLayer) {

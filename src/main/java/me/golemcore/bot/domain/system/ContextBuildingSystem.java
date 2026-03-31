@@ -20,8 +20,11 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.context.ContextAssembler;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.selfevolving.RunRecord;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SelfEvolvingRunService;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -36,11 +39,24 @@ import org.springframework.stereotype.Component;
  * @see ContextAssembler
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class ContextBuildingSystem implements AgentSystem {
 
     private final ContextAssembler contextAssembler;
+    private final RuntimeConfigService runtimeConfigService;
+    private final SelfEvolvingRunService selfEvolvingRunService;
+
+    public ContextBuildingSystem(ContextAssembler contextAssembler,
+            RuntimeConfigService runtimeConfigService,
+            SelfEvolvingRunService selfEvolvingRunService) {
+        this.contextAssembler = contextAssembler;
+        this.runtimeConfigService = runtimeConfigService;
+        this.selfEvolvingRunService = selfEvolvingRunService;
+    }
+
+    ContextBuildingSystem(ContextAssembler contextAssembler) {
+        this(contextAssembler, null, null);
+    }
 
     @Override
     public String getName() {
@@ -54,6 +70,23 @@ public class ContextBuildingSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
-        return contextAssembler.assemble(context);
+        AgentContext assembledContext = contextAssembler.assemble(context);
+        ensureSelfEvolvingRun(assembledContext);
+        return assembledContext;
+    }
+
+    private void ensureSelfEvolvingRun(AgentContext context) {
+        if (runtimeConfigService == null || selfEvolvingRunService == null || context == null
+                || context.getSession() == null
+                || !runtimeConfigService.isSelfEvolvingEnabled()) {
+            return;
+        }
+        if (context.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID) != null) {
+            return;
+        }
+        RunRecord run = selfEvolvingRunService.startRun(context);
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, run.getId());
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, run.getArtifactBundleId());
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED, false);
     }
 }

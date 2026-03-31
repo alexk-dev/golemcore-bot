@@ -293,6 +293,8 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldRecordLlmAndToolChildSpansWithSnapshots() {
         AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, "run-1");
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, "bundle-1");
         TraceService traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
         TraceContext rootTrace = traceService.startRootTrace(
                 context.getSession(),
@@ -354,6 +356,12 @@ class DefaultToolLoopSystemTest {
         assertTrue(trace.getSpans().stream()
                 .filter(span -> ("tool." + TOOL_NAME).equals(span.getName()))
                 .allMatch(span -> !span.getSnapshots().isEmpty()));
+        TraceSpanRecord toolSpan = trace.getSpans().stream()
+                .filter(span -> ("tool." + TOOL_NAME).equals(span.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("run-1", toolSpan.getAttributes().get("selfevolving.run.id"));
+        assertEquals("bundle-1", toolSpan.getAttributes().get("selfevolving.artifact.bundle.id"));
     }
 
     @Test
@@ -362,6 +370,8 @@ class DefaultToolLoopSystemTest {
         context.setActiveSkill(Skill.builder().name("planner").build());
         context.setModelTier("smart");
         context.setAttribute("model.tier.source", "skill");
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, "run-1");
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, "bundle-1");
 
         TraceService traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
         TraceContext rootTrace = traceService.startRootTrace(
@@ -411,11 +421,15 @@ class DefaultToolLoopSystemTest {
         assertEquals("gpt-5-smart", llmSpan.getAttributes().get("context.model.id"));
         assertEquals("high", llmSpan.getAttributes().get("context.model.reasoning"));
         assertEquals("skill", llmSpan.getAttributes().get("context.model.source"));
+        assertEquals("run-1", llmSpan.getAttributes().get("selfevolving.run.id"));
+        assertEquals("bundle-1", llmSpan.getAttributes().get("selfevolving.artifact.bundle.id"));
         assertTrue(llmSpan.getEvents().stream()
                 .anyMatch(event -> "request.context".equals(event.getName())
                         && "planner".equals(event.getAttributes().get("skill"))
                         && "smart".equals(event.getAttributes().get("tier"))
-                        && "gpt-5-smart".equals(event.getAttributes().get("model_id"))));
+                        && "gpt-5-smart".equals(event.getAttributes().get("model_id"))
+                        && "run-1".equals(event.getAttributes().get("run_id"))
+                        && "bundle-1".equals(event.getAttributes().get("artifact_bundle_id"))));
     }
 
     @Test

@@ -36,6 +36,7 @@ import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
@@ -54,6 +55,7 @@ public class HiveEventBatchPublisher {
     private static final String EVENT_TYPE_INSPECTION_RESPONSE = "inspection_response";
     private static final String EVENT_TYPE_SELF_EVOLVING_RUN_UPSERTED = "selfevolving.run.upserted";
     private static final String EVENT_TYPE_SELF_EVOLVING_CANDIDATE_UPSERTED = "selfevolving.candidate.upserted";
+    private static final String EVENT_TYPE_SELF_EVOLVING_CAMPAIGN_UPSERTED = "selfevolving.campaign.upserted";
     private static final String CONTROL_EVENT_TYPE_STOP = "command.stop";
     private static final String CONTROL_EVENT_TYPE_CANCEL = "command.cancel";
     private static final int SUMMARY_MAX_LENGTH = 240;
@@ -266,6 +268,34 @@ public class HiveEventBatchPublisher {
                 .build();
     }
 
+    public HiveEventPayload buildSelfEvolvingCampaignProjection(String golemId, BenchmarkCampaign campaign) {
+        if (campaign == null) {
+            throw new IllegalArgumentException("Campaign is required");
+        }
+        String resolvedGolemId = firstNonBlank(golemId, resolveSessionGolemId());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", campaign.getId());
+        payload.put("golemId", resolvedGolemId);
+        payload.put("suiteId", campaign.getSuiteId());
+        payload.put("baselineBundleId", campaign.getBaselineBundleId());
+        payload.put("candidateBundleId", campaign.getCandidateBundleId());
+        payload.put("status", campaign.getStatus());
+        payload.put("runIds", campaign.getRunIds());
+        payload.put("startedAt", campaign.getStartedAt());
+        payload.put("completedAt", campaign.getCompletedAt());
+        return HiveEventPayload.builder()
+                .schemaVersion(SCHEMA_VERSION)
+                .eventType(EVENT_TYPE_SELF_EVOLVING_CAMPAIGN_UPSERTED)
+                .golemId(resolvedGolemId)
+                .runId(campaign.getRunIds() != null && !campaign.getRunIds().isEmpty() ? campaign.getRunIds().getFirst()
+                        : null)
+                .summary(firstNonBlank(campaign.getStatus(), "SelfEvolving benchmark campaign updated"))
+                .payload(payload)
+                .createdAt(campaign.getCompletedAt() != null ? campaign.getCompletedAt()
+                        : campaign.getStartedAt() != null ? campaign.getStartedAt() : Instant.now())
+                .build();
+    }
+
     public void publishSelfEvolvingProjection(
             RunRecord runRecord,
             RunVerdict verdict,
@@ -279,6 +309,10 @@ public class HiveEventBatchPublisher {
             }
         }
         publishBatch(events);
+    }
+
+    public void publishSelfEvolvingCampaignProjection(String golemId, BenchmarkCampaign campaign) {
+        publishBatch(List.of(buildSelfEvolvingCampaignProjection(golemId, campaign)));
     }
 
     private HiveEventPayload buildUsageEvent(HiveEventContext context, Map<String, Object> metadata) {

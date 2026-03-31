@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingCampaignDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingCandidateDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunDetailDto;
@@ -27,12 +28,29 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/self-evolving")
-@RequiredArgsConstructor
+@Slf4j
 public class SelfEvolvingController {
 
     private final SelfEvolvingProjectionService projectionService;
     private final PromotionWorkflowService promotionWorkflowService;
     private final BenchmarkLabService benchmarkLabService;
+    private final HiveEventBatchPublisher hiveEventBatchPublisher;
+
+    public SelfEvolvingController(SelfEvolvingProjectionService projectionService,
+            PromotionWorkflowService promotionWorkflowService,
+            BenchmarkLabService benchmarkLabService,
+            HiveEventBatchPublisher hiveEventBatchPublisher) {
+        this.projectionService = projectionService;
+        this.promotionWorkflowService = promotionWorkflowService;
+        this.benchmarkLabService = benchmarkLabService;
+        this.hiveEventBatchPublisher = hiveEventBatchPublisher;
+    }
+
+    SelfEvolvingController(SelfEvolvingProjectionService projectionService,
+            PromotionWorkflowService promotionWorkflowService,
+            BenchmarkLabService benchmarkLabService) {
+        this(projectionService, promotionWorkflowService, benchmarkLabService, null);
+    }
 
     @GetMapping("/runs")
     public Mono<ResponseEntity<List<SelfEvolvingRunSummaryDto>>> listRuns() {
@@ -64,6 +82,7 @@ public class SelfEvolvingController {
     @PostMapping("/benchmarks/regression/{runId}")
     public Mono<ResponseEntity<SelfEvolvingCampaignDto>> createRegressionCampaign(@PathVariable String runId) {
         BenchmarkCampaign campaign = benchmarkLabService.createRegressionCampaign(runId);
+        publishHiveCampaignProjection(campaign);
         return Mono.just(ResponseEntity.ok(toCampaignDto(campaign)));
     }
 
@@ -78,5 +97,16 @@ public class SelfEvolvingController {
                 .completedAt(campaign.getCompletedAt() != null ? campaign.getCompletedAt().toString() : null)
                 .runIds(campaign.getRunIds())
                 .build();
+    }
+
+    private void publishHiveCampaignProjection(BenchmarkCampaign campaign) {
+        if (hiveEventBatchPublisher == null || campaign == null) {
+            return;
+        }
+        try {
+            hiveEventBatchPublisher.publishSelfEvolvingCampaignProjection(null, campaign);
+        } catch (RuntimeException exception) {
+            log.debug("[Hive] Skipping SelfEvolving campaign projection publish: {}", exception.getMessage());
+        }
     }
 }

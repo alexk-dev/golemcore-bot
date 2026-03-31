@@ -604,6 +604,10 @@ class LlmCallPhase {
                     if (source != null && !source.isBlank()) {
                         attributes.put("context.model.source", source);
                     }
+                    putIfPresent(attributes, ContextAttributes.SELF_EVOLVING_RUN_ID,
+                            readContextAttribute(context, ContextAttributes.SELF_EVOLVING_RUN_ID));
+                    putIfPresent(attributes, ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID,
+                            readContextAttribute(context, ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
                 }
                 return attributes;
             }
@@ -665,6 +669,9 @@ class LlmCallPhase {
                 copyAttribute(attributes, eventAttributes, "context.model.id", "model_id");
                 copyAttribute(attributes, eventAttributes, "context.model.reasoning", "reasoning");
                 copyAttribute(attributes, eventAttributes, "context.model.source", "source");
+                copyAttribute(attributes, eventAttributes, ContextAttributes.SELF_EVOLVING_RUN_ID, "run_id");
+                copyAttribute(attributes, eventAttributes, ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID,
+                        "artifact_bundle_id");
                 traceService.appendEvent(context.getSession(), llmSpan, "request.context", clock.instant(),
                         eventAttributes);
             }
@@ -698,6 +705,13 @@ class LlmCallPhase {
                 }
                 Object value = context.getAttributes().get(key);
                 return value instanceof String stringValue && !stringValue.isBlank() ? stringValue : null;
+            }
+
+            private void putIfPresent(Map<String, Object> attributes, String key, String value) {
+                if (attributes == null || key == null || key.isBlank() || value == null || value.isBlank()) {
+                    return;
+                }
+                attributes.put(key, value);
             }
 
             private ModelSelectionService.ModelSelection selectModel(String tier) {

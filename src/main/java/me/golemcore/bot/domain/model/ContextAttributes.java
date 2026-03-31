@@ -308,6 +308,9 @@ public final class ContextAttributes {
      */
     public static final String SELF_EVOLVING_ARTIFACT_BUNDLE_ID = "selfevolving.artifact.bundle.id";
 
+    /** Boolean ? whether post-run SelfEvolving analysis already completed. */
+    public static final String SELF_EVOLVING_ANALYSIS_COMPLETED = "selfevolving.analysis.completed";
+
     /** Map<String,Object> ? latest structured compaction details. */
     public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";
 

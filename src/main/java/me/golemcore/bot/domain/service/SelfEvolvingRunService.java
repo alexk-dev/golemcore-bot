@@ -35,6 +35,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -83,11 +84,22 @@ public class SelfEvolvingRunService {
         return run;
     }
 
+    public Optional<RunRecord> findRun(String runId) {
+        if (StringValueSupport.isBlank(runId)) {
+            return Optional.empty();
+        }
+        return getRuns().stream()
+                .filter(run -> run != null && runId.equals(run.getId()))
+                .findFirst();
+    }
+
     public RunRecord completeRun(RunRecord run, AgentContext context) {
         if (run == null) {
             return null;
         }
+        ArtifactBundleRecord refreshedBundle = artifactBundleService.refresh(run.getArtifactBundleId(), context);
         run.setTraceId(context.getTraceContext() != null ? context.getTraceContext().getTraceId() : run.getTraceId());
+        run.setArtifactBundleId(refreshedBundle != null ? refreshedBundle.getId() : run.getArtifactBundleId());
         run.setCompletedAt(Instant.now(clock));
         run.setStatus(resolveCompletionStatus(context));
         save(run);

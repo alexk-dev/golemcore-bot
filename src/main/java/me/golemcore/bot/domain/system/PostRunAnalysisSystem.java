@@ -33,6 +33,7 @@ import org.springframework.stereotype.Component;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Minimal post-turn hook that materializes a SelfEvolving run record.
@@ -88,7 +89,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
         if (context == null || context.getTurnOutcome() == null) {
             return false;
         }
-        return context.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID) == null;
+        return !Boolean.TRUE.equals(context.getAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED));
     }
 
     @Override
@@ -96,7 +97,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
         if (!shouldProcess(context)) {
             return context;
         }
-        RunRecord startedRun = selfEvolvingRunService.startRun(context);
+        RunRecord startedRun = resolveRun(context);
         RunRecord completedRun = selfEvolvingRunService.completeRun(startedRun, context);
         RunVerdict deterministicVerdict = deterministicJudgeService.evaluate(completedRun, null);
         RunVerdict llmVerdict = llmJudgeService.judge(completedRun, null, deterministicVerdict);
@@ -110,6 +111,16 @@ public class PostRunAnalysisSystem implements AgentSystem {
         }
         context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, completedRun.getId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, completedRun.getArtifactBundleId());
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED, true);
         return context;
+    }
+
+    private RunRecord resolveRun(AgentContext context) {
+        String runId = context != null ? context.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID) : null;
+        Optional<RunRecord> existingRun = selfEvolvingRunService.findRun(runId);
+        if (existingRun.isPresent()) {
+            return existingRun.get();
+        }
+        return selfEvolvingRunService.startRun(context);
     }
 }

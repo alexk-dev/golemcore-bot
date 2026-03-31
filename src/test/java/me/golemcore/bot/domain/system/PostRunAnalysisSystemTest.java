@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -104,6 +105,46 @@ class PostRunAnalysisSystemTest {
         verify(evolutionCandidateService).deriveCandidates(completedRun, llmVerdict);
         verify(promotionWorkflowService).registerAndPlanCandidates(candidates);
         verify(hiveEventBatchPublisher).publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
+        assertEquals("run-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
+        assertEquals("bundle-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
+    }
+
+    @Test
+    void shouldCompleteExistingRunRecordStartedEarlier() {
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, "run-1");
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, "bundle-1");
+        RunRecord existingRun = RunRecord.builder()
+                .id("run-1")
+                .artifactBundleId("bundle-1")
+                .status("RUNNING")
+                .build();
+        RunRecord completedRun = RunRecord.builder()
+                .id("run-1")
+                .artifactBundleId("bundle-1")
+                .status("COMPLETED")
+                .build();
+        RunVerdict deterministicVerdict = RunVerdict.builder()
+                .runId("run-1")
+                .outcomeStatus("COMPLETED")
+                .build();
+        RunVerdict llmVerdict = RunVerdict.builder()
+                .runId("run-1")
+                .outcomeStatus("COMPLETED")
+                .build();
+        when(selfEvolvingRunService.findRun("run-1")).thenReturn(java.util.Optional.of(existingRun));
+        when(selfEvolvingRunService.completeRun(existingRun, context)).thenReturn(completedRun);
+        when(deterministicJudgeService.evaluate(completedRun, null)).thenReturn(deterministicVerdict);
+        when(llmJudgeService.judge(completedRun, null, deterministicVerdict)).thenReturn(llmVerdict);
+        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(List.of());
+
+        assertTrue(system.shouldProcess(context));
+        AgentContext result = system.process(context);
+
+        verify(selfEvolvingRunService, never()).startRun(context);
+        verify(selfEvolvingRunService).findRun("run-1");
+        verify(selfEvolvingRunService).completeRun(existingRun, context);
         assertEquals("run-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
         assertEquals("bundle-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
     }
