@@ -2,12 +2,19 @@ import { type ReactElement, useState } from 'react';
 import { Alert, Col, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 
+import { SelfEvolvingArtifactWorkspace } from '../components/selfevolving/SelfEvolvingArtifactWorkspace';
 import { SelfEvolvingBenchmarkLab } from '../components/selfevolving/SelfEvolvingBenchmarkLab';
 import { SelfEvolvingCandidateQueue } from '../components/selfevolving/SelfEvolvingCandidateQueue';
 import { SelfEvolvingOverviewCards } from '../components/selfevolving/SelfEvolvingOverviewCards';
 import { SelfEvolvingRunTable } from '../components/selfevolving/SelfEvolvingRunTable';
 import { SelfEvolvingVerdictPanel } from '../components/selfevolving/SelfEvolvingVerdictPanel';
 import {
+  useSelfEvolvingArtifacts,
+  useSelfEvolvingArtifactEvidence,
+  useSelfEvolvingArtifactLineage,
+  useSelfEvolvingArtifactRevisionDiff,
+  useSelfEvolvingArtifactTransitionDiff,
+  useSelfEvolvingArtifactWorkspaceSummary,
   useCreateSelfEvolvingRegressionCampaign,
   usePlanSelfEvolvingPromotion,
   useSelfEvolvingCampaigns,
@@ -16,19 +23,73 @@ import {
   useSelfEvolvingRuns,
 } from '../hooks/useSelfEvolving';
 
+interface ArtifactSelectionState {
+  artifactStreamId: string | null;
+  compareMode: 'revision' | 'transition';
+  revisionPair: {
+    fromRevisionId: string | null;
+    toRevisionId: string | null;
+  };
+  transitionPair: {
+    fromNodeId: string | null;
+    toNodeId: string | null;
+  };
+}
+
 export default function SelfEvolvingPage(): ReactElement {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [artifactSelection, setArtifactSelection] = useState<ArtifactSelectionState>({
+    artifactStreamId: null,
+    compareMode: 'revision',
+    revisionPair: {
+      fromRevisionId: null,
+      toRevisionId: null,
+    },
+    transitionPair: {
+      fromNodeId: null,
+      toNodeId: null,
+    },
+  });
   const runsQuery = useSelfEvolvingRuns();
   const candidatesQuery = useSelfEvolvingCandidates();
   const campaignsQuery = useSelfEvolvingCampaigns();
+  const artifactsQuery = useSelfEvolvingArtifacts();
   const planPromotion = usePlanSelfEvolvingPromotion();
   const createRegressionCampaign = useCreateSelfEvolvingRegressionCampaign();
 
   const runs = runsQuery.data ?? [];
   const candidates = candidatesQuery.data ?? [];
   const campaigns = campaignsQuery.data ?? [];
+  const artifacts = artifactsQuery.data ?? [];
   const activeRunId = selectedRunId ?? runs[0]?.id ?? null;
+  const activeArtifactStreamId = artifactSelection.artifactStreamId ?? artifacts[0]?.artifactStreamId ?? null;
   const activeRunQuery = useSelfEvolvingRunDetail(activeRunId);
+  const workspaceSummaryQuery = useSelfEvolvingArtifactWorkspaceSummary(activeArtifactStreamId);
+  const lineageQuery = useSelfEvolvingArtifactLineage(activeArtifactStreamId);
+
+  const activeCompareOptions = workspaceSummaryQuery.data?.compareOptions ?? null;
+  const activeFromRevisionId = artifactSelection.revisionPair.fromRevisionId ?? activeCompareOptions?.defaultFromRevisionId ?? null;
+  const activeToRevisionId = artifactSelection.revisionPair.toRevisionId ?? activeCompareOptions?.defaultToRevisionId ?? null;
+  const activeFromNodeId = artifactSelection.transitionPair.fromNodeId ?? activeCompareOptions?.defaultFromNodeId ?? null;
+  const activeToNodeId = artifactSelection.transitionPair.toNodeId ?? activeCompareOptions?.defaultToNodeId ?? null;
+
+  const revisionDiffQuery = useSelfEvolvingArtifactRevisionDiff(
+    activeArtifactStreamId,
+    activeFromRevisionId,
+    activeToRevisionId,
+  );
+  const transitionDiffQuery = useSelfEvolvingArtifactTransitionDiff(
+    activeArtifactStreamId,
+    activeFromNodeId,
+    activeToNodeId,
+  );
+  const evidenceQuery = useSelfEvolvingArtifactEvidence(
+    artifactSelection.compareMode,
+    activeArtifactStreamId,
+    activeToRevisionId,
+    activeFromNodeId,
+    activeToNodeId,
+  );
 
   const handlePlanPromotion = async (candidateId: string): Promise<void> => {
     await planPromotion.mutateAsync(candidateId);
@@ -43,7 +104,59 @@ export default function SelfEvolvingPage(): ReactElement {
     toast.success('Regression campaign created');
   };
 
-  const hasError = runsQuery.isError || candidatesQuery.isError || campaignsQuery.isError;
+  const handleSelectArtifactStream = (artifactStreamId: string): void => {
+    setArtifactSelection((currentSelection) => ({
+      ...currentSelection,
+      artifactStreamId,
+      revisionPair: {
+        fromRevisionId: null,
+        toRevisionId: null,
+      },
+      transitionPair: {
+        fromNodeId: null,
+        toNodeId: null,
+      },
+    }));
+  };
+
+  const handleSelectCompareMode = (compareMode: 'revision' | 'transition'): void => {
+    setArtifactSelection((currentSelection) => ({
+      ...currentSelection,
+      compareMode,
+    }));
+  };
+
+  const handleSelectRevisionPair = (fromRevisionId: string, toRevisionId: string): void => {
+    setArtifactSelection((currentSelection) => ({
+      ...currentSelection,
+      compareMode: 'revision',
+      revisionPair: {
+        fromRevisionId,
+        toRevisionId,
+      },
+    }));
+  };
+
+  const handleSelectTransitionPair = (fromNodeId: string, toNodeId: string): void => {
+    setArtifactSelection((currentSelection) => ({
+      ...currentSelection,
+      compareMode: 'transition',
+      transitionPair: {
+        fromNodeId,
+        toNodeId,
+      },
+    }));
+  };
+
+  const hasError = runsQuery.isError
+    || candidatesQuery.isError
+    || campaignsQuery.isError
+    || artifactsQuery.isError
+    || workspaceSummaryQuery.isError
+    || lineageQuery.isError
+    || revisionDiffQuery.isError
+    || transitionDiffQuery.isError
+    || evidenceQuery.isError;
 
   return (
     <div>
@@ -63,6 +176,30 @@ export default function SelfEvolvingPage(): ReactElement {
       )}
 
       <SelfEvolvingOverviewCards runs={runs} candidates={candidates} campaigns={campaigns} />
+
+      <SelfEvolvingArtifactWorkspace
+        artifacts={artifacts}
+        selectedArtifactStreamId={activeArtifactStreamId}
+        workspaceSummary={workspaceSummaryQuery.data ?? null}
+        lineage={lineageQuery.data ?? null}
+        compareMode={artifactSelection.compareMode}
+        selectedFromRevisionId={activeFromRevisionId}
+        selectedToRevisionId={activeToRevisionId}
+        selectedFromNodeId={activeFromNodeId}
+        selectedToNodeId={activeToNodeId}
+        revisionDiff={revisionDiffQuery.data ?? null}
+        transitionDiff={transitionDiffQuery.data ?? null}
+        evidence={evidenceQuery.data ?? null}
+        isCatalogLoading={artifactsQuery.isLoading}
+        isWorkspaceLoading={workspaceSummaryQuery.isLoading}
+        isLineageLoading={lineageQuery.isLoading}
+        isDiffLoading={artifactSelection.compareMode === 'transition' ? transitionDiffQuery.isLoading : revisionDiffQuery.isLoading}
+        isEvidenceLoading={evidenceQuery.isLoading}
+        onSelectArtifactStream={handleSelectArtifactStream}
+        onSelectCompareMode={handleSelectCompareMode}
+        onSelectRevisionPair={handleSelectRevisionPair}
+        onSelectTransitionPair={handleSelectTransitionPair}
+      />
 
       <Row className="g-3 mb-3">
         <Col xl={7}>

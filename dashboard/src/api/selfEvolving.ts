@@ -40,6 +40,8 @@ export interface SelfEvolvingCandidate {
   id: string;
   goal: string | null;
   artifactType: string | null;
+  artifactStreamId?: string | null;
+  artifactKey?: string | null;
   status: string | null;
   riskLevel: string | null;
   expectedImpact: string | null;
@@ -71,6 +73,160 @@ export interface SelfEvolvingPromotionDecision {
   decidedAt: string | null;
 }
 
+export interface SelfEvolvingArtifactCatalogEntry {
+  artifactStreamId: string;
+  originArtifactStreamId: string | null;
+  artifactKey: string | null;
+  artifactAliases: string[];
+  artifactType: string | null;
+  artifactSubtype: string | null;
+  displayName: string | null;
+  latestRevisionId: string | null;
+  activeRevisionId: string | null;
+  latestCandidateRevisionId: string | null;
+  currentLifecycleState: string | null;
+  currentRolloutStage: string | null;
+  hasRegression: boolean | null;
+  hasPendingApproval: boolean | null;
+  campaignCount: number | null;
+  projectionSchemaVersion: number | null;
+  updatedAt: string | null;
+  projectedAt: string | null;
+}
+
+export interface SelfEvolvingArtifactCompareOption {
+  label: string;
+  fromId: string;
+  toId: string;
+}
+
+export interface SelfEvolvingArtifactCompareOptions {
+  artifactStreamId: string;
+  defaultFromRevisionId: string | null;
+  defaultToRevisionId: string | null;
+  defaultFromNodeId: string | null;
+  defaultToNodeId: string | null;
+  revisionOptions: SelfEvolvingArtifactCompareOption[];
+  transitionOptions: SelfEvolvingArtifactCompareOption[];
+}
+
+export interface SelfEvolvingArtifactWorkspaceSummary {
+  artifactStreamId: string;
+  originArtifactStreamId: string | null;
+  artifactKey: string | null;
+  artifactAliases: string[];
+  artifactType: string | null;
+  artifactSubtype: string | null;
+  activeRevisionId: string | null;
+  latestCandidateRevisionId: string | null;
+  currentLifecycleState: string | null;
+  currentRolloutStage: string | null;
+  campaignCount: number | null;
+  projectionSchemaVersion: number | null;
+  updatedAt: string | null;
+  projectedAt: string | null;
+  compareOptions: SelfEvolvingArtifactCompareOptions | null;
+}
+
+export interface SelfEvolvingArtifactLineageNode {
+  nodeId: string;
+  contentRevisionId: string | null;
+  lifecycleState: string | null;
+  rolloutStage: string | null;
+  promotionDecisionId: string | null;
+  originBundleId: string | null;
+  sourceRunIds: string[];
+  campaignIds: string[];
+  attributionMode: string | null;
+  createdAt: string | null;
+}
+
+export interface SelfEvolvingArtifactLineageEdge {
+  edgeId: string;
+  fromNodeId: string;
+  toNodeId: string;
+  edgeType: string | null;
+  createdAt: string | null;
+}
+
+export interface SelfEvolvingArtifactLineage {
+  artifactStreamId: string;
+  originArtifactStreamId: string | null;
+  artifactKey: string | null;
+  nodes: SelfEvolvingArtifactLineageNode[];
+  edges: SelfEvolvingArtifactLineageEdge[];
+  railOrder: string[];
+  branches: string[];
+  defaultSelectedNodeId: string | null;
+  defaultSelectedRevisionId: string | null;
+  projectionSchemaVersion: number | null;
+  projectedAt: string | null;
+}
+
+export interface SelfEvolvingArtifactImpactSummary {
+  attributionMode: string | null;
+  campaignDelta: number | null;
+  regressionIntroduced: boolean | null;
+  verdictDelta: number | null;
+  latencyDeltaMs: number | null;
+  costDeltaMicros: number | null;
+  projectionSchemaVersion: number | null;
+  projectedAt: string | null;
+}
+
+export interface SelfEvolvingArtifactRevisionDiff {
+  artifactStreamId: string;
+  artifactKey: string | null;
+  fromRevisionId: string | null;
+  toRevisionId: string | null;
+  summary: string | null;
+  semanticSections: string[];
+  rawPatch: string | null;
+  changedFields: string[];
+  riskSignals: string[];
+  impactSummary: SelfEvolvingArtifactImpactSummary | null;
+  attributionMode: string | null;
+  projectionSchemaVersion: number | null;
+  projectedAt: string | null;
+}
+
+export interface SelfEvolvingArtifactTransitionDiff {
+  artifactStreamId: string;
+  artifactKey: string | null;
+  fromNodeId: string | null;
+  toNodeId: string | null;
+  fromRevisionId: string | null;
+  toRevisionId: string | null;
+  fromRolloutStage: string | null;
+  toRolloutStage: string | null;
+  contentChanged: boolean;
+  summary: string | null;
+  impactSummary: SelfEvolvingArtifactImpactSummary | null;
+  attributionMode: string | null;
+  projectionSchemaVersion: number | null;
+  projectedAt: string | null;
+}
+
+export interface SelfEvolvingArtifactEvidence {
+  artifactStreamId: string;
+  artifactKey: string | null;
+  payloadKind: 'revision' | 'compare' | 'transition';
+  revisionId: string | null;
+  fromRevisionId: string | null;
+  toRevisionId: string | null;
+  fromNodeId: string | null;
+  toNodeId: string | null;
+  runIds: string[];
+  traceIds: string[];
+  spanIds: string[];
+  campaignIds: string[];
+  promotionDecisionIds: string[];
+  approvalRequestIds: string[];
+  findings: string[];
+  projectionSchemaVersion: number | null;
+  projectedAt: string | null;
+}
+
 export async function getSelfEvolvingRuns(): Promise<SelfEvolvingRunSummary[]> {
   const { data } = await client.get<SelfEvolvingRunSummary[]>('/self-evolving/runs');
   return data;
@@ -83,6 +239,68 @@ export async function getSelfEvolvingRun(runId: string): Promise<SelfEvolvingRun
 
 export async function getSelfEvolvingCandidates(): Promise<SelfEvolvingCandidate[]> {
   const { data } = await client.get<SelfEvolvingCandidate[]>('/self-evolving/candidates');
+  return data;
+}
+
+export async function getSelfEvolvingArtifacts(): Promise<SelfEvolvingArtifactCatalogEntry[]> {
+  const { data } = await client.get<SelfEvolvingArtifactCatalogEntry[]>('/self-evolving/artifacts');
+  return data;
+}
+
+export async function getSelfEvolvingArtifactWorkspaceSummary(
+  artifactStreamId: string,
+): Promise<SelfEvolvingArtifactWorkspaceSummary> {
+  const { data } = await client.get<SelfEvolvingArtifactWorkspaceSummary>(`/self-evolving/artifacts/${artifactStreamId}`);
+  return data;
+}
+
+export async function getSelfEvolvingArtifactLineage(artifactStreamId: string): Promise<SelfEvolvingArtifactLineage> {
+  const { data } = await client.get<SelfEvolvingArtifactLineage>(`/self-evolving/artifacts/${artifactStreamId}/lineage`);
+  return data;
+}
+
+export async function getSelfEvolvingArtifactRevisionDiff(
+  artifactStreamId: string,
+  fromRevisionId: string,
+  toRevisionId: string,
+): Promise<SelfEvolvingArtifactRevisionDiff> {
+  const { data } = await client.get<SelfEvolvingArtifactRevisionDiff>(`/self-evolving/artifacts/${artifactStreamId}/diff`, {
+    params: { fromRevisionId, toRevisionId },
+  });
+  return data;
+}
+
+export async function getSelfEvolvingArtifactTransitionDiff(
+  artifactStreamId: string,
+  fromNodeId: string,
+  toNodeId: string,
+): Promise<SelfEvolvingArtifactTransitionDiff> {
+  const { data } = await client.get<SelfEvolvingArtifactTransitionDiff>(
+    `/self-evolving/artifacts/${artifactStreamId}/transition-diff`,
+    { params: { fromNodeId, toNodeId } },
+  );
+  return data;
+}
+
+export async function getSelfEvolvingArtifactRevisionEvidence(
+  artifactStreamId: string,
+  revisionId: string,
+): Promise<SelfEvolvingArtifactEvidence> {
+  const { data } = await client.get<SelfEvolvingArtifactEvidence>(`/self-evolving/artifacts/${artifactStreamId}/evidence`, {
+    params: { revisionId },
+  });
+  return data;
+}
+
+export async function getSelfEvolvingArtifactTransitionEvidence(
+  artifactStreamId: string,
+  fromNodeId: string,
+  toNodeId: string,
+): Promise<SelfEvolvingArtifactEvidence> {
+  const { data } = await client.get<SelfEvolvingArtifactEvidence>(
+    `/self-evolving/artifacts/${artifactStreamId}/transition-evidence`,
+    { params: { fromNodeId, toNodeId } },
+  );
   return data;
 }
 

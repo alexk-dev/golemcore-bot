@@ -251,6 +251,23 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
+.selfevolving-artifact-catalog-item {
+  min-height: 4.25rem;
+  border-radius: 0.9rem;
+}
+
+.selfevolving-lineage-node {
+  padding: 0.75rem;
+  border: 1px solid rgba(var(--bs-border-color-rgb), 0.8);
+  border-radius: 0.75rem;
+  background-color: rgba(var(--bs-tertiary-bg-rgb), 0.55);
+}
+
+.selfevolving-raw-patch {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .selfevolving-verdict-block {
   padding: 0.75rem;
   border: 1px solid rgba(var(--bs-border-color-rgb), 0.8);
