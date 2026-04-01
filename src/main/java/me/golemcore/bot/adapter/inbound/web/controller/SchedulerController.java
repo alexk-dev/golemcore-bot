@@ -1,6 +1,8 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.auto.AutoModeScheduler;
+import me.golemcore.bot.auto.ScheduleReportSender;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduleEntry;
@@ -47,6 +49,7 @@ public class SchedulerController {
     private final AutoModeService autoModeService;
     private final ScheduleService scheduleService;
     private final ChannelRegistry channelRegistry;
+    private final AutoModeScheduler autoModeScheduler;
 
     @GetMapping
     public Mono<ResponseEntity<SchedulerStateResponse>> getState() {
@@ -55,11 +58,26 @@ public class SchedulerController {
 
     @GetMapping("/channels")
     public Mono<ResponseEntity<ChannelsResponse>> getAvailableChannels() {
-        List<ChannelDto> channels = channelRegistry.getAll().stream()
+        AutoModeScheduler.ChannelInfo activeBinding = autoModeScheduler.getChannelInfo();
+        List<ChannelDto> channels = new ArrayList<>(channelRegistry.getAll().stream()
                 .filter(ChannelPort::isRunning)
-                .map(channel -> new ChannelDto(channel.getChannelType(), channel.getChannelType()))
-                .toList();
+                .map(channel -> {
+                    String activeChatId = resolveActiveChatId(channel.getChannelType(), activeBinding);
+                    return new ChannelDto(channel.getChannelType(), channel.getChannelType(), activeChatId);
+                })
+                .toList());
+        channels.add(new ChannelDto(ScheduleReportSender.OUTGOING_WEBHOOK, "Outgoing Webhook", null));
         return Mono.just(ResponseEntity.ok(new ChannelsResponse(channels)));
+    }
+
+    private static String resolveActiveChatId(String channelType, AutoModeScheduler.ChannelInfo activeBinding) {
+        if (activeBinding == null) {
+            return null;
+        }
+        if (channelType.equals(activeBinding.channelType())) {
+            return activeBinding.transportChatId();
+        }
+        return null;
     }
 
     @PostMapping("/schedules")
@@ -83,12 +101,14 @@ public class SchedulerController {
 
             String reportChannelType = normalizeOptionalString(request.reportChannelType());
             String reportChatId = normalizeOptionalString(request.reportChatId());
-            validateReportChannel(reportChannelType, reportChatId);
+            String reportWebhookUrl = normalizeOptionalString(request.reportWebhookUrl());
+            String reportWebhookSecret = normalizeOptionalString(request.reportWebhookSecret());
+            validateReportChannel(reportChannelType, reportChatId, reportWebhookUrl);
 
             ScheduleEntry entry = scheduleService.createSchedule(
                     targetType, targetId, cronExpression, maxExecutions,
                     Boolean.TRUE.equals(request.clearContextBeforeRun()),
-                    reportChannelType, reportChatId);
+                    reportChannelType, reportChatId, reportWebhookUrl, reportWebhookSecret);
             String targetLabel = resolveTargetLabel(entry, autoModeService.getGoals());
             return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toScheduleDto(entry, targetLabel)));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -120,9 +140,12 @@ public class SchedulerController {
 
             String reportChannelType = normalizeOptionalString(request.reportChannelType());
             String reportChatId = normalizeOptionalString(request.reportChatId());
-            boolean updateReportChannel = request.reportChannelType() != null || request.reportChatId() != null;
+            String reportWebhookUrl = normalizeOptionalString(request.reportWebhookUrl());
+            String reportWebhookSecret = normalizeOptionalString(request.reportWebhookSecret());
+            boolean updateReportChannel = request.reportChannelType() != null || request.reportChatId() != null
+                    || request.reportWebhookUrl() != null || request.reportWebhookSecret() != null;
             if (updateReportChannel) {
-                validateReportChannel(reportChannelType, reportChatId);
+                validateReportChannel(reportChannelType, reportChatId, reportWebhookUrl);
             }
 
             ScheduleEntry entry = scheduleService.updateSchedule(
@@ -135,6 +158,8 @@ public class SchedulerController {
                     request.clearContextBeforeRun(),
                     reportChannelType,
                     reportChatId,
+                    reportWebhookUrl,
+                    reportWebhookSecret,
                     updateReportChannel);
             String targetLabel = resolveTargetLabel(entry, autoModeService.getGoals());
             return Mono.just(ResponseEntity.ok(toScheduleDto(entry, targetLabel)));
@@ -256,6 +281,7 @@ public class SchedulerController {
                 entry.isClearContextBeforeRun(),
                 entry.getReportChannelType(),
                 entry.getReportChatId(),
+                entry.getReportWebhookUrl(),
                 entry.getMaxExecutions(),
                 entry.getExecutionCount(),
                 entry.getCreatedAt(),
@@ -520,7 +546,9 @@ public class SchedulerController {
             String cronExpression,
             Boolean clearContextBeforeRun,
             String reportChannelType,
-            String reportChatId) {
+            String reportChatId,
+            String reportWebhookUrl,
+            String reportWebhookSecret) {
 
         public CreateScheduleRequest(
                 String targetType,
@@ -529,7 +557,8 @@ public class SchedulerController {
                 List<Integer> days,
                 String time,
                 Integer maxExecutions) {
-            this(targetType, targetId, frequency, days, time, maxExecutions, null, null, null, null, null);
+            this(targetType, targetId, frequency, days, time, maxExecutions,
+                    null, null, null, null, null, null, null);
         }
 
         public CreateScheduleRequest(
@@ -541,7 +570,8 @@ public class SchedulerController {
                 Integer maxExecutions,
                 String mode,
                 String cronExpression) {
-            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, null, null, null);
+            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression,
+                    null, null, null, null, null);
         }
 
         public CreateScheduleRequest(
@@ -555,7 +585,7 @@ public class SchedulerController {
                 String cronExpression,
                 Boolean clearContextBeforeRun) {
             this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression,
-                    clearContextBeforeRun, null, null);
+                    clearContextBeforeRun, null, null, null, null);
         }
     }
 
@@ -571,7 +601,9 @@ public class SchedulerController {
             Boolean enabled,
             Boolean clearContextBeforeRun,
             String reportChannelType,
-            String reportChatId) {
+            String reportChatId,
+            String reportWebhookUrl,
+            String reportWebhookSecret) {
 
         public UpdateScheduleRequest(
                 String targetType,
@@ -584,7 +616,7 @@ public class SchedulerController {
                 String cronExpression,
                 Boolean enabled) {
             this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, enabled, null,
-                    null, null);
+                    null, null, null, null);
         }
 
         public UpdateScheduleRequest(
@@ -599,7 +631,7 @@ public class SchedulerController {
                 Boolean enabled,
                 Boolean clearContextBeforeRun) {
             this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, enabled,
-                    clearContextBeforeRun, null, null);
+                    clearContextBeforeRun, null, null, null, null);
         }
     }
 
@@ -643,6 +675,7 @@ public class SchedulerController {
             boolean clearContextBeforeRun,
             String reportChannelType,
             String reportChatId,
+            String reportWebhookUrl,
             int maxExecutions,
             int executionCount,
             Instant createdAt,
@@ -657,14 +690,24 @@ public class SchedulerController {
     public record ChannelsResponse(List<ChannelDto> channels) {
     }
 
-    public record ChannelDto(String type, String label) {
+    public record ChannelDto(String type, String label, String activeChatId) {
     }
 
-    private void validateReportChannel(String channelType, String chatId) {
+    private void validateReportChannel(String channelType, String chatId, String webhookUrl) {
         if (channelType == null && chatId != null) {
             throw badRequest("reportChannelType is required when reportChatId is set");
         }
-        if (channelType != null && channelRegistry.get(channelType).isEmpty()) {
+        if (channelType == null) {
+            return;
+        }
+        if (ScheduleReportSender.OUTGOING_WEBHOOK.equals(channelType)) {
+            if (StringValueSupport.isBlank(webhookUrl)) {
+                throw badRequest("reportWebhookUrl is required for outgoing_webhook channel type");
+            }
+            if (!webhookUrl.startsWith("http://") && !webhookUrl.startsWith("https://")) {
+                throw badRequest("reportWebhookUrl must start with http:// or https://");
+            }
+        } else if (channelRegistry.get(channelType).isEmpty()) {
             throw badRequest("Unknown channel type: " + channelType);
         }
     }

@@ -39,6 +39,9 @@ interface SchedulerFormStateResult {
   setEnabled: (enabled: boolean) => void;
   setClearContextBeforeRun: (clearContextBeforeRun: boolean) => void;
   setReportChannelType: (reportChannelType: string) => void;
+  setReportChatId: (reportChatId: string) => void;
+  setReportWebhookUrl: (reportWebhookUrl: string) => void;
+  setReportWebhookSecret: (reportWebhookSecret: string) => void;
   toggleDay: (day: number) => void;
   prepareCreateForTarget: (targetType: SchedulerTargetType, targetId: string) => void;
   startEditing: (schedule: SchedulerSchedule) => void;
@@ -60,6 +63,9 @@ function buildInitialFormState(): ScheduleFormState {
     enabled: true,
     clearContextBeforeRun: false,
     reportChannelType: '',
+    reportChatId: '',
+    reportWebhookUrl: '',
+    reportWebhookSecret: '',
   };
 }
 
@@ -100,8 +106,23 @@ function toggleDaySelection(days: number[], day: number): number[] {
   return [...days, day].sort((left, right) => left - right);
 }
 
-function resolveReportChannelType(form: ScheduleFormState): string | null {
-  return form.reportChannelType.length > 0 ? form.reportChannelType : null;
+function resolveReportFields(form: ScheduleFormState): Pick<
+  CreateScheduleRequest, 'reportChannelType' | 'reportChatId' | 'reportWebhookUrl' | 'reportWebhookSecret'
+> {
+  if (form.reportChannelType.length === 0) {
+    return { reportChannelType: null };
+  }
+  if (form.reportChannelType === 'outgoing_webhook') {
+    return {
+      reportChannelType: form.reportChannelType,
+      reportWebhookUrl: form.reportWebhookUrl.length > 0 ? form.reportWebhookUrl : null,
+      reportWebhookSecret: form.reportWebhookSecret.length > 0 ? form.reportWebhookSecret : null,
+    };
+  }
+  return {
+    reportChannelType: form.reportChannelType,
+    reportChatId: form.reportChatId.length > 0 ? form.reportChatId : null,
+  };
 }
 
 function buildSimpleCreateRequest(
@@ -119,7 +140,7 @@ function buildSimpleCreateRequest(
     time: normalizeTimeInput(form.time),
     maxExecutions,
     clearContextBeforeRun: form.clearContextBeforeRun,
-    reportChannelType: resolveReportChannelType(form),
+    ...resolveReportFields(form),
   };
 }
 
@@ -135,7 +156,7 @@ function buildAdvancedCreateRequest(
     cronExpression: form.cronExpression.trim(),
     maxExecutions,
     clearContextBeforeRun: form.clearContextBeforeRun,
-    reportChannelType: resolveReportChannelType(form),
+    ...resolveReportFields(form),
   };
 }
 
@@ -197,6 +218,9 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
       enabled: schedule.enabled,
       clearContextBeforeRun: schedule.clearContextBeforeRun,
       reportChannelType: schedule.reportChannelType ?? '',
+      reportChatId: schedule.reportChatId ?? '',
+      reportWebhookUrl: schedule.reportWebhookUrl ?? '',
+      reportWebhookSecret: '',
     };
   }
 
@@ -214,6 +238,9 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
       enabled: schedule.enabled,
       clearContextBeforeRun: schedule.clearContextBeforeRun,
       reportChannelType: schedule.reportChannelType ?? '',
+      reportChatId: schedule.reportChatId ?? '',
+      reportWebhookUrl: schedule.reportWebhookUrl ?? '',
+      reportWebhookSecret: '',
     };
   }
 
@@ -233,6 +260,9 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
         enabled: schedule.enabled,
         clearContextBeforeRun: schedule.clearContextBeforeRun,
         reportChannelType: schedule.reportChannelType ?? '',
+        reportChatId: schedule.reportChatId ?? '',
+        reportWebhookUrl: schedule.reportWebhookUrl ?? '',
+        reportWebhookSecret: '',
       };
     }
   }
@@ -249,6 +279,9 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
     enabled: schedule.enabled,
     clearContextBeforeRun: schedule.clearContextBeforeRun,
     reportChannelType: schedule.reportChannelType ?? '',
+    reportChatId: schedule.reportChatId ?? '',
+    reportWebhookUrl: schedule.reportWebhookUrl ?? '',
+    reportWebhookSecret: '',
   };
 }
 
@@ -289,7 +322,12 @@ export function useSchedulerForm(
     setTargetType: (targetType) => setForm((current) => ({ ...current, targetType, targetId: '' })),
     setEnabled: (enabled) => setForm((current) => ({ ...current, enabled })),
     setClearContextBeforeRun: (clearContextBeforeRun) => setForm((current) => ({ ...current, clearContextBeforeRun })),
-    setReportChannelType: (reportChannelType) => setForm((current) => ({ ...current, reportChannelType })),
+    setReportChannelType: (reportChannelType) => setForm((current) => ({
+      ...current, reportChannelType, reportChatId: '', reportWebhookUrl: '', reportWebhookSecret: '',
+    })),
+    setReportChatId: (reportChatId) => setForm((current) => ({ ...current, reportChatId })),
+    setReportWebhookUrl: (reportWebhookUrl) => setForm((current) => ({ ...current, reportWebhookUrl })),
+    setReportWebhookSecret: (reportWebhookSecret) => setForm((current) => ({ ...current, reportWebhookSecret })),
     toggleDay: (day) => setForm((current) => ({ ...current, days: toggleDaySelection(current.days, day) })),
     prepareCreateForTarget: (targetType, targetId) => {
       setEditingScheduleId(null);

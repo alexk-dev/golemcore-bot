@@ -96,6 +96,7 @@ public class AutoModeScheduler {
     private final ChannelRegistry channelRegistry;
     private final SessionPort sessionPort;
     private final me.golemcore.bot.domain.component.SkillComponent skillComponent;
+    private final ScheduleReportSender reportSender;
     private final AtomicBoolean executing = new AtomicBoolean(false);
 
     // Single channel info for milestone notifications
@@ -107,7 +108,8 @@ public class AutoModeScheduler {
     public AutoModeScheduler(AutoModeService autoModeService, ScheduleService scheduleService,
             SessionRunCoordinator sessionRunCoordinator, RuntimeConfigService runtimeConfigService,
             GoalManagementTool goalManagementTool, ChannelRegistry channelRegistry, SessionPort sessionPort,
-            me.golemcore.bot.domain.component.SkillComponent skillComponent) {
+            me.golemcore.bot.domain.component.SkillComponent skillComponent,
+            ScheduleReportSender reportSender) {
         this.autoModeService = autoModeService;
         this.scheduleService = scheduleService;
         this.sessionRunCoordinator = sessionRunCoordinator;
@@ -116,6 +118,11 @@ public class AutoModeScheduler {
         this.channelRegistry = channelRegistry;
         this.sessionPort = sessionPort;
         this.skillComponent = skillComponent;
+        this.reportSender = reportSender;
+    }
+
+    public ChannelInfo getChannelInfo() {
+        return channelInfo;
     }
 
     @PostConstruct
@@ -332,7 +339,7 @@ public class AutoModeScheduler {
         }
 
         handleRunSuccess(scheduleMessage, activeSkillName);
-        sendReportToChannel(schedule, scheduleMessage, assistantText);
+        reportSender.sendReport(schedule, buildReportHeader(scheduleMessage), assistantText, channelInfo);
     }
 
     private void recordFailureAndMaybeReflect(ScheduleMessage scheduleMessage, ScheduleEntry schedule,
@@ -420,42 +427,6 @@ public class AutoModeScheduler {
                 .metadata(metadata)
                 .timestamp(Instant.now())
                 .build();
-    }
-
-    private void sendReportToChannel(ScheduleEntry schedule, ScheduleMessage scheduleMessage, String assistantText) {
-        if (!hasScheduleReportChannel(schedule)) {
-            return;
-        }
-
-        if (StringValueSupport.isBlank(assistantText)) {
-            log.debug("[AutoScheduler] No assistant text to report for schedule {}", schedule.getId());
-            return;
-        }
-
-        ChannelInfo reportInfo = resolveReportChannelInfo(schedule);
-        if (reportInfo == null) {
-            return;
-        }
-
-        ChannelPort channel = channelRegistry.get(reportInfo.channelType()).orElse(null);
-        if (channel == null) {
-            log.warn("[AutoScheduler] Report channel '{}' not found", reportInfo.channelType());
-            return;
-        }
-
-        String header = buildReportHeader(scheduleMessage);
-        String report = header + "\n\n" + assistantText;
-
-        try {
-            channel.sendMessage(reportInfo.transportChatId(), report).get(30, TimeUnit.SECONDS);
-            log.info("[AutoScheduler] Sent run report to {} for schedule {}", reportInfo.channelType(),
-                    schedule.getId());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("[AutoScheduler] Failed to send report: {}", e.getMessage());
-        } catch (ExecutionException | TimeoutException e) {
-            log.error("[AutoScheduler] Failed to send report: {}", e.getMessage());
-        }
     }
 
     private static String buildReportHeader(ScheduleMessage scheduleMessage) {
@@ -576,39 +547,6 @@ public class AutoModeScheduler {
         sessionPort.clearMessages(sessionId);
         log.info("[AutoScheduler] Cleared session context before schedule run: scheduleId={}, sessionId={}",
                 scheduleId, sessionId);
-    }
-
-    private ChannelInfo resolveEffectiveChannelInfo(ScheduleEntry schedule) {
-        if (!hasScheduleReportChannel(schedule)) {
-            return channelInfo;
-        }
-
-        String reportChatId = schedule.getReportChatId();
-        if (StringValueSupport.isBlank(reportChatId)) {
-            ChannelInfo current = channelInfo;
-            if (current != null && schedule.getReportChannelType().equals(current.channelType())) {
-                reportChatId = current.transportChatId();
-            }
-        }
-
-        if (StringValueSupport.isBlank(reportChatId)) {
-            log.warn("[AutoScheduler] Cannot resolve chatId for report channel '{}', falling back to default",
-                    schedule.getReportChannelType());
-            return channelInfo;
-        }
-
-        return new ChannelInfo(schedule.getReportChannelType(), reportChatId, reportChatId);
-    }
-
-    private ChannelInfo resolveReportChannelInfo(ScheduleEntry schedule) {
-        if (!hasScheduleReportChannel(schedule)) {
-            return null;
-        }
-        return resolveEffectiveChannelInfo(schedule);
-    }
-
-    private static boolean hasScheduleReportChannel(ScheduleEntry schedule) {
-        return schedule.getReportChannelType() != null && !schedule.getReportChannelType().isBlank();
     }
 
     private ScheduleMessage buildMessageForSchedule(ScheduleEntry schedule) {

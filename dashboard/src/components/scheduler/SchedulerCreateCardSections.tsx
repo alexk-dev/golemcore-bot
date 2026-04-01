@@ -76,13 +76,20 @@ interface ClearContextFieldProps {
 export interface ReportChannelOption {
   type: string;
   label: string;
+  activeChatId: string | null;
 }
 
 interface ReportChannelFieldProps {
   featureEnabled: boolean;
   reportChannelType: string;
+  reportChatId: string;
+  reportWebhookUrl: string;
+  reportWebhookSecret: string;
   channelOptions: ReportChannelOption[];
   onChange: (reportChannelType: string) => void;
+  onChatIdChange: (chatId: string) => void;
+  onWebhookUrlChange: (url: string) => void;
+  onWebhookSecretChange: (secret: string) => void;
 }
 
 function isSchedulerFrequency(value: string): value is SchedulerFrequency {
@@ -365,11 +372,25 @@ export function ClearContextField({
   );
 }
 
+function isOutgoingWebhook(channelType: string): boolean {
+  return channelType === 'outgoing_webhook';
+}
+
+function isChannelSelected(channelType: string): boolean {
+  return channelType.length > 0 && !isOutgoingWebhook(channelType);
+}
+
 export function ReportChannelField({
   featureEnabled,
   reportChannelType,
+  reportChatId,
+  reportWebhookUrl,
+  reportWebhookSecret,
   channelOptions,
   onChange,
+  onChatIdChange,
+  onWebhookUrlChange,
+  onWebhookSecretChange,
 }: ReportChannelFieldProps): ReactElement {
   return (
     <Form.Group className="mb-3">
@@ -388,6 +409,39 @@ export function ReportChannelField({
       <Form.Text className="text-body-secondary">
         Send a summary to this channel after each scheduled run completes.
       </Form.Text>
+
+      {isChannelSelected(reportChannelType) && (
+        <Form.Control
+          size="sm"
+          className="mt-2"
+          value={reportChatId}
+          onChange={(event) => onChatIdChange(event.target.value)}
+          disabled={!featureEnabled}
+          placeholder="Chat ID (auto-resolved if empty)"
+        />
+      )}
+
+      {isOutgoingWebhook(reportChannelType) && (
+        <>
+          <Form.Control
+            size="sm"
+            className="mt-2"
+            value={reportWebhookUrl}
+            onChange={(event) => onWebhookUrlChange(event.target.value)}
+            disabled={!featureEnabled}
+            placeholder="https://example.com/webhook"
+          />
+          <Form.Control
+            size="sm"
+            className="mt-2"
+            type="password"
+            value={reportWebhookSecret}
+            onChange={(event) => onWebhookSecretChange(event.target.value)}
+            disabled={!featureEnabled}
+            placeholder="Bearer token (optional)"
+          />
+        </>
+      )}
     </Form.Group>
   );
 }

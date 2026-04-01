@@ -74,9 +74,21 @@ export default function SchedulerPage(): ReactElement {
   const formState = useSchedulerForm(goals, standaloneTasks);
   const channelsQuery = useAvailableChannels();
   const channelOptions = useMemo(
-    () => (channelsQuery.data?.channels ?? []).map((ch) => ({ type: ch.type, label: ch.label })),
+    () => (channelsQuery.data?.channels ?? []).map((ch) => ({
+      type: ch.type,
+      label: ch.label,
+      activeChatId: ch.activeChatId ?? null,
+    })),
     [channelsQuery.data],
   );
+
+  const handleReportChannelTypeChange = (channelType: string): void => {
+    formState.setReportChannelType(channelType);
+    const selected = channelOptions.find((ch) => ch.type === channelType);
+    if (selected?.activeChatId != null) {
+      formState.setReportChatId(selected.activeChatId);
+    }
+  };
   const navigation = useSchedulerNavigation(
     goals,
     standaloneTasks,
@@ -167,7 +179,10 @@ export default function SchedulerPage(): ReactElement {
       onLimitInputChange={formState.setLimitInput}
       onEnabledChange={formState.setEnabled}
       onClearContextBeforeRunChange={formState.setClearContextBeforeRun}
-      onReportChannelTypeChange={formState.setReportChannelType}
+      onReportChannelTypeChange={handleReportChannelTypeChange}
+      onReportChatIdChange={formState.setReportChatId}
+      onWebhookUrlChange={formState.setReportWebhookUrl}
+      onWebhookSecretChange={formState.setReportWebhookSecret}
       reportChannelOptions={channelOptions}
       onSubmitSchedule={() => { void handleSubmitSchedule(); }}
       onCancelEditSchedule={formState.reset}

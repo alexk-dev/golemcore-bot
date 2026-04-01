@@ -84,7 +84,8 @@ public class ScheduleService {
      */
     public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
             String cronExpression, int maxExecutions, boolean clearContextBeforeRun) {
-        return createSchedule(type, targetId, cronExpression, maxExecutions, clearContextBeforeRun, null, null);
+        return createSchedule(type, targetId, cronExpression, maxExecutions, clearContextBeforeRun,
+                null, null, null, null);
     }
 
     /**
@@ -92,7 +93,8 @@ public class ScheduleService {
      */
     public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
             String cronExpression, int maxExecutions, boolean clearContextBeforeRun,
-            String reportChannelType, String reportChatId) {
+            String reportChannelType, String reportChatId,
+            String reportWebhookUrl, String reportWebhookSecret) {
         String normalizedCron = normalizeCronExpression(cronExpression);
 
         Instant now = clock.instant();
@@ -108,6 +110,8 @@ public class ScheduleService {
                 .clearContextBeforeRun(clearContextBeforeRun)
                 .reportChannelType(reportChannelType)
                 .reportChatId(reportChatId)
+                .reportWebhookUrl(reportWebhookUrl)
+                .reportWebhookSecret(reportWebhookSecret)
                 .maxExecutions(maxExecutions)
                 .executionCount(0)
                 .createdAt(now)
@@ -148,7 +152,7 @@ public class ScheduleService {
             boolean enabled,
             Boolean clearContextBeforeRun) {
         return updateSchedule(id, type, targetId, cronExpression, maxExecutions, enabled, clearContextBeforeRun,
-                null, null, false);
+                null, null, null, null, false);
     }
 
     /**
@@ -164,6 +168,8 @@ public class ScheduleService {
             Boolean clearContextBeforeRun,
             String reportChannelType,
             String reportChatId,
+            String reportWebhookUrl,
+            String reportWebhookSecret,
             boolean updateReportChannel) {
         ScheduleEntry entry = findSchedule(id)
                 .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
@@ -184,6 +190,8 @@ public class ScheduleService {
         if (updateReportChannel) {
             entry.setReportChannelType(reportChannelType);
             entry.setReportChatId(reportChatId);
+            entry.setReportWebhookUrl(reportWebhookUrl);
+            entry.setReportWebhookSecret(reportWebhookSecret);
         }
         if (entry.isEnabled()) {
             entry.setNextExecutionAt(computeNextExecution(normalizedCron, now));

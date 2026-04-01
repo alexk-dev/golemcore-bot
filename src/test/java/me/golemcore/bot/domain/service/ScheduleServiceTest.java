@@ -413,7 +413,7 @@ class ScheduleServiceTest {
         ScheduleEntry entry = service.createSchedule(
                 ScheduleEntry.ScheduleType.GOAL, "goal-rpt",
                 CRON_DAILY_9AM, -1, false,
-                "telegram", "99999");
+                "telegram", "99999", null, null);
 
         assertNotNull(entry.getId());
         assertEquals("telegram", entry.getReportChannelType());
@@ -427,7 +427,7 @@ class ScheduleServiceTest {
         ScheduleEntry entry = service.createSchedule(
                 ScheduleEntry.ScheduleType.GOAL, "goal-rpt2",
                 CRON_DAILY_9AM, -1, false,
-                "telegram", null);
+                "telegram", null, null, null);
 
         assertEquals("telegram", entry.getReportChannelType());
         assertNull(entry.getReportChatId());
@@ -451,6 +451,8 @@ class ScheduleServiceTest {
                 null,
                 "telegram",
                 "12345",
+                null,
+                null,
                 true);
 
         assertEquals("telegram", updated.getReportChannelType());
@@ -462,7 +464,7 @@ class ScheduleServiceTest {
         ScheduleEntry entry = service.createSchedule(
                 ScheduleEntry.ScheduleType.GOAL, "goal-keep",
                 CRON_DAILY_9AM, -1, false,
-                "telegram", "55555");
+                "telegram", "55555", null, null);
 
         ScheduleEntry updated = service.updateSchedule(
                 entry.getId(),
@@ -471,6 +473,8 @@ class ScheduleServiceTest {
                 CRON_DAILY_NOON,
                 -1,
                 true,
+                null,
+                null,
                 null,
                 null,
                 null,

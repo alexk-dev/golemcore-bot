@@ -41,6 +41,9 @@ export interface SchedulerWorkspaceProps {
   onEnabledChange: ReturnType<typeof useSchedulerForm>['setEnabled'];
   onClearContextBeforeRunChange: ReturnType<typeof useSchedulerForm>['setClearContextBeforeRun'];
   onReportChannelTypeChange: ReturnType<typeof useSchedulerForm>['setReportChannelType'];
+  onReportChatIdChange: ReturnType<typeof useSchedulerForm>['setReportChatId'];
+  onWebhookUrlChange: ReturnType<typeof useSchedulerForm>['setReportWebhookUrl'];
+  onWebhookSecretChange: ReturnType<typeof useSchedulerForm>['setReportWebhookSecret'];
   reportChannelOptions: ReportChannelOption[];
   onSubmitSchedule: () => void;
   onCancelEditSchedule: () => void;
@@ -82,6 +85,9 @@ export function SchedulerWorkspace({
   onEnabledChange,
   onClearContextBeforeRunChange,
   onReportChannelTypeChange,
+  onReportChatIdChange,
+  onWebhookUrlChange,
+  onWebhookSecretChange,
   reportChannelOptions,
   onSubmitSchedule,
   onCancelEditSchedule,
@@ -137,6 +143,9 @@ export function SchedulerWorkspace({
               onEnabledChange={onEnabledChange}
               onClearContextBeforeRunChange={onClearContextBeforeRunChange}
               onReportChannelTypeChange={onReportChannelTypeChange}
+              onReportChatIdChange={onReportChatIdChange}
+              onWebhookUrlChange={onWebhookUrlChange}
+              onWebhookSecretChange={onWebhookSecretChange}
               reportChannelOptions={reportChannelOptions}
               onSubmit={onSubmitSchedule}
               onCancelEdit={onCancelEditSchedule}

@@ -45,6 +45,8 @@ public class ScheduleEntry {
     private boolean clearContextBeforeRun;
     private String reportChannelType;
     private String reportChatId;
+    private String reportWebhookUrl;
+    private String reportWebhookSecret;
 
     @Builder.Default
     private int maxExecutions = -1;

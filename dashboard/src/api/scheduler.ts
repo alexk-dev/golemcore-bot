@@ -17,6 +17,7 @@ export interface SchedulerSchedule {
   clearContextBeforeRun: boolean;
   reportChannelType: string | null;
   reportChatId: string | null;
+  reportWebhookUrl: string | null;
   maxExecutions: number;
   executionCount: number;
   createdAt: string | null;
@@ -44,11 +45,15 @@ export interface CreateScheduleRequest {
   cronExpression?: string;
   clearContextBeforeRun: boolean;
   reportChannelType?: string | null;
+  reportChatId?: string | null;
+  reportWebhookUrl?: string | null;
+  reportWebhookSecret?: string | null;
 }
 
 export interface AvailableChannel {
   type: string;
   label: string;
+  activeChatId: string | null;
 }
 
 export interface ChannelsResponse {

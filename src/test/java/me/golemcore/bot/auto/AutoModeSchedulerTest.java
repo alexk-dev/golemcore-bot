@@ -39,6 +39,7 @@ import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.contains;
 import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -61,6 +62,7 @@ class AutoModeSchedulerTest {
     private RuntimeConfigService runtimeConfigService;
     private SessionPort sessionPort;
     private SkillComponent skillComponent;
+    private ScheduleReportSender reportSender;
     private AutoModeScheduler scheduler;
 
     @BeforeEach
@@ -89,9 +91,12 @@ class AutoModeSchedulerTest {
         when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn("deep");
         when(runtimeConfigService.isAutoReflectionTierPriority()).thenReturn(false);
 
+        reportSender = mock(ScheduleReportSender.class);
+
         scheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
+                reportSender);
     }
 
     @Test
@@ -1048,7 +1053,8 @@ class AutoModeSchedulerTest {
     void shutdownDoesNotThrowWhenNotInitialized() {
         AutoModeScheduler freshScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
+                reportSender);
 
         assertDoesNotThrow(freshScheduler::shutdown);
     }
@@ -1060,7 +1066,8 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
+                reportSender);
 
         newScheduler.init();
 
@@ -1075,7 +1082,8 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
+                reportSender);
 
         newScheduler.init();
 
@@ -1091,7 +1099,8 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
+                reportSender);
 
         newScheduler.init();
 
@@ -1106,7 +1115,8 @@ class AutoModeSchedulerTest {
 
         AutoModeScheduler newScheduler = new AutoModeScheduler(
                 autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
+                reportSender);
 
         newScheduler.init();
 
@@ -1196,14 +1206,13 @@ class AutoModeSchedulerTest {
         scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
         scheduler.tick();
 
-        ArgumentCaptor<String> chatIdCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<ScheduleEntry> scheduleCaptor = ArgumentCaptor.forClass(ScheduleEntry.class);
+        ArgumentCaptor<String> headerCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> textCaptor = ArgumentCaptor.forClass(String.class);
-        verify(channelPort).sendMessage(chatIdCaptor.capture(), textCaptor.capture());
+        verify(reportSender).sendReport(scheduleCaptor.capture(), headerCaptor.capture(), textCaptor.capture(), any());
 
-        assertEquals("999", chatIdCaptor.getValue());
-        assertTrue(textCaptor.getValue().contains(GOAL_TITLE));
-        assertTrue(textCaptor.getValue().contains("Verify deployments"));
-        assertTrue(textCaptor.getValue().contains("All 3 deployments are healthy"));
+        assertEquals("sched-report", scheduleCaptor.getValue().getId());
+        assertEquals("All 3 deployments are healthy. No issues found.", textCaptor.getValue());
     }
 
     @Test
@@ -1244,12 +1253,16 @@ class AutoModeSchedulerTest {
         scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "auto-chat-42");
         scheduler.tick();
 
-        ArgumentCaptor<String> chatIdCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<ScheduleEntry> scheduleCaptor = ArgumentCaptor.forClass(ScheduleEntry.class);
         ArgumentCaptor<String> textCaptor = ArgumentCaptor.forClass(String.class);
-        verify(channelPort).sendMessage(chatIdCaptor.capture(), textCaptor.capture());
+        ArgumentCaptor<AutoModeScheduler.ChannelInfo> channelInfoCaptor = ArgumentCaptor
+                .forClass(AutoModeScheduler.ChannelInfo.class);
+        verify(reportSender).sendReport(scheduleCaptor.capture(), anyString(), textCaptor.capture(),
+                channelInfoCaptor.capture());
 
-        assertEquals("auto-chat-42", chatIdCaptor.getValue());
-        assertTrue(textCaptor.getValue().contains("Logs look clean."));
+        assertEquals("sched-report-auto", scheduleCaptor.getValue().getId());
+        assertEquals("Logs look clean.", textCaptor.getValue());
+        assertEquals("auto-chat-42", channelInfoCaptor.getValue().sessionChatId());
     }
 
     @Test
@@ -1289,7 +1302,9 @@ class AutoModeSchedulerTest {
         scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
         scheduler.tick();
 
-        verify(channelPort, never()).sendMessage(anyString(), contains("Done."));
+        ArgumentCaptor<ScheduleEntry> scheduleCaptor = ArgumentCaptor.forClass(ScheduleEntry.class);
+        verify(reportSender).sendReport(scheduleCaptor.capture(), anyString(), eq("Done."), any());
+        assertNull(scheduleCaptor.getValue().getReportChannelType());
     }
 
     @Test
@@ -1324,7 +1339,7 @@ class AutoModeSchedulerTest {
         scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
         scheduler.tick();
 
-        verify(channelPort, never()).sendMessage(eq("999"), anyString());
+        verify(reportSender).sendReport(any(ScheduleEntry.class), anyString(), isNull(), any());
     }
 
     @Test
@@ -1365,6 +1380,8 @@ class AutoModeSchedulerTest {
         scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
         scheduler.tick();
 
-        verify(channelPort, times(1)).sendMessage(anyString(), anyString());
+        ArgumentCaptor<ScheduleEntry> scheduleCaptor = ArgumentCaptor.forClass(ScheduleEntry.class);
+        verify(reportSender).sendReport(scheduleCaptor.capture(), anyString(), eq("Result text."), any());
+        assertEquals("slack", scheduleCaptor.getValue().getReportChannelType());
     }
 }
