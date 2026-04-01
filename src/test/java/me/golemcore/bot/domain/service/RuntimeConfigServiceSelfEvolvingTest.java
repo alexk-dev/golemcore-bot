@@ -7,6 +7,7 @@ import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -89,5 +90,88 @@ class RuntimeConfigServiceSelfEvolvingTest {
         assertEquals(true, persistedSelfEvolving.get("enabled"));
         assertEquals("smart", ((Map<?, ?>) persistedSelfEvolving.get("judge")).get("primaryTier"));
         assertEquals("shadow_then_approval", ((Map<?, ?>) persistedSelfEvolving.get("promotion")).get("mode"));
+    }
+
+    @Test
+    void shouldExposeDefaultSelfEvolvingGettersWhenSectionIsMissing() {
+        assertFalse(service.isSelfEvolvingEnabled());
+        assertTrue(service.isSelfEvolvingTracePayloadOverrideEnabled());
+        assertEquals("standard", service.getSelfEvolvingJudgePrimaryTier());
+        assertEquals("premium", service.getSelfEvolvingJudgeTiebreakerTier());
+        assertEquals("premium", service.getSelfEvolvingJudgeEvolutionTier());
+        assertEquals("approval_gate", service.getSelfEvolvingPromotionMode());
+    }
+
+    @Test
+    void shouldNormalizeInvalidSelfEvolvingValuesBackToDefaults() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setSelfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .tracePayloadOverride(null)
+                .capture(RuntimeConfig.SelfEvolvingCaptureConfig.builder()
+                        .llm("invalid")
+                        .tool("meta_only")
+                        .context(" ")
+                        .skill(null)
+                        .tier("full")
+                        .infra("invalid")
+                        .build())
+                .judge(RuntimeConfig.SelfEvolvingJudgeConfig.builder()
+                        .enabled(null)
+                        .primaryTier(" ")
+                        .tiebreakerTier(" deep ")
+                        .evolutionTier(null)
+                        .requireEvidenceAnchors(null)
+                        .uncertaintyThreshold(2.0d)
+                        .build())
+                .evolution(RuntimeConfig.SelfEvolvingEvolutionConfig.builder()
+                        .enabled(null)
+                        .modes(List.of(" fix ", "fix", "derive", " "))
+                        .artifactTypes(List.of(" skill ", "", "tool_policy", "skill"))
+                        .build())
+                .promotion(RuntimeConfig.SelfEvolvingPromotionConfig.builder()
+                        .mode(" ")
+                        .allowAutoAccept(null)
+                        .shadowRequired(null)
+                        .canaryRequired(null)
+                        .hiveApprovalPreferred(null)
+                        .build())
+                .benchmark(RuntimeConfig.SelfEvolvingBenchmarkConfig.builder()
+                        .enabled(null)
+                        .harvestProductionRuns(null)
+                        .autoCreateRegressionCases(null)
+                        .build())
+                .hive(RuntimeConfig.SelfEvolvingHiveConfig.builder()
+                        .publishInspectionProjection(null)
+                        .readonlyInspection(null)
+                        .build())
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig normalized = service.getRuntimeConfig();
+        assertEquals("full", normalized.getSelfEvolving().getCapture().getLlm());
+        assertEquals("meta_only", normalized.getSelfEvolving().getCapture().getTool());
+        assertEquals("full", normalized.getSelfEvolving().getCapture().getContext());
+        assertEquals("full", normalized.getSelfEvolving().getCapture().getSkill());
+        assertEquals("full", normalized.getSelfEvolving().getCapture().getTier());
+        assertEquals("meta_only", normalized.getSelfEvolving().getCapture().getInfra());
+        assertTrue(normalized.getSelfEvolving().getJudge().getEnabled());
+        assertEquals("standard", normalized.getSelfEvolving().getJudge().getPrimaryTier());
+        assertEquals("deep", normalized.getSelfEvolving().getJudge().getTiebreakerTier());
+        assertEquals("premium", normalized.getSelfEvolving().getJudge().getEvolutionTier());
+        assertEquals(0.22d, normalized.getSelfEvolving().getJudge().getUncertaintyThreshold());
+        assertEquals(List.of("fix", "derive"), normalized.getSelfEvolving().getEvolution().getModes());
+        assertEquals(List.of("skill", "tool_policy"), normalized.getSelfEvolving().getEvolution().getArtifactTypes());
+        assertEquals("approval_gate", normalized.getSelfEvolving().getPromotion().getMode());
+        assertTrue(normalized.getSelfEvolving().getPromotion().getAllowAutoAccept());
+        assertTrue(normalized.getSelfEvolving().getPromotion().getShadowRequired());
+        assertTrue(normalized.getSelfEvolving().getPromotion().getCanaryRequired());
+        assertTrue(normalized.getSelfEvolving().getPromotion().getHiveApprovalPreferred());
+        assertTrue(normalized.getSelfEvolving().getBenchmark().getEnabled());
+        assertTrue(normalized.getSelfEvolving().getBenchmark().getHarvestProductionRuns());
+        assertTrue(normalized.getSelfEvolving().getBenchmark().getAutoCreateRegressionCases());
+        assertTrue(normalized.getSelfEvolving().getHive().getPublishInspectionProjection());
+        assertTrue(normalized.getSelfEvolving().getHive().getReadonlyInspection());
     }
 }

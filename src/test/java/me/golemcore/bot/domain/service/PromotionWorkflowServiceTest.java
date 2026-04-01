@@ -1,5 +1,7 @@
 package me.golemcore.bot.domain.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -9,11 +11,17 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -24,14 +32,28 @@ class PromotionWorkflowServiceTest {
     private RuntimeConfigService runtimeConfigService;
     private EvolutionCandidateService evolutionCandidateService;
     private PromotionWorkflowService promotionWorkflowService;
+    private Map<String, String> persistedFiles;
+    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
         storagePort = mock(StoragePort.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
-        when(storagePort.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
+        persistedFiles = new ConcurrentHashMap<>();
+        objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+
+        when(storagePort.getText(anyString(), anyString())).thenAnswer(invocation -> {
+            String fileName = invocation.getArgument(1);
+            return CompletableFuture.completedFuture(persistedFiles.get(fileName));
+        });
         when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
+                .thenAnswer(invocation -> {
+                    String fileName = invocation.getArgument(1);
+                    String content = invocation.getArgument(2);
+                    persistedFiles.put(fileName, content);
+                    return CompletableFuture.completedFuture(null);
+                });
         when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("approval_gate");
         evolutionCandidateService = new EvolutionCandidateService(storagePort, Clock.fixed(
                 Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
@@ -91,5 +113,143 @@ class PromotionWorkflowServiceTest {
 
         assertEquals(1, registered.size());
         assertEquals("candidate-3", promotionWorkflowService.getCandidates().getFirst().getId());
+    }
+
+    @Test
+    void shouldPlanPromotionByCandidateIdAfterRegisteringCandidate() {
+        EvolutionCandidate candidate = EvolutionCandidate.builder()
+                .id("candidate-4")
+                .golemId("golem-1")
+                .goal("tune")
+                .artifactType("routing policy")
+                .status("proposed")
+                .baseVersion("bundle-4")
+                .build();
+        promotionWorkflowService.registerCandidates(List.of(candidate));
+
+        PromotionDecision decision = promotionWorkflowService.planPromotion("candidate-4");
+
+        assertEquals("candidate-4", decision.getCandidateId());
+        assertEquals("routing_policy", decision.getArtifactType());
+        assertEquals("routing_policy:tier", decision.getArtifactSubtype());
+        assertEquals("routing_policy:tier", decision.getArtifactKey());
+        assertEquals("candidate", decision.getFromLifecycleState());
+        assertEquals("approved", decision.getToLifecycleState());
+    }
+
+    @Test
+    void shouldNormalizeLoadedCandidatesAndPersistBackfilledArtifactIdentity() throws Exception {
+        EvolutionCandidate legacyCandidate = EvolutionCandidate.builder()
+                .id("candidate-legacy")
+                .golemId("golem-1")
+                .goal("derive")
+                .artifactType("prompt section")
+                .status("approved_pending")
+                .build();
+        persistedFiles.put("candidates.json", objectMapper.writeValueAsString(List.of(legacyCandidate)));
+
+        List<EvolutionCandidate> candidates = promotionWorkflowService.getCandidates();
+
+        assertEquals(1, candidates.size());
+        EvolutionCandidate normalized = candidates.getFirst();
+        assertEquals("prompt", normalized.getArtifactType());
+        assertEquals("prompt:section", normalized.getArtifactSubtype());
+        assertEquals("prompt:section", normalized.getArtifactKey());
+        assertEquals("approved", normalized.getLifecycleState());
+        assertEquals("approved", normalized.getRolloutStage());
+        assertNotNull(normalized.getArtifactStreamId());
+        assertNotNull(normalized.getContentRevisionId());
+        assertTrue(persistedFiles.get("candidates.json").contains("\"artifactType\":\"prompt\""));
+        assertTrue(persistedFiles.get("candidates.json").contains("\"contentRevisionId\""));
+    }
+
+    @Test
+    void shouldHydrateStoredDecisionsFromStoredCandidatesAndPersistNormalizedDecision() throws Exception {
+        EvolutionCandidate candidate = EvolutionCandidate.builder()
+                .id("candidate-5")
+                .golemId("golem-1")
+                .goal("fix")
+                .artifactType("routing policy")
+                .status("shadowed")
+                .baseVersion("bundle-5")
+                .build();
+        PromotionDecision legacyDecision = PromotionDecision.builder()
+                .id("decision-1")
+                .candidateId("candidate-5")
+                .toState("approved_pending")
+                .build();
+        persistedFiles.put("candidates.json", objectMapper.writeValueAsString(List.of(candidate)));
+        persistedFiles.put("promotion-decisions.json", objectMapper.writeValueAsString(List.of(legacyDecision)));
+
+        List<PromotionDecision> decisions = promotionWorkflowService.getPromotionDecisions();
+
+        assertEquals(1, decisions.size());
+        PromotionDecision hydrated = decisions.getFirst();
+        assertEquals("routing_policy", hydrated.getArtifactType());
+        assertEquals("routing_policy:tier", hydrated.getArtifactSubtype());
+        assertEquals("routing_policy:tier", hydrated.getArtifactKey());
+        assertEquals("approved", hydrated.getToLifecycleState());
+        assertEquals("approved", hydrated.getToRolloutStage());
+        assertEquals("candidate", hydrated.getFromLifecycleState());
+        assertEquals("shadowed", hydrated.getFromRolloutStage());
+        assertTrue(persistedFiles.get("promotion-decisions.json").contains("\"artifactKey\":\"routing_policy:tier\""));
+    }
+
+    @Test
+    void shouldReturnEmptyCollectionsWhenStoredWorkflowJsonIsInvalid() {
+        persistedFiles.put("candidates.json", "{");
+        persistedFiles.put("promotion-decisions.json", "{");
+
+        assertTrue(promotionWorkflowService.getCandidates().isEmpty());
+        assertTrue(promotionWorkflowService.getPromotionDecisions().isEmpty());
+    }
+
+    @Test
+    void shouldSkipNullCandidatesWhenRegisteringAndPlanning() {
+        EvolutionCandidate candidate = EvolutionCandidate.builder()
+                .id("candidate-6")
+                .golemId("golem-1")
+                .goal("fix")
+                .artifactType("tool_policy")
+                .status("proposed")
+                .build();
+        List<EvolutionCandidate> candidates = new ArrayList<>();
+        candidates.add(null);
+        candidates.add(candidate);
+
+        List<PromotionDecision> decisions = promotionWorkflowService.registerAndPlanCandidates(candidates);
+
+        assertEquals(1, decisions.size());
+        assertEquals("candidate-6", decisions.getFirst().getCandidateId());
+    }
+
+    @Test
+    void shouldRejectBlankCandidateWhenPlanning() {
+        EvolutionCandidate candidate = EvolutionCandidate.builder()
+                .id(" ")
+                .artifactType("skill")
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> promotionWorkflowService.planPromotion(candidate));
+
+        assertEquals("Candidate must not be blank", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectUnsupportedPromotionModes() {
+        when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("ship_it");
+        EvolutionCandidate candidate = EvolutionCandidate.builder()
+                .id("candidate-7")
+                .golemId("golem-1")
+                .goal("fix")
+                .artifactType("skill")
+                .status("proposed")
+                .build();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> promotionWorkflowService.planPromotion(candidate));
+
+        assertEquals("Unsupported promotion mode: ship_it", exception.getMessage());
     }
 }
