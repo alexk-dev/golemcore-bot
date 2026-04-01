@@ -2,6 +2,7 @@ package me.golemcore.bot.auto;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.testsupport.http.OkHttpMockEngine;
@@ -9,9 +10,9 @@ import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -49,7 +50,6 @@ class ScheduleReportSenderTest {
     void shouldSkipWhenNoReportChannelConfigured() {
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-1")
-                .reportChannelType(null)
                 .build();
 
         sender.sendReport(schedule, "header", "text", null);
@@ -62,7 +62,7 @@ class ScheduleReportSenderTest {
     void shouldSkipWhenReportChannelTypeIsBlank() {
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-1")
-                .reportChannelType("")
+                .report(channelReport("", null))
                 .build();
 
         sender.sendReport(schedule, "header", "text", null);
@@ -74,7 +74,7 @@ class ScheduleReportSenderTest {
     void shouldSkipWhenAssistantTextIsBlank() {
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-1")
-                .reportChannelType("telegram")
+                .report(channelReport("telegram", null))
                 .build();
 
         sender.sendReport(schedule, "header", "", null);
@@ -91,8 +91,7 @@ class ScheduleReportSenderTest {
 
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-1")
-                .reportChannelType("telegram")
-                .reportChatId("12345")
+                .report(channelReport("telegram", "12345"))
                 .build();
 
         sender.sendReport(schedule, "header", "assistant reply", null);
@@ -109,11 +108,10 @@ class ScheduleReportSenderTest {
 
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-1")
-                .reportChannelType("telegram")
-                .reportChatId(null)
+                .report(channelReport("telegram", null))
                 .build();
 
-        AutoModeScheduler.ChannelInfo channelInfo = new AutoModeScheduler.ChannelInfo("telegram", "session-1", "99999");
+        ScheduleDeliveryContext channelInfo = new ScheduleDeliveryContext("telegram", "session-1", "99999");
 
         sender.sendReport(schedule, "header", "text", channelInfo);
 
@@ -124,8 +122,7 @@ class ScheduleReportSenderTest {
     void shouldSkipChannelSendWhenChatIdCannotBeResolved() {
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-1")
-                .reportChannelType("telegram")
-                .reportChatId(null)
+                .report(channelReport("telegram", null))
                 .build();
 
         sender.sendReport(schedule, "header", "text", null);
@@ -139,8 +136,7 @@ class ScheduleReportSenderTest {
 
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-1")
-                .reportChannelType("unknown")
-                .reportChatId("12345")
+                .report(channelReport("unknown", "12345"))
                 .build();
 
         sender.sendReport(schedule, "header", "text", null);
@@ -155,9 +151,7 @@ class ScheduleReportSenderTest {
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-wh")
                 .type(ScheduleEntry.ScheduleType.GOAL)
-                .reportChannelType("webhook")
-                .reportWebhookUrl("https://example.com/hook")
-                .reportWebhookSecret("secret-token")
+                .report(webhookReport("https://example.com/hook", "secret-token"))
                 .build();
 
         sender.sendReport(schedule, "header", "assistant reply", null);
@@ -179,9 +173,7 @@ class ScheduleReportSenderTest {
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-wh")
                 .type(ScheduleEntry.ScheduleType.TASK)
-                .reportChannelType("webhook")
-                .reportWebhookUrl("https://example.com/hook")
-                .reportWebhookSecret(null)
+                .report(webhookReport("https://example.com/hook", null))
                 .build();
 
         sender.sendReport(schedule, "header", "text", null);
@@ -196,8 +188,7 @@ class ScheduleReportSenderTest {
     void shouldSkipWebhookWhenUrlIsBlank() {
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-wh")
-                .reportChannelType("webhook")
-                .reportWebhookUrl(null)
+                .report(webhookReport(null, null))
                 .build();
 
         sender.sendReport(schedule, "header", "text", null);
@@ -215,11 +206,9 @@ class ScheduleReportSenderTest {
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-wh")
                 .type(ScheduleEntry.ScheduleType.GOAL)
-                .reportChannelType("webhook")
-                .reportWebhookUrl("https://example.com/hook")
+                .report(webhookReport("https://example.com/hook", null))
                 .build();
 
-        // Should not throw
         sender.sendReport(schedule, "header", "text", null);
 
         assertEquals(4, mockEngine.getRequestCount());
@@ -235,8 +224,7 @@ class ScheduleReportSenderTest {
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-wh")
                 .type(ScheduleEntry.ScheduleType.GOAL)
-                .reportChannelType("webhook")
-                .reportWebhookUrl("https://example.com/hook")
+                .report(webhookReport("https://example.com/hook", null))
                 .build();
 
         sender.sendReport(schedule, "header", "text", null);
@@ -255,13 +243,27 @@ class ScheduleReportSenderTest {
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-wh")
                 .type(ScheduleEntry.ScheduleType.GOAL)
-                .reportChannelType("webhook")
-                .reportWebhookUrl("https://example.com/hook")
+                .report(webhookReport("https://example.com/hook", null))
                 .build();
 
         sender.sendReport(schedule, "header", "text", null);
 
         assertEquals(4, mockEngine.getRequestCount());
         assertEquals(List.of(100L, 200L, 400L), recordedBackoffs);
+    }
+
+    private static ScheduleReportConfig channelReport(String channelType, String chatId) {
+        return ScheduleReportConfig.builder()
+                .channelType(channelType)
+                .chatId(chatId)
+                .build();
+    }
+
+    private static ScheduleReportConfig webhookReport(String webhookUrl, String webhookBearerToken) {
+        return ScheduleReportConfig.builder()
+                .channelType("webhook")
+                .webhookUrl(webhookUrl)
+                .webhookBearerToken(webhookBearerToken)
+                .build();
     }
 }

@@ -1,6 +1,8 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduleReportConfig;
+import me.golemcore.bot.domain.model.ScheduleReportConfigUpdate;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -409,37 +411,56 @@ class ScheduleServiceTest {
     }
 
     @Test
-    void shouldCreateScheduleWithReportChannel() {
+    void shouldCreateScheduleWithReportConfig() {
+        ScheduleReportConfig report = ScheduleReportConfig.builder()
+                .channelType("telegram")
+                .chatId("99999")
+                .build();
+
         ScheduleEntry entry = service.createSchedule(
                 ScheduleEntry.ScheduleType.GOAL, "goal-rpt",
                 CRON_DAILY_9AM, -1, false,
-                "telegram", "99999", null, null);
+                report);
 
         assertNotNull(entry.getId());
-        assertEquals("telegram", entry.getReportChannelType());
-        assertEquals("99999", entry.getReportChatId());
+        assertNotNull(entry.getReport());
+        assertEquals("telegram", entry.getReport().getChannelType());
+        assertEquals("99999", entry.getReport().getChatId());
         assertTrue(entry.isEnabled());
         verify(storagePort).putText(any(), any(), any());
     }
 
     @Test
-    void shouldCreateScheduleWithReportChannelTypeOnly() {
+    void shouldCreateScheduleWithWebhookReportConfig() {
+        ScheduleReportConfig report = ScheduleReportConfig.builder()
+                .channelType("webhook")
+                .webhookUrl("https://example.com/hook")
+                .webhookBearerToken("bearer-token")
+                .build();
+
         ScheduleEntry entry = service.createSchedule(
                 ScheduleEntry.ScheduleType.GOAL, "goal-rpt2",
                 CRON_DAILY_9AM, -1, false,
-                "telegram", null, null, null);
+                report);
 
-        assertEquals("telegram", entry.getReportChannelType());
-        assertNull(entry.getReportChatId());
+        assertNotNull(entry.getReport());
+        assertEquals("webhook", entry.getReport().getChannelType());
+        assertEquals("https://example.com/hook", entry.getReport().getWebhookUrl());
+        assertEquals("bearer-token", entry.getReport().getWebhookBearerToken());
     }
 
     @Test
-    void shouldUpdateScheduleWithReportChannel() {
+    void shouldUpdateScheduleWithExplicitReportConfigChange() {
         ScheduleEntry entry = service.createSchedule(
                 ScheduleEntry.ScheduleType.GOAL, "goal-upd",
                 CRON_DAILY_9AM, -1);
 
-        assertNull(entry.getReportChannelType());
+        assertNull(entry.getReport());
+
+        ScheduleReportConfig report = ScheduleReportConfig.builder()
+                .channelType("telegram")
+                .chatId("12345")
+                .build();
 
         ScheduleEntry updated = service.updateSchedule(
                 entry.getId(),
@@ -449,22 +470,22 @@ class ScheduleServiceTest {
                 -1,
                 true,
                 null,
-                "telegram",
-                "12345",
-                null,
-                null,
-                true);
+                ScheduleReportConfigUpdate.set(report));
 
-        assertEquals("telegram", updated.getReportChannelType());
-        assertEquals("12345", updated.getReportChatId());
+        assertNotNull(updated.getReport());
+        assertEquals("telegram", updated.getReport().getChannelType());
+        assertEquals("12345", updated.getReport().getChatId());
     }
 
     @Test
-    void shouldNotUpdateReportChannelWhenFlagIsFalse() {
+    void shouldClearReportConfigWhenExplicitlyRequested() {
         ScheduleEntry entry = service.createSchedule(
                 ScheduleEntry.ScheduleType.GOAL, "goal-keep",
                 CRON_DAILY_9AM, -1, false,
-                "telegram", "55555", null, null);
+                ScheduleReportConfig.builder()
+                        .channelType("telegram")
+                        .chatId("55555")
+                        .build());
 
         ScheduleEntry updated = service.updateSchedule(
                 entry.getId(),
@@ -474,13 +495,33 @@ class ScheduleServiceTest {
                 -1,
                 true,
                 null,
-                null,
-                null,
-                null,
-                null,
-                false);
+                ScheduleReportConfigUpdate.clear());
 
-        assertEquals("telegram", updated.getReportChannelType());
-        assertEquals("55555", updated.getReportChatId());
+        assertNull(updated.getReport());
+    }
+
+    @Test
+    void shouldPreserveReportConfigWhenUpdateDoesNotChangeIt() {
+        ScheduleEntry entry = service.createSchedule(
+                ScheduleEntry.ScheduleType.GOAL, "goal-keep",
+                CRON_DAILY_9AM, -1, false,
+                ScheduleReportConfig.builder()
+                        .channelType("telegram")
+                        .chatId("55555")
+                        .build());
+
+        ScheduleEntry updated = service.updateSchedule(
+                entry.getId(),
+                ScheduleEntry.ScheduleType.GOAL,
+                "goal-keep",
+                CRON_DAILY_NOON,
+                -1,
+                true,
+                null,
+                ScheduleReportConfigUpdate.noChange());
+
+        assertNotNull(updated.getReport());
+        assertEquals("telegram", updated.getReport().getChannelType());
+        assertEquals("55555", updated.getReport().getChatId());
     }
 }

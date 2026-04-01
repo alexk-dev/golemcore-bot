@@ -1,7 +1,12 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Spinner } from 'react-bootstrap';
 import { useSearchParams } from 'react-router-dom';
-import type { SchedulerRunSummary, SchedulerSchedule, SchedulerTargetType } from '../api/scheduler';
+import type {
+  SchedulerReportChannelOption,
+  SchedulerRunSummary,
+  SchedulerSchedule,
+  SchedulerTargetType,
+} from '../api/scheduler';
 import { SchedulerWorkspace } from '../components/scheduler/SchedulerWorkspace';
 import {
   useCreateSchedule,
@@ -14,9 +19,6 @@ import {
 } from '../hooks/useScheduler';
 import { useSchedulerForm } from '../hooks/useSchedulerForm';
 import { useSchedulerNavigation } from '../hooks/useSchedulerNavigation';
-import { useRuntimeConfig } from '../hooks/useSettings';
-import { useSystemChannels } from '../hooks/useSystem';
-import { filterAndSortChannels, resolveLinkedTelegramUserId } from '../utils/channelUtils';
 
 function resolveEffectiveRunId(runs: SchedulerRunSummary[], selectedRunId: string | null): string | null {
   const selectedRun = runs.find((run) => run.runId === selectedRunId);
@@ -71,28 +73,21 @@ export default function SchedulerPage(): ReactElement {
   const scheduleSectionRef = useRef<HTMLDivElement>(null);
 
   const data = schedulerQuery.data;
+  const reportChannelOptions = useMemo(
+    () => data?.reportChannelOptions ?? [],
+    [data?.reportChannelOptions],
+  );
   const goals = useMemo(() => data?.goals ?? [], [data?.goals]);
   const standaloneTasks = useMemo(() => data?.standaloneTasks ?? [], [data?.standaloneTasks]);
   const formState = useSchedulerForm(goals, standaloneTasks);
-  const runtimeConfigQuery = useRuntimeConfig();
-  const systemChannelsQuery = useSystemChannels();
-  const linkedTelegramUserId = useMemo(
-    () => resolveLinkedTelegramUserId(runtimeConfigQuery.data?.telegram?.allowedUsers),
-    [runtimeConfigQuery.data?.telegram?.allowedUsers],
-  );
-  const channelOptions = useMemo(() => {
-    const excluded = new Set(['web']);
-    return filterAndSortChannels(systemChannelsQuery.data ?? [], excluded)
-      .map((channel) => ({
-        type: channel.type,
-        label: channel.type.charAt(0).toUpperCase() + channel.type.slice(1),
-      }));
-  }, [systemChannelsQuery.data]);
+  const findReportOption = (channelType: string): SchedulerReportChannelOption | undefined =>
+    reportChannelOptions.find((option) => option.type === channelType);
 
   const handleReportChannelTypeChange = (channelType: string): void => {
     formState.setReportChannelType(channelType);
-    if (channelType === 'telegram' && linkedTelegramUserId != null) {
-      formState.setReportChatId(linkedTelegramUserId);
+    const reportChannelOption = findReportOption(channelType);
+    if (reportChannelOption?.suggestedChatId != null && reportChannelOption.suggestedChatId.length > 0) {
+      formState.setReportChatId(reportChannelOption.suggestedChatId);
     }
   };
   const navigation = useSchedulerNavigation(
@@ -189,7 +184,7 @@ export default function SchedulerPage(): ReactElement {
       onReportChatIdChange={formState.setReportChatId}
       onWebhookUrlChange={formState.setReportWebhookUrl}
       onWebhookSecretChange={formState.setReportWebhookSecret}
-      reportChannelOptions={channelOptions}
+      reportChannelOptions={reportChannelOptions}
       onSubmitSchedule={() => { void handleSubmitSchedule(); }}
       onCancelEditSchedule={formState.reset}
       onOpenLogs={(schedule) => {

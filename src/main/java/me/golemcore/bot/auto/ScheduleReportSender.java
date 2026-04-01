@@ -21,6 +21,7 @@ package me.golemcore.bot.auto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
@@ -86,7 +87,7 @@ public class ScheduleReportSender {
      *            the active channel binding for chatId auto-resolution
      */
     public void sendReport(ScheduleEntry schedule, String reportHeader, String assistantText,
-            AutoModeScheduler.ChannelInfo fallbackChannelInfo) {
+            ScheduleDeliveryContext fallbackDeliveryContext) {
         if (!hasReportChannel(schedule)) {
             return;
         }
@@ -95,44 +96,47 @@ public class ScheduleReportSender {
             return;
         }
 
-        if (WEBHOOK_CHANNEL_TYPE.equals(schedule.getReportChannelType())) {
+        ScheduleReportConfig report = schedule.getReport();
+        if (WEBHOOK_CHANNEL_TYPE.equals(report.getChannelType())) {
             sendViaWebhook(schedule, reportHeader, assistantText);
         } else {
-            sendViaChannel(schedule, reportHeader, assistantText, fallbackChannelInfo);
+            sendViaChannel(schedule, reportHeader, assistantText, fallbackDeliveryContext);
         }
     }
 
     private void sendViaChannel(ScheduleEntry schedule, String reportHeader, String assistantText,
-            AutoModeScheduler.ChannelInfo fallbackChannelInfo) {
-        String chatId = resolveChatId(schedule, fallbackChannelInfo);
+            ScheduleDeliveryContext fallbackDeliveryContext) {
+        ScheduleReportConfig report = schedule.getReport();
+        String chatId = resolveChatId(report, fallbackDeliveryContext);
         if (StringValueSupport.isBlank(chatId)) {
             log.warn("[ReportSender] Cannot resolve chatId for channel '{}', skipping report",
-                    schedule.getReportChannelType());
+                    report.getChannelType());
             return;
         }
 
-        ChannelPort channel = channelRegistry.get(schedule.getReportChannelType()).orElse(null);
+        ChannelPort channel = channelRegistry.get(report.getChannelType()).orElse(null);
         if (channel == null) {
-            log.warn("[ReportSender] Channel '{}' not found in registry", schedule.getReportChannelType());
+            log.warn("[ReportSender] Channel '{}' not found in registry", report.getChannelType());
             return;
         }
 
-        String report = reportHeader + "\n\n" + assistantText;
+        String reportText = reportHeader + "\n\n" + assistantText;
         try {
-            channel.sendMessage(chatId, report).get(CHANNEL_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            log.info("[ReportSender] Sent report to {} for schedule {}", schedule.getReportChannelType(),
+            channel.sendMessage(chatId, reportText).get(CHANNEL_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            log.info("[ReportSender] Sent report to {} for schedule {}", report.getChannelType(),
                     schedule.getId());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("[ReportSender] Interrupted sending report: {}", e.getMessage());
         } catch (ExecutionException | TimeoutException e) {
-            log.error("[ReportSender] Failed to send report via {}: {}", schedule.getReportChannelType(),
+            log.error("[ReportSender] Failed to send report via {}: {}", report.getChannelType(),
                     e.getMessage());
         }
     }
 
     private void sendViaWebhook(ScheduleEntry schedule, String reportHeader, String assistantText) {
-        String webhookUrl = schedule.getReportWebhookUrl();
+        ScheduleReportConfig report = schedule.getReport();
+        String webhookUrl = report.getWebhookUrl();
         if (StringValueSupport.isBlank(webhookUrl)) {
             log.warn("[ReportSender] Webhook URL is not configured for schedule {}", schedule.getId());
             return;
@@ -148,7 +152,7 @@ public class ScheduleReportSender {
         try {
             String json = objectMapper.writeValueAsString(payload);
             for (int attempt = 0; attempt <= WEBHOOK_MAX_RETRIES; attempt++) {
-                Request request = buildWebhookRequest(webhookUrl, json, schedule.getReportWebhookSecret());
+                Request request = buildWebhookRequest(webhookUrl, json, report.getWebhookBearerToken());
                 try (Response response = okHttpClient.newCall(request).execute()) {
                     if (response.isSuccessful()) {
                         log.info("[ReportSender] Webhook POST to {} returned {} for schedule {}",
@@ -224,20 +228,21 @@ public class ScheduleReportSender {
         return attempt < WEBHOOK_MAX_RETRIES;
     }
 
-    private static String resolveChatId(ScheduleEntry schedule, AutoModeScheduler.ChannelInfo fallbackChannelInfo) {
-        String chatId = schedule.getReportChatId();
+    private static String resolveChatId(ScheduleReportConfig report, ScheduleDeliveryContext fallbackDeliveryContext) {
+        String chatId = report.getChatId();
         if (!StringValueSupport.isBlank(chatId)) {
             return chatId;
         }
-        if (fallbackChannelInfo != null
-                && schedule.getReportChannelType().equals(fallbackChannelInfo.channelType())) {
-            return fallbackChannelInfo.transportChatId();
+        if (fallbackDeliveryContext != null
+                && report.getChannelType().equals(fallbackDeliveryContext.channelType())) {
+            return fallbackDeliveryContext.transportChatId();
         }
         return null;
     }
 
     private static boolean hasReportChannel(ScheduleEntry schedule) {
-        return schedule.getReportChannelType() != null && !schedule.getReportChannelType().isBlank();
+        ScheduleReportConfig report = schedule.getReport();
+        return report != null && !StringValueSupport.isBlank(report.getChannelType());
     }
 
     @FunctionalInterface

@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import type {
   CreateScheduleRequest,
   SchedulerGoal,
+  SchedulerReport,
+  SchedulerReportPatch,
   SchedulerSchedule,
   SchedulerTask,
   UpdateScheduleRequest,
@@ -106,49 +108,33 @@ function toggleDaySelection(days: number[], day: number): number[] {
   return [...days, day].sort((left, right) => left - right);
 }
 
-function resolveCreateReportFields(form: ScheduleFormState): Pick<
-  CreateScheduleRequest, 'reportChannelType' | 'reportChatId' | 'reportWebhookUrl' | 'reportWebhookSecret'
-> {
+function resolveReportConfig(form: ScheduleFormState): SchedulerReport | null {
   if (form.reportChannelType.length === 0) {
-    return { reportChannelType: null };
+    return null;
   }
   if (form.reportChannelType === 'webhook') {
     return {
-      reportChannelType: form.reportChannelType,
-      reportWebhookUrl: form.reportWebhookUrl.length > 0 ? form.reportWebhookUrl : null,
-      reportWebhookSecret: form.reportWebhookSecret.length > 0 ? form.reportWebhookSecret : null,
+      channelType: form.reportChannelType,
+      chatId: null,
+      webhookUrl: form.reportWebhookUrl.length > 0 ? form.reportWebhookUrl : null,
+      webhookBearerToken: form.reportWebhookSecret.length > 0 ? form.reportWebhookSecret : null,
     };
   }
   return {
-    reportChannelType: form.reportChannelType,
-    reportChatId: form.reportChatId.length > 0 ? form.reportChatId : null,
+    channelType: form.reportChannelType,
+    chatId: form.reportChatId.length > 0 ? form.reportChatId : null,
+    webhookUrl: null,
+    webhookBearerToken: null,
   };
 }
 
-function resolveUpdateReportFields(form: ScheduleFormState): Pick<
-  UpdateScheduleRequest, 'reportChannelType' | 'reportChatId' | 'reportWebhookUrl' | 'reportWebhookSecret'
-> {
+function resolveUpdateReportPatch(form: ScheduleFormState): SchedulerReportPatch {
   if (form.reportChannelType.length === 0) {
-    return {
-      reportChannelType: '',
-      reportChatId: null,
-      reportWebhookUrl: null,
-      reportWebhookSecret: null,
-    };
-  }
-  if (form.reportChannelType === 'webhook') {
-    return {
-      reportChannelType: form.reportChannelType,
-      reportChatId: null,
-      reportWebhookUrl: form.reportWebhookUrl.length > 0 ? form.reportWebhookUrl : null,
-      reportWebhookSecret: form.reportWebhookSecret.length > 0 ? form.reportWebhookSecret : null,
-    };
+    return { operation: 'CLEAR', config: null };
   }
   return {
-    reportChannelType: form.reportChannelType,
-    reportChatId: form.reportChatId.length > 0 ? form.reportChatId : null,
-    reportWebhookUrl: null,
-    reportWebhookSecret: null,
+    operation: 'SET',
+    config: resolveReportConfig(form),
   };
 }
 
@@ -167,7 +153,7 @@ function buildSimpleCreateRequest(
     time: normalizeTimeInput(form.time),
     maxExecutions,
     clearContextBeforeRun: form.clearContextBeforeRun,
-    ...resolveCreateReportFields(form),
+    report: resolveReportConfig(form),
   };
 }
 
@@ -183,7 +169,7 @@ function buildAdvancedCreateRequest(
     cronExpression: form.cronExpression.trim(),
     maxExecutions,
     clearContextBeforeRun: form.clearContextBeforeRun,
-    ...resolveCreateReportFields(form),
+    report: resolveReportConfig(form),
   };
 }
 
@@ -197,7 +183,7 @@ export function createUpdateRequest(
     : buildSimpleCreateRequest(form, targetId, maxExecutions);
   return {
     ...baseRequest,
-    ...resolveUpdateReportFields(form),
+    report: resolveUpdateReportPatch(form),
     enabled: form.enabled,
   };
 }
@@ -235,6 +221,17 @@ function cronDaysToFrequency(daysPart: string): { frequency: SchedulerFrequency;
   };
 }
 
+function resolveReportFormState(schedule: SchedulerSchedule): Pick<
+  ScheduleFormState, 'reportChannelType' | 'reportChatId' | 'reportWebhookUrl' | 'reportWebhookSecret'
+> {
+  return {
+    reportChannelType: schedule.report?.channelType ?? '',
+    reportChatId: schedule.report?.chatId ?? '',
+    reportWebhookUrl: schedule.report?.webhookUrl ?? '',
+    reportWebhookSecret: schedule.report?.webhookBearerToken ?? '',
+  };
+}
+
 export function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormState {
   const dailyMatch = CRON_DAILY_PATTERN.exec(schedule.cronExpression);
   if (dailyMatch != null) {
@@ -249,10 +246,7 @@ export function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleF
       limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
       enabled: schedule.enabled,
       clearContextBeforeRun: schedule.clearContextBeforeRun,
-      reportChannelType: schedule.reportChannelType ?? '',
-      reportChatId: schedule.reportChatId ?? '',
-      reportWebhookUrl: schedule.reportWebhookUrl ?? '',
-      reportWebhookSecret: schedule.reportWebhookSecret ?? '',
+      ...resolveReportFormState(schedule),
     };
   }
 
@@ -269,10 +263,7 @@ export function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleF
       limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
       enabled: schedule.enabled,
       clearContextBeforeRun: schedule.clearContextBeforeRun,
-      reportChannelType: schedule.reportChannelType ?? '',
-      reportChatId: schedule.reportChatId ?? '',
-      reportWebhookUrl: schedule.reportWebhookUrl ?? '',
-      reportWebhookSecret: schedule.reportWebhookSecret ?? '',
+      ...resolveReportFormState(schedule),
     };
   }
 
@@ -291,10 +282,7 @@ export function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleF
         limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
         enabled: schedule.enabled,
         clearContextBeforeRun: schedule.clearContextBeforeRun,
-        reportChannelType: schedule.reportChannelType ?? '',
-        reportChatId: schedule.reportChatId ?? '',
-        reportWebhookUrl: schedule.reportWebhookUrl ?? '',
-        reportWebhookSecret: schedule.reportWebhookSecret ?? '',
+        ...resolveReportFormState(schedule),
       };
     }
   }
@@ -310,10 +298,7 @@ export function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleF
     limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
     enabled: schedule.enabled,
     clearContextBeforeRun: schedule.clearContextBeforeRun,
-    reportChannelType: schedule.reportChannelType ?? '',
-    reportChatId: schedule.reportChatId ?? '',
-    reportWebhookUrl: schedule.reportWebhookUrl ?? '',
-    reportWebhookSecret: schedule.reportWebhookSecret ?? '',
+    ...resolveReportFormState(schedule),
   };
 }
 

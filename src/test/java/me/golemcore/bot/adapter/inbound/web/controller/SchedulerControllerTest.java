@@ -2,8 +2,11 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
@@ -37,6 +40,7 @@ class SchedulerControllerTest {
 
     private AutoModeService autoModeService;
     private ScheduleService scheduleService;
+    private RuntimeConfigService runtimeConfigService;
     private ChannelRegistry channelRegistry;
     private SchedulerController controller;
 
@@ -44,8 +48,18 @@ class SchedulerControllerTest {
     void setUp() {
         autoModeService = mock(AutoModeService.class);
         scheduleService = mock(ScheduleService.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         channelRegistry = mock(ChannelRegistry.class);
-        controller = new SchedulerController(autoModeService, scheduleService, channelRegistry);
+        controller = new SchedulerController(autoModeService, scheduleService, runtimeConfigService, channelRegistry);
+
+        RuntimeConfig.TelegramConfig telegramConfig = new RuntimeConfig.TelegramConfig();
+        telegramConfig.setAllowedUsers(List.of());
+        when(runtimeConfigService.getRuntimeConfig())
+                .thenReturn(RuntimeConfig.builder().telegram(telegramConfig).build());
+
+        ChannelPort webhookChannel = mock(ChannelPort.class);
+        when(webhookChannel.getChannelType()).thenReturn("webhook");
+        when(channelRegistry.getAll()).thenReturn(List.of(webhookChannel));
     }
 
     @Test
@@ -1132,7 +1146,7 @@ class SchedulerControllerTest {
     }
 
     @Test
-    void createScheduleShouldAcceptReportChannelType() {
+    void createScheduleShouldAcceptNestedReportConfig() {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-report")
@@ -1140,7 +1154,9 @@ class SchedulerControllerTest {
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
-                .reportChannelType("telegram")
+                .report(ScheduleReportConfig.builder()
+                        .channelType("telegram")
+                        .build())
                 .maxExecutions(-1)
                 .executionCount(0)
                 .createdAt(Instant.now())
@@ -1155,18 +1171,20 @@ class SchedulerControllerTest {
         when(channelRegistry.get("telegram")).thenReturn(Optional.of(telegramChannel));
 
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 0 9 * * *"), eq(-1), eq(false), eq("telegram"), isNull(), isNull(), isNull()))
+                eq("0 0 9 * * *"), eq(-1), eq(false), any(ScheduleReportConfig.class)))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null, "telegram", null, null, null);
+                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                new SchedulerController.ScheduleReportRequest("telegram", null, null, null));
 
         StepVerifier.create(controller.createSchedule(request))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.CREATED, response.getStatusCode());
                     SchedulerController.ScheduleDto body = response.getBody();
                     assertNotNull(body);
-                    assertEquals("telegram", body.reportChannelType());
+                    assertNotNull(body.report());
+                    assertEquals("telegram", body.report().channelType());
                 })
                 .verifyComplete();
     }
@@ -1215,8 +1233,10 @@ class SchedulerControllerTest {
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
-                .reportChannelType("telegram")
-                .reportChatId("54321")
+                .report(ScheduleReportConfig.builder()
+                        .channelType("telegram")
+                        .chatId("54321")
+                        .build())
                 .maxExecutions(-1)
                 .executionCount(0)
                 .createdAt(Instant.now())
@@ -1231,7 +1251,7 @@ class SchedulerControllerTest {
         when(channelRegistry.get("telegram")).thenReturn(Optional.of(telegramChannel));
 
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 0 9 * * *"), eq(-1), eq(false), eq("telegram"), eq("54321"), isNull(), isNull()))
+                eq("0 0 9 * * *"), eq(-1), eq(false), any(ScheduleReportConfig.class)))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -1257,8 +1277,10 @@ class SchedulerControllerTest {
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
-                .reportChannelType("webhook")
-                .reportWebhookUrl("https://example.com/hook")
+                .report(ScheduleReportConfig.builder()
+                        .channelType("webhook")
+                        .webhookUrl("https://example.com/hook")
+                        .build())
                 .maxExecutions(-1)
                 .executionCount(0)
                 .createdAt(Instant.now())
@@ -1270,8 +1292,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
 
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 0 9 * * *"), eq(-1), eq(false), eq("webhook"), isNull(),
-                eq("https://example.com/hook"), isNull()))
+                eq("0 0 9 * * *"), eq(-1), eq(false), any(ScheduleReportConfig.class)))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -1304,9 +1325,11 @@ class SchedulerControllerTest {
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
-                .reportChannelType("webhook")
-                .reportWebhookUrl("https://example.com/hook")
-                .reportWebhookSecret("bearer-token")
+                .report(ScheduleReportConfig.builder()
+                        .channelType("webhook")
+                        .webhookUrl("https://example.com/hook")
+                        .webhookBearerToken("bearer-token")
+                        .build())
                 .maxExecutions(-1)
                 .executionCount(0)
                 .createdAt(Instant.now())
@@ -1325,9 +1348,12 @@ class SchedulerControllerTest {
                     SchedulerController.SchedulerStateResponse body = response.getBody();
                     assertNotNull(body);
                     assertEquals(1, body.schedules().size());
-                    assertEquals("webhook", body.schedules().get(0).reportChannelType());
-                    assertEquals("https://example.com/hook", body.schedules().get(0).reportWebhookUrl());
-                    assertEquals("bearer-token", body.schedules().get(0).reportWebhookSecret());
+                    assertNotNull(body.schedules().get(0).report());
+                    assertEquals("webhook", body.schedules().get(0).report().channelType());
+                    assertEquals("https://example.com/hook", body.schedules().get(0).report().webhookUrl());
+                    assertEquals("bearer-token", body.schedules().get(0).report().webhookBearerToken());
+                    assertTrue(
+                            body.reportChannelOptions().stream().anyMatch(option -> "webhook".equals(option.type())));
                 })
                 .verifyComplete();
     }

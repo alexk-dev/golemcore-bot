@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -65,6 +66,30 @@ class AutoModeSchedulerTest {
     private ScheduleReportSender reportSender;
     private AutoModeScheduler scheduler;
 
+    private AutoModeScheduler createScheduler() {
+        ScheduledRunExecutor scheduledRunExecutor = new ScheduledRunExecutor(
+                autoModeService,
+                sessionRunCoordinator,
+                runtimeConfigService,
+                sessionPort,
+                skillComponent,
+                reportSender);
+        return new AutoModeScheduler(
+                autoModeService,
+                scheduleService,
+                runtimeConfigService,
+                goalManagementTool,
+                new ChannelRegistry(List.of(channelPort)),
+                scheduledRunExecutor);
+    }
+
+    private static ScheduleReportConfig channelReport(String channelType, String chatId) {
+        return ScheduleReportConfig.builder()
+                .channelType(channelType)
+                .chatId(chatId)
+                .build();
+    }
+
     @BeforeEach
     void setUp() {
         autoModeService = mock(AutoModeService.class);
@@ -93,10 +118,7 @@ class AutoModeSchedulerTest {
 
         reportSender = mock(ScheduleReportSender.class);
 
-        scheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
-                reportSender);
+        scheduler = createScheduler();
     }
 
     @Test
@@ -1052,10 +1074,7 @@ class AutoModeSchedulerTest {
 
     @Test
     void shutdownDoesNotThrowWhenNotInitialized() {
-        AutoModeScheduler freshScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
-                reportSender);
+        AutoModeScheduler freshScheduler = createScheduler();
 
         assertDoesNotThrow(freshScheduler::shutdown);
     }
@@ -1065,10 +1084,7 @@ class AutoModeSchedulerTest {
         when(runtimeConfigService.isAutoStartEnabled()).thenReturn(true);
         when(autoModeService.isAutoModeEnabled()).thenReturn(false);
 
-        AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
-                reportSender);
+        AutoModeScheduler newScheduler = createScheduler();
 
         newScheduler.init();
 
@@ -1081,10 +1097,7 @@ class AutoModeSchedulerTest {
     void shouldNotAutoStartWhenAutoStartDisabled() {
         when(runtimeConfigService.isAutoStartEnabled()).thenReturn(false);
 
-        AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
-                reportSender);
+        AutoModeScheduler newScheduler = createScheduler();
 
         newScheduler.init();
 
@@ -1098,10 +1111,7 @@ class AutoModeSchedulerTest {
         when(runtimeConfigService.isAutoStartEnabled()).thenReturn(true);
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
-        AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
-                reportSender);
+        AutoModeScheduler newScheduler = createScheduler();
 
         newScheduler.init();
 
@@ -1114,10 +1124,7 @@ class AutoModeSchedulerTest {
     void shouldInitializeSchedulerEvenWhenFeatureDisabledAtStartup() {
         when(runtimeConfigService.isAutoModeEnabled()).thenReturn(false);
 
-        AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent,
-                reportSender);
+        AutoModeScheduler newScheduler = createScheduler();
 
         newScheduler.init();
 
@@ -1191,8 +1198,7 @@ class AutoModeSchedulerTest {
                 .targetId(GOAL_ID)
                 .cronExpression(TEST_CRON)
                 .enabled(true)
-                .reportChannelType(CHANNEL_TYPE_TELEGRAM)
-                .reportChatId("999")
+                .report(channelReport(CHANNEL_TYPE_TELEGRAM, "999"))
                 .build();
         when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
 
@@ -1240,7 +1246,7 @@ class AutoModeSchedulerTest {
                 .targetId(GOAL_ID)
                 .cronExpression(TEST_CRON)
                 .enabled(true)
-                .reportChannelType(CHANNEL_TYPE_TELEGRAM)
+                .report(channelReport(CHANNEL_TYPE_TELEGRAM, null))
                 .build();
         when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
 
@@ -1256,8 +1262,8 @@ class AutoModeSchedulerTest {
 
         ArgumentCaptor<ScheduleEntry> scheduleCaptor = ArgumentCaptor.forClass(ScheduleEntry.class);
         ArgumentCaptor<String> textCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<AutoModeScheduler.ChannelInfo> channelInfoCaptor = ArgumentCaptor
-                .forClass(AutoModeScheduler.ChannelInfo.class);
+        ArgumentCaptor<ScheduleDeliveryContext> channelInfoCaptor = ArgumentCaptor
+                .forClass(ScheduleDeliveryContext.class);
         verify(reportSender).sendReport(scheduleCaptor.capture(), anyString(), textCaptor.capture(),
                 channelInfoCaptor.capture());
 
@@ -1305,7 +1311,7 @@ class AutoModeSchedulerTest {
 
         ArgumentCaptor<ScheduleEntry> scheduleCaptor = ArgumentCaptor.forClass(ScheduleEntry.class);
         verify(reportSender).sendReport(scheduleCaptor.capture(), anyString(), eq("Done."), any());
-        assertNull(scheduleCaptor.getValue().getReportChannelType());
+        assertNull(scheduleCaptor.getValue().getReport());
     }
 
     @Test
@@ -1332,8 +1338,7 @@ class AutoModeSchedulerTest {
                 .targetId(GOAL_ID)
                 .cronExpression(TEST_CRON)
                 .enabled(true)
-                .reportChannelType(CHANNEL_TYPE_TELEGRAM)
-                .reportChatId("999")
+                .report(channelReport(CHANNEL_TYPE_TELEGRAM, "999"))
                 .build();
         when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
 
@@ -1367,7 +1372,7 @@ class AutoModeSchedulerTest {
                 .targetId(GOAL_ID)
                 .cronExpression(TEST_CRON)
                 .enabled(true)
-                .reportChannelType("slack")
+                .report(channelReport("slack", null))
                 .build();
         when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
 
@@ -1383,7 +1388,7 @@ class AutoModeSchedulerTest {
 
         ArgumentCaptor<ScheduleEntry> scheduleCaptor = ArgumentCaptor.forClass(ScheduleEntry.class);
         verify(reportSender).sendReport(scheduleCaptor.capture(), anyString(), eq("Result text."), any());
-        assertEquals("slack", scheduleCaptor.getValue().getReportChannelType());
+        assertEquals("slack", scheduleCaptor.getValue().getReport().getChannelType());
     }
 
     @Test
@@ -1410,7 +1415,7 @@ class AutoModeSchedulerTest {
                 .targetId(GOAL_ID)
                 .cronExpression(TEST_CRON)
                 .enabled(true)
-                .reportChannelType(CHANNEL_TYPE_TELEGRAM)
+                .report(channelReport(CHANNEL_TYPE_TELEGRAM, null))
                 .build();
         when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
 
@@ -1425,8 +1430,8 @@ class AutoModeSchedulerTest {
         scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "original-session", "original-transport");
         scheduler.tick();
 
-        ArgumentCaptor<AutoModeScheduler.ChannelInfo> channelInfoCaptor = ArgumentCaptor
-                .forClass(AutoModeScheduler.ChannelInfo.class);
+        ArgumentCaptor<ScheduleDeliveryContext> channelInfoCaptor = ArgumentCaptor
+                .forClass(ScheduleDeliveryContext.class);
         verify(reportSender).sendReport(eq(schedule), anyString(), eq("Snapshot text."), channelInfoCaptor.capture());
         assertEquals("original-session", channelInfoCaptor.getValue().sessionChatId());
         assertEquals("original-transport", channelInfoCaptor.getValue().transportChatId());

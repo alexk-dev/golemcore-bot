@@ -7,6 +7,24 @@ export type SchedulerMode = 'simple' | 'advanced';
 export type SchedulerGoal = Goal;
 export type SchedulerTask = GoalTask;
 
+export interface SchedulerReport {
+  channelType: string;
+  chatId: string | null;
+  webhookUrl: string | null;
+  webhookBearerToken: string | null;
+}
+
+export interface SchedulerReportPatch {
+  operation: 'SET' | 'CLEAR';
+  config: SchedulerReport | null;
+}
+
+export interface SchedulerReportChannelOption {
+  type: string;
+  label: string;
+  suggestedChatId: string | null;
+}
+
 export interface SchedulerSchedule {
   id: string;
   type: SchedulerTargetType;
@@ -15,10 +33,7 @@ export interface SchedulerSchedule {
   cronExpression: string;
   enabled: boolean;
   clearContextBeforeRun: boolean;
-  reportChannelType: string | null;
-  reportChatId: string | null;
-  reportWebhookUrl: string | null;
-  reportWebhookSecret: string | null;
+  report: SchedulerReport | null;
   maxExecutions: number;
   executionCount: number;
   createdAt: string | null;
@@ -33,6 +48,7 @@ export interface SchedulerStateResponse {
   goals: SchedulerGoal[];
   standaloneTasks: SchedulerTask[];
   schedules: SchedulerSchedule[];
+  reportChannelOptions: SchedulerReportChannelOption[];
 }
 
 export interface CreateScheduleRequest {
@@ -45,14 +61,12 @@ export interface CreateScheduleRequest {
   mode?: SchedulerMode;
   cronExpression?: string;
   clearContextBeforeRun: boolean;
-  reportChannelType?: string | null;
-  reportChatId?: string | null;
-  reportWebhookUrl?: string | null;
-  reportWebhookSecret?: string | null;
+  report?: SchedulerReport | null;
 }
 
-export interface UpdateScheduleRequest extends CreateScheduleRequest {
+export interface UpdateScheduleRequest extends Omit<CreateScheduleRequest, 'report'> {
   enabled: boolean;
+  report?: SchedulerReportPatch | null;
 }
 
 export interface DeleteScheduleResponse {

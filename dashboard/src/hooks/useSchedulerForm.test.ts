@@ -13,10 +13,12 @@ describe('useSchedulerForm helpers', () => {
       cronExpression: '0 0 9 * * *',
       enabled: true,
       clearContextBeforeRun: false,
-      reportChannelType: 'webhook',
-      reportChatId: null,
-      reportWebhookUrl: 'https://example.com/hook',
-      reportWebhookSecret: 'bearer-token',
+      report: {
+        channelType: 'webhook',
+        chatId: null,
+        webhookUrl: 'https://example.com/hook',
+        webhookBearerToken: 'bearer-token',
+      },
       maxExecutions: -1,
       executionCount: 0,
       createdAt: null,
@@ -52,9 +54,7 @@ describe('useSchedulerForm helpers', () => {
 
     const request = createUpdateRequest(form, 'goal-1', -1);
 
-    expect(request.reportChannelType).toBe('');
-    expect(request.reportChatId).toBeNull();
-    expect(request.reportWebhookUrl).toBeNull();
-    expect(request.reportWebhookSecret).toBeNull();
+    expect(request.report?.operation).toBe('CLEAR');
+    expect(request.report?.config).toBeNull();
   });
 });
