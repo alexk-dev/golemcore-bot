@@ -9,6 +9,8 @@ import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -29,6 +31,7 @@ class ScheduleReportSenderTest {
     private ChannelRegistry channelRegistry;
     private OkHttpMockEngine mockEngine;
     private ScheduleReportSender sender;
+    private List<Long> recordedBackoffs;
 
     @BeforeEach
     void setUp() {
@@ -38,7 +41,8 @@ class ScheduleReportSenderTest {
                 .addInterceptor(mockEngine)
                 .build();
         ObjectMapper objectMapper = new ObjectMapper();
-        sender = new ScheduleReportSender(channelRegistry, client, objectMapper);
+        recordedBackoffs = new ArrayList<>();
+        sender = new ScheduleReportSender(channelRegistry, client, objectMapper, recordedBackoffs::add);
     }
 
     @Test
@@ -204,6 +208,9 @@ class ScheduleReportSenderTest {
     @Test
     void shouldHandleWebhookNetworkFailureGracefully() {
         mockEngine.enqueueFailure(new IOException("connection refused"));
+        mockEngine.enqueueFailure(new IOException("connection refused"));
+        mockEngine.enqueueFailure(new IOException("connection refused"));
+        mockEngine.enqueueFailure(new IOException("connection refused"));
 
         ScheduleEntry schedule = ScheduleEntry.builder()
                 .id("sched-wh")
@@ -215,6 +222,46 @@ class ScheduleReportSenderTest {
         // Should not throw
         sender.sendReport(schedule, "header", "text", null);
 
-        assertEquals(1, mockEngine.getRequestCount());
+        assertEquals(4, mockEngine.getRequestCount());
+        assertEquals(List.of(100L, 200L, 400L), recordedBackoffs);
+    }
+
+    @Test
+    void shouldRetryWebhookOnHttpErrorWithExponentialBackoff() throws Exception {
+        mockEngine.enqueueJson(500, "{\"ok\":false}");
+        mockEngine.enqueueJson(502, "{\"ok\":false}");
+        mockEngine.enqueueJson(200, "{\"ok\":true}");
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-wh")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .reportChannelType("webhook")
+                .reportWebhookUrl("https://example.com/hook")
+                .build();
+
+        sender.sendReport(schedule, "header", "text", null);
+
+        assertEquals(3, mockEngine.getRequestCount());
+        assertEquals(List.of(100L, 200L), recordedBackoffs);
+    }
+
+    @Test
+    void shouldStopAfterThreeWebhookRetriesAndTreatMissionAsComplete() {
+        mockEngine.enqueueFailure(new IOException("connection refused"));
+        mockEngine.enqueueFailure(new IOException("connection refused"));
+        mockEngine.enqueueFailure(new IOException("connection refused"));
+        mockEngine.enqueueFailure(new IOException("connection refused"));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-wh")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .reportChannelType("webhook")
+                .reportWebhookUrl("https://example.com/hook")
+                .build();
+
+        sender.sendReport(schedule, "header", "text", null);
+
+        assertEquals(4, mockEngine.getRequestCount());
+        assertEquals(List.of(100L, 200L, 400L), recordedBackoffs);
     }
 }

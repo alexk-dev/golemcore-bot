@@ -1385,4 +1385,50 @@ class AutoModeSchedulerTest {
         verify(reportSender).sendReport(scheduleCaptor.capture(), anyString(), eq("Result text."), any());
         assertEquals("slack", scheduleCaptor.getValue().getReportChannelType());
     }
+
+    @Test
+    void shouldPassOriginalChannelSnapshotToReportSenderEvenIfGlobalChannelChangesMidRun() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Check logs")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-report-snapshot")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .reportChannelType(CHANNEL_TYPE_TELEGRAM)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "new-session", "new-transport");
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "COMPLETED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT, "Snapshot text.");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "original-session", "original-transport");
+        scheduler.tick();
+
+        ArgumentCaptor<AutoModeScheduler.ChannelInfo> channelInfoCaptor = ArgumentCaptor
+                .forClass(AutoModeScheduler.ChannelInfo.class);
+        verify(reportSender).sendReport(eq(schedule), anyString(), eq("Snapshot text."), channelInfoCaptor.capture());
+        assertEquals("original-session", channelInfoCaptor.getValue().sessionChatId());
+        assertEquals("original-transport", channelInfoCaptor.getValue().transportChatId());
+    }
 }

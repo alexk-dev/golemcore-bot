@@ -284,7 +284,7 @@ public class AutoModeScheduler {
         try {
             log.info("[AutoScheduler] Processing schedule {}: {}", schedule.getId(), scheduleMessage.content());
             submitAndAwait(scheduleMessage, schedule, timeoutMinutes, channelType, sessionChatId, transportChatId,
-                    runId);
+                    runId, info);
         } catch (TimeoutException e) {
             recordFailureAndMaybeReflect(scheduleMessage, schedule, timeoutMinutes, channelType, sessionChatId,
                     transportChatId,
@@ -314,7 +314,8 @@ public class AutoModeScheduler {
     }
 
     private void submitAndAwait(ScheduleMessage scheduleMessage, ScheduleEntry schedule, int timeoutMinutes,
-            String channelType, String sessionChatId, String transportChatId, String runId)
+            String channelType, String sessionChatId, String transportChatId, String runId,
+            ChannelInfo reportFallbackChannelInfo)
             throws InterruptedException, ExecutionException, TimeoutException {
         Message syntheticMessage = buildSyntheticMessage(scheduleMessage, schedule, channelType, sessionChatId,
                 transportChatId, runId);
@@ -332,7 +333,7 @@ public class AutoModeScheduler {
                     readFailureFingerprint(syntheticMessage),
                     activeSkillName);
             reportSender.sendReport(schedule, buildReportHeader(scheduleMessage),
-                    failureSummary != null ? failureSummary : assistantText, channelInfo);
+                    failureSummary != null ? failureSummary : assistantText, reportFallbackChannelInfo);
             return;
         }
 
@@ -342,7 +343,7 @@ public class AutoModeScheduler {
         }
 
         handleRunSuccess(scheduleMessage, activeSkillName);
-        reportSender.sendReport(schedule, buildReportHeader(scheduleMessage), assistantText, channelInfo);
+        reportSender.sendReport(schedule, buildReportHeader(scheduleMessage), assistantText, reportFallbackChannelInfo);
     }
 
     private void recordFailureAndMaybeReflect(ScheduleMessage scheduleMessage, ScheduleEntry schedule,

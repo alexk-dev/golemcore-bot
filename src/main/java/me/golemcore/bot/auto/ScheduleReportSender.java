@@ -19,7 +19,6 @@ package me.golemcore.bot.auto;
  */
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.StringValueSupport;
@@ -48,17 +47,31 @@ import java.util.concurrent.TimeoutException;
  * </ul>
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class ScheduleReportSender {
 
     public static final String WEBHOOK_CHANNEL_TYPE = "webhook";
     private static final int CHANNEL_SEND_TIMEOUT_SECONDS = 30;
+    private static final int WEBHOOK_MAX_RETRIES = 3;
+    private static final long WEBHOOK_INITIAL_BACKOFF_MILLIS = 100L;
     private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
 
     private final ChannelRegistry channelRegistry;
     private final OkHttpClient okHttpClient;
     private final ObjectMapper objectMapper;
+    private final BackoffSleeper backoffSleeper;
+
+    public ScheduleReportSender(ChannelRegistry channelRegistry, OkHttpClient okHttpClient, ObjectMapper objectMapper) {
+        this(channelRegistry, okHttpClient, objectMapper, Thread::sleep);
+    }
+
+    ScheduleReportSender(ChannelRegistry channelRegistry, OkHttpClient okHttpClient, ObjectMapper objectMapper,
+            BackoffSleeper backoffSleeper) {
+        this.channelRegistry = channelRegistry;
+        this.okHttpClient = okHttpClient;
+        this.objectMapper = objectMapper;
+        this.backoffSleeper = backoffSleeper;
+    }
 
     /**
      * Send a run report for the given schedule.
@@ -134,24 +147,81 @@ public class ScheduleReportSender {
 
         try {
             String json = objectMapper.writeValueAsString(payload);
-            RequestBody body = RequestBody.create(json, JSON_MEDIA_TYPE);
-
-            Request.Builder requestBuilder = new Request.Builder()
-                    .url(webhookUrl)
-                    .post(body);
-
-            String secret = schedule.getReportWebhookSecret();
-            if (!StringValueSupport.isBlank(secret)) {
-                requestBuilder.header("Authorization", "Bearer " + secret);
+            for (int attempt = 0; attempt <= WEBHOOK_MAX_RETRIES; attempt++) {
+                Request request = buildWebhookRequest(webhookUrl, json, schedule.getReportWebhookSecret());
+                try (Response response = okHttpClient.newCall(request).execute()) {
+                    if (response.isSuccessful()) {
+                        log.info("[ReportSender] Webhook POST to {} returned {} for schedule {}",
+                                webhookUrl, response.code(), schedule.getId());
+                        return;
+                    }
+                    if (!shouldRetryWebhookAttempt(attempt)) {
+                        log.warn(
+                                "[ReportSender] Webhook POST to {} failed with status {} for schedule {} after {} attempts;"
+                                        + " treating report delivery as complete",
+                                webhookUrl, response.code(), schedule.getId(), attempt + 1);
+                        return;
+                    }
+                    long backoffMillis = computeWebhookBackoffMillis(attempt);
+                    log.warn(
+                            "[ReportSender] Webhook POST to {} failed with status {} for schedule {}; retrying in {} ms"
+                                    + " (attempt {}/{})",
+                            webhookUrl, response.code(), schedule.getId(), backoffMillis, attempt + 1,
+                            WEBHOOK_MAX_RETRIES + 1);
+                    if (!sleepBeforeRetry(backoffMillis, webhookUrl, schedule.getId())) {
+                        return;
+                    }
+                } catch (Exception e) { // NOSONAR — report delivery must not crash the scheduler
+                    if (!shouldRetryWebhookAttempt(attempt)) {
+                        log.warn("[ReportSender] Failed to send webhook report to {} after {} attempts: {}; treating"
+                                + " report delivery as complete",
+                                webhookUrl, attempt + 1, e.getMessage());
+                        return;
+                    }
+                    long backoffMillis = computeWebhookBackoffMillis(attempt);
+                    log.warn(
+                            "[ReportSender] Failed to send webhook report to {}: {}; retrying in {} ms (attempt {}/{})",
+                            webhookUrl, e.getMessage(), backoffMillis, attempt + 1, WEBHOOK_MAX_RETRIES + 1);
+                    if (!sleepBeforeRetry(backoffMillis, webhookUrl, schedule.getId())) {
+                        return;
+                    }
+                }
             }
-
-            try (Response response = okHttpClient.newCall(requestBuilder.build()).execute()) {
-                log.info("[ReportSender] Webhook POST to {} returned {} for schedule {}",
-                        webhookUrl, response.code(), schedule.getId());
-            }
-        } catch (Exception e) { // NOSONAR — report delivery must not crash the scheduler
-            log.error("[ReportSender] Failed to send webhook report to {}: {}", webhookUrl, e.getMessage());
+        } catch (Exception e) { // NOSONAR — payload serialization must not crash the scheduler
+            log.error("[ReportSender] Failed to serialize webhook report for {}: {}", webhookUrl, e.getMessage());
         }
+    }
+
+    private Request buildWebhookRequest(String webhookUrl, String json, String secret) {
+        RequestBody body = RequestBody.create(json, JSON_MEDIA_TYPE);
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(webhookUrl)
+                .post(body);
+        if (!StringValueSupport.isBlank(secret)) {
+            requestBuilder.header("Authorization", "Bearer " + secret);
+        }
+        return requestBuilder.build();
+    }
+
+    private boolean sleepBeforeRetry(long backoffMillis, String webhookUrl, String scheduleId) {
+        try {
+            backoffSleeper.sleep(backoffMillis);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[ReportSender] Interrupted during webhook retry backoff for {} schedule {}; treating report"
+                    + " delivery as complete",
+                    webhookUrl, scheduleId);
+            return false;
+        }
+    }
+
+    private static long computeWebhookBackoffMillis(int attempt) {
+        return WEBHOOK_INITIAL_BACKOFF_MILLIS * (1L << attempt);
+    }
+
+    private static boolean shouldRetryWebhookAttempt(int attempt) {
+        return attempt < WEBHOOK_MAX_RETRIES;
     }
 
     private static String resolveChatId(ScheduleEntry schedule, AutoModeScheduler.ChannelInfo fallbackChannelInfo) {
@@ -168,5 +238,10 @@ public class ScheduleReportSender {
 
     private static boolean hasReportChannel(ScheduleEntry schedule) {
         return schedule.getReportChannelType() != null && !schedule.getReportChannelType().isBlank();
+    }
+
+    @FunctionalInterface
+    interface BackoffSleeper {
+        void sleep(long millis) throws InterruptedException;
     }
 }
