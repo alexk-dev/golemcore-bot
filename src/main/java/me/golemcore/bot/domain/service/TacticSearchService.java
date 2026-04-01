@@ -100,7 +100,10 @@ public class TacticSearchService {
         if (tacticHybridRankingService == null) {
             return lexicalHits;
         }
-        return tacticHybridRankingService.rank(query, lexicalHits, vectorHits);
+        return tacticHybridRankingService.rank(query, lexicalHits, vectorHits).stream()
+                .map(result -> applyEligibility(result, query))
+                .filter(result -> Boolean.TRUE.equals(result.getExplanation().getEligible()))
+                .toList();
     }
 
     private void ensureIndexWarm() {
@@ -127,6 +130,7 @@ public class TacticSearchService {
     private TacticSearchResult lexicalResult(
             TacticSearchQuery query,
             TacticBm25IndexService.ScoredDocument scoredDocument) {
+        boolean eligible = isEligible(scoredDocument.document().getPromotionState(), query);
         return TacticSearchResult.builder()
                 .tacticId(scoredDocument.document().getTacticId())
                 .artifactStreamId(scoredDocument.document().getArtifactStreamId())
@@ -160,12 +164,24 @@ public class TacticSearchService {
                         .bm25Score(scoredDocument.score())
                         .matchedQueryViews(query.getQueryViews())
                         .matchedTerms(scoredDocument.matchedTerms())
-                        .eligible(isEligible(scoredDocument.document().getPromotionState(), query))
-                        .gatingReason(isEligible(scoredDocument.document().getPromotionState(), query)
-                                ? null
-                                : "promotion state denied by default runtime gating")
+                        .eligible(eligible)
+                        .gatingReason(eligible ? null : "promotion state denied by default runtime gating")
                         .finalScore(scoredDocument.score())
                         .build())
                 .build();
+    }
+
+    private TacticSearchResult applyEligibility(TacticSearchResult result, TacticSearchQuery query) {
+        if (result == null) {
+            return null;
+        }
+        boolean eligible = isEligible(result.getPromotionState(), query);
+        TacticSearchExplanation explanation = result.getExplanation() != null
+                ? result.getExplanation()
+                : TacticSearchExplanation.builder().build();
+        explanation.setEligible(eligible);
+        explanation.setGatingReason(eligible ? null : "promotion state denied by default runtime gating");
+        result.setExplanation(explanation);
+        return result;
     }
 }

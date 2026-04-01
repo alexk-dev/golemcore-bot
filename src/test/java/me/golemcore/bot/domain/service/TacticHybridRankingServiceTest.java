@@ -14,22 +14,26 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class TacticHybridRankingServiceTest {
 
     private RuntimeConfigService runtimeConfigService;
-    private ModelSelectionService modelSelectionService;
     private TacticSearchMetricsService metricsService;
+    private TacticCrossEncoderRerankerService rerankerService;
     private TacticHybridRankingService rankingService;
 
     @BeforeEach
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
-        modelSelectionService = mock(ModelSelectionService.class);
         metricsService = mock(TacticSearchMetricsService.class);
-        rankingService = new TacticHybridRankingService(runtimeConfigService, modelSelectionService, metricsService);
+        rerankerService = mock(TacticCrossEncoderRerankerService.class);
+        rankingService = new TacticHybridRankingService(runtimeConfigService, metricsService, rerankerService);
 
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
@@ -47,8 +51,6 @@ class TacticHybridRankingServiceTest {
                         .build())
                 .build();
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(runtimeConfig.getSelfEvolving());
-        when(modelSelectionService.resolveExplicitTier("deep"))
-                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5.4", "high"));
     }
 
     @Test
@@ -81,16 +83,22 @@ class TacticHybridRankingServiceTest {
 
     @Test
     void shouldSurfaceCrossEncoderRerankerVerdict() {
+        when(rerankerService.rerank(any(), anyList(), eq("deep"), anyInt())).thenReturn(List.of(
+                new TacticCrossEncoderRerankerService.RerankedCandidate("planner", 0.08d,
+                        "tier deep via gpt-5.4/high"),
+                new TacticCrossEncoderRerankerService.RerankedCandidate("rollback", 0.01d,
+                        "tier deep via gpt-5.4/high")));
+
         TacticSearchExplanation explanation = rankingService.rank(query(), lexicalHits(), vectorHits())
                 .getFirst()
                 .getExplanation();
 
-        assertFalse(explanation.getRerankerVerdict().isBlank());
+        assertTrue(explanation.getRerankerVerdict().contains("gpt-5.4"));
     }
 
     @Test
     void shouldDegradeCleanlyWhenCrossEncoderRerankerIsUnavailable() {
-        when(modelSelectionService.resolveExplicitTier("deep"))
+        when(rerankerService.rerank(any(), anyList(), eq("deep"), anyInt()))
                 .thenThrow(new IllegalStateException("reranker unavailable"));
 
         TacticSearchResult result = rankingService.rank(query(), lexicalHits(), vectorHits()).getFirst();

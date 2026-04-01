@@ -68,6 +68,9 @@ public class TacticEmbeddingIndexService {
             metricsService.recordActiveMode("bm25", "embeddings disabled");
             return List.of();
         }
+        if (shouldSkipVectorSearch(config)) {
+            return List.of();
+        }
 
         ensureIndexWarm(config);
         Snapshot current = snapshot();
@@ -109,6 +112,10 @@ public class TacticEmbeddingIndexService {
     public void rebuildAll() {
         RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config = embeddingsConfig();
         if (!Boolean.TRUE.equals(config.getEnabled()) || !isProviderConfigured(config)) {
+            return;
+        }
+        if (shouldSkipVectorSearch(config)) {
+            snapshot.set(Snapshot.empty());
             return;
         }
         List<TacticIndexDocument> documents = tacticRecordService.getAll().stream()
@@ -163,6 +170,18 @@ public class TacticEmbeddingIndexService {
         return !StringValueSupport.isBlank(config.getProvider())
                 && !StringValueSupport.isBlank(config.getBaseUrl())
                 && !StringValueSupport.isBlank(config.getModel());
+    }
+
+    private boolean shouldSkipVectorSearch(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config) {
+        TacticSearchMetricsService.Snapshot metricsSnapshot = metricsService.snapshot();
+        if (!"ollama".equalsIgnoreCase(config.getProvider())) {
+            return false;
+        }
+        if (!"bm25".equalsIgnoreCase(metricsSnapshot.activeMode())) {
+            return false;
+        }
+        String reason = metricsSnapshot.lastReason();
+        return reason != null && reason.toLowerCase(java.util.Locale.ROOT).contains("local embedding");
     }
 
     private TacticSearchResult vectorResult(TacticIndexDocument document, double similarity) {

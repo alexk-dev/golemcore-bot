@@ -924,6 +924,8 @@ public class RuntimeConfig {
         private Boolean crossEncoder = true;
         @Builder.Default
         private String tier = "deep";
+        @Builder.Default
+        private Integer timeoutMs = 5000;
     }
 
     @Data

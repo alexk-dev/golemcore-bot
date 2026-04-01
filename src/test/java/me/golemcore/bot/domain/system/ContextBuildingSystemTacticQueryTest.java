@@ -15,17 +15,22 @@ import me.golemcore.bot.domain.service.TacticSearchService;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ContextBuildingSystemTacticQueryTest {
 
     @Test
-    void shouldAttachTacticQueryContextWithoutMutatingCuratedSkillSelection() {
+    void shouldAttachTacticQueryContextAsTransientAdvisoryMessageWithoutMutatingSystemPrompt() {
         ContextAssembler assembler = mock(ContextAssembler.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
@@ -46,6 +51,7 @@ class ContextBuildingSystemTacticQueryTest {
                         .content("recover from failed shell command")
                         .build())))
                 .build();
+        context.setSystemPrompt("Base prompt");
 
         when(assembler.assemble(context)).thenReturn(context);
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
@@ -57,12 +63,16 @@ class ContextBuildingSystemTacticQueryTest {
                 .id("run-1")
                 .artifactBundleId("bundle-1")
                 .build());
-        when(tacticSearchService.buildQuery(context)).thenReturn(TacticSearchQuery.builder()
+        TacticSearchQuery query = TacticSearchQuery.builder()
                 .rawQuery("recover from failed shell command")
                 .queryViews(List.of("recover", "shell", "failure"))
-                .build());
-        when(tacticSearchService.search(context)).thenReturn(List.of(TacticSearchResult.builder()
+                .build();
+        when(tacticSearchService.buildQuery(context)).thenReturn(query);
+        when(tacticSearchService.search(query)).thenReturn(List.of(TacticSearchResult.builder()
                 .tacticId("planner")
+                .title("Planner tactic")
+                .behaviorSummary("Recover from failed shell commands with a minimal ordered plan.")
+                .toolSummary("shell")
                 .promotionState("approved")
                 .build()));
 
@@ -71,5 +81,21 @@ class ContextBuildingSystemTacticQueryTest {
         assertNotNull(result.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY));
         assertNotNull(result.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_RESULTS));
         assertNull(result.getActiveSkill());
+        assertEquals("Base prompt", result.getSystemPrompt());
+        assertEquals(2, result.getMessages().size());
+        Message advisory = result.getMessages().getFirst();
+        Message userTurn = result.getMessages().get(1);
+        assertEquals("assistant", advisory.getRole());
+        assertEquals("recover from failed shell command", userTurn.getContent());
+        assertTrue(advisory.getContent().contains("Planner tactic"));
+        assertTrue(advisory.getContent().contains("advisory"));
+        assertNotNull(advisory.getMetadata());
+        assertEquals(Boolean.TRUE, advisory.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
+        assertEquals("tactic_advisory", advisory.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
+        assertFalse(result.getSession().getMessages().stream().anyMatch(message -> {
+            Map<String, Object> metadata = message.getMetadata() != null ? message.getMetadata()
+                    : new LinkedHashMap<>();
+            return Boolean.TRUE.equals(metadata.get(ContextAttributes.MESSAGE_INTERNAL));
+        }));
     }
 }

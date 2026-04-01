@@ -14,6 +14,8 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -76,6 +78,46 @@ class TacticSearchServiceTest {
         assertNotNull(results.getFirst().getExplanation());
     }
 
+    @Test
+    void shouldFilterOutIneligibleVectorOnlyResultsAfterHybridRanking() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .enabled(true)
+                        .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                                .enabled(true)
+                                .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                        .mode("hybrid")
+                                        .build())
+                                .build())
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(runtimeConfig.getSelfEvolving());
+
+        TacticBm25IndexService bm25IndexService = new TacticBm25IndexService();
+        TacticEmbeddingIndexService embeddingIndexService = mock(TacticEmbeddingIndexService.class);
+        TacticHybridRankingService rankingService = mock(TacticHybridRankingService.class);
+        TacticSearchService hybridSearchService = new TacticSearchService(
+                queryExpansionService,
+                bm25IndexService,
+                runtimeConfigService,
+                null,
+                embeddingIndexService,
+                rankingService);
+
+        TacticSearchResult active = result("active-vector", "active");
+        TacticSearchResult candidate = result("candidate-vector", "candidate");
+        TacticSearchResult reverted = result("reverted-vector", "reverted");
+        when(embeddingIndexService.search(any())).thenReturn(List.of(active, candidate, reverted));
+        when(rankingService.rank(any(), anyList(), anyList())).thenReturn(List.of(active, candidate, reverted));
+
+        List<TacticSearchResult> results = hybridSearchService.search("recover shell failure");
+
+        assertEquals(List.of("active-vector"), results.stream().map(TacticSearchResult::getTacticId).toList());
+        assertTrue(results.stream().allMatch(result -> Boolean.TRUE.equals(result.getExplanation().getEligible())));
+    }
+
     private TacticRecord tactic(String tacticId, String promotionState, String rolloutStage, String title,
             String summary) {
         return TacticRecord.builder()
@@ -94,6 +136,23 @@ class TacticSearchServiceTest {
                 .recencyScore(0.8d)
                 .golemLocalUsageSuccess(0.85d)
                 .updatedAt(Instant.parse("2026-04-01T22:00:00Z"))
+                .build();
+    }
+
+    private TacticSearchResult result(String tacticId, String promotionState) {
+        return TacticSearchResult.builder()
+                .tacticId(tacticId)
+                .artifactStreamId("stream-" + tacticId)
+                .artifactKey("skill:" + tacticId)
+                .artifactType("skill")
+                .title(tacticId)
+                .promotionState(promotionState)
+                .rolloutStage(promotionState)
+                .score(0.9d)
+                .explanation(me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation.builder()
+                        .searchMode("hybrid")
+                        .eligible(true)
+                        .build())
                 .build();
     }
 }

@@ -202,6 +202,12 @@ public final class ContextAttributes {
      */
     public static final String MESSAGE_INTERNAL_KIND_TOOL_RECOVERY = "tool_recovery";
 
+    /**
+     * String value for {@link #MESSAGE_INTERNAL_KIND}: transient tactic advisory
+     * guidance for the current turn.
+     */
+    public static final String MESSAGE_INTERNAL_KIND_TACTIC_ADVISORY = "tactic_advisory";
+
     /** Boolean ? current inbound message is an internal runtime-only message. */
     public static final String TURN_INPUT_INTERNAL = "turn.input.internal";
 

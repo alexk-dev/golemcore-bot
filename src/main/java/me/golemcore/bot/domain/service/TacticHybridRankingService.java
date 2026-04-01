@@ -42,16 +42,16 @@ public class TacticHybridRankingService {
     private static final double RRF_K = 60.0d;
 
     private final RuntimeConfigService runtimeConfigService;
-    private final ModelSelectionService modelSelectionService;
     private final TacticSearchMetricsService metricsService;
+    private final TacticCrossEncoderRerankerService rerankerService;
 
     public TacticHybridRankingService(
             RuntimeConfigService runtimeConfigService,
-            ModelSelectionService modelSelectionService,
-            TacticSearchMetricsService metricsService) {
+            TacticSearchMetricsService metricsService,
+            TacticCrossEncoderRerankerService rerankerService) {
         this.runtimeConfigService = runtimeConfigService;
-        this.modelSelectionService = modelSelectionService;
         this.metricsService = metricsService;
+        this.rerankerService = rerankerService;
     }
 
     public List<TacticSearchResult> rank(
@@ -171,15 +171,24 @@ public class TacticHybridRankingService {
             return ranked;
         }
         try {
-            ModelSelectionService.ModelSelection selection = modelSelectionService
-                    .resolveExplicitTier(rerankConfig.getTier());
+            Map<String, TacticCrossEncoderRerankerService.RerankedCandidate> rerankedCandidates = rerankerService
+                    .rerank(query, ranked, rerankConfig.getTier(), rerankConfig.getTimeoutMs()).stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            TacticCrossEncoderRerankerService.RerankedCandidate::tacticId,
+                            candidate -> candidate,
+                            (left, right) -> left,
+                            LinkedHashMap::new));
             for (TacticSearchResult result : ranked) {
-                double rerankBoost = rerankBoost(query, result);
-                result.setScore(result.getScore() + rerankBoost);
-                result.getExplanation().setFinalScore(result.getScore());
-                result.getExplanation().setRerankerVerdict(
-                        "tier " + rerankConfig.getTier() + " via " + selection.model() + "/" + selection.reasoning());
+                TacticCrossEncoderRerankerService.RerankedCandidate rerankedCandidate = rerankedCandidates
+                        .get(result.getTacticId());
+                if (rerankedCandidate != null) {
+                    result.setScore(result.getScore() + rerankedCandidate.score());
+                    result.getExplanation().setRerankerVerdict(rerankedCandidate.verdict());
+                } else {
+                    result.getExplanation().setRerankerVerdict("no rerank result");
+                }
                 result.getExplanation().setSearchMode(searchMode);
+                result.getExplanation().setFinalScore(result.getScore());
             }
             ranked.sort(Comparator.comparing(TacticSearchResult::getScore).reversed());
             metricsService.recordActiveMode(searchMode, null);
@@ -259,19 +268,6 @@ public class TacticHybridRankingService {
             }
         }
         return 0.04d * ((double) intersection / Math.max(1, Math.min(leftTokens.size(), rightTokens.size())));
-    }
-
-    private double rerankBoost(TacticSearchQuery query, TacticSearchResult result) {
-        LinkedHashSet<String> queryTokens = tokens(query.getRawQuery() + " " + String.join(" ", query.getQueryViews()));
-        LinkedHashSet<String> candidateTokens = tokens(
-                result.getTitle() + " " + result.getBehaviorSummary() + " " + result.getToolSummary());
-        int overlaps = 0;
-        for (String token : queryTokens) {
-            if (candidateTokens.contains(token)) {
-                overlaps++;
-            }
-        }
-        return Math.min(0.08d, overlaps * 0.02d);
     }
 
     private LinkedHashSet<String> tokens(String value) {

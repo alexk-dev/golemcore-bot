@@ -21,20 +21,38 @@ package me.golemcore.bot.domain.system;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchExplanationDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeEvent;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.domain.service.TacticSearchMetricsService;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class HiveRuntimeEventDispatchSystem implements AgentSystem {
 
     private final HiveEventBatchPublisher hiveEventBatchPublisher;
+    private final TacticSearchMetricsService tacticSearchMetricsService;
+
+    public HiveRuntimeEventDispatchSystem(
+            HiveEventBatchPublisher hiveEventBatchPublisher,
+            TacticSearchMetricsService tacticSearchMetricsService) {
+        this.hiveEventBatchPublisher = hiveEventBatchPublisher;
+        this.tacticSearchMetricsService = tacticSearchMetricsService;
+    }
+
+    HiveRuntimeEventDispatchSystem(HiveEventBatchPublisher hiveEventBatchPublisher) {
+        this(hiveEventBatchPublisher, null);
+    }
 
     @Override
     public String getName() {
@@ -48,6 +66,7 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
+        publishTacticSearch(context);
         if (context == null || context.getSession() == null || context.getSession().getChannelType() == null
                 || !"hive".equalsIgnoreCase(context.getSession().getChannelType())) {
             return context;
@@ -62,6 +81,31 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
             log.warn("[Hive] Failed to dispatch runtime event batch: {}", exception.getMessage());
         }
         return context;
+    }
+
+    private void publishTacticSearch(AgentContext context) {
+        if (context == null) {
+            return;
+        }
+        Object queryValue = context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY);
+        if (!(queryValue instanceof TacticSearchQuery tacticSearchQuery)) {
+            return;
+        }
+        String query = resolveQuery(tacticSearchQuery);
+        if (query == null) {
+            return;
+        }
+        List<TacticSearchResult> results = extractTacticResults(context);
+        try {
+            hiveEventBatchPublisher
+                    .publishSelfEvolvingTacticSearchProjection(SelfEvolvingTacticSearchResponseDto.builder()
+                            .query(query)
+                            .status(buildTacticSearchStatusDto())
+                            .results(results.stream().map(this::toSearchResultDto).toList())
+                            .build());
+        } catch (RuntimeException exception) {
+            log.warn("[Hive] Failed to publish tactic search projection: {}", exception.getMessage());
+        }
     }
 
     private Map<String, Object> buildMetadata(AgentContext context) {
@@ -79,5 +123,98 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
         if (value instanceof String stringValue && !stringValue.isBlank()) {
             metadata.put(key, stringValue);
         }
+    }
+
+    private List<TacticSearchResult> extractTacticResults(AgentContext context) {
+        Object resultsValue = context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_RESULTS);
+        if (!(resultsValue instanceof List<?> rawResults) || rawResults.isEmpty()) {
+            return List.of();
+        }
+        return rawResults.stream()
+                .filter(TacticSearchResult.class::isInstance)
+                .map(TacticSearchResult.class::cast)
+                .toList();
+    }
+
+    private String resolveQuery(TacticSearchQuery tacticSearchQuery) {
+        if (tacticSearchQuery.getRawQuery() != null && !tacticSearchQuery.getRawQuery().isBlank()) {
+            return tacticSearchQuery.getRawQuery().trim();
+        }
+        if (tacticSearchQuery.getQueryViews() != null && !tacticSearchQuery.getQueryViews().isEmpty()) {
+            return String.join(" ", tacticSearchQuery.getQueryViews()).trim();
+        }
+        return null;
+    }
+
+    private SelfEvolvingTacticSearchStatusDto buildTacticSearchStatusDto() {
+        if (tacticSearchMetricsService == null) {
+            return SelfEvolvingTacticSearchStatusDto.builder()
+                    .mode("bm25")
+                    .degraded(false)
+                    .build();
+        }
+        TacticSearchMetricsService.Snapshot snapshot = tacticSearchMetricsService.snapshot();
+        return SelfEvolvingTacticSearchStatusDto.builder()
+                .mode(snapshot.activeMode())
+                .reason(snapshot.lastReason())
+                .degraded(snapshot.degraded())
+                .updatedAt(snapshot.updatedAt() != null ? snapshot.updatedAt().toString() : null)
+                .build();
+    }
+
+    private SelfEvolvingTacticSearchResultDto toSearchResultDto(TacticSearchResult result) {
+        return SelfEvolvingTacticSearchResultDto.builder()
+                .tacticId(result.getTacticId())
+                .artifactStreamId(result.getArtifactStreamId())
+                .originArtifactStreamId(result.getOriginArtifactStreamId())
+                .artifactKey(result.getArtifactKey())
+                .artifactType(result.getArtifactType())
+                .title(result.getTitle())
+                .aliases(result.getAliases())
+                .contentRevisionId(result.getContentRevisionId())
+                .intentSummary(result.getIntentSummary())
+                .behaviorSummary(result.getBehaviorSummary())
+                .toolSummary(result.getToolSummary())
+                .outcomeSummary(result.getOutcomeSummary())
+                .benchmarkSummary(result.getBenchmarkSummary())
+                .approvalNotes(result.getApprovalNotes())
+                .evidenceSnippets(result.getEvidenceSnippets())
+                .taskFamilies(result.getTaskFamilies())
+                .tags(result.getTags())
+                .promotionState(result.getPromotionState())
+                .rolloutStage(result.getRolloutStage())
+                .score(result.getScore())
+                .successRate(result.getSuccessRate())
+                .benchmarkWinRate(result.getBenchmarkWinRate())
+                .regressionFlags(result.getRegressionFlags())
+                .recencyScore(result.getRecencyScore())
+                .golemLocalUsageSuccess(result.getGolemLocalUsageSuccess())
+                .embeddingStatus(result.getEmbeddingStatus())
+                .updatedAt(result.getUpdatedAt() != null ? result.getUpdatedAt().toString() : null)
+                .explanation(toExplanationDto(result.getExplanation()))
+                .build();
+    }
+
+    private SelfEvolvingTacticSearchExplanationDto toExplanationDto(TacticSearchExplanation explanation) {
+        if (explanation == null) {
+            return null;
+        }
+        return SelfEvolvingTacticSearchExplanationDto.builder()
+                .searchMode(explanation.getSearchMode())
+                .degradedReason(explanation.getDegradedReason())
+                .bm25Score(explanation.getBm25Score())
+                .vectorScore(explanation.getVectorScore())
+                .rrfScore(explanation.getRrfScore())
+                .qualityPrior(explanation.getQualityPrior())
+                .mmrDiversityAdjustment(explanation.getMmrDiversityAdjustment())
+                .negativeMemoryPenalty(explanation.getNegativeMemoryPenalty())
+                .personalizationBoost(explanation.getPersonalizationBoost())
+                .rerankerVerdict(explanation.getRerankerVerdict())
+                .matchedQueryViews(explanation.getMatchedQueryViews())
+                .matchedTerms(explanation.getMatchedTerms())
+                .eligible(explanation.getEligible())
+                .gatingReason(explanation.getGatingReason())
+                .finalScore(explanation.getFinalScore())
+                .build();
     }
 }

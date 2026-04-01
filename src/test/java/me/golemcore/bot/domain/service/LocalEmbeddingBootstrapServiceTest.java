@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -95,6 +96,18 @@ class LocalEmbeddingBootstrapServiceTest {
         assertTrue(status.getPullSucceeded());
         assertEquals(1, bootstrapService.pullAttempts);
         assertEquals("hybrid", metricsService.snapshot().activeMode());
+    }
+
+    @Test
+    void shouldInitializeTacticSearchStatusOnStartup() {
+        bootstrapService.runtimeHealthy = true;
+        bootstrapService.modelPresent = true;
+
+        ReflectionTestUtils.invokeMethod(bootstrapService, "initializeOnStartup");
+
+        assertEquals("hybrid", metricsService.snapshot().activeMode());
+        assertFalse(metricsService.snapshot().degraded());
+        assertEquals(0L, metricsService.snapshot().fallbackCount());
     }
 
     private static final class StubLocalEmbeddingBootstrapService extends LocalEmbeddingBootstrapService {

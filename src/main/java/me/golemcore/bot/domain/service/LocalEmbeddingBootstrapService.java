@@ -18,9 +18,17 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -34,6 +42,7 @@ import java.util.Locale;
 @Slf4j
 public class LocalEmbeddingBootstrapService {
 
+    private static final MediaType JSON = MediaType.get("application/json");
     private static final String MODE_BM25 = "bm25";
     private static final String MODE_HYBRID = "hybrid";
     private static final String PROVIDER_OLLAMA = "ollama";
@@ -41,13 +50,30 @@ public class LocalEmbeddingBootstrapService {
     private final RuntimeConfigService runtimeConfigService;
     private final TacticSearchMetricsService metricsService;
     private final Clock clock;
+    private final OkHttpClient okHttpClient;
+    private final ObjectMapper objectMapper;
 
     public LocalEmbeddingBootstrapService(RuntimeConfigService runtimeConfigService,
             TacticSearchMetricsService metricsService,
-            Clock clock) {
+            Clock clock,
+            OkHttpClient okHttpClient,
+            ObjectMapper objectMapper) {
         this.runtimeConfigService = runtimeConfigService;
         this.metricsService = metricsService;
         this.clock = clock;
+        this.okHttpClient = okHttpClient;
+        this.objectMapper = objectMapper;
+    }
+
+    LocalEmbeddingBootstrapService(RuntimeConfigService runtimeConfigService,
+            TacticSearchMetricsService metricsService,
+            Clock clock) {
+        this(runtimeConfigService, metricsService, clock, new OkHttpClient(), new ObjectMapper());
+    }
+
+    @PostConstruct
+    public void initializeOnStartup() {
+        initialize();
     }
 
     public TacticSearchStatus initialize() {
@@ -120,15 +146,54 @@ public class LocalEmbeddingBootstrapService {
     }
 
     protected boolean isRuntimeHealthy(String baseUrl) {
-        return false;
+        Request request = new Request.Builder()
+                .url(joinUrl(baseUrl, "/api/tags"))
+                .get()
+                .build();
+        try (Response response = okHttpClient.newCall(request).execute()) {
+            return response.isSuccessful();
+        } catch (Exception exception) {
+            return false;
+        }
     }
 
     protected boolean hasModel(String baseUrl, String model) {
-        return false;
+        Request request = new Request.Builder()
+                .url(joinUrl(baseUrl, "/api/tags"))
+                .get()
+                .build();
+        try (Response response = okHttpClient.newCall(request).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                return false;
+            }
+            JsonNode json = objectMapper.readTree(response.body().bytes());
+            for (JsonNode node : json.path("models")) {
+                String candidate = node.path("name").asText();
+                if (model.equals(candidate)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception exception) {
+            return false;
+        }
     }
 
     protected boolean pullModel(String baseUrl, String model) {
-        return false;
+        try {
+            byte[] payload = objectMapper.writeValueAsBytes(java.util.Map.of(
+                    "model", model,
+                    "stream", false));
+            Request request = new Request.Builder()
+                    .url(joinUrl(baseUrl, "/api/pull"))
+                    .post(RequestBody.create(payload, JSON))
+                    .build();
+            try (Response response = okHttpClient.newCall(request).execute()) {
+                return response.isSuccessful();
+            }
+        } catch (Exception exception) {
+            return false;
+        }
     }
 
     private boolean shouldPullOnStart(RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig) {
@@ -197,5 +262,13 @@ public class LocalEmbeddingBootstrapService {
             return null;
         }
         return value.trim();
+    }
+
+    private String joinUrl(String baseUrl, String path) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalArgumentException("Embedding base URL must not be blank");
+        }
+        String normalizedBase = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        return normalizedBase + path;
     }
 }

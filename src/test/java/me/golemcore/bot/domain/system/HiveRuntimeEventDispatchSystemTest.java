@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.system;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
@@ -11,11 +12,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import org.junit.jupiter.api.Test;
 
 class HiveRuntimeEventDispatchSystemTest {
@@ -72,5 +77,43 @@ class HiveRuntimeEventDispatchSystemTest {
         system.process(context);
 
         verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void shouldPublishRuntimeTacticSearchProjectionFromContextAttributes() {
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id("web:chat-1")
+                        .channelType("web")
+                        .chatId("chat-1")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY, TacticSearchQuery.builder()
+                .rawQuery("recover failed shell command")
+                .queryViews(List.of("recover", "shell"))
+                .build());
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_RESULTS, List.of(TacticSearchResult.builder()
+                .tacticId("planner")
+                .artifactStreamId("stream-planner")
+                .artifactKey("skill:planner")
+                .artifactType("skill")
+                .title("Planner tactic")
+                .promotionState("active")
+                .rolloutStage("active")
+                .score(1.12d)
+                .explanation(TacticSearchExplanation.builder()
+                        .searchMode("hybrid")
+                        .eligible(true)
+                        .finalScore(1.12d)
+                        .build())
+                .build()));
+
+        system.process(context);
+
+        verify(publisher).publishSelfEvolvingTacticSearchProjection(any(SelfEvolvingTacticSearchResponseDto.class));
     }
 }
