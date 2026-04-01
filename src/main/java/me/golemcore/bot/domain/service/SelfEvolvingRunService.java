@@ -99,7 +99,7 @@ public class SelfEvolvingRunService {
         }
         ArtifactBundleRecord refreshedBundle = artifactBundleService.refresh(run.getArtifactBundleId(), context);
         run.setTraceId(context.getTraceContext() != null ? context.getTraceContext().getTraceId() : run.getTraceId());
-        run.setArtifactBundleId(refreshedBundle != null ? refreshedBundle.getId() : run.getArtifactBundleId());
+        run.setArtifactBundleId(refreshedBundle.getId());
         run.setCompletedAt(Instant.now(clock));
         run.setStatus(resolveCompletionStatus(context));
         save(run);

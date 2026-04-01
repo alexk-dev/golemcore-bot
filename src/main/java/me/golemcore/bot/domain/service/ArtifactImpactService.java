@@ -98,8 +98,9 @@ public class ArtifactImpactService {
 
     private int countChangedBindings(Map<String, String> baselineBindings, Map<String, String> candidateBindings) {
         int changed = 0;
-        for (String artifactStreamId : baselineBindings.keySet()) {
-            if (!StringValueSupport.nullSafe(baselineBindings.get(artifactStreamId))
+        for (Map.Entry<String, String> entry : baselineBindings.entrySet()) {
+            String artifactStreamId = entry.getKey();
+            if (!StringValueSupport.nullSafe(entry.getValue())
                     .equals(StringValueSupport.nullSafe(candidateBindings.get(artifactStreamId)))) {
                 changed++;
             }
