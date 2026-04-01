@@ -43,6 +43,8 @@ public class ScheduleEntry {
     private String cronExpression;
     private boolean enabled;
     private boolean clearContextBeforeRun;
+    private String reportChannelType;
+    private String reportChatId;
 
     @Builder.Default
     private int maxExecutions = -1;

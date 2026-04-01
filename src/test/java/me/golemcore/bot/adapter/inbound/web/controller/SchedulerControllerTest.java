@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -20,9 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -33,13 +36,15 @@ class SchedulerControllerTest {
 
     private AutoModeService autoModeService;
     private ScheduleService scheduleService;
+    private ChannelRegistry channelRegistry;
     private SchedulerController controller;
 
     @BeforeEach
     void setUp() {
         autoModeService = mock(AutoModeService.class);
         scheduleService = mock(ScheduleService.class);
-        controller = new SchedulerController(autoModeService, scheduleService);
+        channelRegistry = mock(ChannelRegistry.class);
+        controller = new SchedulerController(autoModeService, scheduleService, channelRegistry);
     }
 
     @Test
@@ -244,7 +249,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"), eq("0 0 9 * * *"),
-                eq(5)))
+                eq(5), eq(false), isNull(), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -288,7 +293,7 @@ class SchedulerControllerTest {
         when(autoModeService.findGoalForTask("task-1")).thenReturn(Optional.of(taskGoal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal, taskGoal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.TASK), eq("task-1"),
-                eq("0 30 18 * * MON,THU"), eq(-1)))
+                eq("0 30 18 * * MON,THU"), eq(-1), eq(false), isNull(), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -329,7 +334,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 15 8 * * MON-FRI"), eq(1)))
+                eq("0 15 8 * * MON-FRI"), eq(1), eq(false), isNull(), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -364,7 +369,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 0 7 * * MON,TUE,WED,THU,FRI,SAT,SUN"), eq(1)))
+                eq("0 0 7 * * MON,TUE,WED,THU,FRI,SAT,SUN"), eq(1), eq(false), isNull(), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -399,7 +404,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 0 9 * * *"), eq(-1)))
+                eq("0 0 9 * * *"), eq(-1), eq(false), isNull(), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -439,7 +444,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 */5 * * * *"), eq(-1)))
+                eq("0 */5 * * * *"), eq(-1), eq(false), isNull(), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -487,7 +492,9 @@ class SchedulerControllerTest {
                 eq("goal-1"),
                 eq("0 0 9 * * *"),
                 eq(1),
-                eq(true)))
+                eq(true),
+                isNull(),
+                isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -530,7 +537,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 45 8 * * MON,WED,FRI"), eq(1)))
+                eq("0 45 8 * * MON,WED,FRI"), eq(1), eq(false), isNull(), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -575,6 +582,10 @@ class SchedulerControllerTest {
                 eq("goal-1"),
                 eq("0 0 6 * * *"),
                 eq(2),
+                eq(false),
+                isNull(),
+                isNull(),
+                isNull(),
                 eq(false)))
                 .thenReturn(updated);
 
@@ -625,7 +636,11 @@ class SchedulerControllerTest {
                 eq("goal-1"),
                 eq("0 0 6 * * *"),
                 eq(2),
-                eq(true)))
+                eq(true),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(false)))
                 .thenReturn(updated);
 
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
@@ -675,7 +690,10 @@ class SchedulerControllerTest {
                 eq("0 0 6 * * *"),
                 eq(2),
                 eq(true),
-                eq(true)))
+                eq(true),
+                isNull(),
+                isNull(),
+                eq(false)))
                 .thenReturn(updated);
 
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
@@ -731,7 +749,8 @@ class SchedulerControllerTest {
 
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
-        when(scheduleService.createSchedule(any(ScheduleEntry.ScheduleType.class), anyString(), anyString(), anyInt()))
+        when(scheduleService.createSchedule(any(ScheduleEntry.ScheduleType.class), anyString(), anyString(), anyInt(),
+                anyBoolean(), any(), any()))
                 .thenThrow(new IllegalArgumentException("broken schedule"));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(

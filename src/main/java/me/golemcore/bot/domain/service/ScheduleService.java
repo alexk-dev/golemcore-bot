@@ -84,6 +84,15 @@ public class ScheduleService {
      */
     public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
             String cronExpression, int maxExecutions, boolean clearContextBeforeRun) {
+        return createSchedule(type, targetId, cronExpression, maxExecutions, clearContextBeforeRun, null, null);
+    }
+
+    /**
+     * Create a new schedule entry with report channel configuration.
+     */
+    public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
+            String cronExpression, int maxExecutions, boolean clearContextBeforeRun,
+            String reportChannelType, String reportChatId) {
         String normalizedCron = normalizeCronExpression(cronExpression);
 
         Instant now = clock.instant();
@@ -97,6 +106,8 @@ public class ScheduleService {
                 .cronExpression(normalizedCron)
                 .enabled(true)
                 .clearContextBeforeRun(clearContextBeforeRun)
+                .reportChannelType(reportChannelType)
+                .reportChatId(reportChatId)
                 .maxExecutions(maxExecutions)
                 .executionCount(0)
                 .createdAt(now)
@@ -136,6 +147,24 @@ public class ScheduleService {
             int maxExecutions,
             boolean enabled,
             Boolean clearContextBeforeRun) {
+        return updateSchedule(id, type, targetId, cronExpression, maxExecutions, enabled, clearContextBeforeRun,
+                null, null, false);
+    }
+
+    /**
+     * Update an existing schedule entry with report channel configuration.
+     */
+    public ScheduleEntry updateSchedule(
+            String id,
+            ScheduleEntry.ScheduleType type,
+            String targetId,
+            String cronExpression,
+            int maxExecutions,
+            boolean enabled,
+            Boolean clearContextBeforeRun,
+            String reportChannelType,
+            String reportChatId,
+            boolean updateReportChannel) {
         ScheduleEntry entry = findSchedule(id)
                 .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
 
@@ -151,6 +180,10 @@ public class ScheduleService {
         entry.setEnabled(enabled && !exhausted);
         if (clearContextBeforeRun != null) {
             entry.setClearContextBeforeRun(clearContextBeforeRun);
+        }
+        if (updateReportChannel) {
+            entry.setReportChannelType(reportChannelType);
+            entry.setReportChatId(reportChatId);
         }
         if (entry.isEnabled()) {
             entry.setNextExecutionAt(computeNextExecution(normalizedCron, now));

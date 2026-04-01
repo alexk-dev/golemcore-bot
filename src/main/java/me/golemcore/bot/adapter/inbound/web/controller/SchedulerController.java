@@ -7,6 +7,8 @@ import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.plugin.runtime.ChannelRegistry;
+import me.golemcore.bot.port.inbound.ChannelPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -44,10 +46,20 @@ public class SchedulerController {
 
     private final AutoModeService autoModeService;
     private final ScheduleService scheduleService;
+    private final ChannelRegistry channelRegistry;
 
     @GetMapping
     public Mono<ResponseEntity<SchedulerStateResponse>> getState() {
         return Mono.just(ResponseEntity.ok(buildSchedulerStateResponse()));
+    }
+
+    @GetMapping("/channels")
+    public Mono<ResponseEntity<ChannelsResponse>> getAvailableChannels() {
+        List<ChannelDto> channels = channelRegistry.getAll().stream()
+                .filter(ChannelPort::isRunning)
+                .map(channel -> new ChannelDto(channel.getChannelType(), channel.getChannelType()))
+                .toList();
+        return Mono.just(ResponseEntity.ok(new ChannelsResponse(channels)));
     }
 
     @PostMapping("/schedules")
@@ -69,9 +81,14 @@ public class SchedulerController {
                     mode,
                     request.cronExpression());
 
-            ScheduleEntry entry = Boolean.TRUE.equals(request.clearContextBeforeRun())
-                    ? scheduleService.createSchedule(targetType, targetId, cronExpression, maxExecutions, true)
-                    : scheduleService.createSchedule(targetType, targetId, cronExpression, maxExecutions);
+            String reportChannelType = normalizeOptionalString(request.reportChannelType());
+            String reportChatId = normalizeOptionalString(request.reportChatId());
+            validateReportChannel(reportChannelType, reportChatId);
+
+            ScheduleEntry entry = scheduleService.createSchedule(
+                    targetType, targetId, cronExpression, maxExecutions,
+                    Boolean.TRUE.equals(request.clearContextBeforeRun()),
+                    reportChannelType, reportChatId);
             String targetLabel = resolveTargetLabel(entry, autoModeService.getGoals());
             return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toScheduleDto(entry, targetLabel)));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -101,22 +118,24 @@ public class SchedulerController {
                     mode,
                     request.cronExpression());
 
-            ScheduleEntry entry = request.clearContextBeforeRun() != null
-                    ? scheduleService.updateSchedule(
-                            normalizedScheduleId,
-                            targetType,
-                            targetId,
-                            cronExpression,
-                            maxExecutions,
-                            normalizeEnabled(request.enabled()),
-                            request.clearContextBeforeRun())
-                    : scheduleService.updateSchedule(
-                            normalizedScheduleId,
-                            targetType,
-                            targetId,
-                            cronExpression,
-                            maxExecutions,
-                            normalizeEnabled(request.enabled()));
+            String reportChannelType = normalizeOptionalString(request.reportChannelType());
+            String reportChatId = normalizeOptionalString(request.reportChatId());
+            boolean updateReportChannel = request.reportChannelType() != null || request.reportChatId() != null;
+            if (updateReportChannel) {
+                validateReportChannel(reportChannelType, reportChatId);
+            }
+
+            ScheduleEntry entry = scheduleService.updateSchedule(
+                    normalizedScheduleId,
+                    targetType,
+                    targetId,
+                    cronExpression,
+                    maxExecutions,
+                    normalizeEnabled(request.enabled()),
+                    request.clearContextBeforeRun(),
+                    reportChannelType,
+                    reportChatId,
+                    updateReportChannel);
             String targetLabel = resolveTargetLabel(entry, autoModeService.getGoals());
             return Mono.just(ResponseEntity.ok(toScheduleDto(entry, targetLabel)));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -235,6 +254,8 @@ public class SchedulerController {
                 entry.getCronExpression(),
                 entry.isEnabled(),
                 entry.isClearContextBeforeRun(),
+                entry.getReportChannelType(),
+                entry.getReportChatId(),
                 entry.getMaxExecutions(),
                 entry.getExecutionCount(),
                 entry.getCreatedAt(),
@@ -497,7 +518,9 @@ public class SchedulerController {
             Integer maxExecutions,
             String mode,
             String cronExpression,
-            Boolean clearContextBeforeRun) {
+            Boolean clearContextBeforeRun,
+            String reportChannelType,
+            String reportChatId) {
 
         public CreateScheduleRequest(
                 String targetType,
@@ -506,7 +529,7 @@ public class SchedulerController {
                 List<Integer> days,
                 String time,
                 Integer maxExecutions) {
-            this(targetType, targetId, frequency, days, time, maxExecutions, null, null, null);
+            this(targetType, targetId, frequency, days, time, maxExecutions, null, null, null, null, null);
         }
 
         public CreateScheduleRequest(
@@ -518,7 +541,21 @@ public class SchedulerController {
                 Integer maxExecutions,
                 String mode,
                 String cronExpression) {
-            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, null);
+            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, null, null, null);
+        }
+
+        public CreateScheduleRequest(
+                String targetType,
+                String targetId,
+                String frequency,
+                List<Integer> days,
+                String time,
+                Integer maxExecutions,
+                String mode,
+                String cronExpression,
+                Boolean clearContextBeforeRun) {
+            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression,
+                    clearContextBeforeRun, null, null);
         }
     }
 
@@ -532,7 +569,9 @@ public class SchedulerController {
             String mode,
             String cronExpression,
             Boolean enabled,
-            Boolean clearContextBeforeRun) {
+            Boolean clearContextBeforeRun,
+            String reportChannelType,
+            String reportChatId) {
 
         public UpdateScheduleRequest(
                 String targetType,
@@ -544,7 +583,23 @@ public class SchedulerController {
                 String mode,
                 String cronExpression,
                 Boolean enabled) {
-            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, enabled, null);
+            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, enabled, null,
+                    null, null);
+        }
+
+        public UpdateScheduleRequest(
+                String targetType,
+                String targetId,
+                String frequency,
+                List<Integer> days,
+                String time,
+                Integer maxExecutions,
+                String mode,
+                String cronExpression,
+                Boolean enabled,
+                Boolean clearContextBeforeRun) {
+            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, enabled,
+                    clearContextBeforeRun, null, null);
         }
     }
 
@@ -586,6 +641,8 @@ public class SchedulerController {
             String cronExpression,
             boolean enabled,
             boolean clearContextBeforeRun,
+            String reportChannelType,
+            String reportChatId,
             int maxExecutions,
             int executionCount,
             Instant createdAt,
@@ -595,5 +652,27 @@ public class SchedulerController {
     }
 
     public record DeleteScheduleResponse(String scheduleId) {
+    }
+
+    public record ChannelsResponse(List<ChannelDto> channels) {
+    }
+
+    public record ChannelDto(String type, String label) {
+    }
+
+    private static void validateReportChannel(String channelType, String chatId) {
+        if (channelType != null && chatId == null) {
+            throw badRequest("reportChatId is required when reportChannelType is set");
+        }
+        if (channelType == null && chatId != null) {
+            throw badRequest("reportChannelType is required when reportChatId is set");
+        }
+    }
+
+    private static String normalizeOptionalString(String value) {
+        if (StringValueSupport.isBlank(value)) {
+            return null;
+        }
+        return value.trim();
     }
 }

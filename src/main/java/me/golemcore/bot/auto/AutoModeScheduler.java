@@ -265,13 +265,18 @@ public class AutoModeScheduler {
             return;
         }
 
-        ChannelInfo info = channelInfo;
+        ChannelInfo info = resolveEffectiveChannelInfo(schedule);
         String sessionChatId = info != null ? info.sessionChatId() : "auto";
         String transportChatId = info != null ? info.transportChatId() : sessionChatId;
         String channelType = info != null ? info.channelType() : "auto";
         String runId = UUID.randomUUID().toString();
         if (schedule.isClearContextBeforeRun()) {
             clearSessionContext(channelType, sessionChatId, schedule.getId());
+        }
+
+        ChannelInfo previousChannelInfo = channelInfo;
+        if (info != null && hasScheduleReportChannel(schedule)) {
+            channelInfo = info;
         }
 
         try {
@@ -303,6 +308,10 @@ public class AutoModeScheduler {
                     null);
             log.error("[AutoScheduler] Failed to process schedule {}: {}",
                     schedule.getId(), e.getMessage(), e);
+        } finally {
+            if (hasScheduleReportChannel(schedule)) {
+                channelInfo = previousChannelInfo;
+            }
         }
     }
 
@@ -524,6 +533,19 @@ public class AutoModeScheduler {
         sessionPort.clearMessages(sessionId);
         log.info("[AutoScheduler] Cleared session context before schedule run: scheduleId={}, sessionId={}",
                 scheduleId, sessionId);
+    }
+
+    private ChannelInfo resolveEffectiveChannelInfo(ScheduleEntry schedule) {
+        if (hasScheduleReportChannel(schedule)) {
+            return new ChannelInfo(schedule.getReportChannelType(), schedule.getReportChatId(),
+                    schedule.getReportChatId());
+        }
+        return channelInfo;
+    }
+
+    private static boolean hasScheduleReportChannel(ScheduleEntry schedule) {
+        return schedule.getReportChannelType() != null && !schedule.getReportChannelType().isBlank()
+                && schedule.getReportChatId() != null && !schedule.getReportChatId().isBlank();
     }
 
     private ScheduleMessage buildMessageForSchedule(ScheduleEntry schedule) {
