@@ -311,6 +311,20 @@ public final class ContextAttributes {
     /** Boolean ? whether post-run SelfEvolving analysis already completed. */
     public static final String SELF_EVOLVING_ANALYSIS_COMPLETED = "selfevolving.analysis.completed";
 
+    /** TacticSearchQuery ? expanded tactic search query for the active turn. */
+    public static final String SELF_EVOLVING_TACTIC_QUERY = "selfevolving.tactic.query";
+
+    /**
+     * List<TacticSearchResult> ? tactic-search candidates prepared for the turn.
+     */
+    public static final String SELF_EVOLVING_TACTIC_RESULTS = "selfevolving.tactic.results";
+
+    /** TacticSearchResult ? selected tactic candidate for runtime guidance. */
+    public static final String SELF_EVOLVING_TACTIC_SELECTION = "selfevolving.tactic.selection";
+
+    /** TacticSearchResult ? tactic guidance carried across pipeline transitions. */
+    public static final String SELF_EVOLVING_TACTIC_GUIDANCE = "selfevolving.tactic.guidance";
+
     /** Map<String,Object> ? latest structured compaction details. */
     public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";
 

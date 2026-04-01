@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SelfEvolvingRunService;
+import me.golemcore.bot.domain.service.TacticSearchService;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -45,17 +46,26 @@ public class ContextBuildingSystem implements AgentSystem {
     private final ContextAssembler contextAssembler;
     private final RuntimeConfigService runtimeConfigService;
     private final SelfEvolvingRunService selfEvolvingRunService;
+    private final TacticSearchService tacticSearchService;
+
+    public ContextBuildingSystem(ContextAssembler contextAssembler,
+            RuntimeConfigService runtimeConfigService,
+            SelfEvolvingRunService selfEvolvingRunService,
+            TacticSearchService tacticSearchService) {
+        this.contextAssembler = contextAssembler;
+        this.runtimeConfigService = runtimeConfigService;
+        this.selfEvolvingRunService = selfEvolvingRunService;
+        this.tacticSearchService = tacticSearchService;
+    }
 
     public ContextBuildingSystem(ContextAssembler contextAssembler,
             RuntimeConfigService runtimeConfigService,
             SelfEvolvingRunService selfEvolvingRunService) {
-        this.contextAssembler = contextAssembler;
-        this.runtimeConfigService = runtimeConfigService;
-        this.selfEvolvingRunService = selfEvolvingRunService;
+        this(contextAssembler, runtimeConfigService, selfEvolvingRunService, null);
     }
 
     ContextBuildingSystem(ContextAssembler contextAssembler) {
-        this(contextAssembler, null, null);
+        this(contextAssembler, null, null, null);
     }
 
     @Override
@@ -72,6 +82,7 @@ public class ContextBuildingSystem implements AgentSystem {
     public AgentContext process(AgentContext context) {
         AgentContext assembledContext = contextAssembler.assemble(context);
         ensureSelfEvolvingRun(assembledContext);
+        attachTacticQueryContext(assembledContext);
         return assembledContext;
     }
 
@@ -88,5 +99,27 @@ public class ContextBuildingSystem implements AgentSystem {
         context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, run.getId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, run.getArtifactBundleId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED, false);
+    }
+
+    private void attachTacticQueryContext(AgentContext context) {
+        if (runtimeConfigService == null || tacticSearchService == null || context == null
+                || !runtimeConfigService.isSelfEvolvingEnabled()) {
+            return;
+        }
+        if (runtimeConfigService.getSelfEvolvingConfig().getTactics() == null
+                || !Boolean.TRUE.equals(runtimeConfigService.getSelfEvolvingConfig().getTactics().getEnabled())) {
+            return;
+        }
+        try {
+            var query = tacticSearchService.buildQuery(context);
+            context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY, query);
+            var results = tacticSearchService.search(query);
+            context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_RESULTS, results);
+            if (results != null && !results.isEmpty()) {
+                context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION, results.getFirst());
+            }
+        } catch (RuntimeException exception) { // NOSONAR - tactic search must never break context assembly
+            log.warn("[ContextBuildingSystem] Failed to attach tactic search context: {}", exception.getMessage());
+        }
     }
 }

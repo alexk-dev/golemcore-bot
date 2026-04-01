@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -50,18 +51,27 @@ public class TacticRecordService {
     private final StoragePort storagePort;
     private final Clock clock;
     private final ObjectMapper objectMapper;
+    private final ObjectProvider<TacticIndexRebuildService> rebuildServiceProvider;
     private final AtomicReference<List<TacticRecord>> cache = new AtomicReference<>();
 
     @Autowired
-    public TacticRecordService(StoragePort storagePort, Clock clock) {
+    public TacticRecordService(
+            StoragePort storagePort,
+            Clock clock,
+            ObjectProvider<TacticIndexRebuildService> rebuildServiceProvider) {
         this.storagePort = storagePort;
         this.clock = clock;
+        this.rebuildServiceProvider = rebuildServiceProvider;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     public TacticRecordService(StoragePort storagePort) {
-        this(storagePort, Clock.systemUTC());
+        this(storagePort, Clock.systemUTC(), null);
+    }
+
+    public TacticRecordService(StoragePort storagePort, Clock clock) {
+        this(storagePort, clock, null);
     }
 
     public TacticRecord save(TacticRecord record) {
@@ -70,6 +80,7 @@ public class TacticRecordService {
             String path = TACTICS_PREFIX + normalized.getTacticId() + ".json";
             storagePort.putText(SELF_EVOLVING_DIR, path, objectMapper.writeValueAsString(normalized)).join();
             upsertCache(normalized);
+            triggerRebuild(normalized.getTacticId());
             return normalized;
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to serialize tactic record", exception);
@@ -199,5 +210,15 @@ public class TacticRecordService {
             }
         }
         return null;
+    }
+
+    private void triggerRebuild(String tacticId) {
+        if (rebuildServiceProvider == null) {
+            return;
+        }
+        TacticIndexRebuildService rebuildService = rebuildServiceProvider.getIfAvailable();
+        if (rebuildService != null) {
+            rebuildService.onTacticChanged(tacticId);
+        }
     }
 }

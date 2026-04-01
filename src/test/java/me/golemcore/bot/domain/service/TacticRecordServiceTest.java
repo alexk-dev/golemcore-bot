@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -38,6 +39,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -46,11 +48,17 @@ class TacticRecordServiceTest {
     private StoragePort storagePort;
     private Map<String, String> persistedFiles;
     private TacticRecordService tacticRecordService;
+    private TacticIndexRebuildService rebuildService;
+    private ObjectProvider<TacticIndexRebuildService> rebuildServiceProvider;
 
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setUp() {
         storagePort = mock(StoragePort.class);
         persistedFiles = new ConcurrentHashMap<>();
+        rebuildService = mock(TacticIndexRebuildService.class);
+        rebuildServiceProvider = mock(ObjectProvider.class);
+        when(rebuildServiceProvider.getIfAvailable()).thenReturn(rebuildService);
 
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenAnswer(invocation -> {
@@ -78,7 +86,8 @@ class TacticRecordServiceTest {
 
         tacticRecordService = new TacticRecordService(
                 storagePort,
-                Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC),
+                rebuildServiceProvider);
     }
 
     @Test
@@ -89,6 +98,7 @@ class TacticRecordServiceTest {
         assertFalse(storagePort.listObjects("self-evolving", "tactics").join().isEmpty());
         assertTrue(persistedFiles.keySet().stream().anyMatch(path -> path.startsWith("self-evolving/tactics/")));
         verify(storagePort, never()).putText(eq("skills"), anyString(), anyString());
+        verify(rebuildService, times(1)).onTacticChanged("tactic-1");
     }
 
     private TacticRecord sampleTactic() {
