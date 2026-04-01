@@ -98,6 +98,15 @@ public class TacticRecordService {
         return new ArrayList<>(cached);
     }
 
+    public java.util.Optional<TacticRecord> getById(String tacticId) {
+        if (StringValueSupport.isBlank(tacticId)) {
+            return java.util.Optional.empty();
+        }
+        return getAll().stream()
+                .filter(record -> record != null && tacticId.trim().equals(record.getTacticId()))
+                .findFirst();
+    }
+
     private List<TacticRecord> loadAll() {
         List<String> paths;
         try {

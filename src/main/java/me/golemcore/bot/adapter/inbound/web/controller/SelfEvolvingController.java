@@ -13,6 +13,9 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvi
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactRevisionDiffDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactTransitionDiffDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactWorkspaceSummaryDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchExplanationDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.service.BenchmarkLabService;
@@ -185,6 +188,47 @@ public class SelfEvolvingController {
                 .getArtifactCompareOptions(artifactStreamId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
         return Mono.just(ResponseEntity.ok(compareOptions));
+    }
+
+    @GetMapping("/tactics")
+    public Mono<ResponseEntity<List<SelfEvolvingTacticDto>>> listTactics() {
+        return Mono.just(ResponseEntity.ok(projectionService.listTactics()));
+    }
+
+    @GetMapping("/tactics/search")
+    public Mono<ResponseEntity<SelfEvolvingTacticSearchResponseDto>> searchTactics(
+            @RequestParam(name = "q", required = false) String query) {
+        return Mono.just(ResponseEntity.ok(projectionService.searchTactics(query)));
+    }
+
+    @GetMapping("/tactics/{tacticId}")
+    public Mono<ResponseEntity<SelfEvolvingTacticDto>> getTactic(@PathVariable String tacticId) {
+        SelfEvolvingTacticDto tactic = projectionService.getTactic(tacticId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
+        return Mono.just(ResponseEntity.ok(tactic));
+    }
+
+    @GetMapping("/tactics/{tacticId}/explanation")
+    public Mono<ResponseEntity<SelfEvolvingTacticSearchExplanationDto>> getTacticExplanation(
+            @PathVariable String tacticId,
+            @RequestParam(name = "q", required = false) String query) {
+        SelfEvolvingTacticSearchExplanationDto explanation = projectionService.getTacticExplanation(tacticId, query)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
+        return Mono.just(ResponseEntity.ok(explanation));
+    }
+
+    @GetMapping("/tactics/{tacticId}/lineage")
+    public Mono<ResponseEntity<SelfEvolvingArtifactLineageDto>> getTacticLineage(@PathVariable String tacticId) {
+        SelfEvolvingArtifactLineageDto lineage = projectionService.getTacticLineage(tacticId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
+        return Mono.just(ResponseEntity.ok(lineage));
+    }
+
+    @GetMapping("/tactics/{tacticId}/evidence")
+    public Mono<ResponseEntity<SelfEvolvingArtifactEvidenceDto>> getTacticEvidence(@PathVariable String tacticId) {
+        SelfEvolvingArtifactEvidenceDto evidence = projectionService.getTacticEvidence(tacticId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
+        return Mono.just(ResponseEntity.ok(evidence));
     }
 
     @PostMapping("/candidates/{candidateId}/promotion")

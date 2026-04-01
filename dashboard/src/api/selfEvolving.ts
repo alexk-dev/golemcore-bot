@@ -227,6 +227,71 @@ export interface SelfEvolvingArtifactEvidence {
   projectedAt: string | null;
 }
 
+export interface SelfEvolvingTacticSearchStatus {
+  mode: string | null;
+  reason: string | null;
+  degraded: boolean | null;
+  updatedAt: string | null;
+}
+
+export interface SelfEvolvingTacticSearchExplanation {
+  searchMode: string | null;
+  degradedReason: string | null;
+  bm25Score: number | null;
+  vectorScore: number | null;
+  rrfScore: number | null;
+  qualityPrior: number | null;
+  mmrDiversityAdjustment: number | null;
+  negativeMemoryPenalty: number | null;
+  personalizationBoost: number | null;
+  rerankerVerdict: string | null;
+  matchedQueryViews: string[];
+  matchedTerms: string[];
+  eligible: boolean | null;
+  gatingReason: string | null;
+  finalScore: number | null;
+}
+
+export interface SelfEvolvingTactic {
+  tacticId: string;
+  artifactStreamId: string | null;
+  originArtifactStreamId: string | null;
+  artifactKey: string | null;
+  artifactType: string | null;
+  title: string | null;
+  aliases: string[];
+  contentRevisionId: string | null;
+  intentSummary: string | null;
+  behaviorSummary: string | null;
+  toolSummary: string | null;
+  outcomeSummary: string | null;
+  benchmarkSummary: string | null;
+  approvalNotes: string | null;
+  evidenceSnippets: string[];
+  taskFamilies: string[];
+  tags: string[];
+  promotionState: string | null;
+  rolloutStage: string | null;
+  successRate: number | null;
+  benchmarkWinRate: number | null;
+  regressionFlags: string[];
+  recencyScore: number | null;
+  golemLocalUsageSuccess: number | null;
+  embeddingStatus: string | null;
+  updatedAt: string | null;
+}
+
+export interface SelfEvolvingTacticSearchResult extends SelfEvolvingTactic {
+  score: number | null;
+  explanation: SelfEvolvingTacticSearchExplanation | null;
+}
+
+export interface SelfEvolvingTacticSearchResponse {
+  query: string | null;
+  status: SelfEvolvingTacticSearchStatus | null;
+  results: SelfEvolvingTacticSearchResult[];
+}
+
 export async function getSelfEvolvingRuns(): Promise<SelfEvolvingRunSummary[]> {
   const { data } = await client.get<SelfEvolvingRunSummary[]>('/self-evolving/runs');
   return data;
@@ -311,6 +376,13 @@ export async function planSelfEvolvingPromotion(candidateId: string): Promise<Se
 
 export async function getSelfEvolvingCampaigns(): Promise<SelfEvolvingCampaign[]> {
   const { data } = await client.get<SelfEvolvingCampaign[]>('/self-evolving/benchmarks/campaigns');
+  return data;
+}
+
+export async function searchSelfEvolvingTactics(query: string): Promise<SelfEvolvingTacticSearchResponse> {
+  const { data } = await client.get<SelfEvolvingTacticSearchResponse>('/self-evolving/tactics/search', {
+    params: { q: query },
+  });
   return data;
 }
 

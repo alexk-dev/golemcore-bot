@@ -30,12 +30,20 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvi
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactRevisionDiffDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactTransitionDiffDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactWorkspaceSummaryDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchExplanationDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCompareEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageEdge;
@@ -70,6 +78,30 @@ public class SelfEvolvingProjectionService {
     private final BenchmarkLabService benchmarkLabService;
     private final ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService;
     private final SessionPort sessionPort;
+    private final TacticRecordService tacticRecordService;
+    private final TacticSearchService tacticSearchService;
+    private final TacticSearchMetricsService tacticSearchMetricsService;
+
+    public SelfEvolvingProjectionService(
+            SelfEvolvingRunService selfEvolvingRunService,
+            ArtifactBundleService artifactBundleService,
+            DeterministicJudgeService deterministicJudgeService,
+            PromotionWorkflowService promotionWorkflowService,
+            BenchmarkLabService benchmarkLabService,
+            ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService,
+            SessionPort sessionPort) {
+        this(
+                selfEvolvingRunService,
+                artifactBundleService,
+                deterministicJudgeService,
+                promotionWorkflowService,
+                benchmarkLabService,
+                artifactWorkspaceProjectionService,
+                sessionPort,
+                null,
+                null,
+                null);
+    }
 
     public List<SelfEvolvingRunSummaryDto> listRuns() {
         return selfEvolvingRunService.getRuns().stream()
@@ -122,6 +154,66 @@ public class SelfEvolvingProjectionService {
                 .filter(entry -> matchesQuery(entry, query))
                 .map(this::toArtifactCatalogDto)
                 .toList();
+    }
+
+    public List<SelfEvolvingTacticDto> listTactics() {
+        if (tacticRecordService == null) {
+            return List.of();
+        }
+        return tacticRecordService.getAll().stream()
+                .map(this::toTacticDto)
+                .toList();
+    }
+
+    public SelfEvolvingTacticSearchResponseDto searchTactics(String query) {
+        List<SelfEvolvingTacticSearchResultDto> results;
+        if (StringValueSupport.isBlank(query) || tacticSearchService == null) {
+            results = listTactics().stream()
+                    .map(this::toSearchResultDto)
+                    .toList();
+        } else {
+            results = tacticSearchService.search(query).stream()
+                    .map(this::toSearchResultDto)
+                    .toList();
+        }
+        return SelfEvolvingTacticSearchResponseDto.builder()
+                .query(query)
+                .status(buildTacticSearchStatusDto())
+                .results(results)
+                .build();
+    }
+
+    public Optional<SelfEvolvingTacticDto> getTactic(String tacticId) {
+        if (tacticRecordService == null) {
+            return Optional.empty();
+        }
+        return tacticRecordService.getById(tacticId).map(this::toTacticDto);
+    }
+
+    public Optional<SelfEvolvingTacticSearchExplanationDto> getTacticExplanation(String tacticId, String query) {
+        if (tacticSearchService == null || tacticRecordService == null) {
+            return Optional.empty();
+        }
+        return tacticRecordService.getById(tacticId)
+                .flatMap(record -> tacticSearchService.search(
+                        StringValueSupport.isBlank(query) ? record.getTitle() : query).stream()
+                        .filter(result -> tacticId.equals(result.getTacticId()))
+                        .findFirst()
+                        .map(TacticSearchResult::getExplanation)
+                        .map(this::toExplanationDto));
+    }
+
+    public Optional<SelfEvolvingArtifactLineageDto> getTacticLineage(String tacticId) {
+        return tacticRecordService == null ? Optional.empty()
+                : tacticRecordService.getById(tacticId)
+                        .flatMap(record -> getArtifactLineage(record.getArtifactStreamId()));
+    }
+
+    public Optional<SelfEvolvingArtifactEvidenceDto> getTacticEvidence(String tacticId) {
+        return tacticRecordService == null ? Optional.empty()
+                : tacticRecordService.getById(tacticId)
+                        .flatMap(record -> getArtifactRevisionEvidence(record.getArtifactStreamId(),
+                                record.getContentRevisionId()));
     }
 
     public Optional<SelfEvolvingArtifactWorkspaceSummaryDto> getArtifactWorkspaceSummary(String artifactStreamId) {
@@ -264,6 +356,140 @@ public class SelfEvolvingProjectionService {
                 .riskLevel(candidate.getRiskLevel())
                 .expectedImpact(candidate.getExpectedImpact())
                 .sourceRunIds(candidate.getSourceRunIds())
+                .build();
+    }
+
+    private SelfEvolvingTacticDto toTacticDto(TacticRecord record) {
+        return SelfEvolvingTacticDto.builder()
+                .tacticId(record.getTacticId())
+                .artifactStreamId(record.getArtifactStreamId())
+                .originArtifactStreamId(record.getOriginArtifactStreamId())
+                .artifactKey(record.getArtifactKey())
+                .artifactType(record.getArtifactType())
+                .title(record.getTitle())
+                .aliases(record.getAliases())
+                .contentRevisionId(record.getContentRevisionId())
+                .intentSummary(record.getIntentSummary())
+                .behaviorSummary(record.getBehaviorSummary())
+                .toolSummary(record.getToolSummary())
+                .outcomeSummary(record.getOutcomeSummary())
+                .benchmarkSummary(record.getBenchmarkSummary())
+                .approvalNotes(record.getApprovalNotes())
+                .evidenceSnippets(record.getEvidenceSnippets())
+                .taskFamilies(record.getTaskFamilies())
+                .tags(record.getTags())
+                .promotionState(record.getPromotionState())
+                .rolloutStage(record.getRolloutStage())
+                .successRate(record.getSuccessRate())
+                .benchmarkWinRate(record.getBenchmarkWinRate())
+                .regressionFlags(record.getRegressionFlags())
+                .recencyScore(record.getRecencyScore())
+                .golemLocalUsageSuccess(record.getGolemLocalUsageSuccess())
+                .embeddingStatus(record.getEmbeddingStatus())
+                .updatedAt(formatInstant(record.getUpdatedAt()))
+                .build();
+    }
+
+    private SelfEvolvingTacticSearchResultDto toSearchResultDto(SelfEvolvingTacticDto tactic) {
+        return SelfEvolvingTacticSearchResultDto.builder()
+                .tacticId(tactic.getTacticId())
+                .artifactStreamId(tactic.getArtifactStreamId())
+                .originArtifactStreamId(tactic.getOriginArtifactStreamId())
+                .artifactKey(tactic.getArtifactKey())
+                .artifactType(tactic.getArtifactType())
+                .title(tactic.getTitle())
+                .aliases(tactic.getAliases())
+                .contentRevisionId(tactic.getContentRevisionId())
+                .intentSummary(tactic.getIntentSummary())
+                .behaviorSummary(tactic.getBehaviorSummary())
+                .toolSummary(tactic.getToolSummary())
+                .outcomeSummary(tactic.getOutcomeSummary())
+                .benchmarkSummary(tactic.getBenchmarkSummary())
+                .approvalNotes(tactic.getApprovalNotes())
+                .evidenceSnippets(tactic.getEvidenceSnippets())
+                .taskFamilies(tactic.getTaskFamilies())
+                .tags(tactic.getTags())
+                .promotionState(tactic.getPromotionState())
+                .rolloutStage(tactic.getRolloutStage())
+                .successRate(tactic.getSuccessRate())
+                .benchmarkWinRate(tactic.getBenchmarkWinRate())
+                .regressionFlags(tactic.getRegressionFlags())
+                .recencyScore(tactic.getRecencyScore())
+                .golemLocalUsageSuccess(tactic.getGolemLocalUsageSuccess())
+                .embeddingStatus(tactic.getEmbeddingStatus())
+                .updatedAt(tactic.getUpdatedAt())
+                .build();
+    }
+
+    private SelfEvolvingTacticSearchResultDto toSearchResultDto(TacticSearchResult result) {
+        return SelfEvolvingTacticSearchResultDto.builder()
+                .tacticId(result.getTacticId())
+                .artifactStreamId(result.getArtifactStreamId())
+                .originArtifactStreamId(result.getOriginArtifactStreamId())
+                .artifactKey(result.getArtifactKey())
+                .artifactType(result.getArtifactType())
+                .title(result.getTitle())
+                .aliases(result.getAliases())
+                .contentRevisionId(result.getContentRevisionId())
+                .intentSummary(result.getIntentSummary())
+                .behaviorSummary(result.getBehaviorSummary())
+                .toolSummary(result.getToolSummary())
+                .outcomeSummary(result.getOutcomeSummary())
+                .benchmarkSummary(result.getBenchmarkSummary())
+                .approvalNotes(result.getApprovalNotes())
+                .evidenceSnippets(result.getEvidenceSnippets())
+                .taskFamilies(result.getTaskFamilies())
+                .tags(result.getTags())
+                .promotionState(result.getPromotionState())
+                .rolloutStage(result.getRolloutStage())
+                .score(result.getScore())
+                .successRate(result.getSuccessRate())
+                .benchmarkWinRate(result.getBenchmarkWinRate())
+                .regressionFlags(result.getRegressionFlags())
+                .recencyScore(result.getRecencyScore())
+                .golemLocalUsageSuccess(result.getGolemLocalUsageSuccess())
+                .embeddingStatus(result.getEmbeddingStatus())
+                .updatedAt(formatInstant(result.getUpdatedAt()))
+                .explanation(toExplanationDto(result.getExplanation()))
+                .build();
+    }
+
+    private SelfEvolvingTacticSearchExplanationDto toExplanationDto(TacticSearchExplanation explanation) {
+        if (explanation == null) {
+            return null;
+        }
+        return SelfEvolvingTacticSearchExplanationDto.builder()
+                .searchMode(explanation.getSearchMode())
+                .degradedReason(explanation.getDegradedReason())
+                .bm25Score(explanation.getBm25Score())
+                .vectorScore(explanation.getVectorScore())
+                .rrfScore(explanation.getRrfScore())
+                .qualityPrior(explanation.getQualityPrior())
+                .mmrDiversityAdjustment(explanation.getMmrDiversityAdjustment())
+                .negativeMemoryPenalty(explanation.getNegativeMemoryPenalty())
+                .personalizationBoost(explanation.getPersonalizationBoost())
+                .rerankerVerdict(explanation.getRerankerVerdict())
+                .matchedQueryViews(explanation.getMatchedQueryViews())
+                .matchedTerms(explanation.getMatchedTerms())
+                .eligible(explanation.getEligible())
+                .gatingReason(explanation.getGatingReason())
+                .finalScore(explanation.getFinalScore())
+                .build();
+    }
+
+    private SelfEvolvingTacticSearchStatusDto buildTacticSearchStatusDto() {
+        if (tacticSearchMetricsService == null) {
+            return SelfEvolvingTacticSearchStatusDto.builder()
+                    .mode("bm25")
+                    .degraded(false)
+                    .build();
+        }
+        TacticSearchMetricsService.Snapshot snapshot = tacticSearchMetricsService.snapshot();
+        return SelfEvolvingTacticSearchStatusDto.builder()
+                .mode(snapshot.activeMode())
+                .reason(snapshot.lastReason())
+                .degraded(snapshot.degraded())
+                .updatedAt(formatInstant(snapshot.updatedAt()))
                 .build();
     }
 

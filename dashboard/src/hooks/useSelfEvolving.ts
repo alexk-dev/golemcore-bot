@@ -18,6 +18,7 @@ import {
   getSelfEvolvingCandidates,
   getSelfEvolvingRun,
   getSelfEvolvingRuns,
+  searchSelfEvolvingTactics,
   type SelfEvolvingArtifactCatalogEntry,
   type SelfEvolvingArtifactEvidence,
   type SelfEvolvingArtifactLineage,
@@ -30,6 +31,7 @@ import {
   type SelfEvolvingPromotionDecision,
   type SelfEvolvingRunDetail,
   type SelfEvolvingRunSummary,
+  type SelfEvolvingTacticSearchResponse,
 } from '../api/selfEvolving';
 
 export function useSelfEvolvingRuns(): UseQueryResult<SelfEvolvingRunSummary[], unknown> {
@@ -144,6 +146,13 @@ export function useSelfEvolvingCampaigns(): UseQueryResult<SelfEvolvingCampaign[
   return useQuery({
     queryKey: ['self-evolving', 'campaigns'],
     queryFn: getSelfEvolvingCampaigns,
+  });
+}
+
+export function useSelfEvolvingTacticSearch(query: string): UseQueryResult<SelfEvolvingTacticSearchResponse, unknown> {
+  return useQuery({
+    queryKey: ['self-evolving', 'tactics', query],
+    queryFn: () => searchSelfEvolvingTactics(query),
   });
 }
 
