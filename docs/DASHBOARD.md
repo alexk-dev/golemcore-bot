@@ -91,11 +91,15 @@ The Settings page is now organized into catalog blocks instead of a flat tab lis
 
 `Settings -> SelfEvolving` controls the native eval and promotion runtime:
 
+- keep the whole pipeline disabled by default until explicitly enabled
 - enable or disable the `SelfEvolving` pipeline
 - choose judge tiers for primary, tiebreaker, and evolution passes
 - configure approval-gated or automatic promotion behavior
 - enable benchmark harvesting from production runs
 - force trace payload capture for evaluation-relevant spans while keeping redaction active
+- tune tactic search defaults such as `BM25-only` versus `hybrid`, rerank tier, personalization, negative memory, and optional embeddings
+
+Startup-only `bot.self-evolving.bootstrap.*` overrides win over editable runtime settings for the effective process configuration. This is the right place to force tactic search on a deployed worker without rewriting its stored preferences.
 
 ### SelfEvolving Workspace
 
@@ -104,6 +108,10 @@ The Settings page is now organized into catalog blocks instead of a flat tab lis
 It shows:
 
 - overview cards for runs, candidates, campaigns, and approval pressure
+- a tactic search workspace that stays separate from `/dashboard/skills`
+- search state banners for `Hybrid`, `BM25-only`, and `Embeddings degraded`
+- readonly tactic result ranking with operator-visible `BM25`, vector, `RRF`, quality prior, `MMR`, negative-memory, personalization, and reranker signals
+- a `Why this tactic` panel that exposes `success rate`, `benchmark win rate`, `regression flags`, `promotion state`, `recency`, and `golem-local usage success`
 - a workspace-first artifact browser where `artifactStreamId` is the canonical identity for deep links, compare flows, and evidence joins
 - an artifact catalog left rail for evolved `skills`, `prompts`, `routing policies`, `tool policies`, `memory policies`, `context policies`, and `governance policies`
 - a lineage rail that shows the full `candidate -> approved -> active -> reverted` history as rollout nodes over immutable content revisions
@@ -113,6 +121,7 @@ It shows:
 - benchmark lab campaigns harvested from production or curated suites, with selection wired back into the chosen artifact stream
 
 The workspace is bot-local and remains the primary working screen. Hive mirrors the same artifact workspace as a readonly inspection view when the golem is connected.
+Tactic search follows the same rule: tune and inspect it in the bot first, then use Hive as the shared readonly observation window.
 
 Diff behavior is split deliberately:
 
