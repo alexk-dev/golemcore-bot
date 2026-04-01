@@ -325,11 +325,14 @@ public class AutoModeScheduler {
         String assistantText = readAssistantText(syntheticMessage);
         String activeSkillName = readActiveSkillName(syntheticMessage);
         if ("FAILED".equals(runStatus)) {
+            String failureSummary = readFailureSummary(syntheticMessage);
             recordFailureAndMaybeReflect(scheduleMessage, schedule, timeoutMinutes, channelType, sessionChatId,
                     transportChatId,
-                    readFailureSummary(syntheticMessage),
+                    failureSummary,
                     readFailureFingerprint(syntheticMessage),
                     activeSkillName);
+            reportSender.sendReport(schedule, buildReportHeader(scheduleMessage),
+                    failureSummary != null ? failureSummary : assistantText, channelInfo);
             return;
         }
 
