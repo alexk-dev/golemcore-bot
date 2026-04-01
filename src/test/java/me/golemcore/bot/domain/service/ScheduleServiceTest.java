@@ -407,4 +407,76 @@ class ScheduleServiceTest {
         assertEquals(CRON_WEEKDAYS_9AM, loaded.get(0).getCronExpression());
         assertTrue(loaded.get(0).isClearContextBeforeRun());
     }
+
+    @Test
+    void shouldCreateScheduleWithReportChannel() {
+        ScheduleEntry entry = service.createSchedule(
+                ScheduleEntry.ScheduleType.GOAL, "goal-rpt",
+                CRON_DAILY_9AM, -1, false,
+                "telegram", "99999");
+
+        assertNotNull(entry.getId());
+        assertEquals("telegram", entry.getReportChannelType());
+        assertEquals("99999", entry.getReportChatId());
+        assertTrue(entry.isEnabled());
+        verify(storagePort).putText(any(), any(), any());
+    }
+
+    @Test
+    void shouldCreateScheduleWithReportChannelTypeOnly() {
+        ScheduleEntry entry = service.createSchedule(
+                ScheduleEntry.ScheduleType.GOAL, "goal-rpt2",
+                CRON_DAILY_9AM, -1, false,
+                "telegram", null);
+
+        assertEquals("telegram", entry.getReportChannelType());
+        assertNull(entry.getReportChatId());
+    }
+
+    @Test
+    void shouldUpdateScheduleWithReportChannel() {
+        ScheduleEntry entry = service.createSchedule(
+                ScheduleEntry.ScheduleType.GOAL, "goal-upd",
+                CRON_DAILY_9AM, -1);
+
+        assertNull(entry.getReportChannelType());
+
+        ScheduleEntry updated = service.updateSchedule(
+                entry.getId(),
+                ScheduleEntry.ScheduleType.GOAL,
+                "goal-upd",
+                CRON_DAILY_NOON,
+                -1,
+                true,
+                null,
+                "telegram",
+                "12345",
+                true);
+
+        assertEquals("telegram", updated.getReportChannelType());
+        assertEquals("12345", updated.getReportChatId());
+    }
+
+    @Test
+    void shouldNotUpdateReportChannelWhenFlagIsFalse() {
+        ScheduleEntry entry = service.createSchedule(
+                ScheduleEntry.ScheduleType.GOAL, "goal-keep",
+                CRON_DAILY_9AM, -1, false,
+                "telegram", "55555");
+
+        ScheduleEntry updated = service.updateSchedule(
+                entry.getId(),
+                ScheduleEntry.ScheduleType.GOAL,
+                "goal-keep",
+                CRON_DAILY_NOON,
+                -1,
+                true,
+                null,
+                null,
+                null,
+                false);
+
+        assertEquals("telegram", updated.getReportChannelType());
+        assertEquals("55555", updated.getReportChatId());
+    }
 }

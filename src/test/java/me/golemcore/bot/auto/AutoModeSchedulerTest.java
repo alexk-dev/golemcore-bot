@@ -1155,4 +1155,216 @@ class AutoModeSchedulerTest {
 
         verify(sessionRunCoordinator, times(1)).submit(any(Message.class));
     }
+
+    @Test
+    void shouldSendReportToConfiguredChannelAfterSuccessfulRun() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Verify deployments")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-report")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .reportChannelType(CHANNEL_TYPE_TELEGRAM)
+                .reportChatId("999")
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "COMPLETED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT,
+                    "All 3 deployments are healthy. No issues found.");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
+        scheduler.tick();
+
+        ArgumentCaptor<String> chatIdCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> textCaptor = ArgumentCaptor.forClass(String.class);
+        verify(channelPort).sendMessage(chatIdCaptor.capture(), textCaptor.capture());
+
+        assertEquals("999", chatIdCaptor.getValue());
+        assertTrue(textCaptor.getValue().contains(GOAL_TITLE));
+        assertTrue(textCaptor.getValue().contains("Verify deployments"));
+        assertTrue(textCaptor.getValue().contains("All 3 deployments are healthy"));
+    }
+
+    @Test
+    void shouldAutoResolveChatIdFromRegisteredChannelWhenReportChatIdIsNull() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Check logs")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-report-auto")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .reportChannelType(CHANNEL_TYPE_TELEGRAM)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "COMPLETED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT, "Logs look clean.");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "auto-chat-42");
+        scheduler.tick();
+
+        ArgumentCaptor<String> chatIdCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> textCaptor = ArgumentCaptor.forClass(String.class);
+        verify(channelPort).sendMessage(chatIdCaptor.capture(), textCaptor.capture());
+
+        assertEquals("auto-chat-42", chatIdCaptor.getValue());
+        assertTrue(textCaptor.getValue().contains("Logs look clean."));
+    }
+
+    @Test
+    void shouldNotSendReportWhenNoReportChannelConfigured() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Normal task")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-no-report")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "COMPLETED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT, "Done.");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
+        scheduler.tick();
+
+        verify(channelPort, never()).sendMessage(anyString(), contains("Done."));
+    }
+
+    @Test
+    void shouldNotSendReportWhenAssistantTextIsEmpty() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Silent task")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-report-empty")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .reportChannelType(CHANNEL_TYPE_TELEGRAM)
+                .reportChatId("999")
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
+        scheduler.tick();
+
+        verify(channelPort, never()).sendMessage(eq("999"), anyString());
+    }
+
+    @Test
+    void shouldFallbackToDefaultChannelWhenReportChannelTypeDoesNotMatchRegistered() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Check")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-report-mismatch")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .reportChannelType("slack")
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "COMPLETED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT, "Result text.");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
+        scheduler.tick();
+
+        verify(channelPort, times(1)).sendMessage(anyString(), anyString());
+    }
 }

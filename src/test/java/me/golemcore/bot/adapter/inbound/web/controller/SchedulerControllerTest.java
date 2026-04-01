@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
+import me.golemcore.bot.port.inbound.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -1120,5 +1121,145 @@ class SchedulerControllerTest {
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
         assertTrue(exception.getReason() != null && exception.getReason().contains("cannot delete"));
+    }
+
+    @Test
+    void getAvailableChannelsShouldReturnRunningChannels() {
+        ChannelPort telegramChannel = mock(ChannelPort.class);
+        when(telegramChannel.getChannelType()).thenReturn("telegram");
+        when(telegramChannel.isRunning()).thenReturn(true);
+
+        ChannelPort webChannel = mock(ChannelPort.class);
+        when(webChannel.getChannelType()).thenReturn("web");
+        when(webChannel.isRunning()).thenReturn(false);
+
+        when(channelRegistry.getAll()).thenReturn(List.of(telegramChannel, webChannel));
+
+        StepVerifier.create(controller.getAvailableChannels())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SchedulerController.ChannelsResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(1, body.channels().size());
+                    assertEquals("telegram", body.channels().get(0).type());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void createScheduleShouldAcceptReportChannelType() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+        ScheduleEntry created = ScheduleEntry.builder()
+                .id("sched-report")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("goal-1")
+                .cronExpression("0 0 9 * * *")
+                .enabled(true)
+                .reportChannelType("telegram")
+                .maxExecutions(-1)
+                .executionCount(0)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+
+        ChannelPort telegramChannel = mock(ChannelPort.class);
+        when(channelRegistry.get("telegram")).thenReturn(Optional.of(telegramChannel));
+
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+                eq("0 0 9 * * *"), eq(-1), eq(false), eq("telegram"), isNull()))
+                .thenReturn(created);
+
+        SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
+                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null, "telegram", null);
+
+        StepVerifier.create(controller.createSchedule(request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.CREATED, response.getStatusCode());
+                    SchedulerController.ScheduleDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("telegram", body.reportChannelType());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void createScheduleShouldRejectReportChatIdWithoutChannelType() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+
+        SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
+                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null, null, "12345");
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.createSchedule(request));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertTrue(exception.getReason() != null && exception.getReason().contains("reportChannelType is required"));
+    }
+
+    @Test
+    void createScheduleShouldRejectUnknownReportChannelType() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+        when(channelRegistry.get("nonexistent")).thenReturn(Optional.empty());
+
+        SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
+                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null, "nonexistent", null);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.createSchedule(request));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertTrue(exception.getReason() != null && exception.getReason().contains("Unknown channel type"));
+    }
+
+    @Test
+    void createScheduleShouldIncludeReportChannelFieldsInDto() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+        ScheduleEntry created = ScheduleEntry.builder()
+                .id("sched-full-report")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("goal-1")
+                .cronExpression("0 0 9 * * *")
+                .enabled(true)
+                .reportChannelType("telegram")
+                .reportChatId("54321")
+                .maxExecutions(-1)
+                .executionCount(0)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+
+        ChannelPort telegramChannel = mock(ChannelPort.class);
+        when(channelRegistry.get("telegram")).thenReturn(Optional.of(telegramChannel));
+
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+                eq("0 0 9 * * *"), eq(-1), eq(false), eq("telegram"), eq("54321")))
+                .thenReturn(created);
+
+        SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
+                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null, "telegram", "54321");
+
+        StepVerifier.create(controller.createSchedule(request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.CREATED, response.getStatusCode());
+                    SchedulerController.ScheduleDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("telegram", body.reportChannelType());
+                    assertEquals("54321", body.reportChatId());
+                })
+                .verifyComplete();
     }
 }
