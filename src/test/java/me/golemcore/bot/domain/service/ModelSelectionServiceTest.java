@@ -334,6 +334,14 @@ class ModelSelectionServiceTest {
     }
 
     @Test
+    void shouldResolveExplicitTierThroughAliasMethod() {
+        ModelSelectionService.ModelSelection selection = service.resolveExplicitTier("balanced");
+
+        assertEquals("openai/gpt-5.1", selection.model());
+        assertEquals("medium", selection.reasoning());
+    }
+
+    @Test
     void shouldReturnBalancedModelWhenTierIsNull() {
         // Act
         String model = service.resolveModelName(null);
