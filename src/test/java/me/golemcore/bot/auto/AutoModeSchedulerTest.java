@@ -887,7 +887,7 @@ class AutoModeSchedulerTest {
     }
 
     @Test
-    void shouldSkipTaskScheduleWhenTaskCompleted() {
+    void shouldResetCompletedTaskToPendingAndRun() {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
         AutoTask task = AutoTask.builder()
@@ -917,7 +917,8 @@ class AutoModeSchedulerTest {
 
         scheduler.tick();
 
-        verify(sessionRunCoordinator, never()).submit(any(Message.class));
+        verify(autoModeService).updateTaskStatus(GOAL_ID, "task-done", AutoTask.TaskStatus.PENDING, null);
+        verify(sessionRunCoordinator).submit(any(Message.class));
     }
 
     @Test

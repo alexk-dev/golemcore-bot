@@ -629,10 +629,13 @@ public class AutoModeScheduler {
         }
 
         AutoTask task = taskOpt.get();
-        if (task.getStatus() == AutoTask.TaskStatus.COMPLETED
-                || task.getStatus() == AutoTask.TaskStatus.SKIPPED) {
-            log.debug("[AutoScheduler] Task {} already finished ({}), skipping", taskId, task.getStatus());
+        if (task.getStatus() == AutoTask.TaskStatus.SKIPPED) {
+            log.debug("[AutoScheduler] Task {} is skipped, not running", taskId);
             return null;
+        }
+        if (task.getStatus() == AutoTask.TaskStatus.COMPLETED) {
+            autoModeService.updateTaskStatus(goal.getId(), taskId, AutoTask.TaskStatus.PENDING, null);
+            log.info("[AutoScheduler] Reset completed task {} to PENDING for scheduled re-run", taskId);
         }
 
         return new ScheduleMessage(
