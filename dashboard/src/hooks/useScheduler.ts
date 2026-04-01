@@ -10,10 +10,12 @@ import {
 import {
   createSchedule,
   deleteSchedule,
+  getAvailableChannels,
   getSchedulerRun,
   getSchedulerRuns,
   getSchedulerState,
   updateSchedule,
+  type ChannelsResponse,
   type CreateScheduleRequest,
   type DeleteScheduleResponse,
   type SchedulerRunDetail,
@@ -102,6 +104,14 @@ export function useDeleteSchedule(): UseMutationResult<DeleteScheduleResponse, u
     onError: (error: unknown) => {
       toast.error(`Failed to delete schedule: ${extractErrorMessage(error)}`);
     },
+  });
+}
+
+export function useAvailableChannels(): UseQueryResult<ChannelsResponse, unknown> {
+  return useQuery({
+    queryKey: ['scheduler', 'channels'],
+    queryFn: getAvailableChannels,
+    staleTime: 60000,
   });
 }
 

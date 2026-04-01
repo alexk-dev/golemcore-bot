@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { SchedulerRunSummary, SchedulerSchedule, SchedulerTargetType } from '../api/scheduler';
 import { SchedulerWorkspace } from '../components/scheduler/SchedulerWorkspace';
 import {
+  useAvailableChannels,
   useCreateSchedule,
   useDeleteSchedule,
   useSchedulerBusyState,
@@ -71,6 +72,11 @@ export default function SchedulerPage(): ReactElement {
   const goals = useMemo(() => data?.goals ?? [], [data?.goals]);
   const standaloneTasks = useMemo(() => data?.standaloneTasks ?? [], [data?.standaloneTasks]);
   const formState = useSchedulerForm(goals, standaloneTasks);
+  const channelsQuery = useAvailableChannels();
+  const channelOptions = useMemo(
+    () => (channelsQuery.data?.channels ?? []).map((ch) => ({ type: ch.type, label: ch.label })),
+    [channelsQuery.data],
+  );
   const navigation = useSchedulerNavigation(
     goals,
     standaloneTasks,
@@ -161,6 +167,8 @@ export default function SchedulerPage(): ReactElement {
       onLimitInputChange={formState.setLimitInput}
       onEnabledChange={formState.setEnabled}
       onClearContextBeforeRunChange={formState.setClearContextBeforeRun}
+      onReportChannelTypeChange={formState.setReportChannelType}
+      reportChannelOptions={channelOptions}
       onSubmitSchedule={() => { void handleSubmitSchedule(); }}
       onCancelEditSchedule={formState.reset}
       onOpenLogs={(schedule) => {

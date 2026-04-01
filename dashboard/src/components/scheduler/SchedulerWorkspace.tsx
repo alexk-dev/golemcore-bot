@@ -7,6 +7,7 @@ import type {
   SchedulerStateResponse,
 } from '../../api/scheduler';
 import type { useSchedulerForm } from '../../hooks/useSchedulerForm';
+import type { ReportChannelOption } from './SchedulerCreateCardSections';
 import { SchedulerCreateCard } from './SchedulerCreateCard';
 import { SchedulerRunLogsModal } from './SchedulerRunLogsModal';
 import { SchedulerSchedulesCard } from './SchedulerSchedulesCard';
@@ -39,6 +40,8 @@ export interface SchedulerWorkspaceProps {
   onLimitInputChange: ReturnType<typeof useSchedulerForm>['setLimitInput'];
   onEnabledChange: ReturnType<typeof useSchedulerForm>['setEnabled'];
   onClearContextBeforeRunChange: ReturnType<typeof useSchedulerForm>['setClearContextBeforeRun'];
+  onReportChannelTypeChange: ReturnType<typeof useSchedulerForm>['setReportChannelType'];
+  reportChannelOptions: ReportChannelOption[];
   onSubmitSchedule: () => void;
   onCancelEditSchedule: () => void;
   onOpenLogs: (schedule: SchedulerSchedule) => void;
@@ -78,6 +81,8 @@ export function SchedulerWorkspace({
   onLimitInputChange,
   onEnabledChange,
   onClearContextBeforeRunChange,
+  onReportChannelTypeChange,
+  reportChannelOptions,
   onSubmitSchedule,
   onCancelEditSchedule,
   onOpenLogs,
@@ -131,6 +136,8 @@ export function SchedulerWorkspace({
               onPresetLimitSelect={onLimitInputChange}
               onEnabledChange={onEnabledChange}
               onClearContextBeforeRunChange={onClearContextBeforeRunChange}
+              onReportChannelTypeChange={onReportChannelTypeChange}
+              reportChannelOptions={reportChannelOptions}
               onSubmit={onSubmitSchedule}
               onCancelEdit={onCancelEditSchedule}
             />

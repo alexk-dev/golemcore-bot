@@ -16,6 +16,8 @@ import {
   AdvancedCronFields,
   ClearContextField,
   RepeatLimitField,
+  ReportChannelField,
+  type ReportChannelOption,
   ScheduleEnabledField,
   SchedulerModeToggle,
   SimpleScheduleFields,
@@ -47,6 +49,8 @@ interface SchedulerCreateCardProps {
   onPresetLimitSelect: (value: string) => void;
   onEnabledChange: (enabled: boolean) => void;
   onClearContextBeforeRunChange: (clearContextBeforeRun: boolean) => void;
+  onReportChannelTypeChange: (reportChannelType: string) => void;
+  reportChannelOptions: ReportChannelOption[];
   onSubmit: () => void;
   onCancelEdit: () => void;
 }
@@ -129,6 +133,8 @@ export function SchedulerCreateCard({
   onPresetLimitSelect,
   onEnabledChange,
   onClearContextBeforeRunChange,
+  onReportChannelTypeChange,
+  reportChannelOptions,
   onSubmit,
   onCancelEdit,
 }: SchedulerCreateCardProps): ReactElement {
@@ -197,6 +203,13 @@ export function SchedulerCreateCard({
           featureEnabled={featureEnabled}
           clearContextBeforeRun={form.clearContextBeforeRun}
           onChange={onClearContextBeforeRunChange}
+        />
+
+        <ReportChannelField
+          featureEnabled={featureEnabled}
+          reportChannelType={form.reportChannelType}
+          channelOptions={reportChannelOptions}
+          onChange={onReportChannelTypeChange}
         />
 
         {isEditing && (

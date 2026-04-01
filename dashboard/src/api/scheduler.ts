@@ -15,6 +15,8 @@ export interface SchedulerSchedule {
   cronExpression: string;
   enabled: boolean;
   clearContextBeforeRun: boolean;
+  reportChannelType: string | null;
+  reportChatId: string | null;
   maxExecutions: number;
   executionCount: number;
   createdAt: string | null;
@@ -41,6 +43,16 @@ export interface CreateScheduleRequest {
   mode?: SchedulerMode;
   cronExpression?: string;
   clearContextBeforeRun: boolean;
+  reportChannelType?: string | null;
+}
+
+export interface AvailableChannel {
+  type: string;
+  label: string;
+}
+
+export interface ChannelsResponse {
+  channels: AvailableChannel[];
 }
 
 export interface UpdateScheduleRequest extends CreateScheduleRequest {
@@ -122,5 +134,10 @@ export async function getSchedulerRuns(scheduleId?: string): Promise<SchedulerRu
 
 export async function getSchedulerRun(runId: string): Promise<SchedulerRunDetail> {
   const { data } = await client.get<SchedulerRunDetail>(`/scheduler/runs/${encodeURIComponent(runId)}`);
+  return data;
+}
+
+export async function getAvailableChannels(): Promise<ChannelsResponse> {
+  const { data } = await client.get<ChannelsResponse>('/scheduler/channels');
   return data;
 }

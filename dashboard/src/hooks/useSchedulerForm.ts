@@ -38,6 +38,7 @@ interface SchedulerFormStateResult {
   setTargetType: (targetType: SchedulerTargetType) => void;
   setEnabled: (enabled: boolean) => void;
   setClearContextBeforeRun: (clearContextBeforeRun: boolean) => void;
+  setReportChannelType: (reportChannelType: string) => void;
   toggleDay: (day: number) => void;
   prepareCreateForTarget: (targetType: SchedulerTargetType, targetId: string) => void;
   startEditing: (schedule: SchedulerSchedule) => void;
@@ -58,6 +59,7 @@ function buildInitialFormState(): ScheduleFormState {
     limitInput: '0',
     enabled: true,
     clearContextBeforeRun: false,
+    reportChannelType: '',
   };
 }
 
@@ -98,6 +100,10 @@ function toggleDaySelection(days: number[], day: number): number[] {
   return [...days, day].sort((left, right) => left - right);
 }
 
+function resolveReportChannelType(form: ScheduleFormState): string | null {
+  return form.reportChannelType.length > 0 ? form.reportChannelType : null;
+}
+
 function buildSimpleCreateRequest(
   form: ScheduleFormState,
   targetId: string,
@@ -113,6 +119,7 @@ function buildSimpleCreateRequest(
     time: normalizeTimeInput(form.time),
     maxExecutions,
     clearContextBeforeRun: form.clearContextBeforeRun,
+    reportChannelType: resolveReportChannelType(form),
   };
 }
 
@@ -128,6 +135,7 @@ function buildAdvancedCreateRequest(
     cronExpression: form.cronExpression.trim(),
     maxExecutions,
     clearContextBeforeRun: form.clearContextBeforeRun,
+    reportChannelType: resolveReportChannelType(form),
   };
 }
 
@@ -188,6 +196,7 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
       limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
       enabled: schedule.enabled,
       clearContextBeforeRun: schedule.clearContextBeforeRun,
+      reportChannelType: schedule.reportChannelType ?? '',
     };
   }
 
@@ -204,6 +213,7 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
       limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
       enabled: schedule.enabled,
       clearContextBeforeRun: schedule.clearContextBeforeRun,
+      reportChannelType: schedule.reportChannelType ?? '',
     };
   }
 
@@ -222,6 +232,7 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
         limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
         enabled: schedule.enabled,
         clearContextBeforeRun: schedule.clearContextBeforeRun,
+        reportChannelType: schedule.reportChannelType ?? '',
       };
     }
   }
@@ -237,6 +248,7 @@ function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleFormStat
     limitInput: schedule.maxExecutions > 0 ? String(schedule.maxExecutions) : '0',
     enabled: schedule.enabled,
     clearContextBeforeRun: schedule.clearContextBeforeRun,
+    reportChannelType: schedule.reportChannelType ?? '',
   };
 }
 
@@ -277,6 +289,7 @@ export function useSchedulerForm(
     setTargetType: (targetType) => setForm((current) => ({ ...current, targetType, targetId: '' })),
     setEnabled: (enabled) => setForm((current) => ({ ...current, enabled })),
     setClearContextBeforeRun: (clearContextBeforeRun) => setForm((current) => ({ ...current, clearContextBeforeRun })),
+    setReportChannelType: (reportChannelType) => setForm((current) => ({ ...current, reportChannelType })),
     toggleDay: (day) => setForm((current) => ({ ...current, days: toggleDaySelection(current.days, day) })),
     prepareCreateForTarget: (targetType, targetId) => {
       setEditingScheduleId(null);

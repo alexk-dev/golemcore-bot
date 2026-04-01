@@ -13,4 +13,5 @@ export interface ScheduleFormState {
   limitInput: string;
   enabled: boolean;
   clearContextBeforeRun: boolean;
+  reportChannelType: string;
 }

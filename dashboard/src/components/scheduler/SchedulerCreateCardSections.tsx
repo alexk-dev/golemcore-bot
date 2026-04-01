@@ -73,6 +73,18 @@ interface ClearContextFieldProps {
   onChange: (clearContextBeforeRun: boolean) => void;
 }
 
+export interface ReportChannelOption {
+  type: string;
+  label: string;
+}
+
+interface ReportChannelFieldProps {
+  featureEnabled: boolean;
+  reportChannelType: string;
+  channelOptions: ReportChannelOption[];
+  onChange: (reportChannelType: string) => void;
+}
+
 function isSchedulerFrequency(value: string): value is SchedulerFrequency {
   return value === 'daily' || value === 'weekdays' || value === 'weekly' || value === 'custom';
 }
@@ -348,6 +360,33 @@ export function ClearContextField({
       />
       <Form.Text className="text-body-secondary">
         Resets the schedule session transcript before execution. Previous run logs from that session will no longer appear.
+      </Form.Text>
+    </Form.Group>
+  );
+}
+
+export function ReportChannelField({
+  featureEnabled,
+  reportChannelType,
+  channelOptions,
+  onChange,
+}: ReportChannelFieldProps): ReactElement {
+  return (
+    <Form.Group className="mb-3">
+      <Form.Label>Report channel</Form.Label>
+      <Form.Select
+        size="sm"
+        value={reportChannelType}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={!featureEnabled || channelOptions.length === 0}
+      >
+        <option value="">None (no report)</option>
+        {channelOptions.map((channel) => (
+          <option key={channel.type} value={channel.type}>{channel.label}</option>
+        ))}
+      </Form.Select>
+      <Form.Text className="text-body-secondary">
+        Send a summary to this channel after each scheduled run completes.
       </Form.Text>
     </Form.Group>
   );
