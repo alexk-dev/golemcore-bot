@@ -40,23 +40,37 @@ public class TacticSearchService {
     private final TacticBm25IndexService bm25IndexService;
     private final RuntimeConfigService runtimeConfigService;
     private final TacticIndexRebuildService tacticIndexRebuildService;
+    private final TacticEmbeddingIndexService tacticEmbeddingIndexService;
+    private final TacticHybridRankingService tacticHybridRankingService;
 
     public TacticSearchService(
             TacticQueryExpansionService queryExpansionService,
             TacticBm25IndexService bm25IndexService,
             RuntimeConfigService runtimeConfigService,
-            TacticIndexRebuildService tacticIndexRebuildService) {
+            TacticIndexRebuildService tacticIndexRebuildService,
+            TacticEmbeddingIndexService tacticEmbeddingIndexService,
+            TacticHybridRankingService tacticHybridRankingService) {
         this.queryExpansionService = queryExpansionService;
         this.bm25IndexService = bm25IndexService;
         this.runtimeConfigService = runtimeConfigService;
         this.tacticIndexRebuildService = tacticIndexRebuildService;
+        this.tacticEmbeddingIndexService = tacticEmbeddingIndexService;
+        this.tacticHybridRankingService = tacticHybridRankingService;
     }
 
     TacticSearchService(
             TacticQueryExpansionService queryExpansionService,
             TacticBm25IndexService bm25IndexService,
             RuntimeConfigService runtimeConfigService) {
-        this(queryExpansionService, bm25IndexService, runtimeConfigService, null);
+        this(queryExpansionService, bm25IndexService, runtimeConfigService, null, null, null);
+    }
+
+    TacticSearchService(
+            TacticQueryExpansionService queryExpansionService,
+            TacticBm25IndexService bm25IndexService,
+            RuntimeConfigService runtimeConfigService,
+            TacticIndexRebuildService tacticIndexRebuildService) {
+        this(queryExpansionService, bm25IndexService, runtimeConfigService, tacticIndexRebuildService, null, null);
     }
 
     public TacticSearchQuery buildQuery(AgentContext context) {
@@ -76,31 +90,17 @@ public class TacticSearchService {
             return List.of();
         }
         ensureIndexWarm();
-        return bm25IndexService.search(query, DEFAULT_LIMIT).stream()
-                .map(scoredDocument -> TacticSearchResult.builder()
-                        .tacticId(scoredDocument.document().getTacticId())
-                        .artifactStreamId(scoredDocument.document().getArtifactStreamId())
-                        .artifactKey(scoredDocument.document().getArtifactKey())
-                        .artifactType(scoredDocument.document().getArtifactType())
-                        .title(scoredDocument.document().getTitle())
-                        .aliases(scoredDocument.document().getAliases())
-                        .promotionState(scoredDocument.document().getPromotionState())
-                        .rolloutStage(scoredDocument.document().getRolloutStage())
-                        .score(scoredDocument.score())
-                        .updatedAt(scoredDocument.document().getUpdatedAt())
-                        .explanation(TacticSearchExplanation.builder()
-                                .bm25Score(scoredDocument.score())
-                                .matchedQueryViews(query.getQueryViews())
-                                .matchedTerms(scoredDocument.matchedTerms())
-                                .eligible(isEligible(scoredDocument.document().getPromotionState(), query))
-                                .gatingReason(isEligible(scoredDocument.document().getPromotionState(), query)
-                                        ? null
-                                        : "promotion state denied by default runtime gating")
-                                .finalScore(scoredDocument.score())
-                                .build())
-                        .build())
+        List<TacticSearchResult> lexicalHits = bm25IndexService.search(query, DEFAULT_LIMIT).stream()
+                .map(scoredDocument -> lexicalResult(query, scoredDocument))
                 .filter(result -> Boolean.TRUE.equals(result.getExplanation().getEligible()))
                 .toList();
+        List<TacticSearchResult> vectorHits = tacticEmbeddingIndexService != null
+                ? tacticEmbeddingIndexService.search(query)
+                : List.of();
+        if (tacticHybridRankingService == null) {
+            return lexicalHits;
+        }
+        return tacticHybridRankingService.rank(query, lexicalHits, vectorHits);
     }
 
     private void ensureIndexWarm() {
@@ -122,5 +122,50 @@ public class TacticSearchService {
             return !"reverted".equalsIgnoreCase(promotionState);
         }
         return "approved".equalsIgnoreCase(promotionState) || "active".equalsIgnoreCase(promotionState);
+    }
+
+    private TacticSearchResult lexicalResult(
+            TacticSearchQuery query,
+            TacticBm25IndexService.ScoredDocument scoredDocument) {
+        return TacticSearchResult.builder()
+                .tacticId(scoredDocument.document().getTacticId())
+                .artifactStreamId(scoredDocument.document().getArtifactStreamId())
+                .originArtifactStreamId(scoredDocument.document().getOriginArtifactStreamId())
+                .artifactKey(scoredDocument.document().getArtifactKey())
+                .artifactType(scoredDocument.document().getArtifactType())
+                .title(scoredDocument.document().getTitle())
+                .aliases(scoredDocument.document().getAliases())
+                .contentRevisionId(scoredDocument.document().getContentRevisionId())
+                .intentSummary(scoredDocument.document().getIntentSummary())
+                .behaviorSummary(scoredDocument.document().getBehaviorSummary())
+                .toolSummary(scoredDocument.document().getToolSummary())
+                .outcomeSummary(scoredDocument.document().getOutcomeSummary())
+                .benchmarkSummary(scoredDocument.document().getBenchmarkSummary())
+                .approvalNotes(scoredDocument.document().getApprovalNotes())
+                .evidenceSnippets(scoredDocument.document().getEvidenceSnippets())
+                .taskFamilies(scoredDocument.document().getTaskFamilies())
+                .tags(scoredDocument.document().getTags())
+                .promotionState(scoredDocument.document().getPromotionState())
+                .rolloutStage(scoredDocument.document().getRolloutStage())
+                .score(scoredDocument.score())
+                .successRate(scoredDocument.document().getSuccessRate())
+                .benchmarkWinRate(scoredDocument.document().getBenchmarkWinRate())
+                .regressionFlags(scoredDocument.document().getRegressionFlags())
+                .recencyScore(scoredDocument.document().getRecencyScore())
+                .golemLocalUsageSuccess(scoredDocument.document().getGolemLocalUsageSuccess())
+                .embeddingStatus(scoredDocument.document().getEmbeddingStatus())
+                .updatedAt(scoredDocument.document().getUpdatedAt())
+                .explanation(TacticSearchExplanation.builder()
+                        .searchMode("bm25")
+                        .bm25Score(scoredDocument.score())
+                        .matchedQueryViews(query.getQueryViews())
+                        .matchedTerms(scoredDocument.matchedTerms())
+                        .eligible(isEligible(scoredDocument.document().getPromotionState(), query))
+                        .gatingReason(isEligible(scoredDocument.document().getPromotionState(), query)
+                                ? null
+                                : "promotion state denied by default runtime gating")
+                        .finalScore(scoredDocument.score())
+                        .build())
+                .build();
     }
 }

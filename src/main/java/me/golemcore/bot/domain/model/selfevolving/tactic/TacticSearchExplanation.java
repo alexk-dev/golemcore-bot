@@ -38,6 +38,11 @@ import java.util.List;
 public class TacticSearchExplanation {
 
     @Builder.Default
+    private String searchMode = "bm25";
+
+    private String degradedReason;
+
+    @Builder.Default
     private Double bm25Score = 0.0d;
 
     @Builder.Default
