@@ -26,7 +26,9 @@ import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionRecord;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -51,16 +53,23 @@ public class EvolutionCandidateService {
     };
 
     private final StoragePort storagePort;
+    private final TacticRecordService tacticRecordService;
     private final Clock clock;
     private final ObjectMapper objectMapper;
     private final AtomicReference<List<ArtifactRevisionRecord>> artifactRevisionCache = new AtomicReference<>();
 
     public EvolutionCandidateService(StoragePort storagePort) {
-        this(storagePort, Clock.systemUTC());
+        this(storagePort, new TacticRecordService(storagePort, Clock.systemUTC()), Clock.systemUTC());
     }
 
     EvolutionCandidateService(StoragePort storagePort, Clock clock) {
+        this(storagePort, new TacticRecordService(storagePort, clock), clock);
+    }
+
+    @Autowired
+    public EvolutionCandidateService(StoragePort storagePort, TacticRecordService tacticRecordService, Clock clock) {
         this.storagePort = storagePort;
+        this.tacticRecordService = tacticRecordService;
         this.clock = clock;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -105,6 +114,7 @@ public class EvolutionCandidateService {
         }
         normalizeCandidate(candidate);
         ensureArtifactRevision(candidate);
+        emitTacticRecord(candidate);
         return candidate;
     }
 
@@ -143,6 +153,7 @@ public class EvolutionCandidateService {
                 .build();
         normalizeCandidate(candidate);
         ensureArtifactRevision(candidate);
+        emitTacticRecord(candidate);
         return candidate;
     }
 
@@ -238,6 +249,35 @@ public class EvolutionCandidateService {
             }
         }
         return latest;
+    }
+
+    private void emitTacticRecord(EvolutionCandidate candidate) {
+        if (candidate == null) {
+            return;
+        }
+        tacticRecordService.save(TacticRecord.builder()
+                .tacticId(candidate.getContentRevisionId())
+                .artifactStreamId(candidate.getArtifactStreamId())
+                .originArtifactStreamId(candidate.getOriginArtifactStreamId())
+                .artifactKey(candidate.getArtifactKey())
+                .artifactType(candidate.getArtifactType())
+                .title(resolveTacticTitle(candidate))
+                .aliases(candidate.getArtifactAliases() != null ? new ArrayList<>(candidate.getArtifactAliases())
+                        : new ArrayList<>())
+                .contentRevisionId(candidate.getContentRevisionId())
+                .intentSummary(candidate.getExpectedImpact())
+                .behaviorSummary(candidate.getProposedDiff())
+                .outcomeSummary(candidate.getGoal())
+                .evidenceSnippets(resolveEvidenceSnippets(candidate))
+                .taskFamilies(resolveTaskFamilies(candidate))
+                .tags(resolveTags(candidate))
+                .promotionState(candidate.getLifecycleState())
+                .rolloutStage(candidate.getRolloutStage())
+                .successRate(resolveSuccessRate(candidate))
+                .golemLocalUsageSuccess(resolveSuccessRate(candidate))
+                .embeddingStatus("pending")
+                .updatedAt(candidate.getCreatedAt() != null ? candidate.getCreatedAt() : Instant.now(clock))
+                .build());
     }
 
     private List<ArtifactRevisionRecord> loadArtifactRevisions() {
@@ -388,5 +428,71 @@ public class EvolutionCandidateService {
             return "replayed";
         }
         return "proposed";
+    }
+
+    private String resolveTacticTitle(EvolutionCandidate candidate) {
+        if (candidate == null || StringValueSupport.isBlank(candidate.getArtifactKey())) {
+            return "Tactic";
+        }
+        String normalized = candidate.getArtifactKey().replace(':', ' ').replace('_', ' ').trim();
+        if (normalized.isEmpty()) {
+            return "Tactic";
+        }
+        return Character.toUpperCase(normalized.charAt(0)) + normalized.substring(1);
+    }
+
+    private List<String> resolveEvidenceSnippets(EvolutionCandidate candidate) {
+        List<String> snippets = new ArrayList<>();
+        if (candidate == null || candidate.getEvidenceRefs() == null) {
+            return snippets;
+        }
+        for (var ref : candidate.getEvidenceRefs()) {
+            if (ref == null) {
+                continue;
+            }
+            if (!StringValueSupport.isBlank(ref.getOutputFragment())) {
+                snippets.add(ref.getOutputFragment().trim());
+                continue;
+            }
+            if (!StringValueSupport.isBlank(ref.getSpanId())) {
+                snippets.add("span:" + ref.getSpanId().trim());
+                continue;
+            }
+            if (!StringValueSupport.isBlank(ref.getTraceId())) {
+                snippets.add("trace:" + ref.getTraceId().trim());
+            }
+        }
+        return snippets;
+    }
+
+    private List<String> resolveTaskFamilies(EvolutionCandidate candidate) {
+        if (candidate == null || StringValueSupport.isBlank(candidate.getArtifactType())) {
+            return List.of();
+        }
+        return List.of(candidate.getArtifactType());
+    }
+
+    private List<String> resolveTags(EvolutionCandidate candidate) {
+        if (candidate == null) {
+            return List.of();
+        }
+        List<String> tags = new ArrayList<>();
+        if (!StringValueSupport.isBlank(candidate.getArtifactType())) {
+            tags.add(candidate.getArtifactType());
+        }
+        if (!StringValueSupport.isBlank(candidate.getLifecycleState())) {
+            tags.add(candidate.getLifecycleState());
+        }
+        if (!StringValueSupport.isBlank(candidate.getGoal())) {
+            tags.add(candidate.getGoal());
+        }
+        return tags;
+    }
+
+    private Double resolveSuccessRate(EvolutionCandidate candidate) {
+        if (candidate == null) {
+            return 0.0d;
+        }
+        return "derive".equals(candidate.getGoal()) ? 1.0d : 0.0d;
     }
 }
