@@ -660,12 +660,12 @@ public class SchedulerController {
     public record ChannelDto(String type, String label) {
     }
 
-    private static void validateReportChannel(String channelType, String chatId) {
-        if (channelType != null && chatId == null) {
-            throw badRequest("reportChatId is required when reportChannelType is set");
-        }
+    private void validateReportChannel(String channelType, String chatId) {
         if (channelType == null && chatId != null) {
             throw badRequest("reportChannelType is required when reportChatId is set");
+        }
+        if (channelType != null && channelRegistry.get(channelType).isEmpty()) {
+            throw badRequest("Unknown channel type: " + channelType);
         }
     }
 
