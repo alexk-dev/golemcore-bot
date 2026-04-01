@@ -1,10 +1,13 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduleReportConfig;
+import me.golemcore.bot.domain.model.ScheduleReportConfigUpdate;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
@@ -30,6 +33,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -43,6 +47,7 @@ class SchedulerControllerTest {
     private RuntimeConfigService runtimeConfigService;
     private ChannelRegistry channelRegistry;
     private SchedulerController controller;
+    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
@@ -51,6 +56,7 @@ class SchedulerControllerTest {
         runtimeConfigService = mock(RuntimeConfigService.class);
         channelRegistry = mock(ChannelRegistry.class);
         controller = new SchedulerController(autoModeService, scheduleService, runtimeConfigService, channelRegistry);
+        objectMapper = new ObjectMapper().findAndRegisterModules();
 
         RuntimeConfig.TelegramConfig telegramConfig = new RuntimeConfig.TelegramConfig();
         telegramConfig.setAllowedUsers(List.of());
@@ -264,7 +270,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"), eq("0 0 9 * * *"),
-                eq(5), eq(false), isNull(), isNull(), isNull(), isNull()))
+                eq(5), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -308,7 +314,7 @@ class SchedulerControllerTest {
         when(autoModeService.findGoalForTask("task-1")).thenReturn(Optional.of(taskGoal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal, taskGoal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.TASK), eq("task-1"),
-                eq("0 30 18 * * MON,THU"), eq(-1), eq(false), isNull(), isNull(), isNull(), isNull()))
+                eq("0 30 18 * * MON,THU"), eq(-1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -349,7 +355,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 15 8 * * MON-FRI"), eq(1), eq(false), isNull(), isNull(), isNull(), isNull()))
+                eq("0 15 8 * * MON-FRI"), eq(1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -384,7 +390,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 0 7 * * MON,TUE,WED,THU,FRI,SAT,SUN"), eq(1), eq(false), isNull(), isNull(), isNull(), isNull()))
+                eq("0 0 7 * * MON,TUE,WED,THU,FRI,SAT,SUN"), eq(1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -419,7 +425,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 0 9 * * *"), eq(-1), eq(false), isNull(), isNull(), isNull(), isNull()))
+                eq("0 0 9 * * *"), eq(-1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -459,7 +465,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 */5 * * * *"), eq(-1), eq(false), isNull(), isNull(), isNull(), isNull()))
+                eq("0 */5 * * * *"), eq(-1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -508,9 +514,6 @@ class SchedulerControllerTest {
                 eq("0 0 9 * * *"),
                 eq(1),
                 eq(true),
-                isNull(),
-                isNull(),
-                isNull(),
                 isNull()))
                 .thenReturn(created);
 
@@ -554,7 +557,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
-                eq("0 45 8 * * MON,WED,FRI"), eq(1), eq(false), isNull(), isNull(), isNull(), isNull()))
+                eq("0 45 8 * * MON,WED,FRI"), eq(1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -601,11 +604,7 @@ class SchedulerControllerTest {
                 eq(2),
                 eq(false),
                 isNull(),
-                isNull(),
-                isNull(),
-                isNull(),
-                isNull(),
-                eq(false)))
+                eq(ScheduleReportConfigUpdate.noChange())))
                 .thenReturn(updated);
 
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
@@ -657,11 +656,7 @@ class SchedulerControllerTest {
                 eq(2),
                 eq(true),
                 isNull(),
-                isNull(),
-                isNull(),
-                isNull(),
-                isNull(),
-                eq(false)))
+                eq(ScheduleReportConfigUpdate.noChange())))
                 .thenReturn(updated);
 
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
@@ -712,11 +707,7 @@ class SchedulerControllerTest {
                 eq(2),
                 eq(true),
                 eq(true),
-                isNull(),
-                isNull(),
-                isNull(),
-                isNull(),
-                eq(false)))
+                eq(ScheduleReportConfigUpdate.noChange())))
                 .thenReturn(updated);
 
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
@@ -773,7 +764,7 @@ class SchedulerControllerTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(scheduleService.createSchedule(any(ScheduleEntry.ScheduleType.class), anyString(), anyString(), anyInt(),
-                anyBoolean(), any(), any(), any(), any()))
+                anyBoolean(), nullable(ScheduleReportConfig.class)))
                 .thenThrow(new IllegalArgumentException("broken schedule"));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
@@ -1197,7 +1188,8 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null, null, "12345", null, null);
+                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                new SchedulerController.ScheduleReportRequest(null, "12345", null, null));
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.createSchedule(request));
@@ -1215,7 +1207,8 @@ class SchedulerControllerTest {
         when(channelRegistry.get("nonexistent")).thenReturn(Optional.empty());
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null, "nonexistent", null, null, null);
+                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                new SchedulerController.ScheduleReportRequest("nonexistent", null, null, null));
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.createSchedule(request));
@@ -1255,15 +1248,17 @@ class SchedulerControllerTest {
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null, "telegram", "54321", null, null);
+                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                new SchedulerController.ScheduleReportRequest("telegram", "54321", null, null));
 
         StepVerifier.create(controller.createSchedule(request))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.CREATED, response.getStatusCode());
                     SchedulerController.ScheduleDto body = response.getBody();
                     assertNotNull(body);
-                    assertEquals("telegram", body.reportChannelType());
-                    assertEquals("54321", body.reportChatId());
+                    assertNotNull(body.report());
+                    assertEquals("telegram", body.report().channelType());
+                    assertEquals("54321", body.report().chatId());
                 })
                 .verifyComplete();
     }
@@ -1297,15 +1292,16 @@ class SchedulerControllerTest {
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
                 "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
-                "webhook", null, "https://example.com/hook", null);
+                new SchedulerController.ScheduleReportRequest("webhook", null, "https://example.com/hook", null));
 
         StepVerifier.create(controller.createSchedule(request))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.CREATED, response.getStatusCode());
                     SchedulerController.ScheduleDto body = response.getBody();
                     assertNotNull(body);
-                    assertEquals("webhook", body.reportChannelType());
-                    assertEquals("https://example.com/hook", body.reportWebhookUrl());
+                    assertNotNull(body.report());
+                    assertEquals("webhook", body.report().channelType());
+                    assertEquals("https://example.com/hook", body.report().webhookUrl());
                 })
                 .verifyComplete();
     }
@@ -1367,7 +1363,7 @@ class SchedulerControllerTest {
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
                 "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
-                "webhook", null, null, null);
+                new SchedulerController.ScheduleReportRequest("webhook", null, null, null));
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.createSchedule(request));
@@ -1385,12 +1381,72 @@ class SchedulerControllerTest {
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
                 "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
-                "webhook", null, "ftp://not-http.com/hook", null);
+                new SchedulerController.ScheduleReportRequest("webhook", null, "ftp://not-http.com/hook", null));
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.createSchedule(request));
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
         assertTrue(exception.getReason() != null && exception.getReason().contains("http://"));
+    }
+
+    @Test
+    void createScheduleRequestJsonShouldUseNestedReportShape() throws Exception {
+        String json = """
+                {
+                  "targetType": "GOAL",
+                  "targetId": "goal-1",
+                  "frequency": "daily",
+                  "time": "09:00",
+                  "report": {
+                    "channelType": "webhook",
+                    "webhookUrl": "https://example.com/hook",
+                    "webhookBearerToken": "bearer-token"
+                  }
+                }
+                """;
+
+        SchedulerController.CreateScheduleRequest request = objectMapper.readValue(
+                json,
+                SchedulerController.CreateScheduleRequest.class);
+
+        assertNotNull(request.report());
+        assertEquals("webhook", request.report().channelType());
+        assertEquals("https://example.com/hook", request.report().webhookUrl());
+        assertEquals("bearer-token", request.report().webhookBearerToken());
+    }
+
+    @Test
+    void scheduleDtoJsonShouldExposeOnlyNestedReportFields() throws Exception {
+        SchedulerController.ScheduleDto dto = new SchedulerController.ScheduleDto(
+                "sched-1",
+                "GOAL",
+                "goal-1",
+                "Goal",
+                "0 0 9 * * *",
+                true,
+                false,
+                new SchedulerController.ScheduleReportDto(
+                        "webhook",
+                        null,
+                        "https://example.com/hook",
+                        "bearer-token"),
+                -1,
+                0,
+                Instant.parse("2026-04-01T00:00:00Z"),
+                Instant.parse("2026-04-01T00:05:00Z"),
+                null,
+                Instant.parse("2026-04-02T09:00:00Z"));
+
+        JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(dto));
+
+        assertTrue(json.has("report"));
+        assertEquals("webhook", json.path("report").path("channelType").asText());
+        assertEquals("https://example.com/hook", json.path("report").path("webhookUrl").asText());
+        assertEquals("bearer-token", json.path("report").path("webhookBearerToken").asText());
+        assertTrue(!json.has("reportChannelType"));
+        assertTrue(!json.has("reportChatId"));
+        assertTrue(!json.has("reportWebhookUrl"));
+        assertTrue(!json.has("reportWebhookSecret"));
     }
 }

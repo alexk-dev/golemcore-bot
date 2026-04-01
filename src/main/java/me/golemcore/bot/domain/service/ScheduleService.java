@@ -125,17 +125,6 @@ public class ScheduleService {
     }
 
     /**
-     * Create a new schedule entry with report channel configuration.
-     */
-    public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
-            String cronExpression, int maxExecutions, boolean clearContextBeforeRun,
-            String reportChannelType, String reportChatId,
-            String reportWebhookUrl, String reportWebhookSecret) {
-        return createSchedule(type, targetId, cronExpression, maxExecutions, clearContextBeforeRun,
-                toReportConfig(reportChannelType, reportChatId, reportWebhookUrl, reportWebhookSecret));
-    }
-
-    /**
      * Update an existing schedule entry.
      */
     public ScheduleEntry updateSchedule(
@@ -204,44 +193,6 @@ public class ScheduleService {
         saveSchedules(getSchedules());
         log.info("[Schedule] Updated schedule {} for target {}: {}", id, targetId, normalizedCron);
         return entry;
-    }
-
-    /**
-     * Update an existing schedule entry with report channel configuration.
-     */
-    public ScheduleEntry updateSchedule(
-            String id,
-            ScheduleEntry.ScheduleType type,
-            String targetId,
-            String cronExpression,
-            int maxExecutions,
-            boolean enabled,
-            Boolean clearContextBeforeRun,
-            String reportChannelType,
-            String reportChatId,
-            String reportWebhookUrl,
-            String reportWebhookSecret,
-            boolean updateReportChannel) {
-        ScheduleReportConfigUpdate reportUpdate = updateReportChannel
-                ? ScheduleReportConfigUpdate.set(
-                        toReportConfig(reportChannelType, reportChatId, reportWebhookUrl, reportWebhookSecret))
-                : ScheduleReportConfigUpdate.noChange();
-        return updateSchedule(id, type, targetId, cronExpression, maxExecutions, enabled, clearContextBeforeRun,
-                reportUpdate);
-    }
-
-    private static ScheduleReportConfig toReportConfig(String reportChannelType, String reportChatId,
-            String reportWebhookUrl, String reportWebhookSecret) {
-        if (reportChannelType == null && reportChatId == null && reportWebhookUrl == null
-                && reportWebhookSecret == null) {
-            return null;
-        }
-        return ScheduleReportConfig.builder()
-                .channelType(reportChannelType)
-                .chatId(reportChatId)
-                .webhookUrl(reportWebhookUrl)
-                .webhookBearerToken(reportWebhookSecret)
-                .build();
     }
 
     private static ScheduleReportConfig copyReport(ScheduleReportConfig report) {

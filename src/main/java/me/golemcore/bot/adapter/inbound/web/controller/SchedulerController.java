@@ -79,14 +79,13 @@ public class SchedulerController {
                     request.cronExpression());
 
             ScheduleReportConfig report = normalizeReportRequest(request.report());
-            ScheduleEntry entry = report == null
-                    ? scheduleService.createSchedule(
-                            targetType, targetId, cronExpression, maxExecutions,
-                            Boolean.TRUE.equals(request.clearContextBeforeRun()),
-                            null, null, null, null)
-                    : scheduleService.createSchedule(
-                            targetType, targetId, cronExpression, maxExecutions,
-                            Boolean.TRUE.equals(request.clearContextBeforeRun()), report);
+            ScheduleEntry entry = scheduleService.createSchedule(
+                    targetType,
+                    targetId,
+                    cronExpression,
+                    maxExecutions,
+                    Boolean.TRUE.equals(request.clearContextBeforeRun()),
+                    report);
             String targetLabel = resolveTargetLabel(entry, autoModeService.getGoals());
             return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toScheduleDto(entry, targetLabel)));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -117,29 +116,15 @@ public class SchedulerController {
                     request.cronExpression());
 
             ScheduleReportConfigUpdate reportUpdate = normalizeReportUpdateRequest(request.report());
-            ScheduleEntry entry = reportUpdate.applies()
-                    ? scheduleService.updateSchedule(
-                            normalizedScheduleId,
-                            targetType,
-                            targetId,
-                            cronExpression,
-                            maxExecutions,
-                            normalizeEnabled(request.enabled()),
-                            request.clearContextBeforeRun(),
-                            reportUpdate)
-                    : scheduleService.updateSchedule(
-                            normalizedScheduleId,
-                            targetType,
-                            targetId,
-                            cronExpression,
-                            maxExecutions,
-                            normalizeEnabled(request.enabled()),
-                            request.clearContextBeforeRun(),
-                            null,
-                            null,
-                            null,
-                            null,
-                            false);
+            ScheduleEntry entry = scheduleService.updateSchedule(
+                    normalizedScheduleId,
+                    targetType,
+                    targetId,
+                    cronExpression,
+                    maxExecutions,
+                    normalizeEnabled(request.enabled()),
+                    request.clearContextBeforeRun(),
+                    reportUpdate);
             String targetLabel = resolveTargetLabel(entry, autoModeService.getGoals());
             return Mono.just(ResponseEntity.ok(toScheduleDto(entry, targetLabel)));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -681,32 +666,6 @@ public class SchedulerController {
                     clearContextBeforeRun, null);
         }
 
-        public CreateScheduleRequest(
-                String targetType,
-                String targetId,
-                String frequency,
-                List<Integer> days,
-                String time,
-                Integer maxExecutions,
-                String mode,
-                String cronExpression,
-                Boolean clearContextBeforeRun,
-                String reportChannelType,
-                String reportChatId,
-                String reportWebhookUrl,
-                String reportWebhookSecret) {
-            this(
-                    targetType,
-                    targetId,
-                    frequency,
-                    days,
-                    time,
-                    maxExecutions,
-                    mode,
-                    cronExpression,
-                    clearContextBeforeRun,
-                    legacyReport(reportChannelType, reportChatId, reportWebhookUrl, reportWebhookSecret));
-        }
     }
 
     public record UpdateScheduleRequest(
@@ -751,34 +710,6 @@ public class SchedulerController {
                     clearContextBeforeRun, null);
         }
 
-        public UpdateScheduleRequest(
-                String targetType,
-                String targetId,
-                String frequency,
-                List<Integer> days,
-                String time,
-                Integer maxExecutions,
-                String mode,
-                String cronExpression,
-                Boolean enabled,
-                Boolean clearContextBeforeRun,
-                String reportChannelType,
-                String reportChatId,
-                String reportWebhookUrl,
-                String reportWebhookSecret) {
-            this(
-                    targetType,
-                    targetId,
-                    frequency,
-                    days,
-                    time,
-                    maxExecutions,
-                    mode,
-                    cronExpression,
-                    enabled,
-                    clearContextBeforeRun,
-                    legacyReportPatch(reportChannelType, reportChatId, reportWebhookUrl, reportWebhookSecret));
-        }
     }
 
     public record SchedulerStateResponse(
@@ -827,22 +758,6 @@ public class SchedulerController {
             Instant updatedAt,
             Instant lastExecutedAt,
             Instant nextExecutionAt) {
-
-        public String reportChannelType() {
-            return report != null ? report.channelType() : null;
-        }
-
-        public String reportChatId() {
-            return report != null ? report.chatId() : null;
-        }
-
-        public String reportWebhookUrl() {
-            return report != null ? report.webhookUrl() : null;
-        }
-
-        public String reportWebhookSecret() {
-            return report != null ? report.webhookBearerToken() : null;
-        }
     }
 
     public record ScheduleReportDto(
@@ -911,25 +826,5 @@ public class SchedulerController {
             return null;
         }
         return value.trim();
-    }
-
-    private static ScheduleReportRequest legacyReport(String channelType, String chatId,
-            String webhookUrl, String webhookBearerToken) {
-        if (channelType == null && chatId == null && webhookUrl == null && webhookBearerToken == null) {
-            return null;
-        }
-        return new ScheduleReportRequest(channelType, chatId, webhookUrl, webhookBearerToken);
-    }
-
-    private static ScheduleReportPatchRequest legacyReportPatch(String channelType, String chatId,
-            String webhookUrl, String webhookBearerToken) {
-        if (channelType == null && chatId == null && webhookUrl == null && webhookBearerToken == null) {
-            return null;
-        }
-        if (StringValueSupport.isBlank(channelType)) {
-            return new ScheduleReportPatchRequest("CLEAR", null);
-        }
-        return new ScheduleReportPatchRequest("SET",
-                new ScheduleReportRequest(channelType, chatId, webhookUrl, webhookBearerToken));
     }
 }

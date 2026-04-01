@@ -67,12 +67,16 @@ class AutoModeSchedulerTest {
     private AutoModeScheduler scheduler;
 
     private AutoModeScheduler createScheduler() {
+        ScheduledRunMessageFactory scheduledRunMessageFactory = new ScheduledRunMessageFactory(
+                autoModeService,
+                runtimeConfigService,
+                skillComponent);
         ScheduledRunExecutor scheduledRunExecutor = new ScheduledRunExecutor(
                 autoModeService,
                 sessionRunCoordinator,
                 runtimeConfigService,
                 sessionPort,
-                skillComponent,
+                scheduledRunMessageFactory,
                 reportSender);
         return new AutoModeScheduler(
                 autoModeService,
