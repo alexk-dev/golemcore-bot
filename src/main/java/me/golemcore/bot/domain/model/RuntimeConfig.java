@@ -820,6 +820,8 @@ public class RuntimeConfig {
         @Builder.Default
         private Boolean tracePayloadOverride = true;
         @Builder.Default
+        private SelfEvolvingTacticsConfig tactics = new SelfEvolvingTacticsConfig();
+        @Builder.Default
         private SelfEvolvingCaptureConfig capture = new SelfEvolvingCaptureConfig();
         @Builder.Default
         private SelfEvolvingJudgeConfig judge = new SelfEvolvingJudgeConfig();
@@ -831,6 +833,107 @@ public class RuntimeConfig {
         private SelfEvolvingBenchmarkConfig benchmark = new SelfEvolvingBenchmarkConfig();
         @Builder.Default
         private SelfEvolvingHiveConfig hive = new SelfEvolvingHiveConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticsConfig {
+        @Builder.Default
+        private Boolean enabled = false;
+        @Builder.Default
+        private SelfEvolvingTacticSearchConfig search = new SelfEvolvingTacticSearchConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticSearchConfig {
+        @Builder.Default
+        private String mode = "bm25";
+        @Builder.Default
+        private SelfEvolvingTacticBm25Config bm25 = new SelfEvolvingTacticBm25Config();
+        @Builder.Default
+        private SelfEvolvingTacticEmbeddingsConfig embeddings = new SelfEvolvingTacticEmbeddingsConfig();
+        @Builder.Default
+        private SelfEvolvingTacticRerankConfig rerank = new SelfEvolvingTacticRerankConfig();
+        @Builder.Default
+        private SelfEvolvingToggleConfig personalization = new SelfEvolvingToggleConfig();
+        @Builder.Default
+        private SelfEvolvingToggleConfig negativeMemory = new SelfEvolvingToggleConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticBm25Config {
+        @Builder.Default
+        private Boolean enabled = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticEmbeddingsConfig {
+        @Builder.Default
+        private Boolean enabled = false;
+        private String provider;
+        private String baseUrl;
+        private String apiKey;
+        private String model;
+        private Integer dimensions;
+        private Integer batchSize;
+        private Integer timeoutMs;
+        @Builder.Default
+        private Boolean autoFallbackToBm25 = true;
+        @Builder.Default
+        private SelfEvolvingTacticEmbeddingsLocalConfig local = new SelfEvolvingTacticEmbeddingsLocalConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticEmbeddingsLocalConfig {
+        @Builder.Default
+        private Boolean autoInstall = false;
+        @Builder.Default
+        private Boolean pullOnStart = false;
+        @Builder.Default
+        private Boolean requireHealthyRuntime = true;
+        @Builder.Default
+        private Boolean failOpen = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticRerankConfig {
+        @Builder.Default
+        private Boolean crossEncoder = true;
+        @Builder.Default
+        private String tier = "deep";
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingToggleConfig {
+        @Builder.Default
+        private Boolean enabled = true;
     }
 
     @Data
