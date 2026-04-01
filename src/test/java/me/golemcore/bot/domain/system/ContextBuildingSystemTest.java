@@ -32,7 +32,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.never;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -222,6 +224,49 @@ class ContextBuildingSystemTest {
         verify(selfEvolvingRunService).startRun(context);
         assertEquals("run-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
         assertEquals("bundle-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
+    }
+
+    @Test
+    void shouldSkipSelfEvolvingRunWhenFeatureIsDisabled() {
+        ContextAssembler assembler = mock(ContextAssembler.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
+        ContextBuildingSystem system = new ContextBuildingSystem(
+                assembler,
+                runtimeConfigService,
+                selfEvolvingRunService);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-2").chatId("chat-2").build())
+                .build();
+        when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(false);
+
+        AgentContext result = system.process(context);
+
+        verify(selfEvolvingRunService, never()).startRun(context);
+        assertNull(result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
+    }
+
+    @Test
+    void shouldNotRestartSelfEvolvingRunWhenRunIdAlreadyExists() {
+        ContextAssembler assembler = mock(ContextAssembler.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
+        ContextBuildingSystem system = new ContextBuildingSystem(
+                assembler,
+                runtimeConfigService,
+                selfEvolvingRunService);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-3").chatId("chat-3").build())
+                .build();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, "run-existing");
+        when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+
+        AgentContext result = system.process(context);
+
+        verify(selfEvolvingRunService, never()).startRun(context);
+        assertEquals("run-existing", result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
     }
 
     private ContextAssembler buildAssembler(SkillComponent skillComponent, ToolLayer toolLayer) {

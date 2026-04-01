@@ -284,6 +284,13 @@ class ModelSelectionServiceTest {
     }
 
     @Test
+    void shouldReturnNullProviderWhenModelSpecIsNull() {
+        String provider = service.resolveProviderForModel(null);
+
+        assertNull(provider);
+    }
+
+    @Test
     void shouldSkipOverrideWhenOverrideModelIsNull() {
         // Arrange
         Map<String, UserPreferences.TierOverride> overrides = new HashMap<>();

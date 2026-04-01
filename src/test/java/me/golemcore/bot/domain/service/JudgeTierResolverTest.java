@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -41,5 +42,25 @@ class JudgeTierResolverTest {
 
         assertEquals("provider/judge-premium", selection.model());
         assertEquals("high", selection.reasoning());
+    }
+
+    @Test
+    void shouldResolveEvolutionJudgeTierAfterNormalizingLane() {
+        when(runtimeConfigService.getSelfEvolvingJudgeEvolutionTier()).thenReturn("coding");
+        when(modelSelectionService.resolveExplicitTier("coding"))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider/judge-evolution", "medium"));
+
+        ModelSelectionService.ModelSelection selection = judgeTierResolver.resolveSelection(" Evolution ");
+
+        assertEquals("provider/judge-evolution", selection.model());
+        assertEquals("medium", selection.reasoning());
+    }
+
+    @Test
+    void shouldRejectUnknownJudgeLane() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> judgeTierResolver.resolveSelection("sidecar"));
+
+        assertEquals("Unknown judge lane: sidecar", error.getMessage());
     }
 }

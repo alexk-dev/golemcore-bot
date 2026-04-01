@@ -19,12 +19,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -147,6 +149,88 @@ class PostRunAnalysisSystemTest {
         verify(selfEvolvingRunService).completeRun(existingRun, context);
         assertEquals("run-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
         assertEquals("bundle-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
+    }
+
+    @Test
+    void shouldNotProcessWhenOutcomeMissingOrAnalysisAlreadyCompleted() {
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        AgentContext withoutOutcome = AgentContext.builder().build();
+        AgentContext alreadyCompleted = buildContext();
+        alreadyCompleted.setAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED, true);
+
+        assertFalse(system.shouldProcess(withoutOutcome));
+        assertFalse(system.shouldProcess(alreadyCompleted));
+    }
+
+    @Test
+    void shouldReturnContextImmediatelyWhenProcessingIsNotNeeded() {
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(false);
+        AgentContext context = buildContext();
+
+        AgentContext result = system.process(context);
+
+        assertTrue(result == context);
+        verify(selfEvolvingRunService, never()).startRun(context);
+        verify(selfEvolvingRunService, never()).completeRun(null, context);
+    }
+
+    @Test
+    void shouldStartNewRunWhenStoredRunIdCannotBeResolved() {
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, "missing-run");
+        RunRecord startedRun = RunRecord.builder()
+                .id("run-2")
+                .artifactBundleId("bundle-2")
+                .build();
+        RunRecord completedRun = RunRecord.builder()
+                .id("run-2")
+                .artifactBundleId("bundle-2")
+                .status("COMPLETED")
+                .build();
+        RunVerdict deterministicVerdict = RunVerdict.builder().runId("run-2").build();
+        RunVerdict llmVerdict = RunVerdict.builder().runId("run-2").build();
+        when(selfEvolvingRunService.findRun("missing-run")).thenReturn(Optional.empty());
+        when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
+        when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
+        when(deterministicJudgeService.evaluate(completedRun, null)).thenReturn(deterministicVerdict);
+        when(llmJudgeService.judge(completedRun, null, deterministicVerdict)).thenReturn(llmVerdict);
+        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(List.of());
+
+        AgentContext result = system.process(context);
+
+        verify(selfEvolvingRunService).findRun("missing-run");
+        verify(selfEvolvingRunService).startRun(context);
+        assertEquals("run-2", result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
+    }
+
+    @Test
+    void shouldContinueWhenHiveProjectionPublishFails() {
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        AgentContext context = buildContext();
+        RunRecord startedRun = RunRecord.builder()
+                .id("run-3")
+                .artifactBundleId("bundle-3")
+                .build();
+        RunRecord completedRun = RunRecord.builder()
+                .id("run-3")
+                .artifactBundleId("bundle-3")
+                .status("COMPLETED")
+                .build();
+        RunVerdict deterministicVerdict = RunVerdict.builder().runId("run-3").build();
+        RunVerdict llmVerdict = RunVerdict.builder().runId("run-3").build();
+        when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
+        when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
+        when(deterministicJudgeService.evaluate(completedRun, null)).thenReturn(deterministicVerdict);
+        when(llmJudgeService.judge(completedRun, null, deterministicVerdict)).thenReturn(llmVerdict);
+        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(List.of());
+        doThrow(new IllegalStateException("hive offline")).when(hiveEventBatchPublisher)
+                .publishSelfEvolvingProjection(completedRun, llmVerdict, List.of());
+
+        AgentContext result = system.process(context);
+
+        verify(promotionWorkflowService).registerAndPlanCandidates(List.of());
+        assertEquals(Boolean.TRUE, result.getAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED));
     }
 
     private AgentContext buildContext() {
