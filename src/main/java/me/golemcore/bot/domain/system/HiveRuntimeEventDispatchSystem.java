@@ -29,10 +29,12 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.domain.service.HiveSessionStateStore;
 import me.golemcore.bot.domain.service.TacticSearchMetricsService;
 import org.springframework.stereotype.Component;
 
@@ -42,16 +44,25 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
 
     private final HiveEventBatchPublisher hiveEventBatchPublisher;
     private final TacticSearchMetricsService tacticSearchMetricsService;
+    private final HiveSessionStateStore hiveSessionStateStore;
 
     public HiveRuntimeEventDispatchSystem(
             HiveEventBatchPublisher hiveEventBatchPublisher,
-            TacticSearchMetricsService tacticSearchMetricsService) {
+            TacticSearchMetricsService tacticSearchMetricsService,
+            HiveSessionStateStore hiveSessionStateStore) {
         this.hiveEventBatchPublisher = hiveEventBatchPublisher;
         this.tacticSearchMetricsService = tacticSearchMetricsService;
+        this.hiveSessionStateStore = hiveSessionStateStore;
     }
 
     HiveRuntimeEventDispatchSystem(HiveEventBatchPublisher hiveEventBatchPublisher) {
-        this(hiveEventBatchPublisher, null);
+        this(hiveEventBatchPublisher, null, null);
+    }
+
+    HiveRuntimeEventDispatchSystem(
+            HiveEventBatchPublisher hiveEventBatchPublisher,
+            TacticSearchMetricsService tacticSearchMetricsService) {
+        this(hiveEventBatchPublisher, tacticSearchMetricsService, null);
     }
 
     @Override
@@ -87,6 +98,9 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
         if (context == null) {
             return;
         }
+        if (!isHiveSessionAvailable()) {
+            return;
+        }
         Object queryValue = context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY);
         if (!(queryValue instanceof TacticSearchQuery tacticSearchQuery)) {
             return;
@@ -106,6 +120,26 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
         } catch (RuntimeException exception) {
             log.warn("[Hive] Failed to publish tactic search projection: {}", exception.getMessage());
         }
+    }
+
+    private boolean isHiveSessionAvailable() {
+        if (hiveSessionStateStore == null) {
+            return true;
+        }
+        return hiveSessionStateStore.load()
+                .map(this::isCompleteHiveSession)
+                .orElse(false);
+    }
+
+    private boolean isCompleteHiveSession(HiveSessionState sessionState) {
+        return sessionState != null
+                && !isBlank(sessionState.getServerUrl())
+                && !isBlank(sessionState.getGolemId())
+                && !isBlank(sessionState.getAccessToken());
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private Map<String, Object> buildMetadata(AgentContext context) {

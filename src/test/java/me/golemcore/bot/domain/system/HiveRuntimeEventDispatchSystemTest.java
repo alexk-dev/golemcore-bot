@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -16,11 +17,13 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.domain.service.HiveSessionStateStore;
 import org.junit.jupiter.api.Test;
 
 class HiveRuntimeEventDispatchSystemTest {
@@ -82,7 +85,14 @@ class HiveRuntimeEventDispatchSystemTest {
     @Test
     void shouldPublishRuntimeTacticSearchProjectionFromContextAttributes() {
         HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher);
+        HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
+        when(sessionStateStore.load())
+                .thenReturn(java.util.Optional.of(HiveSessionState.builder()
+                        .serverUrl("https://hive.example")
+                        .golemId("golem-1")
+                        .accessToken("token")
+                        .build()));
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, sessionStateStore);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("web:chat-1")
@@ -115,5 +125,45 @@ class HiveRuntimeEventDispatchSystemTest {
         system.process(context);
 
         verify(publisher).publishSelfEvolvingTacticSearchProjection(any(SelfEvolvingTacticSearchResponseDto.class));
+    }
+
+    @Test
+    void shouldSkipRuntimeTacticSearchProjectionWhenHiveSessionIsUnavailable() {
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
+        when(sessionStateStore.load()).thenReturn(java.util.Optional.empty());
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, sessionStateStore);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id("web:chat-1")
+                        .channelType("web")
+                        .chatId("chat-1")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY, TacticSearchQuery.builder()
+                .rawQuery("recover failed shell command")
+                .queryViews(List.of("recover", "shell"))
+                .build());
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_RESULTS, List.of(TacticSearchResult.builder()
+                .tacticId("planner")
+                .artifactStreamId("stream-planner")
+                .artifactKey("skill:planner")
+                .artifactType("skill")
+                .title("Planner tactic")
+                .promotionState("active")
+                .rolloutStage("active")
+                .score(1.12d)
+                .explanation(TacticSearchExplanation.builder()
+                        .searchMode("hybrid")
+                        .eligible(true)
+                        .finalScore(1.12d)
+                        .build())
+                .build()));
+
+        system.process(context);
+
+        verifyNoInteractions(publisher);
     }
 }
