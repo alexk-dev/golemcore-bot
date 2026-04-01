@@ -248,6 +248,77 @@ class ContextBuildingSystemTest {
     }
 
     @Test
+    void shouldSkipSelfEvolvingRunWhenSessionIsMissing() {
+        ContextAssembler assembler = mock(ContextAssembler.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
+        ContextBuildingSystem system = new ContextBuildingSystem(
+                assembler,
+                runtimeConfigService,
+                selfEvolvingRunService);
+        AgentContext context = AgentContext.builder().build();
+        when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+
+        AgentContext result = system.process(context);
+
+        verify(selfEvolvingRunService, never()).startRun(context);
+        assertNull(result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
+    }
+
+    @Test
+    void shouldAssembleContextWhenSelfEvolvingDependenciesAreMissing() {
+        ContextAssembler assembler = mock(ContextAssembler.class);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-4").chatId("chat-4").build())
+                .build();
+        when(assembler.assemble(context)).thenReturn(context);
+
+        AgentContext result = system.process(context);
+
+        verify(assembler).assemble(context);
+        assertNull(result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
+    }
+
+    @Test
+    void shouldSkipSelfEvolvingRunWhenRunServiceIsMissing() {
+        ContextAssembler assembler = mock(ContextAssembler.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler, runtimeConfigService, null);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-5").chatId("chat-5").build())
+                .build();
+        when(assembler.assemble(context)).thenReturn(context);
+
+        AgentContext result = system.process(context);
+
+        verify(assembler).assemble(context);
+        assertNull(result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
+    }
+
+    @Test
+    void shouldHandleNullAssembledContextWhenSelfEvolvingIsEnabled() {
+        ContextAssembler assembler = mock(ContextAssembler.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
+        ContextBuildingSystem system = new ContextBuildingSystem(
+                assembler,
+                runtimeConfigService,
+                selfEvolvingRunService);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-6").chatId("chat-6").build())
+                .build();
+        when(assembler.assemble(context)).thenReturn(null);
+
+        AgentContext result = system.process(context);
+
+        verify(assembler).assemble(context);
+        verify(selfEvolvingRunService, never()).startRun(any());
+        assertNull(result);
+    }
+
+    @Test
     void shouldNotRestartSelfEvolvingRunWhenRunIdAlreadyExists() {
         ContextAssembler assembler = mock(ContextAssembler.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);

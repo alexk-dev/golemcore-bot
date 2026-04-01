@@ -68,6 +68,12 @@ class PostRunAnalysisSystemTest {
     }
 
     @Test
+    void shouldExposeSystemMetadata() {
+        assertEquals("PostRunAnalysisSystem", system.getName());
+        assertEquals(58, system.getOrder());
+    }
+
+    @Test
     void shouldCreateRunRecordWhenTurnOutcomeIsReady() {
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         AgentContext context = buildContext();
@@ -158,6 +164,7 @@ class PostRunAnalysisSystemTest {
         AgentContext alreadyCompleted = buildContext();
         alreadyCompleted.setAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED, true);
 
+        assertFalse(system.shouldProcess(null));
         assertFalse(system.shouldProcess(withoutOutcome));
         assertFalse(system.shouldProcess(alreadyCompleted));
     }

@@ -59,4 +59,34 @@ class TraceRuntimeConfigSupportSelfEvolvingTest {
         assertFalse(tracingConfig.getCaptureToolPayloads());
         assertFalse(tracingConfig.getCaptureLlmPayloads());
     }
+
+    @Test
+    void shouldRespectConfiguredPayloadFlagsWhenOverrideIsDisabled() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.isPayloadSnapshotsEnabled()).thenReturn(true);
+        when(runtimeConfigService.getSessionTraceBudgetMb()).thenReturn(128);
+        when(runtimeConfigService.getTraceMaxSnapshotSizeKb()).thenReturn(256);
+        when(runtimeConfigService.getTraceMaxSnapshotsPerSpan()).thenReturn(10);
+        when(runtimeConfigService.getTraceMaxTracesPerSession()).thenReturn(100);
+        when(runtimeConfigService.isTraceInboundPayloadCaptureEnabled()).thenReturn(true);
+        when(runtimeConfigService.isTraceOutboundPayloadCaptureEnabled()).thenReturn(false);
+        when(runtimeConfigService.isTraceToolPayloadCaptureEnabled()).thenReturn(false);
+        when(runtimeConfigService.isTraceLlmPayloadCaptureEnabled()).thenReturn(false);
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        when(runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled()).thenReturn(false);
+
+        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
+
+        assertTrue(tracingConfig.getPayloadSnapshotsEnabled());
+        assertTrue(tracingConfig.getCaptureInboundPayloads());
+        assertFalse(tracingConfig.getCaptureOutboundPayloads());
+        assertFalse(tracingConfig.getCaptureToolPayloads());
+        assertFalse(tracingConfig.getCaptureLlmPayloads());
+    }
+
+    @Test
+    void shouldReturnNullWhenRuntimeConfigServiceIsMissing() {
+        assertTrue(TraceRuntimeConfigSupport.resolve(null) == null);
+    }
 }
