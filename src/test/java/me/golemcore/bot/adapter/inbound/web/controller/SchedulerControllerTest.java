@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.auto.AutoModeScheduler;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduleEntry;
@@ -39,7 +38,6 @@ class SchedulerControllerTest {
     private AutoModeService autoModeService;
     private ScheduleService scheduleService;
     private ChannelRegistry channelRegistry;
-    private AutoModeScheduler autoModeScheduler;
     private SchedulerController controller;
 
     @BeforeEach
@@ -47,8 +45,7 @@ class SchedulerControllerTest {
         autoModeService = mock(AutoModeService.class);
         scheduleService = mock(ScheduleService.class);
         channelRegistry = mock(ChannelRegistry.class);
-        autoModeScheduler = mock(AutoModeScheduler.class);
-        controller = new SchedulerController(autoModeService, scheduleService, channelRegistry, autoModeScheduler);
+        controller = new SchedulerController(autoModeService, scheduleService, channelRegistry);
     }
 
     @Test
@@ -1135,30 +1132,6 @@ class SchedulerControllerTest {
     }
 
     @Test
-    void getAvailableChannelsShouldReturnRunningChannels() {
-        ChannelPort telegramChannel = mock(ChannelPort.class);
-        when(telegramChannel.getChannelType()).thenReturn("telegram");
-        when(telegramChannel.isRunning()).thenReturn(true);
-
-        ChannelPort webChannel = mock(ChannelPort.class);
-        when(webChannel.getChannelType()).thenReturn("web");
-        when(webChannel.isRunning()).thenReturn(false);
-
-        when(channelRegistry.getAll()).thenReturn(List.of(telegramChannel, webChannel));
-
-        StepVerifier.create(controller.getAvailableChannels())
-                .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
-                    SchedulerController.ChannelsResponse body = response.getBody();
-                    assertNotNull(body);
-                    assertEquals(2, body.channels().size());
-                    assertEquals("telegram", body.channels().get(0).type());
-                    assertEquals("outgoing_webhook", body.channels().get(1).type());
-                })
-                .verifyComplete();
-    }
-
-    @Test
     void createScheduleShouldAcceptReportChannelType() {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
@@ -1273,5 +1246,82 @@ class SchedulerControllerTest {
                     assertEquals("54321", body.reportChatId());
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void createScheduleShouldAcceptWebhookChannelWithUrl() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+        ScheduleEntry created = ScheduleEntry.builder()
+                .id("sched-webhook")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("goal-1")
+                .cronExpression("0 0 9 * * *")
+                .enabled(true)
+                .reportChannelType("webhook")
+                .reportWebhookUrl("https://example.com/hook")
+                .maxExecutions(-1)
+                .executionCount(0)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+                eq("0 0 9 * * *"), eq(-1), eq(false), eq("webhook"), isNull(),
+                eq("https://example.com/hook"), isNull()))
+                .thenReturn(created);
+
+        SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
+                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                "webhook", null, "https://example.com/hook", null);
+
+        StepVerifier.create(controller.createSchedule(request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.CREATED, response.getStatusCode());
+                    SchedulerController.ScheduleDto body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("webhook", body.reportChannelType());
+                    assertEquals("https://example.com/hook", body.reportWebhookUrl());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void createScheduleShouldRejectWebhookChannelWithoutUrl() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+
+        SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
+                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                "webhook", null, null, null);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.createSchedule(request));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertTrue(exception.getReason() != null && exception.getReason().contains("reportWebhookUrl is required"));
+    }
+
+    @Test
+    void createScheduleShouldRejectWebhookChannelWithInvalidUrl() {
+        Goal goal = Goal.builder().id("goal-1").title("Goal").build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
+
+        SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
+                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                "webhook", null, "ftp://not-http.com/hook", null);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.createSchedule(request));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertTrue(exception.getReason() != null && exception.getReason().contains("http://"));
     }
 }

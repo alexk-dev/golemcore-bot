@@ -1,7 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
-import me.golemcore.bot.auto.AutoModeScheduler;
 import me.golemcore.bot.auto.ScheduleReportSender;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
@@ -10,7 +9,6 @@ import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -49,35 +47,10 @@ public class SchedulerController {
     private final AutoModeService autoModeService;
     private final ScheduleService scheduleService;
     private final ChannelRegistry channelRegistry;
-    private final AutoModeScheduler autoModeScheduler;
 
     @GetMapping
     public Mono<ResponseEntity<SchedulerStateResponse>> getState() {
         return Mono.just(ResponseEntity.ok(buildSchedulerStateResponse()));
-    }
-
-    @GetMapping("/channels")
-    public Mono<ResponseEntity<ChannelsResponse>> getAvailableChannels() {
-        AutoModeScheduler.ChannelInfo activeBinding = autoModeScheduler.getChannelInfo();
-        List<ChannelDto> channels = new ArrayList<>(channelRegistry.getAll().stream()
-                .filter(ChannelPort::isRunning)
-                .map(channel -> {
-                    String activeChatId = resolveActiveChatId(channel.getChannelType(), activeBinding);
-                    return new ChannelDto(channel.getChannelType(), channel.getChannelType(), activeChatId);
-                })
-                .toList());
-        channels.add(new ChannelDto(ScheduleReportSender.OUTGOING_WEBHOOK, "Outgoing Webhook", null));
-        return Mono.just(ResponseEntity.ok(new ChannelsResponse(channels)));
-    }
-
-    private static String resolveActiveChatId(String channelType, AutoModeScheduler.ChannelInfo activeBinding) {
-        if (activeBinding == null) {
-            return null;
-        }
-        if (channelType.equals(activeBinding.channelType())) {
-            return activeBinding.transportChatId();
-        }
-        return null;
     }
 
     @PostMapping("/schedules")
@@ -687,12 +660,6 @@ public class SchedulerController {
     public record DeleteScheduleResponse(String scheduleId) {
     }
 
-    public record ChannelsResponse(List<ChannelDto> channels) {
-    }
-
-    public record ChannelDto(String type, String label, String activeChatId) {
-    }
-
     private void validateReportChannel(String channelType, String chatId, String webhookUrl) {
         if (channelType == null && chatId != null) {
             throw badRequest("reportChannelType is required when reportChatId is set");
@@ -700,9 +667,9 @@ public class SchedulerController {
         if (channelType == null) {
             return;
         }
-        if (ScheduleReportSender.OUTGOING_WEBHOOK.equals(channelType)) {
+        if (ScheduleReportSender.WEBHOOK_CHANNEL_TYPE.equals(channelType)) {
             if (StringValueSupport.isBlank(webhookUrl)) {
-                throw badRequest("reportWebhookUrl is required for outgoing_webhook channel type");
+                throw badRequest("reportWebhookUrl is required for webhook channel type");
             }
             if (!webhookUrl.startsWith("http://") && !webhookUrl.startsWith("https://")) {
                 throw badRequest("reportWebhookUrl must start with http:// or https://");

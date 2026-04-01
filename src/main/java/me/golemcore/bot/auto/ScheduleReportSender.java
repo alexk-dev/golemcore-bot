@@ -52,7 +52,7 @@ import java.util.concurrent.TimeoutException;
 @Slf4j
 public class ScheduleReportSender {
 
-    public static final String OUTGOING_WEBHOOK = "outgoing_webhook";
+    public static final String WEBHOOK_CHANNEL_TYPE = "webhook";
     private static final int CHANNEL_SEND_TIMEOUT_SECONDS = 30;
     private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
 
@@ -82,7 +82,7 @@ public class ScheduleReportSender {
             return;
         }
 
-        if (OUTGOING_WEBHOOK.equals(schedule.getReportChannelType())) {
+        if (WEBHOOK_CHANNEL_TYPE.equals(schedule.getReportChannelType())) {
             sendViaWebhook(schedule, reportHeader, assistantText);
         } else {
             sendViaChannel(schedule, reportHeader, assistantText, fallbackChannelInfo);

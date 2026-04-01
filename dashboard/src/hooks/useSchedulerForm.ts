@@ -112,7 +112,7 @@ function resolveReportFields(form: ScheduleFormState): Pick<
   if (form.reportChannelType.length === 0) {
     return { reportChannelType: null };
   }
-  if (form.reportChannelType === 'outgoing_webhook') {
+  if (form.reportChannelType === 'webhook') {
     return {
       reportChannelType: form.reportChannelType,
       reportWebhookUrl: form.reportWebhookUrl.length > 0 ? form.reportWebhookUrl : null,

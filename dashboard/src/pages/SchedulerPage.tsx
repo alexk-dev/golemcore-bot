@@ -4,7 +4,6 @@ import { useSearchParams } from 'react-router-dom';
 import type { SchedulerRunSummary, SchedulerSchedule, SchedulerTargetType } from '../api/scheduler';
 import { SchedulerWorkspace } from '../components/scheduler/SchedulerWorkspace';
 import {
-  useAvailableChannels,
   useCreateSchedule,
   useDeleteSchedule,
   useSchedulerBusyState,
@@ -15,6 +14,9 @@ import {
 } from '../hooks/useScheduler';
 import { useSchedulerForm } from '../hooks/useSchedulerForm';
 import { useSchedulerNavigation } from '../hooks/useSchedulerNavigation';
+import { useRuntimeConfig } from '../hooks/useSettings';
+import { useSystemChannels } from '../hooks/useSystem';
+import { filterAndSortChannels, resolveLinkedTelegramUserId } from '../utils/channelUtils';
 
 function resolveEffectiveRunId(runs: SchedulerRunSummary[], selectedRunId: string | null): string | null {
   const selectedRun = runs.find((run) => run.runId === selectedRunId);
@@ -72,21 +74,25 @@ export default function SchedulerPage(): ReactElement {
   const goals = useMemo(() => data?.goals ?? [], [data?.goals]);
   const standaloneTasks = useMemo(() => data?.standaloneTasks ?? [], [data?.standaloneTasks]);
   const formState = useSchedulerForm(goals, standaloneTasks);
-  const channelsQuery = useAvailableChannels();
-  const channelOptions = useMemo(
-    () => (channelsQuery.data?.channels ?? []).map((ch) => ({
-      type: ch.type,
-      label: ch.label,
-      activeChatId: ch.activeChatId ?? null,
-    })),
-    [channelsQuery.data],
+  const runtimeConfigQuery = useRuntimeConfig();
+  const systemChannelsQuery = useSystemChannels();
+  const linkedTelegramUserId = useMemo(
+    () => resolveLinkedTelegramUserId(runtimeConfigQuery.data?.telegram?.allowedUsers),
+    [runtimeConfigQuery.data?.telegram?.allowedUsers],
   );
+  const channelOptions = useMemo(() => {
+    const excluded = new Set(['web']);
+    return filterAndSortChannels(systemChannelsQuery.data ?? [], excluded)
+      .map((channel) => ({
+        type: channel.type,
+        label: channel.type.charAt(0).toUpperCase() + channel.type.slice(1),
+      }));
+  }, [systemChannelsQuery.data]);
 
   const handleReportChannelTypeChange = (channelType: string): void => {
     formState.setReportChannelType(channelType);
-    const selected = channelOptions.find((ch) => ch.type === channelType);
-    if (selected?.activeChatId != null) {
-      formState.setReportChatId(selected.activeChatId);
+    if (channelType === 'telegram' && linkedTelegramUserId != null) {
+      formState.setReportChatId(linkedTelegramUserId);
     }
   };
   const navigation = useSchedulerNavigation(

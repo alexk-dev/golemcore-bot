@@ -76,7 +76,6 @@ interface ClearContextFieldProps {
 export interface ReportChannelOption {
   type: string;
   label: string;
-  activeChatId: string | null;
 }
 
 interface ReportChannelFieldProps {
@@ -372,12 +371,12 @@ export function ClearContextField({
   );
 }
 
-function isOutgoingWebhook(channelType: string): boolean {
-  return channelType === 'outgoing_webhook';
+function isWebhookChannel(channelType: string): boolean {
+  return channelType === 'webhook';
 }
 
 function isChannelSelected(channelType: string): boolean {
-  return channelType.length > 0 && !isOutgoingWebhook(channelType);
+  return channelType.length > 0 && !isWebhookChannel(channelType);
 }
 
 export function ReportChannelField({
@@ -421,7 +420,7 @@ export function ReportChannelField({
         />
       )}
 
-      {isOutgoingWebhook(reportChannelType) && (
+      {isWebhookChannel(reportChannelType) && (
         <>
           <Form.Control
             size="sm"

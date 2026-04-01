@@ -50,16 +50,6 @@ export interface CreateScheduleRequest {
   reportWebhookSecret?: string | null;
 }
 
-export interface AvailableChannel {
-  type: string;
-  label: string;
-  activeChatId: string | null;
-}
-
-export interface ChannelsResponse {
-  channels: AvailableChannel[];
-}
-
 export interface UpdateScheduleRequest extends CreateScheduleRequest {
   enabled: boolean;
 }
@@ -142,7 +132,3 @@ export async function getSchedulerRun(runId: string): Promise<SchedulerRunDetail
   return data;
 }
 
-export async function getAvailableChannels(): Promise<ChannelsResponse> {
-  const { data } = await client.get<ChannelsResponse>('/scheduler/channels');
-  return data;
-}
