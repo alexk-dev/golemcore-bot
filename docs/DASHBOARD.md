@@ -21,7 +21,6 @@ How to use the built-in web dashboard for chat, setup, settings, scheduler manag
 - `/dashboard/skills` - skill library
 - `/dashboard/prompts` - prompt configuration
 - `/dashboard/analytics` - analytics view
-- `/dashboard/self-evolving` - SelfEvolving workspace
 - `/dashboard/diagnostics` - diagnostics utilities
 
 ## Authentication
@@ -84,42 +83,7 @@ The Settings page is now organized into catalog blocks instead of a flat tab lis
 - `Extensions` - Plugin Marketplace plus plugin-contributed settings pages
 - `Tools` - filesystem, shell, automation, goal management, voice routing
 - `Runtime` - memory, skills, turn budget, usage, MCP, auto mode, updates
-- `Runtime` also includes `SelfEvolving` for judge tiers, promotion policy, benchmark harvesting, and trace payload override
 - `Advanced` - rate limiting, security, compaction
-
-### SelfEvolving Settings
-
-`Settings -> SelfEvolving` controls the native eval and promotion runtime:
-
-- enable or disable the `SelfEvolving` pipeline
-- choose judge tiers for primary, tiebreaker, and evolution passes
-- configure approval-gated or automatic promotion behavior
-- enable benchmark harvesting from production runs
-- force trace payload capture for evaluation-relevant spans while keeping redaction active
-
-### SelfEvolving Workspace
-
-`/dashboard/self-evolving` is the operator workspace for bot-local `SelfEvolving` state.
-
-It shows:
-
-- workspace-first artifact browser keyed by canonical `artifactStreamId`
-- artifact catalog for evolved `skills`, `prompts`, `routing policies`, `tool policies`, `memory policies`, `context policies`, and `governance policies`
-- lineage rail for the full lifecycle `candidate -> approved -> active -> reverted`
-- semantic revision diff, rollout transition diff, evidence, and benchmark impact for the selected compare pair
-- overview cards for runs, candidates, campaigns, and approval pressure
-- readonly run list with verdict summaries
-- candidate queue deep-linked into the selected artifact stream
-- benchmark lab campaigns harvested from production or curated suites, with artifact-aware context for the selected stream
-
-`artifactStreamId` is the canonical deep-link and compare identity. `artifactKey` and aliases stay display metadata only.
-
-Diff behavior is intentionally split:
-
-- bounded rollout and common revision compares are materialized ahead of time for fast inspection
-- arbitrary revision compares remain on-demand instead of being precomputed for every pair
-
-The workspace is bot-local and remains the source of truth for revisions, rollout nodes, and evidence. Hive mirrors this workspace as a readonly fleet view when the golem is connected.
 
 Plugin settings pages are discovered dynamically from `/api/plugins/settings/catalog`.
 
