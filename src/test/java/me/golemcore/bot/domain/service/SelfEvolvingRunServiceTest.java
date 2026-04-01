@@ -5,6 +5,8 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FinishReason;
+import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -18,7 +20,9 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -73,5 +77,69 @@ class SelfEvolvingRunServiceTest {
 
         String persistedJson = service.exportRunsJson();
         assertTrue(persistedJson.contains("\"artifactBundleId\":\"bundle-1\""));
+    }
+
+    @Test
+    void shouldCompleteRunWithFailedOutcomeAndUpdatedBundle() {
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-2").metadata(Map.of()).build())
+                .turnOutcome(TurnOutcome.builder().finishReason(FinishReason.ITERATION_LIMIT).build())
+                .build();
+        RunRecord run = RunRecord.builder()
+                .id("run-2")
+                .artifactBundleId("bundle-2")
+                .traceId("trace-before")
+                .status("RUNNING")
+                .build();
+        ArtifactBundleRecord refreshedBundle = ArtifactBundleRecord.builder()
+                .id("bundle-2b")
+                .build();
+        when(artifactBundleService.refresh("bundle-2", context)).thenReturn(refreshedBundle);
+
+        RunRecord completed = service.completeRun(run, context);
+
+        assertSame(run, completed);
+        assertEquals("bundle-2b", completed.getArtifactBundleId());
+        assertEquals("FAILED", completed.getStatus());
+        assertEquals(FIXED_INSTANT, completed.getCompletedAt());
+    }
+
+    @Test
+    void shouldFindRunsAndFallbackToMetadataGolemId() {
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id("session-3")
+                        .metadata(Map.of(ContextAttributes.HIVE_GOLEM_ID, "golem-meta"))
+                        .build())
+                .build();
+        when(artifactBundleService.snapshot(context)).thenReturn(ArtifactBundleRecord.builder()
+                .id("bundle-3")
+                .golemId("golem-meta")
+                .build());
+
+        RunRecord run = service.startRun(context);
+
+        assertTrue(service.findRun(run.getId()).isPresent());
+        assertFalse(service.findRun(" ").isPresent());
+        assertEquals("golem-meta", run.getGolemId());
+    }
+
+    @Test
+    void shouldReturnCompletedStatusWhenOutcomeIsMissing() {
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-4").metadata(Map.of()).build())
+                .build();
+        RunRecord run = RunRecord.builder()
+                .id("run-4")
+                .artifactBundleId("bundle-4")
+                .status("RUNNING")
+                .build();
+        when(artifactBundleService.refresh("bundle-4", context)).thenReturn(ArtifactBundleRecord.builder()
+                .id("bundle-4")
+                .build());
+
+        RunRecord completed = service.completeRun(run, context);
+
+        assertEquals("COMPLETED", completed.getStatus());
     }
 }

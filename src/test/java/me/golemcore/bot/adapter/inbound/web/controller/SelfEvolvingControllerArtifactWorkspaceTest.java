@@ -4,6 +4,8 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvi
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactCompareOptionsDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactEvidenceDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactLineageDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactRevisionDiffDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactTransitionDiffDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactWorkspaceSummaryDto;
 import me.golemcore.bot.domain.service.BenchmarkLabService;
 import me.golemcore.bot.domain.service.PromotionWorkflowService;
@@ -121,11 +123,77 @@ class SelfEvolvingControllerArtifactWorkspaceTest {
     }
 
     @Test
-    void shouldRejectMissingRevisionDiffQueryParams() {
-        ResponseStatusException responseStatusException = assertThrows(
+    void shouldReturnArtifactDiffEndpointsByStreamId() {
+        when(projectionService.getArtifactRevisionDiff("stream-1", "rev-1", "rev-2")).thenReturn(Optional.of(
+                SelfEvolvingArtifactRevisionDiffDto.builder()
+                        .artifactStreamId("stream-1")
+                        .fromRevisionId("rev-1")
+                        .toRevisionId("rev-2")
+                        .summary("revision diff")
+                        .build()));
+        when(projectionService.getArtifactTransitionDiff("stream-1", "node-1", "node-2")).thenReturn(Optional.of(
+                SelfEvolvingArtifactTransitionDiffDto.builder()
+                        .artifactStreamId("stream-1")
+                        .fromNodeId("node-1")
+                        .toNodeId("node-2")
+                        .summary("transition diff")
+                        .build()));
+        when(projectionService.getArtifactCompareEvidence("stream-1", "rev-1", "rev-2")).thenReturn(Optional.of(
+                SelfEvolvingArtifactEvidenceDto.builder()
+                        .artifactStreamId("stream-1")
+                        .payloadKind("compare")
+                        .fromRevisionId("rev-1")
+                        .toRevisionId("rev-2")
+                        .build()));
+        when(projectionService.getArtifactTransitionEvidence("stream-1", "node-1", "node-2")).thenReturn(Optional.of(
+                SelfEvolvingArtifactEvidenceDto.builder()
+                        .artifactStreamId("stream-1")
+                        .payloadKind("transition")
+                        .fromNodeId("node-1")
+                        .toNodeId("node-2")
+                        .build()));
+        when(projectionService.getArtifactCompareOptions("stream-1")).thenReturn(Optional.of(
+                SelfEvolvingArtifactCompareOptionsDto.builder()
+                        .artifactStreamId("stream-1")
+                        .defaultFromNodeId("node-1")
+                        .defaultToNodeId("node-2")
+                        .build()));
+
+        StepVerifier.create(controller.getArtifactRevisionDiff("stream-1", "rev-1", "rev-2"))
+                .assertNext(response -> assertEquals("revision diff", response.getBody().getSummary()))
+                .verifyComplete();
+        StepVerifier.create(controller.getArtifactTransitionDiff("stream-1", "node-1", "node-2"))
+                .assertNext(response -> assertEquals("transition diff", response.getBody().getSummary()))
+                .verifyComplete();
+        StepVerifier.create(controller.getArtifactCompareEvidence("stream-1", "rev-1", "rev-2"))
+                .assertNext(response -> assertEquals("compare", response.getBody().getPayloadKind()))
+                .verifyComplete();
+        StepVerifier.create(controller.getArtifactTransitionEvidence("stream-1", "node-1", "node-2"))
+                .assertNext(response -> assertEquals("transition", response.getBody().getPayloadKind()))
+                .verifyComplete();
+        StepVerifier.create(controller.getArtifactCompareOptions("stream-1"))
+                .assertNext(response -> assertEquals("node-1", response.getBody().getDefaultFromNodeId()))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldRejectMissingRevisionDiffAndEvidenceQueryParams() {
+        ResponseStatusException revisionDiffException = assertThrows(
                 ResponseStatusException.class,
                 () -> controller.getArtifactRevisionDiff("stream-1", null, "rev-2"));
+        ResponseStatusException transitionDiffException = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.getArtifactTransitionDiff("stream-1", null, "node-2"));
+        ResponseStatusException compareEvidenceException = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.getArtifactCompareEvidence("stream-1", "rev-1", null));
+        ResponseStatusException transitionEvidenceException = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.getArtifactTransitionEvidence("stream-1", "node-1", null));
 
-        assertEquals(HttpStatus.BAD_REQUEST, responseStatusException.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, revisionDiffException.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, transitionDiffException.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, compareEvidenceException.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, transitionEvidenceException.getStatusCode());
     }
 }
