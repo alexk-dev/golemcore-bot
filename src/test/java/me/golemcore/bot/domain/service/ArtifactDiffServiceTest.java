@@ -73,6 +73,72 @@ class ArtifactDiffServiceTest {
         assertEquals("bundle_observed", diff.getAttributionMode());
     }
 
+    @Test
+    void shouldMarkRevisionDiffAsMissingWhenEitherSideIsAbsent() {
+        ArtifactNormalizedRevisionProjection toProjection = normalizedRevisionProjectionService.normalize(
+                revision("rev-2", "title: planner\nstep: inspect"));
+
+        ArtifactRevisionDiffProjection diff = artifactDiffService.compareRevisions(
+                "stream-1",
+                "skill:planner",
+                null,
+                toProjection,
+                null);
+
+        assertEquals(List.of("missing_revision"), diff.getChangedFields());
+        assertEquals("Artifact content changed", diff.getSummary());
+        assertEquals(List.of("content_changed"), diff.getRiskSignals());
+        assertEquals("rev-2", diff.getToRevisionId());
+    }
+
+    @Test
+    void shouldDescribeNoContentChangesWhenNormalizedHashesMatch() {
+        ArtifactNormalizedRevisionProjection fromProjection = normalizedRevisionProjectionService.normalize(
+                revision("rev-1", "title: planner\nstep: inspect"));
+        ArtifactNormalizedRevisionProjection toProjection = normalizedRevisionProjectionService.normalize(
+                revision("rev-2", "title: planner\nstep: inspect"));
+
+        ArtifactRevisionDiffProjection diff = artifactDiffService.compareRevisions(
+                "stream-1",
+                "skill:planner",
+                fromProjection,
+                toProjection,
+                ArtifactImpactProjection.builder().attributionMode("isolated").build());
+
+        assertTrue(diff.getChangedFields().isEmpty());
+        assertEquals("No content changes", diff.getSummary());
+        assertTrue(diff.getRiskSignals().isEmpty());
+        assertEquals("isolated", diff.getAttributionMode());
+    }
+
+    @Test
+    void shouldMarkTransitionDiffAsContentChangedWhenRevisionDiffChangesFields() {
+        ArtifactRevisionDiffProjection revisionDiff = ArtifactRevisionDiffProjection.builder()
+                .changedFields(List.of("normalizedContent"))
+                .build();
+
+        ArtifactTransitionDiffProjection diff = artifactDiffService.compareTransition(
+                "stream-1",
+                "skill:planner",
+                ArtifactLineageNode.builder()
+                        .nodeId("node-approved")
+                        .contentRevisionId("rev-1")
+                        .rolloutStage("approved")
+                        .build(),
+                ArtifactLineageNode.builder()
+                        .nodeId("node-active")
+                        .contentRevisionId("rev-2")
+                        .rolloutStage("active")
+                        .build(),
+                revisionDiff,
+                null);
+
+        assertTrue(diff.isContentChanged());
+        assertEquals("Transition includes content change", diff.getSummary());
+        assertEquals("approved", diff.getFromRolloutStage());
+        assertEquals("active", diff.getToRolloutStage());
+    }
+
     private ArtifactRevisionRecord revision(String revisionId, String rawContent) {
         return ArtifactRevisionRecord.builder()
                 .artifactStreamId("stream-1")

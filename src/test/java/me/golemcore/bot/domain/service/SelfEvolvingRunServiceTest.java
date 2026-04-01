@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
+import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,12 +17,15 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -141,5 +145,101 @@ class SelfEvolvingRunServiceTest {
         RunRecord completed = service.completeRun(run, context);
 
         assertEquals("COMPLETED", completed.getStatus());
+    }
+
+    @Test
+    void shouldUpdatePersistedRunWithoutDuplicatingAndRefreshTraceId() throws Exception {
+        Map<String, String> persistedFiles = new ConcurrentHashMap<>();
+        RunRecord storedRun = RunRecord.builder()
+                .id("run-5")
+                .golemId("golem-5")
+                .artifactBundleId("bundle-5")
+                .traceId("trace-old")
+                .status("RUNNING")
+                .startedAt(FIXED_INSTANT)
+                .build();
+        persistedFiles.put("runs.json", objectMapper.writeValueAsString(List.of(storedRun)));
+
+        StoragePort persistedStorage = mapBackedStorage(persistedFiles);
+        SelfEvolvingRunService persistedService = new SelfEvolvingRunService(persistedStorage, artifactBundleService,
+                clock);
+        RunRecord run = persistedService.getRuns().getFirst();
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-5").metadata(Map.of()).build())
+                .turnOutcome(TurnOutcome.builder().finishReason(FinishReason.SUCCESS).build())
+                .build();
+        context.setTraceContext(TraceContext.builder()
+                .traceId("trace-new")
+                .spanId("span-new")
+                .build());
+        when(artifactBundleService.refresh("bundle-5", context)).thenReturn(ArtifactBundleRecord.builder()
+                .id("bundle-5b")
+                .build());
+
+        RunRecord completed = persistedService.completeRun(run, context);
+
+        assertEquals("COMPLETED", completed.getStatus());
+        assertEquals("trace-new", completed.getTraceId());
+        assertEquals("bundle-5b", completed.getArtifactBundleId());
+        assertEquals(1, persistedService.getRuns().size());
+        assertTrue(persistedService.exportRunsJson().contains("\"traceId\":\"trace-new\""));
+    }
+
+    @Test
+    void shouldReturnNullWhenCompletingMissingRun() {
+        assertNull(service.completeRun(null, AgentContext.builder().build()));
+    }
+
+    @Test
+    void shouldFallbackToLocalSessionGolemIdWhenHiveMetadataIsMissing() {
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-local").metadata(Map.of()).build())
+                .build();
+        when(artifactBundleService.snapshot(context)).thenReturn(ArtifactBundleRecord.builder()
+                .id("bundle-local")
+                .build());
+
+        RunRecord run = service.startRun(context);
+
+        assertEquals("local-session-local", run.getGolemId());
+    }
+
+    @Test
+    void shouldFallbackToLocalGolemWhenSessionIsMissing() {
+        AgentContext context = AgentContext.builder().build();
+        when(artifactBundleService.snapshot(context)).thenReturn(ArtifactBundleRecord.builder()
+                .id("bundle-global")
+                .build());
+
+        RunRecord run = service.startRun(context);
+
+        assertEquals("local-golem", run.getGolemId());
+        assertEquals("bundle-global", run.getArtifactBundleId());
+    }
+
+    @Test
+    void shouldLoadRunsAsEmptyWhenStoredJsonIsInvalid() {
+        StoragePort brokenStorage = mock(StoragePort.class);
+        when(brokenStorage.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture("{"));
+        when(brokenStorage.putText(eq("self-evolving"), eq("runs.json"), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        SelfEvolvingRunService brokenService = new SelfEvolvingRunService(brokenStorage, artifactBundleService, clock);
+
+        assertTrue(brokenService.getRuns().isEmpty());
+    }
+
+    private StoragePort mapBackedStorage(Map<String, String> persistedFiles) {
+        StoragePort persistedStorage = mock(StoragePort.class);
+        when(persistedStorage.getText(anyString(), anyString())).thenAnswer(invocation -> {
+            String fileName = invocation.getArgument(1);
+            return CompletableFuture.completedFuture(persistedFiles.get(fileName));
+        });
+        when(persistedStorage.putText(eq("self-evolving"), eq("runs.json"), anyString())).thenAnswer(invocation -> {
+            String fileName = invocation.getArgument(1);
+            String content = invocation.getArgument(2);
+            persistedFiles.put(fileName, content);
+            return CompletableFuture.completedFuture(null);
+        });
+        return persistedStorage;
     }
 }
