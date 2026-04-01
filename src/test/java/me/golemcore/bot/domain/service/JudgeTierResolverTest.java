@@ -63,4 +63,12 @@ class JudgeTierResolverTest {
 
         assertEquals("Unknown judge lane: sidecar", error.getMessage());
     }
+
+    @Test
+    void shouldRejectNullJudgeLane() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> judgeTierResolver.resolveSelection(null));
+
+        assertEquals("Unknown judge lane: null", error.getMessage());
+    }
 }
