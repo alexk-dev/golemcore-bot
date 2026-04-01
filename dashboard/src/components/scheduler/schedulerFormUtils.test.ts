@@ -74,6 +74,7 @@ describe('schedulerFormUtils', () => {
       reportChannelType: null,
       reportChatId: null,
       reportWebhookUrl: null,
+      reportWebhookSecret: null,
       maxExecutions: 0,
       executionCount: 0,
       createdAt: null,

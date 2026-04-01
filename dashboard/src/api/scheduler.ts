@@ -18,6 +18,7 @@ export interface SchedulerSchedule {
   reportChannelType: string | null;
   reportChatId: string | null;
   reportWebhookUrl: string | null;
+  reportWebhookSecret: string | null;
   maxExecutions: number;
   executionCount: number;
   createdAt: string | null;
@@ -131,4 +132,3 @@ export async function getSchedulerRun(runId: string): Promise<SchedulerRunDetail
   const { data } = await client.get<SchedulerRunDetail>(`/scheduler/runs/${encodeURIComponent(runId)}`);
   return data;
 }
-

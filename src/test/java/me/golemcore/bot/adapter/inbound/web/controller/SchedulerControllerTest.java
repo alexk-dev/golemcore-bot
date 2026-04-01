@@ -1290,6 +1290,49 @@ class SchedulerControllerTest {
     }
 
     @Test
+    void getStateShouldIncludeWebhookBearerTokenInDto() {
+        Goal goal = Goal.builder()
+                .id("goal-1")
+                .title("Goal")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of())
+                .createdAt(Instant.now())
+                .build();
+        ScheduleEntry entry = ScheduleEntry.builder()
+                .id("sched-webhook-state")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("goal-1")
+                .cronExpression("0 0 9 * * *")
+                .enabled(true)
+                .reportChannelType("webhook")
+                .reportWebhookUrl("https://example.com/hook")
+                .reportWebhookSecret("bearer-token")
+                .maxExecutions(-1)
+                .executionCount(0)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.getGoals()).thenReturn(List.of(goal));
+        when(autoModeService.isInboxGoal(goal)).thenReturn(false);
+        when(scheduleService.getSchedules()).thenReturn(List.of(entry));
+
+        StepVerifier.create(controller.getState())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SchedulerController.SchedulerStateResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(1, body.schedules().size());
+                    assertEquals("webhook", body.schedules().get(0).reportChannelType());
+                    assertEquals("https://example.com/hook", body.schedules().get(0).reportWebhookUrl());
+                    assertEquals("bearer-token", body.schedules().get(0).reportWebhookSecret());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void createScheduleShouldRejectWebhookChannelWithoutUrl() {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
 
