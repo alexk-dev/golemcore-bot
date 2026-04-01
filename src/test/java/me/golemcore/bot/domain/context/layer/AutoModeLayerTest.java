@@ -52,6 +52,8 @@ class AutoModeLayerTest {
 
         assertTrue(result.hasContent());
         assertTrue(result.getContent().contains("Fix bug #123"));
+        assertTrue(result.getContent().contains("Autonomous Execution Guidelines"));
+        assertTrue(result.getContent().contains("Do NOT include follow-up questions"));
     }
 
     @Test
@@ -71,7 +73,7 @@ class AutoModeLayerTest {
     }
 
     @Test
-    void shouldReturnEmptyWhenAutoContextIsBlank() {
+    void shouldIncludeGuidelinesEvenWhenAutoContextIsBlank() {
         when(autoModeService.buildAutoContext()).thenReturn("");
 
         Message autoMsg = Message.builder().role("user").content("task")
@@ -79,7 +81,9 @@ class AutoModeLayerTest {
         AgentContext context = AgentContext.builder().messages(List.of(autoMsg)).build();
 
         ContextLayerResult result = layer.assemble(context);
-        assertFalse(result.hasContent());
+        assertTrue(result.hasContent());
+        assertTrue(result.getContent().contains("Autonomous Execution Guidelines"));
+        assertFalse(result.getContent().contains("# Goals"));
     }
 
     @Test
