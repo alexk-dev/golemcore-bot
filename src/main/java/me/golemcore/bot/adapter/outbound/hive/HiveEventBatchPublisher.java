@@ -29,6 +29,10 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
@@ -70,6 +74,8 @@ public class HiveEventBatchPublisher {
     private static final String EVENT_TYPE_SELF_EVOLVING_ARTIFACT_DIFF_UPSERTED = "selfevolving.artifact.diff.upserted";
     private static final String EVENT_TYPE_SELF_EVOLVING_ARTIFACT_EVIDENCE_UPSERTED = "selfevolving.artifact.evidence.upserted";
     private static final String EVENT_TYPE_SELF_EVOLVING_ARTIFACT_IMPACT_UPSERTED = "selfevolving.artifact.impact.upserted";
+    private static final String EVENT_TYPE_SELF_EVOLVING_TACTIC_UPSERTED = "selfevolving.tactic.upserted";
+    private static final String EVENT_TYPE_SELF_EVOLVING_TACTIC_SEARCH_STATUS_UPSERTED = "selfevolving.tactic.search-status.upserted";
     private static final String CONTROL_EVENT_TYPE_STOP = "command.stop";
     private static final String CONTROL_EVENT_TYPE_CANCEL = "command.cancel";
     private static final int SUMMARY_MAX_LENGTH = 240;
@@ -553,6 +559,31 @@ public class HiveEventBatchPublisher {
         publishBatch(List.of(buildSelfEvolvingCampaignProjection(golemId, campaign)));
     }
 
+    public void publishSelfEvolvingTacticCatalogProjection(List<SelfEvolvingTacticDto> tactics) {
+        if (tactics == null || tactics.isEmpty()) {
+            return;
+        }
+        List<HiveEventPayload> events = new ArrayList<>();
+        for (SelfEvolvingTacticDto tactic : tactics) {
+            events.add(buildSelfEvolvingTacticProjection(null, null, tactic));
+        }
+        publishBatch(events);
+    }
+
+    public void publishSelfEvolvingTacticSearchProjection(SelfEvolvingTacticSearchResponseDto response) {
+        if (response == null) {
+            return;
+        }
+        List<HiveEventPayload> events = new ArrayList<>();
+        events.add(buildSelfEvolvingTacticSearchStatusProjection(null, response.getQuery(), response.getStatus()));
+        if (response.getResults() != null) {
+            for (SelfEvolvingTacticSearchResultDto result : response.getResults()) {
+                events.add(buildSelfEvolvingTacticProjection(null, response.getQuery(), result));
+            }
+        }
+        publishBatch(events);
+    }
+
     private HiveEventPayload buildSelfEvolvingArtifactEvidencePayload(
             String golemId,
             String payloadKind,
@@ -599,6 +630,38 @@ public class HiveEventBatchPublisher {
                 projectedAt);
     }
 
+    private HiveEventPayload buildSelfEvolvingTacticProjection(
+            String golemId,
+            String query,
+            SelfEvolvingTacticDto tactic) {
+        Map<String, Object> payload = objectMapper.convertValue(tactic, Map.class);
+        payload.put("searchQuery", query);
+        return buildArtifactEvent(
+                EVENT_TYPE_SELF_EVOLVING_TACTIC_UPSERTED,
+                golemId,
+                tactic.getArtifactKey(),
+                payload,
+                parseInstantOrNow(tactic.getUpdatedAt()));
+    }
+
+    private HiveEventPayload buildSelfEvolvingTacticSearchStatusProjection(
+            String golemId,
+            String query,
+            SelfEvolvingTacticSearchStatusDto status) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("query", query);
+        payload.put("mode", status != null ? status.getMode() : null);
+        payload.put("reason", status != null ? status.getReason() : null);
+        payload.put("degraded", status != null ? status.getDegraded() : null);
+        payload.put("searchUpdatedAt", status != null ? status.getUpdatedAt() : null);
+        return buildArtifactEvent(
+                EVENT_TYPE_SELF_EVOLVING_TACTIC_SEARCH_STATUS_UPSERTED,
+                golemId,
+                query,
+                payload,
+                parseInstantOrNow(status != null ? status.getUpdatedAt() : null));
+    }
+
     private HiveEventPayload buildArtifactEvent(
             String eventType,
             String golemId,
@@ -618,6 +681,17 @@ public class HiveEventBatchPublisher {
 
     private String resolveSourceBotVersion() {
         return firstNonBlank(System.getProperty("golemcore.bot.version"), "dev");
+    }
+
+    private Instant parseInstantOrNow(String value) {
+        if (isBlank(value)) {
+            return Instant.now();
+        }
+        try {
+            return Instant.parse(value);
+        } catch (RuntimeException ignored) {
+            return Instant.now();
+        }
     }
 
     private HiveEventPayload buildUsageEvent(HiveEventContext context, Map<String, Object> metadata) {

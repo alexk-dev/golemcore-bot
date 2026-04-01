@@ -192,13 +192,17 @@ public class SelfEvolvingController {
 
     @GetMapping("/tactics")
     public Mono<ResponseEntity<List<SelfEvolvingTacticDto>>> listTactics() {
-        return Mono.just(ResponseEntity.ok(projectionService.listTactics()));
+        List<SelfEvolvingTacticDto> tactics = projectionService.listTactics();
+        publishHiveTacticCatalog(tactics);
+        return Mono.just(ResponseEntity.ok(tactics));
     }
 
     @GetMapping("/tactics/search")
     public Mono<ResponseEntity<SelfEvolvingTacticSearchResponseDto>> searchTactics(
             @RequestParam(name = "q", required = false) String query) {
-        return Mono.just(ResponseEntity.ok(projectionService.searchTactics(query)));
+        SelfEvolvingTacticSearchResponseDto response = projectionService.searchTactics(query);
+        publishHiveTacticSearch(response);
+        return Mono.just(ResponseEntity.ok(response));
     }
 
     @GetMapping("/tactics/{tacticId}")
@@ -269,6 +273,28 @@ public class SelfEvolvingController {
             hiveEventBatchPublisher.publishSelfEvolvingCampaignProjection(null, campaign);
         } catch (RuntimeException exception) {
             log.debug("[Hive] Skipping SelfEvolving campaign projection publish: {}", exception.getMessage());
+        }
+    }
+
+    private void publishHiveTacticCatalog(List<SelfEvolvingTacticDto> tactics) {
+        if (hiveEventBatchPublisher == null || tactics == null || tactics.isEmpty()) {
+            return;
+        }
+        try {
+            hiveEventBatchPublisher.publishSelfEvolvingTacticCatalogProjection(tactics);
+        } catch (RuntimeException exception) {
+            log.debug("[Hive] Skipping SelfEvolving tactic catalog publish: {}", exception.getMessage());
+        }
+    }
+
+    private void publishHiveTacticSearch(SelfEvolvingTacticSearchResponseDto response) {
+        if (hiveEventBatchPublisher == null || response == null) {
+            return;
+        }
+        try {
+            hiveEventBatchPublisher.publishSelfEvolvingTacticSearchProjection(response);
+        } catch (RuntimeException exception) {
+            log.debug("[Hive] Skipping SelfEvolving tactic search publish: {}", exception.getMessage());
         }
     }
 
