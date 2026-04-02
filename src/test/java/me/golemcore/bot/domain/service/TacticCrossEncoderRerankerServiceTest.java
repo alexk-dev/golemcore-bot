@@ -29,6 +29,8 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -109,6 +111,102 @@ class TacticCrossEncoderRerankerServiceTest {
                 10));
 
         assertTrue(error.getCause() instanceof TimeoutException);
+    }
+
+    @Test
+    void shouldIgnoreBlankTacticIdsInRerankerResponse() {
+        when(modelSelectionService.resolveExplicitTier("deep"))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5.4", "high"));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                .content("""
+                        {
+                          "results": [
+                            {"tacticId": "", "score": 0.09, "verdict": "ignore"},
+                            {"tacticId": "planner", "score": 0.08, "verdict": "keep"}
+                          ]
+                        }
+                        """)
+                .build()));
+
+        List<TacticCrossEncoderRerankerService.RerankedCandidate> results = rerankerService.rerank(
+                TacticSearchQuery.builder().rawQuery("recover failed shell command").build(),
+                List.of(tactic("planner", "Planner tactic", "Recover via shell and git")),
+                "deep",
+                2500);
+
+        assertEquals(1, results.size());
+        assertEquals("planner", results.getFirst().tacticId());
+    }
+
+    @Test
+    void shouldFailWhenRerankerReturnsEmptyResponse() {
+        when(modelSelectionService.resolveExplicitTier("deep"))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5.4", "high"));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                .content("  ")
+                .build()));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> rerankerService.rerank(
+                TacticSearchQuery.builder().rawQuery("recover failed shell command").build(),
+                List.of(tactic("planner", "Planner tactic", "Recover via shell and git")),
+                "deep",
+                2500));
+
+        assertTrue(error.getMessage().contains("empty response"));
+    }
+
+    @Test
+    void shouldFailWhenRerankerReturnsInvalidJson() {
+        when(modelSelectionService.resolveExplicitTier("deep"))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5.4", "high"));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                .content("not-json")
+                .build()));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> rerankerService.rerank(
+                TacticSearchQuery.builder().rawQuery("recover failed shell command").build(),
+                List.of(tactic("planner", "Planner tactic", "Recover via shell and git")),
+                "deep",
+                2500));
+
+        assertTrue(error.getMessage().contains("Unable to parse"));
+    }
+
+    @Test
+    void shouldWrapExecutionFailureFromRerankerModel() {
+        when(modelSelectionService.resolveExplicitTier("deep"))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5.4", "high"));
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.failedFuture(new RuntimeException("boom")));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> rerankerService.rerank(
+                TacticSearchQuery.builder().rawQuery("recover failed shell command").build(),
+                List.of(tactic("planner", "Planner tactic", "Recover via shell and git")),
+                "deep",
+                2500));
+
+        assertTrue(error.getCause() instanceof ExecutionException);
+    }
+
+    @Test
+    void shouldWrapInterruptedFailureFromRerankerModel() {
+        when(modelSelectionService.resolveExplicitTier("deep"))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5.4", "high"));
+        CompletableFuture<LlmResponse> interruptedFuture = new CompletableFuture<>() {
+            @Override
+            public LlmResponse get(long timeout, TimeUnit unit) throws InterruptedException {
+                throw new InterruptedException("interrupted");
+            }
+        };
+        when(llmPort.chat(any())).thenReturn(interruptedFuture);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> rerankerService.rerank(
+                TacticSearchQuery.builder().rawQuery("recover failed shell command").build(),
+                List.of(tactic("planner", "Planner tactic", "Recover via shell and git")),
+                "deep",
+                2500));
+
+        assertTrue(error.getMessage().contains("interrupted"));
+        assertTrue(Thread.interrupted());
     }
 
     private TacticSearchResult tactic(String tacticId, String title, String behaviorSummary) {

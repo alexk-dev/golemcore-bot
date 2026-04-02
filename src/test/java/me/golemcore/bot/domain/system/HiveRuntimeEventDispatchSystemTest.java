@@ -3,7 +3,9 @@ package me.golemcore.bot.domain.system;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -165,5 +167,97 @@ class HiveRuntimeEventDispatchSystemTest {
         system.process(context);
 
         verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void shouldSkipRuntimeTacticSearchProjectionWhenHiveSessionIsIncomplete() {
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
+        when(sessionStateStore.load())
+                .thenReturn(java.util.Optional.of(HiveSessionState.builder()
+                        .serverUrl("https://hive.example")
+                        .golemId("golem-1")
+                        .accessToken(" ")
+                        .build()));
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, sessionStateStore);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id("web:chat-1")
+                        .channelType("web")
+                        .chatId("chat-1")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY, TacticSearchQuery.builder()
+                .rawQuery("recover failed shell command")
+                .queryViews(List.of("recover", "shell"))
+                .build());
+
+        system.process(context);
+
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void shouldPublishRuntimeTacticSearchProjectionUsingQueryViewsWhenRawQueryIsBlank() {
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
+        when(sessionStateStore.load())
+                .thenReturn(java.util.Optional.of(HiveSessionState.builder()
+                        .serverUrl("https://hive.example")
+                        .golemId("golem-1")
+                        .accessToken("token")
+                        .build()));
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, sessionStateStore);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id("web:chat-1")
+                        .channelType("web")
+                        .chatId("chat-1")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY, TacticSearchQuery.builder()
+                .rawQuery("  ")
+                .queryViews(List.of("recover", "shell"))
+                .build());
+
+        system.process(context);
+
+        verify(publisher).publishSelfEvolvingTacticSearchProjection(argThat(response -> "recover shell".equals(
+                response.getQuery()) && response.getResults() != null && response.getResults().isEmpty()));
+    }
+
+    @Test
+    void shouldSwallowRuntimeTacticSearchProjectionPublishFailures() {
+        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
+        when(sessionStateStore.load())
+                .thenReturn(java.util.Optional.of(HiveSessionState.builder()
+                        .serverUrl("https://hive.example")
+                        .golemId("golem-1")
+                        .accessToken("token")
+                        .build()));
+        doThrow(new IllegalStateException("publish failed"))
+                .when(publisher)
+                .publishSelfEvolvingTacticSearchProjection(any(SelfEvolvingTacticSearchResponseDto.class));
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, sessionStateStore);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id("web:chat-1")
+                        .channelType("web")
+                        .chatId("chat-1")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY, TacticSearchQuery.builder()
+                .rawQuery("recover failed shell command")
+                .queryViews(List.of("recover", "shell"))
+                .build());
+
+        assertDoesNotThrow(() -> system.process(context));
     }
 }

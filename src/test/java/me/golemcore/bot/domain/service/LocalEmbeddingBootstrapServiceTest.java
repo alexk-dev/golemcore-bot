@@ -18,109 +18,180 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
-
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
 class LocalEmbeddingBootstrapServiceTest {
+
+    private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-04-02T00:30:00Z"), ZoneOffset.UTC);
 
     private RuntimeConfigService runtimeConfigService;
     private TacticSearchMetricsService metricsService;
-    private RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig;
-    private StubLocalEmbeddingBootstrapService bootstrapService;
+    private TestLocalEmbeddingBootstrapService service;
 
     @BeforeEach
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
-        metricsService = new TacticSearchMetricsService(
-                Clock.fixed(Instant.parse("2026-04-01T20:00:00Z"), ZoneOffset.UTC));
-
-        RuntimeConfig config = RuntimeConfig.builder().build();
-        selfEvolvingConfig = config.getSelfEvolving();
-        selfEvolvingConfig.setEnabled(true);
-        selfEvolvingConfig.getTactics().setEnabled(true);
-        selfEvolvingConfig.getTactics().getSearch().setMode("hybrid");
-        selfEvolvingConfig.getTactics().getSearch().getEmbeddings().setEnabled(true);
-        selfEvolvingConfig.getTactics().getSearch().getEmbeddings().setProvider("ollama");
-        selfEvolvingConfig.getTactics().getSearch().getEmbeddings().setBaseUrl("http://127.0.0.1:11434");
-        selfEvolvingConfig.getTactics().getSearch().getEmbeddings().setModel("qwen3-embedding:0.6b");
-        selfEvolvingConfig.getTactics().getSearch().getEmbeddings().getLocal().setAutoInstall(true);
-        selfEvolvingConfig.getTactics().getSearch().getEmbeddings().getLocal().setPullOnStart(true);
-        selfEvolvingConfig.getTactics().getSearch().getEmbeddings().getLocal().setRequireHealthyRuntime(true);
-        selfEvolvingConfig.getTactics().getSearch().getEmbeddings().getLocal().setFailOpen(true);
-
-        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(selfEvolvingConfig);
-
-        bootstrapService = new StubLocalEmbeddingBootstrapService(runtimeConfigService, metricsService,
-                Clock.fixed(Instant.parse("2026-04-01T20:00:00Z"), ZoneOffset.UTC));
+        metricsService = new TacticSearchMetricsService(FIXED_CLOCK);
+        service = new TestLocalEmbeddingBootstrapService(runtimeConfigService, metricsService);
     }
 
     @Test
-    void shouldDegradeToBm25WhenLocalRuntimeIsUnavailable() {
-        bootstrapService.runtimeHealthy = false;
+    void shouldStayBm25WhenSelfEvolvingTacticsAreDisabled() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(false, true, "hybrid", true,
+                "ollama", true, true, false, true, "http://localhost:11434", "qwen3-embedding:0.6b"));
 
-        TacticSearchStatus status = bootstrapService.initialize();
+        TacticSearchStatus status = service.initialize();
 
         assertEquals("bm25", status.getMode());
-        assertTrue(status.getDegraded());
-        assertFalse(status.getRuntimeHealthy());
-        assertTrue(status.getReason().contains("runtime unavailable"));
-        assertEquals(1L, metricsService.snapshot().fallbackCount());
-        assertEquals("bm25", metricsService.snapshot().activeMode());
+        assertEquals("selfevolving tactics disabled", status.getReason());
+        assertFalse(status.getDegraded());
     }
 
     @Test
-    void shouldPullMissingModelWhenAutoInstallEnabled() {
-        bootstrapService.runtimeHealthy = true;
-        bootstrapService.modelPresent = false;
-        bootstrapService.pullResult = true;
+    void shouldStayBm25WhenEmbeddingsAreDisabled() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", false,
+                "ollama", true, true, true, true, "http://localhost:11434", "qwen3-embedding:0.6b"));
 
-        TacticSearchStatus status = bootstrapService.initialize();
+        TacticSearchStatus status = service.initialize();
+
+        assertEquals("bm25", status.getMode());
+        assertEquals("embeddings disabled", status.getReason());
+        assertFalse(status.getDegraded());
+    }
+
+    @Test
+    void shouldUseHybridForConfiguredNonOllamaProvider() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "openai_compatible", true, false, false, false, "https://embeddings.example",
+                "text-embedding-3-large"));
+
+        TacticSearchStatus status = service.initialize();
 
         assertEquals("hybrid", status.getMode());
+        assertEquals("openai_compatible", status.getProvider());
         assertTrue(status.getRuntimeHealthy());
         assertTrue(status.getModelAvailable());
-        assertTrue(status.getPullAttempted());
-        assertTrue(status.getPullSucceeded());
-        assertEquals(1, bootstrapService.pullAttempts);
-        assertEquals("hybrid", metricsService.snapshot().activeMode());
     }
 
     @Test
-    void shouldInitializeTacticSearchStatusOnStartup() {
-        bootstrapService.runtimeHealthy = true;
-        bootstrapService.modelPresent = true;
+    void shouldDegradeWhenLocalRuntimeIsRequiredButUnavailable() {
+        service.runtimeHealthy = false;
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, false, true, true, "http://localhost:11434", "qwen3-embedding:0.6b"));
 
-        ReflectionTestUtils.invokeMethod(bootstrapService, "initializeOnStartup");
+        TacticSearchStatus status = service.initialize();
 
-        assertEquals("hybrid", metricsService.snapshot().activeMode());
-        assertFalse(metricsService.snapshot().degraded());
-        assertEquals(0L, metricsService.snapshot().fallbackCount());
+        assertEquals("bm25", status.getMode());
+        assertEquals("local embedding runtime unavailable", status.getReason());
+        assertTrue(status.getDegraded());
+        assertEquals(1L, metricsService.snapshot().fallbackCount());
     }
 
-    private static final class StubLocalEmbeddingBootstrapService extends LocalEmbeddingBootstrapService {
+    @Test
+    void shouldThrowWhenEmbeddingProviderConfigurationIsIncompleteAndFailOpenIsDisabled() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", false, false, false, false, null, "qwen3-embedding:0.6b"));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.initialize());
+
+        assertEquals("embedding provider configuration incomplete", error.getMessage());
+    }
+
+    @Test
+    void shouldAttemptPullAndRecoverHybridModeWhenLocalModelBecomesAvailable() {
+        service.runtimeHealthy = true;
+        service.hasModelResponses.add(false);
+        service.hasModelResponses.add(true);
+        service.pullResult = true;
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, true, false, true, "http://localhost:11434", "qwen3-embedding:0.6b"));
+
+        TacticSearchStatus status = service.initialize();
+
+        assertEquals("hybrid", status.getMode());
+        assertTrue(status.getPullAttempted());
+        assertTrue(status.getPullSucceeded());
+        assertTrue(status.getModelAvailable());
+    }
+
+    @Test
+    void shouldDegradeWhenPullFailsButFailOpenIsEnabled() {
+        service.runtimeHealthy = true;
+        service.hasModelResponses.add(false);
+        service.hasModelResponses.add(false);
+        service.pullResult = false;
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, true, false, true, "http://localhost:11434", "qwen3-embedding:0.6b"));
+
+        TacticSearchStatus status = service.initialize();
+
+        assertEquals("bm25", status.getMode());
+        assertEquals("local embedding model pull failed", status.getReason());
+        assertTrue(status.getPullAttempted());
+        assertFalse(status.getPullSucceeded());
+        assertTrue(status.getDegraded());
+    }
+
+    private RuntimeConfig.SelfEvolvingConfig config(
+            boolean selfEvolvingEnabled,
+            boolean tacticsEnabled,
+            String mode,
+            boolean embeddingsEnabled,
+            String provider,
+            boolean failOpen,
+            boolean autoInstall,
+            boolean requireHealthyRuntime,
+            boolean pullOnStart,
+            String baseUrl,
+            String model) {
+        return RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(selfEvolvingEnabled)
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .enabled(tacticsEnabled)
+                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                .mode(mode)
+                                .embeddings(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig.builder()
+                                        .enabled(embeddingsEnabled)
+                                        .provider(provider)
+                                        .baseUrl(baseUrl)
+                                        .model(model)
+                                        .local(RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig.builder()
+                                                .failOpen(failOpen)
+                                                .autoInstall(autoInstall)
+                                                .requireHealthyRuntime(requireHealthyRuntime)
+                                                .pullOnStart(pullOnStart)
+                                                .build())
+                                        .build())
+                                .build())
+                        .build())
+                .build();
+    }
+
+    private static final class TestLocalEmbeddingBootstrapService extends LocalEmbeddingBootstrapService {
 
         private boolean runtimeHealthy = true;
-        private boolean modelPresent = true;
-        private boolean pullResult = false;
-        private int pullAttempts;
+        private final Deque<Boolean> hasModelResponses = new ArrayDeque<>();
+        private boolean pullResult;
 
-        private StubLocalEmbeddingBootstrapService(RuntimeConfigService runtimeConfigService,
-                TacticSearchMetricsService metricsService,
-                Clock clock) {
-            super(runtimeConfigService, metricsService, clock);
+        private TestLocalEmbeddingBootstrapService(
+                RuntimeConfigService runtimeConfigService,
+                TacticSearchMetricsService metricsService) {
+            super(runtimeConfigService, metricsService, FIXED_CLOCK);
         }
 
         @Override
@@ -130,15 +201,11 @@ class LocalEmbeddingBootstrapServiceTest {
 
         @Override
         protected boolean hasModel(String baseUrl, String model) {
-            return modelPresent;
+            return hasModelResponses.isEmpty() ? false : hasModelResponses.removeFirst();
         }
 
         @Override
         protected boolean pullModel(String baseUrl, String model) {
-            pullAttempts++;
-            if (pullResult) {
-                modelPresent = true;
-            }
             return pullResult;
         }
     }
