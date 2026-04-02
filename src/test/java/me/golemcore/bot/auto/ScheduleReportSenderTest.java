@@ -43,7 +43,8 @@ class ScheduleReportSenderTest {
                 .build();
         ObjectMapper objectMapper = new ObjectMapper();
         recordedBackoffs = new ArrayList<>();
-        sender = new ScheduleReportSender(channelRegistry, client, objectMapper, recordedBackoffs::add);
+        sender = new ScheduleReportSender(channelRegistry, client, objectMapper);
+        sender.setBackoffSleeperForTest(recordedBackoffs::add);
     }
 
     @Test
