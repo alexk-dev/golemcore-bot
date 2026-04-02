@@ -55,6 +55,10 @@ import java.util.Set;
 public class ArtifactWorkspaceProjectionService {
 
     private static final int PROJECTION_SCHEMA_VERSION = 1;
+    private static final Comparator<ArtifactBundleRecord> BUNDLE_RECENCY_COMPARATOR = Comparator
+            .comparing(ArtifactBundleRecord::getActivatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(ArtifactBundleRecord::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(ArtifactBundleRecord::getId, Comparator.nullsLast(Comparator.naturalOrder()));
 
     private final EvolutionCandidateService evolutionCandidateService;
     private final PromotionWorkflowService promotionWorkflowService;
@@ -457,9 +461,10 @@ public class ArtifactWorkspaceProjectionService {
     private Optional<String> resolveActiveRevisionId(String artifactStreamId) {
         return artifactBundleService.getBundles().stream()
                 .filter(bundle -> bundle != null && bundle.getArtifactRevisionBindings() != null)
-                .map(bundle -> bundle.getArtifactRevisionBindings().get(artifactStreamId))
-                .filter(value -> !StringValueSupport.isBlank(value))
-                .findFirst();
+                .filter(bundle -> !StringValueSupport
+                        .isBlank(bundle.getArtifactRevisionBindings().get(artifactStreamId)))
+                .max(BUNDLE_RECENCY_COMPARATOR)
+                .map(bundle -> bundle.getArtifactRevisionBindings().get(artifactStreamId));
     }
 
     private int resolveCampaignCount(String artifactStreamId) {
@@ -493,7 +498,7 @@ public class ArtifactWorkspaceProjectionService {
         return artifactBundleService.getBundles().stream()
                 .filter(bundle -> bundle != null && bundle.getArtifactRevisionBindings() != null)
                 .filter(bundle -> revisionId.equals(bundle.getArtifactRevisionBindings().get(artifactStreamId)))
-                .findFirst();
+                .max(BUNDLE_RECENCY_COMPARATOR);
     }
 
     private Optional<ArtifactBundleRecord> findBundleById(String bundleId) {

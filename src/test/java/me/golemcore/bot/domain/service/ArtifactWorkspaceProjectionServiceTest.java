@@ -93,11 +93,13 @@ class ArtifactWorkspaceProjectionServiceTest {
                         .id("bundle-1")
                         .artifactRevisionBindings(Map.of("stream-1", "rev-1"))
                         .artifactSubtypeBindings(Map.of("skill:planner", "skill"))
+                        .createdAt(Instant.parse("2026-03-31T18:10:00Z"))
                         .build(),
                 ArtifactBundleRecord.builder()
                         .id("bundle-2")
                         .artifactRevisionBindings(Map.of("stream-1", "rev-2"))
                         .artifactSubtypeBindings(Map.of("skill:planner", "skill"))
+                        .createdAt(Instant.parse("2026-03-31T19:10:00Z"))
                         .build()));
         when(benchmarkLabService.getCampaigns()).thenReturn(List.of(BenchmarkCampaign.builder()
                 .id("campaign-1")
@@ -123,9 +125,49 @@ class ArtifactWorkspaceProjectionServiceTest {
                 .distinct()
                 .toList());
         assertEquals("rev-2", catalogEntry.getLatestCandidateRevisionId());
-        assertEquals("rev-1", catalogEntry.getActiveRevisionId());
+        assertEquals("rev-2", catalogEntry.getActiveRevisionId());
         assertEquals(List.of("run-2"), evidence.getRunIds());
         assertFalse(lineage.getEdges().isEmpty());
+    }
+
+    @Test
+    void shouldPreferMostRecentBundleBindingForActiveRevision() {
+        when(evolutionCandidateService.getArtifactRevisionRecords()).thenReturn(List.of(
+                revision("rev-1", null, "planner v1", Instant.parse("2026-03-31T18:00:00Z")),
+                revision("rev-2", "rev-1", "planner v2", Instant.parse("2026-03-31T19:00:00Z")),
+                revision("rev-3", "rev-2", "planner v3", Instant.parse("2026-03-31T20:00:00Z"))));
+        when(promotionWorkflowService.getCandidates()).thenReturn(List.of(EvolutionCandidate.builder()
+                .id("candidate-1")
+                .artifactType("skill")
+                .artifactSubtype("skill")
+                .artifactStreamId("stream-1")
+                .originArtifactStreamId("stream-1")
+                .artifactKey("skill:planner")
+                .artifactAliases(List.of("skill:planner"))
+                .contentRevisionId("rev-3")
+                .baseContentRevisionId("rev-2")
+                .status("approved_pending")
+                .lifecycleState("approved")
+                .rolloutStage("approved")
+                .sourceRunIds(List.of("run-3"))
+                .createdAt(Instant.parse("2026-03-31T20:00:00Z"))
+                .build()));
+        when(artifactBundleService.getBundles()).thenReturn(List.of(
+                ArtifactBundleRecord.builder()
+                        .id("bundle-old")
+                        .artifactRevisionBindings(Map.of("stream-1", "rev-1"))
+                        .createdAt(Instant.parse("2026-03-31T18:05:00Z"))
+                        .build(),
+                ArtifactBundleRecord.builder()
+                        .id("bundle-new")
+                        .artifactRevisionBindings(Map.of("stream-1", "rev-3"))
+                        .createdAt(Instant.parse("2026-03-31T20:05:00Z"))
+                        .build()));
+        when(benchmarkLabService.getCampaigns()).thenReturn(List.of());
+
+        ArtifactCatalogEntry catalogEntry = service.listCatalog().getFirst();
+
+        assertEquals("rev-3", catalogEntry.getActiveRevisionId());
     }
 
     @Test
@@ -159,10 +201,12 @@ class ArtifactWorkspaceProjectionServiceTest {
                 ArtifactBundleRecord.builder()
                         .id("bundle-1")
                         .artifactRevisionBindings(Map.of("stream-1", "rev-1"))
+                        .createdAt(Instant.parse("2026-03-31T18:10:00Z"))
                         .build(),
                 ArtifactBundleRecord.builder()
                         .id("bundle-2")
                         .artifactRevisionBindings(Map.of("stream-1", "rev-2"))
+                        .createdAt(Instant.parse("2026-03-31T19:10:00Z"))
                         .build()));
         when(benchmarkLabService.getCampaigns()).thenReturn(List.of());
 

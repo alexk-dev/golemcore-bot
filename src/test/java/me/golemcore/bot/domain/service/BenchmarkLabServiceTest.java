@@ -83,19 +83,19 @@ class BenchmarkLabServiceTest {
         when(selfEvolvingRunService.getRuns()).thenReturn(List.of(RunRecord.builder()
                 .id("run-3")
                 .golemId("golem-3")
-                .artifactBundleId("bundle-candidate")
+                .artifactBundleId("candidate-1:shadowed")
                 .traceId("trace-3")
                 .status("COMPLETED")
                 .build()));
         when(promotionWorkflowService.getPromotionDecisions()).thenReturn(List.of(PromotionDecision.builder()
                 .id("decision-1")
-                .bundleId("bundle-candidate")
+                .bundleId("candidate-1:shadowed")
                 .originBundleId("bundle-baseline")
                 .build()));
 
         BenchmarkCampaign campaign = benchmarkLabService.createRegressionCampaign("run-3");
 
         assertEquals("bundle-baseline", campaign.getBaselineBundleId());
-        assertEquals("bundle-candidate", campaign.getCandidateBundleId());
+        assertEquals("candidate-1:shadowed", campaign.getCandidateBundleId());
     }
 }

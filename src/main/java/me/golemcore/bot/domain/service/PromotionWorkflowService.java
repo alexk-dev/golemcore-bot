@@ -147,7 +147,7 @@ public class PromotionWorkflowService {
         PromotionDecision decision = PromotionDecision.builder()
                 .id(UUID.randomUUID().toString())
                 .candidateId(storedCandidate.getId())
-                .bundleId(storedCandidate.getBaseVersion())
+                .bundleId(buildTargetBundleId(storedCandidate, target))
                 .originBundleId(storedCandidate.getBaseVersion())
                 .state(target.legacyState())
                 .fromState(storedCandidate.getStatus())
@@ -217,6 +217,17 @@ public class PromotionWorkflowService {
         case "auto_accept" -> new PromotionTarget("shadowed", "candidate", "shadowed");
         default -> throw new IllegalArgumentException("Unsupported promotion mode: " + promotionMode);
         };
+    }
+
+    private String buildTargetBundleId(EvolutionCandidate storedCandidate, PromotionTarget target) {
+        String baseVersion = storedCandidate.getBaseVersion();
+        if (StringValueSupport.isBlank(baseVersion)) {
+            return null;
+        }
+        if ("approved".equals(target.rolloutStage()) || "active".equals(target.rolloutStage())) {
+            return baseVersion;
+        }
+        return storedCandidate.getId() + ":" + target.rolloutStage();
     }
 
     private String buildReason(String nextState) {
@@ -396,6 +407,10 @@ public class PromotionWorkflowService {
                 decision.setOriginBundleId(candidate.getBaseVersion());
                 mutated = true;
             }
+            if (StringValueSupport.isBlank(decision.getBundleId())) {
+                decision.setBundleId(buildTargetBundleId(candidate, resolvePromotionTargetFromDecision(decision)));
+                mutated = true;
+            }
             if (StringValueSupport.isBlank(decision.getFromLifecycleState())) {
                 decision.setFromLifecycleState(candidate.getLifecycleState());
                 mutated = true;
@@ -414,6 +429,40 @@ public class PromotionWorkflowService {
             mutated = true;
         }
         return mutated;
+    }
+
+    private PromotionTarget resolvePromotionTargetFromDecision(PromotionDecision decision) {
+        String toState = decision != null ? decision.getToState() : null;
+        String toLifecycleState = decision != null ? decision.getToLifecycleState() : null;
+        String toRolloutStage = decision != null ? decision.getToRolloutStage() : null;
+        return new PromotionTarget(
+                !StringValueSupport.isBlank(toState)
+                        ? toState
+                        : resolveLegacyState(toLifecycleState, toRolloutStage),
+                !StringValueSupport.isBlank(toLifecycleState) ? toLifecycleState : resolveLifecycleState(toState),
+                !StringValueSupport.isBlank(toRolloutStage) ? toRolloutStage : resolveRolloutStage(toState));
+    }
+
+    private String resolveLegacyState(String lifecycleState, String rolloutStage) {
+        if ("approved".equals(lifecycleState) || "approved".equals(rolloutStage)) {
+            return "approved_pending";
+        }
+        if ("active".equals(lifecycleState) || "active".equals(rolloutStage)) {
+            return "active";
+        }
+        if ("reverted".equals(lifecycleState) || "reverted".equals(rolloutStage)) {
+            return "reverted";
+        }
+        if ("shadowed".equals(rolloutStage)) {
+            return "shadowed";
+        }
+        if ("canary".equals(rolloutStage)) {
+            return "canary";
+        }
+        if ("replayed".equals(rolloutStage)) {
+            return "replayed";
+        }
+        return "proposed";
     }
 
     private String resolveLifecycleState(String state) {

@@ -90,12 +90,15 @@ class PromotionWorkflowServiceTest {
                 .goal("fix")
                 .artifactType("tool_policy")
                 .status("proposed")
+                .baseVersion("bundle-2")
                 .build();
 
         PromotionDecision decision = promotionWorkflowService.planPromotion(candidate);
 
         assertEquals("shadowed", decision.getState());
         assertEquals("shadowed", promotionWorkflowService.getCandidates().getFirst().getStatus());
+        assertEquals("candidate-2:shadowed", decision.getBundleId());
+        assertEquals("bundle-2", decision.getOriginBundleId());
         assertFalse(promotionWorkflowService.getPromotionDecisions().isEmpty());
     }
 
@@ -135,6 +138,7 @@ class PromotionWorkflowServiceTest {
         assertEquals("routing_policy:tier", decision.getArtifactKey());
         assertEquals("candidate", decision.getFromLifecycleState());
         assertEquals("approved", decision.getToLifecycleState());
+        assertEquals("bundle-4", decision.getBundleId());
     }
 
     @Test
@@ -192,6 +196,7 @@ class PromotionWorkflowServiceTest {
         assertEquals("approved", hydrated.getToRolloutStage());
         assertEquals("candidate", hydrated.getFromLifecycleState());
         assertEquals("shadowed", hydrated.getFromRolloutStage());
+        assertEquals("bundle-5", hydrated.getBundleId());
         assertTrue(persistedFiles.get("promotion-decisions.json").contains("\"artifactKey\":\"routing_policy:tier\""));
     }
 
@@ -268,9 +273,11 @@ class PromotionWorkflowServiceTest {
                 .goal("derive")
                 .artifactType("skill")
                 .status("proposed")
+                .baseVersion("bundle-9")
                 .build());
 
         assertEquals("candidate-8-approval", approvalDecision.getApprovalRequestId());
         assertEquals(null, shadowDecision.getApprovalRequestId());
+        assertEquals("candidate-9:shadowed", shadowDecision.getBundleId());
     }
 }
