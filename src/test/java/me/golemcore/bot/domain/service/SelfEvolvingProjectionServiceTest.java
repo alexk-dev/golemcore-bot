@@ -16,6 +16,9 @@ import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCompareEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjection;
@@ -29,6 +32,7 @@ import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +53,9 @@ class SelfEvolvingProjectionServiceTest {
     private BenchmarkLabService benchmarkLabService;
     private ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService;
     private SessionPort sessionPort;
+    private TacticRecordService tacticRecordService;
+    private TacticSearchService tacticSearchService;
+    private TacticSearchMetricsService tacticSearchMetricsService;
     private SelfEvolvingProjectionService projectionService;
 
     @BeforeEach
@@ -60,6 +67,11 @@ class SelfEvolvingProjectionServiceTest {
         benchmarkLabService = mock(BenchmarkLabService.class);
         artifactWorkspaceProjectionService = mock(ArtifactWorkspaceProjectionService.class);
         sessionPort = mock(SessionPort.class);
+        tacticRecordService = mock(TacticRecordService.class);
+        tacticSearchService = mock(TacticSearchService.class);
+        tacticSearchMetricsService = new TacticSearchMetricsService(Clock.fixed(
+                Instant.parse("2026-04-01T23:00:00Z"),
+                java.time.ZoneOffset.UTC));
         projectionService = new SelfEvolvingProjectionService(
                 runService,
                 artifactBundleService,
@@ -67,7 +79,10 @@ class SelfEvolvingProjectionServiceTest {
                 promotionWorkflowService,
                 benchmarkLabService,
                 artifactWorkspaceProjectionService,
-                sessionPort);
+                sessionPort,
+                tacticRecordService,
+                tacticSearchService,
+                tacticSearchMetricsService);
     }
 
     @Test
@@ -396,5 +411,178 @@ class SelfEvolvingProjectionServiceTest {
         assertTrue(projectionService.getArtifactCompareEvidence("missing", "a", "b").isEmpty());
         assertTrue(projectionService.getArtifactTransitionEvidence("missing", "a", "b").isEmpty());
         assertTrue(projectionService.getArtifactCompareOptions("missing").isEmpty());
+    }
+
+    @Test
+    void shouldProjectTacticsSearchStatusExplanationAndEvidence() {
+        TacticRecord tacticRecord = TacticRecord.builder()
+                .tacticId("tactic-1")
+                .artifactStreamId("stream-1")
+                .originArtifactStreamId("origin-1")
+                .artifactKey("skill:planner")
+                .artifactType("skill")
+                .title("Planner tactic")
+                .aliases(List.of("planner"))
+                .contentRevisionId("rev-2")
+                .intentSummary("plan work")
+                .behaviorSummary("produce stepwise plans")
+                .toolSummary("shell git")
+                .outcomeSummary("reliable")
+                .benchmarkSummary("wins benchmarks")
+                .approvalNotes("approved")
+                .evidenceSnippets(List.of("evidence-1"))
+                .taskFamilies(List.of("engineering"))
+                .tags(List.of("planner"))
+                .promotionState("approved")
+                .rolloutStage("active")
+                .successRate(0.92d)
+                .benchmarkWinRate(0.87d)
+                .regressionFlags(List.of("none"))
+                .recencyScore(0.71d)
+                .golemLocalUsageSuccess(0.81d)
+                .embeddingStatus("indexed")
+                .updatedAt(Instant.parse("2026-04-01T22:30:00Z"))
+                .build();
+        TacticSearchExplanation explanation = TacticSearchExplanation.builder()
+                .searchMode("hybrid")
+                .degradedReason("embeddings unavailable")
+                .bm25Score(0.8d)
+                .vectorScore(0.6d)
+                .rrfScore(0.7d)
+                .qualityPrior(0.4d)
+                .mmrDiversityAdjustment(-0.1d)
+                .negativeMemoryPenalty(-0.05d)
+                .personalizationBoost(0.2d)
+                .rerankerVerdict("prefer tactic-1")
+                .matchedQueryViews(List.of("intent", "tool"))
+                .matchedTerms(List.of("planner", "shell"))
+                .eligible(true)
+                .gatingReason(null)
+                .finalScore(0.95d)
+                .build();
+        TacticSearchResult searchResult = TacticSearchResult.builder()
+                .tacticId("tactic-1")
+                .artifactStreamId("stream-1")
+                .originArtifactStreamId("origin-1")
+                .artifactKey("skill:planner")
+                .artifactType("skill")
+                .title("Planner tactic")
+                .aliases(List.of("planner"))
+                .contentRevisionId("rev-2")
+                .intentSummary("plan work")
+                .behaviorSummary("produce stepwise plans")
+                .toolSummary("shell git")
+                .outcomeSummary("reliable")
+                .benchmarkSummary("wins benchmarks")
+                .approvalNotes("approved")
+                .evidenceSnippets(List.of("evidence-1"))
+                .taskFamilies(List.of("engineering"))
+                .tags(List.of("planner"))
+                .promotionState("approved")
+                .rolloutStage("active")
+                .score(0.95d)
+                .successRate(0.92d)
+                .benchmarkWinRate(0.87d)
+                .regressionFlags(List.of("none"))
+                .recencyScore(0.71d)
+                .golemLocalUsageSuccess(0.81d)
+                .embeddingStatus("indexed")
+                .updatedAt(Instant.parse("2026-04-01T22:30:00Z"))
+                .explanation(explanation)
+                .build();
+        ArtifactCatalogEntry entry = ArtifactCatalogEntry.builder()
+                .artifactStreamId("stream-1")
+                .artifactKey("skill:planner")
+                .activeRevisionId("rev-1")
+                .latestCandidateRevisionId("rev-2")
+                .build();
+        when(tacticRecordService.getAll()).thenReturn(List.of(tacticRecord));
+        when(tacticSearchService.search("planner query")).thenReturn(List.of(searchResult));
+        when(tacticRecordService.getById("tactic-1")).thenReturn(Optional.of(tacticRecord));
+        when(artifactWorkspaceProjectionService.listCatalog()).thenReturn(List.of(entry));
+        when(artifactWorkspaceProjectionService.getLineage("stream-1")).thenReturn(ArtifactLineageProjection.builder()
+                .artifactStreamId("stream-1")
+                .artifactKey("skill:planner")
+                .nodes(List.of())
+                .edges(List.of())
+                .railOrder(List.of("candidate-1:proposed", "decision-1:active"))
+                .defaultSelectedNodeId("decision-1:active")
+                .defaultSelectedRevisionId("rev-2")
+                .build());
+        when(artifactWorkspaceProjectionService.getRevisionEvidence("stream-1", "rev-2"))
+                .thenReturn(ArtifactRevisionEvidenceProjection.builder()
+                        .artifactStreamId("stream-1")
+                        .artifactKey("skill:planner")
+                        .revisionId("rev-2")
+                        .runIds(List.of("run-1"))
+                        .campaignIds(List.of("campaign-1"))
+                        .findings(List.of("revision_evidence"))
+                        .build());
+        tacticSearchMetricsService.recordFallback("bm25", "embeddings unavailable");
+
+        List<me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto> tactics = projectionService
+                .listTactics();
+        me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto response = projectionService
+                .searchTactics("planner query");
+        Optional<me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchExplanationDto> explanationDto = projectionService
+                .getTacticExplanation("tactic-1", "planner query");
+        Optional<SelfEvolvingArtifactLineageDto> lineage = projectionService.getTacticLineage("tactic-1");
+        Optional<SelfEvolvingArtifactEvidenceDto> evidence = projectionService.getTacticEvidence("tactic-1");
+
+        assertEquals(1, tactics.size());
+        assertEquals("Planner tactic", tactics.getFirst().getTitle());
+        assertEquals("bm25", response.getStatus().getMode());
+        assertTrue(response.getStatus().getDegraded());
+        assertEquals("embeddings unavailable", response.getStatus().getReason());
+        assertEquals(1, response.getResults().size());
+        assertEquals("prefer tactic-1", response.getResults().getFirst().getExplanation().getRerankerVerdict());
+        assertTrue(explanationDto.isPresent());
+        assertEquals(0.95d, explanationDto.get().getFinalScore());
+        assertTrue(lineage.isPresent());
+        assertEquals("decision-1:active", lineage.get().getDefaultSelectedNodeId());
+        assertTrue(evidence.isPresent());
+        assertEquals("revision", evidence.get().getPayloadKind());
+    }
+
+    @Test
+    void shouldFallbackToLocalTacticsAndDefaultStatusWhenSearchDependenciesAreMissing() {
+        SelfEvolvingProjectionService noSearchProjectionService = new SelfEvolvingProjectionService(
+                runService,
+                artifactBundleService,
+                deterministicJudgeService,
+                promotionWorkflowService,
+                benchmarkLabService,
+                artifactWorkspaceProjectionService,
+                sessionPort,
+                tacticRecordService,
+                null,
+                null);
+        TacticRecord tacticRecord = TacticRecord.builder()
+                .tacticId("tactic-1")
+                .artifactStreamId("stream-1")
+                .artifactKey("skill:planner")
+                .artifactType("skill")
+                .title("Planner tactic")
+                .contentRevisionId("rev-1")
+                .promotionState("approved")
+                .rolloutStage("active")
+                .updatedAt(Instant.parse("2026-04-01T21:00:00Z"))
+                .build();
+        when(tacticRecordService.getAll()).thenReturn(List.of(tacticRecord));
+        when(tacticRecordService.getById("tactic-1")).thenReturn(Optional.of(tacticRecord));
+
+        me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto response = noSearchProjectionService
+                .searchTactics("  ");
+        Optional<me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto> tactic = noSearchProjectionService
+                .getTactic("tactic-1");
+        Optional<me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchExplanationDto> explanation = noSearchProjectionService
+                .getTacticExplanation("tactic-1", "planner");
+
+        assertEquals("bm25", response.getStatus().getMode());
+        assertFalse(response.getStatus().getDegraded());
+        assertEquals(1, response.getResults().size());
+        assertEquals("Planner tactic", response.getResults().getFirst().getTitle());
+        assertTrue(tactic.isPresent());
+        assertTrue(explanation.isEmpty());
     }
 }

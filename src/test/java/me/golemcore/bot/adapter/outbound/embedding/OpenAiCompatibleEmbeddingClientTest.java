@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class OpenAiCompatibleEmbeddingClientTest {
 
@@ -58,5 +59,24 @@ class OpenAiCompatibleEmbeddingClientTest {
         assertEquals("Bearer test-key", recordedRequest.getHeaders().get("Authorization"));
         assertEquals(1, response.vectors().size());
         assertEquals(3, response.vectors().getFirst().size());
+    }
+
+    @Test
+    void shouldRejectEmptyEmbeddingResponseBody() {
+        server.enqueue(new MockResponse.Builder()
+                .code(200)
+                .body("")
+                .build());
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> client.embed(
+                new me.golemcore.bot.port.outbound.EmbeddingPort.EmbeddingRequest(
+                        server.url("/").toString(),
+                        "test-key",
+                        "text-embedding-3-large",
+                        3,
+                        5000,
+                        List.of("planner tactic"))));
+
+        assertEquals("Embedding response body is empty", exception.getMessage());
     }
 }

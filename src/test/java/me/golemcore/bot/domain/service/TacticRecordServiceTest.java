@@ -29,11 +29,13 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -99,6 +101,86 @@ class TacticRecordServiceTest {
         assertTrue(persistedFiles.keySet().stream().anyMatch(path -> path.startsWith("self-evolving/tactics/")));
         verify(storagePort, never()).putText(eq("skills"), anyString(), anyString());
         verify(rebuildService, times(1)).onTacticChanged("tactic-1");
+    }
+
+    @Test
+    void shouldLoadAndNormalizePersistedTacticsWhileIgnoringBrokenFiles() {
+        persistedFiles.put("self-evolving/tactics/tactic-b.json", """
+                {
+                  "tacticId": " tactic-b ",
+                  "artifactKey": "prompt:toolloop_core",
+                  "artifactType": "prompt",
+                  "contentRevisionId": "revision-b",
+                  "successRate": 0.8,
+                  "updatedAt": "2026-04-01T20:00:00Z"
+                }
+                """);
+        persistedFiles.put("self-evolving/tactics/tactic-a.json", """
+                {
+                  "tacticId": "tactic-a",
+                  "artifactStreamId": "stream-a",
+                  "artifactKey": "skill:planner",
+                  "artifactType": "skill",
+                  "title": "Planner tactic",
+                  "contentRevisionId": "revision-a",
+                  "updatedAt": "2026-04-01T21:30:00Z"
+                }
+                """);
+        persistedFiles.put("self-evolving/tactics/invalid.json", "{");
+        persistedFiles.put("self-evolving/tactics/readme.txt", "ignore");
+
+        List<TacticRecord> records = tacticRecordService.getAll();
+
+        assertEquals(List.of("tactic-a", "tactic-b"), records.stream().map(TacticRecord::getTacticId).toList());
+        TacticRecord normalized = records.get(1);
+        assertEquals("prompt:toolloop_core", normalized.getAliases().getFirst());
+        assertEquals("Prompt toolloop core", normalized.getTitle());
+        assertEquals("candidate", normalized.getPromotionState());
+        assertEquals("proposed", normalized.getRolloutStage());
+        assertEquals("pending", normalized.getEmbeddingStatus());
+        assertEquals(List.of("prompt"), normalized.getTaskFamilies());
+        assertEquals(List.of("prompt", "candidate"), normalized.getTags());
+    }
+
+    @Test
+    void shouldReturnEmptyWhenLookupIdIsBlank() {
+        Optional<TacticRecord> result = tacticRecordService.getById("   ");
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void shouldRefreshCachedRecordWhenSavingUpdatedTactic() {
+        persistedFiles.put("self-evolving/tactics/tactic-1.json", """
+                {
+                  "tacticId": "tactic-1",
+                  "artifactStreamId": "stream-1",
+                  "artifactKey": "skill:planner",
+                  "artifactType": "skill",
+                  "title": "Old planner",
+                  "contentRevisionId": "revision-1",
+                  "updatedAt": "2026-04-01T19:00:00Z"
+                }
+                """);
+
+        List<TacticRecord> initial = tacticRecordService.getAll();
+        TacticRecord saved = tacticRecordService.save(TacticRecord.builder()
+                .tacticId("tactic-1")
+                .artifactStreamId("stream-1")
+                .artifactKey("skill:planner")
+                .artifactType("skill")
+                .title("New planner")
+                .contentRevisionId("revision-2")
+                .updatedAt(Instant.parse("2026-04-01T22:00:00Z"))
+                .build());
+        List<TacticRecord> records = tacticRecordService.getAll();
+
+        assertEquals(1, initial.size());
+        assertEquals("New planner", saved.getTitle());
+        assertEquals(1, records.size());
+        assertEquals("revision-2", records.getFirst().getContentRevisionId());
+        assertEquals("New planner", records.getFirst().getTitle());
+        assertNull(persistedFiles.get("skills/tactic-1.json"));
     }
 
     private TacticRecord sampleTactic() {

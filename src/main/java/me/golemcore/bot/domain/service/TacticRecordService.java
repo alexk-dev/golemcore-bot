@@ -182,9 +182,11 @@ public class TacticRecordService {
         normalized.setRegressionFlags(
                 normalized.getRegressionFlags() != null ? new ArrayList<>(normalized.getRegressionFlags())
                         : new ArrayList<>());
-        normalized.setTaskFamilies(normalized.getTaskFamilies() != null ? new ArrayList<>(normalized.getTaskFamilies())
+        normalized.setTaskFamilies(normalized.getTaskFamilies() != null && !normalized.getTaskFamilies().isEmpty()
+                ? new ArrayList<>(normalized.getTaskFamilies())
                 : new ArrayList<>(List.of(artifactType)));
-        normalized.setTags(normalized.getTags() != null ? new ArrayList<>(normalized.getTags())
+        normalized.setTags(normalized.getTags() != null && !normalized.getTags().isEmpty()
+                ? new ArrayList<>(normalized.getTags())
                 : new ArrayList<>(List.of(artifactType, normalized.getPromotionState())));
         normalized.setEvidenceSnippets(normalized.getEvidenceSnippets() != null
                 ? new ArrayList<>(normalized.getEvidenceSnippets())

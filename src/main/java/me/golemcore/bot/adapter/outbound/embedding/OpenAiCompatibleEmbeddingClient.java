@@ -77,10 +77,11 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingPort {
                 throw new IllegalStateException("Embedding request failed with status " + response.code());
             }
             ResponseBody responseBody = response.body();
-            if (responseBody == null) {
+            byte[] responseBytes = responseBody.bytes();
+            if (responseBytes.length == 0) {
                 throw new IllegalStateException("Embedding response body is empty");
             }
-            JsonNode json = objectMapper.readTree(responseBody.bytes());
+            JsonNode json = objectMapper.readTree(responseBytes);
             List<List<Double>> vectors = new ArrayList<>();
             for (JsonNode item : json.path("data")) {
                 List<Double> vector = new ArrayList<>();
