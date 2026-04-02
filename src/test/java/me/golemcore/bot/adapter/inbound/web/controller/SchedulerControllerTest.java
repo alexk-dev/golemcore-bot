@@ -1417,6 +1417,62 @@ class SchedulerControllerTest {
     }
 
     @Test
+    void updateScheduleRequestJsonShouldUseNestedReportPatchShapeForSet() throws Exception {
+        String json = """
+                {
+                  "targetType": "GOAL",
+                  "targetId": "goal-1",
+                  "frequency": "daily",
+                  "time": "09:00",
+                  "enabled": true,
+                  "report": {
+                    "operation": "SET",
+                    "config": {
+                      "channelType": "webhook",
+                      "webhookUrl": "https://example.com/hook",
+                      "webhookBearerToken": "bearer-token"
+                    }
+                  }
+                }
+                """;
+
+        SchedulerController.UpdateScheduleRequest request = objectMapper.readValue(
+                json,
+                SchedulerController.UpdateScheduleRequest.class);
+
+        assertNotNull(request.report());
+        assertEquals("SET", request.report().operation());
+        assertNotNull(request.report().config());
+        assertEquals("webhook", request.report().config().channelType());
+        assertEquals("https://example.com/hook", request.report().config().webhookUrl());
+        assertEquals("bearer-token", request.report().config().webhookBearerToken());
+    }
+
+    @Test
+    void updateScheduleRequestJsonShouldUseNestedReportPatchShapeForClear() throws Exception {
+        String json = """
+                {
+                  "targetType": "GOAL",
+                  "targetId": "goal-1",
+                  "frequency": "daily",
+                  "time": "09:00",
+                  "enabled": true,
+                  "report": {
+                    "operation": "CLEAR"
+                  }
+                }
+                """;
+
+        SchedulerController.UpdateScheduleRequest request = objectMapper.readValue(
+                json,
+                SchedulerController.UpdateScheduleRequest.class);
+
+        assertNotNull(request.report());
+        assertEquals("CLEAR", request.report().operation());
+        assertTrue(request.report().config() == null);
+    }
+
+    @Test
     void scheduleDtoJsonShouldExposeOnlyNestedReportFields() throws Exception {
         SchedulerController.ScheduleDto dto = new SchedulerController.ScheduleDto(
                 "sched-1",

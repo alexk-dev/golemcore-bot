@@ -47,6 +47,7 @@ import java.util.Set;
 public class SchedulerController {
 
     private static final String FEATURE_DISABLED = "Auto mode feature is disabled";
+    private static final String CHANNEL_TELEGRAM = "telegram";
     private static final Set<Integer> WEEKDAY_SET = Set.of(1, 2, 3, 4, 5, 6, 7);
 
     private final AutoModeService autoModeService;
@@ -262,11 +263,11 @@ public class SchedulerController {
                 .map(type -> type.trim().toLowerCase(Locale.ROOT))
                 .filter(type -> !"web".equals(type))
                 .distinct()
-                .sorted((left, right) -> compareChannelTypes(left, right))
+                .sorted(SchedulerController::compareChannelTypes)
                 .map(type -> new ScheduleReportChannelOptionDto(
                         type,
                         toChannelLabel(type),
-                        "telegram".equals(type) ? telegramSuggestedChatId : null))
+                        CHANNEL_TELEGRAM.equals(type) ? telegramSuggestedChatId : null))
                 .toList();
     }
 
@@ -287,10 +288,10 @@ public class SchedulerController {
     }
 
     private static int compareChannelTypes(String left, String right) {
-        if ("telegram".equals(left) && !"telegram".equals(right)) {
+        if (CHANNEL_TELEGRAM.equals(left) && !CHANNEL_TELEGRAM.equals(right)) {
             return -1;
         }
-        if (!"telegram".equals(left) && "telegram".equals(right)) {
+        if (!CHANNEL_TELEGRAM.equals(left) && CHANNEL_TELEGRAM.equals(right)) {
             return 1;
         }
         return left.compareTo(right);
@@ -309,7 +310,7 @@ public class SchedulerController {
             label.append(segment.substring(0, 1).toUpperCase(Locale.ROOT));
             label.append(segment.substring(1));
         }
-        return label.length() > 0 ? label.toString() : channelType;
+        return !label.isEmpty() ? label.toString() : channelType;
     }
 
     private static String resolveTargetLabel(

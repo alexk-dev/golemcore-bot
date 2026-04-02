@@ -40,6 +40,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Scheduler for autonomous mode that periodically evaluates cron-based
@@ -58,8 +59,7 @@ public class AutoModeScheduler {
     private final ChannelRegistry channelRegistry;
     private final ScheduledRunExecutor scheduledRunExecutor;
     private final AtomicBoolean executing = new AtomicBoolean(false);
-
-    private volatile ScheduleDeliveryContext deliveryContext;
+    private final AtomicReference<ScheduleDeliveryContext> deliveryContext = new AtomicReference<>();
 
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> tickTask;
@@ -80,7 +80,7 @@ public class AutoModeScheduler {
     }
 
     public ScheduleDeliveryContext getDeliveryContext() {
-        return deliveryContext;
+        return deliveryContext.get();
     }
 
     @PostConstruct
@@ -141,7 +141,7 @@ public class AutoModeScheduler {
     }
 
     public void registerChannel(String channelType, String sessionChatId, String transportChatId) {
-        deliveryContext = new ScheduleDeliveryContext(channelType, sessionChatId, transportChatId);
+        deliveryContext.set(new ScheduleDeliveryContext(channelType, sessionChatId, transportChatId));
         log.debug("[AutoScheduler] Registered channel: {} session={} transport={}",
                 channelType, sessionChatId, transportChatId);
     }
@@ -163,7 +163,7 @@ public class AutoModeScheduler {
             return;
         }
 
-        ScheduleDeliveryContext currentDeliveryContext = deliveryContext;
+        ScheduleDeliveryContext currentDeliveryContext = deliveryContext.get();
         if (currentDeliveryContext == null) {
             log.debug("[AutoScheduler] No channel info, skipping notification");
             return;
@@ -213,7 +213,7 @@ public class AutoModeScheduler {
 
                 int taskTimeLimitMinutes = runtimeConfigService.getAutoTaskTimeLimitMinutes();
                 for (ScheduleEntry schedule : dueSchedules) {
-                    scheduledRunExecutor.executeSchedule(schedule, deliveryContext, taskTimeLimitMinutes);
+                    scheduledRunExecutor.executeSchedule(schedule, deliveryContext.get(), taskTimeLimitMinutes);
                     scheduleService.recordExecution(schedule.getId());
                 }
             } finally {

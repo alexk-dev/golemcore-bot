@@ -151,49 +151,44 @@ public class ScheduleReportSender {
 
         try {
             String json = objectMapper.writeValueAsString(payload);
-            for (int attempt = 0; attempt <= WEBHOOK_MAX_RETRIES; attempt++) {
-                Request request = buildWebhookRequest(webhookUrl, json, report.getWebhookBearerToken());
-                try (Response response = okHttpClient.newCall(request).execute()) {
-                    if (response.isSuccessful()) {
-                        log.info("[ReportSender] Webhook POST to {} returned {} for schedule {}",
-                                webhookUrl, response.code(), schedule.getId());
-                        return;
-                    }
-                    if (!shouldRetryWebhookAttempt(attempt)) {
-                        log.warn(
-                                "[ReportSender] Webhook POST to {} failed with status {} for schedule {} after {} attempts;"
-                                        + " treating report delivery as complete",
-                                webhookUrl, response.code(), schedule.getId(), attempt + 1);
-                        return;
-                    }
-                    long backoffMillis = computeWebhookBackoffMillis(attempt);
-                    log.warn(
-                            "[ReportSender] Webhook POST to {} failed with status {} for schedule {}; retrying in {} ms"
-                                    + " (attempt {}/{})",
-                            webhookUrl, response.code(), schedule.getId(), backoffMillis, attempt + 1,
-                            WEBHOOK_MAX_RETRIES + 1);
-                    if (!sleepBeforeRetry(backoffMillis, webhookUrl, schedule.getId())) {
-                        return;
-                    }
-                } catch (Exception e) { // NOSONAR — report delivery must not crash the scheduler
-                    if (!shouldRetryWebhookAttempt(attempt)) {
-                        log.warn("[ReportSender] Failed to send webhook report to {} after {} attempts: {}; treating"
-                                + " report delivery as complete",
-                                webhookUrl, attempt + 1, e.getMessage());
-                        return;
-                    }
-                    long backoffMillis = computeWebhookBackoffMillis(attempt);
-                    log.warn(
-                            "[ReportSender] Failed to send webhook report to {}: {}; retrying in {} ms (attempt {}/{})",
-                            webhookUrl, e.getMessage(), backoffMillis, attempt + 1, WEBHOOK_MAX_RETRIES + 1);
-                    if (!sleepBeforeRetry(backoffMillis, webhookUrl, schedule.getId())) {
-                        return;
-                    }
-                }
-            }
+            executeWebhookWithRetries(webhookUrl, json, report.getWebhookBearerToken(), schedule.getId());
         } catch (Exception e) { // NOSONAR — payload serialization must not crash the scheduler
             log.error("[ReportSender] Failed to serialize webhook report for {}: {}", webhookUrl, e.getMessage());
         }
+    }
+
+    private void executeWebhookWithRetries(String webhookUrl, String json, String bearerToken, String scheduleId) {
+        for (int attempt = 0; attempt <= WEBHOOK_MAX_RETRIES; attempt++) {
+            Request request = buildWebhookRequest(webhookUrl, json, bearerToken);
+            try (Response response = okHttpClient.newCall(request).execute()) {
+                if (response.isSuccessful()) {
+                    log.info("[ReportSender] Webhook POST to {} returned {} for schedule {}",
+                            webhookUrl, response.code(), scheduleId);
+                    return;
+                }
+                if (!retryOrComplete(attempt, webhookUrl, scheduleId,
+                        "failed with status " + response.code())) {
+                    return;
+                }
+            } catch (Exception e) { // NOSONAR — report delivery must not crash the scheduler
+                if (!retryOrComplete(attempt, webhookUrl, scheduleId, e.getMessage())) {
+                    return;
+                }
+            }
+        }
+    }
+
+    private boolean retryOrComplete(int attempt, String webhookUrl, String scheduleId, String reason) {
+        if (!shouldRetryWebhookAttempt(attempt)) {
+            log.warn("[ReportSender] Webhook POST to {} {} for schedule {} after {} attempts;"
+                    + " treating report delivery as complete",
+                    webhookUrl, reason, scheduleId, attempt + 1);
+            return false;
+        }
+        long backoffMillis = computeWebhookBackoffMillis(attempt);
+        log.warn("[ReportSender] Webhook POST to {} {} for schedule {}; retrying in {} ms (attempt {}/{})",
+                webhookUrl, reason, scheduleId, backoffMillis, attempt + 1, WEBHOOK_MAX_RETRIES + 1);
+        return sleepBeforeRetry(backoffMillis, webhookUrl, scheduleId);
     }
 
     private Request buildWebhookRequest(String webhookUrl, String json, String secret) {
