@@ -50,9 +50,9 @@ class ArtifactBundleServiceTest {
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled()).thenReturn(true);
         when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("approval_gate");
-        when(runtimeConfigService.getSelfEvolvingJudgePrimaryTier()).thenReturn("standard");
-        when(runtimeConfigService.getSelfEvolvingJudgeTiebreakerTier()).thenReturn("premium");
-        when(runtimeConfigService.getSelfEvolvingJudgeEvolutionTier()).thenReturn("premium");
+        when(runtimeConfigService.getSelfEvolvingJudgePrimaryTier()).thenReturn("smart");
+        when(runtimeConfigService.getSelfEvolvingJudgeTiebreakerTier()).thenReturn("deep");
+        when(runtimeConfigService.getSelfEvolvingJudgeEvolutionTier()).thenReturn("deep");
     }
 
     @Test
@@ -83,8 +83,8 @@ class ArtifactBundleServiceTest {
         assertEquals("skill", bundle.getArtifactSubtypeBindings().get("skill:planner"));
         assertEquals("routing_policy", bundle.getArtifactTypeBindings().get("routing_policy:tier"));
         assertEquals("balanced", bundle.getTierBindings().get("active"));
-        assertEquals("standard", bundle.getTierBindings().get("judge.primary"));
-        assertEquals("premium", bundle.getTierBindings().get("judge.tiebreaker"));
+        assertEquals("smart", bundle.getTierBindings().get("judge.primary"));
+        assertEquals("deep", bundle.getTierBindings().get("judge.tiebreaker"));
         assertEquals("approval_gate", bundle.getConfigSnapshot().get("promotionMode"));
         assertEquals("conv-1", bundle.getConfigSnapshot().get("conversationKey"));
         assertTrue(bundle.getArtifactKeyBindings().containsKey("governance_policy:approval"));

@@ -64,29 +64,6 @@ public class PromotionWorkflowService {
             StoragePort storagePort,
             RuntimeConfigService runtimeConfigService,
             EvolutionCandidateService evolutionCandidateService,
-            ArtifactBundleService artifactBundleService) {
-        this(storagePort, runtimeConfigService, evolutionCandidateService, artifactBundleService, Clock.systemUTC());
-    }
-
-    public PromotionWorkflowService(
-            StoragePort storagePort,
-            RuntimeConfigService runtimeConfigService,
-            EvolutionCandidateService evolutionCandidateService) {
-        this(storagePort, runtimeConfigService, evolutionCandidateService, null, Clock.systemUTC());
-    }
-
-    PromotionWorkflowService(
-            StoragePort storagePort,
-            RuntimeConfigService runtimeConfigService,
-            EvolutionCandidateService evolutionCandidateService,
-            Clock clock) {
-        this(storagePort, runtimeConfigService, evolutionCandidateService, null, clock);
-    }
-
-    PromotionWorkflowService(
-            StoragePort storagePort,
-            RuntimeConfigService runtimeConfigService,
-            EvolutionCandidateService evolutionCandidateService,
             ArtifactBundleService artifactBundleService,
             Clock clock) {
         this.storagePort = storagePort;

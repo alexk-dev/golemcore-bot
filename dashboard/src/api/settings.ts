@@ -1,4 +1,4 @@
-import type { ExplicitModelTierId } from '../lib/modelTiers';
+import { isExplicitModelTier, type ExplicitModelTierId } from '../lib/modelTiers';
 import client from './client';
 
 interface SecretPayload {
@@ -391,6 +391,7 @@ export interface SelfEvolvingConfig {
   capture: SelfEvolvingCaptureConfig;
   judge: SelfEvolvingJudgeConfig;
   evolution: SelfEvolvingEvolutionConfig;
+  tactics: SelfEvolvingTacticsConfig;
   promotion: SelfEvolvingPromotionConfig;
   benchmark: SelfEvolvingBenchmarkConfig;
   hive: SelfEvolvingHiveConfig;
@@ -418,6 +419,54 @@ export interface SelfEvolvingEvolutionConfig {
   enabled: boolean | null;
   modes: string[];
   artifactTypes: string[];
+}
+
+export interface SelfEvolvingTacticsConfig {
+  enabled: boolean | null;
+  search: SelfEvolvingTacticSearchConfig;
+}
+
+export interface SelfEvolvingTacticSearchConfig {
+  mode: 'bm25' | 'hybrid' | null;
+  bm25: SelfEvolvingTacticBm25Config;
+  embeddings: SelfEvolvingTacticEmbeddingsConfig;
+  rerank: SelfEvolvingTacticRerankConfig;
+  personalization: SelfEvolvingToggleConfig;
+  negativeMemory: SelfEvolvingToggleConfig;
+}
+
+export interface SelfEvolvingTacticBm25Config {
+  enabled: boolean | null;
+}
+
+export interface SelfEvolvingTacticEmbeddingsConfig {
+  enabled: boolean | null;
+  provider: string | null;
+  baseUrl: string | null;
+  apiKey: string | null;
+  model: string | null;
+  dimensions: number | null;
+  batchSize: number | null;
+  timeoutMs: number | null;
+  autoFallbackToBm25: boolean | null;
+  local: SelfEvolvingTacticEmbeddingsLocalConfig;
+}
+
+export interface SelfEvolvingTacticEmbeddingsLocalConfig {
+  autoInstall: boolean | null;
+  pullOnStart: boolean | null;
+  requireHealthyRuntime: boolean | null;
+  failOpen: boolean | null;
+}
+
+export interface SelfEvolvingTacticRerankConfig {
+  crossEncoder: boolean | null;
+  tier: string | null;
+  timeoutMs: number | null;
+}
+
+export interface SelfEvolvingToggleConfig {
+  enabled: boolean | null;
 }
 
 export interface SelfEvolvingPromotionConfig {
@@ -686,6 +735,23 @@ function toStringArray(value: unknown): string[] {
     .filter((entry) => entry.length > 0);
 }
 
+function normalizeSelfEvolvingJudgeTier(
+  value: unknown,
+  fallback: ExplicitModelTierId,
+): ExplicitModelTierId {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'standard') {
+    return 'smart';
+  }
+  if (normalized === 'premium') {
+    return 'deep';
+  }
+  return isExplicitModelTier(normalized) ? normalized : fallback;
+}
+
 function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
   const record = value != null && typeof value === 'object' ? value as UnknownRecord : {};
   const capture = record.capture != null && typeof record.capture === 'object'
@@ -696,6 +762,30 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
     : {};
   const evolution = record.evolution != null && typeof record.evolution === 'object'
     ? record.evolution as UnknownRecord
+    : {};
+  const tactics = record.tactics != null && typeof record.tactics === 'object'
+    ? record.tactics as UnknownRecord
+    : {};
+  const tacticsSearch = tactics.search != null && typeof tactics.search === 'object'
+    ? tactics.search as UnknownRecord
+    : {};
+  const tacticsBm25 = tacticsSearch.bm25 != null && typeof tacticsSearch.bm25 === 'object'
+    ? tacticsSearch.bm25 as UnknownRecord
+    : {};
+  const tacticsEmbeddings = tacticsSearch.embeddings != null && typeof tacticsSearch.embeddings === 'object'
+    ? tacticsSearch.embeddings as UnknownRecord
+    : {};
+  const tacticsEmbeddingsLocal = tacticsEmbeddings.local != null && typeof tacticsEmbeddings.local === 'object'
+    ? tacticsEmbeddings.local as UnknownRecord
+    : {};
+  const tacticsRerank = tacticsSearch.rerank != null && typeof tacticsSearch.rerank === 'object'
+    ? tacticsSearch.rerank as UnknownRecord
+    : {};
+  const tacticsPersonalization = tacticsSearch.personalization != null && typeof tacticsSearch.personalization === 'object'
+    ? tacticsSearch.personalization as UnknownRecord
+    : {};
+  const tacticsNegativeMemory = tacticsSearch.negativeMemory != null && typeof tacticsSearch.negativeMemory === 'object'
+    ? tacticsSearch.negativeMemory as UnknownRecord
     : {};
   const promotion = record.promotion != null && typeof record.promotion === 'object'
     ? record.promotion as UnknownRecord
@@ -720,9 +810,9 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
     },
     judge: {
       enabled: typeof judge.enabled === 'boolean' ? judge.enabled : true,
-      primaryTier: toNullableString(judge.primaryTier) ?? 'standard',
-      tiebreakerTier: toNullableString(judge.tiebreakerTier) ?? 'premium',
-      evolutionTier: toNullableString(judge.evolutionTier) ?? 'premium',
+      primaryTier: normalizeSelfEvolvingJudgeTier(judge.primaryTier, 'smart'),
+      tiebreakerTier: normalizeSelfEvolvingJudgeTier(judge.tiebreakerTier, 'deep'),
+      evolutionTier: normalizeSelfEvolvingJudgeTier(judge.evolutionTier, 'deep'),
       requireEvidenceAnchors: typeof judge.requireEvidenceAnchors === 'boolean' ? judge.requireEvidenceAnchors : true,
       uncertaintyThreshold: typeof judge.uncertaintyThreshold === 'number' ? judge.uncertaintyThreshold : 0.22,
     },
@@ -730,6 +820,53 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
       enabled: typeof evolution.enabled === 'boolean' ? evolution.enabled : true,
       modes: toStringArray(evolution.modes),
       artifactTypes: toStringArray(evolution.artifactTypes),
+    },
+    tactics: {
+      enabled: typeof tactics.enabled === 'boolean' ? tactics.enabled : false,
+      search: {
+        mode: toNullableString(tacticsSearch.mode) as 'bm25' | 'hybrid' | null ?? 'bm25',
+        bm25: {
+          enabled: typeof tacticsBm25.enabled === 'boolean' ? tacticsBm25.enabled : true,
+        },
+        embeddings: {
+          enabled: typeof tacticsEmbeddings.enabled === 'boolean' ? tacticsEmbeddings.enabled : false,
+          provider: toNullableString(tacticsEmbeddings.provider),
+          baseUrl: toNullableString(tacticsEmbeddings.baseUrl),
+          apiKey: toNullableString(tacticsEmbeddings.apiKey),
+          model: toNullableString(tacticsEmbeddings.model),
+          dimensions: typeof tacticsEmbeddings.dimensions === 'number' ? tacticsEmbeddings.dimensions : null,
+          batchSize: typeof tacticsEmbeddings.batchSize === 'number' ? tacticsEmbeddings.batchSize : null,
+          timeoutMs: typeof tacticsEmbeddings.timeoutMs === 'number' ? tacticsEmbeddings.timeoutMs : null,
+          autoFallbackToBm25: typeof tacticsEmbeddings.autoFallbackToBm25 === 'boolean'
+            ? tacticsEmbeddings.autoFallbackToBm25
+            : true,
+          local: {
+            autoInstall: typeof tacticsEmbeddingsLocal.autoInstall === 'boolean'
+              ? tacticsEmbeddingsLocal.autoInstall
+              : false,
+            pullOnStart: typeof tacticsEmbeddingsLocal.pullOnStart === 'boolean'
+              ? tacticsEmbeddingsLocal.pullOnStart
+              : false,
+            requireHealthyRuntime: typeof tacticsEmbeddingsLocal.requireHealthyRuntime === 'boolean'
+              ? tacticsEmbeddingsLocal.requireHealthyRuntime
+              : true,
+            failOpen: typeof tacticsEmbeddingsLocal.failOpen === 'boolean'
+              ? tacticsEmbeddingsLocal.failOpen
+              : true,
+          },
+        },
+        rerank: {
+          crossEncoder: typeof tacticsRerank.crossEncoder === 'boolean' ? tacticsRerank.crossEncoder : true,
+          tier: normalizeSelfEvolvingJudgeTier(tacticsRerank.tier, 'deep'),
+          timeoutMs: typeof tacticsRerank.timeoutMs === 'number' ? tacticsRerank.timeoutMs : 5000,
+        },
+        personalization: {
+          enabled: typeof tacticsPersonalization.enabled === 'boolean' ? tacticsPersonalization.enabled : true,
+        },
+        negativeMemory: {
+          enabled: typeof tacticsNegativeMemory.enabled === 'boolean' ? tacticsNegativeMemory.enabled : true,
+        },
+      },
     },
     promotion: {
       mode: toNullableString(promotion.mode) as 'approval_gate' | 'auto_accept' | null ?? 'approval_gate',

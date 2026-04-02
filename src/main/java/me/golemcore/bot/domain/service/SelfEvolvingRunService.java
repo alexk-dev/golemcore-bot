@@ -57,11 +57,7 @@ public class SelfEvolvingRunService {
     private final ObjectMapper objectMapper;
     private final AtomicReference<List<RunRecord>> runCache = new AtomicReference<>();
 
-    public SelfEvolvingRunService(StoragePort storagePort, ArtifactBundleService artifactBundleService) {
-        this(storagePort, artifactBundleService, Clock.systemUTC());
-    }
-
-    SelfEvolvingRunService(StoragePort storagePort, ArtifactBundleService artifactBundleService, Clock clock) {
+    public SelfEvolvingRunService(StoragePort storagePort, ArtifactBundleService artifactBundleService, Clock clock) {
         this.storagePort = storagePort;
         this.artifactBundleService = artifactBundleService;
         this.clock = clock;

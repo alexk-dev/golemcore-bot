@@ -33,7 +33,7 @@ class HiveRuntimeEventDispatchSystemTest {
     @Test
     void shouldDispatchHiveRuntimeEventsWithTurnMetadata() {
         HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("hive:thread-1")
@@ -68,7 +68,7 @@ class HiveRuntimeEventDispatchSystemTest {
     @Test
     void shouldSkipNonHiveSessions() {
         HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("web:chat-1")

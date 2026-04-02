@@ -81,7 +81,7 @@ class EvolutionCandidateServiceTacticRecordTest {
                 });
 
         Clock clock = Clock.fixed(Instant.parse("2026-04-01T21:15:00Z"), ZoneOffset.UTC);
-        tacticRecordService = new TacticRecordService(storagePort, clock);
+        tacticRecordService = new TacticRecordService(storagePort, clock, null);
         evolutionCandidateService = new EvolutionCandidateService(storagePort, tacticRecordService, clock);
     }
 

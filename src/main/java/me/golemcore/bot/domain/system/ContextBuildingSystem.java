@@ -66,16 +66,6 @@ public class ContextBuildingSystem implements AgentSystem {
         this.tacticSearchService = tacticSearchService;
     }
 
-    public ContextBuildingSystem(ContextAssembler contextAssembler,
-            RuntimeConfigService runtimeConfigService,
-            SelfEvolvingRunService selfEvolvingRunService) {
-        this(contextAssembler, runtimeConfigService, selfEvolvingRunService, null);
-    }
-
-    ContextBuildingSystem(ContextAssembler contextAssembler) {
-        this(contextAssembler, null, null, null);
-    }
-
     @Override
     public String getName() {
         return "ContextBuildingSystem";

@@ -55,12 +55,14 @@ class PromotionWorkflowServiceTest {
                     return CompletableFuture.completedFuture(null);
                 });
         when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("approval_gate");
-        evolutionCandidateService = new EvolutionCandidateService(storagePort, Clock.fixed(
-                Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
+        evolutionCandidateService = new EvolutionCandidateService(storagePort, mock(TacticRecordService.class),
+                Clock.fixed(
+                        Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
         promotionWorkflowService = new PromotionWorkflowService(
                 storagePort,
                 runtimeConfigService,
                 evolutionCandidateService,
+                null,
                 Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
     }
 

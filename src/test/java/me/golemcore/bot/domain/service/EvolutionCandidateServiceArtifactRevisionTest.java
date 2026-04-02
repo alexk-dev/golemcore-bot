@@ -37,6 +37,7 @@ class EvolutionCandidateServiceArtifactRevisionTest {
                 .thenReturn(CompletableFuture.completedFuture(null));
         service = new EvolutionCandidateService(
                 storagePort,
+                mock(TacticRecordService.class),
                 Clock.fixed(Instant.parse("2026-03-31T18:00:00Z"), ZoneOffset.UTC));
     }
 

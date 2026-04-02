@@ -55,16 +55,6 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
         this.hiveSessionStateStore = hiveSessionStateStore;
     }
 
-    HiveRuntimeEventDispatchSystem(HiveEventBatchPublisher hiveEventBatchPublisher) {
-        this(hiveEventBatchPublisher, null, null);
-    }
-
-    HiveRuntimeEventDispatchSystem(
-            HiveEventBatchPublisher hiveEventBatchPublisher,
-            TacticSearchMetricsService tacticSearchMetricsService) {
-        this(hiveEventBatchPublisher, tacticSearchMetricsService, null);
-    }
-
     @Override
     public String getName() {
         return "HiveRuntimeEventDispatchSystem";
@@ -191,7 +181,15 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
         return SelfEvolvingTacticSearchStatusDto.builder()
                 .mode(snapshot.activeMode())
                 .reason(snapshot.lastReason())
+                .provider(snapshot.provider())
+                .model(snapshot.model())
                 .degraded(snapshot.degraded())
+                .runtimeHealthy(snapshot.runtimeHealthy())
+                .modelAvailable(snapshot.modelAvailable())
+                .autoInstallConfigured(snapshot.autoInstallConfigured())
+                .pullOnStartConfigured(snapshot.pullOnStartConfigured())
+                .pullAttempted(snapshot.pullAttempted())
+                .pullSucceeded(snapshot.pullSucceeded())
                 .updatedAt(snapshot.updatedAt() != null ? snapshot.updatedAt().toString() : null)
                 .build();
     }

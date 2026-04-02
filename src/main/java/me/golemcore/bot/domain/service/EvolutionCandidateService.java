@@ -28,7 +28,6 @@ import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionRecord;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -58,15 +57,6 @@ public class EvolutionCandidateService {
     private final ObjectMapper objectMapper;
     private final AtomicReference<List<ArtifactRevisionRecord>> artifactRevisionCache = new AtomicReference<>();
 
-    public EvolutionCandidateService(StoragePort storagePort) {
-        this(storagePort, new TacticRecordService(storagePort, Clock.systemUTC()), Clock.systemUTC());
-    }
-
-    EvolutionCandidateService(StoragePort storagePort, Clock clock) {
-        this(storagePort, new TacticRecordService(storagePort, clock), clock);
-    }
-
-    @Autowired
     public EvolutionCandidateService(StoragePort storagePort, TacticRecordService tacticRecordService, Clock clock) {
         this.storagePort = storagePort;
         this.tacticRecordService = tacticRecordService;

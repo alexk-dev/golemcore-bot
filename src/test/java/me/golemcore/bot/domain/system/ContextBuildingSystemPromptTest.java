@@ -141,7 +141,7 @@ class ContextBuildingSystemPromptTest {
                 new HiveLayer());
 
         ContextAssembler contextAssembler = new ContextAssembler(skillResolver, tierResolver, layers, promptComposer);
-        return new ContextBuildingSystem(contextAssembler);
+        return new ContextBuildingSystem(contextAssembler, null, null, null);
     }
 
     private AgentContext createContext() {

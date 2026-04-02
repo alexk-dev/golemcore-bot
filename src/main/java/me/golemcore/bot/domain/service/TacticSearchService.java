@@ -58,21 +58,6 @@ public class TacticSearchService {
         this.tacticHybridRankingService = tacticHybridRankingService;
     }
 
-    TacticSearchService(
-            TacticQueryExpansionService queryExpansionService,
-            TacticBm25IndexService bm25IndexService,
-            RuntimeConfigService runtimeConfigService) {
-        this(queryExpansionService, bm25IndexService, runtimeConfigService, null, null, null);
-    }
-
-    TacticSearchService(
-            TacticQueryExpansionService queryExpansionService,
-            TacticBm25IndexService bm25IndexService,
-            RuntimeConfigService runtimeConfigService,
-            TacticIndexRebuildService tacticIndexRebuildService) {
-        this(queryExpansionService, bm25IndexService, runtimeConfigService, tacticIndexRebuildService, null, null);
-    }
-
     public TacticSearchQuery buildQuery(AgentContext context) {
         return queryExpansionService.expand(context);
     }

@@ -191,7 +191,8 @@ class LocalEmbeddingBootstrapServiceTest {
         private TestLocalEmbeddingBootstrapService(
                 RuntimeConfigService runtimeConfigService,
                 TacticSearchMetricsService metricsService) {
-            super(runtimeConfigService, metricsService, FIXED_CLOCK);
+            super(runtimeConfigService, metricsService, FIXED_CLOCK, new okhttp3.OkHttpClient(),
+                    new com.fasterxml.jackson.databind.ObjectMapper());
         }
 
         @Override

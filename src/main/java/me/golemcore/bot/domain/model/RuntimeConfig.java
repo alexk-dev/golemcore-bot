@@ -974,11 +974,11 @@ public class RuntimeConfig {
         @Builder.Default
         private Boolean enabled = true;
         @Builder.Default
-        private String primaryTier = "standard";
+        private String primaryTier = "smart";
         @Builder.Default
-        private String tiebreakerTier = "premium";
+        private String tiebreakerTier = "deep";
         @Builder.Default
-        private String evolutionTier = "premium";
+        private String evolutionTier = "deep";
         @Builder.Default
         private Boolean requireEvidenceAnchors = true;
         @Builder.Default

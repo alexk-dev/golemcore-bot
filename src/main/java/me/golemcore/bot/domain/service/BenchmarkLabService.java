@@ -69,22 +69,6 @@ public class BenchmarkLabService {
 
     public BenchmarkLabService(StoragePort storagePort,
             SelfEvolvingRunService selfEvolvingRunService,
-            PromotionWorkflowService promotionWorkflowService) {
-        this(storagePort, selfEvolvingRunService, promotionWorkflowService, Clock.systemUTC());
-    }
-
-    public BenchmarkLabService(StoragePort storagePort, SelfEvolvingRunService selfEvolvingRunService) {
-        this(storagePort, selfEvolvingRunService, null, Clock.systemUTC());
-    }
-
-    BenchmarkLabService(StoragePort storagePort,
-            SelfEvolvingRunService selfEvolvingRunService,
-            Clock clock) {
-        this(storagePort, selfEvolvingRunService, null, clock);
-    }
-
-    BenchmarkLabService(StoragePort storagePort,
-            SelfEvolvingRunService selfEvolvingRunService,
             PromotionWorkflowService promotionWorkflowService,
             Clock clock) {
         this.storagePort = storagePort;

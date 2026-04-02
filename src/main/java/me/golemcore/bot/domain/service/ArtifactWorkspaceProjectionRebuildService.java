@@ -44,12 +44,6 @@ public class ArtifactWorkspaceProjectionRebuildService {
 
     public ArtifactWorkspaceProjectionRebuildService(
             ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService,
-            StoragePort storagePort) {
-        this(artifactWorkspaceProjectionService, storagePort, Clock.systemUTC());
-    }
-
-    ArtifactWorkspaceProjectionRebuildService(
-            ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService,
             StoragePort storagePort,
             Clock clock) {
         this.artifactWorkspaceProjectionService = artifactWorkspaceProjectionService;

@@ -23,7 +23,6 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -54,7 +53,6 @@ public class TacticRecordService {
     private final ObjectProvider<TacticIndexRebuildService> rebuildServiceProvider;
     private final AtomicReference<List<TacticRecord>> cache = new AtomicReference<>();
 
-    @Autowired
     public TacticRecordService(
             StoragePort storagePort,
             Clock clock,
@@ -64,14 +62,6 @@ public class TacticRecordService {
         this.rebuildServiceProvider = rebuildServiceProvider;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
-    }
-
-    public TacticRecordService(StoragePort storagePort) {
-        this(storagePort, Clock.systemUTC(), null);
-    }
-
-    public TacticRecordService(StoragePort storagePort, Clock clock) {
-        this(storagePort, clock, null);
     }
 
     public TacticRecord save(TacticRecord record) {

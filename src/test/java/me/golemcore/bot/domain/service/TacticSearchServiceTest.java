@@ -58,7 +58,8 @@ class TacticSearchServiceTest {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(runtimeConfig.getSelfEvolving());
 
         queryExpansionService = new TacticQueryExpansionService();
-        tacticSearchService = new TacticSearchService(queryExpansionService, bm25IndexService, runtimeConfigService);
+        tacticSearchService = new TacticSearchService(queryExpansionService, bm25IndexService, runtimeConfigService,
+                null, null, null);
     }
 
     @Test

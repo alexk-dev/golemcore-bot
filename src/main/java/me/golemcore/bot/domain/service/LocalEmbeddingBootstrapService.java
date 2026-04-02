@@ -65,12 +65,6 @@ public class LocalEmbeddingBootstrapService {
         this.objectMapper = objectMapper;
     }
 
-    LocalEmbeddingBootstrapService(RuntimeConfigService runtimeConfigService,
-            TacticSearchMetricsService metricsService,
-            Clock clock) {
-        this(runtimeConfigService, metricsService, clock, new OkHttpClient(), new ObjectMapper());
-    }
-
     @PostConstruct
     public void initializeOnStartup() {
         initialize();
@@ -139,7 +133,7 @@ public class LocalEmbeddingBootstrapService {
 
         TacticSearchStatus status = buildStatus(MODE_HYBRID, null, provider, model, false, runtimeHealthy, true,
                 localConfig, pullAttempted, pullSucceeded);
-        metricsService.recordActiveMode(status.getMode(), status.getReason());
+        metricsService.recordStatus(status);
         log.info("[TacticSearch] Local embedding bootstrap active in {} mode for provider {} model {}",
                 status.getMode(), provider, model);
         return status;
@@ -209,6 +203,7 @@ public class LocalEmbeddingBootstrapService {
         TacticSearchStatus status = buildStatus(MODE_BM25, reason, provider, model, true, runtimeHealthy,
                 modelAvailable, localConfig, pullAttempted, pullSucceeded);
         metricsService.recordFallback(status.getMode(), status.getReason());
+        metricsService.recordStatus(status);
         log.warn("[TacticSearch] Local embedding bootstrap degraded to {}: {}", status.getMode(), status.getReason());
         return status;
     }
@@ -219,7 +214,7 @@ public class LocalEmbeddingBootstrapService {
             boolean pullAttempted, boolean pullSucceeded) {
         TacticSearchStatus status = buildStatus(mode, reason, provider, model, false, runtimeHealthy, modelAvailable,
                 localConfig, pullAttempted, pullSucceeded);
-        metricsService.recordActiveMode(status.getMode(), status.getReason());
+        metricsService.recordStatus(status);
         return status;
     }
 

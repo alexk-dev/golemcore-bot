@@ -230,7 +230,15 @@ export interface SelfEvolvingArtifactEvidence {
 export interface SelfEvolvingTacticSearchStatus {
   mode: string | null;
   reason: string | null;
+  provider: string | null;
+  model: string | null;
   degraded: boolean | null;
+  runtimeHealthy: boolean | null;
+  modelAvailable: boolean | null;
+  autoInstallConfigured: boolean | null;
+  pullOnStartConfigured: boolean | null;
+  pullAttempted: boolean | null;
+  pullSucceeded: boolean | null;
   updatedAt: string | null;
 }
 
@@ -304,6 +312,11 @@ export async function getSelfEvolvingRun(runId: string): Promise<SelfEvolvingRun
 
 export async function getSelfEvolvingCandidates(): Promise<SelfEvolvingCandidate[]> {
   const { data } = await client.get<SelfEvolvingCandidate[]>('/self-evolving/candidates');
+  return data;
+}
+
+export async function getSelfEvolvingTacticSearchStatus(): Promise<SelfEvolvingTacticSearchStatus> {
+  const { data } = await client.get<SelfEvolvingTacticSearchStatus>('/self-evolving/tactics/status');
   return data;
 }
 

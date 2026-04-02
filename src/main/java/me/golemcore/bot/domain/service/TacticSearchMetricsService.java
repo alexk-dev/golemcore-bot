@@ -25,6 +25,8 @@ import java.time.Instant;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+
 /**
  * In-memory counters and gauges describing tactic-search fallback and
  * degradation state.
@@ -40,7 +42,15 @@ public class TacticSearchMetricsService {
     private final AtomicLong degradedIndexFailureCount = new AtomicLong();
     private final AtomicReference<String> activeMode = new AtomicReference<>(DEFAULT_MODE);
     private final AtomicReference<String> lastReason = new AtomicReference<>();
+    private final AtomicReference<String> provider = new AtomicReference<>();
+    private final AtomicReference<String> model = new AtomicReference<>();
     private final AtomicReference<Boolean> degraded = new AtomicReference<>(false);
+    private final AtomicReference<Boolean> runtimeHealthy = new AtomicReference<>(false);
+    private final AtomicReference<Boolean> modelAvailable = new AtomicReference<>(false);
+    private final AtomicReference<Boolean> autoInstallConfigured = new AtomicReference<>(false);
+    private final AtomicReference<Boolean> pullOnStartConfigured = new AtomicReference<>(false);
+    private final AtomicReference<Boolean> pullAttempted = new AtomicReference<>(false);
+    private final AtomicReference<Boolean> pullSucceeded = new AtomicReference<>(false);
     private final AtomicReference<Instant> updatedAt = new AtomicReference<>();
 
     public TacticSearchMetricsService(Clock clock) {
@@ -77,6 +87,24 @@ public class TacticSearchMetricsService {
         updatedAt.set(clock.instant());
     }
 
+    public void recordStatus(TacticSearchStatus status) {
+        if (status == null) {
+            return;
+        }
+        activeMode.set(normalizeMode(status.getMode()));
+        lastReason.set(normalizeReason(status.getReason()));
+        provider.set(normalizeString(status.getProvider()));
+        model.set(normalizeString(status.getModel()));
+        degraded.set(Boolean.TRUE.equals(status.getDegraded()));
+        runtimeHealthy.set(Boolean.TRUE.equals(status.getRuntimeHealthy()));
+        modelAvailable.set(Boolean.TRUE.equals(status.getModelAvailable()));
+        autoInstallConfigured.set(Boolean.TRUE.equals(status.getAutoInstallConfigured()));
+        pullOnStartConfigured.set(Boolean.TRUE.equals(status.getPullOnStartConfigured()));
+        pullAttempted.set(Boolean.TRUE.equals(status.getPullAttempted()));
+        pullSucceeded.set(Boolean.TRUE.equals(status.getPullSucceeded()));
+        updatedAt.set(status.getUpdatedAt() != null ? status.getUpdatedAt() : clock.instant());
+    }
+
     public Snapshot snapshot() {
         return new Snapshot(
                 fallbackCount.get(),
@@ -84,7 +112,15 @@ public class TacticSearchMetricsService {
                 degradedIndexFailureCount.get(),
                 activeMode.get(),
                 lastReason.get(),
+                provider.get(),
+                model.get(),
                 degraded.get(),
+                runtimeHealthy.get(),
+                modelAvailable.get(),
+                autoInstallConfigured.get(),
+                pullOnStartConfigured.get(),
+                pullAttempted.get(),
+                pullSucceeded.get(),
                 updatedAt.get());
     }
 
@@ -94,7 +130,15 @@ public class TacticSearchMetricsService {
             long degradedIndexFailureCount,
             String activeMode,
             String lastReason,
+            String provider,
+            String model,
             boolean degraded,
+            boolean runtimeHealthy,
+            boolean modelAvailable,
+            boolean autoInstallConfigured,
+            boolean pullOnStartConfigured,
+            boolean pullAttempted,
+            boolean pullSucceeded,
             Instant updatedAt) {
     }
 
@@ -110,5 +154,12 @@ public class TacticSearchMetricsService {
             return null;
         }
         return reason.trim();
+    }
+
+    private String normalizeString(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 }

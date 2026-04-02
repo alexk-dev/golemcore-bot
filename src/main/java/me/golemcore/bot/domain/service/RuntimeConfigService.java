@@ -37,6 +37,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -198,9 +199,19 @@ public class RuntimeConfigService {
     private static final String DEFAULT_SELF_EVOLVING_CAPTURE_MODE_FULL = "full";
     private static final String DEFAULT_SELF_EVOLVING_CAPTURE_MODE_META_ONLY = "meta_only";
     private static final boolean DEFAULT_SELF_EVOLVING_JUDGE_ENABLED = true;
-    private static final String DEFAULT_SELF_EVOLVING_JUDGE_PRIMARY_TIER = "standard";
-    private static final String DEFAULT_SELF_EVOLVING_JUDGE_TIEBREAKER_TIER = "premium";
-    private static final String DEFAULT_SELF_EVOLVING_JUDGE_EVOLUTION_TIER = "premium";
+    private static final String DEFAULT_SELF_EVOLVING_JUDGE_PRIMARY_TIER = "smart";
+    private static final String DEFAULT_SELF_EVOLVING_JUDGE_TIEBREAKER_TIER = "deep";
+    private static final String DEFAULT_SELF_EVOLVING_JUDGE_EVOLUTION_TIER = "deep";
+    private static final Set<String> SUPPORTED_SELF_EVOLVING_JUDGE_TIERS = Set.of(
+            "balanced",
+            "smart",
+            "deep",
+            "coding",
+            "special1",
+            "special2",
+            "special3",
+            "special4",
+            "special5");
     private static final boolean DEFAULT_SELF_EVOLVING_REQUIRE_EVIDENCE_ANCHORS = true;
     private static final double DEFAULT_SELF_EVOLVING_UNCERTAINTY_THRESHOLD = 0.22d;
     private static final boolean DEFAULT_SELF_EVOLVING_EVOLUTION_ENABLED = true;
@@ -2209,13 +2220,13 @@ public class RuntimeConfigService {
         if (judgeConfig.getEnabled() == null) {
             judgeConfig.setEnabled(DEFAULT_SELF_EVOLVING_JUDGE_ENABLED);
         }
-        judgeConfig.setPrimaryTier(normalizeNonBlankString(
+        judgeConfig.setPrimaryTier(normalizeSelfEvolvingJudgeTier(
                 judgeConfig.getPrimaryTier(),
                 DEFAULT_SELF_EVOLVING_JUDGE_PRIMARY_TIER));
-        judgeConfig.setTiebreakerTier(normalizeNonBlankString(
+        judgeConfig.setTiebreakerTier(normalizeSelfEvolvingJudgeTier(
                 judgeConfig.getTiebreakerTier(),
                 DEFAULT_SELF_EVOLVING_JUDGE_TIEBREAKER_TIER));
-        judgeConfig.setEvolutionTier(normalizeNonBlankString(
+        judgeConfig.setEvolutionTier(normalizeSelfEvolvingJudgeTier(
                 judgeConfig.getEvolutionTier(),
                 DEFAULT_SELF_EVOLVING_JUDGE_EVOLUTION_TIER));
         if (judgeConfig.getRequireEvidenceAnchors() == null) {
@@ -2310,6 +2321,22 @@ public class RuntimeConfigService {
             return normalizedValue;
         }
         return defaultValue;
+    }
+
+    private String normalizeSelfEvolvingJudgeTier(String value, String defaultValue) {
+        String normalizedValue = normalizeNonBlankString(value, defaultValue);
+        if (normalizedValue == null) {
+            return defaultValue;
+        }
+        String normalizedTierId = ModelTierCatalog.normalizeTierId(normalizedValue);
+        if ("standard".equals(normalizedTierId)) {
+            normalizedTierId = "smart";
+        } else if ("premium".equals(normalizedTierId)) {
+            normalizedTierId = "deep";
+        }
+        return normalizedTierId != null && SUPPORTED_SELF_EVOLVING_JUDGE_TIERS.contains(normalizedTierId)
+                ? normalizedTierId
+                : defaultValue;
     }
 
     private String normalizeNonBlankString(String value, String defaultValue) {

@@ -18,6 +18,7 @@ import {
   getSelfEvolvingCandidates,
   getSelfEvolvingRun,
   getSelfEvolvingRuns,
+  getSelfEvolvingTacticSearchStatus,
   searchSelfEvolvingTactics,
   type SelfEvolvingArtifactCatalogEntry,
   type SelfEvolvingArtifactEvidence,
@@ -32,6 +33,7 @@ import {
   type SelfEvolvingRunDetail,
   type SelfEvolvingRunSummary,
   type SelfEvolvingTacticSearchResponse,
+  type SelfEvolvingTacticSearchStatus,
 } from '../api/selfEvolving';
 
 export function useSelfEvolvingRuns(): UseQueryResult<SelfEvolvingRunSummary[], unknown> {
@@ -158,6 +160,16 @@ export function useSelfEvolvingTacticSearch(query: string): UseQueryResult<SelfE
   return useQuery({
     queryKey: ['self-evolving', 'tactics', query],
     queryFn: () => searchSelfEvolvingTactics(query),
+  });
+}
+
+export function useSelfEvolvingTacticSearchStatus(
+  enabled = true,
+): UseQueryResult<SelfEvolvingTacticSearchStatus, unknown> {
+  return useQuery({
+    queryKey: ['self-evolving', 'tactics', 'status'],
+    queryFn: getSelfEvolvingTacticSearchStatus,
+    enabled,
   });
 }
 

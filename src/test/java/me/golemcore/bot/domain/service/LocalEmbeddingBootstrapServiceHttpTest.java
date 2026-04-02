@@ -25,6 +25,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import okhttp3.OkHttpClient;
+
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
@@ -46,7 +49,9 @@ class LocalEmbeddingBootstrapServiceHttpTest {
         service = new LocalEmbeddingBootstrapService(
                 mock(RuntimeConfigService.class),
                 new TacticSearchMetricsService(Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC)),
-                Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC),
+                new OkHttpClient(),
+                new ObjectMapper());
     }
 
     @AfterEach

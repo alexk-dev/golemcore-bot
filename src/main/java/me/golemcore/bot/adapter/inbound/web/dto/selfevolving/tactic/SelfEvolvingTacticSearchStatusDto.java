@@ -16,6 +16,14 @@ public class SelfEvolvingTacticSearchStatusDto {
 
     private String mode;
     private String reason;
+    private String provider;
+    private String model;
     private Boolean degraded;
+    private Boolean runtimeHealthy;
+    private Boolean modelAvailable;
+    private Boolean autoInstallConfigured;
+    private Boolean pullOnStartConfigured;
+    private Boolean pullAttempted;
+    private Boolean pullSucceeded;
     private String updatedAt;
 }

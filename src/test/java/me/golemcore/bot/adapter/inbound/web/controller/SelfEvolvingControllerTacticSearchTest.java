@@ -34,7 +34,8 @@ class SelfEvolvingControllerTacticSearchTest {
         controller = new SelfEvolvingController(
                 projectionService,
                 mock(PromotionWorkflowService.class),
-                mock(BenchmarkLabService.class));
+                mock(BenchmarkLabService.class),
+                null);
     }
 
     @Test
@@ -65,6 +66,35 @@ class SelfEvolvingControllerTacticSearchTest {
                     assertEquals(0.5d, response.getBody().getResults().getFirst().getExplanation().getBm25Score());
                     assertEquals(0.08d,
                             response.getBody().getResults().getFirst().getExplanation().getPersonalizationBoost());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnDedicatedTacticSearchStatusForSettings() {
+        when(projectionService.getTacticSearchStatus()).thenReturn(SelfEvolvingTacticSearchStatusDto.builder()
+                .mode("hybrid")
+                .reason("local embedding model unavailable")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .degraded(true)
+                .runtimeHealthy(false)
+                .modelAvailable(false)
+                .autoInstallConfigured(true)
+                .pullOnStartConfigured(true)
+                .pullAttempted(true)
+                .pullSucceeded(false)
+                .updatedAt("2026-04-01T23:30:00Z")
+                .build());
+
+        StepVerifier.create(controller.getTacticSearchStatus())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("ollama", response.getBody().getProvider());
+                    assertEquals("qwen3-embedding:0.6b", response.getBody().getModel());
+                    assertEquals(false, response.getBody().getRuntimeHealthy());
+                    assertEquals(true, response.getBody().getPullAttempted());
                 })
                 .verifyComplete();
     }

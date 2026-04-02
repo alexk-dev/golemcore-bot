@@ -54,6 +54,7 @@ class EvolutionCandidateServiceTest {
                 });
         evolutionCandidateService = new EvolutionCandidateService(
                 storagePort,
+                mock(TacticRecordService.class),
                 Clock.fixed(Instant.parse("2026-03-31T16:30:00Z"), ZoneOffset.UTC));
     }
 
@@ -221,6 +222,7 @@ class EvolutionCandidateServiceTest {
         persistedFiles.put("artifact-revisions.json", "{");
         EvolutionCandidateService reloadedService = new EvolutionCandidateService(
                 mockReloadingStoragePort(),
+                mock(TacticRecordService.class),
                 Clock.fixed(Instant.parse("2026-03-31T16:30:00Z"), ZoneOffset.UTC));
         assertTrue(reloadedService.getArtifactRevisionRecords().isEmpty());
     }

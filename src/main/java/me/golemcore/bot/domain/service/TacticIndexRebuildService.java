@@ -42,13 +42,6 @@ public class TacticIndexRebuildService {
     public TacticIndexRebuildService(
             TacticRecordService tacticRecordService,
             TacticSearchDocumentAssembler documentAssembler,
-            TacticBm25IndexService bm25IndexService) {
-        this(tacticRecordService, documentAssembler, bm25IndexService, Clock.systemUTC());
-    }
-
-    TacticIndexRebuildService(
-            TacticRecordService tacticRecordService,
-            TacticSearchDocumentAssembler documentAssembler,
             TacticBm25IndexService bm25IndexService,
             Clock clock) {
         this.tacticRecordService = tacticRecordService;

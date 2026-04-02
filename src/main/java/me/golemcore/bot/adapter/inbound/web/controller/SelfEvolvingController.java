@@ -16,6 +16,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvi
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchExplanationDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.service.BenchmarkLabService;
@@ -55,12 +56,6 @@ public class SelfEvolvingController {
         this.promotionWorkflowService = promotionWorkflowService;
         this.benchmarkLabService = benchmarkLabService;
         this.hiveEventBatchPublisher = hiveEventBatchPublisher;
-    }
-
-    SelfEvolvingController(SelfEvolvingProjectionService projectionService,
-            PromotionWorkflowService promotionWorkflowService,
-            BenchmarkLabService benchmarkLabService) {
-        this(projectionService, promotionWorkflowService, benchmarkLabService, null);
     }
 
     @GetMapping("/runs")
@@ -195,6 +190,11 @@ public class SelfEvolvingController {
         List<SelfEvolvingTacticDto> tactics = projectionService.listTactics();
         publishHiveTacticCatalog(tactics);
         return Mono.just(ResponseEntity.ok(tactics));
+    }
+
+    @GetMapping("/tactics/status")
+    public Mono<ResponseEntity<SelfEvolvingTacticSearchStatusDto>> getTacticSearchStatus() {
+        return Mono.just(ResponseEntity.ok(projectionService.getTacticSearchStatus()));
     }
 
     @GetMapping("/tactics/search")

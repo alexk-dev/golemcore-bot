@@ -82,27 +82,6 @@ public class SelfEvolvingProjectionService {
     private final TacticSearchService tacticSearchService;
     private final TacticSearchMetricsService tacticSearchMetricsService;
 
-    public SelfEvolvingProjectionService(
-            SelfEvolvingRunService selfEvolvingRunService,
-            ArtifactBundleService artifactBundleService,
-            DeterministicJudgeService deterministicJudgeService,
-            PromotionWorkflowService promotionWorkflowService,
-            BenchmarkLabService benchmarkLabService,
-            ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService,
-            SessionPort sessionPort) {
-        this(
-                selfEvolvingRunService,
-                artifactBundleService,
-                deterministicJudgeService,
-                promotionWorkflowService,
-                benchmarkLabService,
-                artifactWorkspaceProjectionService,
-                sessionPort,
-                null,
-                null,
-                null);
-    }
-
     public List<SelfEvolvingRunSummaryDto> listRuns() {
         return selfEvolvingRunService.getRuns().stream()
                 .sorted(Comparator.comparing(
@@ -178,9 +157,13 @@ public class SelfEvolvingProjectionService {
         }
         return SelfEvolvingTacticSearchResponseDto.builder()
                 .query(query)
-                .status(buildTacticSearchStatusDto())
+                .status(getTacticSearchStatus())
                 .results(results)
                 .build();
+    }
+
+    public SelfEvolvingTacticSearchStatusDto getTacticSearchStatus() {
+        return buildTacticSearchStatusDto();
     }
 
     public Optional<SelfEvolvingTacticDto> getTactic(String tacticId) {
@@ -488,7 +471,15 @@ public class SelfEvolvingProjectionService {
         return SelfEvolvingTacticSearchStatusDto.builder()
                 .mode(snapshot.activeMode())
                 .reason(snapshot.lastReason())
+                .provider(snapshot.provider())
+                .model(snapshot.model())
                 .degraded(snapshot.degraded())
+                .runtimeHealthy(snapshot.runtimeHealthy())
+                .modelAvailable(snapshot.modelAvailable())
+                .autoInstallConfigured(snapshot.autoInstallConfigured())
+                .pullOnStartConfigured(snapshot.pullOnStartConfigured())
+                .pullAttempted(snapshot.pullAttempted())
+                .pullSucceeded(snapshot.pullSucceeded())
                 .updatedAt(formatInstant(snapshot.updatedAt()))
                 .build();
     }

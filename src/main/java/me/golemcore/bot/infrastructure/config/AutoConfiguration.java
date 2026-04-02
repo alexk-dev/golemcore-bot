@@ -31,6 +31,7 @@ import org.springframework.boot.info.BuildProperties;
 import org.springframework.boot.info.GitProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -73,6 +74,13 @@ public class AutoConfiguration {
     @Bean
     public static Clock clock() {
         return Clock.systemDefaultZone();
+    }
+
+    @Bean
+    public static WebClient webClient() {
+        return WebClient.builder()
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(256 * 1024))
+                .build();
     }
 
     @Bean

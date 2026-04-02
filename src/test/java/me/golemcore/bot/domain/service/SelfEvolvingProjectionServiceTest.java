@@ -19,6 +19,7 @@ import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCompareEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjection;
@@ -542,6 +543,40 @@ class SelfEvolvingProjectionServiceTest {
         assertEquals("decision-1:active", lineage.get().getDefaultSelectedNodeId());
         assertTrue(evidence.isPresent());
         assertEquals("revision", evidence.get().getPayloadKind());
+    }
+
+    @Test
+    void shouldProjectFullTacticSearchStatusForSettings() {
+        tacticSearchMetricsService.recordStatus(TacticSearchStatus.builder()
+                .mode("hybrid")
+                .reason("local embedding model unavailable")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .degraded(true)
+                .runtimeHealthy(false)
+                .modelAvailable(false)
+                .autoInstallConfigured(true)
+                .pullOnStartConfigured(true)
+                .pullAttempted(true)
+                .pullSucceeded(false)
+                .updatedAt(Instant.parse("2026-04-01T23:30:00Z"))
+                .build());
+
+        me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto status = projectionService
+                .getTacticSearchStatus();
+
+        assertEquals("hybrid", status.getMode());
+        assertEquals("local embedding model unavailable", status.getReason());
+        assertEquals("ollama", status.getProvider());
+        assertEquals("qwen3-embedding:0.6b", status.getModel());
+        assertTrue(status.getDegraded());
+        assertFalse(status.getRuntimeHealthy());
+        assertFalse(status.getModelAvailable());
+        assertTrue(status.getAutoInstallConfigured());
+        assertTrue(status.getPullOnStartConfigured());
+        assertTrue(status.getPullAttempted());
+        assertFalse(status.getPullSucceeded());
+        assertEquals("2026-04-01T23:30:00Z", status.getUpdatedAt());
     }
 
     @Test

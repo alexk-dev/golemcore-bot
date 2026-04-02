@@ -76,25 +76,6 @@ public class ArtifactWorkspaceProjectionService {
             BenchmarkLabService benchmarkLabService,
             ArtifactNormalizedRevisionProjectionService normalizedRevisionProjectionService,
             ArtifactDiffService artifactDiffService,
-            ArtifactImpactService artifactImpactService) {
-        this(
-                evolutionCandidateService,
-                promotionWorkflowService,
-                artifactBundleService,
-                benchmarkLabService,
-                normalizedRevisionProjectionService,
-                artifactDiffService,
-                artifactImpactService,
-                Clock.systemUTC());
-    }
-
-    ArtifactWorkspaceProjectionService(
-            EvolutionCandidateService evolutionCandidateService,
-            PromotionWorkflowService promotionWorkflowService,
-            ArtifactBundleService artifactBundleService,
-            BenchmarkLabService benchmarkLabService,
-            ArtifactNormalizedRevisionProjectionService normalizedRevisionProjectionService,
-            ArtifactDiffService artifactDiffService,
             ArtifactImpactService artifactImpactService,
             Clock clock) {
         this.evolutionCandidateService = evolutionCandidateService;

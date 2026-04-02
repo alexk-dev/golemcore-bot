@@ -97,10 +97,33 @@ class RuntimeConfigServiceSelfEvolvingTest {
     void shouldExposeDefaultSelfEvolvingGettersWhenSectionIsMissing() {
         assertFalse(service.isSelfEvolvingEnabled());
         assertTrue(service.isSelfEvolvingTracePayloadOverrideEnabled());
-        assertEquals("standard", service.getSelfEvolvingJudgePrimaryTier());
-        assertEquals("premium", service.getSelfEvolvingJudgeTiebreakerTier());
-        assertEquals("premium", service.getSelfEvolvingJudgeEvolutionTier());
+        assertEquals("smart", service.getSelfEvolvingJudgePrimaryTier());
+        assertEquals("deep", service.getSelfEvolvingJudgeTiebreakerTier());
+        assertEquals("deep", service.getSelfEvolvingJudgeEvolutionTier());
         assertEquals("approval_gate", service.getSelfEvolvingPromotionMode());
+    }
+
+    @Test
+    void shouldNormalizeLegacySelfEvolvingJudgeTiersToSupportedModelTiers() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setSelfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .judge(RuntimeConfig.SelfEvolvingJudgeConfig.builder()
+                        .enabled(true)
+                        .primaryTier("standard")
+                        .tiebreakerTier("premium")
+                        .evolutionTier("premium")
+                        .requireEvidenceAnchors(true)
+                        .uncertaintyThreshold(0.22d)
+                        .build())
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig normalized = service.getRuntimeConfig();
+        assertEquals("smart", normalized.getSelfEvolving().getJudge().getPrimaryTier());
+        assertEquals("deep", normalized.getSelfEvolving().getJudge().getTiebreakerTier());
+        assertEquals("deep", normalized.getSelfEvolving().getJudge().getEvolutionTier());
     }
 
     @Test
@@ -158,9 +181,9 @@ class RuntimeConfigServiceSelfEvolvingTest {
         assertEquals("full", normalized.getSelfEvolving().getCapture().getTier());
         assertEquals("meta_only", normalized.getSelfEvolving().getCapture().getInfra());
         assertTrue(normalized.getSelfEvolving().getJudge().getEnabled());
-        assertEquals("standard", normalized.getSelfEvolving().getJudge().getPrimaryTier());
+        assertEquals("smart", normalized.getSelfEvolving().getJudge().getPrimaryTier());
         assertEquals("deep", normalized.getSelfEvolving().getJudge().getTiebreakerTier());
-        assertEquals("premium", normalized.getSelfEvolving().getJudge().getEvolutionTier());
+        assertEquals("deep", normalized.getSelfEvolving().getJudge().getEvolutionTier());
         assertEquals(0.22d, normalized.getSelfEvolving().getJudge().getUncertaintyThreshold());
         assertEquals(List.of("fix", "derive"), normalized.getSelfEvolving().getEvolution().getModes());
         assertEquals(List.of("skill", "tool_policy"), normalized.getSelfEvolving().getEvolution().getArtifactTypes());

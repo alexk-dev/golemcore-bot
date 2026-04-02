@@ -58,11 +58,7 @@ public class ArtifactBundleService {
     private final ObjectMapper objectMapper;
     private final AtomicReference<List<ArtifactBundleRecord>> bundleCache = new AtomicReference<>();
 
-    public ArtifactBundleService(StoragePort storagePort, RuntimeConfigService runtimeConfigService) {
-        this(storagePort, runtimeConfigService, Clock.systemUTC());
-    }
-
-    ArtifactBundleService(StoragePort storagePort, RuntimeConfigService runtimeConfigService, Clock clock) {
+    public ArtifactBundleService(StoragePort storagePort, RuntimeConfigService runtimeConfigService, Clock clock) {
         this.storagePort = storagePort;
         this.runtimeConfigService = runtimeConfigService;
         this.clock = clock;

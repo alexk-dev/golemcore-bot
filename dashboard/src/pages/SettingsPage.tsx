@@ -30,6 +30,7 @@ import TracingTab from './settings/TracingTab';
 import { UpdatesTab } from './settings/UpdatesTab';
 import PluginSettingsPanel from './settings/PluginSettingsPanel';
 import PluginsMarketplaceTab from './settings/PluginsMarketplaceTab';
+import { useSelfEvolvingTacticSearchStatus } from '../hooks/useSelfEvolving';
 import {
   SETTINGS_BLOCKS,
   SETTINGS_SECTIONS,
@@ -113,6 +114,7 @@ export default function SettingsPage(): ReactElement {
   const marketplaceBadge = buildMarketplaceBadge(pluginMarketplace);
 
   const staticSection = isSettingsSectionKey(section) ? section : null;
+  const { data: selfEvolvingTacticSearchStatus } = useSelfEvolvingTacticSearchStatus(staticSection === 'self-evolving');
   const pluginSection = staticSection == null && section != null
     ? pluginCatalog.find((item) => item.routeKey === section) ?? null
     : null;
@@ -339,6 +341,7 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'self-evolving' && rc != null && (
         <SelfEvolvingTab
           config={rc.selfEvolving}
+          tacticSearchStatus={selfEvolvingTacticSearchStatus ?? null}
           isSaving={updateRuntimeConfig.isPending}
           onSave={async (selfEvolving) => {
             await updateRuntimeConfig.mutateAsync({
