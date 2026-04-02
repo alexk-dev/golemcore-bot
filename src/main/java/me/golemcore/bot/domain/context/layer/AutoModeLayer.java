@@ -63,6 +63,11 @@ public class AutoModeLayer implements ContextLayer {
     public ContextLayerResult assemble(AgentContext context) {
         StringBuilder sb = new StringBuilder();
 
+        sb.append("# Autonomous Execution Guidelines\n");
+        sb.append("This is an autonomous scheduled run. Your response must be a concise report ");
+        sb.append("of what was accomplished. Do NOT include follow-up questions, suggestions ");
+        sb.append("to continue, or offers to do more work. The user cannot respond in this context.\n\n");
+
         if (isAutoReflectionContext(context)) {
             sb.append("# Auto Reflection Mode\n");
             sb.append("This autonomous run is a recovery/reflection step after repeated failures. ");

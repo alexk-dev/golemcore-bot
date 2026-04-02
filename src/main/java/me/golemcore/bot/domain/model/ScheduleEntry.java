@@ -19,12 +19,15 @@ package me.golemcore.bot.domain.model;
  */
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.function.Consumer;
 
 /**
  * Represents a cron-based schedule entry for autonomous goal/task execution.
@@ -35,6 +38,7 @@ import java.time.Instant;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ScheduleEntry {
 
     private String id;
@@ -43,6 +47,7 @@ public class ScheduleEntry {
     private String cronExpression;
     private boolean enabled;
     private boolean clearContextBeforeRun;
+    private ScheduleReportConfig report;
 
     @Builder.Default
     private int maxExecutions = -1;
@@ -66,5 +71,39 @@ public class ScheduleEntry {
     @JsonIgnore
     public boolean isExhausted() {
         return maxExecutions > 0 && executionCount >= maxExecutions;
+    }
+
+    @JsonSetter("reportChannelType")
+    public void setLegacyReportChannelType(String value) {
+        applyLegacyReportField(value, normalized -> getOrCreateReport().setChannelType(normalized));
+    }
+
+    @JsonSetter("reportChatId")
+    public void setLegacyReportChatId(String value) {
+        applyLegacyReportField(value, normalized -> getOrCreateReport().setChatId(normalized));
+    }
+
+    @JsonSetter("reportWebhookUrl")
+    public void setLegacyReportWebhookUrl(String value) {
+        applyLegacyReportField(value, normalized -> getOrCreateReport().setWebhookUrl(normalized));
+    }
+
+    @JsonSetter("reportWebhookSecret")
+    public void setLegacyReportWebhookSecret(String value) {
+        applyLegacyReportField(value, normalized -> getOrCreateReport().setWebhookBearerToken(normalized));
+    }
+
+    private void applyLegacyReportField(String value, Consumer<String> consumer) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        consumer.accept(value.trim());
+    }
+
+    private ScheduleReportConfig getOrCreateReport() {
+        if (report == null) {
+            report = new ScheduleReportConfig();
+        }
+        return report;
     }
 }

@@ -1,7 +1,12 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Spinner } from 'react-bootstrap';
 import { useSearchParams } from 'react-router-dom';
-import type { SchedulerRunSummary, SchedulerSchedule, SchedulerTargetType } from '../api/scheduler';
+import type {
+  SchedulerReportChannelOption,
+  SchedulerRunSummary,
+  SchedulerSchedule,
+  SchedulerTargetType,
+} from '../api/scheduler';
 import { SchedulerWorkspace } from '../components/scheduler/SchedulerWorkspace';
 import {
   useCreateSchedule,
@@ -68,9 +73,23 @@ export default function SchedulerPage(): ReactElement {
   const scheduleSectionRef = useRef<HTMLDivElement>(null);
 
   const data = schedulerQuery.data;
+  const reportChannelOptions = useMemo(
+    () => data?.reportChannelOptions ?? [],
+    [data?.reportChannelOptions],
+  );
   const goals = useMemo(() => data?.goals ?? [], [data?.goals]);
   const standaloneTasks = useMemo(() => data?.standaloneTasks ?? [], [data?.standaloneTasks]);
   const formState = useSchedulerForm(goals, standaloneTasks);
+  const findReportOption = (channelType: string): SchedulerReportChannelOption | undefined =>
+    reportChannelOptions.find((option) => option.type === channelType);
+
+  const handleReportChannelTypeChange = (channelType: string): void => {
+    formState.setReportChannelType(channelType);
+    const reportChannelOption = findReportOption(channelType);
+    if (reportChannelOption?.suggestedChatId != null && reportChannelOption.suggestedChatId.length > 0) {
+      formState.setReportChatId(reportChannelOption.suggestedChatId);
+    }
+  };
   const navigation = useSchedulerNavigation(
     goals,
     standaloneTasks,
@@ -161,6 +180,11 @@ export default function SchedulerPage(): ReactElement {
       onLimitInputChange={formState.setLimitInput}
       onEnabledChange={formState.setEnabled}
       onClearContextBeforeRunChange={formState.setClearContextBeforeRun}
+      onReportChannelTypeChange={handleReportChannelTypeChange}
+      onReportChatIdChange={formState.setReportChatId}
+      onWebhookUrlChange={formState.setReportWebhookUrl}
+      onWebhookSecretChange={formState.setReportWebhookSecret}
+      reportChannelOptions={reportChannelOptions}
       onSubmitSchedule={() => { void handleSubmitSchedule(); }}
       onCancelEditSchedule={formState.reset}
       onOpenLogs={(schedule) => {

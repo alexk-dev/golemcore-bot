@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -39,6 +40,7 @@ import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.contains;
 import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -61,7 +63,36 @@ class AutoModeSchedulerTest {
     private RuntimeConfigService runtimeConfigService;
     private SessionPort sessionPort;
     private SkillComponent skillComponent;
+    private ScheduleReportSender reportSender;
     private AutoModeScheduler scheduler;
+
+    private AutoModeScheduler createScheduler() {
+        ScheduledRunMessageFactory scheduledRunMessageFactory = new ScheduledRunMessageFactory(
+                autoModeService,
+                runtimeConfigService,
+                skillComponent);
+        ScheduledRunExecutor scheduledRunExecutor = new ScheduledRunExecutor(
+                autoModeService,
+                sessionRunCoordinator,
+                runtimeConfigService,
+                sessionPort,
+                scheduledRunMessageFactory,
+                reportSender);
+        return new AutoModeScheduler(
+                autoModeService,
+                scheduleService,
+                runtimeConfigService,
+                goalManagementTool,
+                new ChannelRegistry(List.of(channelPort)),
+                scheduledRunExecutor);
+    }
+
+    private static ScheduleReportConfig channelReport(String channelType, String chatId) {
+        return ScheduleReportConfig.builder()
+                .channelType(channelType)
+                .chatId(chatId)
+                .build();
+    }
 
     @BeforeEach
     void setUp() {
@@ -89,9 +120,9 @@ class AutoModeSchedulerTest {
         when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn("deep");
         when(runtimeConfigService.isAutoReflectionTierPriority()).thenReturn(false);
 
-        scheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+        reportSender = mock(ScheduleReportSender.class);
+
+        scheduler = createScheduler();
     }
 
     @Test
@@ -882,7 +913,7 @@ class AutoModeSchedulerTest {
     }
 
     @Test
-    void shouldSkipTaskScheduleWhenTaskCompleted() {
+    void shouldResetCompletedTaskToPendingAndRun() {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
         AutoTask task = AutoTask.builder()
@@ -912,7 +943,8 @@ class AutoModeSchedulerTest {
 
         scheduler.tick();
 
-        verify(sessionRunCoordinator, never()).submit(any(Message.class));
+        verify(autoModeService).updateTaskStatus(GOAL_ID, "task-done", AutoTask.TaskStatus.PENDING, null);
+        verify(sessionRunCoordinator).submit(any(Message.class));
     }
 
     @Test
@@ -1046,9 +1078,7 @@ class AutoModeSchedulerTest {
 
     @Test
     void shutdownDoesNotThrowWhenNotInitialized() {
-        AutoModeScheduler freshScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+        AutoModeScheduler freshScheduler = createScheduler();
 
         assertDoesNotThrow(freshScheduler::shutdown);
     }
@@ -1058,9 +1088,7 @@ class AutoModeSchedulerTest {
         when(runtimeConfigService.isAutoStartEnabled()).thenReturn(true);
         when(autoModeService.isAutoModeEnabled()).thenReturn(false);
 
-        AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+        AutoModeScheduler newScheduler = createScheduler();
 
         newScheduler.init();
 
@@ -1073,9 +1101,7 @@ class AutoModeSchedulerTest {
     void shouldNotAutoStartWhenAutoStartDisabled() {
         when(runtimeConfigService.isAutoStartEnabled()).thenReturn(false);
 
-        AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+        AutoModeScheduler newScheduler = createScheduler();
 
         newScheduler.init();
 
@@ -1089,9 +1115,7 @@ class AutoModeSchedulerTest {
         when(runtimeConfigService.isAutoStartEnabled()).thenReturn(true);
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
-        AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+        AutoModeScheduler newScheduler = createScheduler();
 
         newScheduler.init();
 
@@ -1104,9 +1128,7 @@ class AutoModeSchedulerTest {
     void shouldInitializeSchedulerEvenWhenFeatureDisabledAtStartup() {
         when(runtimeConfigService.isAutoModeEnabled()).thenReturn(false);
 
-        AutoModeScheduler newScheduler = new AutoModeScheduler(
-                autoModeService, scheduleService, sessionRunCoordinator, runtimeConfigService,
-                goalManagementTool, new ChannelRegistry(List.of(channelPort)), sessionPort, skillComponent);
+        AutoModeScheduler newScheduler = createScheduler();
 
         newScheduler.init();
 
@@ -1154,5 +1176,268 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         verify(sessionRunCoordinator, times(1)).submit(any(Message.class));
+    }
+
+    @Test
+    void shouldSendReportToConfiguredChannelAfterSuccessfulRun() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Verify deployments")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-report")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .report(channelReport(CHANNEL_TYPE_TELEGRAM, "999"))
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "COMPLETED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT,
+                    "All 3 deployments are healthy. No issues found.");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
+        scheduler.tick();
+
+        ArgumentCaptor<ScheduleEntry> scheduleCaptor = ArgumentCaptor.forClass(ScheduleEntry.class);
+        ArgumentCaptor<String> headerCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> textCaptor = ArgumentCaptor.forClass(String.class);
+        verify(reportSender).sendReport(scheduleCaptor.capture(), headerCaptor.capture(), textCaptor.capture(), any());
+
+        assertEquals("sched-report", scheduleCaptor.getValue().getId());
+        assertEquals("All 3 deployments are healthy. No issues found.", textCaptor.getValue());
+    }
+
+    @Test
+    void shouldAutoResolveChatIdFromRegisteredChannelWhenReportChatIdIsNull() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Check logs")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-report-auto")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .report(channelReport(CHANNEL_TYPE_TELEGRAM, null))
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "COMPLETED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT, "Logs look clean.");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "auto-chat-42");
+        scheduler.tick();
+
+        ArgumentCaptor<ScheduleEntry> scheduleCaptor = ArgumentCaptor.forClass(ScheduleEntry.class);
+        ArgumentCaptor<String> textCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<ScheduleDeliveryContext> channelInfoCaptor = ArgumentCaptor
+                .forClass(ScheduleDeliveryContext.class);
+        verify(reportSender).sendReport(scheduleCaptor.capture(), anyString(), textCaptor.capture(),
+                channelInfoCaptor.capture());
+
+        assertEquals("sched-report-auto", scheduleCaptor.getValue().getId());
+        assertEquals("Logs look clean.", textCaptor.getValue());
+        assertEquals("auto-chat-42", channelInfoCaptor.getValue().sessionChatId());
+    }
+
+    @Test
+    void shouldNotSendReportWhenNoReportChannelConfigured() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Normal task")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-no-report")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "COMPLETED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT, "Done.");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
+        scheduler.tick();
+
+        ArgumentCaptor<ScheduleEntry> scheduleCaptor = ArgumentCaptor.forClass(ScheduleEntry.class);
+        verify(reportSender).sendReport(scheduleCaptor.capture(), anyString(), eq("Done."), any());
+        assertNull(scheduleCaptor.getValue().getReport());
+    }
+
+    @Test
+    void shouldNotSendReportWhenAssistantTextIsEmpty() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Silent task")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-report-empty")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .report(channelReport(CHANNEL_TYPE_TELEGRAM, "999"))
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
+        scheduler.tick();
+
+        verify(reportSender).sendReport(any(ScheduleEntry.class), anyString(), isNull(), any());
+    }
+
+    @Test
+    void shouldFallbackToDefaultChannelWhenReportChannelTypeDoesNotMatchRegistered() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Check")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-report-mismatch")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .report(channelReport("slack", null))
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "COMPLETED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT, "Result text.");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "123");
+        scheduler.tick();
+
+        ArgumentCaptor<ScheduleEntry> scheduleCaptor = ArgumentCaptor.forClass(ScheduleEntry.class);
+        verify(reportSender).sendReport(scheduleCaptor.capture(), anyString(), eq("Result text."), any());
+        assertEquals("slack", scheduleCaptor.getValue().getReport().getChannelType());
+    }
+
+    @Test
+    void shouldPassOriginalChannelSnapshotToReportSenderEvenIfGlobalChannelChangesMidRun() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+
+        Goal goal = Goal.builder()
+                .id(GOAL_ID)
+                .title(GOAL_TITLE)
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of(AutoTask.builder()
+                        .id(TASK_ID)
+                        .title("Check logs")
+                        .status(AutoTask.TaskStatus.PENDING)
+                        .order(1)
+                        .build()))
+                .createdAt(Instant.now())
+                .build();
+        when(autoModeService.getGoal(GOAL_ID)).thenReturn(Optional.of(goal));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-report-snapshot")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId(GOAL_ID)
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .report(channelReport(CHANNEL_TYPE_TELEGRAM, null))
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "new-session", "new-transport");
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "COMPLETED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT, "Snapshot text.");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.registerChannel(CHANNEL_TYPE_TELEGRAM, "original-session", "original-transport");
+        scheduler.tick();
+
+        ArgumentCaptor<ScheduleDeliveryContext> channelInfoCaptor = ArgumentCaptor
+                .forClass(ScheduleDeliveryContext.class);
+        verify(reportSender).sendReport(eq(schedule), anyString(), eq("Snapshot text."), channelInfoCaptor.capture());
+        assertEquals("original-session", channelInfoCaptor.getValue().sessionChatId());
+        assertEquals("original-transport", channelInfoCaptor.getValue().transportChatId());
     }
 }

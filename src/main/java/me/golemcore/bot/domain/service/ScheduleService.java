@@ -19,6 +19,8 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduleReportConfig;
+import me.golemcore.bot.domain.model.ScheduleReportConfigUpdate;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -84,6 +86,15 @@ public class ScheduleService {
      */
     public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
             String cronExpression, int maxExecutions, boolean clearContextBeforeRun) {
+        return createSchedule(type, targetId, cronExpression, maxExecutions, clearContextBeforeRun, null);
+    }
+
+    /**
+     * Create a new schedule entry with nested report configuration.
+     */
+    public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
+            String cronExpression, int maxExecutions, boolean clearContextBeforeRun,
+            ScheduleReportConfig report) {
         String normalizedCron = normalizeCronExpression(cronExpression);
 
         Instant now = clock.instant();
@@ -97,6 +108,7 @@ public class ScheduleService {
                 .cronExpression(normalizedCron)
                 .enabled(true)
                 .clearContextBeforeRun(clearContextBeforeRun)
+                .report(copyReport(report))
                 .maxExecutions(maxExecutions)
                 .executionCount(0)
                 .createdAt(now)
@@ -136,6 +148,22 @@ public class ScheduleService {
             int maxExecutions,
             boolean enabled,
             Boolean clearContextBeforeRun) {
+        return updateSchedule(id, type, targetId, cronExpression, maxExecutions, enabled, clearContextBeforeRun,
+                ScheduleReportConfigUpdate.noChange());
+    }
+
+    /**
+     * Update an existing schedule entry with explicit report config semantics.
+     */
+    public ScheduleEntry updateSchedule(
+            String id,
+            ScheduleEntry.ScheduleType type,
+            String targetId,
+            String cronExpression,
+            int maxExecutions,
+            boolean enabled,
+            Boolean clearContextBeforeRun,
+            ScheduleReportConfigUpdate reportUpdate) {
         ScheduleEntry entry = findSchedule(id)
                 .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
 
@@ -152,6 +180,10 @@ public class ScheduleService {
         if (clearContextBeforeRun != null) {
             entry.setClearContextBeforeRun(clearContextBeforeRun);
         }
+        if (reportUpdate != null && reportUpdate.applies()) {
+            ScheduleReportConfig report = reportUpdate.clears() ? null : copyReport(reportUpdate.getConfig());
+            entry.setReport(report);
+        }
         if (entry.isEnabled()) {
             entry.setNextExecutionAt(computeNextExecution(normalizedCron, now));
         } else {
@@ -161,6 +193,18 @@ public class ScheduleService {
         saveSchedules(getSchedules());
         log.info("[Schedule] Updated schedule {} for target {}: {}", id, targetId, normalizedCron);
         return entry;
+    }
+
+    private static ScheduleReportConfig copyReport(ScheduleReportConfig report) {
+        if (report == null) {
+            return null;
+        }
+        return ScheduleReportConfig.builder()
+                .channelType(report.getChannelType())
+                .chatId(report.getChatId())
+                .webhookUrl(report.getWebhookUrl())
+                .webhookBearerToken(report.getWebhookBearerToken())
+                .build();
     }
 
     /**
@@ -307,11 +351,28 @@ public class ScheduleService {
         try {
             String json = storagePort.getText(AUTO_DIR, SCHEDULES_FILE).join();
             if (json != null && !json.isBlank()) {
-                return new ArrayList<>(objectMapper.readValue(json, SCHEDULE_LIST_TYPE_REF));
+                List<ScheduleEntry> loadedSchedules = new ArrayList<>(
+                        objectMapper.readValue(json, SCHEDULE_LIST_TYPE_REF));
+                loadedSchedules.forEach(this::normalizeLoadedSchedule);
+                return loadedSchedules;
             }
         } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
             log.debug("[Schedule] No schedules found or failed to parse: {}", e.getMessage());
         }
         return new ArrayList<>();
+    }
+
+    private void normalizeLoadedSchedule(ScheduleEntry entry) {
+        ScheduleReportConfig report = entry.getReport();
+        if (report == null) {
+            return;
+        }
+        boolean emptyChannel = StringValueSupport.isBlank(report.getChannelType());
+        boolean emptyChat = StringValueSupport.isBlank(report.getChatId());
+        boolean emptyWebhookUrl = StringValueSupport.isBlank(report.getWebhookUrl());
+        boolean emptyWebhookToken = StringValueSupport.isBlank(report.getWebhookBearerToken());
+        if (emptyChannel && emptyChat && emptyWebhookUrl && emptyWebhookToken) {
+            entry.setReport(null);
+        }
     }
 }

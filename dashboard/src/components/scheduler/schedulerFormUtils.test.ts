@@ -71,6 +71,7 @@ describe('schedulerFormUtils', () => {
       cronExpression: '0 0 9 * * *',
       enabled: true,
       clearContextBeforeRun: false,
+      report: null,
       maxExecutions: 0,
       executionCount: 0,
       createdAt: null,

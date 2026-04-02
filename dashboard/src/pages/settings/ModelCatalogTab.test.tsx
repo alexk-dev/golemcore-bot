@@ -19,6 +19,7 @@ const llmConfig: LlmConfig = {
       baseUrl: null,
       requestTimeoutSeconds: null,
       apiType: 'openai',
+      legacyApi: null,
     },
     openrouter: {
       apiKey: null,
@@ -26,6 +27,7 @@ const llmConfig: LlmConfig = {
       baseUrl: 'https://openrouter.ai/api/v1',
       requestTimeoutSeconds: 30,
       apiType: 'openai',
+      legacyApi: null,
     },
   },
 };

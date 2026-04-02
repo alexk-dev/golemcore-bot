@@ -392,6 +392,13 @@ public class RuntimeConfig {
         private String baseUrl;
         private Integer requestTimeoutSeconds;
         private String apiType;
+        /**
+         * When {@code true}, forces the legacy {@code /v1/chat/completions} endpoint
+         * for OpenAI-type providers. When {@code null} or {@code false}, the adapter
+         * uses the new {@code /v1/responses} endpoint. Only meaningful when
+         * {@code apiType} is {@code "openai"}.
+         */
+        private Boolean legacyApi;
     }
 
     @Data

@@ -102,6 +102,7 @@ function buildDefaultProviderConfig(name: string): LlmProviderConfig {
     baseUrl: getSuggestedBaseUrl(name, defaultApiType),
     requestTimeoutSeconds: 300,
     apiType: defaultApiType,
+    legacyApi: null,
   };
 }
 
@@ -227,6 +228,29 @@ function ProviderEditor({
               )}
             </Form.Group>
           </Col>
+          {apiType === 'openai' && (
+            <Col md={3}>
+              <Form.Group className="mb-2">
+                <Form.Label className="small fw-medium">API Endpoint</Form.Label>
+                <Form.Select
+                  size="sm"
+                  value={form.legacyApi === true ? 'legacy' : 'responses'}
+                  onChange={(e) => onFormChange({ ...form, legacyApi: e.target.value === 'legacy' || null })}
+                  title={form.legacyApi === true
+                    ? 'Legacy: /v1/chat/completions — for proxies that do not support the Responses API'
+                    : 'Default: /v1/responses — supports reasoning + tools on reasoning models'}
+                >
+                  <option value="responses">/v1/responses</option>
+                  <option value="legacy">/v1/chat/completions</option>
+                </Form.Select>
+                <Form.Text className="text-body-secondary d-block">
+                  {form.legacyApi === true
+                    ? 'For proxies without Responses API support.'
+                    : 'Supports reasoning + function tools.'}
+                </Form.Text>
+              </Form.Group>
+            </Col>
+          )}
           <Col md={3}>
             <Form.Group className="mb-2">
               <Form.Label className="small fw-medium">Timeout (s)</Form.Label>
@@ -332,7 +356,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
       return;
     }
     setEditingName(name);
-    setEditForm({ ...provider, apiKey: null, apiType: normalizeApiType(provider.apiType) });
+    setEditForm({ ...provider, apiKey: null, apiType: normalizeApiType(provider.apiType), legacyApi: provider.legacyApi ?? null });
     setIsNewProvider(false);
     setShowKey(false);
   };

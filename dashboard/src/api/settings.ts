@@ -107,6 +107,7 @@ function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
         apiKey: scrubSecret(),
         apiKeyPresent: hasApiKey,
         apiType,
+        legacyApi: provider.legacyApi === true ? true : null,
       };
     });
     cfg.llm = { ...cfg.llm, providers };
@@ -153,6 +154,7 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
             requestTimeoutSeconds: provider.requestTimeoutSeconds,
             apiKey: toSecretPayload(provider.apiKey ?? null),
             apiType: normalizeLlmApiType(provider.apiType),
+            legacyApi: provider.legacyApi === true ? true : null,
           },
         ]),
       ),
@@ -237,6 +239,7 @@ export interface LlmProviderConfig {
   baseUrl: string | null;
   requestTimeoutSeconds: number | null;
   apiType: ApiType | null;
+  legacyApi: boolean | null;
 }
 
 export interface MemoryConfig {
@@ -531,6 +534,7 @@ export async function updateLlmConfig(config: LlmConfig): Promise<RuntimeConfig>
           requestTimeoutSeconds: provider.requestTimeoutSeconds,
           apiKey: toSecretPayload(provider.apiKey ?? null),
           apiType: normalizeLlmApiType(provider.apiType),
+          legacyApi: provider.legacyApi === true ? true : null,
         },
       ]),
     ),
@@ -545,6 +549,7 @@ export async function addLlmProvider(name: string, config: LlmProviderConfig): P
     requestTimeoutSeconds: config.requestTimeoutSeconds,
     apiKey: toSecretPayload(config.apiKey ?? null),
     apiType: normalizeLlmApiType(config.apiType),
+    legacyApi: config.legacyApi === true ? true : null,
   };
   const { data } = await client.post<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
   return toUiRuntimeConfig(data);
@@ -556,6 +561,7 @@ export async function updateLlmProvider(name: string, config: LlmProviderConfig)
     requestTimeoutSeconds: config.requestTimeoutSeconds,
     apiKey: toSecretPayload(config.apiKey ?? null),
     apiType: normalizeLlmApiType(config.apiType),
+    legacyApi: config.legacyApi === true ? true : null,
   };
   const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
   return toUiRuntimeConfig(data);
