@@ -9,6 +9,8 @@ import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.service.DeterministicJudgeService;
 import me.golemcore.bot.domain.service.EvolutionCandidateService;
 import me.golemcore.bot.domain.service.LlmJudgeService;
@@ -24,9 +26,9 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -84,7 +86,11 @@ class PostRunAnalysisSystemTest {
         RunRecord completedRun = RunRecord.builder()
                 .id("run-1")
                 .artifactBundleId("bundle-1")
+                .traceId("trace-1")
                 .status("COMPLETED")
+                .build();
+        TraceRecord traceRecord = TraceRecord.builder()
+                .traceId("trace-1")
                 .build();
         RunVerdict deterministicVerdict = RunVerdict.builder()
                 .runId("run-1")
@@ -96,11 +102,14 @@ class PostRunAnalysisSystemTest {
                 .build();
         List<EvolutionCandidate> candidates = List.of(EvolutionCandidate.builder()
                 .id("candidate-1")
+                .baseVersion("bundle-1")
+                .artifactStreamId("stream-1")
+                .baseContentRevisionId("rev-1")
                 .build());
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
-        when(deterministicJudgeService.evaluate(completedRun, null)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, null, deterministicVerdict)).thenReturn(llmVerdict);
+        when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
+        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
         when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(candidates);
 
         assertTrue(system.shouldProcess(context));
@@ -108,10 +117,11 @@ class PostRunAnalysisSystemTest {
 
         verify(selfEvolvingRunService).startRun(context);
         verify(selfEvolvingRunService).completeRun(startedRun, context);
-        verify(deterministicJudgeService).evaluate(completedRun, null);
-        verify(llmJudgeService).judge(completedRun, null, deterministicVerdict);
+        verify(deterministicJudgeService).evaluate(completedRun, traceRecord);
+        verify(llmJudgeService).judge(completedRun, traceRecord, deterministicVerdict);
         verify(evolutionCandidateService).deriveCandidates(completedRun, llmVerdict);
         verify(promotionWorkflowService).registerAndPlanCandidates(candidates);
+        verify(promotionWorkflowService).bindCandidateBaseRevisions("bundle-1", candidates);
         verify(hiveEventBatchPublisher).publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
         assertEquals("run-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
         assertEquals("bundle-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
@@ -131,8 +141,10 @@ class PostRunAnalysisSystemTest {
         RunRecord completedRun = RunRecord.builder()
                 .id("run-1")
                 .artifactBundleId("bundle-1")
+                .traceId("trace-1")
                 .status("COMPLETED")
                 .build();
+        TraceRecord traceRecord = TraceRecord.builder().traceId("trace-1").build();
         RunVerdict deterministicVerdict = RunVerdict.builder()
                 .runId("run-1")
                 .outcomeStatus("COMPLETED")
@@ -143,8 +155,8 @@ class PostRunAnalysisSystemTest {
                 .build();
         when(selfEvolvingRunService.findRun("run-1")).thenReturn(java.util.Optional.of(existingRun));
         when(selfEvolvingRunService.completeRun(existingRun, context)).thenReturn(completedRun);
-        when(deterministicJudgeService.evaluate(completedRun, null)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, null, deterministicVerdict)).thenReturn(llmVerdict);
+        when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
+        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
         when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(List.of());
 
         assertTrue(system.shouldProcess(context));
@@ -193,15 +205,17 @@ class PostRunAnalysisSystemTest {
         RunRecord completedRun = RunRecord.builder()
                 .id("run-2")
                 .artifactBundleId("bundle-2")
+                .traceId("trace-1")
                 .status("COMPLETED")
                 .build();
+        TraceRecord traceRecord = TraceRecord.builder().traceId("trace-1").build();
         RunVerdict deterministicVerdict = RunVerdict.builder().runId("run-2").build();
         RunVerdict llmVerdict = RunVerdict.builder().runId("run-2").build();
         when(selfEvolvingRunService.findRun("missing-run")).thenReturn(Optional.empty());
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
-        when(deterministicJudgeService.evaluate(completedRun, null)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, null, deterministicVerdict)).thenReturn(llmVerdict);
+        when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
+        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
         when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(List.of());
 
         AgentContext result = system.process(context);
@@ -222,14 +236,16 @@ class PostRunAnalysisSystemTest {
         RunRecord completedRun = RunRecord.builder()
                 .id("run-3")
                 .artifactBundleId("bundle-3")
+                .traceId("trace-1")
                 .status("COMPLETED")
                 .build();
+        TraceRecord traceRecord = TraceRecord.builder().traceId("trace-1").build();
         RunVerdict deterministicVerdict = RunVerdict.builder().runId("run-3").build();
         RunVerdict llmVerdict = RunVerdict.builder().runId("run-3").build();
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
-        when(deterministicJudgeService.evaluate(completedRun, null)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, null, deterministicVerdict)).thenReturn(llmVerdict);
+        when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
+        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
         when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(List.of());
         doThrow(new IllegalStateException("hive offline")).when(hiveEventBatchPublisher)
                 .publishSelfEvolvingProjection(completedRun, llmVerdict, List.of());
@@ -241,8 +257,12 @@ class PostRunAnalysisSystemTest {
     }
 
     private AgentContext buildContext() {
+        TraceRecord traceRecord = TraceRecord.builder()
+                .traceId("trace-1")
+                .build();
         AgentContext context = AgentContext.builder()
-                .session(AgentSession.builder().id("session-1").chatId("chat-1").build())
+                .session(AgentSession.builder().id("session-1").chatId("chat-1").traces(List.of(traceRecord)).build())
+                .traceContext(TraceContext.builder().traceId("trace-1").spanId("span-1").build())
                 .build();
         context.setTurnOutcome(TurnOutcome.builder()
                 .finishReason(FinishReason.SUCCESS)

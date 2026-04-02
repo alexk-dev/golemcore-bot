@@ -18,19 +18,21 @@ package me.golemcore.bot.domain.system;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.service.DeterministicJudgeService;
 import me.golemcore.bot.domain.service.EvolutionCandidateService;
 import me.golemcore.bot.domain.service.LlmJudgeService;
 import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SelfEvolvingRunService;
-import org.springframework.stereotype.Component;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Optional;
@@ -99,11 +101,14 @@ public class PostRunAnalysisSystem implements AgentSystem {
         }
         RunRecord startedRun = resolveRun(context);
         RunRecord completedRun = selfEvolvingRunService.completeRun(startedRun, context);
-        RunVerdict deterministicVerdict = deterministicJudgeService.evaluate(completedRun, null);
-        RunVerdict llmVerdict = llmJudgeService.judge(completedRun, null, deterministicVerdict);
-        List<me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate> candidates = evolutionCandidateService
-                .deriveCandidates(completedRun, llmVerdict);
+        TraceRecord traceRecord = resolveTrace(context, completedRun);
+        RunVerdict deterministicVerdict = deterministicJudgeService.evaluate(completedRun, traceRecord);
+        RunVerdict llmVerdict = llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict);
+        List<EvolutionCandidate> candidates = evolutionCandidateService.deriveCandidates(completedRun, llmVerdict);
         promotionWorkflowService.registerAndPlanCandidates(candidates);
+        if (!candidates.isEmpty()) {
+            bindRunBundleToCandidateBaselines(completedRun, candidates);
+        }
         try {
             hiveEventBatchPublisher.publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
         } catch (RuntimeException exception) {
@@ -122,5 +127,33 @@ public class PostRunAnalysisSystem implements AgentSystem {
             return existingRun.get();
         }
         return selfEvolvingRunService.startRun(context);
+    }
+
+    private TraceRecord resolveTrace(AgentContext context, RunRecord completedRun) {
+        if (context == null || context.getSession() == null || context.getSession().getTraces() == null) {
+            return null;
+        }
+        if (completedRun != null && completedRun.getTraceId() != null && !completedRun.getTraceId().isBlank()) {
+            return context.getSession().getTraces().stream()
+                    .filter(trace -> trace != null && completedRun.getTraceId().equals(trace.getTraceId()))
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (context.getTraceContext() == null || context.getTraceContext().getTraceId() == null
+                || context.getTraceContext().getTraceId().isBlank()) {
+            return null;
+        }
+        return context.getSession().getTraces().stream()
+                .filter(trace -> trace != null && context.getTraceContext().getTraceId().equals(trace.getTraceId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void bindRunBundleToCandidateBaselines(RunRecord completedRun, List<EvolutionCandidate> candidates) {
+        if (completedRun == null || completedRun.getArtifactBundleId() == null
+                || completedRun.getArtifactBundleId().isBlank()) {
+            return;
+        }
+        promotionWorkflowService.bindCandidateBaseRevisions(completedRun.getArtifactBundleId(), candidates);
     }
 }

@@ -25,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCase;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkSuite;
+import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
@@ -59,19 +60,36 @@ public class BenchmarkLabService {
 
     private final StoragePort storagePort;
     private final SelfEvolvingRunService selfEvolvingRunService;
+    private final PromotionWorkflowService promotionWorkflowService;
     private final Clock clock;
     private final ObjectMapper objectMapper;
     private final AtomicReference<List<BenchmarkCase>> caseCache = new AtomicReference<>();
     private final AtomicReference<List<BenchmarkSuite>> suiteCache = new AtomicReference<>();
     private final AtomicReference<List<BenchmarkCampaign>> campaignCache = new AtomicReference<>();
 
-    public BenchmarkLabService(StoragePort storagePort, SelfEvolvingRunService selfEvolvingRunService) {
-        this(storagePort, selfEvolvingRunService, Clock.systemUTC());
+    public BenchmarkLabService(StoragePort storagePort,
+            SelfEvolvingRunService selfEvolvingRunService,
+            PromotionWorkflowService promotionWorkflowService) {
+        this(storagePort, selfEvolvingRunService, promotionWorkflowService, Clock.systemUTC());
     }
 
-    BenchmarkLabService(StoragePort storagePort, SelfEvolvingRunService selfEvolvingRunService, Clock clock) {
+    public BenchmarkLabService(StoragePort storagePort, SelfEvolvingRunService selfEvolvingRunService) {
+        this(storagePort, selfEvolvingRunService, null, Clock.systemUTC());
+    }
+
+    BenchmarkLabService(StoragePort storagePort,
+            SelfEvolvingRunService selfEvolvingRunService,
+            Clock clock) {
+        this(storagePort, selfEvolvingRunService, null, clock);
+    }
+
+    BenchmarkLabService(StoragePort storagePort,
+            SelfEvolvingRunService selfEvolvingRunService,
+            PromotionWorkflowService promotionWorkflowService,
+            Clock clock) {
         this.storagePort = storagePort;
         this.selfEvolvingRunService = selfEvolvingRunService;
+        this.promotionWorkflowService = promotionWorkflowService;
         this.clock = clock;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -106,7 +124,7 @@ public class BenchmarkLabService {
         BenchmarkCampaign benchmarkCampaign = BenchmarkCampaign.builder()
                 .id(UUID.randomUUID().toString())
                 .suiteId(suiteId)
-                .baselineBundleId(runRecord.getArtifactBundleId())
+                .baselineBundleId(resolveBaselineBundleId(runRecord))
                 .candidateBundleId(runRecord.getArtifactBundleId())
                 .status("created")
                 .startedAt(Instant.now(clock))
@@ -157,9 +175,26 @@ public class BenchmarkLabService {
 
     private Map<String, Object> buildExpectedConstraints(RunRecord runRecord) {
         Map<String, Object> constraints = new LinkedHashMap<>();
-        constraints.put("baselineBundleId", runRecord.getArtifactBundleId());
+        constraints.put("baselineBundleId", resolveBaselineBundleId(runRecord));
+        constraints.put("candidateBundleId", runRecord.getArtifactBundleId());
         constraints.put("baselineStatus", runRecord.getStatus());
         return constraints;
+    }
+
+    private String resolveBaselineBundleId(RunRecord runRecord) {
+        if (runRecord == null || StringValueSupport.isBlank(runRecord.getArtifactBundleId())
+                || promotionWorkflowService == null) {
+            return runRecord != null ? runRecord.getArtifactBundleId() : null;
+        }
+        return promotionWorkflowService.getPromotionDecisions().stream()
+                .filter(decision -> decision != null)
+                .filter(decision -> StringValueSupport.nullSafe(runRecord.getArtifactBundleId())
+                        .equals(StringValueSupport.nullSafe(decision.getBundleId())))
+                .map(PromotionDecision::getOriginBundleId)
+                .filter(originBundleId -> !StringValueSupport.isBlank(originBundleId))
+                .filter(originBundleId -> !originBundleId.equals(runRecord.getArtifactBundleId()))
+                .findFirst()
+                .orElse(runRecord.getArtifactBundleId());
     }
 
     private void saveCase(BenchmarkCase benchmarkCase) {

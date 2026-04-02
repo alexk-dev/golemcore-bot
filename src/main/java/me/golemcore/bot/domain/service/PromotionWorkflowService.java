@@ -54,6 +54,7 @@ public class PromotionWorkflowService {
     private final StoragePort storagePort;
     private final RuntimeConfigService runtimeConfigService;
     private final EvolutionCandidateService evolutionCandidateService;
+    private final ArtifactBundleService artifactBundleService;
     private final Clock clock;
     private final ObjectMapper objectMapper;
     private final AtomicReference<List<EvolutionCandidate>> candidateCache = new AtomicReference<>();
@@ -62,8 +63,16 @@ public class PromotionWorkflowService {
     public PromotionWorkflowService(
             StoragePort storagePort,
             RuntimeConfigService runtimeConfigService,
+            EvolutionCandidateService evolutionCandidateService,
+            ArtifactBundleService artifactBundleService) {
+        this(storagePort, runtimeConfigService, evolutionCandidateService, artifactBundleService, Clock.systemUTC());
+    }
+
+    public PromotionWorkflowService(
+            StoragePort storagePort,
+            RuntimeConfigService runtimeConfigService,
             EvolutionCandidateService evolutionCandidateService) {
-        this(storagePort, runtimeConfigService, evolutionCandidateService, Clock.systemUTC());
+        this(storagePort, runtimeConfigService, evolutionCandidateService, null, Clock.systemUTC());
     }
 
     PromotionWorkflowService(
@@ -71,9 +80,19 @@ public class PromotionWorkflowService {
             RuntimeConfigService runtimeConfigService,
             EvolutionCandidateService evolutionCandidateService,
             Clock clock) {
+        this(storagePort, runtimeConfigService, evolutionCandidateService, null, clock);
+    }
+
+    PromotionWorkflowService(
+            StoragePort storagePort,
+            RuntimeConfigService runtimeConfigService,
+            EvolutionCandidateService evolutionCandidateService,
+            ArtifactBundleService artifactBundleService,
+            Clock clock) {
         this.storagePort = storagePort;
         this.runtimeConfigService = runtimeConfigService;
         this.evolutionCandidateService = evolutionCandidateService;
+        this.artifactBundleService = artifactBundleService;
         this.clock = clock;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -158,6 +177,13 @@ public class PromotionWorkflowService {
         saveCandidate(updatedCandidate);
         saveDecision(decision);
         return decision;
+    }
+
+    public void bindCandidateBaseRevisions(String bundleId, List<EvolutionCandidate> candidates) {
+        if (artifactBundleService == null) {
+            return;
+        }
+        artifactBundleService.bindBaseRevisions(bundleId, candidates);
     }
 
     public List<EvolutionCandidate> getCandidates() {

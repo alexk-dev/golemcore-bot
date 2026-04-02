@@ -92,6 +92,7 @@ export default function SelfEvolvingPage(): ReactElement {
   const evidenceQuery = useSelfEvolvingArtifactEvidence(
     artifactSelection.compareMode,
     activeArtifactStreamId,
+    activeFromRevisionId,
     activeToRevisionId,
     activeFromNodeId,
     activeToNodeId,

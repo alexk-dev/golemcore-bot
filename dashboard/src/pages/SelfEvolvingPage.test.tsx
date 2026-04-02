@@ -20,6 +20,7 @@ vi.mock('../hooks/useSelfEvolving', () => ({
       },
     ],
     isLoading: false,
+    isError: false,
   }),
   useSelfEvolvingRunDetail: () => ({
     data: {
@@ -43,6 +44,7 @@ vi.mock('../hooks/useSelfEvolving', () => ({
       },
     },
     isLoading: false,
+    isError: false,
   }),
   useSelfEvolvingCandidates: () => ({
     data: [
@@ -57,6 +59,7 @@ vi.mock('../hooks/useSelfEvolving', () => ({
       },
     ],
     isLoading: false,
+    isError: false,
   }),
   useSelfEvolvingCampaigns: () => ({
     data: [
@@ -72,6 +75,7 @@ vi.mock('../hooks/useSelfEvolving', () => ({
       },
     ],
     isLoading: false,
+    isError: false,
   }),
   usePlanSelfEvolvingPromotion: () => ({
     mutateAsync: vi.fn(() => Promise.resolve()),
@@ -200,29 +204,34 @@ vi.mock('../hooks/useSelfEvolving', () => ({
     isLoading: false,
     isError: false,
   }),
-  useSelfEvolvingArtifactEvidence: () => ({
-    data: {
-      artifactStreamId: 'stream-1',
-      artifactKey: 'skill:planner',
-      payloadKind: 'revision',
-      revisionId: 'rev-2',
-      fromRevisionId: null,
-      toRevisionId: null,
-      fromNodeId: null,
-      toNodeId: null,
-      runIds: ['run-1'],
-      traceIds: [],
-      spanIds: [],
-      campaignIds: ['campaign-1'],
-      promotionDecisionIds: ['decision-1'],
-      approvalRequestIds: ['approval-1'],
-      findings: ['revision_evidence'],
-      projectionSchemaVersion: 1,
-      projectedAt: '2026-03-31T12:02:00Z',
-    },
-    isLoading: false,
-    isError: false,
-  }),
+  useSelfEvolvingArtifactEvidence: (...args: unknown[]) => {
+    const compareMode = args[0];
+    const fromRevisionId = args[2];
+    const toRevisionId = args[3];
+    return {
+      data: {
+        artifactStreamId: 'stream-1',
+        artifactKey: 'skill:planner',
+        payloadKind: compareMode === 'revision' ? 'compare' : 'transition',
+        revisionId: null,
+        fromRevisionId: compareMode === 'revision' ? fromRevisionId : null,
+        toRevisionId: compareMode === 'revision' ? toRevisionId : null,
+        fromNodeId: null,
+        toNodeId: null,
+        runIds: ['run-1'],
+        traceIds: [],
+        spanIds: [],
+        campaignIds: ['campaign-1'],
+        promotionDecisionIds: ['decision-1'],
+        approvalRequestIds: ['approval-1'],
+        findings: ['compare_evidence'],
+        projectionSchemaVersion: 1,
+        projectedAt: '2026-03-31T12:02:00Z',
+      },
+      isLoading: false,
+      isError: false,
+    };
+  },
   useSelfEvolvingTacticSearch: () => ({
     data: {
       query: 'planner',
@@ -260,23 +269,23 @@ vi.mock('../hooks/useSelfEvolving', () => ({
           golemLocalUsageSuccess: 0.88,
           embeddingStatus: 'indexed',
           updatedAt: '2026-03-31T12:02:00Z',
-          score: 1.18,
+          score: 0.98,
           explanation: {
             searchMode: 'hybrid',
             degradedReason: null,
-            bm25Score: 0.5,
-            vectorScore: 0.4,
-            rrfScore: 0.9,
-            qualityPrior: 0.2,
-            mmrDiversityAdjustment: -0.01,
+            bm25Score: 0.61,
+            vectorScore: 0.55,
+            rrfScore: 0.74,
+            qualityPrior: 0.14,
+            mmrDiversityAdjustment: 0.08,
             negativeMemoryPenalty: 0,
-            personalizationBoost: 0.08,
-            rerankerVerdict: 'tier deep',
+            personalizationBoost: 0.04,
+            rerankerVerdict: 'kept',
             matchedQueryViews: ['planner'],
             matchedTerms: ['planner'],
             eligible: true,
             gatingReason: null,
-            finalScore: 1.18,
+            finalScore: 0.98,
           },
         },
       ],
@@ -287,14 +296,13 @@ vi.mock('../hooks/useSelfEvolving', () => ({
 }));
 
 describe('SelfEvolvingPage', () => {
-  it('renders workspace-first artifact browser with supporting sections', () => {
+  it('renders the dashboard sections with compare-pair evidence state', () => {
     const html = renderToStaticMarkup(<SelfEvolvingPage />);
 
+    expect(html).toContain('SelfEvolving');
     expect(html).toContain('Artifact Catalog');
-    expect(html).toContain('Lineage Rail');
-    expect(html).toContain('Semantic diff');
-    expect(html).toContain('Candidate Queue');
     expect(html).toContain('Benchmark Lab');
-    expect(html).toContain('Recent Runs');
+    expect(html).toContain('Planner tactic');
+    expect(html).toContain('compare_evidence');
   });
 });

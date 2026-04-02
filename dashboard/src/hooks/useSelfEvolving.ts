@@ -7,9 +7,9 @@ import {
 } from '@tanstack/react-query';
 import {
   createSelfEvolvingRegressionCampaign,
+  getSelfEvolvingArtifactCompareEvidence,
   getSelfEvolvingArtifactLineage,
   getSelfEvolvingArtifactRevisionDiff,
-  getSelfEvolvingArtifactRevisionEvidence,
   getSelfEvolvingArtifacts,
   getSelfEvolvingArtifactTransitionDiff,
   getSelfEvolvingArtifactTransitionEvidence,
@@ -120,19 +120,24 @@ export function useSelfEvolvingArtifactTransitionDiff(
 export function useSelfEvolvingArtifactEvidence(
   compareMode: 'revision' | 'transition',
   artifactStreamId: string | null,
-  revisionId: string | null,
+  fromRevisionId: string | null,
+  toRevisionId: string | null,
   fromNodeId: string | null,
   toNodeId: string | null,
 ): UseQueryResult<SelfEvolvingArtifactEvidence, unknown> {
   return useQuery({
-    queryKey: ['self-evolving', 'artifacts', artifactStreamId, 'evidence', compareMode, revisionId, fromNodeId, toNodeId],
+    queryKey: ['self-evolving', 'artifacts', artifactStreamId, 'evidence', compareMode, fromRevisionId, toRevisionId, fromNodeId, toNodeId],
     queryFn: () => compareMode === 'transition'
       ? getSelfEvolvingArtifactTransitionEvidence(artifactStreamId ?? '', fromNodeId ?? '', toNodeId ?? '')
-      : getSelfEvolvingArtifactRevisionEvidence(artifactStreamId ?? '', revisionId ?? ''),
+      : getSelfEvolvingArtifactCompareEvidence(artifactStreamId ?? '', fromRevisionId ?? '', toRevisionId ?? ''),
     enabled: artifactStreamId != null
       && artifactStreamId.length > 0
       && (
-        (compareMode === 'revision' && revisionId != null && revisionId.length > 0)
+        (compareMode === 'revision'
+          && fromRevisionId != null
+          && fromRevisionId.length > 0
+          && toRevisionId != null
+          && toRevisionId.length > 0)
         || (compareMode === 'transition'
           && fromNodeId != null
           && fromNodeId.length > 0

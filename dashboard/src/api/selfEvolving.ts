@@ -357,6 +357,17 @@ export async function getSelfEvolvingArtifactRevisionEvidence(
   return data;
 }
 
+export async function getSelfEvolvingArtifactCompareEvidence(
+  artifactStreamId: string,
+  fromRevisionId: string,
+  toRevisionId: string,
+): Promise<SelfEvolvingArtifactEvidence> {
+  const { data } = await client.get<SelfEvolvingArtifactEvidence>(`/self-evolving/artifacts/${artifactStreamId}/compare-evidence`, {
+    params: { fromRevisionId, toRevisionId },
+  });
+  return data;
+}
+
 export async function getSelfEvolvingArtifactTransitionEvidence(
   artifactStreamId: string,
   fromNodeId: string,

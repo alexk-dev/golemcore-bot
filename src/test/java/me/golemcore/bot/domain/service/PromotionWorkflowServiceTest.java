@@ -224,32 +224,53 @@ class PromotionWorkflowServiceTest {
     }
 
     @Test
-    void shouldRejectBlankCandidateWhenPlanning() {
-        EvolutionCandidate candidate = EvolutionCandidate.builder()
-                .id(" ")
-                .artifactType("skill")
-                .build();
+    void shouldThrowWhenPlanningUnknownCandidateId() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> promotionWorkflowService.planPromotion("missing"));
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> promotionWorkflowService.planPromotion(candidate));
-
-        assertEquals("Candidate must not be blank", exception.getMessage());
+        assertEquals("Candidate not found: missing", exception.getMessage());
     }
 
     @Test
-    void shouldRejectUnsupportedPromotionModes() {
-        when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("ship_it");
+    void shouldThrowWhenPromotionModeIsUnsupported() {
+        when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("invalid_mode");
         EvolutionCandidate candidate = EvolutionCandidate.builder()
                 .id("candidate-7")
                 .golemId("golem-1")
                 .goal("fix")
+                .artifactType("prompt")
+                .status("proposed")
+                .build();
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> promotionWorkflowService.planPromotion(candidate));
+
+        assertTrue(exception.getMessage().contains("Unsupported promotion mode"));
+    }
+
+    @Test
+    void shouldKeepDecisionApprovalRequestForApprovalGateOnly() {
+        EvolutionCandidate candidate = EvolutionCandidate.builder()
+                .id("candidate-8")
+                .golemId("golem-1")
+                .goal("derive")
                 .artifactType("skill")
                 .status("proposed")
                 .build();
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> promotionWorkflowService.planPromotion(candidate));
+        PromotionDecision approvalDecision = promotionWorkflowService.planPromotion(candidate);
+        when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("auto_accept");
+        PromotionDecision shadowDecision = promotionWorkflowService.planPromotion(EvolutionCandidate.builder()
+                .id("candidate-9")
+                .golemId("golem-1")
+                .goal("derive")
+                .artifactType("skill")
+                .status("proposed")
+                .build());
 
-        assertEquals("Unsupported promotion mode: ship_it", exception.getMessage());
+        assertEquals("candidate-8-approval", approvalDecision.getApprovalRequestId());
+        assertEquals(null, shadowDecision.getApprovalRequestId());
     }
 }

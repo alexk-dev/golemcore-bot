@@ -114,10 +114,10 @@ describe('SelfEvolvingArtifactWorkspace', () => {
         evidence={{
           artifactStreamId: 'stream-1',
           artifactKey: 'skill:planner',
-          payloadKind: 'revision',
-          revisionId: 'rev-2',
-          fromRevisionId: null,
-          toRevisionId: null,
+          payloadKind: 'compare',
+          revisionId: null,
+          fromRevisionId: 'rev-1',
+          toRevisionId: 'rev-2',
           fromNodeId: null,
           toNodeId: null,
           runIds: ['run-1'],
@@ -126,7 +126,7 @@ describe('SelfEvolvingArtifactWorkspace', () => {
           campaignIds: ['campaign-1'],
           promotionDecisionIds: ['decision-1'],
           approvalRequestIds: ['approval-1'],
-          findings: ['revision_evidence'],
+          findings: ['compare_evidence'],
           projectionSchemaVersion: 1,
           projectedAt: '2026-03-31T12:02:00Z',
         }}
@@ -146,5 +146,6 @@ describe('SelfEvolvingArtifactWorkspace', () => {
     expect(html).toContain('Lineage Rail');
     expect(html).toContain('Semantic diff');
     expect(html).toContain('skill:planner');
+    expect(html).toContain('compare_evidence');
   });
 });

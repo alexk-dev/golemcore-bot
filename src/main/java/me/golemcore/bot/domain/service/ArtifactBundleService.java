@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
@@ -90,6 +91,9 @@ public class ArtifactBundleService {
             updated.setSourceCandidateId(existing.getSourceCandidateId());
             updated.setSourceRunId(existing.getSourceRunId());
             updated.setStatus(existing.getStatus());
+            updated.setArtifactRevisionBindings(existing.getArtifactRevisionBindings() != null
+                    ? new LinkedHashMap<>(existing.getArtifactRevisionBindings())
+                    : new LinkedHashMap<>());
         }
         save(updated);
         return updated;
@@ -121,6 +125,24 @@ public class ArtifactBundleService {
         saveBundles(bundles);
     }
 
+    public void bindBaseRevisions(String bundleId, List<EvolutionCandidate> candidates) {
+        if (StringValueSupport.isBlank(bundleId) || candidates == null || candidates.isEmpty()) {
+            return;
+        }
+        List<ArtifactBundleRecord> bundles = new ArrayList<>(getBundles());
+        boolean updated = false;
+        for (ArtifactBundleRecord bundle : bundles) {
+            if (bundle == null || !bundleId.equals(bundle.getId())) {
+                continue;
+            }
+            updated = bindBaseRevisions(bundle, candidates);
+            break;
+        }
+        if (updated) {
+            saveBundles(bundles);
+        }
+    }
+
     private ArtifactBundleRecord buildSnapshot(String bundleId, AgentContext context) {
         return ArtifactBundleRecord.builder()
                 .id(bundleId)
@@ -134,6 +156,31 @@ public class ArtifactBundleService {
                 .tierBindings(resolveTierBindings(context))
                 .configSnapshot(buildConfigSnapshot(context))
                 .build();
+    }
+
+    private boolean bindBaseRevisions(ArtifactBundleRecord bundle, List<EvolutionCandidate> candidates) {
+        Map<String, String> bindings = bundle.getArtifactRevisionBindings() != null
+                ? new LinkedHashMap<>(bundle.getArtifactRevisionBindings())
+                : new LinkedHashMap<>();
+        boolean updated = false;
+        for (EvolutionCandidate candidate : candidates) {
+            if (candidate == null || !bundle.getId().equals(candidate.getBaseVersion())) {
+                continue;
+            }
+            if (StringValueSupport.isBlank(candidate.getArtifactStreamId())
+                    || StringValueSupport.isBlank(candidate.getBaseContentRevisionId())) {
+                continue;
+            }
+            String previous = bindings.putIfAbsent(candidate.getArtifactStreamId(),
+                    candidate.getBaseContentRevisionId());
+            if (previous == null) {
+                updated = true;
+            }
+        }
+        if (updated) {
+            bundle.setArtifactRevisionBindings(bindings);
+        }
+        return updated;
     }
 
     private List<ArtifactBundleRecord> loadBundles() {

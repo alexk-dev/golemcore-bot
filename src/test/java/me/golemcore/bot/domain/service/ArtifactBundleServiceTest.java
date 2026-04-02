@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -100,6 +101,7 @@ class ArtifactBundleServiceTest {
                 .activatedAt(Instant.parse("2026-03-30T13:00:00Z"))
                 .sourceCandidateId("candidate-1")
                 .sourceRunId("run-1")
+                .artifactRevisionBindings(Map.of("stream-1", "rev-1"))
                 .artifactKeyBindings(Map.of("skill:legacy", "skill:legacy"))
                 .build();
         when(storagePort.getText("self-evolving", "artifact-bundles.json"))
@@ -124,6 +126,7 @@ class ArtifactBundleServiceTest {
         assertEquals(existing.getActivatedAt(), refreshed.getActivatedAt());
         assertEquals("candidate-1", refreshed.getSourceCandidateId());
         assertEquals("run-1", refreshed.getSourceRunId());
+        assertEquals("rev-1", refreshed.getArtifactRevisionBindings().get("stream-1"));
         assertTrue(refreshed.getArtifactKeyBindings().containsKey("skill:default"));
 
         List<ArtifactBundleRecord> persisted = service.getBundles();
@@ -148,6 +151,44 @@ class ArtifactBundleServiceTest {
         assertEquals("local-session-99", refreshed.getGolemId());
         assertEquals("SNAPSHOT", refreshed.getStatus());
         assertEquals("skill:default", refreshed.getArtifactKeyBindings().get("skill:default"));
+    }
+
+    @Test
+    void shouldBindBaseRevisionsForCandidateStreams() {
+        ArtifactBundleRecord existing = ArtifactBundleRecord.builder()
+                .id("bundle-1")
+                .artifactRevisionBindings(Map.of())
+                .build();
+        ArtifactBundleService service = new ArtifactBundleService(
+                storagePort,
+                runtimeConfigService,
+                Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
+        service.save(existing);
+
+        service.bindBaseRevisions("bundle-1", List.of(
+                EvolutionCandidate.builder()
+                        .id("candidate-1")
+                        .baseVersion("bundle-1")
+                        .artifactStreamId("stream-1")
+                        .baseContentRevisionId("rev-1")
+                        .build(),
+                EvolutionCandidate.builder()
+                        .id("candidate-2")
+                        .baseVersion("bundle-1")
+                        .artifactStreamId("stream-2")
+                        .baseContentRevisionId("rev-2")
+                        .build(),
+                EvolutionCandidate.builder()
+                        .id("candidate-3")
+                        .baseVersion("bundle-2")
+                        .artifactStreamId("stream-3")
+                        .baseContentRevisionId("rev-3")
+                        .build()));
+
+        ArtifactBundleRecord updated = service.getBundles().getFirst();
+        assertEquals("rev-1", updated.getArtifactRevisionBindings().get("stream-1"));
+        assertEquals("rev-2", updated.getArtifactRevisionBindings().get("stream-2"));
+        assertFalse(updated.getArtifactRevisionBindings().containsKey("stream-3"));
     }
 
     @Test
