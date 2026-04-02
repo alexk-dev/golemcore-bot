@@ -26,8 +26,10 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -51,35 +53,43 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingPort {
     @Override
     public EmbeddingResponse embed(EmbeddingRequest request) {
         try {
-            Map<String, Object> body = new java.util.LinkedHashMap<>();
-            body.put("model", request.model());
-            body.put("input", request.inputs());
-            if (request.dimensions() != null) {
-                body.put("dimensions", request.dimensions());
-            }
-            Request.Builder requestBuilder = new Request.Builder()
-                    .url(joinUrl(request.baseUrl(), "/embeddings"))
-                    .post(RequestBody.create(objectMapper.writeValueAsBytes(body), JSON));
-            if (request.apiKey() != null && !request.apiKey().isBlank()) {
-                requestBuilder.header("Authorization", "Bearer " + request.apiKey().trim());
-            }
-            try (Response response = okHttpClient.newCall(requestBuilder.build()).execute()) {
-                if (!response.isSuccessful()) {
-                    throw new IllegalStateException("Embedding request failed with status " + response.code());
-                }
-                JsonNode json = objectMapper.readTree(response.body().bytes());
-                List<List<Double>> vectors = new ArrayList<>();
-                for (JsonNode item : json.path("data")) {
-                    List<Double> vector = new ArrayList<>();
-                    for (JsonNode value : item.path("embedding")) {
-                        vector.add(value.asDouble());
-                    }
-                    vectors.add(vector);
-                }
-                return new EmbeddingResponse(json.path("model").asText(request.model()), vectors);
-            }
-        } catch (Exception exception) {
+            return executeEmbeddingRequest(request);
+        } catch (IOException exception) {
             throw new IllegalStateException("Failed to fetch OpenAI-compatible embeddings", exception);
+        }
+    }
+
+    private EmbeddingResponse executeEmbeddingRequest(EmbeddingRequest request) throws IOException {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("model", request.model());
+        body.put("input", request.inputs());
+        if (request.dimensions() != null) {
+            body.put("dimensions", request.dimensions());
+        }
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(joinUrl(request.baseUrl(), "/embeddings"))
+                .post(RequestBody.create(objectMapper.writeValueAsBytes(body), JSON));
+        if (request.apiKey() != null && !request.apiKey().isBlank()) {
+            requestBuilder.header("Authorization", "Bearer " + request.apiKey().trim());
+        }
+        try (Response response = okHttpClient.newCall(requestBuilder.build()).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IllegalStateException("Embedding request failed with status " + response.code());
+            }
+            ResponseBody responseBody = response.body();
+            if (responseBody == null) {
+                throw new IllegalStateException("Embedding response body is empty");
+            }
+            JsonNode json = objectMapper.readTree(responseBody.bytes());
+            List<List<Double>> vectors = new ArrayList<>();
+            for (JsonNode item : json.path("data")) {
+                List<Double> vector = new ArrayList<>();
+                for (JsonNode value : item.path("embedding")) {
+                    vector.add(value.asDouble());
+                }
+                vectors.add(vector);
+            }
+            return new EmbeddingResponse(json.path("model").asText(request.model()), vectors);
         }
     }
 
