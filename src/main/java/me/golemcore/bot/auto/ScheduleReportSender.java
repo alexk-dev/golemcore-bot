@@ -35,6 +35,7 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -60,18 +61,17 @@ public class ScheduleReportSender {
     private final ChannelRegistry channelRegistry;
     private final OkHttpClient okHttpClient;
     private final ObjectMapper objectMapper;
-    private final BackoffSleeper backoffSleeper;
+    private BackoffSleeper backoffSleeper = Thread::sleep;
 
     public ScheduleReportSender(ChannelRegistry channelRegistry, OkHttpClient okHttpClient, ObjectMapper objectMapper) {
-        this(channelRegistry, okHttpClient, objectMapper, Thread::sleep);
-    }
-
-    ScheduleReportSender(ChannelRegistry channelRegistry, OkHttpClient okHttpClient, ObjectMapper objectMapper,
-            BackoffSleeper backoffSleeper) {
         this.channelRegistry = channelRegistry;
         this.okHttpClient = okHttpClient;
         this.objectMapper = objectMapper;
-        this.backoffSleeper = backoffSleeper;
+    }
+
+    // Package-private test hook so Spring keeps a single constructor candidate.
+    void setBackoffSleeperForTest(BackoffSleeper backoffSleeper) {
+        this.backoffSleeper = Objects.requireNonNull(backoffSleeper);
     }
 
     /**
