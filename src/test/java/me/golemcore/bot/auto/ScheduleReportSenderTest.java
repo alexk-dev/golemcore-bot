@@ -252,6 +252,71 @@ class ScheduleReportSenderTest {
         assertEquals(List.of(100L, 200L, 400L), recordedBackoffs);
     }
 
+    @Test
+    void shouldHandleChannelSendTimeout() {
+        ChannelPort telegramChannel = mock(ChannelPort.class);
+        CompletableFuture<Void> slowFuture = new CompletableFuture<>();
+        slowFuture.completeExceptionally(new java.util.concurrent.TimeoutException("send timeout"));
+        when(telegramChannel.sendMessage(eq("12345"), anyString())).thenReturn(slowFuture);
+        when(channelRegistry.get("telegram")).thenReturn(Optional.of(telegramChannel));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-1")
+                .report(channelReport("telegram", "12345"))
+                .build();
+
+        sender.sendReport(schedule, "header", "text", null);
+
+        verify(telegramChannel).sendMessage(eq("12345"), anyString());
+    }
+
+    @Test
+    void shouldHandleChannelSendInterruption() {
+        ChannelPort telegramChannel = mock(ChannelPort.class);
+        CompletableFuture<Void> interruptedFuture = new CompletableFuture<>();
+        interruptedFuture.completeExceptionally(new RuntimeException("interrupted"));
+        when(telegramChannel.sendMessage(eq("12345"), anyString())).thenReturn(interruptedFuture);
+        when(channelRegistry.get("telegram")).thenReturn(Optional.of(telegramChannel));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-1")
+                .report(channelReport("telegram", "12345"))
+                .build();
+
+        sender.sendReport(schedule, "header", "text", null);
+
+        verify(telegramChannel).sendMessage(eq("12345"), anyString());
+    }
+
+    @Test
+    void shouldNotFallbackChatIdWhenChannelTypeMismatch() {
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-1")
+                .report(channelReport("telegram", null))
+                .build();
+
+        ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("slack", "session-1", "99999");
+
+        sender.sendReport(schedule, "header", "text", ctx);
+
+        verify(channelRegistry, never()).get(anyString());
+    }
+
+    @Test
+    void shouldSendWebhookWithNullTargetType() {
+        mockEngine.enqueueJson(200, "{\"ok\":true}");
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-wh")
+                .type(null)
+                .report(webhookReport("https://example.com/hook", null))
+                .build();
+
+        sender.sendReport(schedule, "header", "text", null);
+
+        assertEquals(1, mockEngine.getRequestCount());
+    }
+
     private static ScheduleReportConfig channelReport(String channelType, String chatId) {
         return ScheduleReportConfig.builder()
                 .channelType(channelType)
