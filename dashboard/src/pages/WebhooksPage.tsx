@@ -28,6 +28,7 @@ import {
 import { useRuntimeConfig } from '../hooks/useSettings';
 import { useSystemChannels } from '../hooks/useSystem';
 import { useUpdateWebhookConfig, useWebhookConfig } from '../hooks/useWebhooks';
+import { filterAndSortChannels, resolveLinkedTelegramUserId } from '../utils/channelUtils';
 import { copyTextToClipboard } from '../utils/clipboard';
 import { extractErrorMessage } from '../utils/extractErrorMessage';
 
@@ -84,32 +85,13 @@ export default function WebhooksPage(): ReactElement {
   const validation = useMemo(() => validateWebhookConfig(form), [form]);
   const summary = useMemo(() => buildWebhookSummary(form), [form]);
   const isDirty = useMemo(() => hasWebhookConfigChanges(form, config), [form, config]);
-  const linkedTelegramUserId = useMemo(() => {
-    const allowedUsers = runtimeConfigQuery.data?.telegram?.allowedUsers ?? [];
-    const userId = allowedUsers.find((value) => value.trim().length > 0);
-    return userId ?? null;
-  }, [runtimeConfigQuery.data?.telegram?.allowedUsers]);
+  const linkedTelegramUserId = useMemo(
+    () => resolveLinkedTelegramUserId(runtimeConfigQuery.data?.telegram?.allowedUsers),
+    [runtimeConfigQuery.data?.telegram?.allowedUsers],
+  );
   const availableDeliveryChannels = useMemo(() => {
-    const seen = new Set<string>();
-    return (systemChannelsQuery.data ?? [])
-      .map((channel) => ({ ...channel, type: channel.type.trim().toLowerCase() }))
-      .filter((channel) => channel.type.length > 0 && channel.type !== 'web' && channel.type !== 'webhook')
-      .filter((channel) => {
-        if (seen.has(channel.type)) {
-          return false;
-        }
-        seen.add(channel.type);
-        return true;
-      })
-      .sort((left, right) => {
-        if (left.type === 'telegram') {
-          return -1;
-        }
-        if (right.type === 'telegram') {
-          return 1;
-        }
-        return left.type.localeCompare(right.type);
-      });
+    const excluded = new Set(['web', 'webhook']);
+    return filterAndSortChannels(systemChannelsQuery.data ?? [], excluded);
   }, [systemChannelsQuery.data]);
   const activeMapping = activeEditIndex != null ? (form.mappings[activeEditIndex] ?? null) : null;
 
