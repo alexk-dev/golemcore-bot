@@ -112,10 +112,15 @@ describe('SelfEvolvingTab', () => {
       <SelfEvolvingTab
         config={config}
         tacticSearchStatus={tacticSearchStatus}
+        onInstallTacticEmbedding={vi.fn(() => Promise.resolve())}
         onSave={vi.fn(() => Promise.resolve())}
       />,
     );
 
+    expect(html).toContain('General');
+    expect(html).toContain('Judge');
+    expect(html).toContain('Tactics');
+    expect(html).toContain('Promotion');
     expect(html).toContain('Primary judge tier');
     expect(html).toContain('Tiebreaker tier');
     expect(html).toContain('Promotion mode');
@@ -136,5 +141,6 @@ describe('SelfEvolvingTab', () => {
     expect(html).toContain('Runtime healthy');
     expect(html).toContain('Model available');
     expect(html).toContain('Pull attempted');
+    expect(html).toContain('Install model');
   });
 });

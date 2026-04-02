@@ -189,13 +189,13 @@ export default function AnalyticsPage(): ReactElement {
           <Card className="selfevolving-launch-card">
             <Card.Body className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
               <div>
-                <Card.Title className="mb-1">SelfEvolving Workspace</Card.Title>
+                <Card.Title className="mb-1">Self-Evolving Workspace</Card.Title>
                 <Card.Text className="text-body-secondary mb-0">
                   Open the trace-first judge workspace to inspect runs, queue promotions, and create regression campaigns.
                 </Card.Text>
               </div>
               <Link to="/self-evolving" className="btn btn-primary">
-                Open SelfEvolving
+                Open Self-Evolving
               </Link>
             </Card.Body>
           </Card>

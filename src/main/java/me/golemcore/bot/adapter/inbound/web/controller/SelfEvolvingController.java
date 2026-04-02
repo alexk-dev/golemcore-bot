@@ -19,7 +19,9 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.service.BenchmarkLabService;
+import me.golemcore.bot.domain.service.LocalEmbeddingBootstrapService;
 import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.SelfEvolvingProjectionService;
 import org.springframework.http.HttpStatus;
@@ -46,15 +48,18 @@ public class SelfEvolvingController {
     private final SelfEvolvingProjectionService projectionService;
     private final PromotionWorkflowService promotionWorkflowService;
     private final BenchmarkLabService benchmarkLabService;
+    private final LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
     private final HiveEventBatchPublisher hiveEventBatchPublisher;
 
     public SelfEvolvingController(SelfEvolvingProjectionService projectionService,
             PromotionWorkflowService promotionWorkflowService,
             BenchmarkLabService benchmarkLabService,
+            LocalEmbeddingBootstrapService localEmbeddingBootstrapService,
             HiveEventBatchPublisher hiveEventBatchPublisher) {
         this.projectionService = projectionService;
         this.promotionWorkflowService = promotionWorkflowService;
         this.benchmarkLabService = benchmarkLabService;
+        this.localEmbeddingBootstrapService = localEmbeddingBootstrapService;
         this.hiveEventBatchPublisher = hiveEventBatchPublisher;
     }
 
@@ -197,6 +202,12 @@ public class SelfEvolvingController {
         return Mono.just(ResponseEntity.ok(projectionService.getTacticSearchStatus()));
     }
 
+    @PostMapping("/tactics/install")
+    public Mono<ResponseEntity<SelfEvolvingTacticSearchStatusDto>> installTacticEmbeddingModel() {
+        TacticSearchStatus status = localEmbeddingBootstrapService.installConfiguredModel();
+        return Mono.just(ResponseEntity.ok(toTacticSearchStatusDto(status)));
+    }
+
     @GetMapping("/tactics/search")
     public Mono<ResponseEntity<SelfEvolvingTacticSearchResponseDto>> searchTactics(
             @RequestParam(name = "q", required = false) String query) {
@@ -262,6 +273,23 @@ public class SelfEvolvingController {
                 .startedAt(campaign.getStartedAt() != null ? campaign.getStartedAt().toString() : null)
                 .completedAt(campaign.getCompletedAt() != null ? campaign.getCompletedAt().toString() : null)
                 .runIds(campaign.getRunIds())
+                .build();
+    }
+
+    private SelfEvolvingTacticSearchStatusDto toTacticSearchStatusDto(TacticSearchStatus status) {
+        return SelfEvolvingTacticSearchStatusDto.builder()
+                .mode(status.getMode())
+                .reason(status.getReason())
+                .provider(status.getProvider())
+                .model(status.getModel())
+                .degraded(status.getDegraded())
+                .runtimeHealthy(status.getRuntimeHealthy())
+                .modelAvailable(status.getModelAvailable())
+                .autoInstallConfigured(status.getAutoInstallConfigured())
+                .pullOnStartConfigured(status.getPullOnStartConfigured())
+                .pullAttempted(status.getPullAttempted())
+                .pullSucceeded(status.getPullSucceeded())
+                .updatedAt(status.getUpdatedAt() != null ? status.getUpdatedAt().toString() : null)
                 .build();
     }
 

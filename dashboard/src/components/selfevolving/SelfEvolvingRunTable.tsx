@@ -49,7 +49,7 @@ export function SelfEvolvingRunTable({
         </div>
 
         {runs.length === 0 ? (
-          <div className="text-body-secondary small">No SelfEvolving runs have been captured yet.</div>
+          <div className="text-body-secondary small">No Self-Evolving runs have been captured yet.</div>
         ) : (
           <div className="table-responsive">
             <Table hover className="align-middle selfevolving-table mb-0">

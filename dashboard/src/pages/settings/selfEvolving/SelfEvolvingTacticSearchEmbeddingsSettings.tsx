@@ -1,4 +1,4 @@
-import { type Dispatch, type ReactElement, type SetStateAction, useState } from 'react';
+import { type Dispatch, type ReactElement, type SetStateAction, useCallback, useEffect, useState } from 'react';
 import { Button, Col, Form, InputGroup, Row } from 'react-bootstrap';
 
 import type { SelfEvolvingConfig } from '../../../api/settings';
@@ -14,9 +14,35 @@ const EMBEDDING_PROVIDER_OPTIONS = [
   { value: 'openai_compatible', label: 'OpenAI-compatible API' },
 ];
 
+interface OllamaEmbeddingPreset {
+  value: string;
+  label: string;
+  dimensions: number;
+  batchSize: number;
+}
+
+const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+const DEFAULT_REMOTE_BASE_URL = 'https://api.openai.com/v1';
+const DEFAULT_REMOTE_MODEL = 'text-embedding-3-large';
+const DEFAULT_EMBEDDING_DIMENSIONS = 1024;
+const DEFAULT_EMBEDDING_BATCH_SIZE = 32;
+const OLLAMA_EMBEDDING_PRESETS: OllamaEmbeddingPreset[] = [
+  { value: 'qwen3-embedding:0.6b', label: 'Qwen3 Embedding 0.6B', dimensions: 1024, batchSize: 32 },
+  { value: 'nomic-embed-text', label: 'Nomic Embed Text', dimensions: 768, batchSize: 32 },
+  { value: 'mxbai-embed-large', label: 'MXBAI Embed Large', dimensions: 1024, batchSize: 16 },
+  { value: 'bge-m3', label: 'BGE-M3', dimensions: 1024, batchSize: 16 },
+];
+
 function toNullableInt(value: string): number | null {
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? null : parsed;
+}
+
+function findOllamaEmbeddingPreset(model: string | null | undefined): OllamaEmbeddingPreset | null {
+  if (model == null) {
+    return null;
+  }
+  return OLLAMA_EMBEDDING_PRESETS.find((preset) => preset.value === model) ?? null;
 }
 
 interface SelfEvolvingTacticSearchEmbeddingsSettingsProps {
@@ -32,9 +58,28 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
   const embeddings = form.tactics.search.embeddings;
   const local = embeddings.local;
   const usesLocalRuntime = (embeddings.provider ?? 'ollama') === 'ollama';
-  const updateEmbeddings = (
+  const configuredOllamaPreset = findOllamaEmbeddingPreset(embeddings.model);
+  const fallbackOllamaPreset = OLLAMA_EMBEDDING_PRESETS[0];
+  const effectiveOllamaPreset = configuredOllamaPreset ?? fallbackOllamaPreset;
+  const resolvedOllamaModel = embeddings.model ?? effectiveOllamaPreset.value;
+  const resolvedOllamaOptions = configuredOllamaPreset == null && embeddings.model != null && embeddings.model.length > 0
+    ? [
+        {
+          value: embeddings.model,
+          label: `Custom (${embeddings.model})`,
+          dimensions: embeddings.dimensions ?? DEFAULT_EMBEDDING_DIMENSIONS,
+          batchSize: embeddings.batchSize ?? DEFAULT_EMBEDDING_BATCH_SIZE,
+        },
+        ...OLLAMA_EMBEDDING_PRESETS,
+      ]
+    : OLLAMA_EMBEDDING_PRESETS;
+  const resolvedDimensions = embeddings.dimensions
+    ?? (usesLocalRuntime ? effectiveOllamaPreset.dimensions : DEFAULT_EMBEDDING_DIMENSIONS);
+  const resolvedBatchSize = embeddings.batchSize
+    ?? (usesLocalRuntime ? effectiveOllamaPreset.batchSize : DEFAULT_EMBEDDING_BATCH_SIZE);
+  const updateEmbeddings = useCallback((
     updater: (current: SelfEvolvingConfig['tactics']['search']['embeddings']) => SelfEvolvingConfig['tactics']['search']['embeddings'],
-  ) =>
+  ): void =>
     setForm((current) => ({
       ...current,
       tactics: {
@@ -44,19 +89,49 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
           embeddings: updater(current.tactics.search.embeddings),
         },
       },
-    }));
-  const updateLocal = (updater: (current: typeof local) => typeof local) =>
+    })), [setForm]);
+  const updateLocal = useCallback((updater: (current: typeof local) => typeof local): void =>
     updateEmbeddings((currentEmbeddings) => ({
       ...currentEmbeddings,
       local: updater(currentEmbeddings.local),
+    })), [updateEmbeddings]);
+
+  useEffect(() => {
+    if (!usesLocalRuntime) {
+      return;
+    }
+    const needsDefaults = embeddings.baseUrl == null
+      || embeddings.model == null
+      || embeddings.dimensions == null
+      || embeddings.batchSize == null;
+    if (!needsDefaults) {
+      return;
+    }
+    updateEmbeddings((current) => ({
+      ...current,
+      baseUrl: current.baseUrl ?? DEFAULT_OLLAMA_BASE_URL,
+      model: current.model ?? effectiveOllamaPreset.value,
+      dimensions: current.dimensions ?? effectiveOllamaPreset.dimensions,
+      batchSize: current.batchSize ?? effectiveOllamaPreset.batchSize,
     }));
+  }, [
+    effectiveOllamaPreset.batchSize,
+    effectiveOllamaPreset.dimensions,
+    effectiveOllamaPreset.value,
+    embeddings.baseUrl,
+    embeddings.batchSize,
+    embeddings.dimensions,
+    embeddings.model,
+    updateEmbeddings,
+    usesLocalRuntime,
+  ]);
 
   return (
     <>
       <div className="mb-3">
         <h6 className="mb-2">Tactic search embeddings</h6>
         <p className="text-body-secondary small mb-0">
-          Configure the embedding provider used by SelfEvolving tactic retrieval. These runtime-owned settings can
+          Configure the embedding provider used by Self-Evolving tactic retrieval. These runtime-owned settings can
           still be overridden by optional <code>bot.self-evolving.bootstrap.*</code> properties at startup.
         </p>
       </div>
@@ -64,7 +139,7 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
       <div className="d-flex flex-column gap-2 mb-3">
         <Form.Check
           type="switch"
-          label={<>Enable tactic retrieval <HelpTip text="Turns on tactic search for advisory retrieval during SelfEvolving runs." /></>}
+          label={<>Enable tactic retrieval <HelpTip text="Turns on tactic search for advisory retrieval during Self-Evolving runs." /></>}
           checked={form.tactics.enabled ?? false}
           onChange={(event) => setForm((current) => ({
             ...current,
@@ -108,7 +183,26 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
             <Form.Select
               size="sm"
               value={embeddings.provider ?? 'ollama'}
-              onChange={(event) => updateEmbeddings((current) => ({ ...current, provider: event.target.value }))}
+              onChange={(event) => updateEmbeddings((current) => {
+                const nextProvider = event.target.value;
+                const nextPreset = OLLAMA_EMBEDDING_PRESETS[0];
+                if (nextProvider === 'ollama') {
+                  return {
+                    ...current,
+                    provider: nextProvider,
+                    baseUrl: current.baseUrl ?? DEFAULT_OLLAMA_BASE_URL,
+                    model: current.model ?? nextPreset.value,
+                    dimensions: current.dimensions ?? nextPreset.dimensions,
+                    batchSize: current.batchSize ?? nextPreset.batchSize,
+                  };
+                }
+                return {
+                  ...current,
+                  provider: nextProvider,
+                  baseUrl: current.baseUrl ?? DEFAULT_REMOTE_BASE_URL,
+                  model: current.model ?? DEFAULT_REMOTE_MODEL,
+                };
+              })}
             >
               {EMBEDDING_PROVIDER_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -119,54 +213,77 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
         <Col md={4}>
           <Form.Group controlId="self-evolving-embedding-model">
             <Form.Label className="small fw-medium">
-              Embedding model <HelpTip text="For local mode, use the exact Ollama model tag to probe and optionally pull at startup." />
+              Embedding model <HelpTip text="For local mode, pick a local Ollama preset that the runtime can probe and install on demand." />
             </Form.Label>
-            <Form.Control
-              size="sm"
-              type="text"
-              placeholder={usesLocalRuntime ? 'qwen3-embedding:0.6b' : 'text-embedding-3-large'}
-              value={embeddings.model ?? ''}
-              onChange={(event) => updateEmbeddings((current) => ({ ...current, model: event.target.value || null }))}
-            />
+            {usesLocalRuntime ? (
+              <Form.Select
+                size="sm"
+                value={resolvedOllamaModel}
+                onChange={(event) => {
+                  const selectedPreset = resolvedOllamaOptions.find((preset) => preset.value === event.target.value);
+                  updateEmbeddings((current) => ({
+                    ...current,
+                    baseUrl: current.baseUrl ?? DEFAULT_OLLAMA_BASE_URL,
+                    model: event.target.value,
+                    dimensions: selectedPreset?.dimensions ?? current.dimensions ?? DEFAULT_EMBEDDING_DIMENSIONS,
+                    batchSize: selectedPreset?.batchSize ?? current.batchSize ?? DEFAULT_EMBEDDING_BATCH_SIZE,
+                  }));
+                }}
+              >
+                {resolvedOllamaOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Form.Select>
+            ) : (
+              <Form.Control
+                size="sm"
+                type="text"
+                placeholder={DEFAULT_REMOTE_MODEL}
+                value={embeddings.model ?? ''}
+                onChange={(event) => updateEmbeddings((current) => ({ ...current, model: event.target.value || null }))}
+              />
+            )}
           </Form.Group>
         </Col>
       </Row>
 
       <Row className="g-3 mb-3">
-        <Col md={6}>
-          <Form.Group controlId="self-evolving-embedding-base-url">
-            <Form.Label className="small fw-medium">Base URL</Form.Label>
-            <Form.Control
-              size="sm"
-              type="url"
-              placeholder={usesLocalRuntime ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
-              value={embeddings.baseUrl ?? ''}
-              onChange={(event) => updateEmbeddings((current) => ({ ...current, baseUrl: event.target.value || null }))}
-            />
-          </Form.Group>
-        </Col>
-        <Col md={6}>
-          <Form.Group controlId="self-evolving-embedding-api-key">
-            <Form.Label className="small fw-medium">
-              Embedding API key <HelpTip text="Used only by remote embedding providers. Local Ollama mode typically leaves this empty." />
-            </Form.Label>
-            <InputGroup size="sm">
-              <Form.Control
-                type={showApiKey ? 'text' : 'password'}
-                autoComplete="new-password"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                placeholder={usesLocalRuntime ? 'Not required for local Ollama' : 'Enter API key'}
-                value={embeddings.apiKey ?? ''}
-                onChange={(event) => updateEmbeddings((current) => ({ ...current, apiKey: event.target.value || null }))}
-              />
-              <Button type="button" variant="secondary" onClick={() => setShowApiKey((current) => !current)}>
-                {showApiKey ? 'Hide' : 'Show'}
-              </Button>
-            </InputGroup>
-          </Form.Group>
-        </Col>
+        {!usesLocalRuntime && (
+          <>
+            <Col md={6}>
+              <Form.Group controlId="self-evolving-embedding-base-url">
+                <Form.Label className="small fw-medium">Base URL</Form.Label>
+                <Form.Control
+                  size="sm"
+                  type="url"
+                  placeholder={DEFAULT_REMOTE_BASE_URL}
+                  value={embeddings.baseUrl ?? ''}
+                  onChange={(event) => updateEmbeddings((current) => ({ ...current, baseUrl: event.target.value || null }))}
+                />
+              </Form.Group>
+            </Col>
+            <Col md={6}>
+              <Form.Group controlId="self-evolving-embedding-api-key">
+                <Form.Label className="small fw-medium">Embedding API key</Form.Label>
+                <InputGroup size="sm">
+                  <Form.Control
+                    type={showApiKey ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    placeholder="Enter API key"
+                    value={embeddings.apiKey ?? ''}
+                    onChange={(event) => updateEmbeddings((current) => ({ ...current, apiKey: event.target.value || null }))}
+                  />
+                  <Button type="button" variant="secondary" onClick={() => setShowApiKey((current) => !current)}>
+                    {showApiKey ? 'Hide' : 'Show'}
+                  </Button>
+                </InputGroup>
+              </Form.Group>
+            </Col>
+          </>
+        )}
       </Row>
 
       <Row className="g-3 mb-4">
@@ -177,7 +294,7 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
               size="sm"
               type="number"
               min={1}
-              value={embeddings.dimensions ?? ''}
+              value={resolvedDimensions}
               onChange={(event) => updateEmbeddings((current) => ({ ...current, dimensions: toNullableInt(event.target.value) }))}
             />
           </Form.Group>
@@ -189,7 +306,7 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
               size="sm"
               type="number"
               min={1}
-              value={embeddings.batchSize ?? ''}
+              value={resolvedBatchSize}
               onChange={(event) => updateEmbeddings((current) => ({ ...current, batchSize: toNullableInt(event.target.value) }))}
             />
           </Form.Group>
@@ -224,7 +341,7 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
         </div>
         <p className="text-body-secondary small mb-3">
           Use these flags to activate local model installation and runtime health checks on startup. They are applied by
-          the SelfEvolving local embedding bootstrap flow.
+          the Self-Evolving local embedding bootstrap flow.
         </p>
         <div className="d-flex flex-column gap-2">
           <Form.Check

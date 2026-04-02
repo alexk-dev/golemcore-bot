@@ -1,5 +1,5 @@
 import { type Dispatch, type ReactElement, type SetStateAction, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Form, Row } from 'react-bootstrap';
+import { Button, Card, Col, Form, Nav, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 
 import type { SelfEvolvingConfig } from '../../api/settings';
@@ -22,6 +22,15 @@ const PROMOTION_MODE_OPTIONS = [
   { value: 'auto_accept', label: 'Auto accept' },
 ];
 
+const SELF_EVOLVING_TABS = [
+  { key: 'general', label: 'General' },
+  { key: 'judge', label: 'Judge' },
+  { key: 'tactics', label: 'Tactics' },
+  { key: 'promotion', label: 'Promotion' },
+] as const;
+
+type SelfEvolvingTabKey = (typeof SELF_EVOLVING_TABS)[number]['key'];
+
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
 }
@@ -29,6 +38,8 @@ function hasDiff<T>(current: T, initial: T): boolean {
 interface SelfEvolvingTabProps {
   config: SelfEvolvingConfig;
   tacticSearchStatus?: SelfEvolvingTacticSearchStatus | null;
+  onInstallTacticEmbedding?: () => Promise<void>;
+  isInstallingTacticEmbedding?: boolean;
   onSave: (config: SelfEvolvingConfig) => Promise<void>;
   isSaving?: boolean;
 }
@@ -38,12 +49,34 @@ interface SelfEvolvingFormSectionProps {
   setForm: Dispatch<SetStateAction<SelfEvolvingConfig>>;
 }
 
+interface SelfEvolvingSectionProps {
+  activeTab: SelfEvolvingTabKey;
+  tabKey: SelfEvolvingTabKey;
+  children: ReactElement | ReactElement[];
+}
+
+function SelfEvolvingSection({
+  activeTab,
+  tabKey,
+  children,
+}: SelfEvolvingSectionProps): ReactElement {
+  return (
+    <div
+      role="tabpanel"
+      aria-hidden={activeTab !== tabKey}
+      className={activeTab === tabKey ? '' : 'd-none'}
+    >
+      {children}
+    </div>
+  );
+}
+
 function SelfEvolvingToggles({ form, setForm }: SelfEvolvingFormSectionProps): ReactElement {
   return (
     <>
       <Form.Check
         type="switch"
-        label={<>Enable SelfEvolving <HelpTip text="Turns on run judging, candidate generation, and promotion workflow capture." /></>}
+        label={<>Enable Self-Evolving <HelpTip text="Turns on run judging, candidate generation, and promotion workflow capture." /></>}
         checked={form.enabled ?? false}
         onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
         className="mb-3"
@@ -51,7 +84,7 @@ function SelfEvolvingToggles({ form, setForm }: SelfEvolvingFormSectionProps): R
 
       <Form.Check
         type="switch"
-        label={<>Trace payload override <HelpTip text="When enabled, SelfEvolving forces payload capture depth for replay and evidence anchoring while still honoring redaction." /></>}
+        label={<>Trace payload override <HelpTip text="When enabled, Self-Evolving forces payload capture depth for replay and evidence anchoring while still honoring redaction." /></>}
         checked={form.tracePayloadOverride ?? true}
         onChange={(event) => setForm((current) => ({ ...current, tracePayloadOverride: event.target.checked }))}
         className="mb-4"
@@ -224,10 +257,13 @@ function BenchmarkAndHiveSettings({ form, setForm }: SelfEvolvingFormSectionProp
 export default function SelfEvolvingTab({
   config,
   tacticSearchStatus = null,
+  onInstallTacticEmbedding,
+  isInstallingTacticEmbedding = false,
   onSave,
   isSaving = false,
 }: SelfEvolvingTabProps): ReactElement {
   const [form, setForm] = useState<SelfEvolvingConfig>({ ...config });
+  const [activeTab, setActiveTab] = useState<SelfEvolvingTabKey>('general');
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
 
   useEffect(() => {
@@ -237,24 +273,60 @@ export default function SelfEvolvingTab({
 
   const handleSave = async (): Promise<void> => {
     await onSave(form);
-    toast.success('SelfEvolving settings saved');
+    toast.success('Self-Evolving settings saved');
+  };
+
+  const handleInstallTacticEmbedding = async (): Promise<void> => {
+    if (onInstallTacticEmbedding == null) {
+      return;
+    }
+    await onInstallTacticEmbedding();
+    toast.success('Self-Evolving embedding model installed');
   };
 
   return (
     <Card className="settings-card">
       <Card.Body>
         <SettingsCardTitle
-          title="SelfEvolving"
-          tip="Configure run judging, promotion gating, benchmark harvesting, and Hive inspection for the SelfEvolving control plane."
+          title="Self-Evolving"
+          tip="Configure run judging, promotion gating, benchmark harvesting, and Hive inspection for the Self-Evolving control plane."
         />
 
-        <SelfEvolvingEmbeddingStatusCard status={tacticSearchStatus} />
-        <SelfEvolvingToggles form={form} setForm={setForm} />
-        <SelfEvolvingJudgeTierSettings form={form} setForm={setForm} />
-        <CaptureSettings form={form} setForm={setForm} />
-        <SelfEvolvingTacticSearchEmbeddingsSettings form={form} setForm={setForm} />
-        <PromotionSettings form={form} setForm={setForm} />
-        <BenchmarkAndHiveSettings form={form} setForm={setForm} />
+        <Nav className="nav-tabs mb-4">
+          {SELF_EVOLVING_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`nav-link${activeTab === tab.key ? ' active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </Nav>
+
+        <SelfEvolvingSection activeTab={activeTab} tabKey="general">
+          <SelfEvolvingToggles form={form} setForm={setForm} />
+        </SelfEvolvingSection>
+
+        <SelfEvolvingSection activeTab={activeTab} tabKey="judge">
+          <SelfEvolvingJudgeTierSettings form={form} setForm={setForm} />
+          <CaptureSettings form={form} setForm={setForm} />
+        </SelfEvolvingSection>
+
+        <SelfEvolvingSection activeTab={activeTab} tabKey="tactics">
+          <SelfEvolvingEmbeddingStatusCard
+            status={tacticSearchStatus}
+            isInstalling={isInstallingTacticEmbedding}
+            onInstall={onInstallTacticEmbedding == null ? undefined : () => { void handleInstallTacticEmbedding(); }}
+          />
+          <SelfEvolvingTacticSearchEmbeddingsSettings form={form} setForm={setForm} />
+        </SelfEvolvingSection>
+
+        <SelfEvolvingSection activeTab={activeTab} tabKey="promotion">
+          <PromotionSettings form={form} setForm={setForm} />
+          <BenchmarkAndHiveSettings form={form} setForm={setForm} />
+        </SelfEvolvingSection>
 
         <SettingsSaveBar>
           <Button

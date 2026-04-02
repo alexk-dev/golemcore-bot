@@ -204,10 +204,12 @@ vi.mock('../hooks/useSelfEvolving', () => ({
     isLoading: false,
     isError: false,
   }),
-  useSelfEvolvingArtifactEvidence: (...args: unknown[]) => {
-    const compareMode = args[0];
-    const fromRevisionId = args[2];
-    const toRevisionId = args[3];
+  useSelfEvolvingArtifactEvidence: (args: {
+    compareMode: 'revision' | 'transition';
+    fromRevisionId: string | null;
+    toRevisionId: string | null;
+  }) => {
+    const { compareMode, fromRevisionId, toRevisionId } = args;
     return {
       data: {
         artifactStreamId: 'stream-1',
@@ -299,10 +301,14 @@ describe('SelfEvolvingPage', () => {
   it('renders the dashboard sections with compare-pair evidence state', () => {
     const html = renderToStaticMarkup(<SelfEvolvingPage />);
 
-    expect(html).toContain('SelfEvolving');
-    expect(html).toContain('Artifact Catalog');
-    expect(html).toContain('Benchmark Lab');
+    expect(html).toContain('Self-Evolving');
+    expect(html).toContain('name="tactic-search-query"');
+    expect(html).toContain('placeholder="planner, tool routing, failure recovery"');
+    expect(html).not.toContain('name="tactic-search-query" placeholder="planner, tool routing, failure recovery" value="planner"');
     expect(html).toContain('Planner tactic');
-    expect(html).toContain('compare_evidence');
+    expect(html).toContain('Benchmark Lab');
+    expect(html).not.toContain('Artifact Catalog');
+    expect(html).not.toContain('Why this tactic');
+    expect(html).not.toContain('compare_evidence');
   });
 });

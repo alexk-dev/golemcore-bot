@@ -1,10 +1,12 @@
 import type { ReactElement } from 'react';
-import { Badge, Col, Row } from 'react-bootstrap';
+import { Badge, Button, Col, Row } from 'react-bootstrap';
 
 import type { SelfEvolvingTacticSearchStatus } from '../../../api/selfEvolving';
 
 interface SelfEvolvingEmbeddingStatusCardProps {
   status: SelfEvolvingTacticSearchStatus | null;
+  isInstalling?: boolean;
+  onInstall?: () => void;
 }
 
 function booleanLabel(value: boolean | null, positive: string, negative: string): string {
@@ -23,14 +25,28 @@ function modeLabel(mode: string | null): string {
 
 export function SelfEvolvingEmbeddingStatusCard({
   status,
+  isInstalling = false,
+  onInstall,
 }: SelfEvolvingEmbeddingStatusCardProps): ReactElement {
+  const showInstallAction = status?.provider === 'ollama'
+    && status.model != null
+    && status.model.length > 0
+    && status.modelAvailable === false
+    && onInstall != null;
   return (
     <div className="rounded-3 border border-border/70 bg-card/40 p-3 mb-4">
       <div className="d-flex align-items-center justify-content-between gap-2 mb-2">
         <h6 className="mb-0">Local embedding runtime status</h6>
-        <Badge bg={status?.degraded ? 'warning' : 'info-subtle'} text={status?.degraded ? 'dark' : 'info'}>
-          {modeLabel(status?.mode ?? null)}
-        </Badge>
+        <div className="d-flex align-items-center gap-2">
+          <Badge bg={status?.degraded ? 'warning' : 'info-subtle'} text={status?.degraded ? 'dark' : 'info'}>
+            {modeLabel(status?.mode ?? null)}
+          </Badge>
+          {showInstallAction && (
+            <Button type="button" size="sm" variant="primary" onClick={onInstall} disabled={isInstalling}>
+              {isInstalling ? 'Installing...' : 'Install model'}
+            </Button>
+          )}
+        </div>
       </div>
       <p className="text-body-secondary small mb-3">
         {status?.reason ?? 'No local embedding runtime degradation has been reported.'}

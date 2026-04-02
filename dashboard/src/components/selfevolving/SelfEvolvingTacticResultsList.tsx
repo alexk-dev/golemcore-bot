@@ -21,21 +21,21 @@ export function SelfEvolvingTacticResultsList({ results, selectedTacticId, onSel
                 <div>
                   <div className="fw-semibold">{result.title ?? result.tacticId}</div>
                   <div className="text-body-secondary small">{result.artifactKey}</div>
+                  <div className="small mt-1">{result.intentSummary ?? result.outcomeSummary ?? 'No summary available.'}</div>
                 </div>
                 <Button
                   size="sm"
                   variant={selectedTacticId === result.tacticId ? 'primary' : 'secondary'}
                   onClick={() => onSelectTacticId(result.tacticId)}
                 >
-                  Inspect
+                  Open tactic
                 </Button>
               </div>
               <div className="d-flex flex-wrap gap-2 mt-2">
+                <Badge bg="secondary">State {result.promotionState ?? 'n/a'}</Badge>
                 <Badge bg="secondary">Success rate {formatPercent(result.successRate)}</Badge>
                 <Badge bg="secondary">Benchmark win rate {formatPercent(result.benchmarkWinRate)}</Badge>
-                <Badge bg="secondary">Regression flags {result.regressionFlags.length}</Badge>
-                <Badge bg="secondary">Recency {formatNumber(result.recencyScore)}</Badge>
-                <Badge bg="secondary">Golem-local usage success {formatPercent(result.golemLocalUsageSuccess)}</Badge>
+                <Badge bg="secondary">Score {formatNumber(result.score)}</Badge>
               </div>
             </div>
           ))}

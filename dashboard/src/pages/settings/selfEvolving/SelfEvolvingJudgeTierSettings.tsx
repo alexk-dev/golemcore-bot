@@ -87,7 +87,7 @@ export function SelfEvolvingJudgeTierSettings({
         <Col md={6}>
           <Form.Group controlId="self-evolving-uncertainty-threshold">
             <Form.Label className="small fw-medium">
-              Uncertainty threshold <HelpTip text="Above this threshold, SelfEvolving escalates to the tiebreaker judge." />
+              Uncertainty threshold <HelpTip text="Above this threshold, Self-Evolving escalates to the tiebreaker judge." />
             </Form.Label>
             <Form.Control
               size="sm"

@@ -147,6 +147,23 @@ class LocalEmbeddingBootstrapServiceTest {
         assertTrue(status.getDegraded());
     }
 
+    @Test
+    void shouldInstallConfiguredLocalModelOnDemand() {
+        service.runtimeHealthy = true;
+        service.hasModelResponses.add(false);
+        service.hasModelResponses.add(true);
+        service.pullResult = true;
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, true, false, false, "http://localhost:11434", "qwen3-embedding:0.6b"));
+
+        TacticSearchStatus status = service.installConfiguredModel();
+
+        assertEquals("hybrid", status.getMode());
+        assertTrue(status.getPullAttempted());
+        assertTrue(status.getPullSucceeded());
+        assertTrue(status.getModelAvailable());
+    }
+
     private RuntimeConfig.SelfEvolvingConfig config(
             boolean selfEvolvingEnabled,
             boolean tacticsEnabled,

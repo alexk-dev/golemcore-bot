@@ -1,3 +1,4 @@
+import type { SelfEvolvingConfig } from './settings';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const clientGetMock = vi.fn();
@@ -10,7 +11,11 @@ vi.mock('./client', () => ({
   },
 }));
 
-function buildRuntimeConfigFixture(selfEvolving: Record<string, unknown>) {
+interface RuntimeConfigPutPayload {
+  selfEvolving: SelfEvolvingConfig;
+}
+
+function buildRuntimeConfigFixture(selfEvolving: Record<string, unknown>): Record<string, unknown> {
   return {
     telegram: {
       enabled: false,
@@ -79,6 +84,13 @@ function buildRuntimeConfigFixture(selfEvolving: Record<string, unknown>) {
     security: {},
     compaction: {},
   };
+}
+
+function isRuntimeConfigPutPayload(value: unknown): value is RuntimeConfigPutPayload {
+  if (value == null || typeof value !== 'object') {
+    return false;
+  }
+  return 'selfEvolving' in value;
 }
 
 describe('settings selfEvolving normalization', () => {
@@ -220,7 +232,11 @@ describe('settings selfEvolving normalization', () => {
     }) as never);
 
     expect(clientPutMock).toHaveBeenCalled();
-    const payload = clientPutMock.mock.calls[0][1];
+    const payload = clientPutMock.mock.calls[0]?.[1] as unknown;
+    expect(isRuntimeConfigPutPayload(payload)).toBe(true);
+    if (!isRuntimeConfigPutPayload(payload)) {
+      throw new Error('Expected updateRuntimeConfig to send a selfEvolving payload');
+    }
     expect(payload.selfEvolving.tactics.search.mode).toBe('hybrid');
     expect(payload.selfEvolving.tactics.search.embeddings.provider).toBe('openai_compatible');
     expect(payload.selfEvolving.tactics.search.embeddings.model).toBe('text-embedding-3-large');

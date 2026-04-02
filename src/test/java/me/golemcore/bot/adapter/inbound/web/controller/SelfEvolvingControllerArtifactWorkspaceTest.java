@@ -38,7 +38,8 @@ class SelfEvolvingControllerArtifactWorkspaceTest {
         projectionService = mock(SelfEvolvingProjectionService.class);
         promotionWorkflowService = mock(PromotionWorkflowService.class);
         benchmarkLabService = mock(BenchmarkLabService.class);
-        controller = new SelfEvolvingController(projectionService, promotionWorkflowService, benchmarkLabService, null);
+        controller = new SelfEvolvingController(projectionService, promotionWorkflowService, benchmarkLabService, null,
+                null);
     }
 
     @Test

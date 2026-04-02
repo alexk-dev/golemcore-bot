@@ -320,6 +320,11 @@ export async function getSelfEvolvingTacticSearchStatus(): Promise<SelfEvolvingT
   return data;
 }
 
+export async function installSelfEvolvingTacticEmbeddingModel(): Promise<SelfEvolvingTacticSearchStatus> {
+  const { data } = await client.post<SelfEvolvingTacticSearchStatus>('/self-evolving/tactics/install');
+  return data;
+}
+
 export async function getSelfEvolvingArtifacts(): Promise<SelfEvolvingArtifactCatalogEntry[]> {
   const { data } = await client.get<SelfEvolvingArtifactCatalogEntry[]>('/self-evolving/artifacts');
   return data;

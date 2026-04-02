@@ -35,6 +35,7 @@ class SelfEvolvingControllerTacticSearchTest {
                 projectionService,
                 mock(PromotionWorkflowService.class),
                 mock(BenchmarkLabService.class),
+                null,
                 null);
     }
 

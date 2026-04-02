@@ -30,7 +30,10 @@ import TracingTab from './settings/TracingTab';
 import { UpdatesTab } from './settings/UpdatesTab';
 import PluginSettingsPanel from './settings/PluginSettingsPanel';
 import PluginsMarketplaceTab from './settings/PluginsMarketplaceTab';
-import { useSelfEvolvingTacticSearchStatus } from '../hooks/useSelfEvolving';
+import {
+  useInstallSelfEvolvingTacticEmbeddingModel,
+  useSelfEvolvingTacticSearchStatus,
+} from '../hooks/useSelfEvolving';
 import {
   SETTINGS_BLOCKS,
   SETTINGS_SECTIONS,
@@ -112,6 +115,7 @@ export default function SettingsPage(): ReactElement {
   const { data: me } = useMe();
   const qc = useQueryClient();
   const marketplaceBadge = buildMarketplaceBadge(pluginMarketplace);
+  const installTacticEmbeddingModel = useInstallSelfEvolvingTacticEmbeddingModel();
 
   const staticSection = isSettingsSectionKey(section) ? section : null;
   const { data: selfEvolvingTacticSearchStatus } = useSelfEvolvingTacticSearchStatus(staticSection === 'self-evolving');
@@ -342,6 +346,10 @@ export default function SettingsPage(): ReactElement {
         <SelfEvolvingTab
           config={rc.selfEvolving}
           tacticSearchStatus={selfEvolvingTacticSearchStatus ?? null}
+          isInstallingTacticEmbedding={installTacticEmbeddingModel.isPending}
+          onInstallTacticEmbedding={async () => {
+            await installTacticEmbeddingModel.mutateAsync();
+          }}
           isSaving={updateRuntimeConfig.isPending}
           onSave={async (selfEvolving) => {
             await updateRuntimeConfig.mutateAsync({

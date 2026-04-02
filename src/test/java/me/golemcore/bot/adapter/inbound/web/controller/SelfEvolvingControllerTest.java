@@ -5,7 +5,9 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunDeta
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunSummaryDto;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.service.BenchmarkLabService;
+import me.golemcore.bot.domain.service.LocalEmbeddingBootstrapService;
 import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.SelfEvolvingProjectionService;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +31,7 @@ class SelfEvolvingControllerTest {
     private SelfEvolvingProjectionService projectionService;
     private PromotionWorkflowService promotionWorkflowService;
     private BenchmarkLabService benchmarkLabService;
+    private LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
     private SelfEvolvingController controller;
 
     @BeforeEach
@@ -36,7 +39,9 @@ class SelfEvolvingControllerTest {
         projectionService = mock(SelfEvolvingProjectionService.class);
         promotionWorkflowService = mock(PromotionWorkflowService.class);
         benchmarkLabService = mock(BenchmarkLabService.class);
-        controller = new SelfEvolvingController(projectionService, promotionWorkflowService, benchmarkLabService, null);
+        localEmbeddingBootstrapService = mock(LocalEmbeddingBootstrapService.class);
+        controller = new SelfEvolvingController(projectionService, promotionWorkflowService, benchmarkLabService,
+                localEmbeddingBootstrapService, null);
     }
 
     @Test
@@ -141,6 +146,28 @@ class SelfEvolvingControllerTest {
                     assertNotNull(response.getBody());
                     assertEquals("campaign-9", response.getBody().getId());
                     assertEquals(List.of("run-9"), response.getBody().getRunIds());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldInstallConfiguredTacticEmbeddingModel() {
+        when(localEmbeddingBootstrapService.installConfiguredModel()).thenReturn(TacticSearchStatus.builder()
+                .mode("hybrid")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .modelAvailable(true)
+                .pullAttempted(true)
+                .pullSucceeded(true)
+                .build());
+
+        StepVerifier.create(controller.installTacticEmbeddingModel())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("ollama", response.getBody().getProvider());
+                    assertTrue(response.getBody().getModelAvailable());
+                    assertTrue(response.getBody().getPullSucceeded());
                 })
                 .verifyComplete();
     }

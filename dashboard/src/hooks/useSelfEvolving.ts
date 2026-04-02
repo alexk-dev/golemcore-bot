@@ -19,6 +19,7 @@ import {
   getSelfEvolvingRun,
   getSelfEvolvingRuns,
   getSelfEvolvingTacticSearchStatus,
+  installSelfEvolvingTacticEmbeddingModel,
   searchSelfEvolvingTactics,
   type SelfEvolvingArtifactCatalogEntry,
   type SelfEvolvingArtifactEvidence,
@@ -119,13 +120,24 @@ export function useSelfEvolvingArtifactTransitionDiff(
   });
 }
 
+interface SelfEvolvingArtifactEvidenceArgs {
+  compareMode: 'revision' | 'transition';
+  artifactStreamId: string | null;
+  fromRevisionId: string | null;
+  toRevisionId: string | null;
+  fromNodeId: string | null;
+  toNodeId: string | null;
+}
+
 export function useSelfEvolvingArtifactEvidence(
-  compareMode: 'revision' | 'transition',
-  artifactStreamId: string | null,
-  fromRevisionId: string | null,
-  toRevisionId: string | null,
-  fromNodeId: string | null,
-  toNodeId: string | null,
+  {
+    compareMode,
+    artifactStreamId,
+    fromRevisionId,
+    toRevisionId,
+    fromNodeId,
+    toNodeId,
+  }: SelfEvolvingArtifactEvidenceArgs,
 ): UseQueryResult<SelfEvolvingArtifactEvidence, unknown> {
   return useQuery({
     queryKey: ['self-evolving', 'artifacts', artifactStreamId, 'evidence', compareMode, fromRevisionId, toRevisionId, fromNodeId, toNodeId],
@@ -170,6 +182,17 @@ export function useSelfEvolvingTacticSearchStatus(
     queryKey: ['self-evolving', 'tactics', 'status'],
     queryFn: getSelfEvolvingTacticSearchStatus,
     enabled,
+  });
+}
+
+export function useInstallSelfEvolvingTacticEmbeddingModel(): UseMutationResult<SelfEvolvingTacticSearchStatus, unknown, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => installSelfEvolvingTacticEmbeddingModel(),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ['self-evolving', 'tactics', 'status'] }),
+      qc.invalidateQueries({ queryKey: ['self-evolving', 'tactics'] }),
+    ]),
   });
 }
 

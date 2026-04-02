@@ -1,16 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const clientGetMock = vi.fn();
+const clientPostMock = vi.fn();
 
 vi.mock('./client', () => ({
   default: {
     get: clientGetMock,
+    post: clientPostMock,
   },
 }));
 
 describe('selfEvolving api', () => {
   beforeEach(() => {
     clientGetMock.mockReset();
+    clientPostMock.mockReset();
   });
 
   it('loads compare evidence from the dedicated compare endpoint', async () => {
@@ -51,5 +54,31 @@ describe('selfEvolving api', () => {
     expect(result.model).toBe('qwen3-embedding:0.6b');
     expect(result.runtimeHealthy).toBe(false);
     expect(result.pullAttempted).toBe(true);
+  });
+
+  it('requests explicit local model install for tactic embeddings', async () => {
+    clientPostMock.mockResolvedValue({
+      data: {
+        mode: 'hybrid',
+        reason: null,
+        provider: 'ollama',
+        model: 'qwen3-embedding:0.6b',
+        degraded: false,
+        runtimeHealthy: true,
+        modelAvailable: true,
+        autoInstallConfigured: true,
+        pullOnStartConfigured: false,
+        pullAttempted: true,
+        pullSucceeded: true,
+        updatedAt: '2026-04-02T01:00:00Z',
+      },
+    });
+
+    const api = await import('./selfEvolving');
+    const result = await api.installSelfEvolvingTacticEmbeddingModel();
+
+    expect(clientPostMock).toHaveBeenCalledWith('/self-evolving/tactics/install');
+    expect(result.modelAvailable).toBe(true);
+    expect(result.pullSucceeded).toBe(true);
   });
 });

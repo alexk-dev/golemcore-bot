@@ -40,7 +40,7 @@ interface ArtifactSelectionState {
 
 export default function SelfEvolvingPage(): ReactElement {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [tacticQuery, setTacticQuery] = useState<string>('planner');
+  const [tacticQuery, setTacticQuery] = useState<string>('');
   const [selectedTacticId, setSelectedTacticId] = useState<string | null>(null);
   const deferredTacticQuery = useDeferredValue(tacticQuery);
   const [artifactSelection, setArtifactSelection] = useState<ArtifactSelectionState>({
@@ -67,6 +67,7 @@ export default function SelfEvolvingPage(): ReactElement {
   const campaigns = campaignsQuery.data ?? [];
   const artifacts = artifactsQuery.data ?? [];
   const tacticSearchQuery = useSelfEvolvingTacticSearch(deferredTacticQuery);
+  const isTacticDetailMode = selectedTacticId != null;
   const activeRunId = selectedRunId ?? runs[0]?.id ?? null;
   const activeArtifactStreamId = artifactSelection.artifactStreamId ?? artifacts[0]?.artifactStreamId ?? null;
   const activeRunQuery = useSelfEvolvingRunDetail(activeRunId);
@@ -90,12 +91,14 @@ export default function SelfEvolvingPage(): ReactElement {
     activeToNodeId,
   );
   const evidenceQuery = useSelfEvolvingArtifactEvidence(
-    artifactSelection.compareMode,
-    activeArtifactStreamId,
-    activeFromRevisionId,
-    activeToRevisionId,
-    activeFromNodeId,
-    activeToNodeId,
+    {
+      compareMode: artifactSelection.compareMode,
+      artifactStreamId: activeArtifactStreamId,
+      fromRevisionId: activeFromRevisionId,
+      toRevisionId: activeToRevisionId,
+      fromNodeId: activeFromNodeId,
+      toNodeId: activeToNodeId,
+    },
   );
 
   const handlePlanPromotion = async (candidateId: string): Promise<void> => {
@@ -169,7 +172,7 @@ export default function SelfEvolvingPage(): ReactElement {
     <div>
       <div className="section-header d-flex align-items-center justify-content-between">
         <div>
-          <h4 className="mb-1">SelfEvolving</h4>
+          <h4 className="mb-1">Self-Evolving</h4>
           <p className="text-body-secondary mb-0">
             Inspect runs, judge outcomes, queue promotions, and create benchmark campaigns for the active golem.
           </p>
@@ -178,7 +181,7 @@ export default function SelfEvolvingPage(): ReactElement {
 
       {hasError && (
         <Alert variant="danger" className="mb-4">
-          Failed to load one or more SelfEvolving datasets. Refresh the page and check backend connectivity.
+          Failed to load one or more Self-Evolving datasets. Refresh the page and check backend connectivity.
         </Alert>
       )}
 
@@ -199,34 +202,37 @@ export default function SelfEvolvingPage(): ReactElement {
             handleSelectArtifactStream(tactic.artifactStreamId);
           }
         }}
+        onBackToResults={() => setSelectedTacticId(null)}
         onOpenArtifactStream={handleSelectArtifactStream}
       />
 
-      <div id="self-evolving-artifact-workspace">
-        <SelfEvolvingArtifactWorkspace
-          artifacts={artifacts}
-          selectedArtifactStreamId={activeArtifactStreamId}
-          workspaceSummary={workspaceSummaryQuery.data ?? null}
-          lineage={lineageQuery.data ?? null}
-          compareMode={artifactSelection.compareMode}
-          selectedFromRevisionId={activeFromRevisionId}
-          selectedToRevisionId={activeToRevisionId}
-          selectedFromNodeId={activeFromNodeId}
-          selectedToNodeId={activeToNodeId}
-          revisionDiff={revisionDiffQuery.data ?? null}
-          transitionDiff={transitionDiffQuery.data ?? null}
-          evidence={evidenceQuery.data ?? null}
-          isCatalogLoading={artifactsQuery.isLoading}
-          isWorkspaceLoading={workspaceSummaryQuery.isLoading}
-          isLineageLoading={lineageQuery.isLoading}
-          isDiffLoading={artifactSelection.compareMode === 'transition' ? transitionDiffQuery.isLoading : revisionDiffQuery.isLoading}
-          isEvidenceLoading={evidenceQuery.isLoading}
-          onSelectArtifactStream={handleSelectArtifactStream}
-          onSelectCompareMode={handleSelectCompareMode}
-          onSelectRevisionPair={handleSelectRevisionPair}
-          onSelectTransitionPair={handleSelectTransitionPair}
-        />
-      </div>
+      {isTacticDetailMode && (
+        <div id="self-evolving-artifact-workspace">
+          <SelfEvolvingArtifactWorkspace
+            artifacts={artifacts}
+            selectedArtifactStreamId={activeArtifactStreamId}
+            workspaceSummary={workspaceSummaryQuery.data ?? null}
+            lineage={lineageQuery.data ?? null}
+            compareMode={artifactSelection.compareMode}
+            selectedFromRevisionId={activeFromRevisionId}
+            selectedToRevisionId={activeToRevisionId}
+            selectedFromNodeId={activeFromNodeId}
+            selectedToNodeId={activeToNodeId}
+            revisionDiff={revisionDiffQuery.data ?? null}
+            transitionDiff={transitionDiffQuery.data ?? null}
+            evidence={evidenceQuery.data ?? null}
+            isCatalogLoading={artifactsQuery.isLoading}
+            isWorkspaceLoading={workspaceSummaryQuery.isLoading}
+            isLineageLoading={lineageQuery.isLoading}
+            isDiffLoading={artifactSelection.compareMode === 'transition' ? transitionDiffQuery.isLoading : revisionDiffQuery.isLoading}
+            isEvidenceLoading={evidenceQuery.isLoading}
+            onSelectArtifactStream={handleSelectArtifactStream}
+            onSelectCompareMode={handleSelectCompareMode}
+            onSelectRevisionPair={handleSelectRevisionPair}
+            onSelectTransitionPair={handleSelectTransitionPair}
+          />
+        </div>
+      )}
 
       <Row className="g-3 mb-3">
         <Col xl={7}>

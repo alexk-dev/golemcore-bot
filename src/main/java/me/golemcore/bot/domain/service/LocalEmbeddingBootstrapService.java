@@ -71,30 +71,22 @@ public class LocalEmbeddingBootstrapService {
     }
 
     public TacticSearchStatus initialize() {
-        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
-        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics() != null
-                ? selfEvolvingConfig.getTactics()
-                : new RuntimeConfig.SelfEvolvingTacticsConfig();
-        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = tacticsConfig.getSearch() != null
-                ? tacticsConfig.getSearch()
-                : new RuntimeConfig.SelfEvolvingTacticSearchConfig();
-        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = searchConfig.getEmbeddings() != null
-                ? searchConfig.getEmbeddings()
-                : new RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig();
-        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = embeddingsConfig.getLocal() != null
-                ? embeddingsConfig.getLocal()
-                : new RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig();
+        BootstrapContext context = resolveContext();
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = context.selfEvolvingConfig();
+        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = context.tacticsConfig();
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = context.searchConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = context.localConfig();
 
-        String configuredMode = normalizeMode(searchConfig.getMode());
-        String provider = normalizeProvider(embeddingsConfig.getProvider());
-        String baseUrl = trimToNull(embeddingsConfig.getBaseUrl());
-        String model = trimToNull(embeddingsConfig.getModel());
+        String configuredMode = context.configuredMode();
+        String provider = context.provider();
+        String baseUrl = context.baseUrl();
+        String model = context.model();
 
         if (!Boolean.TRUE.equals(selfEvolvingConfig.getEnabled()) || !Boolean.TRUE.equals(tacticsConfig.getEnabled())) {
             return activeStatus(MODE_BM25, "selfevolving tactics disabled", provider, model, false, false, localConfig,
                     false, false);
         }
-        if (!Boolean.TRUE.equals(embeddingsConfig.getEnabled())) {
+        if (!Boolean.TRUE.equals(context.embeddingsConfig().getEnabled())) {
             return activeStatus(MODE_BM25, "embeddings disabled", provider, model, false, false, localConfig, false,
                     false);
         }
@@ -136,6 +128,37 @@ public class LocalEmbeddingBootstrapService {
         metricsService.recordStatus(status);
         log.info("[TacticSearch] Local embedding bootstrap active in {} mode for provider {} model {}",
                 status.getMode(), provider, model);
+        return status;
+    }
+
+    public TacticSearchStatus installConfiguredModel() {
+        BootstrapContext context = resolveContext();
+        if (!PROVIDER_OLLAMA.equals(context.provider())) {
+            throw new IllegalStateException("local embedding provider is not configured");
+        }
+        if (context.baseUrl() == null || context.model() == null) {
+            throw new IllegalStateException("embedding provider configuration incomplete");
+        }
+        if (!isRuntimeHealthy(context.baseUrl())) {
+            throw new IllegalStateException("local embedding runtime unavailable");
+        }
+
+        boolean modelAvailable = hasModel(context.baseUrl(), context.model());
+        if (!modelAvailable) {
+            boolean pullSucceeded = pullModel(context.baseUrl(), context.model());
+            modelAvailable = pullSucceeded || hasModel(context.baseUrl(), context.model());
+            if (!modelAvailable) {
+                throw new IllegalStateException("local embedding model pull failed");
+            }
+            TacticSearchStatus status = buildStatus(MODE_HYBRID, null, context.provider(), context.model(), false,
+                    true, true, context.localConfig(), true, pullSucceeded);
+            metricsService.recordStatus(status);
+            return status;
+        }
+
+        TacticSearchStatus status = buildStatus(MODE_HYBRID, null, context.provider(), context.model(), false,
+                true, true, context.localConfig(), false, false);
+        metricsService.recordStatus(status);
         return status;
     }
 
@@ -192,6 +215,32 @@ public class LocalEmbeddingBootstrapService {
 
     private boolean shouldPullOnStart(RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig) {
         return Boolean.TRUE.equals(localConfig.getAutoInstall()) && Boolean.TRUE.equals(localConfig.getPullOnStart());
+    }
+
+    private BootstrapContext resolveContext() {
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
+        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics() != null
+                ? selfEvolvingConfig.getTactics()
+                : new RuntimeConfig.SelfEvolvingTacticsConfig();
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = tacticsConfig.getSearch() != null
+                ? tacticsConfig.getSearch()
+                : new RuntimeConfig.SelfEvolvingTacticSearchConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = searchConfig.getEmbeddings() != null
+                ? searchConfig.getEmbeddings()
+                : new RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = embeddingsConfig.getLocal() != null
+                ? embeddingsConfig.getLocal()
+                : new RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig();
+        return new BootstrapContext(
+                selfEvolvingConfig,
+                tacticsConfig,
+                searchConfig,
+                embeddingsConfig,
+                localConfig,
+                normalizeMode(searchConfig.getMode()),
+                normalizeProvider(embeddingsConfig.getProvider()),
+                trimToNull(embeddingsConfig.getBaseUrl()),
+                trimToNull(embeddingsConfig.getModel()));
     }
 
     private TacticSearchStatus failOpenOrThrow(String reason, String provider, String model, boolean runtimeHealthy,
@@ -265,5 +314,17 @@ public class LocalEmbeddingBootstrapService {
         }
         String normalizedBase = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         return normalizedBase + path;
+    }
+
+    private record BootstrapContext(
+            RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig,
+            RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig,
+            RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig,
+            RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig,
+            RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig,
+            String configuredMode,
+            String provider,
+            String baseUrl,
+            String model) {
     }
 }
