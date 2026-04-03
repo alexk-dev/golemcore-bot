@@ -18,8 +18,12 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -36,6 +40,7 @@ import me.golemcore.bot.port.outbound.OllamaProcessPort;
 import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 class ManagedLocalOllamaSupervisorTest {
 
@@ -279,6 +284,323 @@ class ManagedLocalOllamaSupervisorTest {
         assertEquals(1, processPort.startCount);
     }
 
+    @Test
+    void shouldRestartOwnedRuntimeWithExponentialBackoffAfterCrash() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        processPort.binaryAvailable = true;
+
+        supervisor.startupCheck(true);
+        processPort.ownedProcessAlive = false;
+        processPort.ownedProcessExitCode = 137;
+
+        ManagedLocalOllamaStatus status = supervisor.pollOwnedProcess();
+
+        assertEquals(ManagedLocalOllamaState.DEGRADED_CRASHED, status.getCurrentState());
+        assertEquals(1, status.getRestartAttempts().intValue());
+        assertNotNull(status.getNextRetryAt());
+        assertEquals("2026-04-02T00:00:02Z", status.getNextRetryTime());
+        assertTrue(status.getLastError().contains("137"));
+    }
+
+    @Test
+    void shouldNotStartManagedRuntimeWhenExternalRuntimeIsLostLater() {
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+
+        supervisor.startupCheck(true);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+
+        ManagedLocalOllamaStatus status = supervisor.pollExternalRuntime();
+        ManagedLocalOllamaStatus repeatedStartupStatus = supervisor.startupCheck(true);
+
+        assertEquals(ManagedLocalOllamaState.DEGRADED_EXTERNAL_LOST, status.getCurrentState());
+        assertFalse(status.getOwned());
+        assertEquals(ManagedLocalOllamaState.DEGRADED_EXTERNAL_LOST, repeatedStartupStatus.getCurrentState());
+        assertEquals(0, processPort.startCount);
+    }
+
+    @Test
+    void shouldExposeOutdatedRuntimeWithoutChangingOwnership() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        processPort.binaryAvailable = true;
+
+        TestManagedLocalOllamaSupervisor outdatedSupervisor = new TestManagedLocalOllamaSupervisor(
+                clock,
+                runtimeProbePort,
+                processPort,
+                ENDPOINT,
+                "0.18.0",
+                SELECTED_MODEL);
+
+        ManagedLocalOllamaStatus status = outdatedSupervisor.startupCheck(true);
+
+        assertEquals(ManagedLocalOllamaState.DEGRADED_OUTDATED, status.getCurrentState());
+        assertTrue(status.getOwned());
+    }
+
+    @Test
+    void shouldRemainDegradedAndIncrementAttemptsWhenRestartFails() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        processPort.binaryAvailable = true;
+
+        supervisor.startupCheck(true);
+        processPort.ownedProcessAlive = false;
+        processPort.ownedProcessExitCode = 137;
+        supervisor.pollOwnedProcess();
+        processPort.startFailure = new IllegalStateException("restart failed");
+        assertEquals(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF,
+                supervisor.attemptScheduledRetry().getCurrentState());
+        clock.advanceSeconds(1);
+
+        ManagedLocalOllamaStatus status = supervisor.attemptScheduledRetry();
+
+        assertEquals(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF, status.getCurrentState());
+        assertEquals(2, status.getRestartAttempts().intValue());
+        assertTrue(status.getLastError().contains("restart failed"));
+    }
+
+    @Test
+    void shouldRestartOwnedRuntimeToReadyAfterBackoffDelay() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        processPort.binaryAvailable = true;
+
+        supervisor.startupCheck(true);
+        processPort.ownedProcessAlive = false;
+        processPort.ownedProcessExitCode = 137;
+        supervisor.pollOwnedProcess();
+
+        ManagedLocalOllamaStatus backoffStatus = supervisor.attemptScheduledRetry();
+        assertEquals(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF, backoffStatus.getCurrentState());
+
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        clock.advanceSeconds(1);
+
+        ManagedLocalOllamaStatus recoveredStatus = supervisor.attemptScheduledRetry();
+
+        assertEquals(ManagedLocalOllamaState.OWNED_READY, recoveredStatus.getCurrentState());
+        assertTrue(recoveredStatus.getOwned());
+        assertEquals(2, processPort.startCount);
+    }
+
+    @Test
+    void shouldNotBypassBackoffWhenStartupCheckIsCalledAfterCrash() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        processPort.binaryAvailable = true;
+
+        supervisor.startupCheck(true);
+        processPort.ownedProcessAlive = false;
+        processPort.ownedProcessExitCode = 137;
+        supervisor.pollOwnedProcess();
+
+        ManagedLocalOllamaStatus status = supervisor.startupCheck(true);
+
+        assertEquals(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF, status.getCurrentState());
+        assertEquals(1, processPort.startCount);
+    }
+
+    @Test
+    void shouldRetryWhenFirstRetryPollHappensAfterDeadline() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        processPort.binaryAvailable = true;
+
+        supervisor.startupCheck(true);
+        processPort.ownedProcessAlive = false;
+        processPort.ownedProcessExitCode = 137;
+        supervisor.pollOwnedProcess();
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        clock.advanceSeconds(1);
+
+        ManagedLocalOllamaStatus recoveredStatus = supervisor.attemptScheduledRetry();
+
+        assertEquals(ManagedLocalOllamaState.OWNED_READY, recoveredStatus.getCurrentState());
+        assertEquals(2, processPort.startCount);
+    }
+
+    @Test
+    void shouldPreserveOwnedRuntimeOwnershipOnRepeatedStartupCheck() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        processPort.binaryAvailable = true;
+
+        ManagedLocalOllamaStatus initialStatus = supervisor.startupCheck(true);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+
+        ManagedLocalOllamaStatus repeatedStatus = supervisor.startupCheck(true);
+
+        assertEquals(ManagedLocalOllamaState.OWNED_READY, initialStatus.getCurrentState());
+        assertEquals(ManagedLocalOllamaState.OWNED_READY, repeatedStatus.getCurrentState());
+        assertTrue(repeatedStatus.getOwned());
+    }
+
+    @Test
+    void shouldNotDoubleStartOwnedRuntimeWhenStartupProbeTemporarilyFails() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        processPort.binaryAvailable = true;
+
+        supervisor.startupCheck(true);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+
+        ManagedLocalOllamaStatus repeatedStatus = supervisor.startupCheck(true);
+
+        assertEquals(ManagedLocalOllamaState.OWNED_READY, repeatedStatus.getCurrentState());
+        assertTrue(repeatedStatus.getOwned());
+        assertEquals(1, processPort.startCount);
+    }
+
+    @Test
+    void shouldDetectCrashAfterStartupTimeoutWhenOwnedProcessDies() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        processPort.binaryAvailable = true;
+
+        ManagedLocalOllamaStatus timeoutStatus = supervisor.startupCheck(true);
+        processPort.ownedProcessAlive = false;
+        processPort.ownedProcessExitCode = 137;
+
+        ManagedLocalOllamaStatus crashedStatus = supervisor.pollOwnedProcess();
+
+        assertEquals(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, timeoutStatus.getCurrentState());
+        assertEquals(ManagedLocalOllamaState.DEGRADED_CRASHED, crashedStatus.getCurrentState());
+        assertEquals(1, crashedStatus.getRestartAttempts().intValue());
+    }
+
+    @Test
+    void shouldNotReprocessTheSameCrashOnRepeatedOwnedProcessPolls() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        processPort.binaryAvailable = true;
+
+        supervisor.startupCheck(true);
+        processPort.ownedProcessAlive = false;
+        processPort.ownedProcessExitCode = 137;
+
+        ManagedLocalOllamaStatus firstCrashStatus = supervisor.pollOwnedProcess();
+        ManagedLocalOllamaStatus secondCrashStatus = supervisor.pollOwnedProcess();
+
+        assertEquals(ManagedLocalOllamaState.DEGRADED_CRASHED, firstCrashStatus.getCurrentState());
+        assertEquals(ManagedLocalOllamaState.DEGRADED_CRASHED, secondCrashStatus.getCurrentState());
+        assertEquals(1, secondCrashStatus.getRestartAttempts().intValue());
+        assertEquals(firstCrashStatus.getNextRetryAt(), secondCrashStatus.getNextRetryAt());
+    }
+
+    @Test
+    void shouldEnterRestartBackoffWhenInitialManagedStartFails() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        processPort.binaryAvailable = true;
+        processPort.startFailure = new IllegalStateException("spawn failed");
+
+        ManagedLocalOllamaStatus status = supervisor.startupCheck(true);
+
+        assertEquals(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF, status.getCurrentState());
+        assertEquals(1, status.getRestartAttempts().intValue());
+        assertTrue(status.getLastError().contains("spawn failed"));
+    }
+
+    @Test
+    void shouldNotTakeOwnershipWhenOutdatedExternalRuntimeDisappearsBeforePoll() {
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+
+        TestManagedLocalOllamaSupervisor outdatedExternalSupervisor = new TestManagedLocalOllamaSupervisor(
+                clock,
+                runtimeProbePort,
+                processPort,
+                ENDPOINT,
+                "0.18.0",
+                SELECTED_MODEL);
+
+        ManagedLocalOllamaStatus initialStatus = outdatedExternalSupervisor.startupCheck(true);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+
+        ManagedLocalOllamaStatus followupStatus = outdatedExternalSupervisor.startupCheck(true);
+
+        assertEquals(ManagedLocalOllamaState.DEGRADED_OUTDATED, initialStatus.getCurrentState());
+        assertFalse(initialStatus.getOwned());
+        assertEquals(ManagedLocalOllamaState.DEGRADED_EXTERNAL_LOST, followupStatus.getCurrentState());
+        assertEquals(0, processPort.startCount);
+    }
+
+    @Test
+    void shouldLogLifecycleEventsForExternalLossOutdatedAndStopping() {
+        ListAppender<ILoggingEvent> appender = attachLogAppender();
+        try {
+            runtimeProbePort.runtimeReachableResponses.add(true);
+            runtimeProbePort.modelResponses.add(true);
+
+            supervisor.startupCheck(true);
+            runtimeProbePort.runtimeReachableResponses.add(false);
+            supervisor.pollExternalRuntime();
+
+            TestManagedLocalOllamaSupervisor outdatedSupervisor = new TestManagedLocalOllamaSupervisor(
+                    clock,
+                    runtimeProbePort,
+                    processPort,
+                    ENDPOINT,
+                    "0.18.0",
+                    SELECTED_MODEL);
+            runtimeProbePort.runtimeReachableResponses.add(false);
+            runtimeProbePort.runtimeReachableResponses.add(false);
+            runtimeProbePort.runtimeReachableResponses.add(true);
+            runtimeProbePort.modelResponses.add(true);
+            processPort.binaryAvailable = true;
+            outdatedSupervisor.startupCheck(true);
+            outdatedSupervisor.stop();
+
+            List<String> messages = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .toList();
+
+            assertTrue(messages.stream().anyMatch(message -> message.contains("external ollama lost")));
+            assertTrue(messages.stream().anyMatch(message -> message.contains("ollama version 0.18.0 is outdated")));
+            assertTrue(messages.stream().anyMatch(message -> message.contains("stopping managed ollama")));
+        } finally {
+            ((Logger) LoggerFactory.getLogger(ManagedLocalOllamaSupervisor.class)).detachAppender(appender);
+        }
+    }
+
+    private ListAppender<ILoggingEvent> attachLogAppender() {
+        Logger logger = (Logger) LoggerFactory.getLogger(ManagedLocalOllamaSupervisor.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.setContext(logger.getLoggerContext());
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
+    }
+
     private static final class TestManagedLocalOllamaSupervisor extends ManagedLocalOllamaSupervisor {
 
         private final List<ManagedLocalOllamaState> observedStates = new ArrayList<>();
@@ -328,9 +650,12 @@ class ManagedLocalOllamaSupervisorTest {
     private static final class TestOllamaProcessPort implements OllamaProcessPort {
 
         private boolean binaryAvailable;
+        private boolean ownedProcessAlive;
+        private Integer ownedProcessExitCode;
         private int binaryAvailabilityChecks;
         private int startCount;
         private int stopCount;
+        private RuntimeException startFailure;
         private final Deque<String> startEndpoints = new ArrayDeque<>();
 
         @Override
@@ -341,18 +666,29 @@ class ManagedLocalOllamaSupervisorTest {
 
         @Override
         public void startServe(String endpoint) {
+            if (startFailure != null) {
+                throw startFailure;
+            }
             startCount++;
+            ownedProcessAlive = true;
+            ownedProcessExitCode = null;
             startEndpoints.addLast(endpoint);
         }
 
         @Override
         public boolean isOwnedProcessAlive() {
-            return startCount > stopCount;
+            return ownedProcessAlive;
+        }
+
+        @Override
+        public Integer getOwnedProcessExitCode() {
+            return ownedProcessExitCode;
         }
 
         @Override
         public void stopOwnedProcess() {
             stopCount++;
+            ownedProcessAlive = false;
         }
     }
 

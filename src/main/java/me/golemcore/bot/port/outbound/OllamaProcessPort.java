@@ -29,5 +29,7 @@ public interface OllamaProcessPort {
 
     boolean isOwnedProcessAlive();
 
+    Integer getOwnedProcessExitCode();
+
     void stopOwnedProcess();
 }
