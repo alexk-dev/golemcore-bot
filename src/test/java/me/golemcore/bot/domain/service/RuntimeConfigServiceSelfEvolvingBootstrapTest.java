@@ -78,6 +78,50 @@ class RuntimeConfigServiceSelfEvolvingBootstrapTest {
         assertFalse(config.getSelfEvolving().getTactics().getEnabled());
         assertEquals("bm25", config.getSelfEvolving().getTactics().getSearch().getMode());
         assertFalse(config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getEnabled());
+        assertTrue(config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
+                .getRequireHealthyRuntime());
+        assertEquals(5000,
+                config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal().getStartupTimeoutMs());
+        assertEquals(1000,
+                config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
+                        .getInitialRestartBackoffMs());
+        assertEquals("0.19.0",
+                config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
+                        .getMinimumRuntimeVersion());
+    }
+
+    @Test
+    void shouldKeepManagedLocalStartupTimeoutFixedAtFiveSeconds() throws Exception {
+        Map<String, Object> local = Map.of(
+                "startupTimeoutMs", 12000,
+                "initialRestartBackoffMs", 2500,
+                "minimumRuntimeVersion", "0.20.0");
+        Map<String, Object> embeddings = Map.of(
+                "enabled", true,
+                "provider", "ollama",
+                "baseUrl", "http://127.0.0.1:11434",
+                "model", "qwen3-embedding:0.6b",
+                "local", local);
+        Map<String, Object> search = Map.of(
+                "mode", "hybrid",
+                "embeddings", embeddings);
+        Map<String, Object> tactics = Map.of(
+                "enabled", true,
+                "search", search);
+        persistedSections.put("self-evolving.json", objectMapper.writeValueAsString(Map.of(
+                "enabled", true,
+                "tactics", tactics)));
+        botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getEmbeddings().getLocal()
+                .setStartupTimeoutMs(30000);
+
+        RuntimeConfig config = service.reloadRuntimeConfig();
+
+        assertEquals(5000,
+                config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal().getStartupTimeoutMs());
+        assertEquals(2500, config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
+                .getInitialRestartBackoffMs());
+        assertEquals("0.20.0", config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
+                .getMinimumRuntimeVersion());
     }
 
     @Test

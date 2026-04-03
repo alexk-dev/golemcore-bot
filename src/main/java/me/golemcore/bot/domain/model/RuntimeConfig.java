@@ -919,6 +919,12 @@ public class RuntimeConfig {
         private Boolean requireHealthyRuntime = true;
         @Builder.Default
         private Boolean failOpen = true;
+        @Builder.Default
+        private Integer startupTimeoutMs = 5000;
+        @Builder.Default
+        private Integer initialRestartBackoffMs = 1000;
+        @Builder.Default
+        private String minimumRuntimeVersion = "0.19.0";
     }
 
     @Data

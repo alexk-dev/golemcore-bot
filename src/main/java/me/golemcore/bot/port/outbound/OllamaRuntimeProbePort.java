@@ -18,14 +18,28 @@ package me.golemcore.bot.port.outbound;
  * Contact: alex@kuleshov.tech
  */
 
+import java.time.Duration;
+
 /**
  * Outbound port for probing Ollama runtime reachability and diagnostics.
  */
 public interface OllamaRuntimeProbePort {
 
-    boolean isRuntimeReachable(String endpoint);
+    boolean isRuntimeReachable(String endpoint, Duration timeout);
 
-    String getRuntimeVersion(String endpoint);
+    String getRuntimeVersion(String endpoint, Duration timeout);
 
-    boolean hasModel(String endpoint, String model);
+    boolean hasModel(String endpoint, String model, Duration timeout);
+
+    default boolean isRuntimeReachable(String endpoint) {
+        return isRuntimeReachable(endpoint, Duration.ofSeconds(5));
+    }
+
+    default String getRuntimeVersion(String endpoint) {
+        return getRuntimeVersion(endpoint, Duration.ofSeconds(5));
+    }
+
+    default boolean hasModel(String endpoint, String model) {
+        return hasModel(endpoint, model, Duration.ofSeconds(5));
+    }
 }

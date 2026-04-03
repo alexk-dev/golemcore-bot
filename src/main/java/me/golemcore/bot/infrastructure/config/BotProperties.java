@@ -321,6 +321,9 @@ public class BotProperties {
         private Boolean pullOnStart;
         private Boolean requireHealthyRuntime;
         private Boolean failOpen;
+        private Integer startupTimeoutMs;
+        private Integer initialRestartBackoffMs;
+        private String minimumRuntimeVersion;
     }
 
     @Data

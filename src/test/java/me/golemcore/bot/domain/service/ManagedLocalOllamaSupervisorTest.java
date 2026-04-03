@@ -56,7 +56,7 @@ class ManagedLocalOllamaSupervisorTest {
     @BeforeEach
     void setUp() {
         clock = new MutableClock(Instant.parse("2026-04-02T00:00:00Z"), ZoneId.of("UTC"));
-        runtimeProbePort = new TestOllamaRuntimeProbePort();
+        runtimeProbePort = new TestOllamaRuntimeProbePort(clock);
         processPort = new TestOllamaProcessPort();
         supervisor = new TestManagedLocalOllamaSupervisor(
                 clock,
@@ -169,6 +169,77 @@ class ManagedLocalOllamaSupervisorTest {
         assertEquals(0, processPort.binaryAvailabilityChecks);
         assertEquals(0, processPort.startCount);
         assertEquals(0, processPort.stopCount);
+    }
+
+    @Test
+    void shouldNotProbeRuntimeVersionWhenSupervisorStartsDisabled() {
+        TestManagedLocalOllamaSupervisor nullVersionSupervisor = new TestManagedLocalOllamaSupervisor(
+                clock,
+                runtimeProbePort,
+                processPort,
+                ENDPOINT,
+                null,
+                SELECTED_MODEL);
+
+        assertEquals(0, runtimeProbePort.versionChecks);
+
+        ManagedLocalOllamaStatus status = nullVersionSupervisor.startupCheck(false);
+
+        assertEquals(ManagedLocalOllamaState.DISABLED, status.getCurrentState());
+        assertEquals(0, runtimeProbePort.versionChecks);
+    }
+
+    @Test
+    void shouldCapStartupBudgetToFiveSecondsIncludingInitialExternalProbe() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.consumeReachabilityTimeout = true;
+        processPort.binaryAvailable = true;
+
+        ManagedLocalOllamaStatus status = supervisor.startupCheck(true);
+
+        assertEquals(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, status.getCurrentState());
+        assertEquals(Instant.parse("2026-04-02T00:00:05Z"), clock.instant());
+        assertEquals(1, processPort.startCount);
+    }
+
+    @Test
+    void shouldNotSleepPastRemainingStartupBudgetInsideWaitLoop() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.consumeReachabilityTimeouts.add(java.time.Duration.ofMillis(4500));
+        processPort.binaryAvailable = true;
+
+        ManagedLocalOllamaStatus status = supervisor.startupCheck(true);
+
+        assertEquals(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, status.getCurrentState());
+        assertEquals(Instant.parse("2026-04-02T00:00:05Z"), clock.instant());
+        assertEquals(1, processPort.startCount);
+    }
+
+    @Test
+    void shouldShareRemainingDiagnosticBudgetAcrossModelAndVersionChecks() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        runtimeProbePort.runtimeVersion = VERSION;
+        runtimeProbePort.consumeModelTimeouts.add(java.time.Duration.ofSeconds(3));
+        runtimeProbePort.consumeVersionTimeouts.add(java.time.Duration.ofSeconds(3));
+        processPort.binaryAvailable = true;
+
+        TestManagedLocalOllamaSupervisor nullVersionSupervisor = new TestManagedLocalOllamaSupervisor(
+                clock,
+                runtimeProbePort,
+                processPort,
+                ENDPOINT,
+                null,
+                SELECTED_MODEL);
+
+        ManagedLocalOllamaStatus status = nullVersionSupervisor.startupCheck(true);
+
+        assertEquals(ManagedLocalOllamaState.OWNED_READY, status.getCurrentState());
+        assertEquals(Instant.parse("2026-04-02T00:00:05Z"), clock.instant());
+        assertTrue(status.getModelPresent());
+        assertEquals(VERSION, status.getVersion());
     }
 
     @Test
@@ -615,35 +686,70 @@ class ManagedLocalOllamaSupervisorTest {
         }
 
         @Override
-        protected void pauseBeforeRetry() {
+        protected void pauseBeforeRetry(java.time.Duration delay) {
             observedStates.add(currentStatus().getCurrentState());
-            ((MutableClock) getClock()).advanceSeconds(1);
+            ((MutableClock) getClock()).advance(delay);
         }
     }
 
     private static final class TestOllamaRuntimeProbePort implements OllamaRuntimeProbePort {
 
+        private final MutableClock clock;
         private final Deque<Boolean> runtimeReachableResponses = new ArrayDeque<>();
+        private final Deque<java.time.Duration> consumeReachabilityTimeouts = new ArrayDeque<>();
+        private final Deque<java.time.Duration> consumeModelTimeouts = new ArrayDeque<>();
+        private final Deque<java.time.Duration> consumeVersionTimeouts = new ArrayDeque<>();
         private final Deque<Boolean> modelResponses = new ArrayDeque<>();
         private final List<String> reachabilityEndpoints = new ArrayList<>();
         private int reachabilityChecks;
+        private int versionChecks;
         private String runtimeVersion;
+        private boolean consumeReachabilityTimeout;
+
+        private TestOllamaRuntimeProbePort(MutableClock clock) {
+            this.clock = clock;
+        }
 
         @Override
-        public boolean isRuntimeReachable(String endpoint) {
+        public boolean isRuntimeReachable(String endpoint, java.time.Duration timeout) {
             reachabilityChecks++;
             reachabilityEndpoints.add(endpoint);
+            java.time.Duration requestedConsumption = consumeReachabilityTimeouts.isEmpty()
+                    ? null
+                    : consumeReachabilityTimeouts.removeFirst();
+            if (requestedConsumption != null && timeout != null) {
+                clock.advance(minDuration(requestedConsumption, timeout));
+            } else if (consumeReachabilityTimeout && timeout != null && !timeout.isNegative() && !timeout.isZero()) {
+                clock.advance(timeout);
+            }
             return runtimeReachableResponses.isEmpty() ? false : runtimeReachableResponses.removeFirst();
         }
 
         @Override
-        public String getRuntimeVersion(String endpoint) {
+        public String getRuntimeVersion(String endpoint, java.time.Duration timeout) {
+            versionChecks++;
+            java.time.Duration requestedConsumption = consumeVersionTimeouts.isEmpty()
+                    ? null
+                    : consumeVersionTimeouts.removeFirst();
+            if (requestedConsumption != null && timeout != null) {
+                clock.advance(minDuration(requestedConsumption, timeout));
+            }
             return runtimeVersion;
         }
 
         @Override
-        public boolean hasModel(String endpoint, String model) {
+        public boolean hasModel(String endpoint, String model, java.time.Duration timeout) {
+            java.time.Duration requestedConsumption = consumeModelTimeouts.isEmpty()
+                    ? null
+                    : consumeModelTimeouts.removeFirst();
+            if (requestedConsumption != null && timeout != null) {
+                clock.advance(minDuration(requestedConsumption, timeout));
+            }
             return modelResponses.isEmpty() ? false : modelResponses.removeFirst();
+        }
+
+        private java.time.Duration minDuration(java.time.Duration left, java.time.Duration right) {
+            return left.compareTo(right) <= 0 ? left : right;
         }
     }
 
@@ -704,6 +810,10 @@ class ManagedLocalOllamaSupervisorTest {
 
         private void advanceSeconds(long seconds) {
             instant = instant.plusSeconds(seconds);
+        }
+
+        private void advance(java.time.Duration duration) {
+            instant = instant.plus(duration);
         }
 
         @Override

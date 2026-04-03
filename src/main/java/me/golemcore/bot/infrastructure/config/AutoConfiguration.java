@@ -18,11 +18,17 @@ package me.golemcore.bot.infrastructure.config;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService;
+import me.golemcore.bot.domain.service.ManagedLocalOllamaSupervisor;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SelfEvolvingTacticSearchStatusProjectionService;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.infrastructure.lifecycle.ManagedLocalOllamaLifecycleBridge;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.plugin.runtime.PluginManager;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.OllamaProcessPort;
+import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +44,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
+import java.time.Duration;
 import java.time.Clock;
 
 /**
@@ -68,6 +75,7 @@ public class AutoConfiguration {
     private final RuntimeConfigService runtimeConfigService;
     private final LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService;
     private final PluginManager pluginManager;
+    private final ObjectProvider<ManagedLocalOllamaLifecycleBridge> managedLocalOllamaLifecycleBridgeProvider;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
 
@@ -92,6 +100,57 @@ public class AutoConfiguration {
         return mapper;
     }
 
+    @Bean
+    public OllamaProcessPort ollamaProcessPort() {
+        return new me.golemcore.bot.adapter.outbound.embedding.OllamaProcessAdapter();
+    }
+
+    @Bean
+    public OllamaRuntimeProbePort ollamaRuntimeProbePort(okhttp3.OkHttpClient okHttpClient, ObjectMapper objectMapper) {
+        return new me.golemcore.bot.adapter.outbound.embedding.OllamaRuntimeProbeAdapter(okHttpClient, objectMapper);
+    }
+
+    @Bean
+    public ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor(Clock clock,
+            OllamaRuntimeProbePort runtimeProbePort,
+            OllamaProcessPort processPort) {
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = selfEvolvingConfig.getTactics()
+                .getSearch()
+                .getEmbeddings();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = embeddingsConfig.getLocal();
+        String endpoint = resolveOllamaBaseUrl(embeddingsConfig.getBaseUrl());
+        String selectedModel = trimToNull(embeddingsConfig.getModel());
+        return new ManagedLocalOllamaSupervisor(
+                clock,
+                runtimeProbePort,
+                processPort,
+                endpoint,
+                null,
+                selectedModel,
+                Duration.ofSeconds(5),
+                Duration.ofMillis(localConfig.getInitialRestartBackoffMs()),
+                localConfig.getMinimumRuntimeVersion());
+    }
+
+    @Bean
+    public ManagedLocalOllamaLifecycleBridge managedLocalOllamaLifecycleBridge(
+            RuntimeConfigService runtimeConfigService,
+            ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor) {
+        return new ManagedLocalOllamaLifecycleBridge(runtimeConfigService, managedLocalOllamaSupervisor);
+    }
+
+    @Bean
+    public SelfEvolvingTacticSearchStatusProjectionService selfEvolvingTacticSearchStatusProjectionService() {
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = runtimeConfigService.getSelfEvolvingConfig()
+                .getTactics()
+                .getSearch()
+                .getEmbeddings();
+        return new SelfEvolvingTacticSearchStatusProjectionService(
+                resolveOllamaBaseUrl(embeddingsConfig.getBaseUrl()),
+                trimToNull(embeddingsConfig.getModel()));
+    }
+
     @PostConstruct
     public void init() {
         BuildProperties buildProps = buildPropertiesProvider.getIfAvailable();
@@ -99,6 +158,11 @@ public class AutoConfiguration {
         String version = buildProps != null ? buildProps.getVersion() : "dev";
         String commitAbbrev = gitProps != null ? gitProps.getShortCommitId() : "unknown";
         log.info("GolemCore Bot v{} ({}) starting...", version, commitAbbrev);
+        ManagedLocalOllamaLifecycleBridge managedLocalOllamaLifecycleBridge = managedLocalOllamaLifecycleBridgeProvider
+                .getIfAvailable();
+        if (managedLocalOllamaLifecycleBridge != null) {
+            managedLocalOllamaLifecycleBridge.runStartupGate();
+        }
         log.info("Balanced Model: {}", runtimeConfigService.getBalancedModel());
         log.info("LLM Provider: {}", properties.getLlm().getProvider());
         log.info("Storage Path: {}", properties.getStorage().getLocal().getBasePath());
@@ -126,5 +190,18 @@ public class AutoConfiguration {
     private boolean isChannelEnabled(String channelType) {
         BotProperties.ChannelProperties channelProps = properties.getChannels().get(channelType);
         return channelProps != null && channelProps.isEnabled();
+    }
+
+    private String resolveOllamaBaseUrl(String configuredBaseUrl) {
+        String baseUrl = trimToNull(configuredBaseUrl);
+        return baseUrl != null ? baseUrl : "http://127.0.0.1:11434";
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

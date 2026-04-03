@@ -246,6 +246,15 @@ public class SelfEvolvingBootstrapOverrideService {
         if (source.getFailOpen() != null) {
             localConfig.setFailOpen(source.getFailOpen());
         }
+        if (source.getStartupTimeoutMs() != null) {
+            localConfig.setStartupTimeoutMs(source.getStartupTimeoutMs());
+        }
+        if (source.getInitialRestartBackoffMs() != null) {
+            localConfig.setInitialRestartBackoffMs(source.getInitialRestartBackoffMs());
+        }
+        if (isNonBlank(source.getMinimumRuntimeVersion())) {
+            localConfig.setMinimumRuntimeVersion(source.getMinimumRuntimeVersion().trim());
+        }
     }
 
     private void restoreEmbeddingsLocal(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig target,
@@ -269,6 +278,15 @@ public class SelfEvolvingBootstrapOverrideService {
         }
         if (source.getFailOpen() != null) {
             candidateLocal.setFailOpen(persistedLocal.getFailOpen());
+        }
+        if (source.getStartupTimeoutMs() != null) {
+            candidateLocal.setStartupTimeoutMs(persistedLocal.getStartupTimeoutMs());
+        }
+        if (source.getInitialRestartBackoffMs() != null) {
+            candidateLocal.setInitialRestartBackoffMs(persistedLocal.getInitialRestartBackoffMs());
+        }
+        if (source.getMinimumRuntimeVersion() != null) {
+            candidateLocal.setMinimumRuntimeVersion(persistedLocal.getMinimumRuntimeVersion());
         }
     }
 

@@ -196,6 +196,9 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_PULL_ON_START = false;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_REQUIRE_HEALTHY_RUNTIME = true;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_FAIL_OPEN = true;
+    private static final int DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_STARTUP_TIMEOUT_MS = 5000;
+    private static final int DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_INITIAL_RESTART_BACKOFF_MS = 1000;
+    private static final String DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MINIMUM_RUNTIME_VERSION = "0.19.0";
     private static final String DEFAULT_SELF_EVOLVING_CAPTURE_MODE_FULL = "full";
     private static final String DEFAULT_SELF_EVOLVING_CAPTURE_MODE_META_ONLY = "meta_only";
     private static final boolean DEFAULT_SELF_EVOLVING_JUDGE_ENABLED = true;
@@ -2178,6 +2181,13 @@ public class RuntimeConfigService {
         if (localConfig.getFailOpen() == null) {
             localConfig.setFailOpen(DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_FAIL_OPEN);
         }
+        localConfig.setStartupTimeoutMs(DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_STARTUP_TIMEOUT_MS);
+        if (localConfig.getInitialRestartBackoffMs() == null || localConfig.getInitialRestartBackoffMs() <= 0) {
+            localConfig.setInitialRestartBackoffMs(DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_INITIAL_RESTART_BACKOFF_MS);
+        }
+        localConfig.setMinimumRuntimeVersion(normalizeNonBlankString(
+                localConfig.getMinimumRuntimeVersion(),
+                DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MINIMUM_RUNTIME_VERSION));
         if (searchConfig.getRerank() == null) {
             searchConfig.setRerank(new RuntimeConfig.SelfEvolvingTacticRerankConfig());
         }
