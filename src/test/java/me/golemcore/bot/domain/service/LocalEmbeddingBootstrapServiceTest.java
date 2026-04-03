@@ -298,6 +298,27 @@ class LocalEmbeddingBootstrapServiceTest {
     }
 
     @Test
+    void shouldThrowWhenConfiguredInstallProviderIsNotLocal() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "openai_compatible", true, false, false, false, "https://embeddings.example",
+                "text-embedding-3-large"));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.installConfiguredModel());
+
+        assertEquals("local embedding provider is not configured", error.getMessage());
+    }
+
+    @Test
+    void shouldThrowWhenConfiguredInstallModelIsMissing() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, false, false, false, null, null));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.installConfiguredModel());
+
+        assertEquals("embedding provider configuration incomplete", error.getMessage());
+    }
+
+    @Test
     void shouldReturnExistingConfiguredModelWithoutPullWhenAlreadyInstalled() {
         service.runtimeProbe = new LocalEmbeddingBootstrapService.LocalRuntimeProbe(true, "0.19.0");
         service.runtimeHealthy = true;
@@ -406,6 +427,84 @@ class LocalEmbeddingBootstrapServiceTest {
 
         assertEquals("hybrid", status.getMode());
         assertEquals("hybrid", metricsService.snapshot().activeMode());
+    }
+
+    @Test
+    void shouldTreatNonOllamaRuntimeProbeAsNotApplicable() {
+        LocalEmbeddingBootstrapService directService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                null,
+                new StubOllamaProcessPort());
+        LocalEmbeddingBootstrapService.LocalRuntimeProbe probe = directService.probeLocalRuntime("openai_compatible");
+
+        assertFalse(probe.installed());
+        assertEquals(null, probe.version());
+    }
+
+    @Test
+    void shouldTreatMissingOllamaProcessPortAsMissingRuntime() {
+        LocalEmbeddingBootstrapService directService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                null,
+                null);
+
+        LocalEmbeddingBootstrapService.LocalRuntimeProbe probe = directService.probeLocalRuntime("ollama");
+
+        assertFalse(probe.installed());
+        assertEquals(null, probe.version());
+    }
+
+    @Test
+    void shouldNormalizeVersionFromOllamaProcessProbe() {
+        LocalEmbeddingBootstrapService directService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                null,
+                new OllamaProcessPort() {
+                    @Override
+                    public boolean isBinaryAvailable() {
+                        return true;
+                    }
+
+                    @Override
+                    public String getInstalledVersion() {
+                        return "ollama version 0.19.0\nbuild abc";
+                    }
+
+                    @Override
+                    public void startServe(String endpoint) {
+                    }
+
+                    @Override
+                    public boolean isOwnedProcessAlive() {
+                        return false;
+                    }
+
+                    @Override
+                    public Integer getOwnedProcessExitCode() {
+                        return null;
+                    }
+
+                    @Override
+                    public void stopOwnedProcess() {
+                    }
+                });
+
+        LocalEmbeddingBootstrapService.LocalRuntimeProbe probe = directService.probeLocalRuntime("ollama");
+
+        assertTrue(probe.installed());
+        assertEquals("0.19.0", probe.version());
     }
 
     @Test
