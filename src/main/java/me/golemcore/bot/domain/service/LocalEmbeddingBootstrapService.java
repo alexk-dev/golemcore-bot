@@ -33,6 +33,7 @@ import okhttp3.Response;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Locale;
 
@@ -50,6 +51,7 @@ public class LocalEmbeddingBootstrapService {
     private static final String PROVIDER_OLLAMA = "ollama";
     private static final String DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
     private static final long LOCAL_RUNTIME_PROBE_TIMEOUT_SECONDS = 5L;
+    private static final Duration MODEL_PULL_TIMEOUT = Duration.ofMinutes(20);
 
     private final RuntimeConfigService runtimeConfigService;
     private final TacticSearchMetricsService metricsService;
@@ -347,7 +349,7 @@ public class LocalEmbeddingBootstrapService {
             JsonNode json = objectMapper.readTree(response.body().bytes());
             for (JsonNode node : json.path("models")) {
                 String candidate = node.path("name").asText();
-                if (model.equals(candidate)) {
+                if (matchesModelName(model, candidate)) {
                     return true;
                 }
             }
@@ -366,7 +368,7 @@ public class LocalEmbeddingBootstrapService {
                     .url(joinUrl(baseUrl, "/api/pull"))
                     .post(RequestBody.create(payload, JSON))
                     .build();
-            try (Response response = okHttpClient.newCall(request).execute()) {
+            try (Response response = buildPullClient().newCall(request).execute()) {
                 return response.isSuccessful();
             }
         } catch (Exception exception) {
@@ -538,6 +540,27 @@ public class LocalEmbeddingBootstrapService {
             return firstLine.substring("ollama version ".length()).trim();
         }
         return firstLine;
+    }
+
+    private OkHttpClient buildPullClient() {
+        return okHttpClient.newBuilder()
+                .callTimeout(MODEL_PULL_TIMEOUT)
+                .readTimeout(MODEL_PULL_TIMEOUT)
+                .writeTimeout(MODEL_PULL_TIMEOUT)
+                .build();
+    }
+
+    private boolean matchesModelName(String requestedModel, String candidateModel) {
+        String normalizedRequested = trimToNull(requestedModel);
+        String normalizedCandidate = trimToNull(candidateModel);
+        if (normalizedRequested == null || normalizedCandidate == null) {
+            return false;
+        }
+        if (normalizedRequested.equals(normalizedCandidate)) {
+            return true;
+        }
+        return normalizedCandidate.equals(normalizedRequested + ":latest")
+                || normalizedRequested.equals(normalizedCandidate + ":latest");
     }
 
     protected record LocalRuntimeProbe(boolean installed, String version) {

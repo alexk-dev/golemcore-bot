@@ -30,6 +30,7 @@ import okhttp3.OkHttpClient;
 
 import java.io.IOException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 
@@ -152,6 +153,26 @@ class LocalEmbeddingBootstrapServiceHttpTest {
     }
 
     @Test
+    void shouldTreatLatestTagAsInstalledForAliasModelName() {
+        server.enqueue(new MockResponse.Builder()
+                .code(200)
+                .body("""
+                        {
+                          "models": [
+                            {
+                              "name": "bge-m3:latest"
+                            }
+                          ]
+                        }
+                        """)
+                .build());
+
+        String baseUrl = server.url("/").toString();
+
+        assertTrue(service.hasModel(baseUrl, "bge-m3"));
+    }
+
+    @Test
     void shouldReturnFalseWhenModelEndpointRejectsRequest() {
         server.enqueue(new MockResponse.Builder().code(503).build());
 
@@ -184,6 +205,36 @@ class LocalEmbeddingBootstrapServiceHttpTest {
     @Test
     void shouldReturnFalseWhenPullEndpointThrowsConnectionError() {
         assertFalse(service.pullModel("http://127.0.0.1:1", "qwen3-embedding:0.6b"));
+    }
+
+    @Test
+    void shouldAllowLongRunningPullsBeyondSharedHttpTimeout() {
+        service = new LocalEmbeddingBootstrapService(
+                mock(RuntimeConfigService.class),
+                new TacticSearchMetricsService(Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC)),
+                Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC),
+                new OkHttpClient.Builder()
+                        .callTimeout(Duration.ofMillis(100))
+                        .connectTimeout(Duration.ofMillis(100))
+                        .readTimeout(Duration.ofMillis(100))
+                        .writeTimeout(Duration.ofMillis(100))
+                        .build(),
+                new ObjectMapper(),
+                null,
+                stubProcessPort());
+        server.enqueue(new MockResponse.Builder()
+                .code(200)
+                .body("""
+                        {
+                          "status": "success"
+                        }
+                        """)
+                .headersDelay(250, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .build());
+
+        String baseUrl = server.url("/").toString();
+
+        assertTrue(service.pullModel(baseUrl, "bge-m3"));
     }
 
     private OllamaProcessPort stubProcessPort() {
