@@ -25,7 +25,9 @@ import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
+import me.golemcore.bot.domain.service.LocalEmbeddingBootstrapService;
 import org.junit.jupiter.api.Test;
 
 class HiveRuntimeEventDispatchSystemTest {
@@ -33,7 +35,7 @@ class HiveRuntimeEventDispatchSystemTest {
     @Test
     void shouldDispatchHiveRuntimeEventsWithTurnMetadata() {
         HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null, null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("hive:thread-1")
@@ -68,7 +70,7 @@ class HiveRuntimeEventDispatchSystemTest {
     @Test
     void shouldSkipNonHiveSessions() {
         HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null, null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("web:chat-1")
@@ -88,13 +90,31 @@ class HiveRuntimeEventDispatchSystemTest {
     void shouldPublishRuntimeTacticSearchProjectionFromContextAttributes() {
         HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
         HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
+        LocalEmbeddingBootstrapService localEmbeddingBootstrapService = mock(LocalEmbeddingBootstrapService.class);
         when(sessionStateStore.load())
                 .thenReturn(java.util.Optional.of(HiveSessionState.builder()
                         .serverUrl("https://hive.example")
                         .golemId("golem-1")
                         .accessToken("token")
                         .build()));
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, sessionStateStore);
+        when(localEmbeddingBootstrapService.probeStatus()).thenReturn(TacticSearchStatus.builder()
+                .mode("bm25")
+                .reason("Managed Ollama exited with code 137")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .degraded(true)
+                .runtimeState("degraded_restart_backoff")
+                .owned(true)
+                .restartAttempts(2)
+                .nextRetryTime("2026-04-02T00:31:00Z")
+                .runtimeHealthy(false)
+                .modelAvailable(false)
+                .build());
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
+                publisher,
+                null,
+                sessionStateStore,
+                localEmbeddingBootstrapService);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("web:chat-1")
@@ -126,7 +146,11 @@ class HiveRuntimeEventDispatchSystemTest {
 
         system.process(context);
 
-        verify(publisher).publishSelfEvolvingTacticSearchProjection(any(SelfEvolvingTacticSearchResponseDto.class));
+        verify(publisher).publishSelfEvolvingTacticSearchProjection(argThat(response -> response != null
+                && response.getStatus() != null
+                && "degraded_restart_backoff".equals(response.getStatus().getRuntimeState())
+                && Boolean.TRUE.equals(response.getStatus().getOwned())
+                && Integer.valueOf(2).equals(response.getStatus().getRestartAttempts())));
     }
 
     @Test
@@ -134,7 +158,11 @@ class HiveRuntimeEventDispatchSystemTest {
         HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
         HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
         when(sessionStateStore.load()).thenReturn(java.util.Optional.empty());
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, sessionStateStore);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
+                publisher,
+                null,
+                sessionStateStore,
+                null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("web:chat-1")
@@ -179,7 +207,11 @@ class HiveRuntimeEventDispatchSystemTest {
                         .golemId("golem-1")
                         .accessToken(" ")
                         .build()));
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, sessionStateStore);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
+                publisher,
+                null,
+                sessionStateStore,
+                null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("web:chat-1")
@@ -209,7 +241,11 @@ class HiveRuntimeEventDispatchSystemTest {
                         .golemId("golem-1")
                         .accessToken("token")
                         .build()));
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, sessionStateStore);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
+                publisher,
+                null,
+                sessionStateStore,
+                null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("web:chat-1")
@@ -243,7 +279,11 @@ class HiveRuntimeEventDispatchSystemTest {
         doThrow(new IllegalStateException("publish failed"))
                 .when(publisher)
                 .publishSelfEvolvingTacticSearchProjection(any(SelfEvolvingTacticSearchResponseDto.class));
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, sessionStateStore);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
+                publisher,
+                null,
+                sessionStateStore,
+                null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("web:chat-1")

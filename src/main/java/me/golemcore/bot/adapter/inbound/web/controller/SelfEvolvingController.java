@@ -31,6 +31,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
@@ -44,6 +45,9 @@ import java.util.List;
 @RequestMapping("/api/self-evolving")
 @Slf4j
 public class SelfEvolvingController {
+
+    public record TacticEmbeddingInstallRequest(String model) {
+    }
 
     private final SelfEvolvingProjectionService projectionService;
     private final PromotionWorkflowService promotionWorkflowService;
@@ -199,12 +203,14 @@ public class SelfEvolvingController {
 
     @GetMapping("/tactics/status")
     public Mono<ResponseEntity<SelfEvolvingTacticSearchStatusDto>> getTacticSearchStatus() {
-        return Mono.just(ResponseEntity.ok(projectionService.getTacticSearchStatus()));
+        return Mono.just(ResponseEntity.ok(toTacticSearchStatusDto(localEmbeddingBootstrapService.probeStatus())));
     }
 
     @PostMapping("/tactics/install")
-    public Mono<ResponseEntity<SelfEvolvingTacticSearchStatusDto>> installTacticEmbeddingModel() {
-        TacticSearchStatus status = localEmbeddingBootstrapService.installConfiguredModel();
+    public Mono<ResponseEntity<SelfEvolvingTacticSearchStatusDto>> installTacticEmbeddingModel(
+            @RequestBody(required = false) TacticEmbeddingInstallRequest request) {
+        String requestedModel = request != null ? request.model() : null;
+        TacticSearchStatus status = localEmbeddingBootstrapService.installModel(requestedModel);
         return Mono.just(ResponseEntity.ok(toTacticSearchStatusDto(status)));
     }
 
@@ -283,8 +289,16 @@ public class SelfEvolvingController {
                 .provider(status.getProvider())
                 .model(status.getModel())
                 .degraded(status.getDegraded())
+                .runtimeState(status.getRuntimeState())
+                .owned(status.getOwned())
+                .runtimeInstalled(status.getRuntimeInstalled())
                 .runtimeHealthy(status.getRuntimeHealthy())
+                .runtimeVersion(status.getRuntimeVersion())
+                .baseUrl(status.getBaseUrl())
                 .modelAvailable(status.getModelAvailable())
+                .restartAttempts(status.getRestartAttempts())
+                .nextRetryAt(status.getNextRetryAt() != null ? status.getNextRetryAt().toString() : null)
+                .nextRetryTime(status.getNextRetryTime())
                 .autoInstallConfigured(status.getAutoInstallConfigured())
                 .pullOnStartConfigured(status.getPullOnStartConfigured())
                 .pullAttempted(status.getPullAttempted())

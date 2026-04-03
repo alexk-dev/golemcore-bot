@@ -35,6 +35,8 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
+import me.golemcore.bot.domain.service.LocalEmbeddingBootstrapService;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.service.TacticSearchMetricsService;
 import org.springframework.stereotype.Component;
 
@@ -45,14 +47,17 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
     private final HiveEventBatchPublisher hiveEventBatchPublisher;
     private final TacticSearchMetricsService tacticSearchMetricsService;
     private final HiveSessionStateStore hiveSessionStateStore;
+    private final LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
 
     public HiveRuntimeEventDispatchSystem(
             HiveEventBatchPublisher hiveEventBatchPublisher,
             TacticSearchMetricsService tacticSearchMetricsService,
-            HiveSessionStateStore hiveSessionStateStore) {
+            HiveSessionStateStore hiveSessionStateStore,
+            LocalEmbeddingBootstrapService localEmbeddingBootstrapService) {
         this.hiveEventBatchPublisher = hiveEventBatchPublisher;
         this.tacticSearchMetricsService = tacticSearchMetricsService;
         this.hiveSessionStateStore = hiveSessionStateStore;
+        this.localEmbeddingBootstrapService = localEmbeddingBootstrapService;
     }
 
     @Override
@@ -171,6 +176,31 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
     }
 
     private SelfEvolvingTacticSearchStatusDto buildTacticSearchStatusDto() {
+        if (localEmbeddingBootstrapService != null) {
+            TacticSearchStatus status = localEmbeddingBootstrapService.probeStatus();
+            return SelfEvolvingTacticSearchStatusDto.builder()
+                    .mode(status.getMode())
+                    .reason(status.getReason())
+                    .provider(status.getProvider())
+                    .model(status.getModel())
+                    .degraded(status.getDegraded())
+                    .runtimeState(status.getRuntimeState())
+                    .owned(status.getOwned())
+                    .runtimeInstalled(status.getRuntimeInstalled())
+                    .runtimeHealthy(status.getRuntimeHealthy())
+                    .runtimeVersion(status.getRuntimeVersion())
+                    .baseUrl(status.getBaseUrl())
+                    .modelAvailable(status.getModelAvailable())
+                    .restartAttempts(status.getRestartAttempts())
+                    .nextRetryAt(status.getNextRetryAt() != null ? status.getNextRetryAt().toString() : null)
+                    .nextRetryTime(status.getNextRetryTime())
+                    .autoInstallConfigured(status.getAutoInstallConfigured())
+                    .pullOnStartConfigured(status.getPullOnStartConfigured())
+                    .pullAttempted(status.getPullAttempted())
+                    .pullSucceeded(status.getPullSucceeded())
+                    .updatedAt(status.getUpdatedAt() != null ? status.getUpdatedAt().toString() : null)
+                    .build();
+        }
         if (tacticSearchMetricsService == null) {
             return SelfEvolvingTacticSearchStatusDto.builder()
                     .mode("bm25")

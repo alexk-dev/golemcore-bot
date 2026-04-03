@@ -18,29 +18,244 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
-import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
-
+import java.time.Clock;
 import java.time.Instant;
+import java.util.Locale;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
+import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 
 /**
- * Domain-level projection wrapper for the managed Ollama runtime status.
+ * Builds a single tactic-search runtime status projection from runtime config
+ * and the managed local Ollama supervisor.
  */
 public class SelfEvolvingTacticSearchStatusProjectionService {
 
+    private static final String MODE_BM25 = "bm25";
+    private static final String MODE_HYBRID = "hybrid";
+    private static final String PROVIDER_OLLAMA = "ollama";
+    private static final String DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
+
     private final String defaultEndpoint;
     private final String defaultSelectedModel;
+    private final RuntimeConfigService runtimeConfigService;
+    private final ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor;
+    private final Clock clock;
 
     public SelfEvolvingTacticSearchStatusProjectionService() {
-        this(null, null);
+        this(null, null, null, null, Clock.systemUTC());
     }
 
     public SelfEvolvingTacticSearchStatusProjectionService(String defaultEndpoint, String defaultSelectedModel) {
+        this(defaultEndpoint, defaultSelectedModel, null, null, Clock.systemUTC());
+    }
+
+    public SelfEvolvingTacticSearchStatusProjectionService(
+            RuntimeConfigService runtimeConfigService,
+            ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor,
+            Clock clock) {
+        this(null, null, runtimeConfigService, managedLocalOllamaSupervisor, clock);
+    }
+
+    private SelfEvolvingTacticSearchStatusProjectionService(
+            String defaultEndpoint,
+            String defaultSelectedModel,
+            RuntimeConfigService runtimeConfigService,
+            ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor,
+            Clock clock) {
         this.defaultEndpoint = defaultEndpoint;
         this.defaultSelectedModel = defaultSelectedModel;
+        this.runtimeConfigService = runtimeConfigService;
+        this.managedLocalOllamaSupervisor = managedLocalOllamaSupervisor;
+        this.clock = clock != null ? clock : Clock.systemUTC();
     }
 
     public ManagedLocalOllamaStatus project(ManagedLocalOllamaStatus status) {
+        return normalize(status, defaultEndpoint, defaultSelectedModel);
+    }
+
+    public TacticSearchStatus projectCurrent() {
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService != null
+                ? runtimeConfigService.getSelfEvolvingConfig()
+                : RuntimeConfig.SelfEvolvingConfig.builder().build();
+        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics() != null
+                ? selfEvolvingConfig.getTactics()
+                : new RuntimeConfig.SelfEvolvingTacticsConfig();
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = tacticsConfig.getSearch() != null
+                ? tacticsConfig.getSearch()
+                : new RuntimeConfig.SelfEvolvingTacticSearchConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = searchConfig.getEmbeddings() != null
+                ? searchConfig.getEmbeddings()
+                : new RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = embeddingsConfig.getLocal() != null
+                ? embeddingsConfig.getLocal()
+                : new RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig();
+        String provider = normalizeProvider(embeddingsConfig.getProvider());
+        String model = trimToNull(embeddingsConfig.getModel());
+        String endpoint = resolveEndpoint(embeddingsConfig, provider);
+        ManagedLocalOllamaStatus runtimeStatus = normalize(
+                managedLocalOllamaSupervisor != null ? managedLocalOllamaSupervisor.currentStatus() : null,
+                endpoint,
+                model);
+
+        if (!Boolean.TRUE.equals(selfEvolvingConfig.getEnabled()) || !Boolean.TRUE.equals(tacticsConfig.getEnabled())) {
+            return buildStatus(
+                    MODE_BM25,
+                    "selfevolving tactics disabled",
+                    provider,
+                    model,
+                    false,
+                    runtimeStatus,
+                    false,
+                    false,
+                    localConfig,
+                    clock.instant());
+        }
+        if (!Boolean.TRUE.equals(embeddingsConfig.getEnabled())) {
+            return buildStatus(
+                    MODE_BM25,
+                    "embeddings disabled",
+                    provider,
+                    model,
+                    false,
+                    runtimeStatus,
+                    false,
+                    false,
+                    localConfig,
+                    clock.instant());
+        }
+
+        String configuredMode = normalizeMode(searchConfig.getMode());
+        if (!MODE_HYBRID.equals(configuredMode)) {
+            return buildStatus(
+                    MODE_BM25,
+                    "lexical-only mode configured",
+                    provider,
+                    model,
+                    false,
+                    runtimeStatus,
+                    false,
+                    false,
+                    localConfig,
+                    clock.instant());
+        }
+
+        if (provider == null || model == null || endpoint == null) {
+            return buildStatus(
+                    MODE_BM25,
+                    "embedding provider configuration incomplete",
+                    provider,
+                    model,
+                    true,
+                    runtimeStatus,
+                    false,
+                    false,
+                    localConfig,
+                    clock.instant());
+        }
+
+        if (!PROVIDER_OLLAMA.equals(provider)) {
+            return buildStatus(
+                    MODE_HYBRID,
+                    null,
+                    provider,
+                    model,
+                    false,
+                    runtimeStatus,
+                    false,
+                    false,
+                    localConfig,
+                    clock.instant()).toBuilder()
+                    .runtimeInstalled(true)
+                    .runtimeHealthy(true)
+                    .modelAvailable(true)
+                    .build();
+        }
+
+        return projectLocalOllamaStatus(provider, model, runtimeStatus, localConfig);
+    }
+
+    private TacticSearchStatus projectLocalOllamaStatus(
+            String provider,
+            String model,
+            ManagedLocalOllamaStatus runtimeStatus,
+            RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig) {
+        ManagedLocalOllamaState state = runtimeStatus.getCurrentState();
+        String reason = switch (state != null ? state : ManagedLocalOllamaState.DISABLED) {
+        case EXTERNAL_READY, OWNED_READY -> Boolean.TRUE.equals(runtimeStatus.getModelPresent())
+                ? null
+                : "Embedding model " + model + " is not installed in Ollama";
+        case OWNED_STARTING -> "Managed Ollama is starting";
+        case DEGRADED_MISSING_BINARY -> "Ollama is not installed on this machine";
+        case DEGRADED_START_TIMEOUT, DEGRADED_CRASHED, DEGRADED_RESTART_BACKOFF, DEGRADED_EXTERNAL_LOST,
+                DEGRADED_OUTDATED ->
+            fallbackReason(runtimeStatus.getLastError(), "Managed Ollama is degraded");
+        case STOPPING -> "Managed Ollama is stopping";
+        case DISABLED -> "Local Ollama supervisor is disabled";
+        };
+        boolean healthy = state == ManagedLocalOllamaState.EXTERNAL_READY
+                || state == ManagedLocalOllamaState.OWNED_READY;
+        boolean degraded = !healthy || !Boolean.TRUE.equals(runtimeStatus.getModelPresent());
+        String mode = healthy && Boolean.TRUE.equals(runtimeStatus.getModelPresent()) ? MODE_HYBRID : MODE_BM25;
+        return buildStatus(
+                mode,
+                reason,
+                provider,
+                model,
+                degraded,
+                runtimeStatus,
+                false,
+                false,
+                localConfig,
+                clock.instant()).toBuilder()
+                .runtimeInstalled(isRuntimeInstalled(runtimeStatus))
+                .runtimeHealthy(healthy)
+                .build();
+    }
+
+    private TacticSearchStatus buildStatus(
+            String mode,
+            String reason,
+            String provider,
+            String model,
+            boolean degraded,
+            ManagedLocalOllamaStatus runtimeStatus,
+            boolean pullAttempted,
+            boolean pullSucceeded,
+            RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig,
+            Instant now) {
+        return TacticSearchStatus.builder()
+                .mode(mode)
+                .reason(reason)
+                .provider(provider)
+                .model(model)
+                .degraded(degraded)
+                .runtimeState(runtimeStatus.getCurrentState() != null
+                        ? runtimeStatus.getCurrentState().name().toLowerCase(Locale.ROOT)
+                        : null)
+                .owned(Boolean.TRUE.equals(runtimeStatus.getOwned()))
+                .runtimeInstalled(isRuntimeInstalled(runtimeStatus))
+                .runtimeHealthy(runtimeStatus.getCurrentState() == ManagedLocalOllamaState.EXTERNAL_READY
+                        || runtimeStatus.getCurrentState() == ManagedLocalOllamaState.OWNED_READY)
+                .runtimeVersion(runtimeStatus.getVersion())
+                .baseUrl(runtimeStatus.getEndpoint())
+                .modelAvailable(Boolean.TRUE.equals(runtimeStatus.getModelPresent()))
+                .restartAttempts(runtimeStatus.getRestartAttempts() != null ? runtimeStatus.getRestartAttempts() : 0)
+                .nextRetryAt(runtimeStatus.getNextRetryAt())
+                .nextRetryTime(runtimeStatus.getNextRetryTime())
+                .autoInstallConfigured(Boolean.TRUE.equals(localConfig.getAutoInstall()))
+                .pullOnStartConfigured(Boolean.TRUE.equals(localConfig.getPullOnStart()))
+                .pullAttempted(pullAttempted)
+                .pullSucceeded(pullSucceeded)
+                .updatedAt(runtimeStatus.getUpdatedAt() != null ? runtimeStatus.getUpdatedAt() : now)
+                .build();
+    }
+
+    private ManagedLocalOllamaStatus normalize(
+            ManagedLocalOllamaStatus status,
+            String fallbackEndpoint,
+            String fallbackSelectedModel) {
         ManagedLocalOllamaStatus source = status != null ? status : ManagedLocalOllamaStatus.builder().build();
         Instant nextRetryAt = source.getNextRetryAt();
 
@@ -48,9 +263,10 @@ public class SelfEvolvingTacticSearchStatusProjectionService {
                 .currentState(
                         source.getCurrentState() != null ? source.getCurrentState() : ManagedLocalOllamaState.DISABLED)
                 .owned(Boolean.TRUE.equals(source.getOwned()))
-                .endpoint(source.getEndpoint() != null ? source.getEndpoint() : defaultEndpoint)
+                .endpoint(source.getEndpoint() != null ? source.getEndpoint() : fallbackEndpoint)
                 .version(source.getVersion())
-                .selectedModel(source.getSelectedModel() != null ? source.getSelectedModel() : defaultSelectedModel)
+                .selectedModel(
+                        source.getSelectedModel() != null ? source.getSelectedModel() : fallbackSelectedModel)
                 .modelPresent(source.getModelPresent())
                 .lastError(source.getLastError())
                 .restartAttempts(source.getRestartAttempts() != null ? source.getRestartAttempts() : 0)
@@ -60,5 +276,49 @@ public class SelfEvolvingTacticSearchStatusProjectionService {
                         : (nextRetryAt != null ? nextRetryAt.toString() : null))
                 .updatedAt(source.getUpdatedAt() != null ? source.getUpdatedAt() : Instant.EPOCH)
                 .build();
+    }
+
+    private boolean isRuntimeInstalled(ManagedLocalOllamaStatus status) {
+        if (status == null || status.getCurrentState() == null) {
+            return false;
+        }
+        return status.getCurrentState() != ManagedLocalOllamaState.DEGRADED_MISSING_BINARY
+                && status.getCurrentState() != ManagedLocalOllamaState.DISABLED;
+    }
+
+    private String resolveEndpoint(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig, String provider) {
+        String configuredBaseUrl = trimToNull(embeddingsConfig.getBaseUrl());
+        if (configuredBaseUrl != null) {
+            return configuredBaseUrl;
+        }
+        if (PROVIDER_OLLAMA.equals(provider)) {
+            return DEFAULT_OLLAMA_BASE_URL;
+        }
+        return defaultEndpoint;
+    }
+
+    private String normalizeMode(String mode) {
+        if (mode == null || mode.isBlank()) {
+            return MODE_BM25;
+        }
+        return mode.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeProvider(String provider) {
+        if (provider == null || provider.isBlank()) {
+            return null;
+        }
+        return provider.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private String fallbackReason(String candidate, String fallback) {
+        return candidate != null && !candidate.isBlank() ? candidate : fallback;
     }
 }

@@ -51,7 +51,8 @@ class LocalEmbeddingBootstrapServiceHttpTest {
                 new TacticSearchMetricsService(Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC)),
                 Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC),
                 new OkHttpClient(),
-                new ObjectMapper());
+                new ObjectMapper(),
+                null);
     }
 
     @AfterEach

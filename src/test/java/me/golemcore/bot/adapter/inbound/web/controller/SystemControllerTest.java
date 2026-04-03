@@ -3,6 +3,8 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import me.golemcore.bot.adapter.inbound.web.dto.LogEntryDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SystemHealthResponse;
 import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+import me.golemcore.bot.domain.service.LocalEmbeddingBootstrapService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
@@ -41,6 +43,7 @@ class SystemControllerTest {
     private StoragePort storagePort;
     private RagPort ragPort;
     private DashboardLogService dashboardLogService;
+    private LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
     private ObjectProvider<BuildProperties> buildPropertiesProvider;
     private ObjectProvider<GitProperties> gitPropertiesProvider;
     private SystemController controller;
@@ -60,6 +63,7 @@ class SystemControllerTest {
         storagePort = mock(StoragePort.class);
         ragPort = mock(RagPort.class);
         dashboardLogService = mock(DashboardLogService.class);
+        localEmbeddingBootstrapService = mock(LocalEmbeddingBootstrapService.class);
         buildPropertiesProvider = mockObjectProvider();
         gitPropertiesProvider = mockObjectProvider();
 
@@ -81,11 +85,16 @@ class SystemControllerTest {
                 ragPort,
                 buildPropertiesProvider,
                 gitPropertiesProvider,
-                dashboardLogService);
+                dashboardLogService,
+                localEmbeddingBootstrapService);
     }
 
     @Test
     void shouldReturnHealthStatus() {
+        when(localEmbeddingBootstrapService.probeStatus()).thenReturn(TacticSearchStatus.builder()
+                .mode("bm25")
+                .degraded(false)
+                .build());
         StepVerifier.create(controller.health())
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -95,6 +104,32 @@ class SystemControllerTest {
                     assertTrue(body.getUptimeMs() >= 0);
                     assertEquals(2, body.getChannels().size());
                     assertTrue(body.getChannels().get("telegram").isRunning());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldKeepHealthUpWhileSurfacingSelfEvolvingEmbeddingDegradation() {
+        when(localEmbeddingBootstrapService.probeStatus()).thenReturn(TacticSearchStatus.builder()
+                .mode("bm25")
+                .reason("Ollama did not become healthy within 5 seconds")
+                .degraded(true)
+                .runtimeState("degraded_start_timeout")
+                .owned(true)
+                .restartAttempts(1)
+                .runtimeHealthy(false)
+                .build());
+
+        StepVerifier.create(controller.health())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SystemHealthResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("UP", body.getStatus());
+                    assertNotNull(body.getSelfEvolvingEmbeddings());
+                    assertTrue(body.getSelfEvolvingEmbeddings().isDegraded());
+                    assertEquals("degraded_start_timeout", body.getSelfEvolvingEmbeddings().getRuntimeState());
+                    assertTrue(body.getSelfEvolvingEmbeddings().isOwned());
                 })
                 .verifyComplete();
     }

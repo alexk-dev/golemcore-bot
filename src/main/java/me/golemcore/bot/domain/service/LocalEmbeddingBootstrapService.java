@@ -32,7 +32,9 @@ import okhttp3.Response;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.util.Arrays;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Probes optional local embedding runtime state and degrades tactic search to
@@ -46,23 +48,28 @@ public class LocalEmbeddingBootstrapService {
     private static final String MODE_BM25 = "bm25";
     private static final String MODE_HYBRID = "hybrid";
     private static final String PROVIDER_OLLAMA = "ollama";
+    private static final String DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
+    private static final long LOCAL_RUNTIME_PROBE_TIMEOUT_SECONDS = 5L;
 
     private final RuntimeConfigService runtimeConfigService;
     private final TacticSearchMetricsService metricsService;
     private final Clock clock;
     private final OkHttpClient okHttpClient;
     private final ObjectMapper objectMapper;
+    private final SelfEvolvingTacticSearchStatusProjectionService tacticSearchStatusProjectionService;
 
     public LocalEmbeddingBootstrapService(RuntimeConfigService runtimeConfigService,
             TacticSearchMetricsService metricsService,
             Clock clock,
             OkHttpClient okHttpClient,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            SelfEvolvingTacticSearchStatusProjectionService tacticSearchStatusProjectionService) {
         this.runtimeConfigService = runtimeConfigService;
         this.metricsService = metricsService;
         this.clock = clock;
         this.okHttpClient = okHttpClient;
         this.objectMapper = objectMapper;
+        this.tacticSearchStatusProjectionService = tacticSearchStatusProjectionService;
     }
 
     @PostConstruct
@@ -71,44 +78,71 @@ public class LocalEmbeddingBootstrapService {
     }
 
     public TacticSearchStatus initialize() {
+        return computeStatus(true);
+    }
+
+    public TacticSearchStatus probeStatus() {
+        return computeStatus(false);
+    }
+
+    private TacticSearchStatus computeStatus(boolean recordMetrics) {
+        if (tacticSearchStatusProjectionService != null) {
+            TacticSearchStatus status = tacticSearchStatusProjectionService.projectCurrent();
+            if (recordMetrics) {
+                metricsService.recordStatus(status);
+            }
+            return status;
+        }
         BootstrapContext context = resolveContext();
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = context.selfEvolvingConfig();
         RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = context.tacticsConfig();
-        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = context.searchConfig();
         RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = context.localConfig();
 
         String configuredMode = context.configuredMode();
         String provider = context.provider();
         String baseUrl = context.baseUrl();
         String model = context.model();
+        LocalRuntimeProbe runtimeProbe = probeLocalRuntime(provider);
+        boolean runtimeHealthy = PROVIDER_OLLAMA.equals(provider) && baseUrl != null
+                ? isRuntimeHealthy(baseUrl)
+                : false;
+        boolean runtimeInstalled = runtimeProbe.installed() || runtimeHealthy;
+        String runtimeVersion = runtimeProbe.version();
+        boolean modelAvailable = runtimeHealthy && model != null && PROVIDER_OLLAMA.equals(provider)
+                ? hasModel(baseUrl, model)
+                : false;
 
         if (!Boolean.TRUE.equals(selfEvolvingConfig.getEnabled()) || !Boolean.TRUE.equals(tacticsConfig.getEnabled())) {
-            return activeStatus(MODE_BM25, "selfevolving tactics disabled", provider, model, false, false, localConfig,
-                    false, false);
+            return activeStatus(MODE_BM25, "selfevolving tactics disabled", provider, model, runtimeInstalled,
+                    runtimeHealthy, runtimeVersion, baseUrl, modelAvailable, localConfig, false, false, recordMetrics);
         }
         if (!Boolean.TRUE.equals(context.embeddingsConfig().getEnabled())) {
-            return activeStatus(MODE_BM25, "embeddings disabled", provider, model, false, false, localConfig, false,
-                    false);
+            return activeStatus(MODE_BM25, "embeddings disabled", provider, model, runtimeInstalled, runtimeHealthy,
+                    runtimeVersion, baseUrl, modelAvailable, localConfig, false, false, recordMetrics);
         }
         if (!MODE_HYBRID.equals(configuredMode)) {
-            return activeStatus(MODE_BM25, "lexical-only mode configured", provider, model, false, false, localConfig,
-                    false, false);
+            return activeStatus(MODE_BM25, "lexical-only mode configured", provider, model, runtimeInstalled,
+                    runtimeHealthy, runtimeVersion, baseUrl, modelAvailable, localConfig, false, false,
+                    recordMetrics);
         }
         if (provider == null || baseUrl == null || model == null) {
-            return failOpenOrThrow("embedding provider configuration incomplete", provider, model, false, false,
-                    localConfig, false, false);
+            return failOpenOrThrow("embedding provider configuration incomplete", provider, model, runtimeInstalled,
+                    runtimeHealthy, runtimeVersion, baseUrl, modelAvailable, localConfig, false, false, recordMetrics);
         }
         if (!PROVIDER_OLLAMA.equals(provider)) {
-            return activeStatus(MODE_HYBRID, null, provider, model, true, true, localConfig, false, false);
+            return activeStatus(MODE_HYBRID, null, provider, model, true, true, null, baseUrl, true, localConfig,
+                    false, false, recordMetrics);
         }
 
-        boolean runtimeHealthy = isRuntimeHealthy(baseUrl);
+        if (!runtimeInstalled) {
+            return failOpenOrThrow("Ollama is not installed on this machine", provider, model, false, false,
+                    runtimeVersion, baseUrl, false, localConfig, false, false, recordMetrics);
+        }
         if (!runtimeHealthy && Boolean.TRUE.equals(localConfig.getRequireHealthyRuntime())) {
-            return failOpenOrThrow("local embedding runtime unavailable", provider, model, false, false, localConfig,
-                    false, false);
+            return failOpenOrThrow("Ollama is installed but not running at " + baseUrl, provider, model, true, false,
+                    runtimeVersion, baseUrl, false, localConfig, false, false, recordMetrics);
         }
 
-        boolean modelAvailable = runtimeHealthy && hasModel(baseUrl, model);
         boolean pullAttempted = false;
         boolean pullSucceeded = false;
         if (!modelAvailable && shouldPullOnStart(localConfig)) {
@@ -118,48 +152,168 @@ public class LocalEmbeddingBootstrapService {
         }
 
         if (!modelAvailable) {
-            String reason = pullAttempted ? "local embedding model pull failed" : "local embedding model unavailable";
-            return failOpenOrThrow(reason, provider, model, runtimeHealthy, false, localConfig, pullAttempted,
-                    pullSucceeded);
+            String reason = pullAttempted
+                    ? "Failed to install embedding model " + model + " in Ollama"
+                    : "Embedding model " + model + " is not installed in Ollama";
+            return failOpenOrThrow(reason, provider, model, true, runtimeHealthy, runtimeVersion, baseUrl, false,
+                    localConfig, pullAttempted, pullSucceeded, recordMetrics);
         }
 
-        TacticSearchStatus status = buildStatus(MODE_HYBRID, null, provider, model, false, runtimeHealthy, true,
-                localConfig, pullAttempted, pullSucceeded);
-        metricsService.recordStatus(status);
-        log.info("[TacticSearch] Local embedding bootstrap active in {} mode for provider {} model {}",
-                status.getMode(), provider, model);
+        TacticSearchStatus status = buildStatus(MODE_HYBRID, null, provider, model, false, true, runtimeHealthy,
+                runtimeVersion, baseUrl, true, localConfig, pullAttempted, pullSucceeded);
+        if (recordMetrics) {
+            metricsService.recordStatus(status);
+            log.info("[TacticSearch] Local embedding bootstrap active in {} mode for provider {} model {}",
+                    status.getMode(), provider, model);
+        }
         return status;
     }
 
     public TacticSearchStatus installConfiguredModel() {
+        return installModel(null);
+    }
+
+    public TacticSearchStatus installModel(String requestedModel) {
+        if (tacticSearchStatusProjectionService != null) {
+            return installModelUsingProjectedStatus(requestedModel);
+        }
         BootstrapContext context = resolveContext();
-        if (!PROVIDER_OLLAMA.equals(context.provider())) {
+        String explicitModel = trimToNull(requestedModel);
+        String provider = explicitModel != null ? PROVIDER_OLLAMA : context.provider();
+        String baseUrl = resolveInstallBaseUrl(context, provider);
+        String model = explicitModel != null ? explicitModel : context.model();
+        if (!PROVIDER_OLLAMA.equals(provider)) {
             throw new IllegalStateException("local embedding provider is not configured");
         }
-        if (context.baseUrl() == null || context.model() == null) {
+        if (baseUrl == null || model == null) {
             throw new IllegalStateException("embedding provider configuration incomplete");
         }
-        if (!isRuntimeHealthy(context.baseUrl())) {
-            throw new IllegalStateException("local embedding runtime unavailable");
+        LocalRuntimeProbe runtimeProbe = probeLocalRuntime(provider);
+        boolean runtimeHealthy = isRuntimeHealthy(baseUrl);
+        boolean runtimeInstalled = runtimeProbe.installed() || runtimeHealthy;
+        if (!runtimeInstalled) {
+            throw new IllegalStateException(
+                    "Ollama is not installed on this machine. Install Ollama first, then retry model installation.");
+        }
+        if (!runtimeHealthy) {
+            throw new IllegalStateException(
+                    "Ollama is installed but not running at " + baseUrl
+                            + ". Start the runtime, then retry model installation.");
         }
 
-        boolean modelAvailable = hasModel(context.baseUrl(), context.model());
+        boolean modelAvailable = hasModel(baseUrl, model);
         if (!modelAvailable) {
-            boolean pullSucceeded = pullModel(context.baseUrl(), context.model());
-            modelAvailable = pullSucceeded || hasModel(context.baseUrl(), context.model());
+            boolean pullSucceeded = pullModel(baseUrl, model);
+            modelAvailable = pullSucceeded || hasModel(baseUrl, model);
             if (!modelAvailable) {
-                throw new IllegalStateException("local embedding model pull failed");
+                throw new IllegalStateException("Failed to install embedding model " + model + " in Ollama");
             }
-            TacticSearchStatus status = buildStatus(MODE_HYBRID, null, context.provider(), context.model(), false,
-                    true, true, context.localConfig(), true, pullSucceeded);
+            TacticSearchStatus status = buildStatus(MODE_HYBRID, null, provider, model, false,
+                    true, true, runtimeProbe.version(), baseUrl, true, context.localConfig(), true, pullSucceeded);
             metricsService.recordStatus(status);
             return status;
         }
 
-        TacticSearchStatus status = buildStatus(MODE_HYBRID, null, context.provider(), context.model(), false,
-                true, true, context.localConfig(), false, false);
+        TacticSearchStatus status = buildStatus(MODE_HYBRID, null, provider, model, false,
+                true, true, runtimeProbe.version(), baseUrl, true, context.localConfig(), false, false);
         metricsService.recordStatus(status);
         return status;
+    }
+
+    private TacticSearchStatus installModelUsingProjectedStatus(String requestedModel) {
+        TacticSearchStatus projectedStatus = tacticSearchStatusProjectionService.projectCurrent();
+        BootstrapContext context = resolveContext();
+        String explicitModel = trimToNull(requestedModel);
+        String provider = explicitModel != null ? PROVIDER_OLLAMA : trimToNull(projectedStatus.getProvider());
+        String model = explicitModel != null ? explicitModel : trimToNull(projectedStatus.getModel());
+        String baseUrl = resolveInstallBaseUrl(projectedStatus, context, provider);
+        if (!PROVIDER_OLLAMA.equals(provider)) {
+            throw new IllegalStateException("local embedding provider is not configured");
+        }
+        if (baseUrl == null || model == null) {
+            throw new IllegalStateException("embedding provider configuration incomplete");
+        }
+        if (!Boolean.TRUE.equals(projectedStatus.getRuntimeInstalled())) {
+            throw new IllegalStateException(projectedStatus.getReason() != null
+                    ? projectedStatus.getReason()
+                    : "Ollama is not installed on this machine");
+        }
+        if (!Boolean.TRUE.equals(projectedStatus.getRuntimeHealthy())) {
+            throw new IllegalStateException(projectedStatus.getReason() != null
+                    ? projectedStatus.getReason()
+                    : "Ollama is installed but not running at " + baseUrl);
+        }
+
+        boolean modelAvailable = hasModel(baseUrl, model);
+        if (!modelAvailable) {
+            boolean pullSucceeded = pullModel(baseUrl, model);
+            modelAvailable = pullSucceeded || hasModel(baseUrl, model);
+            if (!modelAvailable) {
+                throw new IllegalStateException("Failed to install embedding model " + model + " in Ollama");
+            }
+            TacticSearchStatus status = projectedStatus.toBuilder()
+                    .mode(MODE_HYBRID)
+                    .reason(null)
+                    .provider(provider)
+                    .model(model)
+                    .degraded(false)
+                    .runtimeInstalled(true)
+                    .runtimeHealthy(true)
+                    .baseUrl(baseUrl)
+                    .modelAvailable(true)
+                    .pullAttempted(true)
+                    .pullSucceeded(true)
+                    .updatedAt(clock.instant())
+                    .build();
+            metricsService.recordStatus(status);
+            return status;
+        }
+
+        TacticSearchStatus status = projectedStatus.toBuilder()
+                .mode(MODE_HYBRID)
+                .reason(null)
+                .provider(provider)
+                .model(model)
+                .degraded(false)
+                .runtimeInstalled(true)
+                .runtimeHealthy(true)
+                .baseUrl(baseUrl)
+                .modelAvailable(true)
+                .pullAttempted(false)
+                .pullSucceeded(false)
+                .updatedAt(clock.instant())
+                .build();
+        metricsService.recordStatus(status);
+        return status;
+    }
+
+    protected LocalRuntimeProbe probeLocalRuntime(String provider) {
+        if (!PROVIDER_OLLAMA.equals(provider)) {
+            return LocalRuntimeProbe.notApplicable();
+        }
+        Process process = null;
+        try {
+            process = new ProcessBuilder("ollama", "--version")
+                    .redirectErrorStream(true)
+                    .start();
+            boolean finished = process.waitFor(LOCAL_RUNTIME_PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                return LocalRuntimeProbe.missing();
+            }
+            if (process.exitValue() != 0) {
+                return LocalRuntimeProbe.missing();
+            }
+            String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
+                    .trim();
+            return LocalRuntimeProbe.installed(normalizeRuntimeVersion(output));
+        } catch (Exception exception) {
+            return LocalRuntimeProbe.missing();
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
+        }
     }
 
     protected boolean isRuntimeHealthy(String baseUrl) {
@@ -239,36 +393,78 @@ public class LocalEmbeddingBootstrapService {
                 localConfig,
                 normalizeMode(searchConfig.getMode()),
                 normalizeProvider(embeddingsConfig.getProvider()),
-                trimToNull(embeddingsConfig.getBaseUrl()),
+                resolveBaseUrl(embeddingsConfig),
                 trimToNull(embeddingsConfig.getModel()));
     }
 
-    private TacticSearchStatus failOpenOrThrow(String reason, String provider, String model, boolean runtimeHealthy,
-            boolean modelAvailable, RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig,
-            boolean pullAttempted, boolean pullSucceeded) {
+    private String resolveBaseUrl(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig) {
+        String configuredBaseUrl = trimToNull(embeddingsConfig.getBaseUrl());
+        String provider = normalizeProvider(embeddingsConfig.getProvider());
+        if (configuredBaseUrl != null) {
+            return configuredBaseUrl;
+        }
+        if (PROVIDER_OLLAMA.equals(provider)) {
+            return DEFAULT_OLLAMA_BASE_URL;
+        }
+        return null;
+    }
+
+    private String resolveInstallBaseUrl(BootstrapContext context, String provider) {
+        if (!PROVIDER_OLLAMA.equals(provider)) {
+            return context.baseUrl();
+        }
+        if (PROVIDER_OLLAMA.equals(context.provider()) && context.baseUrl() != null) {
+            return context.baseUrl();
+        }
+        return DEFAULT_OLLAMA_BASE_URL;
+    }
+
+    private String resolveInstallBaseUrl(TacticSearchStatus projectedStatus, BootstrapContext context,
+            String provider) {
+        if (!PROVIDER_OLLAMA.equals(provider)) {
+            return context.baseUrl();
+        }
+        String projectedBaseUrl = trimToNull(projectedStatus.getBaseUrl());
+        if (projectedBaseUrl != null) {
+            return projectedBaseUrl;
+        }
+        return resolveInstallBaseUrl(context, provider);
+    }
+
+    private TacticSearchStatus failOpenOrThrow(String reason, String provider, String model, boolean runtimeInstalled,
+            boolean runtimeHealthy, String runtimeVersion, String baseUrl, boolean modelAvailable,
+            RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig,
+            boolean pullAttempted, boolean pullSucceeded, boolean recordMetrics) {
         if (!Boolean.TRUE.equals(localConfig.getFailOpen())) {
             throw new IllegalStateException(reason);
         }
-        TacticSearchStatus status = buildStatus(MODE_BM25, reason, provider, model, true, runtimeHealthy,
-                modelAvailable, localConfig, pullAttempted, pullSucceeded);
-        metricsService.recordFallback(status.getMode(), status.getReason());
-        metricsService.recordStatus(status);
-        log.warn("[TacticSearch] Local embedding bootstrap degraded to {}: {}", status.getMode(), status.getReason());
+        TacticSearchStatus status = buildStatus(MODE_BM25, reason, provider, model, true, runtimeInstalled,
+                runtimeHealthy, runtimeVersion, baseUrl, modelAvailable, localConfig, pullAttempted, pullSucceeded);
+        if (recordMetrics) {
+            metricsService.recordFallback(status.getMode(), status.getReason());
+            metricsService.recordStatus(status);
+            log.warn("[TacticSearch] Local embedding bootstrap degraded to {}: {}", status.getMode(),
+                    status.getReason());
+        }
         return status;
     }
 
     private TacticSearchStatus activeStatus(String mode, String reason, String provider, String model,
-            boolean runtimeHealthy, boolean modelAvailable,
+            boolean runtimeInstalled, boolean runtimeHealthy, String runtimeVersion, String baseUrl,
+            boolean modelAvailable,
             RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig,
-            boolean pullAttempted, boolean pullSucceeded) {
-        TacticSearchStatus status = buildStatus(mode, reason, provider, model, false, runtimeHealthy, modelAvailable,
-                localConfig, pullAttempted, pullSucceeded);
-        metricsService.recordStatus(status);
+            boolean pullAttempted, boolean pullSucceeded, boolean recordMetrics) {
+        TacticSearchStatus status = buildStatus(mode, reason, provider, model, false, runtimeInstalled, runtimeHealthy,
+                runtimeVersion, baseUrl, modelAvailable, localConfig, pullAttempted, pullSucceeded);
+        if (recordMetrics) {
+            metricsService.recordStatus(status);
+        }
         return status;
     }
 
     private TacticSearchStatus buildStatus(String mode, String reason, String provider, String model, boolean degraded,
-            boolean runtimeHealthy, boolean modelAvailable,
+            boolean runtimeInstalled, boolean runtimeHealthy, String runtimeVersion, String baseUrl,
+            boolean modelAvailable,
             RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig,
             boolean pullAttempted, boolean pullSucceeded) {
         return TacticSearchStatus.builder()
@@ -277,7 +473,10 @@ public class LocalEmbeddingBootstrapService {
                 .provider(provider)
                 .model(model)
                 .degraded(degraded)
+                .runtimeInstalled(runtimeInstalled)
                 .runtimeHealthy(runtimeHealthy)
+                .runtimeVersion(runtimeVersion)
+                .baseUrl(baseUrl)
                 .modelAvailable(modelAvailable)
                 .autoInstallConfigured(Boolean.TRUE.equals(localConfig.getAutoInstall()))
                 .pullOnStartConfigured(Boolean.TRUE.equals(localConfig.getPullOnStart()))
@@ -314,6 +513,38 @@ public class LocalEmbeddingBootstrapService {
         }
         String normalizedBase = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         return normalizedBase + path;
+    }
+
+    private String normalizeRuntimeVersion(String output) {
+        if (output == null || output.isBlank()) {
+            return null;
+        }
+        String firstLine = Arrays.stream(output.split("\\R"))
+                .map(String::trim)
+                .filter(line -> !line.isEmpty())
+                .findFirst()
+                .orElse(output.trim());
+        if (firstLine.regionMatches(true, 0, "ollama version is ", 0, "ollama version is ".length())) {
+            return firstLine.substring("ollama version is ".length()).trim();
+        }
+        if (firstLine.regionMatches(true, 0, "ollama version ", 0, "ollama version ".length())) {
+            return firstLine.substring("ollama version ".length()).trim();
+        }
+        return firstLine;
+    }
+
+    protected record LocalRuntimeProbe(boolean installed, String version) {
+        static LocalRuntimeProbe installed(String version) {
+            return new LocalRuntimeProbe(true, version);
+        }
+
+        static LocalRuntimeProbe missing() {
+            return new LocalRuntimeProbe(false, null);
+        }
+
+        static LocalRuntimeProbe notApplicable() {
+            return new LocalRuntimeProbe(false, null);
+        }
     }
 
     private record BootstrapContext(

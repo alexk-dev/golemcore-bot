@@ -30,7 +30,7 @@ import java.time.Instant;
  * Current tactic-search operating mode and degradation state for inspection UI.
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -41,8 +41,16 @@ public class TacticSearchStatus {
     private String provider;
     private String model;
     private Boolean degraded;
+    private String runtimeState;
+    private Boolean owned;
+    private Boolean runtimeInstalled;
     private Boolean runtimeHealthy;
+    private String runtimeVersion;
+    private String baseUrl;
     private Boolean modelAvailable;
+    private Integer restartAttempts;
+    private Instant nextRetryAt;
+    private String nextRetryTime;
     private Boolean autoInstallConfigured;
     private Boolean pullOnStartConfigured;
     private Boolean pullAttempted;

@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -151,23 +152,62 @@ class SelfEvolvingControllerTest {
     }
 
     @Test
-    void shouldInstallConfiguredTacticEmbeddingModel() {
-        when(localEmbeddingBootstrapService.installConfiguredModel()).thenReturn(TacticSearchStatus.builder()
+    void shouldInstallRequestedTacticEmbeddingModel() {
+        when(localEmbeddingBootstrapService.installModel("bge-m3")).thenReturn(TacticSearchStatus.builder()
                 .mode("hybrid")
                 .provider("ollama")
-                .model("qwen3-embedding:0.6b")
+                .model("bge-m3")
+                .runtimeInstalled(true)
+                .runtimeHealthy(true)
+                .runtimeVersion("0.19.0")
+                .baseUrl("http://127.0.0.1:11434")
                 .modelAvailable(true)
                 .pullAttempted(true)
                 .pullSucceeded(true)
                 .build());
 
-        StepVerifier.create(controller.installTacticEmbeddingModel())
+        StepVerifier.create(controller.installTacticEmbeddingModel(
+                new SelfEvolvingController.TacticEmbeddingInstallRequest("bge-m3")))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
                     assertEquals("ollama", response.getBody().getProvider());
+                    assertEquals("bge-m3", response.getBody().getModel());
                     assertTrue(response.getBody().getModelAvailable());
                     assertTrue(response.getBody().getPullSucceeded());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeDedicatedOllamaDiagnosticsForTacticSearchStatus() {
+        when(localEmbeddingBootstrapService.probeStatus()).thenReturn(TacticSearchStatus.builder()
+                .mode("bm25")
+                .reason("Ollama is not installed on this machine")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .runtimeState("degraded_missing_binary")
+                .owned(false)
+                .restartAttempts(0)
+                .nextRetryTime(null)
+                .runtimeInstalled(false)
+                .runtimeHealthy(false)
+                .runtimeVersion(null)
+                .baseUrl("http://127.0.0.1:11434")
+                .modelAvailable(false)
+                .degraded(true)
+                .build());
+
+        StepVerifier.create(controller.getTacticSearchStatus())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("ollama", response.getBody().getProvider());
+                    assertEquals("degraded_missing_binary", response.getBody().getRuntimeState());
+                    assertFalse(Boolean.TRUE.equals(response.getBody().getOwned()));
+                    assertEquals(0, response.getBody().getRestartAttempts());
+                    assertFalse(Boolean.TRUE.equals(response.getBody().getRuntimeInstalled()));
+                    assertEquals("http://127.0.0.1:11434", response.getBody().getBaseUrl());
                 })
                 .verifyComplete();
     }

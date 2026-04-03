@@ -83,7 +83,8 @@ class SelfEvolvingProjectionServiceTest {
                 sessionPort,
                 tacticRecordService,
                 tacticSearchService,
-                tacticSearchMetricsService);
+                tacticSearchMetricsService,
+                null);
     }
 
     @Test
@@ -590,6 +591,7 @@ class SelfEvolvingProjectionServiceTest {
                 artifactWorkspaceProjectionService,
                 sessionPort,
                 tacticRecordService,
+                null,
                 null,
                 null);
         TacticRecord tacticRecord = TacticRecord.builder()

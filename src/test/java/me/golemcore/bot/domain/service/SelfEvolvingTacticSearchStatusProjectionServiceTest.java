@@ -20,10 +20,17 @@ package me.golemcore.bot.domain.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.time.Clock;
+import java.time.ZoneOffset;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import org.junit.jupiter.api.Test;
 
 class SelfEvolvingTacticSearchStatusProjectionServiceTest {
@@ -91,5 +98,58 @@ class SelfEvolvingTacticSearchStatusProjectionServiceTest {
         assertEquals(retryAt, projection.getNextRetryAt());
         assertEquals(retryAt.toString(), projection.getNextRetryTime());
         assertEquals(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, projection.getCurrentState());
+    }
+
+    @Test
+    void shouldProjectOwnedRestartBackoffIntoTacticSearchStatus() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ManagedLocalOllamaSupervisor supervisor = mock(ManagedLocalOllamaSupervisor.class);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .enabled(true)
+                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                .mode("hybrid")
+                                .embeddings(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig.builder()
+                                        .enabled(true)
+                                        .provider("ollama")
+                                        .baseUrl("http://127.0.0.1:11434")
+                                        .model("qwen3-embedding:0.6b")
+                                        .local(RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig.builder()
+                                                .autoInstall(true)
+                                                .pullOnStart(true)
+                                                .build())
+                                        .build())
+                                .build())
+                        .build())
+                .build());
+        when(supervisor.currentStatus()).thenReturn(ManagedLocalOllamaStatus.builder()
+                .currentState(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF)
+                .owned(true)
+                .endpoint("http://127.0.0.1:11434")
+                .version("0.19.0")
+                .selectedModel("qwen3-embedding:0.6b")
+                .modelPresent(false)
+                .lastError("Managed Ollama exited with code 137")
+                .restartAttempts(3)
+                .nextRetryTime("2026-04-02T00:00:10Z")
+                .updatedAt(Instant.parse("2026-04-02T00:00:05Z"))
+                .build());
+
+        SelfEvolvingTacticSearchStatusProjectionService service = new SelfEvolvingTacticSearchStatusProjectionService(
+                runtimeConfigService,
+                supervisor,
+                Clock.fixed(Instant.parse("2026-04-02T00:00:06Z"), ZoneOffset.UTC));
+
+        TacticSearchStatus status = service.projectCurrent();
+
+        assertEquals("bm25", status.getMode());
+        assertTrue(status.getDegraded());
+        assertEquals("degraded_restart_backoff", status.getRuntimeState());
+        assertTrue(status.getOwned());
+        assertEquals(Integer.valueOf(3), status.getRestartAttempts());
+        assertEquals("2026-04-02T00:00:10Z", status.getNextRetryTime());
+        assertEquals("Managed Ollama exited with code 137", status.getReason());
+        assertFalse(status.getRuntimeHealthy());
     }
 }

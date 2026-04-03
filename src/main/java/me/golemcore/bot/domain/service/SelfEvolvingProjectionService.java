@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingCampaignDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingCandidateDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunDetailDto;
@@ -44,6 +43,7 @@ import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCompareEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageEdge;
@@ -68,7 +68,6 @@ import java.util.Optional;
  * Projects SelfEvolving core records into dashboard-friendly DTOs.
  */
 @Service
-@RequiredArgsConstructor
 public class SelfEvolvingProjectionService {
 
     private final SelfEvolvingRunService selfEvolvingRunService;
@@ -81,6 +80,32 @@ public class SelfEvolvingProjectionService {
     private final TacticRecordService tacticRecordService;
     private final TacticSearchService tacticSearchService;
     private final TacticSearchMetricsService tacticSearchMetricsService;
+    private final LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
+
+    public SelfEvolvingProjectionService(
+            SelfEvolvingRunService selfEvolvingRunService,
+            ArtifactBundleService artifactBundleService,
+            DeterministicJudgeService deterministicJudgeService,
+            PromotionWorkflowService promotionWorkflowService,
+            BenchmarkLabService benchmarkLabService,
+            ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService,
+            SessionPort sessionPort,
+            TacticRecordService tacticRecordService,
+            TacticSearchService tacticSearchService,
+            TacticSearchMetricsService tacticSearchMetricsService,
+            LocalEmbeddingBootstrapService localEmbeddingBootstrapService) {
+        this.selfEvolvingRunService = selfEvolvingRunService;
+        this.artifactBundleService = artifactBundleService;
+        this.deterministicJudgeService = deterministicJudgeService;
+        this.promotionWorkflowService = promotionWorkflowService;
+        this.benchmarkLabService = benchmarkLabService;
+        this.artifactWorkspaceProjectionService = artifactWorkspaceProjectionService;
+        this.sessionPort = sessionPort;
+        this.tacticRecordService = tacticRecordService;
+        this.tacticSearchService = tacticSearchService;
+        this.tacticSearchMetricsService = tacticSearchMetricsService;
+        this.localEmbeddingBootstrapService = localEmbeddingBootstrapService;
+    }
 
     public List<SelfEvolvingRunSummaryDto> listRuns() {
         return selfEvolvingRunService.getRuns().stream()
@@ -461,6 +486,31 @@ public class SelfEvolvingProjectionService {
     }
 
     private SelfEvolvingTacticSearchStatusDto buildTacticSearchStatusDto() {
+        if (localEmbeddingBootstrapService != null) {
+            TacticSearchStatus status = localEmbeddingBootstrapService.probeStatus();
+            return SelfEvolvingTacticSearchStatusDto.builder()
+                    .mode(status.getMode())
+                    .reason(status.getReason())
+                    .provider(status.getProvider())
+                    .model(status.getModel())
+                    .degraded(status.getDegraded())
+                    .runtimeState(status.getRuntimeState())
+                    .owned(status.getOwned())
+                    .runtimeInstalled(status.getRuntimeInstalled())
+                    .runtimeHealthy(status.getRuntimeHealthy())
+                    .runtimeVersion(status.getRuntimeVersion())
+                    .baseUrl(status.getBaseUrl())
+                    .modelAvailable(status.getModelAvailable())
+                    .restartAttempts(status.getRestartAttempts())
+                    .nextRetryAt(formatInstant(status.getNextRetryAt()))
+                    .nextRetryTime(status.getNextRetryTime())
+                    .autoInstallConfigured(status.getAutoInstallConfigured())
+                    .pullOnStartConfigured(status.getPullOnStartConfigured())
+                    .pullAttempted(status.getPullAttempted())
+                    .pullSucceeded(status.getPullSucceeded())
+                    .updatedAt(formatInstant(status.getUpdatedAt()))
+                    .build();
+        }
         if (tacticSearchMetricsService == null) {
             return SelfEvolvingTacticSearchStatusDto.builder()
                     .mode("bm25")
