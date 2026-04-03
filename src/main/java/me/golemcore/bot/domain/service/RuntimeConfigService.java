@@ -185,6 +185,8 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_SELF_EVOLVING_TRACE_PAYLOAD_OVERRIDE = true;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTICS_ENABLED = false;
     private static final String DEFAULT_SELF_EVOLVING_TACTIC_SEARCH_MODE = "hybrid";
+    private static final String DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_PROVIDER = "ollama";
+    private static final String DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MODEL = "qwen3-embedding:0.6b";
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_BM25_ENABLED = true;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_ENABLED = false;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_AUTO_FALLBACK_TO_BM25 = true;
@@ -2172,6 +2174,16 @@ public class RuntimeConfigService {
             embeddingsConfig.setEnabled(DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_ENABLED);
         }
         embeddingsConfig.setEnabled("hybrid".equalsIgnoreCase(searchConfig.getMode()));
+        embeddingsConfig.setProvider(normalizeSelfEvolvingEmbeddingProvider(
+                embeddingsConfig.getProvider(),
+                searchConfig.getMode()));
+        if (DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_PROVIDER.equals(embeddingsConfig.getProvider())) {
+            embeddingsConfig.setModel(normalizeNonBlankString(
+                    embeddingsConfig.getModel(),
+                    DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MODEL));
+        } else {
+            embeddingsConfig.setModel(normalizeNonBlankString(embeddingsConfig.getModel(), null));
+        }
         embeddingsConfig.setAutoFallbackToBm25(DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_AUTO_FALLBACK_TO_BM25);
         if (embeddingsConfig.getLocal() == null) {
             embeddingsConfig.setLocal(new RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig());
@@ -2356,6 +2368,16 @@ public class RuntimeConfigService {
             return normalizedValue;
         }
         return defaultValue;
+    }
+
+    private String normalizeSelfEvolvingEmbeddingProvider(String provider, String mode) {
+        String normalizedProvider = normalizeNonBlankString(provider, null);
+        if (normalizedProvider != null) {
+            return normalizedProvider.toLowerCase(Locale.ROOT);
+        }
+        return "hybrid".equalsIgnoreCase(mode)
+                ? DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_PROVIDER
+                : null;
     }
 
     private String normalizeSelfEvolvingJudgeTier(String value, String defaultValue) {

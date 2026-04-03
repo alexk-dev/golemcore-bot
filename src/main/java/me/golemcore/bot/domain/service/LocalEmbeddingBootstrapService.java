@@ -50,6 +50,7 @@ public class LocalEmbeddingBootstrapService {
     private static final String MODE_HYBRID = "hybrid";
     private static final String PROVIDER_OLLAMA = "ollama";
     private static final String DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
+    private static final String DEFAULT_OLLAMA_MODEL = "qwen3-embedding:0.6b";
     private static final long LOCAL_RUNTIME_PROBE_TIMEOUT_SECONDS = 5L;
     private static final Duration MODEL_PULL_TIMEOUT = Duration.ofMinutes(20);
 
@@ -518,14 +519,15 @@ public class LocalEmbeddingBootstrapService {
                 embeddingsConfig,
                 localConfig,
                 normalizeMode(searchConfig.getMode()),
-                normalizeProvider(embeddingsConfig.getProvider()),
-                resolveBaseUrl(embeddingsConfig),
-                trimToNull(embeddingsConfig.getModel()));
+                resolveEffectiveProvider(embeddingsConfig.getProvider(), searchConfig.getMode()),
+                resolveBaseUrl(embeddingsConfig,
+                        resolveEffectiveProvider(embeddingsConfig.getProvider(), searchConfig.getMode())),
+                resolveEffectiveModel(trimToNull(embeddingsConfig.getModel()),
+                        resolveEffectiveProvider(embeddingsConfig.getProvider(), searchConfig.getMode())));
     }
 
-    private String resolveBaseUrl(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig) {
+    private String resolveBaseUrl(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig, String provider) {
         String configuredBaseUrl = trimToNull(embeddingsConfig.getBaseUrl());
-        String provider = normalizeProvider(embeddingsConfig.getProvider());
         if (configuredBaseUrl != null) {
             return configuredBaseUrl;
         }
@@ -638,6 +640,22 @@ public class LocalEmbeddingBootstrapService {
             return null;
         }
         return provider.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String resolveEffectiveProvider(String provider, String mode) {
+        String normalizedProvider = normalizeProvider(provider);
+        if (normalizedProvider != null) {
+            return normalizedProvider;
+        }
+        return MODE_HYBRID.equals(normalizeMode(mode)) ? PROVIDER_OLLAMA : null;
+    }
+
+    private String resolveEffectiveModel(String model, String provider) {
+        String normalizedModel = trimToNull(model);
+        if (normalizedModel != null) {
+            return normalizedModel;
+        }
+        return PROVIDER_OLLAMA.equals(provider) ? DEFAULT_OLLAMA_MODEL : null;
     }
 
     private String trimToNull(String value) {

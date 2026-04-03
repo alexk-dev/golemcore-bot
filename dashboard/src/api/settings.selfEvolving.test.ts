@@ -252,4 +252,72 @@ describe('settings selfEvolving normalization', () => {
     expect(result.selfEvolving.overriddenPaths).toEqual(['enabled', 'tactics.search.mode']);
     expect(result.selfEvolving.tactics.search.embeddings.baseUrl).toBe('https://api.example.com/v1');
   });
+
+  it('materializes local ollama provider before saving hybrid tactic embeddings', async () => {
+    clientPutMock.mockResolvedValue({
+      data: buildRuntimeConfigFixture({
+        enabled: true,
+        tactics: {
+          enabled: true,
+          search: {
+            mode: 'hybrid',
+            embeddings: {
+              enabled: true,
+              provider: 'ollama',
+              baseUrl: null,
+              apiKey: null,
+              model: 'bge-m3',
+              dimensions: 1024,
+              batchSize: 16,
+              timeoutMs: null,
+              autoFallbackToBm25: true,
+              local: {
+                autoInstall: false,
+                pullOnStart: false,
+                requireHealthyRuntime: true,
+                failOpen: true,
+              },
+            },
+          },
+        },
+      }),
+    });
+
+    const api = await import('./settings');
+    await api.updateRuntimeConfig(buildRuntimeConfigFixture({
+      enabled: true,
+      tactics: {
+        enabled: true,
+        search: {
+          mode: 'hybrid',
+          embeddings: {
+            enabled: true,
+            provider: null,
+            baseUrl: null,
+            apiKey: null,
+            model: 'bge-m3',
+            dimensions: 1024,
+            batchSize: 16,
+            timeoutMs: null,
+            autoFallbackToBm25: true,
+            local: {
+              autoInstall: false,
+              pullOnStart: false,
+              requireHealthyRuntime: true,
+              failOpen: true,
+            },
+          },
+        },
+      },
+    }) as never);
+
+    expect(clientPutMock).toHaveBeenCalled();
+    const payload = clientPutMock.mock.calls[0]?.[1] as unknown;
+    expect(isRuntimeConfigPutPayload(payload)).toBe(true);
+    if (!isRuntimeConfigPutPayload(payload)) {
+      throw new Error('Expected updateRuntimeConfig to send a selfEvolving payload');
+    }
+    expect(payload.selfEvolving.tactics.search.embeddings.provider).toBe('ollama');
+    expect(payload.selfEvolving.tactics.search.embeddings.model).toBe('bge-m3');
+  });
 });

@@ -191,4 +191,49 @@ class SelfEvolvingTacticSearchStatusProjectionServiceTest {
         assertEquals("openai_compatible", status.getProvider());
         assertEquals("text-embedding-3-large", status.getModel());
     }
+
+    @Test
+    void shouldProjectLocalHybridModeWhenProviderIsMissingButModelIsPresent() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ManagedLocalOllamaSupervisor supervisor = mock(ManagedLocalOllamaSupervisor.class);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                .mode("hybrid")
+                                .embeddings(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig.builder()
+                                        .provider(null)
+                                        .baseUrl(null)
+                                        .model("bge-m3")
+                                        .local(RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig.builder()
+                                                .requireHealthyRuntime(true)
+                                                .build())
+                                        .build())
+                                .build())
+                        .build())
+                .build());
+        when(supervisor.currentStatus()).thenReturn(ManagedLocalOllamaStatus.builder()
+                .currentState(ManagedLocalOllamaState.EXTERNAL_READY)
+                .owned(false)
+                .endpoint("http://127.0.0.1:11434")
+                .version("0.19.0")
+                .selectedModel("bge-m3")
+                .modelPresent(true)
+                .updatedAt(Instant.parse("2026-04-03T15:00:00Z"))
+                .build());
+
+        SelfEvolvingTacticSearchStatusProjectionService service = new SelfEvolvingTacticSearchStatusProjectionService(
+                runtimeConfigService,
+                supervisor,
+                Clock.fixed(Instant.parse("2026-04-03T15:00:01Z"), ZoneOffset.UTC));
+
+        TacticSearchStatus status = service.projectCurrent();
+
+        assertEquals("hybrid", status.getMode());
+        assertFalse(status.getDegraded());
+        assertEquals("ollama", status.getProvider());
+        assertEquals("bge-m3", status.getModel());
+        assertEquals("http://127.0.0.1:11434", status.getBaseUrl());
+        assertTrue(status.getRuntimeHealthy());
+    }
 }

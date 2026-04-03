@@ -36,6 +36,7 @@ public class SelfEvolvingTacticSearchStatusProjectionService {
     private static final String MODE_HYBRID = "hybrid";
     private static final String PROVIDER_OLLAMA = "ollama";
     private static final String DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
+    private static final String DEFAULT_OLLAMA_MODEL = "qwen3-embedding:0.6b";
 
     private final String defaultEndpoint;
     private final String defaultSelectedModel;
@@ -91,8 +92,8 @@ public class SelfEvolvingTacticSearchStatusProjectionService {
         RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = embeddingsConfig.getLocal() != null
                 ? embeddingsConfig.getLocal()
                 : new RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig();
-        String provider = normalizeProvider(embeddingsConfig.getProvider());
-        String model = trimToNull(embeddingsConfig.getModel());
+        String provider = resolveEffectiveProvider(embeddingsConfig.getProvider(), searchConfig.getMode());
+        String model = resolveEffectiveModel(embeddingsConfig.getModel(), provider);
         String endpoint = resolveEndpoint(embeddingsConfig, provider);
         ManagedLocalOllamaStatus runtimeStatus = normalize(
                 managedLocalOllamaSupervisor != null ? managedLocalOllamaSupervisor.currentStatus() : null,
@@ -281,6 +282,22 @@ public class SelfEvolvingTacticSearchStatusProjectionService {
             return DEFAULT_OLLAMA_BASE_URL;
         }
         return defaultEndpoint;
+    }
+
+    private String resolveEffectiveProvider(String provider, String mode) {
+        String normalizedProvider = normalizeProvider(provider);
+        if (normalizedProvider != null) {
+            return normalizedProvider;
+        }
+        return MODE_HYBRID.equals(normalizeMode(mode)) ? PROVIDER_OLLAMA : null;
+    }
+
+    private String resolveEffectiveModel(String model, String provider) {
+        String normalizedModel = trimToNull(model);
+        if (normalizedModel != null) {
+            return normalizedModel;
+        }
+        return PROVIDER_OLLAMA.equals(provider) ? DEFAULT_OLLAMA_MODEL : null;
     }
 
     private String normalizeMode(String mode) {

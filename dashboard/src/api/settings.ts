@@ -26,6 +26,9 @@ function hasSecretValue(secret: unknown): boolean {
   return Boolean(present) || (typeof value === 'string' && value.length > 0);
 }
 
+const DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDING_PROVIDER = 'ollama';
+const DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MODEL = 'qwen3-embedding:0.6b';
+
 const SUPPORTED_LLM_API_TYPES = ['openai', 'anthropic', 'gemini'] as const;
 type SupportedLlmApiType = (typeof SUPPORTED_LLM_API_TYPES)[number];
 
@@ -137,11 +140,12 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
   const { tokenPresent: _telegramTokenPresent, ...telegram } = config.telegram;
   const { apiKeyPresent: _voiceApiKeyPresent, whisperSttApiKeyPresent: _whisperSttApiKeyPresent, ...voice } = config.voice;
   const tools = config.tools;
+  const normalizedSelfEvolving = toSelfEvolvingConfig(config.selfEvolving);
   const {
     managedByProperties: _selfEvolvingManagedByProperties,
     overriddenPaths: _selfEvolvingOverriddenPaths,
     ...selfEvolving
-  } = config.selfEvolving;
+  } = normalizedSelfEvolving;
 
   const payload: UnknownRecord = {
     ...config,
@@ -807,6 +811,14 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
 
   const selfEvolvingEnabled = typeof record.enabled === 'boolean' ? record.enabled : false;
   const tacticSearchMode = (toNullableString(tacticsSearch.mode) as 'bm25' | 'hybrid' | null) ?? 'hybrid';
+  const tacticEmbeddingsProvider = normalizeSelfEvolvingEmbeddingProvider(
+    toNullableString(tacticsEmbeddings.provider),
+    tacticSearchMode,
+  );
+  const tacticEmbeddingsModel = normalizeSelfEvolvingEmbeddingModel(
+    toNullableString(tacticsEmbeddings.model),
+    tacticEmbeddingsProvider,
+  );
 
   return {
     enabled: selfEvolvingEnabled,
@@ -843,10 +855,10 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
         },
         embeddings: {
           enabled: tacticSearchMode === 'hybrid',
-          provider: toNullableString(tacticsEmbeddings.provider),
+          provider: tacticEmbeddingsProvider,
           baseUrl: toNullableString(tacticsEmbeddings.baseUrl),
           apiKey: toNullableString(tacticsEmbeddings.apiKey),
-          model: toNullableString(tacticsEmbeddings.model),
+          model: tacticEmbeddingsModel,
           dimensions: typeof tacticsEmbeddings.dimensions === 'number' ? tacticsEmbeddings.dimensions : null,
           batchSize: typeof tacticsEmbeddings.batchSize === 'number' ? tacticsEmbeddings.batchSize : null,
           timeoutMs: typeof tacticsEmbeddings.timeoutMs === 'number' ? tacticsEmbeddings.timeoutMs : null,
@@ -900,6 +912,28 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
       readonlyInspection: typeof hive.readonlyInspection === 'boolean' ? hive.readonlyInspection : true,
     },
   };
+}
+
+function normalizeSelfEvolvingEmbeddingProvider(
+  provider: string | null,
+  mode: 'bm25' | 'hybrid',
+): string | null {
+  if (provider != null && provider.length > 0) {
+    return provider.trim().toLowerCase();
+  }
+  return mode === 'hybrid' ? DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDING_PROVIDER : null;
+}
+
+function normalizeSelfEvolvingEmbeddingModel(
+  model: string | null,
+  provider: string | null,
+): string | null {
+  if (model != null && model.length > 0) {
+    return model;
+  }
+  return provider === DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDING_PROVIDER
+    ? DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MODEL
+    : null;
 }
 
 function toTierBinding(value: unknown): TierBinding {

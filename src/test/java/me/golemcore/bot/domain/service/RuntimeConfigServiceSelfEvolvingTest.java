@@ -201,4 +201,29 @@ class RuntimeConfigServiceSelfEvolvingTest {
         assertEquals("hybrid", normalized.getSelfEvolving().getTactics().getSearch().getMode());
         assertTrue(normalized.getSelfEvolving().getTactics().getSearch().getEmbeddings().getAutoFallbackToBm25());
     }
+
+    @Test
+    void shouldNormalizeMissingLocalEmbeddingProviderToOllama() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setSelfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                .mode("hybrid")
+                                .embeddings(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig.builder()
+                                        .provider(null)
+                                        .baseUrl(null)
+                                        .model("bge-m3")
+                                        .build())
+                                .build())
+                        .build())
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig normalized = service.getRuntimeConfig();
+        assertEquals("ollama", normalized.getSelfEvolving().getTactics().getSearch().getEmbeddings().getProvider());
+        assertEquals("bge-m3", normalized.getSelfEvolving().getTactics().getSearch().getEmbeddings().getModel());
+        assertTrue(normalized.getSelfEvolving().getTactics().getSearch().getEmbeddings().getEnabled());
+    }
 }
