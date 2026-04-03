@@ -203,6 +203,9 @@ public class SelfEvolvingController {
 
     @GetMapping("/tactics/status")
     public Mono<ResponseEntity<SelfEvolvingTacticSearchStatusDto>> getTacticSearchStatus() {
+        if (localEmbeddingBootstrapService == null) {
+            return Mono.just(ResponseEntity.ok(projectionService.getTacticSearchStatus()));
+        }
         return Mono.just(ResponseEntity.ok(toTacticSearchStatusDto(localEmbeddingBootstrapService.probeStatus())));
     }
 

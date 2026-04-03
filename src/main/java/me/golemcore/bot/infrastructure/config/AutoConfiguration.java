@@ -75,7 +75,6 @@ public class AutoConfiguration {
     private final RuntimeConfigService runtimeConfigService;
     private final LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService;
     private final PluginManager pluginManager;
-    private final ObjectProvider<ManagedLocalOllamaLifecycleBridge> managedLocalOllamaLifecycleBridgeProvider;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
 
@@ -141,14 +140,13 @@ public class AutoConfiguration {
     }
 
     @Bean
-    public SelfEvolvingTacticSearchStatusProjectionService selfEvolvingTacticSearchStatusProjectionService() {
-        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = runtimeConfigService.getSelfEvolvingConfig()
-                .getTactics()
-                .getSearch()
-                .getEmbeddings();
+    public SelfEvolvingTacticSearchStatusProjectionService selfEvolvingTacticSearchStatusProjectionService(
+            ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor,
+            Clock clock) {
         return new SelfEvolvingTacticSearchStatusProjectionService(
-                resolveOllamaBaseUrl(embeddingsConfig.getBaseUrl()),
-                trimToNull(embeddingsConfig.getModel()));
+                runtimeConfigService,
+                managedLocalOllamaSupervisor,
+                clock);
     }
 
     @PostConstruct
@@ -158,11 +156,6 @@ public class AutoConfiguration {
         String version = buildProps != null ? buildProps.getVersion() : "dev";
         String commitAbbrev = gitProps != null ? gitProps.getShortCommitId() : "unknown";
         log.info("GolemCore Bot v{} ({}) starting...", version, commitAbbrev);
-        ManagedLocalOllamaLifecycleBridge managedLocalOllamaLifecycleBridge = managedLocalOllamaLifecycleBridgeProvider
-                .getIfAvailable();
-        if (managedLocalOllamaLifecycleBridge != null) {
-            managedLocalOllamaLifecycleBridge.runStartupGate();
-        }
         log.info("Balanced Model: {}", runtimeConfigService.getBalancedModel());
         log.info("LLM Provider: {}", properties.getLlm().getProvider());
         log.info("Storage Path: {}", properties.getStorage().getLocal().getBasePath());

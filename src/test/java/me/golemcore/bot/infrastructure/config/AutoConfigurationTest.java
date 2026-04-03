@@ -2,7 +2,6 @@ package me.golemcore.bot.infrastructure.config;
 
 import me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.infrastructure.lifecycle.ManagedLocalOllamaLifecycleBridge;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.plugin.runtime.PluginManager;
 import me.golemcore.bot.port.inbound.ChannelPort;
@@ -36,10 +35,6 @@ class AutoConfigurationTest {
     @Mock
     private ObjectProvider<GitProperties> gitPropertiesProvider;
     @Mock
-    private ManagedLocalOllamaLifecycleBridge managedLocalOllamaLifecycleBridge;
-    @Mock
-    private ObjectProvider<ManagedLocalOllamaLifecycleBridge> managedLocalOllamaLifecycleBridgeProvider;
-    @Mock
     private ChannelPort channelPort;
     @Mock
     private ChannelPort telegramChannel;
@@ -50,7 +45,6 @@ class AutoConfigurationTest {
         when(runtimeConfigService.getBalancedModel()).thenReturn("openai/gpt-5.1");
         when(buildPropertiesProvider.getIfAvailable()).thenReturn(null);
         when(gitPropertiesProvider.getIfAvailable()).thenReturn(null);
-        when(managedLocalOllamaLifecycleBridgeProvider.getIfAvailable()).thenReturn(managedLocalOllamaLifecycleBridge);
         when(channelRegistry.getAll()).thenReturn(List.of());
         when(runtimeConfigService.isTelegramEnabled()).thenReturn(false);
     }
@@ -63,7 +57,6 @@ class AutoConfigurationTest {
                 runtimeConfigService,
                 legacyPluginConfigurationMigrationService,
                 pluginManager,
-                managedLocalOllamaLifecycleBridgeProvider,
                 buildPropertiesProvider,
                 gitPropertiesProvider);
 
@@ -71,7 +64,6 @@ class AutoConfigurationTest {
 
         verify(legacyPluginConfigurationMigrationService).migrateIfNeeded();
         verify(pluginManager).reloadAll();
-        verify(managedLocalOllamaLifecycleBridge).runStartupGate();
     }
 
     @Test
@@ -89,18 +81,15 @@ class AutoConfigurationTest {
                 runtimeConfigService,
                 legacyPluginConfigurationMigrationService,
                 pluginManager,
-                managedLocalOllamaLifecycleBridgeProvider,
                 buildPropertiesProvider,
                 gitPropertiesProvider);
 
         autoConfiguration.init();
 
         org.mockito.InOrder inOrder = inOrder(
-                managedLocalOllamaLifecycleBridge,
                 legacyPluginConfigurationMigrationService,
                 pluginManager,
                 channelPort);
-        inOrder.verify(managedLocalOllamaLifecycleBridge).runStartupGate();
         inOrder.verify(legacyPluginConfigurationMigrationService).migrateIfNeeded();
         inOrder.verify(pluginManager).reloadAll();
         inOrder.verify(channelPort).start();
@@ -121,7 +110,6 @@ class AutoConfigurationTest {
                 runtimeConfigService,
                 legacyPluginConfigurationMigrationService,
                 pluginManager,
-                managedLocalOllamaLifecycleBridgeProvider,
                 buildPropertiesProvider,
                 gitPropertiesProvider);
 
@@ -142,7 +130,6 @@ class AutoConfigurationTest {
                 runtimeConfigService,
                 legacyPluginConfigurationMigrationService,
                 pluginManager,
-                managedLocalOllamaLifecycleBridgeProvider,
                 buildPropertiesProvider,
                 gitPropertiesProvider);
 
@@ -167,7 +154,6 @@ class AutoConfigurationTest {
                 runtimeConfigService,
                 legacyPluginConfigurationMigrationService,
                 pluginManager,
-                managedLocalOllamaLifecycleBridgeProvider,
                 buildPropertiesProvider,
                 gitPropertiesProvider);
 
@@ -187,7 +173,6 @@ class AutoConfigurationTest {
                 runtimeConfigService,
                 legacyPluginConfigurationMigrationService,
                 pluginManager,
-                managedLocalOllamaLifecycleBridgeProvider,
                 buildPropertiesProvider,
                 gitPropertiesProvider);
 

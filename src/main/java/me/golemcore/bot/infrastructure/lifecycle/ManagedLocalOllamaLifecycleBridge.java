@@ -18,6 +18,7 @@ package me.golemcore.bot.infrastructure.lifecycle;
  * Contact: alex@kuleshov.tech
  */
 
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -37,6 +38,11 @@ public class ManagedLocalOllamaLifecycleBridge {
             ManagedLocalOllamaSupervisor supervisor) {
         this.runtimeConfigService = runtimeConfigService;
         this.supervisor = supervisor;
+    }
+
+    @PostConstruct
+    public void initialize() {
+        runStartupGate();
     }
 
     public synchronized void runStartupGate() {
