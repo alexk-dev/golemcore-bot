@@ -21,18 +21,29 @@ package me.golemcore.bot.infrastructure.lifecycle;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
+import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
 import me.golemcore.bot.domain.service.ManagedLocalOllamaSupervisor;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Framework-facing lifecycle bridge for the managed local Ollama supervisor.
  */
 public class ManagedLocalOllamaLifecycleBridge {
 
+    private static final Logger log = LoggerFactory.getLogger(ManagedLocalOllamaLifecycleBridge.class);
+    private static final long WATCHDOG_INTERVAL_SECONDS = 1L;
+
     private final RuntimeConfigService runtimeConfigService;
     private final ManagedLocalOllamaSupervisor supervisor;
     private volatile boolean started;
+    private ScheduledExecutorService watchdogExecutor;
 
     public ManagedLocalOllamaLifecycleBridge(RuntimeConfigService runtimeConfigService,
             ManagedLocalOllamaSupervisor supervisor) {
@@ -50,17 +61,114 @@ public class ManagedLocalOllamaLifecycleBridge {
             return;
         }
         supervisor.startupCheck(isManagedLocalEmbeddingsActive(runtimeConfigService.getSelfEvolvingConfig()));
+        startWatchdog();
         started = true;
+    }
+
+    synchronized void runWatchdogTick() {
+        boolean localEmbeddingsActive = isManagedLocalEmbeddingsActive(runtimeConfigService.getSelfEvolvingConfig());
+        if (!localEmbeddingsActive) {
+            supervisor.embeddingsDisabled();
+            return;
+        }
+
+        ManagedLocalOllamaStatus status = supervisor.currentStatus();
+        ManagedLocalOllamaState state = status != null && status.getCurrentState() != null
+                ? status.getCurrentState()
+                : ManagedLocalOllamaState.DISABLED;
+        boolean owned = status != null && Boolean.TRUE.equals(status.getOwned());
+        switch (state) {
+        case DISABLED:
+            supervisor.startupCheck(true);
+            break;
+        case OWNED_READY:
+        case OWNED_STARTING:
+            monitorOwnedRuntime(true);
+            break;
+        case DEGRADED_START_TIMEOUT:
+            if (owned) {
+                ManagedLocalOllamaStatus ownedStatus = monitorOwnedRuntime(true);
+                if (ownedStatus.getCurrentState() == ManagedLocalOllamaState.DEGRADED_START_TIMEOUT) {
+                    supervisor.observeReadiness();
+                }
+                break;
+            }
+            supervisor.startupCheck(true);
+            break;
+        case DEGRADED_CRASHED:
+        case DEGRADED_RESTART_BACKOFF:
+            supervisor.attemptScheduledRetry();
+            break;
+        case EXTERNAL_READY:
+            supervisor.pollExternalRuntime();
+            break;
+        case DEGRADED_EXTERNAL_LOST:
+            supervisor.startupCheck(true);
+            break;
+        case DEGRADED_OUTDATED:
+            if (owned) {
+                monitorOwnedRuntime(true);
+                break;
+            }
+            supervisor.pollExternalRuntime();
+            break;
+        case DEGRADED_MISSING_BINARY:
+        case STOPPING:
+            break;
+        }
     }
 
     @PreDestroy
     public synchronized void stop() {
+        stopWatchdog();
         supervisor.stop();
         started = false;
     }
 
     boolean isStarted() {
         return started;
+    }
+
+    private ManagedLocalOllamaStatus monitorOwnedRuntime(boolean allowRetry) {
+        ManagedLocalOllamaStatus status = supervisor.pollOwnedProcess();
+        ManagedLocalOllamaState state = status.getCurrentState();
+        if (allowRetry && (state == ManagedLocalOllamaState.DEGRADED_CRASHED
+                || state == ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF)) {
+            return supervisor.attemptScheduledRetry();
+        }
+        return status;
+    }
+
+    private void startWatchdog() {
+        if (watchdogExecutor != null) {
+            return;
+        }
+        watchdogExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "managed-local-ollama-watchdog");
+            thread.setDaemon(true);
+            return thread;
+        });
+        watchdogExecutor.scheduleWithFixedDelay(
+                this::safeRunWatchdogTick,
+                WATCHDOG_INTERVAL_SECONDS,
+                WATCHDOG_INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
+    }
+
+    private void stopWatchdog() {
+        if (watchdogExecutor == null) {
+            return;
+        }
+        watchdogExecutor.shutdownNow();
+        watchdogExecutor = null;
+    }
+
+    private void safeRunWatchdogTick() {
+        try {
+            runWatchdogTick();
+        } catch (RuntimeException exception) {
+            log.warn("Managed local ollama watchdog tick failed", exception);
+        }
     }
 
     private boolean isManagedLocalEmbeddingsActive(RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig) {

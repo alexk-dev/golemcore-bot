@@ -127,6 +127,11 @@ class LocalEmbeddingBootstrapServiceHttpTest {
     }
 
     @Test
+    void shouldReturnFalseWhenRuntimeEndpointThrowsConnectionError() {
+        assertFalse(service.isRuntimeHealthy("http://127.0.0.1:1"));
+    }
+
+    @Test
     void shouldReturnFalseWhenRequestedModelIsMissing() {
         server.enqueue(new MockResponse.Builder()
                 .code(200)
@@ -147,6 +152,20 @@ class LocalEmbeddingBootstrapServiceHttpTest {
     }
 
     @Test
+    void shouldReturnFalseWhenModelEndpointRejectsRequest() {
+        server.enqueue(new MockResponse.Builder().code(503).build());
+
+        String baseUrl = server.url("/").toString();
+
+        assertFalse(service.hasModel(baseUrl, "qwen3-embedding:0.6b"));
+    }
+
+    @Test
+    void shouldReturnFalseWhenModelEndpointThrowsConnectionError() {
+        assertFalse(service.hasModel("http://127.0.0.1:1", "qwen3-embedding:0.6b"));
+    }
+
+    @Test
     void shouldReturnFalseWhenPullEndpointRejectsInstall() {
         server.enqueue(new MockResponse.Builder()
                 .code(500)
@@ -160,6 +179,11 @@ class LocalEmbeddingBootstrapServiceHttpTest {
         String baseUrl = server.url("/").toString();
 
         assertFalse(service.pullModel(baseUrl, "qwen3-embedding:0.6b"));
+    }
+
+    @Test
+    void shouldReturnFalseWhenPullEndpointThrowsConnectionError() {
+        assertFalse(service.pullModel("http://127.0.0.1:1", "qwen3-embedding:0.6b"));
     }
 
     private OllamaProcessPort stubProcessPort() {

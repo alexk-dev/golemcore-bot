@@ -28,6 +28,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
 import me.golemcore.bot.domain.service.ManagedLocalOllamaSupervisor;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -100,6 +101,76 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         assertTrue(bridge.isStarted());
     }
 
+    @Test
+    void shouldPollOwnedRuntimeAndObserveRecoveryAfterStartupTimeout() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
+        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, true);
+
+        bridge.runWatchdogTick();
+
+        assertEquals(1, supervisor.pollOwnedProcessInvocations);
+        assertEquals(1, supervisor.observeReadinessInvocations);
+        assertEquals(0, supervisor.pollExternalRuntimeInvocations);
+        assertEquals(0, supervisor.attemptScheduledRetryInvocations);
+    }
+
+    @Test
+    void shouldAttemptScheduledRetryAfterOwnedCrashDetection() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
+        supervisor.currentStatus = status(ManagedLocalOllamaState.OWNED_READY, true);
+        supervisor.pollOwnedProcessStatus = status(ManagedLocalOllamaState.DEGRADED_CRASHED, true);
+
+        bridge.runWatchdogTick();
+
+        assertEquals(1, supervisor.pollOwnedProcessInvocations);
+        assertEquals(1, supervisor.attemptScheduledRetryInvocations);
+        assertEquals(0, supervisor.observeReadinessInvocations);
+    }
+
+    @Test
+    void shouldPollExternalRuntimeWhenUsingExternalOwnership() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
+        supervisor.currentStatus = status(ManagedLocalOllamaState.EXTERNAL_READY, false);
+
+        bridge.runWatchdogTick();
+
+        assertEquals(1, supervisor.pollExternalRuntimeInvocations);
+        assertEquals(0, supervisor.pollOwnedProcessInvocations);
+        assertEquals(0, supervisor.startupCheckInvocations);
+    }
+
+    @Test
+    void shouldRetryExternalRecoveryWithoutTakingOwnership() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
+        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_EXTERNAL_LOST, false);
+
+        bridge.runWatchdogTick();
+
+        assertEquals(1, supervisor.startupCheckInvocations);
+        assertTrue(supervisor.lastLocalEmbeddingsActive);
+        assertEquals(0, supervisor.pollExternalRuntimeInvocations);
+    }
+
+    @Test
+    void shouldMarkSupervisorDisabledWhenManagedLocalEmbeddingsAreInactive() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(false));
+        supervisor.currentStatus = status(ManagedLocalOllamaState.OWNED_READY, true);
+
+        bridge.runWatchdogTick();
+
+        assertEquals(1, supervisor.embeddingsDisabledInvocations);
+        assertEquals(0, supervisor.pollOwnedProcessInvocations);
+        assertEquals(0, supervisor.pollExternalRuntimeInvocations);
+        assertEquals(0, supervisor.attemptScheduledRetryInvocations);
+    }
+
+    private static ManagedLocalOllamaStatus status(ManagedLocalOllamaState state, boolean owned) {
+        return ManagedLocalOllamaStatus.builder()
+                .currentState(state)
+                .owned(owned)
+                .build();
+    }
+
     private RuntimeConfig.SelfEvolvingConfig localEmbeddingsConfig(boolean enabled) {
         return RuntimeConfig.SelfEvolvingConfig.builder()
                 .enabled(enabled)
@@ -167,6 +238,16 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         private int startupCheckInvocations;
         private boolean lastLocalEmbeddingsActive;
         private boolean stopInvoked;
+        private int embeddingsDisabledInvocations;
+        private int pollOwnedProcessInvocations;
+        private int observeReadinessInvocations;
+        private int pollExternalRuntimeInvocations;
+        private int attemptScheduledRetryInvocations;
+        private ManagedLocalOllamaStatus currentStatus = ManagedLocalOllamaStatus.builder()
+                .currentState(ManagedLocalOllamaState.DISABLED)
+                .owned(false)
+                .build();
+        private ManagedLocalOllamaStatus pollOwnedProcessStatus;
 
         private RecordingSupervisor() {
             super(
@@ -182,13 +263,52 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         public ManagedLocalOllamaStatus startupCheck(boolean localEmbeddingsActive) {
             startupCheckInvocations++;
             lastLocalEmbeddingsActive = localEmbeddingsActive;
-            return ManagedLocalOllamaStatus.builder().build();
+            return currentStatus;
         }
 
         @Override
         public ManagedLocalOllamaStatus stop() {
             stopInvoked = true;
-            return ManagedLocalOllamaStatus.builder().build();
+            return currentStatus;
+        }
+
+        @Override
+        public ManagedLocalOllamaStatus embeddingsDisabled() {
+            embeddingsDisabledInvocations++;
+            currentStatus = status(ManagedLocalOllamaState.DISABLED, Boolean.TRUE.equals(currentStatus.getOwned()));
+            return currentStatus;
+        }
+
+        @Override
+        public ManagedLocalOllamaStatus pollOwnedProcess() {
+            pollOwnedProcessInvocations++;
+            if (pollOwnedProcessStatus != null) {
+                currentStatus = pollOwnedProcessStatus;
+            }
+            return currentStatus;
+        }
+
+        @Override
+        public ManagedLocalOllamaStatus observeReadiness() {
+            observeReadinessInvocations++;
+            return currentStatus;
+        }
+
+        @Override
+        public ManagedLocalOllamaStatus pollExternalRuntime() {
+            pollExternalRuntimeInvocations++;
+            return currentStatus;
+        }
+
+        @Override
+        public ManagedLocalOllamaStatus attemptScheduledRetry() {
+            attemptScheduledRetryInvocations++;
+            return currentStatus;
+        }
+
+        @Override
+        public ManagedLocalOllamaStatus currentStatus() {
+            return currentStatus;
         }
     }
 
