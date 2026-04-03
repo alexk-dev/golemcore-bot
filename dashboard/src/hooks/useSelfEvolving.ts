@@ -185,11 +185,11 @@ export function useSelfEvolvingTacticSearchStatus(
   });
 }
 
-export function useInstallSelfEvolvingTacticEmbeddingModel(): UseMutationResult<SelfEvolvingTacticSearchStatus, unknown, void> {
+export function useInstallSelfEvolvingTacticEmbeddingModel(): UseMutationResult<SelfEvolvingTacticSearchStatus, unknown, string> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => installSelfEvolvingTacticEmbeddingModel(),
-    onSuccess: () => Promise.all([
+    mutationFn: (model: string) => installSelfEvolvingTacticEmbeddingModel(model),
+    onSettled: () => Promise.all([
       qc.invalidateQueries({ queryKey: ['self-evolving', 'tactics', 'status'] }),
       qc.invalidateQueries({ queryKey: ['self-evolving', 'tactics'] }),
     ]),

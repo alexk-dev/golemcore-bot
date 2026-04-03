@@ -347,8 +347,8 @@ export default function SettingsPage(): ReactElement {
           config={rc.selfEvolving}
           tacticSearchStatus={selfEvolvingTacticSearchStatus ?? null}
           isInstallingTacticEmbedding={installTacticEmbeddingModel.isPending}
-          onInstallTacticEmbedding={async () => {
-            await installTacticEmbeddingModel.mutateAsync();
+          onInstallTacticEmbedding={async (model) => {
+            await installTacticEmbeddingModel.mutateAsync(model);
           }}
           isSaving={updateRuntimeConfig.isPending}
           onSave={async (selfEvolving) => {

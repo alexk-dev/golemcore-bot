@@ -93,11 +93,14 @@ const config: SelfEvolvingConfig = {
 
 const tacticSearchStatus: SelfEvolvingTacticSearchStatus = {
   mode: 'hybrid',
-  reason: 'local embedding model unavailable',
+  reason: 'Embedding model qwen3-embedding:0.6b is not installed in Ollama',
   provider: 'ollama',
   model: 'qwen3-embedding:0.6b',
   degraded: true,
-  runtimeHealthy: false,
+  runtimeInstalled: true,
+  runtimeHealthy: true,
+  runtimeVersion: '0.19.0',
+  baseUrl: 'http://127.0.0.1:11434',
   modelAvailable: false,
   autoInstallConfigured: true,
   pullOnStartConfigured: true,
@@ -107,7 +110,7 @@ const tacticSearchStatus: SelfEvolvingTacticSearchStatus = {
 };
 
 describe('SelfEvolvingTab', () => {
-  it('renders judge tiers, tactic embeddings settings, and readonly local runtime status', () => {
+  it('renders judge tiers and simplified tactic embedding controls', () => {
     const html = renderToStaticMarkup(
       <SelfEvolvingTab
         config={config}
@@ -130,17 +133,16 @@ describe('SelfEvolvingTab', () => {
     expect(html).not.toContain('Standard');
     expect(html).not.toContain('Premium');
     expect(html).toContain('Tactic search embeddings');
-    expect(html).toContain('Embedding provider');
+    expect(html).toContain('Local embedding model');
     expect(html).toContain('Embedding model');
-    expect(html).toContain('Auto-install local model');
-    expect(html).toContain('Require healthy runtime');
+    expect(html).toContain('Install model');
+    expect(html).toContain('Used for tactic indexing and hybrid retrieval.');
     expect(html).toContain('bot.self-evolving.bootstrap');
     expect(html).toContain('BM25 fallback');
-    expect(html).toContain('Local embedding runtime status');
     expect(html).toContain('qwen3-embedding:0.6b');
-    expect(html).toContain('Runtime healthy');
-    expect(html).toContain('Model available');
-    expect(html).toContain('Pull attempted');
-    expect(html).toContain('Install model');
+    expect(html).toContain('Model status');
+    expect(html).toContain('Ollama is ready, but the selected embedding model is not installed yet.');
+    expect(html).not.toContain('Local embedding runtime status');
+    expect(html).not.toContain('Auto-install local model');
   });
 });

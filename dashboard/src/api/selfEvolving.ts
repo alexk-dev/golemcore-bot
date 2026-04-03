@@ -233,7 +233,10 @@ export interface SelfEvolvingTacticSearchStatus {
   provider: string | null;
   model: string | null;
   degraded: boolean | null;
+  runtimeInstalled: boolean | null;
   runtimeHealthy: boolean | null;
+  runtimeVersion: string | null;
+  baseUrl: string | null;
   modelAvailable: boolean | null;
   autoInstallConfigured: boolean | null;
   pullOnStartConfigured: boolean | null;
@@ -320,8 +323,8 @@ export async function getSelfEvolvingTacticSearchStatus(): Promise<SelfEvolvingT
   return data;
 }
 
-export async function installSelfEvolvingTacticEmbeddingModel(): Promise<SelfEvolvingTacticSearchStatus> {
-  const { data } = await client.post<SelfEvolvingTacticSearchStatus>('/self-evolving/tactics/install');
+export async function installSelfEvolvingTacticEmbeddingModel(model: string): Promise<SelfEvolvingTacticSearchStatus> {
+  const { data } = await client.post<SelfEvolvingTacticSearchStatus>('/self-evolving/tactics/install', { model });
   return data;
 }
 

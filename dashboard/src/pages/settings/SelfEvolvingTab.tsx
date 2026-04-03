@@ -7,7 +7,8 @@ import type { SelfEvolvingTacticSearchStatus } from '../../api/selfEvolving';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
-import { SelfEvolvingEmbeddingStatusCard } from './selfEvolving/SelfEvolvingEmbeddingStatusCard';
+import { extractErrorMessage } from '../../utils/extractErrorMessage';
+import { SelfEvolvingEmbeddingInstallModal } from './selfEvolving/SelfEvolvingEmbeddingInstallModal';
 import { SelfEvolvingJudgeTierSettings } from './selfEvolving/SelfEvolvingJudgeTierSettings';
 import { SelfEvolvingTacticSearchEmbeddingsSettings } from './selfEvolving/SelfEvolvingTacticSearchEmbeddingsSettings';
 
@@ -38,7 +39,7 @@ function hasDiff<T>(current: T, initial: T): boolean {
 interface SelfEvolvingTabProps {
   config: SelfEvolvingConfig;
   tacticSearchStatus?: SelfEvolvingTacticSearchStatus | null;
-  onInstallTacticEmbedding?: () => Promise<void>;
+  onInstallTacticEmbedding?: (model: string) => Promise<void>;
   isInstallingTacticEmbedding?: boolean;
   onSave: (config: SelfEvolvingConfig) => Promise<void>;
   isSaving?: boolean;
@@ -264,6 +265,7 @@ export default function SelfEvolvingTab({
 }: SelfEvolvingTabProps): ReactElement {
   const [form, setForm] = useState<SelfEvolvingConfig>({ ...config });
   const [activeTab, setActiveTab] = useState<SelfEvolvingTabKey>('general');
+  const [installingModel, setInstallingModel] = useState<string | null>(null);
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
 
   useEffect(() => {
@@ -276,71 +278,89 @@ export default function SelfEvolvingTab({
     toast.success('Self-Evolving settings saved');
   };
 
-  const handleInstallTacticEmbedding = async (): Promise<void> => {
-    if (onInstallTacticEmbedding == null) {
+  const handleInstallTacticEmbedding = async (model: string): Promise<void> => {
+    if (onInstallTacticEmbedding == null || model.length === 0) {
       return;
     }
-    await onInstallTacticEmbedding();
-    toast.success('Self-Evolving embedding model installed');
+    setInstallingModel(model);
+    try {
+      await onInstallTacticEmbedding(model);
+      toast.success('Self-Evolving embedding model installed');
+    } catch (error: unknown) {
+      const message = extractErrorMessage(error);
+      const resolvedMessage = message.includes('Ollama')
+        ? `${message} Check the diagnostics in the Tactics tab.`
+        : message;
+      toast.error(`Failed to install embedding model: ${resolvedMessage}`);
+    } finally {
+      setInstallingModel(null);
+    }
   };
 
   return (
-    <Card className="settings-card">
-      <Card.Body>
-        <SettingsCardTitle
-          title="Self-Evolving"
-          tip="Configure run judging, promotion gating, benchmark harvesting, and Hive inspection for the Self-Evolving control plane."
-        />
-
-        <Nav className="nav-tabs mb-4">
-          {SELF_EVOLVING_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              className={`nav-link${activeTab === tab.key ? ' active' : ''}`}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </Nav>
-
-        <SelfEvolvingSection activeTab={activeTab} tabKey="general">
-          <SelfEvolvingToggles form={form} setForm={setForm} />
-        </SelfEvolvingSection>
-
-        <SelfEvolvingSection activeTab={activeTab} tabKey="judge">
-          <SelfEvolvingJudgeTierSettings form={form} setForm={setForm} />
-          <CaptureSettings form={form} setForm={setForm} />
-        </SelfEvolvingSection>
-
-        <SelfEvolvingSection activeTab={activeTab} tabKey="tactics">
-          <SelfEvolvingEmbeddingStatusCard
-            status={tacticSearchStatus}
-            isInstalling={isInstallingTacticEmbedding}
-            onInstall={onInstallTacticEmbedding == null ? undefined : () => { void handleInstallTacticEmbedding(); }}
+    <>
+      <Card className="settings-card">
+        <Card.Body>
+          <SettingsCardTitle
+            title="Self-Evolving"
+            tip="Configure run judging, promotion gating, benchmark harvesting, and Hive inspection for the Self-Evolving control plane."
           />
-          <SelfEvolvingTacticSearchEmbeddingsSettings form={form} setForm={setForm} />
-        </SelfEvolvingSection>
 
-        <SelfEvolvingSection activeTab={activeTab} tabKey="promotion">
-          <PromotionSettings form={form} setForm={setForm} />
-          <BenchmarkAndHiveSettings form={form} setForm={setForm} />
-        </SelfEvolvingSection>
+          <Nav className="nav-tabs mb-4">
+            {SELF_EVOLVING_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={`nav-link${activeTab === tab.key ? ' active' : ''}`}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </Nav>
 
-        <SettingsSaveBar>
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            onClick={() => { void handleSave(); }}
-            disabled={!isDirty || isSaving}
-          >
-            {isSaving ? 'Saving...' : 'Save'}
-          </Button>
-          <SaveStateHint isDirty={isDirty} />
-        </SettingsSaveBar>
-      </Card.Body>
-    </Card>
+          <SelfEvolvingSection activeTab={activeTab} tabKey="general">
+            <SelfEvolvingToggles form={form} setForm={setForm} />
+          </SelfEvolvingSection>
+
+          <SelfEvolvingSection activeTab={activeTab} tabKey="judge">
+            <SelfEvolvingJudgeTierSettings form={form} setForm={setForm} />
+            <CaptureSettings form={form} setForm={setForm} />
+          </SelfEvolvingSection>
+
+          <SelfEvolvingSection activeTab={activeTab} tabKey="tactics">
+            <SelfEvolvingTacticSearchEmbeddingsSettings
+              form={form}
+              setForm={setForm}
+              status={tacticSearchStatus}
+              isInstalling={isInstallingTacticEmbedding}
+              onInstall={(model) => { void handleInstallTacticEmbedding(model); }}
+            />
+          </SelfEvolvingSection>
+
+          <SelfEvolvingSection activeTab={activeTab} tabKey="promotion">
+            <PromotionSettings form={form} setForm={setForm} />
+            <BenchmarkAndHiveSettings form={form} setForm={setForm} />
+          </SelfEvolvingSection>
+
+          <SettingsSaveBar>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => { void handleSave(); }}
+              disabled={!isDirty || isSaving}
+            >
+              {isSaving ? 'Saving...' : 'Save'}
+            </Button>
+            <SaveStateHint isDirty={isDirty} />
+          </SettingsSaveBar>
+        </Card.Body>
+      </Card>
+      <SelfEvolvingEmbeddingInstallModal
+        show={installingModel != null}
+        model={installingModel}
+      />
+    </>
   );
 }

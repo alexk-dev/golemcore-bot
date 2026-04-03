@@ -36,7 +36,10 @@ describe('selfEvolving api', () => {
         provider: 'ollama',
         model: 'qwen3-embedding:0.6b',
         degraded: true,
+        runtimeInstalled: false,
         runtimeHealthy: false,
+        runtimeVersion: null,
+        baseUrl: 'http://127.0.0.1:11434',
         modelAvailable: false,
         autoInstallConfigured: true,
         pullOnStartConfigured: true,
@@ -52,7 +55,9 @@ describe('selfEvolving api', () => {
     expect(clientGetMock).toHaveBeenCalledWith('/self-evolving/tactics/status');
     expect(result.provider).toBe('ollama');
     expect(result.model).toBe('qwen3-embedding:0.6b');
+    expect(result.runtimeInstalled).toBe(false);
     expect(result.runtimeHealthy).toBe(false);
+    expect(result.baseUrl).toBe('http://127.0.0.1:11434');
     expect(result.pullAttempted).toBe(true);
   });
 
@@ -64,7 +69,10 @@ describe('selfEvolving api', () => {
         provider: 'ollama',
         model: 'qwen3-embedding:0.6b',
         degraded: false,
+        runtimeInstalled: true,
         runtimeHealthy: true,
+        runtimeVersion: '0.19.0',
+        baseUrl: 'http://127.0.0.1:11434',
         modelAvailable: true,
         autoInstallConfigured: true,
         pullOnStartConfigured: false,
@@ -75,9 +83,9 @@ describe('selfEvolving api', () => {
     });
 
     const api = await import('./selfEvolving');
-    const result = await api.installSelfEvolvingTacticEmbeddingModel();
+    const result = await api.installSelfEvolvingTacticEmbeddingModel('bge-m3');
 
-    expect(clientPostMock).toHaveBeenCalledWith('/self-evolving/tactics/install');
+    expect(clientPostMock).toHaveBeenCalledWith('/self-evolving/tactics/install', { model: 'bge-m3' });
     expect(result.modelAvailable).toBe(true);
     expect(result.pullSucceeded).toBe(true);
   });
