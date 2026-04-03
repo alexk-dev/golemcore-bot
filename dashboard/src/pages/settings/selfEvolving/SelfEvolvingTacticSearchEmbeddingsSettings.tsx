@@ -159,13 +159,13 @@ function buildPendingDiagnostics(model: string, baseUrl: string): LocalEmbedding
   return {
     variant: 'secondary',
     title: 'Local embedding diagnostics will appear here after the next status refresh.',
-    summary: 'Save or refresh settings if you recently changed the provider or model.',
+    summary: 'Save or refresh settings if you recently changed the provider or model. You can still install the selected model now.',
     details: [
       `Expected endpoint: ${baseUrl}`,
       `Selected model: ${model}`,
     ],
-    installAvailable: false,
-    installHint: 'Model install becomes available after Ollama diagnostics are ready.',
+    installAvailable: true,
+    installHint: null,
   };
 }
 

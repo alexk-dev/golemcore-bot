@@ -826,6 +826,59 @@ class LocalEmbeddingBootstrapServiceTest {
         assertTrue(status.getModelAvailable());
     }
 
+    @Test
+    void shouldInstallExplicitProjectedModelWhenSavedConfigStillLooksDisabled() {
+        SelfEvolvingTacticSearchStatusProjectionService projectionService = mock(
+                SelfEvolvingTacticSearchStatusProjectionService.class);
+        TacticSearchStatus projectedStatus = TacticSearchStatus.builder()
+                .mode("bm25")
+                .reason("selfevolving tactics disabled")
+                .runtimeInstalled(false)
+                .runtimeHealthy(false)
+                .build();
+        when(projectionService.projectCurrent()).thenReturn(projectedStatus);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(false, false, "bm25", false,
+                null, true, true, false, false, null, null));
+
+        LocalEmbeddingBootstrapService projectedService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                projectionService,
+                new StubOllamaProcessPort()) {
+            private int checks;
+
+            @Override
+            protected boolean isRuntimeHealthy(String baseUrl) {
+                return true;
+            }
+
+            @Override
+            protected boolean hasModel(String baseUrl, String model) {
+                checks++;
+                return checks > 1;
+            }
+
+            @Override
+            protected boolean pullModel(String baseUrl, String model) {
+                return true;
+            }
+        };
+
+        TacticSearchStatus status = projectedService.installModel("bge-m3");
+
+        assertEquals("ollama", status.getProvider());
+        assertEquals("bge-m3", status.getModel());
+        assertEquals("http://127.0.0.1:11434", status.getBaseUrl());
+        assertTrue(status.getRuntimeInstalled());
+        assertTrue(status.getRuntimeHealthy());
+        assertTrue(status.getPullAttempted());
+        assertTrue(status.getPullSucceeded());
+        assertTrue(status.getModelAvailable());
+    }
+
     private RuntimeConfig.SelfEvolvingConfig config(
             boolean selfEvolvingEnabled,
             boolean tacticsEnabled,

@@ -160,7 +160,7 @@ describe('SelfEvolvingTacticSearchEmbeddingsSettings', () => {
     expect(html).not.toContain('Install model');
   });
 
-  it('does not misreport missing Ollama when backend status is still disabled or stale', () => {
+  it('keeps install available when backend status is still disabled or stale', () => {
     const html = renderToStaticMarkup(
       <SelfEvolvingTacticSearchEmbeddingsSettings
         form={buildConfig('ollama', null)}
@@ -180,6 +180,7 @@ describe('SelfEvolvingTacticSearchEmbeddingsSettings', () => {
     );
 
     expect(html).toContain('Local embedding diagnostics will appear here after the next status refresh.');
+    expect(html).toContain('Install model');
     expect(html).not.toContain('Ollama is not installed on this machine.');
     expect(html).not.toContain('Install Ollama locally or use the latest base image that already bundles it.');
   });

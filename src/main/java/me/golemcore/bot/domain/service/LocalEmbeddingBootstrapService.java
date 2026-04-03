@@ -230,21 +230,39 @@ public class LocalEmbeddingBootstrapService {
         String provider = explicitModel != null ? PROVIDER_OLLAMA : trimToNull(projectedStatus.getProvider());
         String model = explicitModel != null ? explicitModel : trimToNull(projectedStatus.getModel());
         String baseUrl = resolveInstallBaseUrl(projectedStatus, context, provider);
+        String runtimeVersion = trimToNull(projectedStatus.getRuntimeVersion());
+        boolean runtimeInstalled = Boolean.TRUE.equals(projectedStatus.getRuntimeInstalled());
+        boolean runtimeHealthy = Boolean.TRUE.equals(projectedStatus.getRuntimeHealthy());
         if (!PROVIDER_OLLAMA.equals(provider)) {
             throw new IllegalStateException("local embedding provider is not configured");
         }
         if (baseUrl == null || model == null) {
             throw new IllegalStateException("embedding provider configuration incomplete");
         }
-        if (!Boolean.TRUE.equals(projectedStatus.getRuntimeInstalled())) {
-            throw new IllegalStateException(projectedStatus.getReason() != null
-                    ? projectedStatus.getReason()
-                    : "Ollama is not installed on this machine");
+        if (explicitModel != null) {
+            LocalRuntimeProbe runtimeProbe = probeLocalRuntime(provider);
+            runtimeHealthy = isRuntimeHealthy(baseUrl);
+            runtimeInstalled = runtimeProbe.installed() || runtimeHealthy;
+            if (runtimeProbe.version() != null) {
+                runtimeVersion = runtimeProbe.version();
+            }
         }
-        if (!Boolean.TRUE.equals(projectedStatus.getRuntimeHealthy())) {
-            throw new IllegalStateException(projectedStatus.getReason() != null
-                    ? projectedStatus.getReason()
-                    : "Ollama is installed but not running at " + baseUrl);
+        String runtimeMissingReason = explicitModel != null
+                ? "Ollama is not installed on this machine. Install Ollama first, then retry model installation."
+                : (projectedStatus.getReason() != null
+                        ? projectedStatus.getReason()
+                        : "Ollama is not installed on this machine");
+        String runtimeUnhealthyReason = explicitModel != null
+                ? "Ollama is installed but not running at " + baseUrl
+                        + ". Start the runtime, then retry model installation."
+                : (projectedStatus.getReason() != null
+                        ? projectedStatus.getReason()
+                        : "Ollama is installed but not running at " + baseUrl);
+        if (!runtimeInstalled) {
+            throw new IllegalStateException(runtimeMissingReason);
+        }
+        if (!runtimeHealthy) {
+            throw new IllegalStateException(runtimeUnhealthyReason);
         }
 
         boolean modelAvailable = hasModel(baseUrl, model);
@@ -260,8 +278,9 @@ public class LocalEmbeddingBootstrapService {
                     .provider(provider)
                     .model(model)
                     .degraded(false)
-                    .runtimeInstalled(true)
-                    .runtimeHealthy(true)
+                    .runtimeInstalled(runtimeInstalled)
+                    .runtimeHealthy(runtimeHealthy)
+                    .runtimeVersion(runtimeVersion)
                     .baseUrl(baseUrl)
                     .modelAvailable(true)
                     .pullAttempted(true)
@@ -278,8 +297,9 @@ public class LocalEmbeddingBootstrapService {
                 .provider(provider)
                 .model(model)
                 .degraded(false)
-                .runtimeInstalled(true)
-                .runtimeHealthy(true)
+                .runtimeInstalled(runtimeInstalled)
+                .runtimeHealthy(runtimeHealthy)
+                .runtimeVersion(runtimeVersion)
                 .baseUrl(baseUrl)
                 .modelAvailable(true)
                 .pullAttempted(false)
