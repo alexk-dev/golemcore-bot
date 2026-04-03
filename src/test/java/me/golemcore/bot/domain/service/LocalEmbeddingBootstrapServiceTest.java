@@ -298,6 +298,49 @@ class LocalEmbeddingBootstrapServiceTest {
     }
 
     @Test
+    void shouldReturnExistingConfiguredModelWithoutPullWhenAlreadyInstalled() {
+        service.runtimeProbe = new LocalEmbeddingBootstrapService.LocalRuntimeProbe(true, "0.19.0");
+        service.runtimeHealthy = true;
+        service.hasModelResponses.add(true);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, true, false, false, "http://localhost:11434", "qwen3-embedding:0.6b"));
+
+        TacticSearchStatus status = service.installConfiguredModel();
+
+        assertEquals("hybrid", status.getMode());
+        assertFalse(status.getPullAttempted());
+        assertFalse(status.getPullSucceeded());
+        assertTrue(status.getModelAvailable());
+    }
+
+    @Test
+    void shouldThrowWhenConfiguredLocalRuntimeIsMissingDuringInstall() {
+        service.runtimeProbe = new LocalEmbeddingBootstrapService.LocalRuntimeProbe(false, null);
+        service.runtimeHealthy = false;
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, false, false, false, "http://localhost:11434", "qwen3-embedding:0.6b"));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.installConfiguredModel());
+
+        assertEquals("Ollama is not installed on this machine. Install Ollama first, then retry model installation.",
+                error.getMessage());
+    }
+
+    @Test
+    void shouldThrowWhenConfiguredLocalRuntimeIsNotRunningDuringInstall() {
+        service.runtimeProbe = new LocalEmbeddingBootstrapService.LocalRuntimeProbe(true, "0.19.0");
+        service.runtimeHealthy = false;
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, false, false, false, "http://localhost:11434", "qwen3-embedding:0.6b"));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.installConfiguredModel());
+
+        assertEquals(
+                "Ollama is installed but not running at http://localhost:11434. Start the runtime, then retry model installation.",
+                error.getMessage());
+    }
+
+    @Test
     void shouldReturnSupervisorBackedProjectionWhenAvailable() {
         SelfEvolvingTacticSearchStatusProjectionService projectionService = mock(
                 SelfEvolvingTacticSearchStatusProjectionService.class);
@@ -335,6 +378,34 @@ class LocalEmbeddingBootstrapServiceTest {
         assertTrue(status.getOwned());
         assertEquals(Integer.valueOf(2), status.getRestartAttempts());
         assertEquals("2026-04-02T00:31:00Z", status.getNextRetryTime());
+    }
+
+    @Test
+    void shouldRecordProjectedStatusDuringInitializationWhenProjectionIsAvailable() {
+        SelfEvolvingTacticSearchStatusProjectionService projectionService = mock(
+                SelfEvolvingTacticSearchStatusProjectionService.class);
+        TacticSearchStatus projectedStatus = TacticSearchStatus.builder()
+                .mode("hybrid")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .runtimeInstalled(true)
+                .runtimeHealthy(true)
+                .build();
+        when(projectionService.projectCurrent()).thenReturn(projectedStatus);
+
+        LocalEmbeddingBootstrapService projectedService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                projectionService,
+                new StubOllamaProcessPort());
+
+        TacticSearchStatus status = projectedService.initialize();
+
+        assertEquals("hybrid", status.getMode());
+        assertEquals("hybrid", metricsService.snapshot().activeMode());
     }
 
     @Test
@@ -438,6 +509,75 @@ class LocalEmbeddingBootstrapServiceTest {
                 () -> projectedService.installConfiguredModel());
 
         assertEquals("Ollama is installed but not running at http://127.0.0.1:11434", error.getMessage());
+    }
+
+    @Test
+    void shouldThrowWhenProjectedProviderIsNotConfiguredAndNoExplicitModelIsProvided() {
+        SelfEvolvingTacticSearchStatusProjectionService projectionService = mock(
+                SelfEvolvingTacticSearchStatusProjectionService.class);
+        TacticSearchStatus projectedStatus = TacticSearchStatus.builder()
+                .mode("bm25")
+                .runtimeInstalled(true)
+                .runtimeHealthy(true)
+                .build();
+        when(projectionService.projectCurrent()).thenReturn(projectedStatus);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                null, true, false, false, false, null, null));
+
+        LocalEmbeddingBootstrapService projectedService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                projectionService,
+                new StubOllamaProcessPort());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> projectedService.installConfiguredModel());
+
+        assertEquals("local embedding provider is not configured", error.getMessage());
+    }
+
+    @Test
+    void shouldThrowWhenProjectedModelInstallFails() {
+        SelfEvolvingTacticSearchStatusProjectionService projectionService = mock(
+                SelfEvolvingTacticSearchStatusProjectionService.class);
+        TacticSearchStatus projectedStatus = TacticSearchStatus.builder()
+                .mode("bm25")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .runtimeInstalled(true)
+                .runtimeHealthy(true)
+                .baseUrl("http://127.0.0.1:11434")
+                .build();
+        when(projectionService.projectCurrent()).thenReturn(projectedStatus);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, false, false, false, null, "qwen3-embedding:0.6b"));
+
+        LocalEmbeddingBootstrapService projectedService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                projectionService,
+                new StubOllamaProcessPort()) {
+            @Override
+            protected boolean hasModel(String baseUrl, String model) {
+                return false;
+            }
+
+            @Override
+            protected boolean pullModel(String baseUrl, String model) {
+                return false;
+            }
+        };
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> projectedService.installConfiguredModel());
+
+        assertEquals("Failed to install embedding model qwen3-embedding:0.6b in Ollama", error.getMessage());
     }
 
     @Test

@@ -113,6 +113,29 @@ class OllamaProcessAdapterTest {
     }
 
     @Test
+    void shouldReturnEndpointUnchangedWhenHostCannotBeParsed() {
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter("ollama");
+
+        Map<String, String> environment = adapter.buildEnvironment("127.0.0.1:11434");
+
+        assertEquals("127.0.0.1:11434", environment.get("OLLAMA_HOST"));
+    }
+
+    @Test
+    void shouldReturnNullVersionWhenVersionProbeTimesOut() throws IOException {
+        Path fakeBinary = createExecutable("fake-ollama-slow", """
+                #!/bin/sh
+                sleep 5
+                echo 'ollama version is 0.19.0'
+                """);
+
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter(fakeBinary.toString());
+
+        assertFalse(adapter.isBinaryAvailable());
+        assertEquals(null, adapter.getInstalledVersion());
+    }
+
+    @Test
     void shouldStartAndStopOwnedProcessSafely() throws Exception {
         Path fakeBinary = createExecutable("fake-ollama-serve", """
                 #!/bin/sh

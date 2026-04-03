@@ -169,13 +169,17 @@ public class OllamaProcessAdapter implements OllamaProcessPort {
         if (endpoint == null || endpoint.isBlank()) {
             return "127.0.0.1:11434";
         }
-        URI uri = URI.create(endpoint);
-        String host = uri.getHost();
-        int port = uri.getPort();
-        if (host == null || port <= 0) {
+        try {
+            URI uri = URI.create(endpoint);
+            String host = uri.getHost();
+            int port = uri.getPort();
+            if (host == null || port <= 0) {
+                return endpoint;
+            }
+            return host + ":" + port;
+        } catch (IllegalArgumentException exception) {
             return endpoint;
         }
-        return host + ":" + port;
     }
 
     private record VersionProbeResult(boolean finished, Integer exitCode, String output) {
