@@ -80,7 +80,13 @@ public class LocalEmbeddingBootstrapService {
 
     @PostConstruct
     public void initializeOnStartup() {
-        initialize();
+        Thread.ofVirtual().name("embedding-bootstrap").start(() -> {
+            try {
+                initialize();
+            } catch (RuntimeException exception) {
+                log.warn("[TacticSearch] Async embedding bootstrap failed: {}", exception.getMessage());
+            }
+        });
     }
 
     public TacticSearchStatus initialize() {

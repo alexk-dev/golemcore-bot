@@ -39,7 +39,7 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 
 /**
- * Readonly SelfEvolving endpoints for the local dashboard.
+ * SelfEvolving endpoints for the local dashboard (read and write).
  */
 @RestController
 @RequestMapping("/api/self-evolving")
@@ -125,8 +125,8 @@ public class SelfEvolvingController {
     @GetMapping("/artifacts/{artifactStreamId}/diff")
     public Mono<ResponseEntity<SelfEvolvingArtifactRevisionDiffDto>> getArtifactRevisionDiff(
             @PathVariable String artifactStreamId,
-            @RequestParam(required = false) String fromRevisionId,
-            @RequestParam(required = false) String toRevisionId) {
+            @RequestParam String fromRevisionId,
+            @RequestParam String toRevisionId) {
         requireQueryParam("fromRevisionId", fromRevisionId);
         requireQueryParam("toRevisionId", toRevisionId);
         SelfEvolvingArtifactRevisionDiffDto diff = projectionService
@@ -138,8 +138,8 @@ public class SelfEvolvingController {
     @GetMapping("/artifacts/{artifactStreamId}/transition-diff")
     public Mono<ResponseEntity<SelfEvolvingArtifactTransitionDiffDto>> getArtifactTransitionDiff(
             @PathVariable String artifactStreamId,
-            @RequestParam(required = false) String fromNodeId,
-            @RequestParam(required = false) String toNodeId) {
+            @RequestParam String fromNodeId,
+            @RequestParam String toNodeId) {
         requireQueryParam("fromNodeId", fromNodeId);
         requireQueryParam("toNodeId", toNodeId);
         SelfEvolvingArtifactTransitionDiffDto diff = projectionService
@@ -151,7 +151,7 @@ public class SelfEvolvingController {
     @GetMapping("/artifacts/{artifactStreamId}/evidence")
     public Mono<ResponseEntity<SelfEvolvingArtifactEvidenceDto>> getArtifactRevisionEvidence(
             @PathVariable String artifactStreamId,
-            @RequestParam(required = false) String revisionId) {
+            @RequestParam String revisionId) {
         requireQueryParam("revisionId", revisionId);
         SelfEvolvingArtifactEvidenceDto evidence = projectionService
                 .getArtifactRevisionEvidence(artifactStreamId, revisionId)
@@ -162,8 +162,8 @@ public class SelfEvolvingController {
     @GetMapping("/artifacts/{artifactStreamId}/compare-evidence")
     public Mono<ResponseEntity<SelfEvolvingArtifactEvidenceDto>> getArtifactCompareEvidence(
             @PathVariable String artifactStreamId,
-            @RequestParam(required = false) String fromRevisionId,
-            @RequestParam(required = false) String toRevisionId) {
+            @RequestParam String fromRevisionId,
+            @RequestParam String toRevisionId) {
         requireQueryParam("fromRevisionId", fromRevisionId);
         requireQueryParam("toRevisionId", toRevisionId);
         SelfEvolvingArtifactEvidenceDto evidence = projectionService
@@ -175,8 +175,8 @@ public class SelfEvolvingController {
     @GetMapping("/artifacts/{artifactStreamId}/transition-evidence")
     public Mono<ResponseEntity<SelfEvolvingArtifactEvidenceDto>> getArtifactTransitionEvidence(
             @PathVariable String artifactStreamId,
-            @RequestParam(required = false) String fromNodeId,
-            @RequestParam(required = false) String toNodeId) {
+            @RequestParam String fromNodeId,
+            @RequestParam String toNodeId) {
         requireQueryParam("fromNodeId", fromNodeId);
         requireQueryParam("toNodeId", toNodeId);
         SelfEvolvingArtifactEvidenceDto evidence = projectionService

@@ -103,8 +103,10 @@ public class EvolutionCandidateService {
             return null;
         }
         normalizeCandidate(candidate);
-        ensureArtifactRevision(candidate);
-        emitTacticRecord(candidate);
+        boolean newRevision = ensureArtifactRevision(candidate);
+        if (newRevision) {
+            emitTacticRecord(candidate);
+        }
         return candidate;
     }
 
@@ -142,8 +144,10 @@ public class EvolutionCandidateService {
                 .evidenceRefs(runVerdict.getEvidenceRefs())
                 .build();
         normalizeCandidate(candidate);
-        ensureArtifactRevision(candidate);
-        emitTacticRecord(candidate);
+        boolean newRevision = ensureArtifactRevision(candidate);
+        if (newRevision) {
+            emitTacticRecord(candidate);
+        }
         return candidate;
     }
 
@@ -186,14 +190,14 @@ public class EvolutionCandidateService {
         }
     }
 
-    private void ensureArtifactRevision(EvolutionCandidate candidate) {
+    private boolean ensureArtifactRevision(EvolutionCandidate candidate) {
         if (candidate == null || StringValueSupport.isBlank(candidate.getContentRevisionId())) {
-            return;
+            return false;
         }
         List<ArtifactRevisionRecord> records = new ArrayList<>(getArtifactRevisionRecords());
         for (ArtifactRevisionRecord existing : records) {
             if (existing != null && candidate.getContentRevisionId().equals(existing.getContentRevisionId())) {
-                return;
+                return false;
             }
         }
         ArtifactRevisionRecord record = ArtifactRevisionRecord.builder()
@@ -211,6 +215,7 @@ public class EvolutionCandidateService {
                 .build();
         records.add(record);
         saveArtifactRevisions(records);
+        return true;
     }
 
     private ArtifactRevisionRecord findLatestRevision(String artifactKey, String artifactType, String artifactSubtype) {

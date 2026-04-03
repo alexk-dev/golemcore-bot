@@ -320,25 +320,7 @@ public class PromotionWorkflowService {
     }
 
     private EvolutionCandidate cloneCandidate(EvolutionCandidate candidate) {
-        return EvolutionCandidate.builder()
-                .id(candidate.getId())
-                .golemId(candidate.getGolemId())
-                .goal(candidate.getGoal())
-                .artifactType(candidate.getArtifactType())
-                .artifactSubtype(candidate.getArtifactSubtype())
-                .artifactStreamId(candidate.getArtifactStreamId())
-                .originArtifactStreamId(candidate.getOriginArtifactStreamId())
-                .artifactKey(candidate.getArtifactKey())
-                .contentRevisionId(candidate.getContentRevisionId())
-                .baseContentRevisionId(candidate.getBaseContentRevisionId())
-                .baseVersion(candidate.getBaseVersion())
-                .proposedDiff(candidate.getProposedDiff())
-                .expectedImpact(candidate.getExpectedImpact())
-                .riskLevel(candidate.getRiskLevel())
-                .status(candidate.getStatus())
-                .lifecycleState(candidate.getLifecycleState())
-                .rolloutStage(candidate.getRolloutStage())
-                .createdAt(candidate.getCreatedAt())
+        return candidate.toBuilder()
                 .sourceRunIds(candidate.getSourceRunIds() != null ? new ArrayList<>(candidate.getSourceRunIds())
                         : new ArrayList<>())
                 .artifactAliases(

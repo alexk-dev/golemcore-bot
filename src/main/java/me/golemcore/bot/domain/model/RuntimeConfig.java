@@ -898,6 +898,7 @@ public class RuntimeConfig {
         private Boolean enabled = false;
         private String provider;
         private String baseUrl;
+        @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
         private String apiKey;
         private String model;
         private Integer dimensions;

@@ -32,7 +32,7 @@ import java.util.List;
  * Proposed change produced from judged run evidence.
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
