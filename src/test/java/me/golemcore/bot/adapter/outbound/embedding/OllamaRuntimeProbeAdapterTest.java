@@ -86,6 +86,22 @@ class OllamaRuntimeProbeAdapterTest {
     }
 
     @Test
+    void shouldDetectModelAvailabilityWhenOllamaReturnsLatestTag() {
+        server.enqueue(new MockResponse.Builder()
+                .code(200)
+                .body("""
+                        {
+                          "models": [
+                            {"name": "bge-m3:latest"}
+                          ]
+                        }
+                        """)
+                .build());
+
+        assertTrue(adapter.hasModel(server.url("/").toString(), "bge-m3"));
+    }
+
+    @Test
     void shouldReturnFalseWhenModelIsMissing() {
         server.enqueue(new MockResponse.Builder()
                 .code(200)

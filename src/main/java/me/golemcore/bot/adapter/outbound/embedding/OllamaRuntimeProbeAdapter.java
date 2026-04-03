@@ -83,7 +83,7 @@ public class OllamaRuntimeProbeAdapter implements OllamaRuntimeProbePort {
             JsonNode json = objectMapper.readTree(response.body().bytes());
             for (JsonNode item : json.path("models")) {
                 String candidate = item.path("name").asText(null);
-                if (candidate != null && candidate.equals(model)) {
+                if (matchesModelName(model, candidate)) {
                     return true;
                 }
             }
@@ -105,5 +105,25 @@ public class OllamaRuntimeProbeAdapter implements OllamaRuntimeProbePort {
         return okHttpClient.newBuilder()
                 .callTimeout(safeTimeout)
                 .build();
+    }
+
+    private boolean matchesModelName(String requestedModel, String candidateModel) {
+        String normalizedRequested = trimToNull(requestedModel);
+        String normalizedCandidate = trimToNull(candidateModel);
+        if (normalizedRequested == null || normalizedCandidate == null) {
+            return false;
+        }
+        if (normalizedRequested.equals(normalizedCandidate)) {
+            return true;
+        }
+        return normalizedCandidate.equals(normalizedRequested + ":latest")
+                || normalizedRequested.equals(normalizedCandidate + ":latest");
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 }
