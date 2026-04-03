@@ -177,9 +177,6 @@ public class SystemController {
         }
         try {
             TacticSearchStatus status = localEmbeddingBootstrapService.probeStatus();
-            if (status == null) {
-                return null;
-            }
             return SystemHealthResponse.SelfEvolvingEmbeddingsStatus.builder()
                     .mode(status.getMode())
                     .reason(status.getReason())

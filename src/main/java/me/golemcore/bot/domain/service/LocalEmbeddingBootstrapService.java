@@ -31,6 +31,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.Clock;
 import java.util.Arrays;
 import java.util.Locale;
@@ -307,7 +308,10 @@ public class LocalEmbeddingBootstrapService {
             String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
                     .trim();
             return LocalRuntimeProbe.installed(normalizeRuntimeVersion(output));
-        } catch (Exception exception) {
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return LocalRuntimeProbe.missing();
+        } catch (IOException exception) {
             return LocalRuntimeProbe.missing();
         } finally {
             if (process != null) {
