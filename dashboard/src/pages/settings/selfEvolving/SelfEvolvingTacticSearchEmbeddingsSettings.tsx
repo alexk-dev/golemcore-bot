@@ -170,10 +170,23 @@ function buildPendingDiagnostics(model: string, baseUrl: string): LocalEmbedding
 }
 
 function isMissingLocalRuntime(status: SelfEvolvingTacticSearchStatus | null | undefined): boolean {
-  return status?.runtimeInstalled === false;
+  const runtimeState = status?.runtimeState?.toLowerCase() ?? null;
+  const reason = status?.reason?.toLowerCase() ?? '';
+  return runtimeState === 'degraded_missing_binary'
+    || reason.includes('not installed on this machine');
 }
 
 function isStoppedLocalRuntime(status: SelfEvolvingTacticSearchStatus | null | undefined): boolean {
+  const runtimeState = status?.runtimeState?.toLowerCase() ?? null;
+  if (runtimeState != null) {
+    return runtimeState === 'owned_starting'
+      || runtimeState === 'degraded_start_timeout'
+      || runtimeState === 'degraded_crashed'
+      || runtimeState === 'degraded_restart_backoff'
+      || runtimeState === 'degraded_external_lost'
+      || runtimeState === 'degraded_outdated'
+      || runtimeState === 'stopping';
+  }
   return status?.runtimeInstalled === true && status.runtimeHealthy === false;
 }
 

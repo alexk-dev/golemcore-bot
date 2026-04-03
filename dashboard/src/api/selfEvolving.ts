@@ -233,11 +233,16 @@ export interface SelfEvolvingTacticSearchStatus {
   provider: string | null;
   model: string | null;
   degraded: boolean | null;
+  runtimeState?: string | null;
+  owned?: boolean | null;
   runtimeInstalled: boolean | null;
   runtimeHealthy: boolean | null;
   runtimeVersion: string | null;
   baseUrl: string | null;
   modelAvailable: boolean | null;
+  restartAttempts?: number | null;
+  nextRetryAt?: string | null;
+  nextRetryTime?: string | null;
   autoInstallConfigured: boolean | null;
   pullOnStartConfigured: boolean | null;
   pullAttempted: boolean | null;

@@ -160,6 +160,30 @@ describe('SelfEvolvingTacticSearchEmbeddingsSettings', () => {
     expect(html).not.toContain('Install model');
   });
 
+  it('does not misreport missing Ollama when backend status is still disabled or stale', () => {
+    const html = renderToStaticMarkup(
+      <SelfEvolvingTacticSearchEmbeddingsSettings
+        form={buildConfig('ollama', null)}
+        setForm={vi.fn()}
+        status={{
+          ...localStatus,
+          mode: 'bm25',
+          reason: 'selfevolving tactics disabled',
+          runtimeState: 'disabled',
+          runtimeInstalled: false,
+          runtimeHealthy: false,
+          runtimeVersion: null,
+        }}
+        isInstalling={false}
+        onInstall={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('Local embedding diagnostics will appear here after the next status refresh.');
+    expect(html).not.toContain('Ollama is not installed on this machine.');
+    expect(html).not.toContain('Install Ollama locally or use the latest base image that already bundles it.');
+  });
+
   it('keeps remote provider fields visible for openai-compatible embeddings', () => {
     const html = renderToStaticMarkup(
       <SelfEvolvingTacticSearchEmbeddingsSettings
