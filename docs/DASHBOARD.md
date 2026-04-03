@@ -99,6 +99,22 @@ The Settings page is now organized into catalog blocks instead of a flat tab lis
 - force trace payload capture for evaluation-relevant spans while keeping redaction active
 - tune tactic search defaults such as `BM25-only` versus `hybrid`, rerank tier, personalization, negative memory, and optional embeddings
 
+For local embeddings, `Settings -> Self-Evolving -> Tactics` is also the main diagnostics surface. It shows:
+
+- whether the runtime is external or managed by the bot
+- current runtime state such as ready, startup timeout, restart backoff, or outdated version
+- selected model and whether that model is installed
+- last degraded reason
+- restart attempts and next retry timing when the bot owns the runtime
+- install gating for the selected embedding model
+
+Lifecycle rules exposed in the UI:
+
+- the bot never installs or updates `ollama` itself
+- the bot only stops a local `ollama` process if it started that process itself
+- the first `5s` of startup are reserved for local runtime readiness; after that the bot stays healthy even if embeddings remain degraded
+- model install is available only when the runtime is ready
+
 Startup-only `bot.self-evolving.bootstrap.*` overrides win over editable runtime settings for the effective process configuration. This is the right place to force tactic search on a deployed worker without rewriting its stored preferences.
 
 ### SelfEvolving Workspace

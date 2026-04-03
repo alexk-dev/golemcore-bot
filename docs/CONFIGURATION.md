@@ -210,10 +210,32 @@ The preferred local path is a lightweight embedding runtime, not a bundled infer
 
 Recommended flow:
 
-1. Run a local `ollama` runtime.
+1. Make sure a local `ollama` runtime is installed.
 2. Configure the embedding provider through `bot.self-evolving.bootstrap.tactics.search.embeddings.*`.
-3. Optionally set `local.auto-install=true` and `local.pull-on-start=true` so the bot can pull the model automatically.
-4. If the runtime is unavailable or the pull fails, the bot stays online and tactic search degrades to `BM25-only`.
+3. Enable local embeddings and choose the embedding model in `Settings -> Self-Evolving -> Tactics`.
+4. Let the bot manage readiness and degraded fallback; install the embedding model only after the runtime is ready.
+
+Managed local runtime behavior:
+
+- If embeddings are enabled with local `ollama`, the bot checks `http://127.0.0.1:11434` during startup.
+- If an external `ollama` runtime is already ready there, the bot uses it without taking ownership.
+- If no runtime is ready, the bot tries to start its own managed `ollama` process and waits up to `5s` for readiness.
+- If readiness is not reached within `5s`, the bot still finishes startup and stays healthy, but `Self-Evolving` embeddings remain in a degraded state until `ollama` becomes ready.
+- If the bot owns the runtime and it crashes later, the bot retries with exponential backoff and exposes restart attempts and next retry time in the UI.
+- If the bot is using an external runtime and that runtime disappears later, the bot does not take it over retroactively; embeddings simply degrade.
+- On shutdown, the bot stops only the `ollama` process that it started itself.
+
+Notes:
+
+- The `golemcore-bot-base` image now bundles the `ollama` binary.
+- Bundling the binary in the base image does not install or update `ollama` on the host machine.
+- The dashboard `Settings -> Self-Evolving -> Tactics` page shows explicit diagnostics for:
+  - `ollama` not installed
+  - `ollama` installed but not running
+  - selected embedding model missing from `ollama`
+- Bundling the binary in the base image does not guarantee a ready runtime. If diagnostics say the runtime is not running, start it with `ollama serve` inside the container or your preferred service manager outside it.
+- The bot never installs or updates `ollama` itself. It only diagnoses missing/outdated runtime states and can pull the selected embedding model into an already available runtime.
+- Outdated `ollama` versions are surfaced as degraded diagnostics; the operator must update them manually.
 
 Recommended local model:
 
