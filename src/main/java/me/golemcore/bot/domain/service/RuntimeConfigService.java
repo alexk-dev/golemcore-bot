@@ -184,7 +184,7 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_SELF_EVOLVING_ENABLED = false;
     private static final boolean DEFAULT_SELF_EVOLVING_TRACE_PAYLOAD_OVERRIDE = true;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTICS_ENABLED = false;
-    private static final String DEFAULT_SELF_EVOLVING_TACTIC_SEARCH_MODE = "bm25";
+    private static final String DEFAULT_SELF_EVOLVING_TACTIC_SEARCH_MODE = "hybrid";
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_BM25_ENABLED = true;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_ENABLED = false;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_AUTO_FALLBACK_TO_BM25 = true;
@@ -310,6 +310,7 @@ public class RuntimeConfigService {
         normalizeRuntimeConfig(storedPersistedConfig);
         RuntimeConfig persistedConfig = copyRuntimeConfig(newConfig);
         selfEvolvingBootstrapOverrideService.restorePersistedValues(persistedConfig, storedPersistedConfig);
+        clearSelfEvolvingRuntimeMetadata(persistedConfig);
         normalizeRuntimeConfig(persistedConfig);
         RuntimeConfig effectiveConfig = buildEffectiveRuntimeConfig(persistedConfig);
         RuntimeConfig oldConfig = this.configRef.get();
@@ -350,8 +351,7 @@ public class RuntimeConfigService {
     }
 
     public boolean isSelfEvolvingTracePayloadOverrideEnabled() {
-        Boolean tracePayloadOverride = getSelfEvolvingConfig().getTracePayloadOverride();
-        return tracePayloadOverride != null ? tracePayloadOverride : DEFAULT_SELF_EVOLVING_TRACE_PAYLOAD_OVERRIDE;
+        return isSelfEvolvingEnabled();
     }
 
     public String getSelfEvolvingJudgePrimaryTier() {
@@ -1831,7 +1831,9 @@ public class RuntimeConfigService {
     private RuntimeConfig buildEffectiveRuntimeConfig(RuntimeConfig baseConfig) {
         RuntimeConfig effectiveConfig = copyRuntimeConfig(baseConfig);
         normalizeRuntimeConfig(effectiveConfig);
+        clearSelfEvolvingRuntimeMetadata(effectiveConfig);
         selfEvolvingBootstrapOverrideService.apply(effectiveConfig);
+        applySelfEvolvingRuntimeMetadata(effectiveConfig);
         normalizeRuntimeConfig(effectiveConfig);
         return effectiveConfig;
     }
@@ -2129,12 +2131,18 @@ public class RuntimeConfigService {
             cfg.setSelfEvolving(new RuntimeConfig.SelfEvolvingConfig());
         }
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = cfg.getSelfEvolving();
+        if (selfEvolvingConfig.getManagedByProperties() == null) {
+            selfEvolvingConfig.setManagedByProperties(false);
+        }
+        if (selfEvolvingConfig.getOverriddenPaths() == null) {
+            selfEvolvingConfig.setOverriddenPaths(new ArrayList<>());
+        } else {
+            selfEvolvingConfig.setOverriddenPaths(new ArrayList<>(selfEvolvingConfig.getOverriddenPaths()));
+        }
         if (selfEvolvingConfig.getEnabled() == null) {
             selfEvolvingConfig.setEnabled(DEFAULT_SELF_EVOLVING_ENABLED);
         }
-        if (selfEvolvingConfig.getTracePayloadOverride() == null) {
-            selfEvolvingConfig.setTracePayloadOverride(DEFAULT_SELF_EVOLVING_TRACE_PAYLOAD_OVERRIDE);
-        }
+        selfEvolvingConfig.setTracePayloadOverride(DEFAULT_SELF_EVOLVING_TRACE_PAYLOAD_OVERRIDE);
         if (selfEvolvingConfig.getTactics() == null) {
             selfEvolvingConfig.setTactics(new RuntimeConfig.SelfEvolvingTacticsConfig());
         }
@@ -2142,6 +2150,7 @@ public class RuntimeConfigService {
         if (tacticsConfig.getEnabled() == null) {
             tacticsConfig.setEnabled(DEFAULT_SELF_EVOLVING_TACTICS_ENABLED);
         }
+        tacticsConfig.setEnabled(Boolean.TRUE.equals(selfEvolvingConfig.getEnabled()));
         if (tacticsConfig.getSearch() == null) {
             tacticsConfig.setSearch(new RuntimeConfig.SelfEvolvingTacticSearchConfig());
         }
@@ -2162,9 +2171,8 @@ public class RuntimeConfigService {
         if (embeddingsConfig.getEnabled() == null) {
             embeddingsConfig.setEnabled(DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_ENABLED);
         }
-        if (embeddingsConfig.getAutoFallbackToBm25() == null) {
-            embeddingsConfig.setAutoFallbackToBm25(DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_AUTO_FALLBACK_TO_BM25);
-        }
+        embeddingsConfig.setEnabled("hybrid".equalsIgnoreCase(searchConfig.getMode()));
+        embeddingsConfig.setAutoFallbackToBm25(DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_AUTO_FALLBACK_TO_BM25);
         if (embeddingsConfig.getLocal() == null) {
             embeddingsConfig.setLocal(new RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig());
         }
@@ -2302,6 +2310,23 @@ public class RuntimeConfigService {
         if (hiveConfig.getReadonlyInspection() == null) {
             hiveConfig.setReadonlyInspection(DEFAULT_SELF_EVOLVING_READONLY_INSPECTION);
         }
+    }
+
+    private void clearSelfEvolvingRuntimeMetadata(RuntimeConfig cfg) {
+        if (cfg == null || cfg.getSelfEvolving() == null) {
+            return;
+        }
+        cfg.getSelfEvolving().setManagedByProperties(false);
+        cfg.getSelfEvolving().setOverriddenPaths(new ArrayList<>());
+    }
+
+    private void applySelfEvolvingRuntimeMetadata(RuntimeConfig cfg) {
+        if (cfg == null || cfg.getSelfEvolving() == null) {
+            return;
+        }
+        List<String> overriddenPaths = selfEvolvingBootstrapOverrideService.getOverriddenPaths();
+        cfg.getSelfEvolving().setManagedByProperties(selfEvolvingBootstrapOverrideService.hasManagedOverrides());
+        cfg.getSelfEvolving().setOverriddenPaths(new ArrayList<>(overriddenPaths));
     }
 
     private List<String> normalizeStringList(List<String> values, List<String> defaultValues) {

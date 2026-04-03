@@ -8,7 +8,7 @@ interface Props {
 }
 
 export function SelfEvolvingTacticSearchStatusBanner({ status }: Props): ReactElement {
-  const mode = status?.mode ?? 'bm25';
+  const mode = status?.mode ?? 'hybrid';
   const label = mode === 'hybrid' ? 'Hybrid' : mode === 'bm25' ? 'BM25-only' : mode;
   return (
     <Alert variant={status?.degraded ? 'warning' : 'info'} className="mb-3">

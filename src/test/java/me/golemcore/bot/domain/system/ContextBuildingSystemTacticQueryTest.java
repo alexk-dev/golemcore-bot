@@ -98,4 +98,61 @@ class ContextBuildingSystemTacticQueryTest {
             return Boolean.TRUE.equals(metadata.get(ContextAttributes.MESSAGE_INTERNAL));
         }));
     }
+
+    @Test
+    void shouldAttachTacticContextWhenSelfEvolvingIsEnabledEvenIfLegacyTacticsFlagIsFalse() {
+        ContextAssembler assembler = mock(ContextAssembler.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
+        TacticSearchService tacticSearchService = mock(TacticSearchService.class);
+        ContextBuildingSystem system = new ContextBuildingSystem(
+                assembler,
+                runtimeConfigService,
+                selfEvolvingRunService,
+                tacticSearchService);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id("session-1")
+                        .chatId("chat-1")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>(List.of(Message.builder()
+                        .role("user")
+                        .content("recover from failed shell command")
+                        .build())))
+                .build();
+
+        when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .enabled(false)
+                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                .mode("hybrid")
+                                .build())
+                        .build())
+                .build());
+        when(selfEvolvingRunService.startRun(context)).thenReturn(RunRecord.builder()
+                .id("run-1")
+                .artifactBundleId("bundle-1")
+                .build());
+        TacticSearchQuery query = TacticSearchQuery.builder()
+                .rawQuery("recover from failed shell command")
+                .queryViews(List.of("recover", "shell", "failure"))
+                .build();
+        when(tacticSearchService.buildQuery(context)).thenReturn(query);
+        when(tacticSearchService.search(query)).thenReturn(List.of(TacticSearchResult.builder()
+                .tacticId("planner")
+                .title("Planner tactic")
+                .behaviorSummary("Recover from failed shell commands with a minimal ordered plan.")
+                .toolSummary("shell")
+                .promotionState("approved")
+                .build()));
+
+        AgentContext result = system.process(context);
+
+        assertNotNull(result.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY));
+        assertNotNull(result.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION));
+    }
 }

@@ -1,9 +1,9 @@
 import { type Dispatch, type ReactElement, type SetStateAction, useCallback, useEffect, useState } from 'react';
-import { Alert, Col, Form, Row } from 'react-bootstrap';
+import { Alert, Col, Row } from 'react-bootstrap';
 
 import type { SelfEvolvingConfig } from '../../../api/settings';
 import type { SelfEvolvingTacticSearchStatus } from '../../../api/selfEvolving';
-import HelpTip from '../../../components/common/HelpTip';
+import { hasOverriddenPath, hasOverriddenPathPrefix } from './selfEvolvingOverridePaths';
 import {
   type EmbeddingsConfig,
   type OllamaEmbeddingPreset,
@@ -12,7 +12,6 @@ import {
   LocalEmbeddingModelSection,
   RemoteEmbeddingFields,
   SearchModeSettings,
-  TacticRetrievalToggles,
 } from './SelfEvolvingTacticSearchEmbeddingsSections';
 
 const DEFAULT_EMBEDDING_DIMENSIONS = 1024;
@@ -28,6 +27,7 @@ interface SelfEvolvingTacticSearchEmbeddingsSettingsProps {
   form: SelfEvolvingConfig;
   setForm: Dispatch<SetStateAction<SelfEvolvingConfig>>;
   status?: SelfEvolvingTacticSearchStatus | null;
+  overriddenPaths?: string[];
   isInstalling?: boolean;
   onInstall?: (model: string) => void;
 }
@@ -61,11 +61,8 @@ function buildOllamaOptions(embeddings: EmbeddingsConfig): OllamaEmbeddingPreset
 }
 
 function modelStatusLabel(status: SelfEvolvingTacticSearchStatus | null | undefined, model: string): string {
-  if (status?.runtimeHealthy === true && status.model !== model) {
-    return 'Not installed';
-  }
-  if (status?.model == null || status.model !== model) {
-    return 'Status unknown';
+  if (status == null || status.runtimeState === 'disabled' || status.model == null || status.model !== model) {
+    return 'Checking...';
   }
   return status.modelAvailable === true ? 'Installed' : 'Missing';
 }
@@ -93,6 +90,7 @@ interface EmbeddingProviderFieldsProps {
   currentModelStatus: string;
   localDiagnostics: LocalEmbeddingDiagnostics | null;
   isInstalling: boolean;
+  disabled?: boolean;
   onInstall?: (model: string) => void;
   updateEmbeddings: (updater: (current: EmbeddingsConfig) => EmbeddingsConfig) => void;
 }
@@ -159,13 +157,13 @@ function buildPendingDiagnostics(model: string, baseUrl: string): LocalEmbedding
   return {
     variant: 'secondary',
     title: 'Local embedding diagnostics will appear here after the next status refresh.',
-    summary: 'Save or refresh settings if you recently changed the provider or model. You can still install the selected model now.',
+    summary: 'Checking the selected model in the local runtime.',
     details: [
       `Expected endpoint: ${baseUrl}`,
       `Selected model: ${model}`,
     ],
-    installAvailable: true,
-    installHint: null,
+    installAvailable: false,
+    installHint: 'Install becomes available after the current diagnostics check completes.',
   };
 }
 
@@ -194,7 +192,7 @@ function isMissingSelectedModel(
   status: SelfEvolvingTacticSearchStatus | null | undefined,
   model: string,
 ): boolean {
-  return status?.runtimeHealthy === true && (status.modelAvailable === false || status.model !== model);
+  return status?.runtimeHealthy === true && status.model === model && status.modelAvailable === false;
 }
 
 function isReadySelectedModel(
@@ -254,6 +252,7 @@ function EmbeddingProviderFields({
   currentModelStatus,
   localDiagnostics,
   isInstalling,
+  disabled = false,
   onInstall,
   updateEmbeddings,
 }: EmbeddingProviderFieldsProps): ReactElement {
@@ -266,6 +265,7 @@ function EmbeddingProviderFields({
         canInstallModel={localDiagnostics?.installAvailable ?? false}
         installHint={localDiagnostics?.installHint ?? null}
         isInstalling={isInstalling}
+        disabled={disabled}
         onInstall={onInstall}
         updateEmbeddings={updateEmbeddings}
       />
@@ -276,6 +276,7 @@ function EmbeddingProviderFields({
       embeddings={embeddings}
       showApiKey={showApiKey}
       setShowApiKey={setShowApiKey}
+      disabled={disabled}
       updateEmbeddings={updateEmbeddings}
     />
   );
@@ -328,6 +329,7 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
   form,
   setForm,
   status = null,
+  overriddenPaths = [],
   isInstalling = false,
   onInstall,
 }: SelfEvolvingTacticSearchEmbeddingsSettingsProps): ReactElement {
@@ -342,6 +344,8 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
   const resolvedBatchSize = embeddings.batchSize
     ?? (usesLocalRuntime ? effectiveOllamaPreset.batchSize : DEFAULT_EMBEDDING_BATCH_SIZE);
   const currentModelStatus = modelStatusLabel(status, resolvedOllamaModel);
+  const searchModeManaged = hasOverriddenPath(overriddenPaths, 'tactics.search.mode');
+  const embeddingFieldsManaged = hasOverriddenPathPrefix(overriddenPaths, 'tactics.search.embeddings');
 
   const updateEmbeddings = useCallback((updater: (current: EmbeddingsConfig) => EmbeddingsConfig): void => {
     setForm((current) => ({
@@ -369,6 +373,7 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
       currentModelStatus={currentModelStatus}
       localDiagnostics={localDiagnostics}
       isInstalling={isInstalling}
+      disabled={embeddingFieldsManaged}
       onInstall={onInstall}
       updateEmbeddings={updateEmbeddings}
     />
@@ -390,6 +395,7 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
             <EmbeddingProviderSelector
               embeddings={embeddings}
               presets={OLLAMA_EMBEDDING_PRESETS}
+              disabled={embeddingFieldsManaged}
               updateEmbeddings={updateEmbeddings}
             />
           </Col>
@@ -399,16 +405,11 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
 
       <LocalDiagnosticsAlert diagnostics={usesLocalRuntime ? localDiagnostics : null} />
 
-      <TacticRetrievalToggles
-        tacticsEnabled={form.tactics.enabled ?? false}
-        embeddingsEnabled={embeddings.enabled ?? false}
-        setForm={setForm}
-        updateEmbeddings={updateEmbeddings}
-      />
-
       <SearchModeSettings
         mode={form.tactics.search.mode}
         timeoutMs={embeddings.timeoutMs}
+        modeDisabled={searchModeManaged}
+        timeoutDisabled={embeddingFieldsManaged}
         setForm={setForm}
         updateEmbeddings={updateEmbeddings}
         toNullableInt={toNullableInt}
@@ -417,18 +418,10 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
       <EmbeddingDimensionSettings
         resolvedDimensions={resolvedDimensions}
         resolvedBatchSize={resolvedBatchSize}
+        disabled={embeddingFieldsManaged}
         updateEmbeddings={updateEmbeddings}
         toNullableInt={toNullableInt}
       />
-
-      <div className="d-flex flex-column gap-2 mb-3">
-        <Form.Check
-          type="switch"
-          label={<>BM25 fallback <HelpTip text="If embeddings are unavailable, keep tactic retrieval alive by falling back to lexical-only mode." /></>}
-          checked={embeddings.autoFallbackToBm25 ?? true}
-          onChange={(event) => updateEmbeddings((current) => ({ ...current, autoFallbackToBm25: event.target.checked }))}
-        />
-      </div>
     </>
   );
 }

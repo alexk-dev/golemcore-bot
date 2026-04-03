@@ -89,6 +89,8 @@ const config: SelfEvolvingConfig = {
     publishInspectionProjection: true,
     readonlyInspection: true,
   },
+  managedByProperties: true,
+  overriddenPaths: ['enabled', 'tactics.search.mode'],
 };
 
 const tacticSearchStatus: SelfEvolvingTacticSearchStatus = {
@@ -127,7 +129,6 @@ describe('SelfEvolvingTab', () => {
     expect(html).toContain('Primary judge tier');
     expect(html).toContain('Tiebreaker tier');
     expect(html).toContain('Promotion mode');
-    expect(html).toContain('Trace payload override');
     expect(html).toContain('Smart');
     expect(html).toContain('Deep');
     expect(html).not.toContain('Standard');
@@ -138,11 +139,17 @@ describe('SelfEvolvingTab', () => {
     expect(html).toContain('Install model');
     expect(html).toContain('Used for tactic indexing and hybrid retrieval.');
     expect(html).toContain('bot.self-evolving.bootstrap');
-    expect(html).toContain('BM25 fallback');
+    expect(html).toContain('Some Self-Evolving settings are managed by');
+    expect(html).toContain('enabled');
     expect(html).toContain('qwen3-embedding:0.6b');
     expect(html).toContain('Model status');
     expect(html).toContain('Ollama is ready, but the selected embedding model is not installed yet.');
     expect(html).not.toContain('Local embedding runtime status');
     expect(html).not.toContain('Auto-install local model');
+    expect(html).not.toContain('Trace payload override');
+    expect(html).not.toContain('BM25 fallback');
+    expect(html).not.toContain('Enable tactic retrieval');
+    expect(html).not.toContain('Enable embeddings');
+    expect(html).toContain('disabled=""');
   });
 });

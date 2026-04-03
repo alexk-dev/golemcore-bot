@@ -63,8 +63,9 @@ public class TacticEmbeddingIndexService {
     }
 
     public List<TacticSearchResult> search(TacticSearchQuery query) {
-        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config = embeddingsConfig();
-        if (!Boolean.TRUE.equals(config.getEnabled()) || !isProviderConfigured(config)) {
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = searchConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config = embeddingsConfig(searchConfig);
+        if (!isHybridMode(searchConfig) || !isProviderConfigured(config)) {
             metricsService.recordActiveMode("bm25", "embeddings disabled");
             return List.of();
         }
@@ -110,8 +111,9 @@ public class TacticEmbeddingIndexService {
     }
 
     public void rebuildAll() {
-        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config = embeddingsConfig();
-        if (!Boolean.TRUE.equals(config.getEnabled()) || !isProviderConfigured(config)) {
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = searchConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config = embeddingsConfig(searchConfig);
+        if (!isHybridMode(searchConfig) || !isProviderConfigured(config)) {
             return;
         }
         if (shouldSkipVectorSearch(config)) {
@@ -157,13 +159,22 @@ public class TacticEmbeddingIndexService {
         rebuildAll();
     }
 
-    private RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig() {
+    private RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig() {
         RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = runtimeConfigService.getSelfEvolvingConfig()
                 .getTactics()
                 .getSearch();
-        return searchConfig != null && searchConfig.getEmbeddings() != null
+        return searchConfig != null ? searchConfig : new RuntimeConfig.SelfEvolvingTacticSearchConfig();
+    }
+
+    private RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig(
+            RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig) {
+        return searchConfig.getEmbeddings() != null
                 ? searchConfig.getEmbeddings()
                 : new RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig();
+    }
+
+    private boolean isHybridMode(RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig) {
+        return searchConfig.getMode() != null && "hybrid".equalsIgnoreCase(searchConfig.getMode());
     }
 
     private boolean isProviderConfigured(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config) {

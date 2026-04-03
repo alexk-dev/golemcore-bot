@@ -202,11 +202,15 @@ public class SelfEvolvingController {
     }
 
     @GetMapping("/tactics/status")
-    public Mono<ResponseEntity<SelfEvolvingTacticSearchStatusDto>> getTacticSearchStatus() {
+    public Mono<ResponseEntity<SelfEvolvingTacticSearchStatusDto>> getTacticSearchStatus(
+            @RequestParam(required = false) String provider,
+            @RequestParam(required = false) String model,
+            @RequestParam(required = false) String baseUrl) {
         if (localEmbeddingBootstrapService == null) {
             return Mono.just(ResponseEntity.ok(projectionService.getTacticSearchStatus()));
         }
-        return Mono.just(ResponseEntity.ok(toTacticSearchStatusDto(localEmbeddingBootstrapService.probeStatus())));
+        return Mono.just(ResponseEntity.ok(
+                toTacticSearchStatusDto(localEmbeddingBootstrapService.probeStatus(provider, model, baseUrl))));
     }
 
     @PostMapping("/tactics/install")

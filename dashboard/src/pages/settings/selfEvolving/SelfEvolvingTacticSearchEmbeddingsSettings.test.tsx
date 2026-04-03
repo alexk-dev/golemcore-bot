@@ -160,7 +160,7 @@ describe('SelfEvolvingTacticSearchEmbeddingsSettings', () => {
     expect(html).not.toContain('Install model');
   });
 
-  it('keeps install available when backend status is still disabled or stale', () => {
+  it('keeps stale diagnostics neutral until the live status refresh completes', () => {
     const html = renderToStaticMarkup(
       <SelfEvolvingTacticSearchEmbeddingsSettings
         form={buildConfig('ollama', null)}
@@ -180,9 +180,31 @@ describe('SelfEvolvingTacticSearchEmbeddingsSettings', () => {
     );
 
     expect(html).toContain('Local embedding diagnostics will appear here after the next status refresh.');
-    expect(html).toContain('Install model');
+    expect(html).toContain('Checking the selected model in the local runtime.');
+    expect(html).not.toContain('Install model');
     expect(html).not.toContain('Ollama is not installed on this machine.');
     expect(html).not.toContain('Install Ollama locally or use the latest base image that already bundles it.');
+  });
+
+  it('keeps the UI in checking mode when the loaded status belongs to a different model', () => {
+    const html = renderToStaticMarkup(
+      <SelfEvolvingTacticSearchEmbeddingsSettings
+        form={buildConfig('ollama', 'bge-m3')}
+        setForm={vi.fn()}
+        status={{
+          ...localStatus,
+          model: 'qwen3-embedding:0.6b',
+          modelAvailable: true,
+          degraded: false,
+        }}
+        isInstalling={false}
+        onInstall={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('Checking...');
+    expect(html).toContain('Checking the selected model in the local runtime.');
+    expect(html).not.toContain('Install model');
   });
 
   it('keeps remote provider fields visible for openai-compatible embeddings', () => {

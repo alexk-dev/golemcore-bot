@@ -35,6 +35,7 @@ import {
   type SelfEvolvingRunSummary,
   type SelfEvolvingTacticSearchResponse,
   type SelfEvolvingTacticSearchStatus,
+  type SelfEvolvingTacticSearchStatusPreview,
 } from '../api/selfEvolving';
 
 export function useSelfEvolvingRuns(): UseQueryResult<SelfEvolvingRunSummary[], unknown> {
@@ -177,10 +178,11 @@ export function useSelfEvolvingTacticSearch(query: string): UseQueryResult<SelfE
 
 export function useSelfEvolvingTacticSearchStatus(
   enabled = true,
+  preview?: SelfEvolvingTacticSearchStatusPreview | null,
 ): UseQueryResult<SelfEvolvingTacticSearchStatus, unknown> {
   return useQuery({
-    queryKey: ['self-evolving', 'tactics', 'status'],
-    queryFn: getSelfEvolvingTacticSearchStatus,
+    queryKey: ['self-evolving', 'tactics', 'status', preview?.provider ?? null, preview?.model ?? null, preview?.baseUrl ?? null],
+    queryFn: () => getSelfEvolvingTacticSearchStatus(preview),
     enabled,
   });
 }

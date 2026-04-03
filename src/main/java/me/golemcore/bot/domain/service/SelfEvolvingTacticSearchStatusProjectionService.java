@@ -99,7 +99,7 @@ public class SelfEvolvingTacticSearchStatusProjectionService {
                 endpoint,
                 model);
 
-        if (!Boolean.TRUE.equals(selfEvolvingConfig.getEnabled()) || !Boolean.TRUE.equals(tacticsConfig.getEnabled())) {
+        if (!Boolean.TRUE.equals(selfEvolvingConfig.getEnabled())) {
             return buildStatus(
                     MODE_BM25,
                     "selfevolving tactics disabled",
@@ -112,20 +112,6 @@ public class SelfEvolvingTacticSearchStatusProjectionService {
                     localConfig,
                     clock.instant());
         }
-        if (!Boolean.TRUE.equals(embeddingsConfig.getEnabled())) {
-            return buildStatus(
-                    MODE_BM25,
-                    "embeddings disabled",
-                    provider,
-                    model,
-                    false,
-                    runtimeStatus,
-                    false,
-                    false,
-                    localConfig,
-                    clock.instant());
-        }
-
         String configuredMode = normalizeMode(searchConfig.getMode());
         if (!MODE_HYBRID.equals(configuredMode)) {
             return buildStatus(

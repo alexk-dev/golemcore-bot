@@ -23,6 +23,9 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Applies startup-only SelfEvolving overrides from {@code bot.*} properties
  * onto the effective runtime config without changing persisted preferences.
@@ -30,6 +33,26 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class SelfEvolvingBootstrapOverrideService {
+
+    private static final String PATH_ENABLED = "enabled";
+    private static final String PATH_TACTICS_SEARCH_MODE = "tactics.search.mode";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_PROVIDER = "tactics.search.embeddings.provider";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_BASE_URL = "tactics.search.embeddings.baseUrl";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_API_KEY = "tactics.search.embeddings.apiKey";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_MODEL = "tactics.search.embeddings.model";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_DIMENSIONS = "tactics.search.embeddings.dimensions";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_BATCH_SIZE = "tactics.search.embeddings.batchSize";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_TIMEOUT_MS = "tactics.search.embeddings.timeoutMs";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_AUTO_INSTALL = "tactics.search.embeddings.local.autoInstall";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_PULL_ON_START = "tactics.search.embeddings.local.pullOnStart";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_REQUIRE_HEALTHY_RUNTIME = "tactics.search.embeddings.local.requireHealthyRuntime";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_FAIL_OPEN = "tactics.search.embeddings.local.failOpen";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_INITIAL_RESTART_BACKOFF_MS = "tactics.search.embeddings.local.initialRestartBackoffMs";
+    private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_MINIMUM_RUNTIME_VERSION = "tactics.search.embeddings.local.minimumRuntimeVersion";
+    private static final String PATH_TACTICS_SEARCH_RERANK_CROSS_ENCODER = "tactics.search.rerank.crossEncoder";
+    private static final String PATH_TACTICS_SEARCH_RERANK_TIER = "tactics.search.rerank.tier";
+    private static final String PATH_TACTICS_SEARCH_PERSONALIZATION_ENABLED = "tactics.search.personalization.enabled";
+    private static final String PATH_TACTICS_SEARCH_NEGATIVE_MEMORY_ENABLED = "tactics.search.negativeMemory.enabled";
 
     private final BotProperties botProperties;
 
@@ -67,14 +90,44 @@ public class SelfEvolvingBootstrapOverrideService {
         restoreTactics(candidate, persisted, bootstrap.getTactics());
     }
 
+    public boolean hasManagedOverrides() {
+        return !getOverriddenPaths().isEmpty();
+    }
+
+    public List<String> getOverriddenPaths() {
+        List<String> overriddenPaths = new ArrayList<>();
+        BotProperties.SelfEvolvingBootstrapProperties bootstrap = botProperties.getSelfEvolving().getBootstrap();
+        if (bootstrap == null) {
+            return overriddenPaths;
+        }
+
+        addOverride(overriddenPaths, bootstrap.getEnabled() != null, PATH_ENABLED);
+        BotProperties.SelfEvolvingBootstrapTacticsProperties tactics = bootstrap.getTactics();
+        if (tactics == null) {
+            return overriddenPaths;
+        }
+
+        BotProperties.SelfEvolvingBootstrapTacticSearchProperties search = tactics.getSearch();
+        if (search == null) {
+            return overriddenPaths;
+        }
+
+        addOverride(overriddenPaths, isNonBlank(search.getMode()), PATH_TACTICS_SEARCH_MODE);
+        describeEmbeddingsOverrides(overriddenPaths, search.getEmbeddings());
+        describeRerankOverrides(overriddenPaths, search.getRerank());
+        describeToggleOverride(overriddenPaths, search.getPersonalization(),
+                PATH_TACTICS_SEARCH_PERSONALIZATION_ENABLED);
+        describeToggleOverride(overriddenPaths, search.getNegativeMemory(),
+                PATH_TACTICS_SEARCH_NEGATIVE_MEMORY_ENABLED);
+        return overriddenPaths;
+    }
+
     private void overrideEnabled(RuntimeConfig.SelfEvolvingConfig target,
             BotProperties.SelfEvolvingBootstrapProperties source) {
         if (source.getEnabled() != null) {
             target.setEnabled(source.getEnabled());
         }
-        if (source.getTracePayloadOverride() != null) {
-            target.setTracePayloadOverride(source.getTracePayloadOverride());
-        }
+        target.setTracePayloadOverride(true);
     }
 
     private void restoreEnabled(RuntimeConfig.SelfEvolvingConfig target,
@@ -83,9 +136,7 @@ public class SelfEvolvingBootstrapOverrideService {
         if (source.getEnabled() != null) {
             target.setEnabled(persisted.getEnabled());
         }
-        if (source.getTracePayloadOverride() != null) {
-            target.setTracePayloadOverride(persisted.getTracePayloadOverride());
-        }
+        target.setTracePayloadOverride(persisted.getTracePayloadOverride());
     }
 
     private void overrideTactics(RuntimeConfig.SelfEvolvingConfig target,
@@ -94,9 +145,7 @@ public class SelfEvolvingBootstrapOverrideService {
             return;
         }
         RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = ensureTacticsConfig(target);
-        if (source.getEnabled() != null) {
-            tacticsConfig.setEnabled(source.getEnabled());
-        }
+        tacticsConfig.setEnabled(Boolean.TRUE.equals(target.getEnabled()));
         overrideSearch(tacticsConfig, source.getSearch());
     }
 
@@ -110,10 +159,59 @@ public class SelfEvolvingBootstrapOverrideService {
         RuntimeConfig.SelfEvolvingTacticsConfig persistedTactics = persisted.getTactics() != null
                 ? persisted.getTactics()
                 : new RuntimeConfig.SelfEvolvingTacticsConfig();
-        if (source.getEnabled() != null) {
-            candidateTactics.setEnabled(persistedTactics.getEnabled());
-        }
+        candidateTactics.setEnabled(Boolean.TRUE.equals(persisted.getEnabled()));
         restoreSearch(candidateTactics, persistedTactics, source.getSearch());
+    }
+
+    private void describeEmbeddingsOverrides(List<String> overriddenPaths,
+            BotProperties.SelfEvolvingBootstrapTacticEmbeddingsProperties embeddings) {
+        if (embeddings == null) {
+            return;
+        }
+        addOverride(overriddenPaths, isNonBlank(embeddings.getProvider()), PATH_TACTICS_SEARCH_EMBEDDINGS_PROVIDER);
+        addOverride(overriddenPaths, isNonBlank(embeddings.getBaseUrl()), PATH_TACTICS_SEARCH_EMBEDDINGS_BASE_URL);
+        addOverride(overriddenPaths, isNonBlank(embeddings.getApiKey()), PATH_TACTICS_SEARCH_EMBEDDINGS_API_KEY);
+        addOverride(overriddenPaths, isNonBlank(embeddings.getModel()), PATH_TACTICS_SEARCH_EMBEDDINGS_MODEL);
+        addOverride(overriddenPaths, embeddings.getDimensions() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_DIMENSIONS);
+        addOverride(overriddenPaths, embeddings.getBatchSize() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_BATCH_SIZE);
+        addOverride(overriddenPaths, embeddings.getTimeoutMs() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_TIMEOUT_MS);
+        BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties local = embeddings.getLocal();
+        if (local == null) {
+            return;
+        }
+        addOverride(overriddenPaths, local.getAutoInstall() != null,
+                PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_AUTO_INSTALL);
+        addOverride(overriddenPaths, local.getPullOnStart() != null,
+                PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_PULL_ON_START);
+        addOverride(overriddenPaths, local.getRequireHealthyRuntime() != null,
+                PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_REQUIRE_HEALTHY_RUNTIME);
+        addOverride(overriddenPaths, local.getFailOpen() != null,
+                PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_FAIL_OPEN);
+        addOverride(overriddenPaths, local.getInitialRestartBackoffMs() != null,
+                PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_INITIAL_RESTART_BACKOFF_MS);
+        addOverride(overriddenPaths, isNonBlank(local.getMinimumRuntimeVersion()),
+                PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_MINIMUM_RUNTIME_VERSION);
+    }
+
+    private void describeRerankOverrides(List<String> overriddenPaths,
+            BotProperties.SelfEvolvingBootstrapTacticRerankProperties rerank) {
+        if (rerank == null) {
+            return;
+        }
+        addOverride(overriddenPaths, rerank.getCrossEncoder() != null, PATH_TACTICS_SEARCH_RERANK_CROSS_ENCODER);
+        addOverride(overriddenPaths, isNonBlank(rerank.getTier()), PATH_TACTICS_SEARCH_RERANK_TIER);
+    }
+
+    private void describeToggleOverride(List<String> overriddenPaths,
+            BotProperties.SelfEvolvingBootstrapToggleProperties toggle,
+            String path) {
+        addOverride(overriddenPaths, toggle != null && toggle.getEnabled() != null, path);
+    }
+
+    private void addOverride(List<String> overriddenPaths, boolean overridden, String path) {
+        if (overridden) {
+            overriddenPaths.add(path);
+        }
     }
 
     private void overrideSearch(RuntimeConfig.SelfEvolvingTacticsConfig target,
@@ -126,6 +224,7 @@ public class SelfEvolvingBootstrapOverrideService {
             searchConfig.setMode(source.getMode().trim());
         }
         overrideEmbeddings(searchConfig, source.getEmbeddings());
+        ensureEmbeddingsConfig(searchConfig).setEnabled("hybrid".equalsIgnoreCase(searchConfig.getMode()));
         overrideRerank(searchConfig, source.getRerank());
         overrideToggle(searchConfig.getPersonalization(), source.getPersonalization());
         overrideToggle(searchConfig.getNegativeMemory(), source.getNegativeMemory());
@@ -145,6 +244,7 @@ public class SelfEvolvingBootstrapOverrideService {
             candidateSearch.setMode(persistedSearch.getMode());
         }
         restoreEmbeddings(candidateSearch, persistedSearch, source.getEmbeddings());
+        ensureEmbeddingsConfig(candidateSearch).setEnabled("hybrid".equalsIgnoreCase(candidateSearch.getMode()));
         restoreRerank(candidateSearch, persistedSearch, source.getRerank());
         restoreToggle(candidateSearch.getPersonalization(), persistedSearch.getPersonalization(),
                 source.getPersonalization());
@@ -158,9 +258,6 @@ public class SelfEvolvingBootstrapOverrideService {
             return;
         }
         RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = ensureEmbeddingsConfig(target);
-        if (source.getEnabled() != null) {
-            embeddingsConfig.setEnabled(source.getEnabled());
-        }
         if (isNonBlank(source.getProvider())) {
             embeddingsConfig.setProvider(source.getProvider().trim());
         }
@@ -182,9 +279,7 @@ public class SelfEvolvingBootstrapOverrideService {
         if (source.getTimeoutMs() != null) {
             embeddingsConfig.setTimeoutMs(source.getTimeoutMs());
         }
-        if (source.getAutoFallbackToBm25() != null) {
-            embeddingsConfig.setAutoFallbackToBm25(source.getAutoFallbackToBm25());
-        }
+        embeddingsConfig.setAutoFallbackToBm25(true);
         overrideEmbeddingsLocal(embeddingsConfig, source.getLocal());
     }
 
@@ -198,9 +293,6 @@ public class SelfEvolvingBootstrapOverrideService {
         RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig persistedEmbeddings = persisted.getEmbeddings() != null
                 ? persisted.getEmbeddings()
                 : new RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig();
-        if (source.getEnabled() != null) {
-            candidateEmbeddings.setEnabled(persistedEmbeddings.getEnabled());
-        }
         if (source.getProvider() != null) {
             candidateEmbeddings.setProvider(persistedEmbeddings.getProvider());
         }
@@ -222,9 +314,7 @@ public class SelfEvolvingBootstrapOverrideService {
         if (source.getTimeoutMs() != null) {
             candidateEmbeddings.setTimeoutMs(persistedEmbeddings.getTimeoutMs());
         }
-        if (source.getAutoFallbackToBm25() != null) {
-            candidateEmbeddings.setAutoFallbackToBm25(persistedEmbeddings.getAutoFallbackToBm25());
-        }
+        candidateEmbeddings.setAutoFallbackToBm25(persistedEmbeddings.getAutoFallbackToBm25());
         restoreEmbeddingsLocal(candidateEmbeddings, persistedEmbeddings, source.getLocal());
     }
 

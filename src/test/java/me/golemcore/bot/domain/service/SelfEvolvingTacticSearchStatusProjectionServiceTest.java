@@ -152,4 +152,43 @@ class SelfEvolvingTacticSearchStatusProjectionServiceTest {
         assertEquals("Managed Ollama exited with code 137", status.getReason());
         assertFalse(status.getRuntimeHealthy());
     }
+
+    @Test
+    void shouldProjectHybridModeWhenSelfEvolvingIsEnabledEvenIfLegacyFlagsAreFalse() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ManagedLocalOllamaSupervisor supervisor = mock(ManagedLocalOllamaSupervisor.class);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .enabled(false)
+                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                .mode("hybrid")
+                                .embeddings(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig.builder()
+                                        .enabled(false)
+                                        .provider("openai_compatible")
+                                        .baseUrl("https://api.example.com/v1")
+                                        .model("text-embedding-3-large")
+                                        .build())
+                                .build())
+                        .build())
+                .build());
+        when(supervisor.currentStatus()).thenReturn(ManagedLocalOllamaStatus.builder()
+                .currentState(ManagedLocalOllamaState.DISABLED)
+                .owned(false)
+                .endpoint("https://api.example.com/v1")
+                .updatedAt(Instant.parse("2026-04-02T00:00:05Z"))
+                .build());
+
+        SelfEvolvingTacticSearchStatusProjectionService service = new SelfEvolvingTacticSearchStatusProjectionService(
+                runtimeConfigService,
+                supervisor,
+                Clock.fixed(Instant.parse("2026-04-02T00:00:06Z"), ZoneOffset.UTC));
+
+        TacticSearchStatus status = service.projectCurrent();
+
+        assertEquals("hybrid", status.getMode());
+        assertFalse(status.getDegraded());
+        assertEquals("openai_compatible", status.getProvider());
+        assertEquals("text-embedding-3-large", status.getModel());
+    }
 }

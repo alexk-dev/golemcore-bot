@@ -137,6 +137,11 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
   const { tokenPresent: _telegramTokenPresent, ...telegram } = config.telegram;
   const { apiKeyPresent: _voiceApiKeyPresent, whisperSttApiKeyPresent: _whisperSttApiKeyPresent, ...voice } = config.voice;
   const tools = config.tools;
+  const {
+    managedByProperties: _selfEvolvingManagedByProperties,
+    overriddenPaths: _selfEvolvingOverriddenPaths,
+    ...selfEvolving
+  } = config.selfEvolving;
 
   const payload: UnknownRecord = {
     ...config,
@@ -167,6 +172,7 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
       apiKey: toSecretPayload(voice.apiKey ?? null),
       whisperSttApiKey: toSecretPayload(voice.whisperSttApiKey ?? null),
     },
+    selfEvolving,
   };
   return payload;
 }
@@ -388,6 +394,8 @@ export interface HiveConfig {
 export interface SelfEvolvingConfig {
   enabled: boolean | null;
   tracePayloadOverride: boolean | null;
+  managedByProperties?: boolean | null;
+  overriddenPaths?: string[];
   capture: SelfEvolvingCaptureConfig;
   judge: SelfEvolvingJudgeConfig;
   evolution: SelfEvolvingEvolutionConfig;
@@ -797,9 +805,14 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
     ? record.hive as UnknownRecord
     : {};
 
+  const selfEvolvingEnabled = typeof record.enabled === 'boolean' ? record.enabled : false;
+  const tacticSearchMode = (toNullableString(tacticsSearch.mode) as 'bm25' | 'hybrid' | null) ?? 'hybrid';
+
   return {
-    enabled: typeof record.enabled === 'boolean' ? record.enabled : false,
+    enabled: selfEvolvingEnabled,
     tracePayloadOverride: typeof record.tracePayloadOverride === 'boolean' ? record.tracePayloadOverride : true,
+    managedByProperties: typeof record.managedByProperties === 'boolean' ? record.managedByProperties : false,
+    overriddenPaths: toStringArray(record.overriddenPaths),
     capture: {
       llm: toNullableString(capture.llm) ?? 'full',
       tool: toNullableString(capture.tool) ?? 'full',
@@ -822,14 +835,14 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
       artifactTypes: toStringArray(evolution.artifactTypes),
     },
     tactics: {
-      enabled: typeof tactics.enabled === 'boolean' ? tactics.enabled : false,
+      enabled: selfEvolvingEnabled,
       search: {
-        mode: toNullableString(tacticsSearch.mode) as 'bm25' | 'hybrid' | null ?? 'bm25',
+        mode: tacticSearchMode,
         bm25: {
           enabled: typeof tacticsBm25.enabled === 'boolean' ? tacticsBm25.enabled : true,
         },
         embeddings: {
-          enabled: typeof tacticsEmbeddings.enabled === 'boolean' ? tacticsEmbeddings.enabled : false,
+          enabled: tacticSearchMode === 'hybrid',
           provider: toNullableString(tacticsEmbeddings.provider),
           baseUrl: toNullableString(tacticsEmbeddings.baseUrl),
           apiKey: toNullableString(tacticsEmbeddings.apiKey),

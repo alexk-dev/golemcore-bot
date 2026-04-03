@@ -127,7 +127,9 @@ describe('settings selfEvolving normalization', () => {
     expect(result.selfEvolving.judge.primaryTier).toBe('smart');
     expect(result.selfEvolving.judge.tiebreakerTier).toBe('deep');
     expect(result.selfEvolving.judge.evolutionTier).toBe('deep');
-    expect(result.selfEvolving.tactics.search.mode).toBe('bm25');
+    expect(result.selfEvolving.managedByProperties).toBe(false);
+    expect(result.selfEvolving.overriddenPaths).toEqual([]);
+    expect(result.selfEvolving.tactics.search.mode).toBe('hybrid');
     expect(result.selfEvolving.tactics.search.embeddings.provider).toBe('ollama');
     expect(result.selfEvolving.tactics.search.embeddings.model).toBe('qwen3-embedding:0.6b');
     expect(result.selfEvolving.tactics.search.embeddings.local.requireHealthyRuntime).toBe(true);
@@ -180,6 +182,8 @@ describe('settings selfEvolving normalization', () => {
         },
         benchmark: { enabled: true, harvestProductionRuns: true, autoCreateRegressionCases: true },
         hive: { publishInspectionProjection: true, readonlyInspection: true },
+        managedByProperties: true,
+        overriddenPaths: ['enabled', 'tactics.search.mode'],
       }),
     });
 
@@ -242,6 +246,10 @@ describe('settings selfEvolving normalization', () => {
     expect(payload.selfEvolving.tactics.search.embeddings.model).toBe('text-embedding-3-large');
     expect(payload.selfEvolving.tactics.search.embeddings.local.autoInstall).toBe(false);
     expect(payload.selfEvolving.tactics.search.embeddings.local.requireHealthyRuntime).toBe(true);
+    expect('managedByProperties' in payload.selfEvolving).toBe(false);
+    expect('overriddenPaths' in payload.selfEvolving).toBe(false);
+    expect(result.selfEvolving.managedByProperties).toBe(true);
+    expect(result.selfEvolving.overriddenPaths).toEqual(['enabled', 'tactics.search.mode']);
     expect(result.selfEvolving.tactics.search.embeddings.baseUrl).toBe('https://api.example.com/v1');
   });
 });

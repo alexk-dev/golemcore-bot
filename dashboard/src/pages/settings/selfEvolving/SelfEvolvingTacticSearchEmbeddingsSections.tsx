@@ -32,6 +32,7 @@ export type UpdateEmbeddings = (updater: (current: EmbeddingsConfig) => Embeddin
 interface EmbeddingProviderSelectorProps {
   embeddings: EmbeddingsConfig;
   presets: OllamaEmbeddingPreset[];
+  disabled?: boolean;
   updateEmbeddings: UpdateEmbeddings;
 }
 
@@ -42,6 +43,7 @@ interface LocalEmbeddingModelSectionProps {
   canInstallModel: boolean;
   installHint: string | null;
   isInstalling: boolean;
+  disabled?: boolean;
   onInstall?: (model: string) => void;
   updateEmbeddings: UpdateEmbeddings;
 }
@@ -50,12 +52,15 @@ interface RemoteEmbeddingFieldsProps {
   embeddings: EmbeddingsConfig;
   showApiKey: boolean;
   setShowApiKey: Dispatch<SetStateAction<boolean>>;
+  disabled?: boolean;
   updateEmbeddings: UpdateEmbeddings;
 }
 
 interface TacticRetrievalTogglesProps {
   tacticsEnabled: boolean;
   embeddingsEnabled: boolean;
+  tacticsDisabled?: boolean;
+  embeddingsDisabled?: boolean;
   setForm: Dispatch<SetStateAction<SelfEvolvingConfig>>;
   updateEmbeddings: UpdateEmbeddings;
 }
@@ -63,6 +68,8 @@ interface TacticRetrievalTogglesProps {
 interface SearchModeSettingsProps {
   mode: 'bm25' | 'hybrid' | null;
   timeoutMs: number | null;
+  modeDisabled?: boolean;
+  timeoutDisabled?: boolean;
   setForm: Dispatch<SetStateAction<SelfEvolvingConfig>>;
   updateEmbeddings: UpdateEmbeddings;
   toNullableInt: (value: string) => number | null;
@@ -71,6 +78,7 @@ interface SearchModeSettingsProps {
 interface EmbeddingDimensionSettingsProps {
   resolvedDimensions: number;
   resolvedBatchSize: number;
+  disabled?: boolean;
   updateEmbeddings: UpdateEmbeddings;
   toNullableInt: (value: string) => number | null;
 }
@@ -78,6 +86,7 @@ interface EmbeddingDimensionSettingsProps {
 export function EmbeddingProviderSelector({
   embeddings,
   presets,
+  disabled = false,
   updateEmbeddings,
 }: EmbeddingProviderSelectorProps): ReactElement {
   return (
@@ -86,6 +95,7 @@ export function EmbeddingProviderSelector({
       <Form.Select
         size="sm"
         value={embeddings.provider ?? 'ollama'}
+        disabled={disabled}
         onChange={(event) => updateEmbeddings((current) => {
           const nextProvider = event.target.value;
           const nextPreset = presets[0];
@@ -122,6 +132,7 @@ export function LocalEmbeddingModelSection({
   canInstallModel,
   installHint,
   isInstalling,
+  disabled = false,
   onInstall,
   updateEmbeddings,
 }: LocalEmbeddingModelSectionProps): ReactElement {
@@ -140,6 +151,7 @@ export function LocalEmbeddingModelSection({
             size="sm"
             aria-label="Local embedding model"
             value={resolvedOllamaModel}
+            disabled={disabled}
             onChange={(event) => {
               const selectedPreset = resolvedOllamaOptions.find((preset) => preset.value === event.target.value);
               updateEmbeddings((current) => ({
@@ -183,6 +195,7 @@ export function RemoteEmbeddingFields({
   embeddings,
   showApiKey,
   setShowApiKey,
+  disabled = false,
   updateEmbeddings,
 }: RemoteEmbeddingFieldsProps): ReactElement {
   return (
@@ -197,6 +210,7 @@ export function RemoteEmbeddingFields({
             type="text"
             placeholder={DEFAULT_REMOTE_MODEL}
             value={embeddings.model ?? ''}
+            disabled={disabled}
             onChange={(event) => updateEmbeddings((current) => ({ ...current, model: event.target.value || null }))}
           />
         </Form.Group>
@@ -209,6 +223,7 @@ export function RemoteEmbeddingFields({
             type="url"
             placeholder={DEFAULT_REMOTE_BASE_URL}
             value={embeddings.baseUrl ?? ''}
+            disabled={disabled}
             onChange={(event) => updateEmbeddings((current) => ({ ...current, baseUrl: event.target.value || null }))}
           />
         </Form.Group>
@@ -225,9 +240,10 @@ export function RemoteEmbeddingFields({
               spellCheck={false}
               placeholder="Enter API key"
               value={embeddings.apiKey ?? ''}
+              disabled={disabled}
               onChange={(event) => updateEmbeddings((current) => ({ ...current, apiKey: event.target.value || null }))}
             />
-            <Button type="button" variant="secondary" onClick={() => setShowApiKey((current) => !current)}>
+            <Button type="button" variant="secondary" disabled={disabled} onClick={() => setShowApiKey((current) => !current)}>
               {showApiKey ? 'Hide' : 'Show'}
             </Button>
           </InputGroup>
@@ -240,6 +256,8 @@ export function RemoteEmbeddingFields({
 export function TacticRetrievalToggles({
   tacticsEnabled,
   embeddingsEnabled,
+  tacticsDisabled = false,
+  embeddingsDisabled = false,
   setForm,
   updateEmbeddings,
 }: TacticRetrievalTogglesProps): ReactElement {
@@ -249,6 +267,7 @@ export function TacticRetrievalToggles({
         type="switch"
         label={<>Enable tactic retrieval <HelpTip text="Turns on tactic search for advisory retrieval during Self-Evolving runs." /></>}
         checked={tacticsEnabled}
+        disabled={tacticsDisabled}
         onChange={(event) => setForm((current) => ({
           ...current,
           tactics: { ...current.tactics, enabled: event.target.checked },
@@ -258,6 +277,7 @@ export function TacticRetrievalToggles({
         type="switch"
         label={<>Enable embeddings <HelpTip text="Allows hybrid retrieval with BM25 plus vector search when search mode is set to Hybrid." /></>}
         checked={embeddingsEnabled}
+        disabled={embeddingsDisabled}
         onChange={(event) => updateEmbeddings((current) => ({ ...current, enabled: event.target.checked }))}
       />
     </div>
@@ -267,6 +287,8 @@ export function TacticRetrievalToggles({
 export function SearchModeSettings({
   mode,
   timeoutMs,
+  modeDisabled = false,
+  timeoutDisabled = false,
   setForm,
   updateEmbeddings,
   toNullableInt,
@@ -276,11 +298,12 @@ export function SearchModeSettings({
       <Col md={6}>
         <Form.Group controlId="self-evolving-tactic-search-mode">
           <Form.Label className="small fw-medium">
-            Search mode <HelpTip text="BM25-only avoids vector calls; Hybrid enables embeddings when they are configured and healthy." />
+            Retrieval mode <HelpTip text="BM25-only avoids vector calls; Hybrid enables embeddings when they are configured and healthy." />
           </Form.Label>
           <Form.Select
             size="sm"
-            value={mode ?? 'bm25'}
+            value={mode ?? 'hybrid'}
+            disabled={modeDisabled}
             onChange={(event) => setForm((current) => ({
               ...current,
               tactics: {
@@ -303,6 +326,7 @@ export function SearchModeSettings({
             type="number"
             min={1}
             value={timeoutMs ?? ''}
+            disabled={timeoutDisabled}
             onChange={(event) => updateEmbeddings((current) => ({ ...current, timeoutMs: toNullableInt(event.target.value) }))}
           />
         </Form.Group>
@@ -314,6 +338,7 @@ export function SearchModeSettings({
 export function EmbeddingDimensionSettings({
   resolvedDimensions,
   resolvedBatchSize,
+  disabled = false,
   updateEmbeddings,
   toNullableInt,
 }: EmbeddingDimensionSettingsProps): ReactElement {
@@ -327,6 +352,7 @@ export function EmbeddingDimensionSettings({
             type="number"
             min={1}
             value={resolvedDimensions}
+            disabled={disabled}
             onChange={(event) => updateEmbeddings((current) => ({ ...current, dimensions: toNullableInt(event.target.value) }))}
           />
         </Form.Group>
@@ -339,6 +365,7 @@ export function EmbeddingDimensionSettings({
             type="number"
             min={1}
             value={resolvedBatchSize}
+            disabled={disabled}
             onChange={(event) => updateEmbeddings((current) => ({ ...current, batchSize: toNullableInt(event.target.value) }))}
           />
         </Form.Group>

@@ -34,6 +34,7 @@ import {
   useInstallSelfEvolvingTacticEmbeddingModel,
   useSelfEvolvingTacticSearchStatus,
 } from '../hooks/useSelfEvolving';
+import type { SelfEvolvingTacticSearchStatusPreview } from '../api/selfEvolving';
 import {
   SETTINGS_BLOCKS,
   SETTINGS_SECTIONS,
@@ -116,9 +117,14 @@ export default function SettingsPage(): ReactElement {
   const qc = useQueryClient();
   const marketplaceBadge = buildMarketplaceBadge(pluginMarketplace);
   const installTacticEmbeddingModel = useInstallSelfEvolvingTacticEmbeddingModel();
+  const [selfEvolvingTacticStatusPreview, setSelfEvolvingTacticStatusPreview] =
+    useState<SelfEvolvingTacticSearchStatusPreview | null>(null);
 
   const staticSection = isSettingsSectionKey(section) ? section : null;
-  const { data: selfEvolvingTacticSearchStatus } = useSelfEvolvingTacticSearchStatus(staticSection === 'self-evolving');
+  const { data: selfEvolvingTacticSearchStatus } = useSelfEvolvingTacticSearchStatus(
+    staticSection === 'self-evolving',
+    selfEvolvingTacticStatusPreview,
+  );
   const pluginSection = staticSection == null && section != null
     ? pluginCatalog.find((item) => item.routeKey === section) ?? null
     : null;
@@ -347,6 +353,7 @@ export default function SettingsPage(): ReactElement {
           config={rc.selfEvolving}
           tacticSearchStatus={selfEvolvingTacticSearchStatus ?? null}
           isInstallingTacticEmbedding={installTacticEmbeddingModel.isPending}
+          onTacticSearchStatusPreviewChange={setSelfEvolvingTacticStatusPreview}
           onInstallTacticEmbedding={async (model) => {
             await installTacticEmbeddingModel.mutateAsync(model);
           }}

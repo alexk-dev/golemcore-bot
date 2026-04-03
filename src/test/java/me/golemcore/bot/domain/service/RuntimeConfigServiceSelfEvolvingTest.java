@@ -96,7 +96,7 @@ class RuntimeConfigServiceSelfEvolvingTest {
     @Test
     void shouldExposeDefaultSelfEvolvingGettersWhenSectionIsMissing() {
         assertFalse(service.isSelfEvolvingEnabled());
-        assertTrue(service.isSelfEvolvingTracePayloadOverrideEnabled());
+        assertFalse(service.isSelfEvolvingTracePayloadOverrideEnabled());
         assertEquals("smart", service.getSelfEvolvingJudgePrimaryTier());
         assertEquals("deep", service.getSelfEvolvingJudgeTiebreakerTier());
         assertEquals("deep", service.getSelfEvolvingJudgeEvolutionTier());
@@ -131,7 +131,7 @@ class RuntimeConfigServiceSelfEvolvingTest {
         RuntimeConfig config = service.getRuntimeConfig();
         config.setSelfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
                 .enabled(true)
-                .tracePayloadOverride(null)
+                .tracePayloadOverride(false)
                 .capture(RuntimeConfig.SelfEvolvingCaptureConfig.builder()
                         .llm("invalid")
                         .tool("meta_only")
@@ -174,6 +174,7 @@ class RuntimeConfigServiceSelfEvolvingTest {
         service.updateRuntimeConfig(config);
 
         RuntimeConfig normalized = service.getRuntimeConfig();
+        assertTrue(normalized.getSelfEvolving().getTracePayloadOverride());
         assertEquals("full", normalized.getSelfEvolving().getCapture().getLlm());
         assertEquals("meta_only", normalized.getSelfEvolving().getCapture().getTool());
         assertEquals("full", normalized.getSelfEvolving().getCapture().getContext());
@@ -197,5 +198,7 @@ class RuntimeConfigServiceSelfEvolvingTest {
         assertTrue(normalized.getSelfEvolving().getBenchmark().getAutoCreateRegressionCases());
         assertTrue(normalized.getSelfEvolving().getHive().getPublishInspectionProjection());
         assertTrue(normalized.getSelfEvolving().getHive().getReadonlyInspection());
+        assertEquals("hybrid", normalized.getSelfEvolving().getTactics().getSearch().getMode());
+        assertTrue(normalized.getSelfEvolving().getTactics().getSearch().getEmbeddings().getAutoFallbackToBm25());
     }
 }

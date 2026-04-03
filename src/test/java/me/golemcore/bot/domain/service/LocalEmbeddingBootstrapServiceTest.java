@@ -101,6 +101,26 @@ class LocalEmbeddingBootstrapServiceTest {
     }
 
     @Test
+    void shouldPreviewUnsavedLocalModelSelectionAgainstLiveRuntime() {
+        service.runtimeProbe = new LocalEmbeddingBootstrapService.LocalRuntimeProbe(true, "0.19.0");
+        service.runtimeHealthy = true;
+        service.hasModelResponses.add(true);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(false, false, "bm25", false,
+                null, true, false, false, true, null, null));
+
+        TacticSearchStatus status = service.probeStatus("ollama", "bge-m3", null);
+
+        assertEquals("hybrid", status.getMode());
+        assertEquals("ollama", status.getProvider());
+        assertEquals("bge-m3", status.getModel());
+        assertEquals("http://127.0.0.1:11434", status.getBaseUrl());
+        assertTrue(status.getRuntimeInstalled());
+        assertTrue(status.getRuntimeHealthy());
+        assertTrue(status.getModelAvailable());
+        assertFalse(Boolean.TRUE.equals(status.getDegraded()));
+    }
+
+    @Test
     void shouldStayBm25WhenSelfEvolvingTacticsAreDisabled() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(false, true, "hybrid", true,
                 "ollama", true, true, false, true, "http://localhost:11434", "qwen3-embedding:0.6b"));

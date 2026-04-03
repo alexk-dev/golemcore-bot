@@ -119,6 +119,47 @@ class TacticSearchServiceTest {
         assertTrue(results.stream().allMatch(result -> Boolean.TRUE.equals(result.getExplanation().getEligible())));
     }
 
+    @Test
+    void shouldSearchWhenSelfEvolvingIsEnabledEvenIfLegacyTacticsFlagIsFalse() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .enabled(true)
+                        .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                                .enabled(false)
+                                .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                        .mode("hybrid")
+                                        .build())
+                                .build())
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(runtimeConfig.getSelfEvolving());
+
+        TacticRecordService tacticRecordService = mock(TacticRecordService.class);
+        when(tacticRecordService.getAll()).thenReturn(List.of(
+                tactic("approved-planner", "approved", "approved", "Planner tactic", "recover failed shell command")));
+        TacticBm25IndexService bm25IndexService = new TacticBm25IndexService();
+        TacticIndexRebuildService indexRebuildService = new TacticIndexRebuildService(
+                tacticRecordService,
+                new TacticSearchDocumentAssembler(),
+                bm25IndexService,
+                Clock.fixed(Instant.parse("2026-04-01T23:00:00Z"), ZoneOffset.UTC));
+        indexRebuildService.rebuildAll();
+        TacticSearchService searchService = new TacticSearchService(
+                queryExpansionService,
+                bm25IndexService,
+                runtimeConfigService,
+                null,
+                null,
+                null);
+
+        List<TacticSearchResult> results = searchService.search("planner");
+
+        assertEquals(1, results.size());
+        assertEquals("approved-planner", results.getFirst().getTacticId());
+    }
+
     private TacticRecord tactic(String tacticId, String promotionState, String rolloutStage, String title,
             String summary) {
         return TacticRecord.builder()

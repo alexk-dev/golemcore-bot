@@ -104,10 +104,6 @@ public class ContextBuildingSystem implements AgentSystem {
                 || !runtimeConfigService.isSelfEvolvingEnabled()) {
             return;
         }
-        if (runtimeConfigService.getSelfEvolvingConfig().getTactics() == null
-                || !Boolean.TRUE.equals(runtimeConfigService.getSelfEvolvingConfig().getTactics().getEnabled())) {
-            return;
-        }
         try {
             TacticSearchQuery query = tacticSearchService.buildQuery(context);
             context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY, query);

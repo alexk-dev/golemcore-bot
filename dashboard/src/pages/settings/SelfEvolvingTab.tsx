@@ -1,9 +1,9 @@
 import { type Dispatch, type ReactElement, type SetStateAction, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Form, Nav, Row } from 'react-bootstrap';
+import { Alert, Button, Card, Col, Form, Nav, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 
 import type { SelfEvolvingConfig } from '../../api/settings';
-import type { SelfEvolvingTacticSearchStatus } from '../../api/selfEvolving';
+import type { SelfEvolvingTacticSearchStatus, SelfEvolvingTacticSearchStatusPreview } from '../../api/selfEvolving';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
@@ -11,6 +11,10 @@ import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import { SelfEvolvingEmbeddingInstallModal } from './selfEvolving/SelfEvolvingEmbeddingInstallModal';
 import { SelfEvolvingJudgeTierSettings } from './selfEvolving/SelfEvolvingJudgeTierSettings';
 import { SelfEvolvingTacticSearchEmbeddingsSettings } from './selfEvolving/SelfEvolvingTacticSearchEmbeddingsSettings';
+import {
+  formatOverriddenPathList,
+  hasOverriddenPath,
+} from './selfEvolving/selfEvolvingOverridePaths';
 
 const CAPTURE_LEVEL_OPTIONS = [
   { value: 'full', label: 'Full payload' },
@@ -43,11 +47,13 @@ interface SelfEvolvingTabProps {
   isInstallingTacticEmbedding?: boolean;
   onSave: (config: SelfEvolvingConfig) => Promise<void>;
   isSaving?: boolean;
+  onTacticSearchStatusPreviewChange?: (preview: SelfEvolvingTacticSearchStatusPreview) => void;
 }
 
 interface SelfEvolvingFormSectionProps {
   form: SelfEvolvingConfig;
   setForm: Dispatch<SetStateAction<SelfEvolvingConfig>>;
+  disabledPaths?: string[];
 }
 
 interface SelfEvolvingSectionProps {
@@ -72,7 +78,9 @@ function SelfEvolvingSection({
   );
 }
 
-function SelfEvolvingToggles({ form, setForm }: SelfEvolvingFormSectionProps): ReactElement {
+function SelfEvolvingToggles({ form, setForm, disabledPaths = [] }: SelfEvolvingFormSectionProps): ReactElement {
+  const isEnabledManaged = hasOverriddenPath(disabledPaths, 'enabled');
+
   return (
     <>
       <Form.Check
@@ -80,15 +88,8 @@ function SelfEvolvingToggles({ form, setForm }: SelfEvolvingFormSectionProps): R
         label={<>Enable Self-Evolving <HelpTip text="Turns on run judging, candidate generation, and promotion workflow capture." /></>}
         checked={form.enabled ?? false}
         onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
+        disabled={isEnabledManaged}
         className="mb-3"
-      />
-
-      <Form.Check
-        type="switch"
-        label={<>Trace payload override <HelpTip text="When enabled, Self-Evolving forces payload capture depth for replay and evidence anchoring while still honoring redaction." /></>}
-        checked={form.tracePayloadOverride ?? true}
-        onChange={(event) => setForm((current) => ({ ...current, tracePayloadOverride: event.target.checked }))}
-        className="mb-4"
       />
     </>
   );
@@ -262,16 +263,33 @@ export default function SelfEvolvingTab({
   isInstallingTacticEmbedding = false,
   onSave,
   isSaving = false,
+  onTacticSearchStatusPreviewChange,
 }: SelfEvolvingTabProps): ReactElement {
   const [form, setForm] = useState<SelfEvolvingConfig>({ ...config });
   const [activeTab, setActiveTab] = useState<SelfEvolvingTabKey>('general');
   const [installingModel, setInstallingModel] = useState<string | null>(null);
+  const overriddenPaths = form.overriddenPaths ?? [];
+  const isManaged = form.managedByProperties === true;
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const tacticSearchPreview = useMemo<SelfEvolvingTacticSearchStatusPreview>(() => ({
+    provider: form.tactics.search.embeddings.provider ?? 'ollama',
+    model: form.tactics.search.embeddings.model ?? null,
+    baseUrl: form.tactics.search.embeddings.baseUrl ?? null,
+  }), [
+    form.tactics.search.embeddings.baseUrl,
+    form.tactics.search.embeddings.model,
+    form.tactics.search.embeddings.provider,
+  ]);
 
   useEffect(() => {
     // Keep the tab aligned with refreshed runtime-config payloads after saves or background refreshes.
     setForm({ ...config });
   }, [config]);
+
+  useEffect(() => {
+    // Keep tactic diagnostics aligned with the current unsaved provider/model selection in the form.
+    onTacticSearchStatusPreviewChange?.(tacticSearchPreview);
+  }, [onTacticSearchStatusPreviewChange, tacticSearchPreview]);
 
   const handleSave = async (): Promise<void> => {
     await onSave(form);
@@ -306,6 +324,16 @@ export default function SelfEvolvingTab({
             tip="Configure run judging, promotion gating, benchmark harvesting, and Hive inspection for the Self-Evolving control plane."
           />
 
+          {isManaged && (
+            <Alert variant="warning">
+              Some Self-Evolving settings are managed by <code>bot.self-evolving.bootstrap.*</code> startup
+              properties and cannot be changed from the dashboard.
+              <div className="small mt-2">
+                Managed paths: <code>{formatOverriddenPathList(overriddenPaths)}</code>
+              </div>
+            </Alert>
+          )}
+
           <Nav className="nav-tabs mb-4">
             {SELF_EVOLVING_TABS.map((tab) => (
               <button
@@ -320,7 +348,7 @@ export default function SelfEvolvingTab({
           </Nav>
 
           <SelfEvolvingSection activeTab={activeTab} tabKey="general">
-            <SelfEvolvingToggles form={form} setForm={setForm} />
+            <SelfEvolvingToggles form={form} setForm={setForm} disabledPaths={overriddenPaths} />
           </SelfEvolvingSection>
 
           <SelfEvolvingSection activeTab={activeTab} tabKey="judge">
@@ -333,6 +361,7 @@ export default function SelfEvolvingTab({
               form={form}
               setForm={setForm}
               status={tacticSearchStatus}
+              overriddenPaths={overriddenPaths}
               isInstalling={isInstallingTacticEmbedding}
               onInstall={(model) => { void handleInstallTacticEmbedding(model); }}
             />

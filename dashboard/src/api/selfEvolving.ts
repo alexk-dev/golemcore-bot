@@ -250,6 +250,12 @@ export interface SelfEvolvingTacticSearchStatus {
   updatedAt: string | null;
 }
 
+export interface SelfEvolvingTacticSearchStatusPreview {
+  provider: string | null;
+  model: string | null;
+  baseUrl: string | null;
+}
+
 export interface SelfEvolvingTacticSearchExplanation {
   searchMode: string | null;
   degradedReason: string | null;
@@ -323,8 +329,17 @@ export async function getSelfEvolvingCandidates(): Promise<SelfEvolvingCandidate
   return data;
 }
 
-export async function getSelfEvolvingTacticSearchStatus(): Promise<SelfEvolvingTacticSearchStatus> {
-  const { data } = await client.get<SelfEvolvingTacticSearchStatus>('/self-evolving/tactics/status');
+export async function getSelfEvolvingTacticSearchStatus(
+  preview?: SelfEvolvingTacticSearchStatusPreview | null,
+): Promise<SelfEvolvingTacticSearchStatus> {
+  const params = preview == null ? undefined : {
+    provider: preview.provider ?? undefined,
+    model: preview.model ?? undefined,
+    baseUrl: preview.baseUrl ?? undefined,
+  };
+  const { data } = await client.get<SelfEvolvingTacticSearchStatus>('/self-evolving/tactics/status', {
+    params,
+  });
   return data;
 }
 

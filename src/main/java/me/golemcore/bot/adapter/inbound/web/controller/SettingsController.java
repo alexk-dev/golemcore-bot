@@ -1103,6 +1103,7 @@ public class SettingsController {
                 .delayedActions(mergeSection(patch.getDelayedActions(), baseline.getDelayedActions(),
                         RuntimeConfig.DelayedActionsConfig::new))
                 .hive(mergeSection(patch.getHive(), baseline.getHive(), RuntimeConfig.HiveConfig::new))
+                .selfEvolving(patch.getSelfEvolving() != null ? patch.getSelfEvolving() : baseline.getSelfEvolving())
                 .build();
     }
 

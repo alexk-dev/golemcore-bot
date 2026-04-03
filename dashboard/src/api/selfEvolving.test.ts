@@ -50,9 +50,18 @@ describe('selfEvolving api', () => {
     });
 
     const api = await import('./selfEvolving');
-    const result = await api.getSelfEvolvingTacticSearchStatus();
+    const result = await api.getSelfEvolvingTacticSearchStatus({
+      provider: 'ollama',
+      model: 'bge-m3',
+      baseUrl: null,
+    });
 
-    expect(clientGetMock).toHaveBeenCalledWith('/self-evolving/tactics/status');
+    expect(clientGetMock).toHaveBeenCalledWith('/self-evolving/tactics/status', {
+      params: {
+        provider: 'ollama',
+        model: 'bge-m3',
+      },
+    });
     expect(result.provider).toBe('ollama');
     expect(result.model).toBe('qwen3-embedding:0.6b');
     expect(result.runtimeInstalled).toBe(false);

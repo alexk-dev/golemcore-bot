@@ -88,7 +88,7 @@ class SelfEvolvingControllerTacticSearchTest {
                 .updatedAt("2026-04-01T23:30:00Z")
                 .build());
 
-        StepVerifier.create(controller.getTacticSearchStatus())
+        StepVerifier.create(controller.getTacticSearchStatus(null, null, null))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());

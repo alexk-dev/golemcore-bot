@@ -827,6 +827,10 @@ public class RuntimeConfig {
         @Builder.Default
         private Boolean tracePayloadOverride = true;
         @Builder.Default
+        private Boolean managedByProperties = false;
+        @Builder.Default
+        private List<String> overriddenPaths = new ArrayList<>();
+        @Builder.Default
         private SelfEvolvingTacticsConfig tactics = new SelfEvolvingTacticsConfig();
         @Builder.Default
         private SelfEvolvingCaptureConfig capture = new SelfEvolvingCaptureConfig();
@@ -861,7 +865,7 @@ public class RuntimeConfig {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class SelfEvolvingTacticSearchConfig {
         @Builder.Default
-        private String mode = "bm25";
+        private String mode = "hybrid";
         @Builder.Default
         private SelfEvolvingTacticBm25Config bm25 = new SelfEvolvingTacticBm25Config();
         @Builder.Default

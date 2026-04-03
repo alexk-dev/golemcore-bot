@@ -181,7 +181,7 @@ class SelfEvolvingControllerTest {
 
     @Test
     void shouldExposeDedicatedOllamaDiagnosticsForTacticSearchStatus() {
-        when(localEmbeddingBootstrapService.probeStatus()).thenReturn(TacticSearchStatus.builder()
+        when(localEmbeddingBootstrapService.probeStatus(null, null, null)).thenReturn(TacticSearchStatus.builder()
                 .mode("bm25")
                 .reason("Ollama is not installed on this machine")
                 .provider("ollama")
@@ -198,7 +198,7 @@ class SelfEvolvingControllerTest {
                 .degraded(true)
                 .build());
 
-        StepVerifier.create(controller.getTacticSearchStatus())
+        StepVerifier.create(controller.getTacticSearchStatus(null, null, null))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
@@ -208,6 +208,33 @@ class SelfEvolvingControllerTest {
                     assertEquals(0, response.getBody().getRestartAttempts());
                     assertFalse(Boolean.TRUE.equals(response.getBody().getRuntimeInstalled()));
                     assertEquals("http://127.0.0.1:11434", response.getBody().getBaseUrl());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposePreviewDiagnosticsForUnsavedLocalEmbeddingSelection() {
+        when(localEmbeddingBootstrapService.probeStatus("ollama", "bge-m3", null))
+                .thenReturn(TacticSearchStatus.builder()
+                        .mode("hybrid")
+                        .reason(null)
+                        .provider("ollama")
+                        .model("bge-m3")
+                        .runtimeInstalled(true)
+                        .runtimeHealthy(true)
+                        .runtimeVersion("0.19.0")
+                        .baseUrl("http://127.0.0.1:11434")
+                        .modelAvailable(true)
+                        .degraded(false)
+                        .build());
+
+        StepVerifier.create(controller.getTacticSearchStatus("ollama", "bge-m3", null))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("ollama", response.getBody().getProvider());
+                    assertEquals("bge-m3", response.getBody().getModel());
+                    assertTrue(Boolean.TRUE.equals(response.getBody().getModelAvailable()));
                 })
                 .verifyComplete();
     }

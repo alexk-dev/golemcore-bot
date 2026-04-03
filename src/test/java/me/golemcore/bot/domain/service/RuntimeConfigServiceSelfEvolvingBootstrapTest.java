@@ -32,6 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyString;
@@ -76,8 +77,8 @@ class RuntimeConfigServiceSelfEvolvingBootstrapTest {
 
         assertFalse(config.getSelfEvolving().getEnabled());
         assertFalse(config.getSelfEvolving().getTactics().getEnabled());
-        assertEquals("bm25", config.getSelfEvolving().getTactics().getSearch().getMode());
-        assertFalse(config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getEnabled());
+        assertEquals("hybrid", config.getSelfEvolving().getTactics().getSearch().getMode());
+        assertTrue(config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getEnabled());
         assertTrue(config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
                 .getRequireHealthyRuntime());
         assertEquals(5000,
@@ -136,7 +137,7 @@ class RuntimeConfigServiceSelfEvolvingBootstrapTest {
                                 "rerank", Map.of("tier", "standard"))))));
 
         botProperties.getSelfEvolving().getBootstrap().setEnabled(true);
-        botProperties.getSelfEvolving().getBootstrap().setTracePayloadOverride(true);
+        botProperties.getSelfEvolving().getBootstrap().setTracePayloadOverride(false);
         botProperties.getSelfEvolving().getBootstrap().getTactics().setEnabled(true);
         botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getRerank().setTier("deep");
 
@@ -146,6 +147,23 @@ class RuntimeConfigServiceSelfEvolvingBootstrapTest {
         assertTrue(config.getSelfEvolving().getTracePayloadOverride());
         assertTrue(config.getSelfEvolving().getTactics().getEnabled());
         assertEquals("deep", config.getSelfEvolving().getTactics().getSearch().getRerank().getTier());
+    }
+
+    @Test
+    void shouldExposeManagedMetadataForApiWhenBootstrapOverridesAreActive() {
+        botProperties.getSelfEvolving().getBootstrap().setEnabled(true);
+        botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().setMode("hybrid");
+        botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getEmbeddings().setProvider("ollama");
+
+        RuntimeConfig config = service.getRuntimeConfigForApi();
+
+        assertTrue(config.getSelfEvolving().getManagedByProperties());
+        assertIterableEquals(
+                java.util.List.of(
+                        "enabled",
+                        "tactics.search.mode",
+                        "tactics.search.embeddings.provider"),
+                config.getSelfEvolving().getOverriddenPaths());
     }
 
     @Test
@@ -160,7 +178,7 @@ class RuntimeConfigServiceSelfEvolvingBootstrapTest {
                                 "rerank", Map.of("tier", "standard"))))));
 
         botProperties.getSelfEvolving().getBootstrap().setEnabled(true);
-        botProperties.getSelfEvolving().getBootstrap().setTracePayloadOverride(true);
+        botProperties.getSelfEvolving().getBootstrap().setTracePayloadOverride(false);
         botProperties.getSelfEvolving().getBootstrap().getTactics().setEnabled(true);
         botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getRerank().setTier("deep");
 
@@ -170,7 +188,7 @@ class RuntimeConfigServiceSelfEvolvingBootstrapTest {
         Map<?, ?> persistedSelfEvolving = objectMapper.readValue(persistedSections.get("self-evolving.json"),
                 Map.class);
         assertEquals(false, persistedSelfEvolving.get("enabled"));
-        assertEquals(false, persistedSelfEvolving.get("tracePayloadOverride"));
+        assertEquals(true, persistedSelfEvolving.get("tracePayloadOverride"));
 
         Map<?, ?> persistedTactics = (Map<?, ?>) persistedSelfEvolving.get("tactics");
         assertEquals(false, persistedTactics.get("enabled"));

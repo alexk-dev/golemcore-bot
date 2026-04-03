@@ -58,7 +58,7 @@ class SelfEvolvingBootstrapOverrideServiceTest {
         service.apply(runtimeConfig);
 
         assertTrue(runtimeConfig.getSelfEvolving().getEnabled());
-        assertFalse(runtimeConfig.getSelfEvolving().getTracePayloadOverride());
+        assertTrue(runtimeConfig.getSelfEvolving().getTracePayloadOverride());
         assertTrue(runtimeConfig.getSelfEvolving().getTactics().getEnabled());
         assertEquals("hybrid", runtimeConfig.getSelfEvolving().getTactics().getSearch().getMode());
         assertTrue(runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getEnabled());
@@ -71,7 +71,7 @@ class SelfEvolvingBootstrapOverrideServiceTest {
         assertEquals(768, runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getDimensions());
         assertEquals(16, runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getBatchSize());
         assertEquals(9000, runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getTimeoutMs());
-        assertFalse(runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings()
+        assertTrue(runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings()
                 .getAutoFallbackToBm25());
         assertTrue(runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
                 .getAutoInstall());

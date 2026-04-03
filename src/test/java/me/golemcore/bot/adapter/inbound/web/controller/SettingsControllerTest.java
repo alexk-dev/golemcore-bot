@@ -443,6 +443,72 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldMergeSelfEvolvingConfigWhenUpdatingRuntimeConfig() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .enabled(false)
+                        .tracePayloadOverride(true)
+                        .build())
+                .build();
+        RuntimeConfig responseConfig = RuntimeConfig.builder()
+                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .enabled(true)
+                        .tracePayloadOverride(true)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(responseConfig);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .enabled(true)
+                        .tracePayloadOverride(true)
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertTrue(Boolean.TRUE.equals(captor.getValue().getSelfEvolving().getEnabled()));
+    }
+
+    @Test
+    void shouldAllowDisablingSelfEvolvingWhenUpdatingRuntimeConfig() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .enabled(true)
+                        .tracePayloadOverride(true)
+                        .build())
+                .build();
+        RuntimeConfig responseConfig = RuntimeConfig.builder()
+                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .enabled(false)
+                        .tracePayloadOverride(true)
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(responseConfig);
+
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .enabled(false)
+                        .tracePayloadOverride(true)
+                        .build())
+                .build();
+
+        StepVerifier.create(controller.updateRuntimeConfig(incoming))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertFalse(Boolean.TRUE.equals(captor.getValue().getSelfEvolving().getEnabled()));
+    }
+
+    @Test
     void shouldRejectRuntimeConfigWhenModelRegistryRepositoryUrlIsInvalid() {
         RuntimeConfig current = RuntimeConfig.builder().build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
