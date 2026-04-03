@@ -32,6 +32,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+import me.golemcore.bot.port.outbound.OllamaProcessPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -135,6 +136,32 @@ class LocalEmbeddingBootstrapServiceTest {
         assertEquals("openai_compatible", status.getProvider());
         assertTrue(status.getRuntimeHealthy());
         assertTrue(status.getModelAvailable());
+    }
+
+    @Test
+    void shouldUseDefaultOllamaBaseUrlWhenConfigDoesNotSetOne() {
+        service.runtimeHealthy = true;
+        service.hasModelResponses.add(true);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, false, false, false, null, "qwen3-embedding:0.6b"));
+
+        TacticSearchStatus status = service.probeStatus();
+
+        assertEquals("hybrid", status.getMode());
+        assertEquals("http://127.0.0.1:11434", status.getBaseUrl());
+        assertTrue(status.getModelAvailable());
+    }
+
+    @Test
+    void shouldStayBm25WhenLexicalOnlyModeIsConfigured() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "bm25", true,
+                "ollama", true, false, false, false, "http://localhost:11434", "qwen3-embedding:0.6b"));
+
+        TacticSearchStatus status = service.initialize();
+
+        assertEquals("bm25", status.getMode());
+        assertEquals("lexical-only mode configured", status.getReason());
+        assertFalse(status.getDegraded());
     }
 
     @Test
@@ -299,7 +326,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 FIXED_CLOCK,
                 new okhttp3.OkHttpClient(),
                 new com.fasterxml.jackson.databind.ObjectMapper(),
-                projectionService);
+                projectionService,
+                new StubOllamaProcessPort());
 
         TacticSearchStatus status = projectedService.probeStatus();
 
@@ -307,6 +335,155 @@ class LocalEmbeddingBootstrapServiceTest {
         assertTrue(status.getOwned());
         assertEquals(Integer.valueOf(2), status.getRestartAttempts());
         assertEquals("2026-04-02T00:31:00Z", status.getNextRetryTime());
+    }
+
+    @Test
+    void shouldThrowProjectedInstallReasonWhenRuntimeIsMissing() {
+        SelfEvolvingTacticSearchStatusProjectionService projectionService = mock(
+                SelfEvolvingTacticSearchStatusProjectionService.class);
+        TacticSearchStatus projectedStatus = TacticSearchStatus.builder()
+                .mode("bm25")
+                .reason("Ollama is not installed on this machine")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .runtimeInstalled(false)
+                .runtimeHealthy(false)
+                .build();
+        when(projectionService.projectCurrent()).thenReturn(projectedStatus);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, false, true, false, null, "qwen3-embedding:0.6b"));
+
+        LocalEmbeddingBootstrapService projectedService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                projectionService,
+                new StubOllamaProcessPort());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> projectedService.installConfiguredModel());
+
+        assertEquals("Ollama is not installed on this machine", error.getMessage());
+    }
+
+    @Test
+    void shouldReuseProjectedHealthyStatusWhenModelIsAlreadyAvailable() {
+        SelfEvolvingTacticSearchStatusProjectionService projectionService = mock(
+                SelfEvolvingTacticSearchStatusProjectionService.class);
+        TacticSearchStatus projectedStatus = TacticSearchStatus.builder()
+                .mode("bm25")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .runtimeInstalled(true)
+                .runtimeHealthy(true)
+                .baseUrl("http://127.0.0.1:11434")
+                .modelAvailable(false)
+                .build();
+        when(projectionService.projectCurrent()).thenReturn(projectedStatus);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, false, true, false, null, "qwen3-embedding:0.6b"));
+
+        LocalEmbeddingBootstrapService projectedService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                projectionService,
+                new StubOllamaProcessPort()) {
+            @Override
+            protected boolean hasModel(String baseUrl, String model) {
+                return true;
+            }
+        };
+
+        TacticSearchStatus status = projectedService.installConfiguredModel();
+
+        assertEquals("hybrid", status.getMode());
+        assertEquals("http://127.0.0.1:11434", status.getBaseUrl());
+        assertTrue(status.getModelAvailable());
+        assertFalse(status.getPullAttempted());
+        assertFalse(status.getPullSucceeded());
+    }
+
+    @Test
+    void shouldThrowProjectedInstallReasonWhenRuntimeIsUnhealthy() {
+        SelfEvolvingTacticSearchStatusProjectionService projectionService = mock(
+                SelfEvolvingTacticSearchStatusProjectionService.class);
+        TacticSearchStatus projectedStatus = TacticSearchStatus.builder()
+                .mode("bm25")
+                .reason("Ollama is installed but not running at http://127.0.0.1:11434")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .runtimeInstalled(true)
+                .runtimeHealthy(false)
+                .baseUrl("http://127.0.0.1:11434")
+                .build();
+        when(projectionService.projectCurrent()).thenReturn(projectedStatus);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, false, true, false, null, "qwen3-embedding:0.6b"));
+
+        LocalEmbeddingBootstrapService projectedService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                projectionService,
+                new StubOllamaProcessPort());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> projectedService.installConfiguredModel());
+
+        assertEquals("Ollama is installed but not running at http://127.0.0.1:11434", error.getMessage());
+    }
+
+    @Test
+    void shouldInstallExplicitProjectedModelUsingDefaultLocalBaseUrl() {
+        SelfEvolvingTacticSearchStatusProjectionService projectionService = mock(
+                SelfEvolvingTacticSearchStatusProjectionService.class);
+        TacticSearchStatus projectedStatus = TacticSearchStatus.builder()
+                .mode("bm25")
+                .reason(null)
+                .runtimeInstalled(true)
+                .runtimeHealthy(true)
+                .build();
+        when(projectionService.projectCurrent()).thenReturn(projectedStatus);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                null, true, true, false, false, null, null));
+
+        LocalEmbeddingBootstrapService projectedService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                projectionService,
+                new StubOllamaProcessPort()) {
+            private int checks;
+
+            @Override
+            protected boolean hasModel(String baseUrl, String model) {
+                checks++;
+                return checks > 1;
+            }
+
+            @Override
+            protected boolean pullModel(String baseUrl, String model) {
+                return true;
+            }
+        };
+
+        TacticSearchStatus status = projectedService.installModel("bge-m3");
+
+        assertEquals("ollama", status.getProvider());
+        assertEquals("bge-m3", status.getModel());
+        assertEquals("http://127.0.0.1:11434", status.getBaseUrl());
+        assertTrue(status.getPullAttempted());
+        assertTrue(status.getPullSucceeded());
+        assertTrue(status.getModelAvailable());
     }
 
     private RuntimeConfig.SelfEvolvingConfig config(
@@ -356,7 +533,7 @@ class LocalEmbeddingBootstrapServiceTest {
                 RuntimeConfigService runtimeConfigService,
                 TacticSearchMetricsService metricsService) {
             super(runtimeConfigService, metricsService, FIXED_CLOCK, new okhttp3.OkHttpClient(),
-                    new com.fasterxml.jackson.databind.ObjectMapper(), null);
+                    new com.fasterxml.jackson.databind.ObjectMapper(), null, new StubOllamaProcessPort());
         }
 
         @Override
@@ -377,6 +554,37 @@ class LocalEmbeddingBootstrapServiceTest {
         @Override
         protected boolean pullModel(String baseUrl, String model) {
             return pullResult;
+        }
+    }
+
+    private static final class StubOllamaProcessPort implements OllamaProcessPort {
+
+        @Override
+        public boolean isBinaryAvailable() {
+            return true;
+        }
+
+        @Override
+        public String getInstalledVersion() {
+            return "0.19.0";
+        }
+
+        @Override
+        public void startServe(String endpoint) {
+        }
+
+        @Override
+        public boolean isOwnedProcessAlive() {
+            return false;
+        }
+
+        @Override
+        public Integer getOwnedProcessExitCode() {
+            return null;
+        }
+
+        @Override
+        public void stopOwnedProcess() {
         }
     }
 }

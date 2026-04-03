@@ -25,6 +25,8 @@ public interface OllamaProcessPort {
 
     boolean isBinaryAvailable();
 
+    String getInstalledVersion();
+
     void startServe(String endpoint);
 
     boolean isOwnedProcessAlive();

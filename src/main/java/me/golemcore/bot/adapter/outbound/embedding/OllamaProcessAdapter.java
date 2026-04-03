@@ -47,27 +47,17 @@ public class OllamaProcessAdapter implements OllamaProcessPort {
 
     @Override
     public boolean isBinaryAvailable() {
-        Process process = null;
-        try {
-            process = new ProcessBuilder(buildVersionCommand())
-                    .redirectErrorStream(true)
-                    .start();
-            boolean finished = process.waitFor(STOP_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                return false;
-            }
-            return process.exitValue() == 0;
-        } catch (IOException exception) {
-            return false;
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            return false;
-        } finally {
-            if (process != null) {
-                process.destroy();
-            }
+        VersionProbeResult probeResult = runVersionProbe();
+        return probeResult.finished() && probeResult.exitCode() == 0;
+    }
+
+    @Override
+    public String getInstalledVersion() {
+        VersionProbeResult probeResult = runVersionProbe();
+        if (!probeResult.finished() || probeResult.exitCode() != 0) {
+            return null;
         }
+        return normalizeRuntimeVersion(probeResult.output());
     }
 
     @Override
@@ -134,6 +124,47 @@ public class OllamaProcessAdapter implements OllamaProcessPort {
         return List.of(executable, "--version");
     }
 
+    private VersionProbeResult runVersionProbe() {
+        Process process = null;
+        try {
+            process = new ProcessBuilder(buildVersionCommand())
+                    .redirectErrorStream(true)
+                    .start();
+            boolean finished = process.waitFor(STOP_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                return new VersionProbeResult(false, null, null);
+            }
+            String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
+                    .trim();
+            return new VersionProbeResult(true, process.exitValue(), output);
+        } catch (IOException exception) {
+            return new VersionProbeResult(false, null, null);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return new VersionProbeResult(false, null, null);
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
+        }
+    }
+
+    private String normalizeRuntimeVersion(String output) {
+        if (output == null || output.isBlank()) {
+            return null;
+        }
+        String normalized = output.trim();
+        String lowerCase = normalized.toLowerCase(java.util.Locale.ROOT);
+        if (lowerCase.startsWith("ollama version is ")) {
+            return normalized.substring("ollama version is ".length()).trim();
+        }
+        if (lowerCase.startsWith("ollama version ")) {
+            return normalized.substring("ollama version ".length()).trim();
+        }
+        return normalized;
+    }
+
     private String normalizeOllamaHost(String endpoint) {
         if (endpoint == null || endpoint.isBlank()) {
             return "127.0.0.1:11434";
@@ -145,5 +176,8 @@ public class OllamaProcessAdapter implements OllamaProcessPort {
             return endpoint;
         }
         return host + ":" + port;
+    }
+
+    private record VersionProbeResult(boolean finished, Integer exitCode, String output) {
     }
 }

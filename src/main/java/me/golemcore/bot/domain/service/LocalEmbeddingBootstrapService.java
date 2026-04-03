@@ -24,6 +24,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+import me.golemcore.bot.port.outbound.OllamaProcessPort;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -31,11 +32,9 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.time.Clock;
 import java.util.Arrays;
 import java.util.Locale;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Probes optional local embedding runtime state and degrades tactic search to
@@ -58,19 +57,22 @@ public class LocalEmbeddingBootstrapService {
     private final OkHttpClient okHttpClient;
     private final ObjectMapper objectMapper;
     private final SelfEvolvingTacticSearchStatusProjectionService tacticSearchStatusProjectionService;
+    private final OllamaProcessPort ollamaProcessPort;
 
     public LocalEmbeddingBootstrapService(RuntimeConfigService runtimeConfigService,
             TacticSearchMetricsService metricsService,
             Clock clock,
             OkHttpClient okHttpClient,
             ObjectMapper objectMapper,
-            SelfEvolvingTacticSearchStatusProjectionService tacticSearchStatusProjectionService) {
+            SelfEvolvingTacticSearchStatusProjectionService tacticSearchStatusProjectionService,
+            OllamaProcessPort ollamaProcessPort) {
         this.runtimeConfigService = runtimeConfigService;
         this.metricsService = metricsService;
         this.clock = clock;
         this.okHttpClient = okHttpClient;
         this.objectMapper = objectMapper;
         this.tacticSearchStatusProjectionService = tacticSearchStatusProjectionService;
+        this.ollamaProcessPort = ollamaProcessPort;
     }
 
     @PostConstruct
@@ -292,32 +294,13 @@ public class LocalEmbeddingBootstrapService {
         if (!PROVIDER_OLLAMA.equals(provider)) {
             return LocalRuntimeProbe.notApplicable();
         }
-        Process process = null;
-        try {
-            process = new ProcessBuilder("ollama", "--version")
-                    .redirectErrorStream(true)
-                    .start();
-            boolean finished = process.waitFor(LOCAL_RUNTIME_PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                return LocalRuntimeProbe.missing();
-            }
-            if (process.exitValue() != 0) {
-                return LocalRuntimeProbe.missing();
-            }
-            String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
-                    .trim();
-            return LocalRuntimeProbe.installed(normalizeRuntimeVersion(output));
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
+        if (ollamaProcessPort == null) {
             return LocalRuntimeProbe.missing();
-        } catch (IOException exception) {
-            return LocalRuntimeProbe.missing();
-        } finally {
-            if (process != null) {
-                process.destroy();
-            }
         }
+        String installedVersion = trimToNull(ollamaProcessPort.getInstalledVersion());
+        return installedVersion != null
+                ? LocalRuntimeProbe.installed(normalizeRuntimeVersion(installedVersion))
+                : LocalRuntimeProbe.missing();
     }
 
     protected boolean isRuntimeHealthy(String baseUrl) {

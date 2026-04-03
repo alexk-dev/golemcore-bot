@@ -62,6 +62,57 @@ class OllamaProcessAdapterTest {
     }
 
     @Test
+    void shouldReadInstalledVersionFromConfiguredExecutable() throws IOException {
+        Path fakeBinary = createExecutable("fake-ollama-version", """
+                #!/bin/sh
+                echo 'ollama version is 0.19.0'
+                exit 0
+                """);
+
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter(fakeBinary.toString());
+
+        assertEquals("0.19.0", adapter.getInstalledVersion());
+    }
+
+    @Test
+    void shouldReturnNullVersionWhenConfiguredExecutableFails() throws IOException {
+        Path fakeBinary = createExecutable("fake-ollama-fail", """
+                #!/bin/sh
+                exit 1
+                """);
+
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter(fakeBinary.toString());
+
+        assertFalse(adapter.isBinaryAvailable());
+        assertEquals(null, adapter.getInstalledVersion());
+    }
+
+    @Test
+    void shouldUseDefaultLocalHostWhenEndpointIsMissing() {
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter("ollama");
+
+        Map<String, String> environment = adapter.buildEnvironment(null);
+
+        assertEquals("127.0.0.1:11434", environment.get("OLLAMA_HOST"));
+    }
+
+    @Test
+    void shouldReturnNullExitCodeWhileOwnedProcessIsAlive() throws Exception {
+        Path fakeBinary = createExecutable("fake-ollama-alive", """
+                #!/bin/sh
+                sleep 30
+                """);
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter(fakeBinary.toString());
+
+        adapter.startServe("http://127.0.0.1:11434");
+
+        assertTrue(adapter.isOwnedProcessAlive());
+        assertEquals(null, adapter.getOwnedProcessExitCode());
+
+        adapter.stopOwnedProcess();
+    }
+
+    @Test
     void shouldStartAndStopOwnedProcessSafely() throws Exception {
         Path fakeBinary = createExecutable("fake-ollama-serve", """
                 #!/bin/sh

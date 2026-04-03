@@ -34,8 +34,11 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+
+import me.golemcore.bot.port.outbound.OllamaProcessPort;
 
 class LocalEmbeddingBootstrapServiceHttpTest {
 
@@ -52,7 +55,8 @@ class LocalEmbeddingBootstrapServiceHttpTest {
                 Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC),
                 new OkHttpClient(),
                 new ObjectMapper(),
-                null);
+                null,
+                stubProcessPort());
     }
 
     @AfterEach
@@ -111,5 +115,82 @@ class LocalEmbeddingBootstrapServiceHttpTest {
         RecordedRequest request = server.takeRequest();
         assertEquals("/api/pull", request.getTarget());
         assertTrue(request.getBody().utf8().contains("qwen3-embedding:0.6b"));
+    }
+
+    @Test
+    void shouldReturnFalseWhenRuntimeEndpointIsUnavailable() {
+        server.enqueue(new MockResponse.Builder().code(503).build());
+
+        String baseUrl = server.url("/").toString();
+
+        assertFalse(service.isRuntimeHealthy(baseUrl));
+    }
+
+    @Test
+    void shouldReturnFalseWhenRequestedModelIsMissing() {
+        server.enqueue(new MockResponse.Builder()
+                .code(200)
+                .body("""
+                        {
+                          "models": [
+                            {
+                              "name": "different-model"
+                            }
+                          ]
+                        }
+                        """)
+                .build());
+
+        String baseUrl = server.url("/").toString();
+
+        assertFalse(service.hasModel(baseUrl, "qwen3-embedding:0.6b"));
+    }
+
+    @Test
+    void shouldReturnFalseWhenPullEndpointRejectsInstall() {
+        server.enqueue(new MockResponse.Builder()
+                .code(500)
+                .body("""
+                        {
+                          "status": "failed"
+                        }
+                        """)
+                .build());
+
+        String baseUrl = server.url("/").toString();
+
+        assertFalse(service.pullModel(baseUrl, "qwen3-embedding:0.6b"));
+    }
+
+    private OllamaProcessPort stubProcessPort() {
+        return new OllamaProcessPort() {
+            @Override
+            public boolean isBinaryAvailable() {
+                return true;
+            }
+
+            @Override
+            public String getInstalledVersion() {
+                return "0.19.0";
+            }
+
+            @Override
+            public void startServe(String endpoint) {
+            }
+
+            @Override
+            public boolean isOwnedProcessAlive() {
+                return false;
+            }
+
+            @Override
+            public Integer getOwnedProcessExitCode() {
+                return null;
+            }
+
+            @Override
+            public void stopOwnedProcess() {
+            }
+        };
     }
 }

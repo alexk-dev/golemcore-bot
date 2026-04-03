@@ -79,6 +79,27 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         assertFalse(supervisor.lastLocalEmbeddingsActive);
     }
 
+    @Test
+    void shouldTreatMissingBaseUrlAsLocalManagedEndpoint() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsWithoutBaseUrl());
+
+        bridge.runStartupGate();
+
+        assertEquals(1, supervisor.startupCheckInvocations);
+        assertTrue(supervisor.lastLocalEmbeddingsActive);
+    }
+
+    @Test
+    void shouldNotRunStartupGateTwiceAfterInitialization() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
+
+        bridge.initialize();
+        bridge.runStartupGate();
+
+        assertEquals(1, supervisor.startupCheckInvocations);
+        assertTrue(bridge.isStarted());
+    }
+
     private RuntimeConfig.SelfEvolvingConfig localEmbeddingsConfig(boolean enabled) {
         return RuntimeConfig.SelfEvolvingConfig.builder()
                 .enabled(enabled)
@@ -111,6 +132,26 @@ class ManagedLocalOllamaLifecycleBridgeTest {
                                         .enabled(true)
                                         .provider("ollama")
                                         .baseUrl("https://ollama.example.com")
+                                        .model("qwen3-embedding:0.6b")
+                                        .local(RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig.builder()
+                                                .requireHealthyRuntime(true)
+                                                .build())
+                                        .build())
+                                .build())
+                        .build())
+                .build();
+    }
+
+    private RuntimeConfig.SelfEvolvingConfig localEmbeddingsWithoutBaseUrl() {
+        return RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .enabled(true)
+                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                .mode("hybrid")
+                                .embeddings(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig.builder()
+                                        .enabled(true)
+                                        .provider("ollama")
                                         .model("qwen3-embedding:0.6b")
                                         .local(RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig.builder()
                                                 .requireHealthyRuntime(true)
@@ -174,6 +215,11 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         @Override
         public boolean isBinaryAvailable() {
             return false;
+        }
+
+        @Override
+        public String getInstalledVersion() {
+            return null;
         }
 
         @Override

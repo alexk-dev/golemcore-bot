@@ -262,6 +262,53 @@ class ManagedLocalOllamaSupervisorTest {
     }
 
     @Test
+    void shouldRecoverFromExternalLostWhenRuntimeBecomesReachableAgain() {
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.runtimeVersion = VERSION;
+        runtimeProbePort.modelResponses.add(true);
+
+        ManagedLocalOllamaStatus ready = supervisor.startupCheck(true);
+        assertEquals(ManagedLocalOllamaState.EXTERNAL_READY, ready.getCurrentState());
+
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        ManagedLocalOllamaStatus lost = supervisor.pollExternalRuntime();
+        assertEquals(ManagedLocalOllamaState.DEGRADED_EXTERNAL_LOST, lost.getCurrentState());
+
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        ManagedLocalOllamaStatus recovered = supervisor.startupCheck(true);
+
+        assertEquals(ManagedLocalOllamaState.EXTERNAL_READY, recovered.getCurrentState());
+        assertFalse(recovered.getOwned());
+    }
+
+    @Test
+    void shouldKeepRestartBackoffUntilRetryDeadlineIsReached() {
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        processPort.binaryAvailable = true;
+
+        ManagedLocalOllamaStatus timeout = supervisor.startupCheck(true);
+        assertEquals(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, timeout.getCurrentState());
+
+        processPort.ownedProcessAlive = false;
+        processPort.ownedProcessExitCode = 137;
+        ManagedLocalOllamaStatus crashed = supervisor.pollOwnedProcess();
+        assertEquals(ManagedLocalOllamaState.DEGRADED_CRASHED, crashed.getCurrentState());
+
+        ManagedLocalOllamaStatus backoff = supervisor.attemptScheduledRetry();
+        assertEquals(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF, backoff.getCurrentState());
+
+        ManagedLocalOllamaStatus stillBackoff = supervisor.attemptScheduledRetry();
+        assertEquals(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF, stillBackoff.getCurrentState());
+        assertEquals(1, processPort.startCount);
+    }
+
+    @Test
     void shouldStopOnlyOwnedProcessOnShutdown() {
         runtimeProbePort.runtimeReachableResponses.add(false);
         runtimeProbePort.runtimeReachableResponses.add(false);
@@ -768,6 +815,11 @@ class ManagedLocalOllamaSupervisorTest {
         public boolean isBinaryAvailable() {
             binaryAvailabilityChecks++;
             return binaryAvailable;
+        }
+
+        @Override
+        public String getInstalledVersion() {
+            return binaryAvailable ? VERSION : null;
         }
 
         @Override
