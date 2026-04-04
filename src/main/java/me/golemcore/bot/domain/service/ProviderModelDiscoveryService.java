@@ -219,7 +219,7 @@ public class ProviderModelDiscoveryService {
             String resolvedBaseUrl = resolveBaseUrl(providerConfig.getBaseUrl(), getApiType(providerConfig));
             URI baseUri = URI.create(resolvedBaseUrl);
             return OPENROUTER_HOST.equalsIgnoreCase(baseUri.getHost());
-        } catch (IllegalArgumentException exception) {
+        } catch (IllegalArgumentException _) {
             return false;
         }
     }
