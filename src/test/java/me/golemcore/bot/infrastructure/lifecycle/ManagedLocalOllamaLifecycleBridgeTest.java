@@ -20,6 +20,7 @@ package me.golemcore.bot.infrastructure.lifecycle;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -119,7 +120,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         assertEquals("http://127.0.0.1:11434", supervisor.lastRefreshEndpoint);
         assertEquals(Duration.ofSeconds(5), supervisor.lastRefreshStartupWindow);
         assertEquals(Duration.ofSeconds(1), supervisor.lastRefreshInitialRestartBackoff);
-        assertEquals("0.19.0", supervisor.lastRefreshMinimumSupportedVersion);
+        assertNull(supervisor.lastRefreshMinimumSupportedVersion);
     }
 
     @Test
