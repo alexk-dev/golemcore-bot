@@ -39,6 +39,7 @@ class TacticSearchServiceTest {
                 tacticRecordService,
                 new TacticSearchDocumentAssembler(),
                 bm25IndexService,
+                mock(TacticEmbeddingIndexService.class),
                 Clock.fixed(Instant.parse("2026-04-01T23:00:00Z"), ZoneOffset.UTC));
         indexRebuildService.rebuildAll();
 
@@ -144,6 +145,7 @@ class TacticSearchServiceTest {
                 tacticRecordService,
                 new TacticSearchDocumentAssembler(),
                 bm25IndexService,
+                mock(TacticEmbeddingIndexService.class),
                 Clock.fixed(Instant.parse("2026-04-01T23:00:00Z"), ZoneOffset.UTC));
         indexRebuildService.rebuildAll();
         TacticSearchService searchService = new TacticSearchService(

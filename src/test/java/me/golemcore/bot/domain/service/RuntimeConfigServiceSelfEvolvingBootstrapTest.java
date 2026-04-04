@@ -79,6 +79,10 @@ class RuntimeConfigServiceSelfEvolvingBootstrapTest {
         assertFalse(config.getSelfEvolving().getTactics().getEnabled());
         assertEquals("hybrid", config.getSelfEvolving().getTactics().getSearch().getMode());
         assertTrue(config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getEnabled());
+        assertEquals("ollama",
+                config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getProvider());
+        assertEquals("http://127.0.0.1:11434",
+                config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getBaseUrl());
         assertTrue(config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
                 .getRequireHealthyRuntime());
         assertEquals(5000,
@@ -123,6 +127,28 @@ class RuntimeConfigServiceSelfEvolvingBootstrapTest {
                 .getInitialRestartBackoffMs());
         assertEquals("0.20.0", config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
                 .getMinimumRuntimeVersion());
+    }
+
+    @Test
+    void shouldDefaultLocalEmbeddingBaseUrlWhenPersistedOllamaConfigOmitsIt() throws Exception {
+        Map<String, Object> embeddings = Map.of(
+                "enabled", true,
+                "provider", "ollama",
+                "model", "bge-m3");
+        Map<String, Object> search = Map.of(
+                "mode", "hybrid",
+                "embeddings", embeddings);
+        Map<String, Object> tactics = Map.of(
+                "enabled", true,
+                "search", search);
+        persistedSections.put("self-evolving.json", objectMapper.writeValueAsString(Map.of(
+                "enabled", true,
+                "tactics", tactics)));
+
+        RuntimeConfig config = service.reloadRuntimeConfig();
+
+        assertEquals("http://127.0.0.1:11434",
+                config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getBaseUrl());
     }
 
     @Test

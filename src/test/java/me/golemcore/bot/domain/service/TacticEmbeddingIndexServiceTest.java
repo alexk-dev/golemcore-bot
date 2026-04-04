@@ -18,10 +18,12 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -31,11 +33,14 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.nio.file.Path;
+import java.nio.file.Files;
 import me.golemcore.bot.port.outbound.EmbeddingClientResolverPort;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.EmbeddingPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,10 +52,11 @@ class TacticEmbeddingIndexServiceTest {
     private EmbeddingClientResolverPort embeddingClientResolver;
     private EmbeddingPort embeddingPort;
     private TacticSearchMetricsService metricsService;
+    private TacticEmbeddingSqliteIndexStore indexStore;
     private TacticEmbeddingIndexService service;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         runtimeConfigService = mock(RuntimeConfigService.class);
         tacticRecordService = mock(TacticRecordService.class);
         embeddingClientResolver = mock(EmbeddingClientResolverPort.class);
@@ -58,12 +64,17 @@ class TacticEmbeddingIndexServiceTest {
         metricsService = new TacticSearchMetricsService(Clock.fixed(
                 Instant.parse("2026-04-02T00:00:00Z"),
                 ZoneOffset.UTC));
+        BotProperties properties = new BotProperties();
+        Path tempDir = Files.createTempDirectory("tactic-embedding-index-test");
+        properties.getStorage().getLocal().setBasePath(tempDir.toString());
+        indexStore = new TacticEmbeddingSqliteIndexStore(properties, new ObjectMapper());
         service = new TacticEmbeddingIndexService(
                 runtimeConfigService,
                 tacticRecordService,
                 new TacticSearchDocumentAssembler(),
                 embeddingClientResolver,
-                metricsService);
+                metricsService,
+                indexStore);
     }
 
     @Test
@@ -165,6 +176,42 @@ class TacticEmbeddingIndexServiceTest {
         assertEquals("bm25", metricsService.snapshot().activeMode());
         assertEquals("embeddings disabled", metricsService.snapshot().lastReason());
         verifyNoInteractions(embeddingClientResolver);
+    }
+
+    @Test
+    void shouldPersistVectorsToSqliteAndReloadWarmIndexWithoutReembeddingDocuments() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(hybridConfig("openai_compatible"));
+        when(tacticRecordService.getAll()).thenReturn(List.of(
+                tactic("planner", "active", "Recover with an ordered shell plan"),
+                tactic("rollback", "approved", "Rollback the last broken shell step")));
+        when(embeddingClientResolver.resolve("openai_compatible")).thenReturn(embeddingPort);
+        when(embeddingPort.embed(any()))
+                .thenReturn(new EmbeddingPort.EmbeddingResponse(
+                        "text-embedding-3-large",
+                        List.of(List.of(1.0d, 0.0d), List.of(0.2d, 0.98d))))
+                .thenReturn(new EmbeddingPort.EmbeddingResponse(
+                        "text-embedding-3-large",
+                        List.of(List.of(1.0d, 0.0d))));
+
+        service.rebuildAll();
+
+        assertTrue(indexStore.hasEntry("planner", "openai_compatible", "text-embedding-3-large"));
+        verify(tacticRecordService).updateEmbeddingStatuses(eq(java.util.Map.of(
+                "planner", "indexed",
+                "rollback", "indexed")));
+
+        TacticEmbeddingIndexService reloaded = new TacticEmbeddingIndexService(
+                runtimeConfigService,
+                tacticRecordService,
+                new TacticSearchDocumentAssembler(),
+                embeddingClientResolver,
+                metricsService,
+                indexStore);
+
+        List<TacticSearchResult> results = reloaded.search(query());
+
+        assertEquals(List.of("planner", "rollback"), results.stream().map(TacticSearchResult::getTacticId).toList());
+        verify(embeddingPort, times(2)).embed(any());
     }
 
     private RuntimeConfig.SelfEvolvingConfig hybridConfig(String provider) {

@@ -28,12 +28,12 @@ import me.golemcore.bot.port.outbound.EmbeddingPort;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -42,11 +42,15 @@ import java.util.concurrent.atomic.AtomicReference;
 @Service
 public class TacticEmbeddingIndexService {
 
+    private static final String EMBEDDING_STATUS_INDEXED = "indexed";
+    private static final String EMBEDDING_STATUS_FAILED = "failed";
+
     private final RuntimeConfigService runtimeConfigService;
     private final TacticRecordService tacticRecordService;
     private final TacticSearchDocumentAssembler documentAssembler;
     private final EmbeddingClientResolverPort embeddingClientResolver;
     private final TacticSearchMetricsService metricsService;
+    private final TacticEmbeddingSqliteIndexStore indexStore;
     private final AtomicReference<Snapshot> snapshot = new AtomicReference<>(Snapshot.empty());
 
     public TacticEmbeddingIndexService(
@@ -54,12 +58,14 @@ public class TacticEmbeddingIndexService {
             TacticRecordService tacticRecordService,
             TacticSearchDocumentAssembler documentAssembler,
             EmbeddingClientResolverPort embeddingClientResolver,
-            TacticSearchMetricsService metricsService) {
+            TacticSearchMetricsService metricsService,
+            TacticEmbeddingSqliteIndexStore indexStore) {
         this.runtimeConfigService = runtimeConfigService;
         this.tacticRecordService = tacticRecordService;
         this.documentAssembler = documentAssembler;
         this.embeddingClientResolver = embeddingClientResolver;
         this.metricsService = metricsService;
+        this.indexStore = indexStore;
     }
 
     public List<TacticSearchResult> search(TacticSearchQuery query) {
@@ -120,10 +126,9 @@ public class TacticEmbeddingIndexService {
             snapshot.set(Snapshot.empty());
             return;
         }
-        List<TacticIndexDocument> documents = tacticRecordService.getAll().stream()
-                .map(documentAssembler::assemble)
-                .toList();
+        List<TacticIndexDocument> documents = tacticDocuments();
         if (documents.isEmpty()) {
+            indexStore.replaceAll(config.getProvider(), config.getModel(), config.getDimensions(), List.of());
             snapshot.set(Snapshot.empty());
             return;
         }
@@ -143,17 +148,29 @@ public class TacticEmbeddingIndexService {
             Map<String, List<Double>> vectorMap = new HashMap<>();
             for (int i = 0; i < documents.size(); i++) {
                 TacticIndexDocument document = documents.get(i);
+                document.setEmbeddingStatus(EMBEDDING_STATUS_INDEXED);
                 documentMap.put(document.getTacticId(), document);
                 vectorMap.put(document.getTacticId(), response.vectors().get(i));
             }
+            indexStore.replaceAll(
+                    config.getProvider(),
+                    config.getModel(),
+                    config.getDimensions(),
+                    toStoreEntries(documentMap, vectorMap));
+            tacticRecordService.updateEmbeddingStatuses(statusMap(documentMap.keySet(), EMBEDDING_STATUS_INDEXED));
             snapshot.set(new Snapshot(documentMap, vectorMap, Instant.now()));
         } catch (RuntimeException exception) {
+            tacticRecordService.updateEmbeddingStatuses(statusMap(documents, EMBEDDING_STATUS_FAILED));
+            snapshot.set(Snapshot.empty());
             metricsService.recordIndexFailure(exception.getMessage());
         }
     }
 
     private void ensureIndexWarm(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config) {
         if (!snapshot().vectors().isEmpty()) {
+            return;
+        }
+        if (hydrateSnapshotFromStore(config)) {
             return;
         }
         rebuildAll();
@@ -194,6 +211,76 @@ public class TacticEmbeddingIndexService {
         }
         String reason = metricsSnapshot.lastReason();
         return reason != null && reason.toLowerCase(java.util.Locale.ROOT).contains("local embedding");
+    }
+
+    private boolean hydrateSnapshotFromStore(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config) {
+        List<TacticIndexDocument> documents = tacticDocuments();
+        if (documents.isEmpty()) {
+            return false;
+        }
+        Map<String, TacticEmbeddingSqliteIndexStore.Entry> persistedEntries = indexStore.loadEntries(
+                config.getProvider(),
+                config.getModel());
+        if (persistedEntries.size() != documents.size()) {
+            return false;
+        }
+        Map<String, TacticIndexDocument> documentMap = new LinkedHashMap<>();
+        Map<String, List<Double>> vectorMap = new HashMap<>();
+        Instant updatedAt = Instant.EPOCH;
+        for (TacticIndexDocument document : documents) {
+            TacticEmbeddingSqliteIndexStore.Entry persistedEntry = persistedEntries.get(document.getTacticId());
+            if (persistedEntry == null
+                    || !Objects.equals(persistedEntry.contentRevisionId(), document.getContentRevisionId())) {
+                return false;
+            }
+            document.setEmbeddingStatus(EMBEDDING_STATUS_INDEXED);
+            documentMap.put(document.getTacticId(), document);
+            vectorMap.put(document.getTacticId(), persistedEntry.vector());
+            if (persistedEntry.updatedAt() != null && persistedEntry.updatedAt().isAfter(updatedAt)) {
+                updatedAt = persistedEntry.updatedAt();
+            }
+        }
+        tacticRecordService.updateEmbeddingStatuses(statusMap(documentMap.keySet(), EMBEDDING_STATUS_INDEXED));
+        snapshot.set(new Snapshot(documentMap, vectorMap, updatedAt));
+        return true;
+    }
+
+    private List<TacticIndexDocument> tacticDocuments() {
+        return tacticRecordService.getAll().stream()
+                .map(documentAssembler::assemble)
+                .toList();
+    }
+
+    private List<TacticEmbeddingSqliteIndexStore.Entry> toStoreEntries(
+            Map<String, TacticIndexDocument> documentMap,
+            Map<String, List<Double>> vectorMap) {
+        return documentMap.values().stream()
+                .map(document -> new TacticEmbeddingSqliteIndexStore.Entry(
+                        document.getTacticId(),
+                        document.getContentRevisionId(),
+                        vectorMap.get(document.getTacticId()),
+                        document.getUpdatedAt()))
+                .toList();
+    }
+
+    private Map<String, String> statusMap(Iterable<String> tacticIds, String status) {
+        Map<String, String> statuses = new LinkedHashMap<>();
+        for (String tacticId : tacticIds) {
+            if (!StringValueSupport.isBlank(tacticId)) {
+                statuses.put(tacticId, status);
+            }
+        }
+        return statuses;
+    }
+
+    private Map<String, String> statusMap(List<TacticIndexDocument> documents, String status) {
+        Map<String, String> statuses = new LinkedHashMap<>();
+        for (TacticIndexDocument document : documents) {
+            if (document != null && !StringValueSupport.isBlank(document.getTacticId())) {
+                statuses.put(document.getTacticId(), status);
+            }
+        }
+        return statuses;
     }
 
     private TacticSearchResult vectorResult(TacticIndexDocument document, double similarity) {

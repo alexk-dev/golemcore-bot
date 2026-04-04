@@ -36,6 +36,7 @@ public class TacticIndexRebuildService {
     private final TacticRecordService tacticRecordService;
     private final TacticSearchDocumentAssembler documentAssembler;
     private final TacticBm25IndexService bm25IndexService;
+    private final TacticEmbeddingIndexService tacticEmbeddingIndexService;
     private final Clock clock;
     private final AtomicReference<Snapshot> snapshot = new AtomicReference<>(new Snapshot(0, Instant.EPOCH, List.of()));
 
@@ -43,10 +44,12 @@ public class TacticIndexRebuildService {
             TacticRecordService tacticRecordService,
             TacticSearchDocumentAssembler documentAssembler,
             TacticBm25IndexService bm25IndexService,
+            TacticEmbeddingIndexService tacticEmbeddingIndexService,
             Clock clock) {
         this.tacticRecordService = tacticRecordService;
         this.documentAssembler = documentAssembler;
         this.bm25IndexService = bm25IndexService;
+        this.tacticEmbeddingIndexService = tacticEmbeddingIndexService;
         this.clock = clock;
     }
 
@@ -83,6 +86,9 @@ public class TacticIndexRebuildService {
                 .map(documentAssembler::assemble)
                 .toList();
         bm25IndexService.replaceDocuments(documents);
+        if (tacticEmbeddingIndexService != null) {
+            tacticEmbeddingIndexService.rebuildAll();
+        }
         Snapshot previous = snapshot();
         snapshot.set(new Snapshot(previous.rebuildCount() + 1, Instant.now(clock), documents));
     }

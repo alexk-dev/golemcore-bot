@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -214,6 +215,19 @@ class TacticRecordServiceTest {
         assertFalse(persistedFiles.containsKey("self-evolving/tactics/tactic-1.json"));
         verify(storagePort).deleteObject("self-evolving", "tactics/tactic-1.json");
         verify(rebuildService, times(2)).onTacticChanged("tactic-1");
+    }
+
+    @Test
+    void shouldUpdateEmbeddingStatusWithoutTriggeringAnotherRebuild() {
+        tacticRecordService.save(sampleTactic());
+        clearInvocations(rebuildService);
+
+        tacticRecordService.updateEmbeddingStatuses(Map.of("tactic-1", "indexed"));
+
+        assertEquals("indexed", tacticRecordService.getById("tactic-1").orElseThrow().getEmbeddingStatus());
+        assertTrue(
+                persistedFiles.get("self-evolving/tactics/tactic-1.json").contains("\"embeddingStatus\":\"indexed\""));
+        verify(rebuildService, never()).onTacticChanged("tactic-1");
     }
 
     private TacticRecord sampleTactic() {

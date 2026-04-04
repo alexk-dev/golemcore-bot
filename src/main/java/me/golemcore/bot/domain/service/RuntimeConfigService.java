@@ -186,6 +186,7 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_SELF_EVOLVING_TACTICS_ENABLED = false;
     private static final String DEFAULT_SELF_EVOLVING_TACTIC_SEARCH_MODE = "hybrid";
     private static final String DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_PROVIDER = "ollama";
+    private static final String DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_BASE_URL = "http://127.0.0.1:11434";
     private static final String DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MODEL = "qwen3-embedding:0.6b";
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_BM25_ENABLED = true;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_ENABLED = false;
@@ -2177,6 +2178,9 @@ public class RuntimeConfigService {
         embeddingsConfig.setProvider(normalizeSelfEvolvingEmbeddingProvider(
                 embeddingsConfig.getProvider(),
                 searchConfig.getMode()));
+        embeddingsConfig.setBaseUrl(normalizeSelfEvolvingEmbeddingBaseUrl(
+                embeddingsConfig.getBaseUrl(),
+                embeddingsConfig.getProvider()));
         if (DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_PROVIDER.equals(embeddingsConfig.getProvider())) {
             embeddingsConfig.setModel(normalizeNonBlankString(
                     embeddingsConfig.getModel(),
@@ -2378,6 +2382,17 @@ public class RuntimeConfigService {
         return "hybrid".equalsIgnoreCase(mode)
                 ? DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_PROVIDER
                 : null;
+    }
+
+    private String normalizeSelfEvolvingEmbeddingBaseUrl(String baseUrl, String provider) {
+        String normalizedBaseUrl = normalizeNonBlankString(baseUrl, null);
+        if (normalizedBaseUrl != null) {
+            return normalizedBaseUrl;
+        }
+        if (DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_PROVIDER.equalsIgnoreCase(provider)) {
+            return DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_BASE_URL;
+        }
+        return null;
     }
 
     private String normalizeSelfEvolvingJudgeTier(String value, String defaultValue) {

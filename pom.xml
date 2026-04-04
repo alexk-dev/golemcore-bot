@@ -215,6 +215,12 @@
             <artifactId>zstd-jni</artifactId>
             <version>1.5.7-7</version>
         </dependency>
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>3.50.3.0</version>
+            <scope>runtime</scope>
+        </dependency>
 
         <!-- Testing -->
         <dependency>

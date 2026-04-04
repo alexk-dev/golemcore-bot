@@ -32,6 +32,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -65,17 +66,28 @@ public class TacticRecordService {
     }
 
     public TacticRecord save(TacticRecord record) {
-        TacticRecord normalized = normalize(record);
-        try {
-            String path = TACTICS_PREFIX + normalized.getTacticId() + ".json";
-            storagePort.putText(SELF_EVOLVING_DIR, path, objectMapper.writeValueAsString(normalized)).join();
-            upsertCache(normalized);
-            triggerRebuild(normalized.getTacticId());
-            return normalized;
-        } catch (IOException exception) {
-            throw new IllegalStateException("Failed to serialize tactic record", exception);
-        } catch (RuntimeException exception) {
-            throw new IllegalStateException("Failed to persist tactic record", exception);
+        return saveInternal(record, true);
+    }
+
+    public void updateEmbeddingStatuses(Map<String, String> embeddingStatuses) {
+        if (embeddingStatuses == null || embeddingStatuses.isEmpty()) {
+            return;
+        }
+        for (TacticRecord record : getAll()) {
+            if (record == null) {
+                continue;
+            }
+            String updatedStatus = embeddingStatuses.get(record.getTacticId());
+            if (StringValueSupport.isBlank(updatedStatus)) {
+                continue;
+            }
+            String normalizedStatus = updatedStatus.trim();
+            if (normalizedStatus.equals(record.getEmbeddingStatus())) {
+                continue;
+            }
+            TacticRecord updated = copyRecord(record);
+            updated.setEmbeddingStatus(normalizedStatus);
+            saveInternal(updated, false);
         }
     }
 
@@ -286,6 +298,23 @@ public class TacticRecordService {
         TacticIndexRebuildService rebuildService = rebuildServiceProvider.getIfAvailable();
         if (rebuildService != null) {
             rebuildService.onTacticChanged(tacticId);
+        }
+    }
+
+    private TacticRecord saveInternal(TacticRecord record, boolean triggerRebuild) {
+        TacticRecord normalized = normalize(record);
+        try {
+            String path = TACTICS_PREFIX + normalized.getTacticId() + ".json";
+            storagePort.putText(SELF_EVOLVING_DIR, path, objectMapper.writeValueAsString(normalized)).join();
+            upsertCache(normalized);
+            if (triggerRebuild) {
+                triggerRebuild(normalized.getTacticId());
+            }
+            return normalized;
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to serialize tactic record", exception);
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("Failed to persist tactic record", exception);
         }
     }
 }

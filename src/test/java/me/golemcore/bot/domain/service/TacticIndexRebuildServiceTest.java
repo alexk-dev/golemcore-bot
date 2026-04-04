@@ -11,22 +11,27 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TacticIndexRebuildServiceTest {
 
     private TacticRecordService tacticRecordService;
     private TacticBm25IndexService bm25IndexService;
+    private TacticEmbeddingIndexService tacticEmbeddingIndexService;
     private TacticIndexRebuildService rebuildService;
 
     @BeforeEach
     void setUp() {
         tacticRecordService = mock(TacticRecordService.class);
         bm25IndexService = new TacticBm25IndexService();
+        tacticEmbeddingIndexService = mock(TacticEmbeddingIndexService.class);
         rebuildService = new TacticIndexRebuildService(
                 tacticRecordService,
                 new TacticSearchDocumentAssembler(),
                 bm25IndexService,
+                tacticEmbeddingIndexService,
                 Clock.fixed(Instant.parse("2026-04-01T22:30:00Z"), ZoneOffset.UTC));
     }
 
@@ -49,5 +54,6 @@ class TacticIndexRebuildServiceTest {
 
         assertEquals(1, bm25IndexService.snapshot().documents().size());
         assertEquals(2, rebuildService.snapshot().rebuildCount());
+        verify(tacticEmbeddingIndexService, times(2)).rebuildAll();
     }
 }
