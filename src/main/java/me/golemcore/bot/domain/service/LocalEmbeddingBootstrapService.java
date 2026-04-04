@@ -109,7 +109,7 @@ public class LocalEmbeddingBootstrapService {
 
     private TacticSearchStatus computeStatus(boolean recordMetrics) {
         if (tacticSearchStatusProjectionService != null) {
-            TacticSearchStatus status = tacticSearchStatusProjectionService.projectCurrent();
+            TacticSearchStatus status = reconcileProjectedStatus(tacticSearchStatusProjectionService.projectCurrent());
             if (recordMetrics) {
                 metricsService.recordStatus(status);
             }
@@ -510,6 +510,9 @@ public class LocalEmbeddingBootstrapService {
 
     private BootstrapContext resolveContext() {
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
+        if (selfEvolvingConfig == null) {
+            selfEvolvingConfig = new RuntimeConfig.SelfEvolvingConfig();
+        }
         RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics() != null
                 ? selfEvolvingConfig.getTactics()
                 : new RuntimeConfig.SelfEvolvingTacticsConfig();
@@ -581,6 +584,90 @@ public class LocalEmbeddingBootstrapService {
             return projectedBaseUrl;
         }
         return resolveInstallBaseUrl(context, provider);
+    }
+
+    private TacticSearchStatus reconcileProjectedStatus(TacticSearchStatus projectedStatus) {
+        if (projectedStatus == null) {
+            return null;
+        }
+        BootstrapContext context = resolveContext();
+        TacticSearchStatus reconciled = projectedStatus.toBuilder()
+                .provider(context.provider())
+                .model(context.model())
+                .baseUrl(context.baseUrl())
+                .updatedAt(clock.instant())
+                .build();
+        if (!Boolean.TRUE.equals(context.selfEvolvingConfig().getEnabled())
+                || !MODE_HYBRID.equals(context.configuredMode())
+                || !PROVIDER_OLLAMA.equals(context.provider())
+                || context.model() == null
+                || context.baseUrl() == null) {
+            return reconciled;
+        }
+
+        LocalRuntimeProbe runtimeProbe = probeLocalRuntime(context.provider());
+        boolean runtimeHealthy = isRuntimeHealthy(context.baseUrl());
+        boolean runtimeInstalled = runtimeProbe.installed() || runtimeHealthy;
+        String runtimeVersion = runtimeProbe.version() != null ? runtimeProbe.version()
+                : reconciled.getRuntimeVersion();
+        if (!runtimeInstalled) {
+            return reconciled.toBuilder()
+                    .mode(MODE_BM25)
+                    .reason("Ollama is not installed on this machine")
+                    .degraded(true)
+                    .runtimeInstalled(false)
+                    .runtimeHealthy(false)
+                    .runtimeVersion(runtimeVersion)
+                    .modelAvailable(false)
+                    .build();
+        }
+        if (!runtimeHealthy) {
+            String reason = reconciled.getReason() != null && !reconciled.getReason().isBlank()
+                    ? reconciled.getReason()
+                    : "Ollama is installed but not running at " + context.baseUrl();
+            return reconciled.toBuilder()
+                    .mode(MODE_BM25)
+                    .reason(reason)
+                    .degraded(true)
+                    .runtimeInstalled(true)
+                    .runtimeHealthy(false)
+                    .runtimeVersion(runtimeVersion)
+                    .modelAvailable(false)
+                    .build();
+        }
+
+        boolean modelAvailable = hasModel(context.baseUrl(), context.model());
+        if (!modelAvailable) {
+            return reconciled.toBuilder()
+                    .mode(MODE_BM25)
+                    .reason("Embedding model " + context.model() + " is not installed in Ollama")
+                    .degraded(true)
+                    .runtimeInstalled(true)
+                    .runtimeHealthy(true)
+                    .runtimeVersion(runtimeVersion)
+                    .modelAvailable(false)
+                    .build();
+        }
+
+        String runtimeState = reconciled.getRuntimeState();
+        if (runtimeState == null
+                || runtimeState.isBlank()
+                || "disabled".equals(runtimeState)
+                || runtimeState.startsWith("degraded_")
+                || "owned_starting".equals(runtimeState)
+                || "stopping".equals(runtimeState)) {
+            runtimeState = Boolean.TRUE.equals(reconciled.getOwned()) ? "owned_ready" : "external_ready";
+        }
+        return reconciled.toBuilder()
+                .mode(MODE_HYBRID)
+                .reason(null)
+                .degraded(false)
+                .runtimeState(runtimeState)
+                .runtimeInstalled(true)
+                .runtimeHealthy(true)
+                .runtimeVersion(runtimeVersion)
+                .modelAvailable(true)
+                .build();
     }
 
     private TacticSearchStatus failOpenOrThrow(String reason, String provider, String model, boolean runtimeInstalled,

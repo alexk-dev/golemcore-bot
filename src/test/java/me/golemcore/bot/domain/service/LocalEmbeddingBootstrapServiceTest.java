@@ -31,6 +31,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.port.outbound.OllamaProcessPort;
 import org.junit.jupiter.api.BeforeEach;
@@ -668,6 +669,66 @@ class LocalEmbeddingBootstrapServiceTest {
         assertTrue(status.getModelAvailable());
         assertFalse(status.getPullAttempted());
         assertFalse(status.getPullSucceeded());
+    }
+
+    @Test
+    void shouldRefreshProjectedStatusAfterConfiguredModelInstallSucceeds() {
+        ManagedLocalOllamaSupervisor supervisor = mock(ManagedLocalOllamaSupervisor.class);
+        when(supervisor.currentStatus()).thenReturn(ManagedLocalOllamaStatus.builder()
+                .currentState(me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState.OWNED_READY)
+                .owned(true)
+                .endpoint("http://127.0.0.1:11434")
+                .version("0.19.0")
+                .selectedModel("qwen3-embedding:0.6b")
+                .modelPresent(false)
+                .updatedAt(Instant.parse("2026-04-02T00:29:00Z"))
+                .build());
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, false, true, false, "http://127.0.0.1:11434", "qwen3-embedding:0.6b"));
+
+        SelfEvolvingTacticSearchStatusProjectionService projectionService = new SelfEvolvingTacticSearchStatusProjectionService(
+                runtimeConfigService,
+                supervisor,
+                FIXED_CLOCK);
+
+        LocalEmbeddingBootstrapService projectedService = new LocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                FIXED_CLOCK,
+                new okhttp3.OkHttpClient(),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                projectionService,
+                new StubOllamaProcessPort()) {
+            private final Deque<Boolean> modelChecks = new ArrayDeque<>(java.util.List.of(false, true, true));
+
+            @Override
+            protected LocalRuntimeProbe probeLocalRuntime(String provider) {
+                return new LocalRuntimeProbe(true, "0.19.0");
+            }
+
+            @Override
+            protected boolean isRuntimeHealthy(String baseUrl) {
+                return true;
+            }
+
+            @Override
+            protected boolean hasModel(String baseUrl, String model) {
+                return modelChecks.isEmpty() ? true : modelChecks.removeFirst();
+            }
+
+            @Override
+            protected boolean pullModel(String baseUrl, String model) {
+                return true;
+            }
+        };
+
+        TacticSearchStatus installStatus = projectedService.installConfiguredModel();
+        TacticSearchStatus refreshedStatus = projectedService.probeStatus();
+
+        assertTrue(installStatus.getModelAvailable());
+        assertEquals("hybrid", refreshedStatus.getMode());
+        assertTrue(refreshedStatus.getModelAvailable());
+        assertFalse(Boolean.TRUE.equals(refreshedStatus.getDegraded()));
     }
 
     @Test

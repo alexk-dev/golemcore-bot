@@ -243,7 +243,7 @@ class ManagedLocalOllamaSupervisorTest {
     }
 
     @Test
-    void shouldNotStopOwnedProcessWhenEmbeddingsAreDisabledAtRuntime() {
+    void shouldStopOwnedProcessWhenManagedRuntimeIsDisabledAtRuntime() {
         runtimeProbePort.runtimeReachableResponses.add(false);
         runtimeProbePort.runtimeReachableResponses.add(false);
         runtimeProbePort.runtimeReachableResponses.add(false);
@@ -257,7 +257,22 @@ class ManagedLocalOllamaSupervisorTest {
 
         assertEquals(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, startupStatus.getCurrentState());
         assertEquals(ManagedLocalOllamaState.DISABLED, disabledStatus.getCurrentState());
-        assertTrue(disabledStatus.getOwned());
+        assertFalse(disabledStatus.getOwned());
+        assertEquals(1, processPort.stopCount);
+    }
+
+    @Test
+    void shouldNotStopExternalRuntimeWhenEmbeddingsAreDisabledAtRuntime() {
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.runtimeVersion = VERSION;
+        runtimeProbePort.modelResponses.add(true);
+
+        ManagedLocalOllamaStatus startupStatus = supervisor.startupCheck(true);
+        ManagedLocalOllamaStatus disabledStatus = supervisor.embeddingsDisabled();
+
+        assertEquals(ManagedLocalOllamaState.EXTERNAL_READY, startupStatus.getCurrentState());
+        assertEquals(ManagedLocalOllamaState.DISABLED, disabledStatus.getCurrentState());
+        assertFalse(disabledStatus.getOwned());
         assertEquals(0, processPort.stopCount);
     }
 

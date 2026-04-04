@@ -25,8 +25,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
@@ -162,6 +165,50 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         assertEquals(0, supervisor.pollOwnedProcessInvocations);
         assertEquals(0, supervisor.pollExternalRuntimeInvocations);
         assertEquals(0, supervisor.attemptScheduledRetryInvocations);
+    }
+
+    @Test
+    void shouldRestartManagedRuntimeWhenManagedEndpointChanges() {
+        RuntimeConfigService liveRuntimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.SelfEvolvingConfig initialConfig = localEmbeddingsConfig(true);
+        RuntimeConfig.SelfEvolvingConfig updatedConfig = localEmbeddingsConfig(true);
+        updatedConfig.getTactics().getSearch().getEmbeddings().setBaseUrl("http://127.0.0.1:22434");
+        when(liveRuntimeConfigService.getSelfEvolvingConfig()).thenReturn(initialConfig, updatedConfig, updatedConfig);
+
+        BridgeMutableClock clock = new BridgeMutableClock(Instant.parse("2026-04-02T03:00:00Z"));
+        BridgeRuntimeProbePort runtimeProbePort = new BridgeRuntimeProbePort(clock);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(false);
+        runtimeProbePort.runtimeReachableResponses.add(true);
+        runtimeProbePort.modelResponses.add(true);
+        runtimeProbePort.runtimeVersion = "0.19.0";
+
+        BridgeProcessPort processPort = new BridgeProcessPort();
+        processPort.binaryAvailable = true;
+
+        ManagedLocalOllamaSupervisor liveSupervisor = new ManagedLocalOllamaSupervisor(
+                clock,
+                runtimeProbePort,
+                processPort,
+                "http://127.0.0.1:11434",
+                "0.19.0",
+                "qwen3-embedding:0.6b");
+        ManagedLocalOllamaLifecycleBridge liveBridge = new ManagedLocalOllamaLifecycleBridge(
+                liveRuntimeConfigService,
+                liveSupervisor);
+
+        liveBridge.runStartupGate();
+        runtimeProbePort.consumeReachabilityTimeouts.add(Duration.ofSeconds(5));
+        liveBridge.runWatchdogTick();
+
+        assertEquals(2, processPort.startEndpoints.size());
+        assertEquals("http://127.0.0.1:11434", processPort.startEndpoints.removeFirst());
+        assertEquals("http://127.0.0.1:22434", processPort.startEndpoints.removeFirst());
+        assertEquals(1, processPort.stopCount);
+        assertEquals("http://127.0.0.1:22434", liveSupervisor.currentStatus().getEndpoint());
+
+        processPort.ownedProcessAlive = false;
+        liveBridge.stop();
     }
 
     private static ManagedLocalOllamaStatus status(ManagedLocalOllamaState state, boolean owned) {
@@ -358,6 +405,111 @@ class ManagedLocalOllamaLifecycleBridgeTest {
 
         @Override
         public void stopOwnedProcess() {
+        }
+    }
+
+    private static final class BridgeRuntimeProbePort implements OllamaRuntimeProbePort {
+
+        private final BridgeMutableClock clock;
+        private final Deque<Boolean> runtimeReachableResponses = new ArrayDeque<>();
+        private final Deque<Duration> consumeReachabilityTimeouts = new ArrayDeque<>();
+        private final Deque<Boolean> modelResponses = new ArrayDeque<>();
+        private String runtimeVersion;
+
+        private BridgeRuntimeProbePort(BridgeMutableClock clock) {
+            this.clock = clock;
+        }
+
+        @Override
+        public boolean isRuntimeReachable(String endpoint, Duration timeout) {
+            Duration requestedConsumption = consumeReachabilityTimeouts.isEmpty() ? null
+                    : consumeReachabilityTimeouts.removeFirst();
+            if (requestedConsumption != null && timeout != null) {
+                clock.advance(minDuration(requestedConsumption, timeout));
+            }
+            return runtimeReachableResponses.isEmpty() ? false : runtimeReachableResponses.removeFirst();
+        }
+
+        @Override
+        public String getRuntimeVersion(String endpoint, Duration timeout) {
+            return runtimeVersion;
+        }
+
+        @Override
+        public boolean hasModel(String endpoint, String model, Duration timeout) {
+            return modelResponses.isEmpty() ? false : modelResponses.removeFirst();
+        }
+
+        private Duration minDuration(Duration left, Duration right) {
+            return left.compareTo(right) <= 0 ? left : right;
+        }
+    }
+
+    private static final class BridgeProcessPort implements OllamaProcessPort {
+
+        private boolean binaryAvailable;
+        private boolean ownedProcessAlive;
+        private int stopCount;
+        private final Deque<String> startEndpoints = new ArrayDeque<>();
+
+        @Override
+        public boolean isBinaryAvailable() {
+            return binaryAvailable;
+        }
+
+        @Override
+        public String getInstalledVersion() {
+            return binaryAvailable ? "0.19.0" : null;
+        }
+
+        @Override
+        public void startServe(String endpoint) {
+            ownedProcessAlive = true;
+            startEndpoints.addLast(endpoint);
+        }
+
+        @Override
+        public boolean isOwnedProcessAlive() {
+            return ownedProcessAlive;
+        }
+
+        @Override
+        public Integer getOwnedProcessExitCode() {
+            return null;
+        }
+
+        @Override
+        public void stopOwnedProcess() {
+            stopCount++;
+            ownedProcessAlive = false;
+        }
+    }
+
+    private static final class BridgeMutableClock extends Clock {
+
+        private Instant instant;
+
+        private BridgeMutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        @Override
+        public ZoneOffset getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(java.time.ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
+
+        private void advance(Duration duration) {
+            instant = instant.plus(duration);
         }
     }
 }

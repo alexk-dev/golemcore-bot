@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.service;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
 import me.golemcore.bot.port.outbound.OllamaProcessPort;
@@ -41,12 +42,12 @@ public class ManagedLocalOllamaSupervisor {
     private final Clock clock;
     private final OllamaRuntimeProbePort runtimeProbePort;
     private final OllamaProcessPort processPort;
-    private final String endpoint;
+    private String endpoint;
     private final String version;
-    private final String selectedModel;
-    private final Duration startupWindow;
-    private final Duration initialRestartBackoff;
-    private final String minimumSupportedVersion;
+    private String selectedModel;
+    private Duration startupWindow;
+    private Duration initialRestartBackoff;
+    private String minimumSupportedVersion;
 
     private ManagedLocalOllamaStatus currentStatus;
 
@@ -102,16 +103,7 @@ public class ManagedLocalOllamaSupervisor {
         Instant now = getClock().instant();
         Instant startupDeadline = now.plus(startupWindow);
         if (!localEmbeddingsActive) {
-            return updateStatus(buildStatus(
-                    ManagedLocalOllamaState.DISABLED,
-                    currentStatus.getOwned(),
-                    currentStatus.getLastError(),
-                    safeRestartAttempts(),
-                    currentStatus.getNextRetryAt(),
-                    currentStatus.getNextRetryTime(),
-                    currentStatus.getModelPresent(),
-                    currentStatus.getVersion(),
-                    now));
+            return embeddingsDisabled();
         }
 
         if (currentStatus.getCurrentState() == ManagedLocalOllamaState.STOPPING) {
@@ -234,15 +226,18 @@ public class ManagedLocalOllamaSupervisor {
     }
 
     public ManagedLocalOllamaStatus embeddingsDisabled() {
+        if (Boolean.TRUE.equals(currentStatus.getOwned()) && processPort.isOwnedProcessAlive()) {
+            processPort.stopOwnedProcess();
+        }
         Instant now = getClock().instant();
         return updateStatus(buildStatus(
                 ManagedLocalOllamaState.DISABLED,
-                currentStatus.getOwned(),
+                false,
                 currentStatus.getLastError(),
                 safeRestartAttempts(),
-                currentStatus.getNextRetryAt(),
-                currentStatus.getNextRetryTime(),
-                currentStatus.getModelPresent(),
+                null,
+                null,
+                null,
                 currentStatus.getVersion(),
                 now));
     }
@@ -259,6 +254,12 @@ public class ManagedLocalOllamaSupervisor {
             return currentStatus;
         }
         if (processPort.isOwnedProcessAlive()) {
+            if (state == ManagedLocalOllamaState.OWNED_READY
+                    || state == ManagedLocalOllamaState.OWNED_STARTING
+                    || state == ManagedLocalOllamaState.DEGRADED_START_TIMEOUT
+                    || state == ManagedLocalOllamaState.DEGRADED_OUTDATED) {
+                return observeReadiness();
+            }
             return currentStatus;
         }
 
@@ -372,6 +373,55 @@ public class ManagedLocalOllamaSupervisor {
 
     public ManagedLocalOllamaStatus currentStatus() {
         return currentStatus;
+    }
+
+    public ManagedLocalOllamaStatus refreshConfiguration(
+            String endpoint,
+            String selectedModel,
+            Duration startupWindow,
+            Duration initialRestartBackoff,
+            String minimumSupportedVersion) {
+        String resolvedEndpoint = endpoint;
+        String resolvedSelectedModel = selectedModel;
+        Duration resolvedStartupWindow = startupWindow != null ? startupWindow : Duration.ofSeconds(5);
+        Duration resolvedInitialRestartBackoff = initialRestartBackoff != null ? initialRestartBackoff
+                : Duration.ofSeconds(1);
+        String resolvedMinimumSupportedVersion = minimumSupportedVersion != null && !minimumSupportedVersion.isBlank()
+                ? minimumSupportedVersion
+                : "0.19.0";
+
+        boolean endpointChanged = !Objects.equals(this.endpoint, resolvedEndpoint);
+        boolean selectedModelChanged = !Objects.equals(this.selectedModel, resolvedSelectedModel);
+
+        this.endpoint = resolvedEndpoint;
+        this.selectedModel = resolvedSelectedModel;
+        this.startupWindow = resolvedStartupWindow;
+        this.initialRestartBackoff = resolvedInitialRestartBackoff;
+        this.minimumSupportedVersion = resolvedMinimumSupportedVersion;
+
+        if (!endpointChanged && !selectedModelChanged) {
+            return currentStatus;
+        }
+
+        if (endpointChanged && Boolean.TRUE.equals(currentStatus.getOwned()) && processPort.isOwnedProcessAlive()) {
+            processPort.stopOwnedProcess();
+        }
+
+        ManagedLocalOllamaState nextState = endpointChanged ? ManagedLocalOllamaState.DISABLED
+                : currentStatus.getCurrentState();
+        Boolean owned = endpointChanged ? false : currentStatus.getOwned();
+        Boolean modelPresent = endpointChanged || selectedModelChanged ? null : currentStatus.getModelPresent();
+        Instant now = getClock().instant();
+        return updateStatus(buildStatus(
+                nextState,
+                owned,
+                currentStatus.getLastError(),
+                safeRestartAttempts(),
+                endpointChanged ? null : currentStatus.getNextRetryAt(),
+                endpointChanged ? null : currentStatus.getNextRetryTime(),
+                modelPresent,
+                currentStatus.getVersion(),
+                now));
     }
 
     protected Clock getClock() {

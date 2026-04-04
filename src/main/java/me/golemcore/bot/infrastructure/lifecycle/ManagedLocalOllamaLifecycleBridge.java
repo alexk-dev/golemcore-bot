@@ -21,6 +21,7 @@ package me.golemcore.bot.infrastructure.lifecycle;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.net.URI;
+import java.time.Duration;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -60,14 +61,20 @@ public class ManagedLocalOllamaLifecycleBridge {
         if (started) {
             return;
         }
-        supervisor.startupCheck(isManagedLocalEmbeddingsActive(runtimeConfigService.getSelfEvolvingConfig()));
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
+        syncSupervisorConfiguration(selfEvolvingConfig);
+        supervisor.startupCheck(isManagedLocalEmbeddingsActive(selfEvolvingConfig));
         startWatchdog();
         started = true;
     }
 
     synchronized void runWatchdogTick() {
-        boolean localEmbeddingsActive = isManagedLocalEmbeddingsActive(runtimeConfigService.getSelfEvolvingConfig());
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
+        syncSupervisorConfiguration(selfEvolvingConfig);
+        boolean localEmbeddingsActive = isManagedLocalEmbeddingsActive(selfEvolvingConfig);
         if (!localEmbeddingsActive) {
+            // Leaving managed-local mode must not tear down an external Ollama session.
+            // Any actual stop is only valid for a managed/owned runtime session.
             supervisor.embeddingsDisabled();
             return;
         }
@@ -137,6 +144,28 @@ public class ManagedLocalOllamaLifecycleBridge {
             return supervisor.attemptScheduledRetry();
         }
         return status;
+    }
+
+    private void syncSupervisorConfiguration(RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig) {
+        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig != null
+                && selfEvolvingConfig.getTactics() != null
+                        ? selfEvolvingConfig.getTactics()
+                        : new RuntimeConfig.SelfEvolvingTacticsConfig();
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = tacticsConfig.getSearch() != null
+                ? tacticsConfig.getSearch()
+                : new RuntimeConfig.SelfEvolvingTacticSearchConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = searchConfig.getEmbeddings() != null
+                ? searchConfig.getEmbeddings()
+                : new RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = embeddingsConfig.getLocal() != null
+                ? embeddingsConfig.getLocal()
+                : new RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig();
+        supervisor.refreshConfiguration(
+                resolveOllamaBaseUrl(trimToNull(embeddingsConfig.getBaseUrl())),
+                trimToNull(embeddingsConfig.getModel()),
+                resolveStartupWindow(localConfig),
+                resolveRestartBackoff(localConfig),
+                trimToNull(localConfig.getMinimumRuntimeVersion()));
     }
 
     private void startWatchdog() {
@@ -218,5 +247,19 @@ public class ManagedLocalOllamaLifecycleBridge {
         } catch (IllegalArgumentException exception) {
             return false;
         }
+    }
+
+    private String resolveOllamaBaseUrl(String baseUrl) {
+        return baseUrl != null ? baseUrl : "http://127.0.0.1:11434";
+    }
+
+    private Duration resolveStartupWindow(RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig) {
+        Integer timeoutMs = localConfig != null ? localConfig.getStartupTimeoutMs() : null;
+        return timeoutMs != null && timeoutMs > 0 ? Duration.ofMillis(timeoutMs) : Duration.ofSeconds(5);
+    }
+
+    private Duration resolveRestartBackoff(RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig) {
+        Integer backoffMs = localConfig != null ? localConfig.getInitialRestartBackoffMs() : null;
+        return backoffMs != null && backoffMs > 0 ? Duration.ofMillis(backoffMs) : Duration.ofSeconds(1);
     }
 }
