@@ -114,10 +114,22 @@ public class AutoConfiguration {
             OllamaRuntimeProbePort runtimeProbePort,
             OllamaProcessPort processPort) {
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
-        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = selfEvolvingConfig.getTactics()
-                .getSearch()
-                .getEmbeddings();
+        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics();
+        if (tacticsConfig == null) {
+            tacticsConfig = new RuntimeConfig.SelfEvolvingTacticsConfig();
+        }
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = tacticsConfig.getSearch();
+        if (searchConfig == null) {
+            searchConfig = new RuntimeConfig.SelfEvolvingTacticSearchConfig();
+        }
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = searchConfig.getEmbeddings();
+        if (embeddingsConfig == null) {
+            embeddingsConfig = new RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig();
+        }
         RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = embeddingsConfig.getLocal();
+        if (localConfig == null) {
+            localConfig = new RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig();
+        }
         String endpoint = resolveOllamaBaseUrl(embeddingsConfig.getBaseUrl());
         String selectedModel = trimToNull(embeddingsConfig.getModel());
         return new ManagedLocalOllamaSupervisor(

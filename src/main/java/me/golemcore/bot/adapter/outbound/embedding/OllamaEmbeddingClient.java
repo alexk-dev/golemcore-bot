@@ -62,6 +62,9 @@ public class OllamaEmbeddingClient implements EmbeddingPort {
                 if (!response.isSuccessful()) {
                     throw new IllegalStateException("Embedding request failed with status " + response.code());
                 }
+                if (response.body() == null) {
+                    throw new IllegalStateException("Embedding response body is null");
+                }
                 JsonNode json = objectMapper.readTree(response.body().bytes());
                 List<List<Double>> vectors = new ArrayList<>();
                 for (JsonNode item : json.path("embeddings")) {

@@ -18,7 +18,7 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.outbound.embedding.EmbeddingClientFactory;
+import me.golemcore.bot.port.outbound.EmbeddingClientResolverPort;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticIndexDocument;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
@@ -45,7 +45,7 @@ public class TacticEmbeddingIndexService {
     private final RuntimeConfigService runtimeConfigService;
     private final TacticRecordService tacticRecordService;
     private final TacticSearchDocumentAssembler documentAssembler;
-    private final EmbeddingClientFactory embeddingClientFactory;
+    private final EmbeddingClientResolverPort embeddingClientResolver;
     private final TacticSearchMetricsService metricsService;
     private final AtomicReference<Snapshot> snapshot = new AtomicReference<>(Snapshot.empty());
 
@@ -53,12 +53,12 @@ public class TacticEmbeddingIndexService {
             RuntimeConfigService runtimeConfigService,
             TacticRecordService tacticRecordService,
             TacticSearchDocumentAssembler documentAssembler,
-            EmbeddingClientFactory embeddingClientFactory,
+            EmbeddingClientResolverPort embeddingClientResolver,
             TacticSearchMetricsService metricsService) {
         this.runtimeConfigService = runtimeConfigService;
         this.tacticRecordService = tacticRecordService;
         this.documentAssembler = documentAssembler;
-        this.embeddingClientFactory = embeddingClientFactory;
+        this.embeddingClientResolver = embeddingClientResolver;
         this.metricsService = metricsService;
     }
 
@@ -80,7 +80,7 @@ public class TacticEmbeddingIndexService {
         }
 
         try {
-            EmbeddingPort client = embeddingClientFactory.resolve(config.getProvider());
+            EmbeddingPort client = embeddingClientResolver.resolve(config.getProvider());
             EmbeddingPort.EmbeddingResponse response = client.embed(new EmbeddingPort.EmbeddingRequest(
                     config.getBaseUrl(),
                     config.getApiKey(),
@@ -128,7 +128,7 @@ public class TacticEmbeddingIndexService {
             return;
         }
         try {
-            EmbeddingPort client = embeddingClientFactory.resolve(config.getProvider());
+            EmbeddingPort client = embeddingClientResolver.resolve(config.getProvider());
             EmbeddingPort.EmbeddingResponse response = client.embed(new EmbeddingPort.EmbeddingRequest(
                     config.getBaseUrl(),
                     config.getApiKey(),

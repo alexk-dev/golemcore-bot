@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.system;
 
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
+import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -40,7 +40,7 @@ class PostRunAnalysisSystemTest {
     private LlmJudgeService llmJudgeService;
     private EvolutionCandidateService evolutionCandidateService;
     private PromotionWorkflowService promotionWorkflowService;
-    private HiveEventBatchPublisher hiveEventBatchPublisher;
+    private SelfEvolvingProjectionPublishPort projectionPublishPort;
     private PostRunAnalysisSystem system;
 
     @BeforeEach
@@ -51,7 +51,7 @@ class PostRunAnalysisSystemTest {
         llmJudgeService = mock(LlmJudgeService.class);
         evolutionCandidateService = mock(EvolutionCandidateService.class);
         promotionWorkflowService = mock(PromotionWorkflowService.class);
-        hiveEventBatchPublisher = mock(HiveEventBatchPublisher.class);
+        projectionPublishPort = mock(SelfEvolvingProjectionPublishPort.class);
         system = new PostRunAnalysisSystem(
                 runtimeConfigService,
                 selfEvolvingRunService,
@@ -59,7 +59,7 @@ class PostRunAnalysisSystemTest {
                 llmJudgeService,
                 evolutionCandidateService,
                 promotionWorkflowService,
-                hiveEventBatchPublisher);
+                projectionPublishPort);
     }
 
     @Test
@@ -122,7 +122,7 @@ class PostRunAnalysisSystemTest {
         verify(evolutionCandidateService).deriveCandidates(completedRun, llmVerdict);
         verify(promotionWorkflowService).registerAndPlanCandidates(candidates);
         verify(promotionWorkflowService).bindCandidateBaseRevisions("bundle-1", candidates);
-        verify(hiveEventBatchPublisher).publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
+        verify(projectionPublishPort).publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
         assertEquals("run-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
         assertEquals("bundle-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
     }
@@ -247,7 +247,7 @@ class PostRunAnalysisSystemTest {
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
         when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
         when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(List.of());
-        doThrow(new IllegalStateException("hive offline")).when(hiveEventBatchPublisher)
+        doThrow(new IllegalStateException("hive offline")).when(projectionPublishPort)
                 .publishSelfEvolvingProjection(completedRun, llmVerdict, List.of());
 
         AgentContext result = system.process(context);

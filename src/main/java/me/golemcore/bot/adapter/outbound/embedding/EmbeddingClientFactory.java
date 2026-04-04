@@ -27,7 +27,7 @@ import java.util.Locale;
  * Resolves the configured embedding provider to a concrete client.
  */
 @Component
-public class EmbeddingClientFactory {
+public class EmbeddingClientFactory implements me.golemcore.bot.port.outbound.EmbeddingClientResolverPort {
 
     private final OpenAiCompatibleEmbeddingClient openAiCompatibleEmbeddingClient;
     private final OllamaEmbeddingClient ollamaEmbeddingClient;

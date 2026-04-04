@@ -31,7 +31,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
-import me.golemcore.bot.adapter.outbound.embedding.EmbeddingClientFactory;
+import me.golemcore.bot.port.outbound.EmbeddingClientResolverPort;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
@@ -44,7 +44,7 @@ class TacticEmbeddingIndexServiceTest {
 
     private RuntimeConfigService runtimeConfigService;
     private TacticRecordService tacticRecordService;
-    private EmbeddingClientFactory embeddingClientFactory;
+    private EmbeddingClientResolverPort embeddingClientResolver;
     private EmbeddingPort embeddingPort;
     private TacticSearchMetricsService metricsService;
     private TacticEmbeddingIndexService service;
@@ -53,7 +53,7 @@ class TacticEmbeddingIndexServiceTest {
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
         tacticRecordService = mock(TacticRecordService.class);
-        embeddingClientFactory = mock(EmbeddingClientFactory.class);
+        embeddingClientResolver = mock(EmbeddingClientResolverPort.class);
         embeddingPort = mock(EmbeddingPort.class);
         metricsService = new TacticSearchMetricsService(Clock.fixed(
                 Instant.parse("2026-04-02T00:00:00Z"),
@@ -62,7 +62,7 @@ class TacticEmbeddingIndexServiceTest {
                 runtimeConfigService,
                 tacticRecordService,
                 new TacticSearchDocumentAssembler(),
-                embeddingClientFactory,
+                embeddingClientResolver,
                 metricsService);
     }
 
@@ -72,7 +72,7 @@ class TacticEmbeddingIndexServiceTest {
         when(tacticRecordService.getAll()).thenReturn(List.of(
                 tactic("planner", "active", "Recover with an ordered shell plan"),
                 tactic("rollback", "approved", "Rollback the last broken shell step")));
-        when(embeddingClientFactory.resolve("openai_compatible")).thenReturn(embeddingPort);
+        when(embeddingClientResolver.resolve("openai_compatible")).thenReturn(embeddingPort);
         when(embeddingPort.embed(any()))
                 .thenReturn(new EmbeddingPort.EmbeddingResponse(
                         "text-embedding-3-large",
@@ -96,7 +96,7 @@ class TacticEmbeddingIndexServiceTest {
         when(tacticRecordService.getAll()).thenReturn(List.of(
                 tactic("planner", "active", "Recover with an ordered shell plan"),
                 tactic("rollback", "approved", "Rollback the last broken shell step")));
-        when(embeddingClientFactory.resolve("openai_compatible")).thenReturn(embeddingPort);
+        when(embeddingClientResolver.resolve("openai_compatible")).thenReturn(embeddingPort);
         when(embeddingPort.embed(any())).thenReturn(new EmbeddingPort.EmbeddingResponse(
                 "text-embedding-3-large",
                 List.of(List.of(1.0d, 0.0d))));
@@ -113,7 +113,7 @@ class TacticEmbeddingIndexServiceTest {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(hybridConfig("openai_compatible"));
         when(tacticRecordService.getAll()).thenReturn(List.of(
                 tactic("planner", "active", "Recover with an ordered shell plan")));
-        when(embeddingClientFactory.resolve("openai_compatible")).thenReturn(embeddingPort);
+        when(embeddingClientResolver.resolve("openai_compatible")).thenReturn(embeddingPort);
         when(embeddingPort.embed(any()))
                 .thenReturn(new EmbeddingPort.EmbeddingResponse(
                         "text-embedding-3-large",
@@ -136,7 +136,7 @@ class TacticEmbeddingIndexServiceTest {
         List<TacticSearchResult> results = service.search(query());
 
         assertTrue(results.isEmpty());
-        verifyNoInteractions(embeddingClientFactory);
+        verifyNoInteractions(embeddingClientResolver);
     }
 
     @Test
@@ -164,7 +164,7 @@ class TacticEmbeddingIndexServiceTest {
         assertTrue(results.isEmpty());
         assertEquals("bm25", metricsService.snapshot().activeMode());
         assertEquals("embeddings disabled", metricsService.snapshot().lastReason());
-        verifyNoInteractions(embeddingClientFactory);
+        verifyNoInteractions(embeddingClientResolver);
     }
 
     private RuntimeConfig.SelfEvolvingConfig hybridConfig(String provider) {

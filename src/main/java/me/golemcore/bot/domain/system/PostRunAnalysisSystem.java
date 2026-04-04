@@ -18,7 +18,7 @@ package me.golemcore.bot.domain.system;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
+import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
@@ -50,7 +50,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
     private final LlmJudgeService llmJudgeService;
     private final EvolutionCandidateService evolutionCandidateService;
     private final PromotionWorkflowService promotionWorkflowService;
-    private final HiveEventBatchPublisher hiveEventBatchPublisher;
+    private final SelfEvolvingProjectionPublishPort projectionPublishPort;
 
     public PostRunAnalysisSystem(RuntimeConfigService runtimeConfigService,
             SelfEvolvingRunService selfEvolvingRunService,
@@ -58,14 +58,14 @@ public class PostRunAnalysisSystem implements AgentSystem {
             LlmJudgeService llmJudgeService,
             EvolutionCandidateService evolutionCandidateService,
             PromotionWorkflowService promotionWorkflowService,
-            HiveEventBatchPublisher hiveEventBatchPublisher) {
+            SelfEvolvingProjectionPublishPort projectionPublishPort) {
         this.runtimeConfigService = runtimeConfigService;
         this.selfEvolvingRunService = selfEvolvingRunService;
         this.deterministicJudgeService = deterministicJudgeService;
         this.llmJudgeService = llmJudgeService;
         this.evolutionCandidateService = evolutionCandidateService;
         this.promotionWorkflowService = promotionWorkflowService;
-        this.hiveEventBatchPublisher = hiveEventBatchPublisher;
+        this.projectionPublishPort = projectionPublishPort;
     }
 
     @Override
@@ -110,7 +110,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
             bindRunBundleToCandidateBaselines(completedRun, candidates);
         }
         try {
-            hiveEventBatchPublisher.publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
+            projectionPublishPort.publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
         } catch (RuntimeException exception) {
             log.debug("[Hive] Skipping SelfEvolving projection publish: {}", exception.getMessage());
         }

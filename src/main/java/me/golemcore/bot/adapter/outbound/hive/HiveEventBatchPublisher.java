@@ -59,7 +59,7 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class HiveEventBatchPublisher {
+public class HiveEventBatchPublisher implements me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort {
 
     private static final Integer SCHEMA_VERSION = 1;
     private static final String EVENT_TYPE_RUNTIME_EVENT = "runtime_event";
