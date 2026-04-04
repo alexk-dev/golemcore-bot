@@ -42,6 +42,17 @@ export interface SelfEvolvingCandidateEvidenceRef {
   outputFragment: string | null;
 }
 
+export interface SelfEvolvingCandidateProposal {
+  summary: string | null;
+  rationale: string | null;
+  behaviorInstructions: string | null;
+  toolInstructions: string | null;
+  expectedOutcome: string | null;
+  approvalNotes: string | null;
+  proposedPatch: string | null;
+  riskLevel: string | null;
+}
+
 export interface SelfEvolvingCandidate {
   id: string;
   goal: string | null;
@@ -52,6 +63,7 @@ export interface SelfEvolvingCandidate {
   riskLevel: string | null;
   expectedImpact: string | null;
   proposedDiff: string | null;
+  proposal?: SelfEvolvingCandidateProposal | null;
   sourceRunIds: string[];
   evidenceRefs: SelfEvolvingCandidateEvidenceRef[];
 }

@@ -94,7 +94,7 @@ public class PromotionWorkflowService {
 
     public List<PromotionDecision> registerAndPlanCandidates(List<EvolutionCandidate> candidates) {
         registerCandidates(candidates);
-        if (candidates == null) {
+        if (candidates == null || isApprovalGateMode()) {
             return List.of();
         }
         List<PromotionDecision> decisions = new ArrayList<>();
@@ -194,6 +194,10 @@ public class PromotionWorkflowService {
         case "approval_gate", "auto_accept" -> new PromotionTarget("active", "active", "active");
         default -> throw new IllegalArgumentException("Unsupported promotion mode: " + promotionMode);
         };
+    }
+
+    private boolean isApprovalGateMode() {
+        return "approval_gate".equalsIgnoreCase(runtimeConfigService.getSelfEvolvingPromotionMode());
     }
 
     private String buildTargetBundleId(EvolutionCandidate storedCandidate, PromotionTarget target) {

@@ -23,8 +23,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionProposal;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionRecord;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -66,6 +68,13 @@ public class EvolutionCandidateService {
     }
 
     public List<EvolutionCandidate> deriveCandidates(RunRecord runRecord, RunVerdict runVerdict) {
+        return deriveCandidates(runRecord, runVerdict, null);
+    }
+
+    public List<EvolutionCandidate> deriveCandidates(
+            RunRecord runRecord,
+            RunVerdict runVerdict,
+            EvolutionProposal proposal) {
         if (runRecord == null
                 || runVerdict == null
                 || runVerdict.getEvidenceRefs() == null
@@ -78,6 +87,7 @@ public class EvolutionCandidateService {
             return List.of(buildCandidate(
                     runRecord,
                     runVerdict,
+                    proposal,
                     "fix",
                     artifactType,
                     buildFixImpact(runVerdict, artifactType),
@@ -90,6 +100,7 @@ public class EvolutionCandidateService {
             return List.of(buildCandidate(
                     runRecord,
                     runVerdict,
+                    proposal,
                     "derive",
                     "skill",
                     buildDeriveImpact(runVerdict),
@@ -131,20 +142,25 @@ public class EvolutionCandidateService {
     private EvolutionCandidate buildCandidate(
             RunRecord runRecord,
             RunVerdict runVerdict,
+            EvolutionProposal proposal,
             String goal,
             String artifactType,
             String expectedImpact,
             String riskLevel) {
         Instant createdAt = Instant.now(clock);
+        String proposedDiff = proposal != null && !StringValueSupport.isBlank(proposal.getProposedPatch())
+                ? proposal.getProposedPatch()
+                : buildProposedDiff(goal, artifactType);
         EvolutionCandidate candidate = EvolutionCandidate.builder()
                 .id(UUID.randomUUID().toString())
                 .golemId(runRecord.getGolemId())
                 .goal(goal)
                 .artifactType(artifactType)
                 .baseVersion(runRecord.getArtifactBundleId())
-                .proposedDiff(buildProposedDiff(goal, artifactType))
-                .expectedImpact(expectedImpact)
-                .riskLevel(riskLevel)
+                .proposedDiff(proposedDiff)
+                .proposal(proposal)
+                .expectedImpact(firstNonBlank(proposal != null ? proposal.getExpectedOutcome() : null, expectedImpact))
+                .riskLevel(firstNonBlank(proposal != null ? proposal.getRiskLevel() : null, riskLevel))
                 .status("proposed")
                 .lifecycleState("candidate")
                 .rolloutStage("proposed")
@@ -259,6 +275,11 @@ public class EvolutionCandidateService {
         if (candidate == null) {
             return;
         }
+        if (!"active".equals(candidate.getStatus())
+                && !"active".equals(candidate.getLifecycleState())
+                && !"active".equals(candidate.getRolloutStage())) {
+            return;
+        }
         if (isPlaceholderDiff(candidate.getProposedDiff())) {
             log.debug("[SelfEvolving] Skipping tactic emit for placeholder diff: {}", candidate.getProposedDiff());
             return;
@@ -270,6 +291,7 @@ public class EvolutionCandidateService {
     }
 
     private TacticRecord buildTacticRecord(EvolutionCandidate candidate, String promotionState, String rolloutStage) {
+        EvolutionProposal proposal = candidate.getProposal();
         return TacticRecord.builder()
                 .tacticId(candidate.getContentRevisionId())
                 .artifactStreamId(candidate.getArtifactStreamId())
@@ -280,9 +302,16 @@ public class EvolutionCandidateService {
                 .aliases(candidate.getArtifactAliases() != null ? new ArrayList<>(candidate.getArtifactAliases())
                         : new ArrayList<>())
                 .contentRevisionId(candidate.getContentRevisionId())
-                .intentSummary(candidate.getExpectedImpact())
-                .behaviorSummary(candidate.getProposedDiff())
-                .outcomeSummary(candidate.getGoal())
+                .intentSummary(
+                        firstNonBlank(proposal != null ? proposal.getSummary() : null, candidate.getExpectedImpact()))
+                .behaviorSummary(firstNonBlank(
+                        proposal != null ? proposal.getBehaviorInstructions() : null,
+                        candidate.getProposedDiff()))
+                .toolSummary(proposal != null ? proposal.getToolInstructions() : null)
+                .outcomeSummary(firstNonBlank(
+                        proposal != null ? proposal.getExpectedOutcome() : null,
+                        candidate.getGoal()))
+                .approvalNotes(proposal != null ? proposal.getApprovalNotes() : null)
                 .evidenceSnippets(resolveEvidenceSnippets(candidate))
                 .taskFamilies(resolveTaskFamilies(candidate))
                 .tags(resolveTags(candidate))
@@ -370,9 +399,9 @@ public class EvolutionCandidateService {
         if (runVerdict.getEvidenceRefs() == null) {
             return null;
         }
-        for (var ref : runVerdict.getEvidenceRefs()) {
-            if (ref != null && !StringValueSupport.isBlank(ref.getOutputFragment())) {
-                String fragment = ref.getOutputFragment().trim();
+        for (VerdictEvidenceRef evidenceRef : runVerdict.getEvidenceRefs()) {
+            if (evidenceRef != null && !StringValueSupport.isBlank(evidenceRef.getOutputFragment())) {
+                String fragment = evidenceRef.getOutputFragment().trim();
                 if (fragment.length() > 200) {
                     fragment = fragment.substring(0, 200) + "...";
                 }
@@ -516,20 +545,20 @@ public class EvolutionCandidateService {
         if (candidate == null || candidate.getEvidenceRefs() == null) {
             return snippets;
         }
-        for (var ref : candidate.getEvidenceRefs()) {
-            if (ref == null) {
+        for (VerdictEvidenceRef evidenceRef : candidate.getEvidenceRefs()) {
+            if (evidenceRef == null) {
                 continue;
             }
-            if (!StringValueSupport.isBlank(ref.getOutputFragment())) {
-                snippets.add(ref.getOutputFragment().trim());
+            if (!StringValueSupport.isBlank(evidenceRef.getOutputFragment())) {
+                snippets.add(evidenceRef.getOutputFragment().trim());
                 continue;
             }
-            if (!StringValueSupport.isBlank(ref.getSpanId())) {
-                snippets.add("span:" + ref.getSpanId().trim());
+            if (!StringValueSupport.isBlank(evidenceRef.getSpanId())) {
+                snippets.add("span:" + evidenceRef.getSpanId().trim());
                 continue;
             }
-            if (!StringValueSupport.isBlank(ref.getTraceId())) {
-                snippets.add("trace:" + ref.getTraceId().trim());
+            if (!StringValueSupport.isBlank(evidenceRef.getTraceId())) {
+                snippets.add("trace:" + evidenceRef.getTraceId().trim());
             }
         }
         return snippets;
@@ -571,5 +600,12 @@ public class EvolutionCandidateService {
             return 0.0d;
         }
         return "derive".equals(candidate.getGoal()) ? 1.0d : 0.0d;
+    }
+
+    private String firstNonBlank(String primary, String fallback) {
+        if (!StringValueSupport.isBlank(primary)) {
+            return primary;
+        }
+        return fallback;
     }
 }

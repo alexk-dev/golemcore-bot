@@ -116,7 +116,7 @@ class SelfEvolvingControllerTest {
         when(promotionWorkflowService.planPromotion("candidate-1")).thenReturn(PromotionDecision.builder()
                 .id("decision-1")
                 .candidateId("candidate-1")
-                .state("approved")
+                .state("active")
                 .build());
         when(projectionService.listCampaigns()).thenReturn(List.of());
 
@@ -125,6 +125,7 @@ class SelfEvolvingControllerTest {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
                     assertEquals("decision-1", response.getBody().getId());
+                    assertEquals("active", response.getBody().getState());
                 })
                 .verifyComplete();
 

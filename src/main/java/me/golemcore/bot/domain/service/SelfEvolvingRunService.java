@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
+import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
@@ -34,7 +35,9 @@ import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -48,7 +51,10 @@ public class SelfEvolvingRunService {
 
     private static final String SELF_EVOLVING_DIR = "self-evolving";
     private static final String RUNS_FILE = "runs.json";
+    private static final String RUN_VERDICTS_FILE = "run-verdicts.json";
     private static final TypeReference<List<RunRecord>> RUN_LIST_TYPE = new TypeReference<>() {
+    };
+    private static final TypeReference<Map<String, RunVerdict>> RUN_VERDICT_MAP_TYPE = new TypeReference<>() {
     };
 
     private final StoragePort storagePort;
@@ -56,6 +62,7 @@ public class SelfEvolvingRunService {
     private final Clock clock;
     private final ObjectMapper objectMapper;
     private final AtomicReference<List<RunRecord>> runCache = new AtomicReference<>();
+    private final AtomicReference<Map<String, RunVerdict>> verdictCache = new AtomicReference<>();
 
     public SelfEvolvingRunService(StoragePort storagePort, ArtifactBundleService artifactBundleService, Clock clock) {
         this.storagePort = storagePort;
@@ -102,6 +109,23 @@ public class SelfEvolvingRunService {
         return run;
     }
 
+    public Optional<RunVerdict> findVerdict(String runId) {
+        if (StringValueSupport.isBlank(runId)) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(getVerdicts().get(runId));
+    }
+
+    public void saveVerdict(String runId, RunVerdict verdict) {
+        if (StringValueSupport.isBlank(runId) || verdict == null) {
+            return;
+        }
+        verdict.setRunId(runId);
+        Map<String, RunVerdict> verdicts = new LinkedHashMap<>(getVerdicts());
+        verdicts.put(runId, verdict);
+        saveVerdicts(verdicts);
+    }
+
     public List<RunRecord> getRuns() {
         List<RunRecord> cached = runCache.get();
         if (cached == null) {
@@ -117,6 +141,15 @@ public class SelfEvolvingRunService {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to serialize runs", e);
         }
+    }
+
+    private Map<String, RunVerdict> getVerdicts() {
+        Map<String, RunVerdict> cached = verdictCache.get();
+        if (cached == null) {
+            cached = loadVerdicts();
+            verdictCache.set(cached);
+        }
+        return cached;
     }
 
     private void save(RunRecord run) {
@@ -157,6 +190,30 @@ public class SelfEvolvingRunService {
             runCache.set(new ArrayList<>(runs));
         } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
             throw new IllegalStateException("Failed to persist self-evolving runs", e);
+        }
+    }
+
+    private Map<String, RunVerdict> loadVerdicts() {
+        try {
+            String json = storagePort.getText(SELF_EVOLVING_DIR, RUN_VERDICTS_FILE).join();
+            if (StringValueSupport.isBlank(json)) {
+                return new LinkedHashMap<>();
+            }
+            Map<String, RunVerdict> verdicts = objectMapper.readValue(json, RUN_VERDICT_MAP_TYPE);
+            return verdicts != null ? new LinkedHashMap<>(verdicts) : new LinkedHashMap<>();
+        } catch (IOException | RuntimeException e) { // NOSONAR - storage fallback
+            log.debug("[SelfEvolving] Failed to load run verdicts: {}", e.getMessage());
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private void saveVerdicts(Map<String, RunVerdict> verdicts) {
+        try {
+            String json = objectMapper.writeValueAsString(verdicts);
+            storagePort.putText(SELF_EVOLVING_DIR, RUN_VERDICTS_FILE, json).join();
+            verdictCache.set(new LinkedHashMap<>(verdicts));
+        } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
+            throw new IllegalStateException("Failed to persist self-evolving run verdicts", e);
         }
     }
 

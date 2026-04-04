@@ -80,7 +80,7 @@ class PromotionWorkflowServiceTest {
     }
 
     @Test
-    void shouldActivateCandidateImmediatelyWhenApprovalGateApprovesIt() {
+    void shouldKeepCandidateProposedWhenApprovalGateRegistersAutomatically() {
         EvolutionCandidate candidate = EvolutionCandidate.builder()
                 .id("candidate-1")
                 .golemId("golem-1")
@@ -89,13 +89,12 @@ class PromotionWorkflowServiceTest {
                 .status("proposed")
                 .build();
 
-        PromotionDecision decision = promotionWorkflowService.planPromotion(candidate);
+        List<PromotionDecision> decisions = promotionWorkflowService.registerAndPlanCandidates(List.of(candidate));
 
-        assertEquals("active", decision.getState());
-        assertEquals("approval_gate", decision.getMode());
+        assertTrue(decisions.isEmpty());
         EvolutionCandidate storedCandidate = promotionWorkflowService.getCandidates().getFirst();
-        assertEquals("active", storedCandidate.getStatus());
-        assertTrue(persistedFiles.containsKey("tactics/" + storedCandidate.getContentRevisionId() + ".json"));
+        assertEquals("proposed", storedCandidate.getStatus());
+        assertFalse(persistedFiles.containsKey("tactics/" + storedCandidate.getContentRevisionId() + ".json"));
     }
 
     @Test
@@ -110,13 +109,32 @@ class PromotionWorkflowServiceTest {
                 .baseVersion("bundle-2")
                 .build();
 
-        PromotionDecision decision = promotionWorkflowService.planPromotion(candidate);
+        PromotionDecision decision = promotionWorkflowService.registerAndPlanCandidates(List.of(candidate)).getFirst();
 
         assertEquals("active", decision.getState());
         assertEquals("active", promotionWorkflowService.getCandidates().getFirst().getStatus());
         assertEquals("bundle-2", decision.getBundleId());
         assertEquals("bundle-2", decision.getOriginBundleId());
         assertFalse(promotionWorkflowService.getPromotionDecisions().isEmpty());
+    }
+
+    @Test
+    void shouldActivateCandidateWhenManualPromotionIsRequestedInApprovalGateMode() {
+        EvolutionCandidate candidate = EvolutionCandidate.builder()
+                .id("candidate-manual")
+                .golemId("golem-1")
+                .goal("fix")
+                .artifactType("tool_policy")
+                .status("proposed")
+                .baseVersion("bundle-manual")
+                .build();
+        promotionWorkflowService.registerCandidates(List.of(candidate));
+
+        PromotionDecision decision = promotionWorkflowService.planPromotion("candidate-manual");
+
+        assertEquals("active", decision.getState());
+        assertEquals("approval_gate", decision.getMode());
+        assertEquals("active", promotionWorkflowService.findCandidate("candidate-manual").orElseThrow().getStatus());
     }
 
     @Test
@@ -274,8 +292,8 @@ class PromotionWorkflowServiceTest {
 
         List<PromotionDecision> decisions = promotionWorkflowService.registerAndPlanCandidates(candidates);
 
-        assertEquals(1, decisions.size());
-        assertEquals("candidate-6", decisions.getFirst().getCandidateId());
+        assertTrue(decisions.isEmpty());
+        assertEquals("candidate-6", promotionWorkflowService.getCandidates().getFirst().getId());
     }
 
     @Test

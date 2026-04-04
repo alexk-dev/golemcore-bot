@@ -15,7 +15,9 @@ function countCompletedRuns(runs: SelfEvolvingRunSummary[]): number {
 }
 
 function countPendingCandidates(candidates: SelfEvolvingCandidate[]): number {
-  return candidates.filter((candidate) => candidate.status === 'approved_pending').length;
+  return candidates.filter((candidate) =>
+    ['proposed', 'approved_pending', 'approved', 'shadowed', 'canary'].includes(candidate.status ?? ''),
+  ).length;
 }
 
 export function SelfEvolvingOverviewCards({
@@ -33,7 +35,7 @@ export function SelfEvolvingOverviewCards({
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Completed</span>
         <span className="text-2xl font-bold">{countCompletedRuns(runs)}</span>
       </div>
-      <div className="card card-body flex flex-col gap-1" title="Approved improvements that need your decision before going live">
+      <div className="card card-body flex flex-col gap-1" title="Candidate improvements that still need review or activation before they go live">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Pending Promotions</span>
         <span className={`text-2xl font-bold ${pendingCount > 0 ? 'text-warning' : ''}`}>{pendingCount}</span>
       </div>

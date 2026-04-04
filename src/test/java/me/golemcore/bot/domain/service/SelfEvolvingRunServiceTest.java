@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
+import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +20,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -55,6 +57,8 @@ class SelfEvolvingRunServiceTest {
 
         when(storagePort.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
         when(storagePort.putText(eq("self-evolving"), eq("runs.json"), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(storagePort.putText(eq("self-evolving"), eq("run-verdicts.json"), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
     }
 
@@ -186,6 +190,32 @@ class SelfEvolvingRunServiceTest {
     }
 
     @Test
+    void shouldPersistAndLoadVerdictByRunId() {
+        Map<String, String> persistedFiles = new ConcurrentHashMap<>();
+        StoragePort persistedStorage = mapBackedStorage(persistedFiles);
+        SelfEvolvingRunService writerService = new SelfEvolvingRunService(persistedStorage, artifactBundleService,
+                clock);
+        RunVerdict verdict = RunVerdict.builder()
+                .id("verdict-1")
+                .runId("run-6")
+                .outcomeStatus("FAILED")
+                .processSummary("Judge found a tool failure")
+                .createdAt(FIXED_INSTANT)
+                .build();
+
+        writerService.saveVerdict("run-6", verdict);
+
+        SelfEvolvingRunService readerService = new SelfEvolvingRunService(persistedStorage, artifactBundleService,
+                clock);
+        Optional<RunVerdict> storedVerdict = readerService.findVerdict("run-6");
+
+        assertTrue(storedVerdict.isPresent());
+        assertEquals("verdict-1", storedVerdict.get().getId());
+        assertEquals("FAILED", storedVerdict.get().getOutcomeStatus());
+        assertTrue(persistedFiles.containsKey("run-verdicts.json"));
+    }
+
+    @Test
     void shouldReturnNullWhenCompletingMissingRun() {
         assertNull(service.completeRun(null, AgentContext.builder().build()));
     }
@@ -234,7 +264,7 @@ class SelfEvolvingRunServiceTest {
             String fileName = invocation.getArgument(1);
             return CompletableFuture.completedFuture(persistedFiles.get(fileName));
         });
-        when(persistedStorage.putText(eq("self-evolving"), eq("runs.json"), anyString())).thenAnswer(invocation -> {
+        when(persistedStorage.putText(eq("self-evolving"), anyString(), anyString())).thenAnswer(invocation -> {
             String fileName = invocation.getArgument(1);
             String content = invocation.getArgument(2);
             persistedFiles.put(fileName, content);

@@ -162,6 +162,16 @@ class TacticSearchServiceTest {
         assertEquals("approved-planner", results.getFirst().getTacticId());
     }
 
+    @Test
+    void shouldPreserveSemanticTacticFieldsInSearchResults() {
+        List<TacticSearchResult> results = tacticSearchService.search("recover failed shell command");
+
+        assertEquals(1, results.size());
+        assertEquals("recover failed shell command", results.getFirst().getIntentSummary());
+        assertEquals("recover failed shell command", results.getFirst().getBehaviorSummary());
+        assertEquals("shell", results.getFirst().getToolSummary());
+    }
+
     private TacticRecord tactic(String tacticId, String promotionState, String rolloutStage, String title,
             String summary) {
         return TacticRecord.builder()

@@ -22,11 +22,13 @@ import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionProposal;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.service.DeterministicJudgeService;
 import me.golemcore.bot.domain.service.EvolutionCandidateService;
+import me.golemcore.bot.domain.service.LlmEvolutionService;
 import me.golemcore.bot.domain.service.LlmJudgeService;
 import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -48,6 +50,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
     private final SelfEvolvingRunService selfEvolvingRunService;
     private final DeterministicJudgeService deterministicJudgeService;
     private final LlmJudgeService llmJudgeService;
+    private final LlmEvolutionService llmEvolutionService;
     private final EvolutionCandidateService evolutionCandidateService;
     private final PromotionWorkflowService promotionWorkflowService;
     private final SelfEvolvingProjectionPublishPort projectionPublishPort;
@@ -56,6 +59,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
             SelfEvolvingRunService selfEvolvingRunService,
             DeterministicJudgeService deterministicJudgeService,
             LlmJudgeService llmJudgeService,
+            LlmEvolutionService llmEvolutionService,
             EvolutionCandidateService evolutionCandidateService,
             PromotionWorkflowService promotionWorkflowService,
             SelfEvolvingProjectionPublishPort projectionPublishPort) {
@@ -63,6 +67,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
         this.selfEvolvingRunService = selfEvolvingRunService;
         this.deterministicJudgeService = deterministicJudgeService;
         this.llmJudgeService = llmJudgeService;
+        this.llmEvolutionService = llmEvolutionService;
         this.evolutionCandidateService = evolutionCandidateService;
         this.promotionWorkflowService = promotionWorkflowService;
         this.projectionPublishPort = projectionPublishPort;
@@ -104,8 +109,15 @@ public class PostRunAnalysisSystem implements AgentSystem {
         TraceRecord traceRecord = resolveTrace(context, completedRun);
         RunVerdict deterministicVerdict = deterministicJudgeService.evaluate(completedRun, traceRecord);
         RunVerdict llmVerdict = llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict);
-        List<EvolutionCandidate> candidates = evolutionCandidateService.deriveCandidates(completedRun, llmVerdict);
-        promotionWorkflowService.registerAndPlanCandidates(candidates);
+        selfEvolvingRunService.saveVerdict(completedRun.getId(), llmVerdict);
+        EvolutionProposal proposal = llmEvolutionService.propose(completedRun, llmVerdict);
+        List<EvolutionCandidate> candidates = evolutionCandidateService
+                .deriveCandidates(completedRun, llmVerdict, proposal);
+        if (isAutoAcceptMode()) {
+            promotionWorkflowService.registerAndPlanCandidates(candidates);
+        } else {
+            promotionWorkflowService.registerCandidates(candidates);
+        }
         if (!candidates.isEmpty()) {
             bindRunBundleToCandidateBaselines(completedRun, candidates);
         }
@@ -118,6 +130,10 @@ public class PostRunAnalysisSystem implements AgentSystem {
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, completedRun.getArtifactBundleId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED, true);
         return context;
+    }
+
+    private boolean isAutoAcceptMode() {
+        return "auto_accept".equalsIgnoreCase(runtimeConfigService.getSelfEvolvingPromotionMode());
     }
 
     private RunRecord resolveRun(AgentContext context) {

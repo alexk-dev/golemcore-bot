@@ -19,7 +19,7 @@ type ActiveTab = 'runs' | 'candidates' | 'tactics';
 
 const TAB_LABELS: Record<ActiveTab, { label: string; hint: string }> = {
   runs: { label: 'Runs', hint: 'Every agent session captured and judged by the self-evolving pipeline' },
-  candidates: { label: 'Candidates', hint: 'Proposed improvements waiting for your approval before going live' },
+  candidates: { label: 'Candidates', hint: 'Concrete proposals derived from judged runs, waiting for review or activation' },
   tactics: { label: 'Tactics', hint: 'Search the tactic library used by the agent at runtime' },
 };
 
@@ -65,7 +65,7 @@ export default function SelfEvolvingPage(): ReactElement {
         <div>
           <h4 className="mb-1 text-lg font-semibold tracking-tight">Self-Evolving</h4>
           <p className="text-sm text-muted-foreground">
-            Monitor how the agent learns from its runs and review proposed improvements.
+            Monitor how the agent learns from its runs and review concrete proposals generated from judged evidence.
           </p>
         </div>
       </div>

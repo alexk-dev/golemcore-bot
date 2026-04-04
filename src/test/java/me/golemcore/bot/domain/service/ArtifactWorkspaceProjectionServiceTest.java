@@ -4,6 +4,7 @@ import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
+import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCompareEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjection;
@@ -82,6 +83,10 @@ class ArtifactWorkspaceProjectionServiceTest {
                 .lifecycleState("candidate")
                 .rolloutStage("canary")
                 .sourceRunIds(List.of("run-2"))
+                .evidenceRefs(List.of(VerdictEvidenceRef.builder()
+                        .traceId("trace-2")
+                        .spanId("span-2")
+                        .build()))
                 .createdAt(Instant.parse("2026-03-31T19:00:00Z"))
                 .build()));
         when(promotionWorkflowService.getPromotionDecisions()).thenReturn(List.of(
@@ -127,6 +132,8 @@ class ArtifactWorkspaceProjectionServiceTest {
         assertEquals("rev-2", catalogEntry.getLatestCandidateRevisionId());
         assertEquals("rev-2", catalogEntry.getActiveRevisionId());
         assertEquals(List.of("run-2"), evidence.getRunIds());
+        assertEquals(List.of("trace-2"), evidence.getTraceIds());
+        assertEquals(List.of("span-2"), evidence.getSpanIds());
         assertFalse(lineage.getEdges().isEmpty());
     }
 

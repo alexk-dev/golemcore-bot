@@ -107,6 +107,8 @@ class SelfEvolvingControllerArtifactWorkspaceTest {
                         .payloadKind("revision")
                         .revisionId("rev-2")
                         .runIds(List.of("run-2"))
+                        .traceIds(List.of("trace-2"))
+                        .spanIds(List.of("span-2"))
                         .findings(List.of("revision_evidence"))
                         .build()));
 
@@ -122,6 +124,8 @@ class SelfEvolvingControllerArtifactWorkspaceTest {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertEquals("revision", response.getBody().getPayloadKind());
                     assertEquals(List.of("run-2"), response.getBody().getRunIds());
+                    assertEquals(List.of("trace-2"), response.getBody().getTraceIds());
+                    assertEquals(List.of("span-2"), response.getBody().getSpanIds());
                 })
                 .verifyComplete();
     }

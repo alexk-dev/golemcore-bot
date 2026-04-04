@@ -365,6 +365,17 @@ public class SelfEvolvingProjectionService {
                                 .outputFragment(ref.getOutputFragment())
                                 .build())
                         .toList();
+        SelfEvolvingCandidateDto.ProposalDto proposalDto = candidate.getProposal() == null ? null
+                : SelfEvolvingCandidateDto.ProposalDto.builder()
+                        .summary(candidate.getProposal().getSummary())
+                        .rationale(candidate.getProposal().getRationale())
+                        .behaviorInstructions(candidate.getProposal().getBehaviorInstructions())
+                        .toolInstructions(candidate.getProposal().getToolInstructions())
+                        .expectedOutcome(candidate.getProposal().getExpectedOutcome())
+                        .approvalNotes(candidate.getProposal().getApprovalNotes())
+                        .proposedPatch(candidate.getProposal().getProposedPatch())
+                        .riskLevel(candidate.getProposal().getRiskLevel())
+                        .build();
         return SelfEvolvingCandidateDto.builder()
                 .id(candidate.getId())
                 .goal(candidate.getGoal())
@@ -375,6 +386,7 @@ public class SelfEvolvingProjectionService {
                 .riskLevel(candidate.getRiskLevel())
                 .expectedImpact(candidate.getExpectedImpact())
                 .proposedDiff(candidate.getProposedDiff())
+                .proposal(proposalDto)
                 .sourceRunIds(candidate.getSourceRunIds())
                 .evidenceRefs(evidenceRefDtos)
                 .build();
@@ -809,6 +821,10 @@ public class SelfEvolvingProjectionService {
     }
 
     private RunVerdict resolveVerdict(RunRecord runRecord) {
+        Optional<RunVerdict> storedVerdict = selfEvolvingRunService.findVerdict(runRecord.getId());
+        if (storedVerdict.isPresent()) {
+            return storedVerdict.get();
+        }
         return deterministicJudgeService.evaluate(runRecord, resolveTrace(runRecord));
     }
 

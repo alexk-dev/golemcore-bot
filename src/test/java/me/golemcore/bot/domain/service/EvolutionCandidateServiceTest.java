@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionProposal;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
@@ -98,6 +99,63 @@ class EvolutionCandidateServiceTest {
         assertEquals("skill", candidates.getFirst().getArtifactType());
         assertTrue(
                 candidates.getFirst().getEvidenceRefs().stream().anyMatch(ref -> "trace-2".equals(ref.getTraceId())));
+    }
+
+    @Test
+    void shouldUseStructuredProposalContentWhenAvailable() {
+        RunRecord runRecord = RunRecord.builder()
+                .id("run-structured")
+                .golemId("golem-1")
+                .build();
+        RunVerdict verdict = RunVerdict.builder()
+                .outcomeStatus("FAILED")
+                .processFindings(List.of("tool_error:tool.exec"))
+                .evidenceRefs(List.of(VerdictEvidenceRef.builder().traceId("trace-3").spanId("tool-3").build()))
+                .build();
+        EvolutionProposal proposal = EvolutionProposal.builder()
+                .summary("Harden tool usage policy after missing binary failure")
+                .rationale("The run retried a missing command instead of replanning.")
+                .behaviorInstructions(
+                        "Before issuing a shell command, verify the tool exists and replan if it does not.")
+                .toolInstructions("Prefer `command -v` before using shell tools.")
+                .expectedOutcome("Reduce exit code 127 failures and recover with an installed fallback.")
+                .approvalNotes("Anchored to trace-3/tool-3.")
+                .proposedPatch("Verify tool availability before shell execution and switch to an installed fallback.")
+                .riskLevel("high")
+                .build();
+
+        List<EvolutionCandidate> candidates = evolutionCandidateService.deriveCandidates(runRecord, verdict, proposal);
+
+        assertEquals(1, candidates.size());
+        assertEquals(proposal.getProposedPatch(), candidates.getFirst().getProposedDiff());
+        assertEquals(proposal.getExpectedOutcome(), candidates.getFirst().getExpectedImpact());
+        assertEquals("high", candidates.getFirst().getRiskLevel());
+        assertEquals(proposal.getSummary(), candidates.getFirst().getProposal().getSummary());
+    }
+
+    @Test
+    void shouldFallbackToPlaceholderDiffWhenStructuredProposalDoesNotIncludePatch() {
+        RunRecord runRecord = RunRecord.builder()
+                .id("run-fallback")
+                .golemId("golem-1")
+                .build();
+        RunVerdict verdict = RunVerdict.builder()
+                .outcomeStatus("FAILED")
+                .processFindings(List.of("tool_error:tool.exec"))
+                .evidenceRefs(List.of(VerdictEvidenceRef.builder().traceId("trace-4").spanId("tool-4").build()))
+                .build();
+        EvolutionProposal proposal = EvolutionProposal.builder()
+                .summary("Harden tool usage policy after missing binary failure")
+                .behaviorInstructions("Check tool availability before shell execution.")
+                .expectedOutcome("Reduce repeated missing command failures.")
+                .riskLevel("high")
+                .build();
+
+        List<EvolutionCandidate> candidates = evolutionCandidateService.deriveCandidates(runRecord, verdict, proposal);
+
+        assertEquals(1, candidates.size());
+        assertEquals("selfevolving:fix:tool_policy", candidates.getFirst().getProposedDiff());
+        assertEquals(proposal.getSummary(), candidates.getFirst().getProposal().getSummary());
     }
 
     @Test

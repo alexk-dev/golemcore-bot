@@ -171,8 +171,13 @@ public class ContextBuildingSystem implements AgentSystem {
                     .append(tacticSearchResult.getTitle().trim())
                     .append(".\n");
         }
-        if (tacticSearchResult.getBehaviorSummary() != null && !tacticSearchResult.getBehaviorSummary().isBlank()) {
-            builder.append("Behavior summary: ").append(tacticSearchResult.getBehaviorSummary().trim()).append("\n");
+        String intentSummary = sanitizeAdvisoryText(tacticSearchResult.getIntentSummary());
+        if (intentSummary != null) {
+            builder.append("Intent summary: ").append(intentSummary).append("\n");
+        }
+        String behaviorSummary = sanitizeAdvisoryText(tacticSearchResult.getBehaviorSummary());
+        if (behaviorSummary != null && !behaviorSummary.equals(intentSummary)) {
+            builder.append("Behavior summary: ").append(behaviorSummary).append("\n");
         }
         if (tacticSearchResult.getToolSummary() != null && !tacticSearchResult.getToolSummary().isBlank()) {
             builder.append("Tooling hint: ").append(tacticSearchResult.getToolSummary().trim()).append("\n");
@@ -184,5 +189,16 @@ public class ContextBuildingSystem implements AgentSystem {
             builder.append("Approval context: ").append(tacticSearchResult.getApprovalNotes().trim()).append("\n");
         }
         return builder.toString().trim();
+    }
+
+    private String sanitizeAdvisoryText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.matches("selfevolving:[a-z_]+:[a-z_]+")) {
+            return null;
+        }
+        return trimmed;
     }
 }

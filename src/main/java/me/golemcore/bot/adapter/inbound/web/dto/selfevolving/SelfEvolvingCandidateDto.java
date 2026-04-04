@@ -22,6 +22,7 @@ public class SelfEvolvingCandidateDto {
     private String riskLevel;
     private String expectedImpact;
     private String proposedDiff;
+    private ProposalDto proposal;
 
     @Builder.Default
     private List<String> sourceRunIds = new ArrayList<>();
@@ -37,5 +38,20 @@ public class SelfEvolvingCandidateDto {
         private String traceId;
         private String spanId;
         private String outputFragment;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ProposalDto {
+        private String summary;
+        private String rationale;
+        private String behaviorInstructions;
+        private String toolInstructions;
+        private String expectedOutcome;
+        private String approvalNotes;
+        private String proposedPatch;
+        private String riskLevel;
     }
 }

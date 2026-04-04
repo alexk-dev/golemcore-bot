@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionProposal;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
@@ -113,13 +114,21 @@ class EvolutionCandidateServiceTacticRecordTest {
     }
 
     @Test
-    void shouldActivatePlaceholderCandidateAsActiveTactic() {
+    void shouldActivateCandidateUsingStructuredProposalSemantics() {
         EvolutionCandidate candidate = evolutionCandidateService.ensureArtifactIdentity(EvolutionCandidate.builder()
                 .id("candidate-activate")
                 .artifactType("skill")
                 .status("proposed")
                 .expectedImpact("Promote planner tactic immediately")
                 .proposedDiff("selfevolving:derive:skill")
+                .proposal(EvolutionProposal.builder()
+                        .summary("Capture the successful planner tactic as reusable guidance")
+                        .behaviorInstructions(
+                                "Reuse the planner sequence when the task requires stepwise decomposition.")
+                        .toolInstructions("Prefer planning before tool execution when the task spans multiple steps.")
+                        .expectedOutcome("Increase success on multi-step tasks without extra retries.")
+                        .approvalNotes("Promoted after reviewing the successful derive run.")
+                        .build())
                 .build());
 
         evolutionCandidateService.activateAsTactic(candidate);
@@ -128,6 +137,12 @@ class EvolutionCandidateServiceTacticRecordTest {
         assertEquals(candidate.getContentRevisionId(), tactic.getTacticId());
         assertEquals("active", tactic.getPromotionState());
         assertEquals("active", tactic.getRolloutStage());
-        assertEquals("selfevolving:derive:skill", tactic.getBehaviorSummary());
+        assertEquals("Capture the successful planner tactic as reusable guidance", tactic.getIntentSummary());
+        assertEquals("Reuse the planner sequence when the task requires stepwise decomposition.",
+                tactic.getBehaviorSummary());
+        assertEquals("Prefer planning before tool execution when the task spans multiple steps.",
+                tactic.getToolSummary());
+        assertEquals("Increase success on multi-step tasks without extra retries.", tactic.getOutcomeSummary());
+        assertEquals("Promoted after reviewing the successful derive run.", tactic.getApprovalNotes());
     }
 }

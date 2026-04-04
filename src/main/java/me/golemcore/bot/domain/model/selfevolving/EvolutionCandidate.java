@@ -50,6 +50,7 @@ public class EvolutionCandidate {
     private String baseContentRevisionId;
     private String baseVersion;
     private String proposedDiff;
+    private EvolutionProposal proposal;
     private String expectedImpact;
     private String riskLevel;
     private String status;

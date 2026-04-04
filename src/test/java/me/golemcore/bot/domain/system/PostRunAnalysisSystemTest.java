@@ -7,12 +7,14 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionProposal;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.service.DeterministicJudgeService;
 import me.golemcore.bot.domain.service.EvolutionCandidateService;
+import me.golemcore.bot.domain.service.LlmEvolutionService;
 import me.golemcore.bot.domain.service.LlmJudgeService;
 import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -38,6 +40,7 @@ class PostRunAnalysisSystemTest {
     private SelfEvolvingRunService selfEvolvingRunService;
     private DeterministicJudgeService deterministicJudgeService;
     private LlmJudgeService llmJudgeService;
+    private LlmEvolutionService llmEvolutionService;
     private EvolutionCandidateService evolutionCandidateService;
     private PromotionWorkflowService promotionWorkflowService;
     private SelfEvolvingProjectionPublishPort projectionPublishPort;
@@ -49,6 +52,7 @@ class PostRunAnalysisSystemTest {
         selfEvolvingRunService = mock(SelfEvolvingRunService.class);
         deterministicJudgeService = mock(DeterministicJudgeService.class);
         llmJudgeService = mock(LlmJudgeService.class);
+        llmEvolutionService = mock(LlmEvolutionService.class);
         evolutionCandidateService = mock(EvolutionCandidateService.class);
         promotionWorkflowService = mock(PromotionWorkflowService.class);
         projectionPublishPort = mock(SelfEvolvingProjectionPublishPort.class);
@@ -57,9 +61,11 @@ class PostRunAnalysisSystemTest {
                 selfEvolvingRunService,
                 deterministicJudgeService,
                 llmJudgeService,
+                llmEvolutionService,
                 evolutionCandidateService,
                 promotionWorkflowService,
                 projectionPublishPort);
+        when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("approval_gate");
     }
 
     @Test
@@ -100,6 +106,9 @@ class PostRunAnalysisSystemTest {
                 .runId("run-1")
                 .outcomeStatus("COMPLETED")
                 .build();
+        EvolutionProposal proposal = EvolutionProposal.builder()
+                .summary("Capture the successful planner tactic as reusable guidance")
+                .build();
         List<EvolutionCandidate> candidates = List.of(EvolutionCandidate.builder()
                 .id("candidate-1")
                 .baseVersion("bundle-1")
@@ -110,7 +119,8 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
         when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
-        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(candidates);
+        when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(proposal);
+        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, proposal)).thenReturn(candidates);
 
         assertTrue(system.shouldProcess(context));
         AgentContext result = system.process(context);
@@ -119,8 +129,11 @@ class PostRunAnalysisSystemTest {
         verify(selfEvolvingRunService).completeRun(startedRun, context);
         verify(deterministicJudgeService).evaluate(completedRun, traceRecord);
         verify(llmJudgeService).judge(completedRun, traceRecord, deterministicVerdict);
-        verify(evolutionCandidateService).deriveCandidates(completedRun, llmVerdict);
-        verify(promotionWorkflowService).registerAndPlanCandidates(candidates);
+        verify(selfEvolvingRunService).saveVerdict("run-1", llmVerdict);
+        verify(llmEvolutionService).propose(completedRun, llmVerdict);
+        verify(evolutionCandidateService).deriveCandidates(completedRun, llmVerdict, proposal);
+        verify(promotionWorkflowService).registerCandidates(candidates);
+        verify(promotionWorkflowService, never()).registerAndPlanCandidates(candidates);
         verify(promotionWorkflowService).bindCandidateBaseRevisions("bundle-1", candidates);
         verify(projectionPublishPort).publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
         assertEquals("run-1", result.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID));
@@ -157,7 +170,8 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.completeRun(existingRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
         when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
-        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(List.of());
+        when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
+        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, null)).thenReturn(List.of());
 
         assertTrue(system.shouldProcess(context));
         AgentContext result = system.process(context);
@@ -216,7 +230,8 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
         when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
-        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(List.of());
+        when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
+        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, null)).thenReturn(List.of());
 
         AgentContext result = system.process(context);
 
@@ -246,14 +261,47 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
         when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
-        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict)).thenReturn(List.of());
+        when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
+        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, null)).thenReturn(List.of());
         doThrow(new IllegalStateException("hive offline")).when(projectionPublishPort)
                 .publishSelfEvolvingProjection(completedRun, llmVerdict, List.of());
 
         AgentContext result = system.process(context);
 
-        verify(promotionWorkflowService).registerAndPlanCandidates(List.of());
+        verify(promotionWorkflowService).registerCandidates(List.of());
         assertEquals(Boolean.TRUE, result.getAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED));
+    }
+
+    @Test
+    void shouldAutoAcceptCandidatesWhenPromotionModeIsConfigured() {
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("auto_accept");
+        AgentContext context = buildContext();
+        RunRecord startedRun = RunRecord.builder()
+                .id("run-4")
+                .artifactBundleId("bundle-4")
+                .build();
+        RunRecord completedRun = RunRecord.builder()
+                .id("run-4")
+                .artifactBundleId("bundle-4")
+                .traceId("trace-1")
+                .status("COMPLETED")
+                .build();
+        TraceRecord traceRecord = TraceRecord.builder().traceId("trace-1").build();
+        RunVerdict deterministicVerdict = RunVerdict.builder().runId("run-4").build();
+        RunVerdict llmVerdict = RunVerdict.builder().runId("run-4").build();
+        List<EvolutionCandidate> candidates = List.of(EvolutionCandidate.builder().id("candidate-4").build());
+        when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
+        when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
+        when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
+        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
+        when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, null)).thenReturn(candidates);
+
+        system.process(context);
+
+        verify(promotionWorkflowService).registerAndPlanCandidates(candidates);
+        verify(promotionWorkflowService, never()).registerCandidates(candidates);
     }
 
     private AgentContext buildContext() {
