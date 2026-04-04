@@ -25,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.port.outbound.OllamaProcessPort;
+import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -457,7 +458,7 @@ public class LocalEmbeddingBootstrapService {
     protected boolean isRuntimeHealthy(String baseUrl) {
         try {
             Request request = new Request.Builder()
-                    .url(joinUrl(baseUrl, "/api/tags"))
+                    .url(buildLocalApiUrl(baseUrl, "/api/tags"))
                     .get()
                     .build();
             try (Response response = okHttpClient.newCall(request).execute()) {
@@ -471,7 +472,7 @@ public class LocalEmbeddingBootstrapService {
     protected boolean hasModel(String baseUrl, String model) {
         try {
             Request request = new Request.Builder()
-                    .url(joinUrl(baseUrl, "/api/tags"))
+                    .url(buildLocalApiUrl(baseUrl, "/api/tags"))
                     .get()
                     .build();
             try (Response response = okHttpClient.newCall(request).execute()) {
@@ -498,7 +499,7 @@ public class LocalEmbeddingBootstrapService {
                     "model", model,
                     "stream", false));
             Request request = new Request.Builder()
-                    .url(joinUrl(baseUrl, "/api/pull"))
+                    .url(buildLocalApiUrl(baseUrl, "/api/pull"))
                     .post(RequestBody.create(payload, JSON))
                     .build();
             try (Response response = buildPullClient().newCall(request).execute()) {
@@ -762,31 +763,73 @@ public class LocalEmbeddingBootstrapService {
         return value.trim();
     }
 
-    private String joinUrl(String baseUrl, String path) {
+    private HttpUrl buildLocalApiUrl(String baseUrl, String path) {
         if (baseUrl == null || baseUrl.isBlank()) {
             throw new IllegalArgumentException("Embedding base URL must not be blank");
         }
-        if (!isLocalEndpoint(baseUrl)) {
+        URI uri = URI.create(baseUrl.trim());
+        String scheme = normalizeLocalScheme(uri.getScheme());
+        String host = normalizeLocalHost(uri.getHost());
+        if (host == null) {
             throw new IllegalArgumentException("Embedding base URL must target a local Ollama endpoint");
         }
-        String normalizedBase = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        return normalizedBase + path;
+        HttpUrl.Builder builder = new HttpUrl.Builder()
+                .scheme(scheme)
+                .host(host)
+                .port(resolvePort(uri.getPort(), scheme));
+        for (String segment : splitPathSegments(uri.getPath())) {
+            builder.addPathSegment(segment);
+        }
+        for (String segment : splitPathSegments(path)) {
+            builder.addPathSegment(segment);
+        }
+        return builder.build();
     }
 
-    private boolean isLocalEndpoint(String baseUrl) {
-        try {
-            URI uri = URI.create(baseUrl);
-            String host = trimToNull(uri.getHost());
-            if (host == null) {
-                return false;
-            }
-            return "127.0.0.1".equals(host)
-                    || "localhost".equalsIgnoreCase(host)
-                    || "::1".equals(host)
-                    || "[::1]".equals(host);
-        } catch (IllegalArgumentException exception) {
-            return false;
+    private String normalizeLocalScheme(String scheme) {
+        String normalizedScheme = trimToNull(scheme);
+        if (normalizedScheme == null) {
+            return "http";
         }
+        if ("http".equalsIgnoreCase(normalizedScheme) || "https".equalsIgnoreCase(normalizedScheme)) {
+            return normalizedScheme.toLowerCase(Locale.ROOT);
+        }
+        throw new IllegalArgumentException("Embedding base URL must use http or https");
+    }
+
+    private String normalizeLocalHost(String host) {
+        String normalizedHost = trimToNull(host);
+        if (normalizedHost == null) {
+            return null;
+        }
+        if ("127.0.0.1".equals(normalizedHost)) {
+            return normalizedHost;
+        }
+        if ("localhost".equalsIgnoreCase(normalizedHost)) {
+            return "localhost";
+        }
+        if ("::1".equals(normalizedHost) || "[::1]".equals(normalizedHost)) {
+            return "::1";
+        }
+        return null;
+    }
+
+    private int resolvePort(int port, String scheme) {
+        if (port > 0 && port <= 65535) {
+            return port;
+        }
+        return "https".equals(scheme) ? 443 : 80;
+    }
+
+    private java.util.List<String> splitPathSegments(String path) {
+        String normalizedPath = trimToNull(path);
+        if (normalizedPath == null) {
+            return java.util.List.of();
+        }
+        return Arrays.stream(normalizedPath.split("/"))
+                .map(String::trim)
+                .filter(segment -> !segment.isEmpty())
+                .toList();
     }
 
     private String normalizeRuntimeVersion(String output) {
