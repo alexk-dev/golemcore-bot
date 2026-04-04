@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class OpenAiCompatibleEmbeddingClientTest {
@@ -78,5 +79,49 @@ class OpenAiCompatibleEmbeddingClientTest {
                         List.of("planner tactic"))));
 
         assertEquals("Embedding response body is empty", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectFailedEmbeddingResponseStatus() {
+        server.enqueue(new MockResponse.Builder().code(502).build());
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> client.embed(
+                new me.golemcore.bot.port.outbound.EmbeddingPort.EmbeddingRequest(
+                        server.url("/").toString(),
+                        "test-key",
+                        "text-embedding-3-large",
+                        3,
+                        5000,
+                        List.of("planner tactic"))));
+
+        assertEquals("Failed to fetch OpenAI-compatible embeddings", exception.getMessage());
+        assertEquals("Embedding request failed with status 502", exception.getCause().getMessage());
+    }
+
+    @Test
+    void shouldOmitAuthorizationHeaderWhenApiKeyBlank() throws Exception {
+        server.enqueue(new MockResponse.Builder()
+                .code(200)
+                .body("""
+                        {
+                          "model": "text-embedding-3-large",
+                          "data": [
+                            {"index": 0, "embedding": [0.1, 0.2, 0.3]}
+                          ]
+                        }
+                        """)
+                .build());
+
+        client.embed(new me.golemcore.bot.port.outbound.EmbeddingPort.EmbeddingRequest(
+                server.url("/").toString(),
+                "   ",
+                "text-embedding-3-large",
+                3,
+                5000,
+                List.of("planner tactic")));
+
+        RecordedRequest recordedRequest = server.takeRequest();
+        assertEquals("/embeddings", recordedRequest.getTarget());
+        assertNull(recordedRequest.getHeaders().get("Authorization"));
     }
 }

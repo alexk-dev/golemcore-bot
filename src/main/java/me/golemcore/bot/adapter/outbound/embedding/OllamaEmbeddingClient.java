@@ -26,6 +26,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -62,10 +63,8 @@ public class OllamaEmbeddingClient implements EmbeddingPort {
                 if (!response.isSuccessful()) {
                     throw new IllegalStateException("Embedding request failed with status " + response.code());
                 }
-                if (response.body() == null) {
-                    throw new IllegalStateException("Embedding response body is null");
-                }
-                JsonNode json = objectMapper.readTree(response.body().bytes());
+                ResponseBody responseBody = response.body();
+                JsonNode json = objectMapper.readTree(responseBody.bytes());
                 List<List<Double>> vectors = new ArrayList<>();
                 for (JsonNode item : json.path("embeddings")) {
                     List<Double> vector = new ArrayList<>();

@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class OllamaEmbeddingClientTest {
 
@@ -57,5 +58,22 @@ class OllamaEmbeddingClientTest {
         assertEquals("/api/embed", recordedRequest.getTarget());
         assertEquals(1, response.vectors().size());
         assertEquals(3, response.vectors().getFirst().size());
+    }
+
+    @Test
+    void shouldRejectFailedEmbeddingResponseStatus() {
+        server.enqueue(new MockResponse.Builder().code(503).build());
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> client.embed(
+                new me.golemcore.bot.port.outbound.EmbeddingPort.EmbeddingRequest(
+                        server.url("/").toString(),
+                        null,
+                        "qwen3-embedding:0.6b",
+                        3,
+                        5000,
+                        List.of("planner tactic"))));
+
+        assertEquals("Failed to fetch Ollama embeddings", exception.getMessage());
+        assertEquals("Embedding request failed with status 503", exception.getCause().getMessage());
     }
 }

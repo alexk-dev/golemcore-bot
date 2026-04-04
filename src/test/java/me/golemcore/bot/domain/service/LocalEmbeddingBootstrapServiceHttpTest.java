@@ -147,6 +147,13 @@ class LocalEmbeddingBootstrapServiceHttpTest {
     }
 
     @Test
+    void shouldRejectLocalRuntimeEndpointsWithUserInfoOrUnsupportedScheme() {
+        assertFalse(service.isRuntimeHealthy("http://user@127.0.0.1:11434"));
+        assertFalse(service.hasModel("ftp://127.0.0.1:11434", "qwen3-embedding:0.6b"));
+        assertFalse(service.pullModel("ftp://127.0.0.1:11434", "qwen3-embedding:0.6b"));
+    }
+
+    @Test
     void shouldReturnFalseWhenRequestedModelIsMissing() {
         server.enqueue(new MockResponse.Builder()
                 .code(200)
