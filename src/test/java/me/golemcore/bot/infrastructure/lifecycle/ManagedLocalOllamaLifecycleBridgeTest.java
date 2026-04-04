@@ -94,6 +94,47 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     }
 
     @Test
+    void shouldTreatIpv6LoopbackBaseUrlAsLocalManagedEndpoint() {
+        RuntimeConfig.SelfEvolvingConfig config = localEmbeddingsConfig(true);
+        config.getTactics().getSearch().getEmbeddings().setBaseUrl("http://[::1]:11434");
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config);
+
+        bridge.runStartupGate();
+
+        assertEquals(1, supervisor.startupCheckInvocations);
+        assertTrue(supervisor.lastLocalEmbeddingsActive);
+    }
+
+    @Test
+    void shouldFallbackToDefaultLifecycleSettingsWhenLocalConfigOverridesAreInvalid() {
+        RuntimeConfig.SelfEvolvingConfig config = localEmbeddingsConfig(true);
+        config.getTactics().getSearch().getEmbeddings().setBaseUrl("   ");
+        config.getTactics().getSearch().getEmbeddings().getLocal().setStartupTimeoutMs(0);
+        config.getTactics().getSearch().getEmbeddings().getLocal().setInitialRestartBackoffMs(0);
+        config.getTactics().getSearch().getEmbeddings().getLocal().setMinimumRuntimeVersion("   ");
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config);
+
+        bridge.runStartupGate();
+
+        assertEquals("http://127.0.0.1:11434", supervisor.lastRefreshEndpoint);
+        assertEquals(Duration.ofSeconds(5), supervisor.lastRefreshStartupWindow);
+        assertEquals(Duration.ofSeconds(1), supervisor.lastRefreshInitialRestartBackoff);
+        assertEquals("0.19.0", supervisor.lastRefreshMinimumSupportedVersion);
+    }
+
+    @Test
+    void shouldRejectMalformedLocalBaseUrlForManagedEndpoints() {
+        RuntimeConfig.SelfEvolvingConfig config = localEmbeddingsConfig(true);
+        config.getTactics().getSearch().getEmbeddings().setBaseUrl("http:///missing-host");
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config);
+
+        bridge.runStartupGate();
+
+        assertEquals(1, supervisor.startupCheckInvocations);
+        assertFalse(supervisor.lastLocalEmbeddingsActive);
+    }
+
+    @Test
     void shouldNotRunStartupGateTwiceAfterInitialization() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
 
@@ -290,6 +331,10 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         private int observeReadinessInvocations;
         private int pollExternalRuntimeInvocations;
         private int attemptScheduledRetryInvocations;
+        private String lastRefreshEndpoint;
+        private Duration lastRefreshStartupWindow;
+        private Duration lastRefreshInitialRestartBackoff;
+        private String lastRefreshMinimumSupportedVersion;
         private ManagedLocalOllamaStatus currentStatus = ManagedLocalOllamaStatus.builder()
                 .currentState(ManagedLocalOllamaState.DISABLED)
                 .owned(false)
@@ -351,6 +396,25 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         public ManagedLocalOllamaStatus attemptScheduledRetry() {
             attemptScheduledRetryInvocations++;
             return currentStatus;
+        }
+
+        @Override
+        public ManagedLocalOllamaStatus refreshConfiguration(
+                String endpoint,
+                String selectedModel,
+                Duration startupWindow,
+                Duration initialRestartBackoff,
+                String minimumSupportedVersion) {
+            lastRefreshEndpoint = endpoint;
+            lastRefreshStartupWindow = startupWindow;
+            lastRefreshInitialRestartBackoff = initialRestartBackoff;
+            lastRefreshMinimumSupportedVersion = minimumSupportedVersion;
+            return super.refreshConfiguration(
+                    endpoint,
+                    selectedModel,
+                    startupWindow,
+                    initialRestartBackoff,
+                    minimumSupportedVersion);
         }
 
         @Override
