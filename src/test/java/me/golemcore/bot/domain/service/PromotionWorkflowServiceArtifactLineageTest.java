@@ -62,7 +62,7 @@ class PromotionWorkflowServiceArtifactLineageTest {
     }
 
     @Test
-    void shouldBackfillLegacyCandidateIdentityAndCreateApprovedLifecycleDecision() {
+    void shouldBackfillLegacyCandidateIdentityAndCreateActiveLifecycleDecision() {
         EvolutionCandidate candidate = service.getCandidates().getFirst();
 
         assertNotNull(candidate.getArtifactStreamId());
@@ -75,9 +75,9 @@ class PromotionWorkflowServiceArtifactLineageTest {
         assertEquals(candidate.getArtifactStreamId(), decision.getArtifactStreamId());
         assertEquals(candidate.getContentRevisionId(), decision.getContentRevisionId());
         assertEquals("candidate", decision.getFromLifecycleState());
-        assertEquals("approved", decision.getToLifecycleState());
+        assertEquals("active", decision.getToLifecycleState());
         assertEquals("proposed", decision.getFromRolloutStage());
-        assertEquals("approved", decision.getToRolloutStage());
+        assertEquals("active", decision.getToRolloutStage());
         assertEquals("bundle-1", decision.getOriginBundleId());
     }
 }

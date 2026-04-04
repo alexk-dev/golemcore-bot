@@ -36,6 +36,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.Objects;
 
 /**
  * Probes optional local embedding runtime state and degrades tactic search to
@@ -117,7 +118,6 @@ public class LocalEmbeddingBootstrapService {
         }
         BootstrapContext context = resolveContext();
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = context.selfEvolvingConfig();
-        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = context.tacticsConfig();
         RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = context.localConfig();
 
         String configuredMode = context.configuredMode();
@@ -509,10 +509,9 @@ public class LocalEmbeddingBootstrapService {
     }
 
     private BootstrapContext resolveContext() {
-        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
-        if (selfEvolvingConfig == null) {
-            selfEvolvingConfig = new RuntimeConfig.SelfEvolvingConfig();
-        }
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = Objects.requireNonNullElseGet(
+                runtimeConfigService.getSelfEvolvingConfig(),
+                RuntimeConfig.SelfEvolvingConfig::new);
         RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics() != null
                 ? selfEvolvingConfig.getTactics()
                 : new RuntimeConfig.SelfEvolvingTacticsConfig();
@@ -809,10 +808,9 @@ public class LocalEmbeddingBootstrapService {
         if (tacticSearchStatusProjectionService == null || status == null) {
             return status;
         }
-        TacticSearchStatus projectedStatus = tacticSearchStatusProjectionService.projectCurrent();
-        if (projectedStatus == null) {
-            return status;
-        }
+        TacticSearchStatus projectedStatus = Objects.requireNonNullElse(
+                tacticSearchStatusProjectionService.projectCurrent(),
+                status);
         String runtimeState = trimToNull(projectedStatus.getRuntimeState());
         if (runtimeState == null || "disabled".equals(runtimeState)) {
             return status;

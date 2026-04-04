@@ -409,7 +409,7 @@ public class ManagedLocalOllamaSupervisor {
 
         ManagedLocalOllamaState nextState = endpointChanged ? ManagedLocalOllamaState.DISABLED
                 : currentStatus.getCurrentState();
-        Boolean owned = endpointChanged ? false : currentStatus.getOwned();
+        Boolean owned = endpointChanged ? Boolean.FALSE : currentStatus.getOwned();
         Boolean modelPresent = endpointChanged || selectedModelChanged ? null : currentStatus.getModelPresent();
         Instant now = getClock().instant();
         return updateStatus(buildStatus(

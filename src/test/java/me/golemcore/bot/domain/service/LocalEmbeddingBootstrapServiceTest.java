@@ -886,6 +886,11 @@ class LocalEmbeddingBootstrapServiceTest {
             private int checks;
 
             @Override
+            protected boolean isRuntimeHealthy(String baseUrl) {
+                return true;
+            }
+
+            @Override
             protected boolean hasModel(String baseUrl, String model) {
                 checks++;
                 return checks > 1;
