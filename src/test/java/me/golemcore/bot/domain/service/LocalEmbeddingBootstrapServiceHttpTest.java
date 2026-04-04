@@ -154,6 +154,13 @@ class LocalEmbeddingBootstrapServiceHttpTest {
     }
 
     @Test
+    void shouldHandleLoopbackDefaultPortsAndIpv6Endpoints() {
+        assertFalse(service.isRuntimeHealthy("http://127.0.0.1"));
+        assertFalse(service.hasModel("https://localhost", "qwen3-embedding:0.6b"));
+        assertFalse(service.pullModel("http://[::1]:1", "qwen3-embedding:0.6b"));
+    }
+
+    @Test
     void shouldReturnFalseWhenRequestedModelIsMissing() {
         server.enqueue(new MockResponse.Builder()
                 .code(200)
