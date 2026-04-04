@@ -455,34 +455,38 @@ public class LocalEmbeddingBootstrapService {
     }
 
     protected boolean isRuntimeHealthy(String baseUrl) {
-        Request request = new Request.Builder()
-                .url(joinUrl(baseUrl, "/api/tags"))
-                .get()
-                .build();
-        try (Response response = okHttpClient.newCall(request).execute()) {
-            return response.isSuccessful();
+        try {
+            Request request = new Request.Builder()
+                    .url(joinUrl(baseUrl, "/api/tags"))
+                    .get()
+                    .build();
+            try (Response response = okHttpClient.newCall(request).execute()) {
+                return response.isSuccessful();
+            }
         } catch (Exception exception) {
             return false;
         }
     }
 
     protected boolean hasModel(String baseUrl, String model) {
-        Request request = new Request.Builder()
-                .url(joinUrl(baseUrl, "/api/tags"))
-                .get()
-                .build();
-        try (Response response = okHttpClient.newCall(request).execute()) {
-            if (!response.isSuccessful() || response.body() == null) {
+        try {
+            Request request = new Request.Builder()
+                    .url(joinUrl(baseUrl, "/api/tags"))
+                    .get()
+                    .build();
+            try (Response response = okHttpClient.newCall(request).execute()) {
+                if (!response.isSuccessful() || response.body() == null) {
+                    return false;
+                }
+                JsonNode json = objectMapper.readTree(response.body().bytes());
+                for (JsonNode node : json.path("models")) {
+                    String candidate = node.path("name").asText();
+                    if (matchesModelName(model, candidate)) {
+                        return true;
+                    }
+                }
                 return false;
             }
-            JsonNode json = objectMapper.readTree(response.body().bytes());
-            for (JsonNode node : json.path("models")) {
-                String candidate = node.path("name").asText();
-                if (matchesModelName(model, candidate)) {
-                    return true;
-                }
-            }
-            return false;
         } catch (Exception exception) {
             return false;
         }
