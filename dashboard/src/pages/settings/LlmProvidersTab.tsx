@@ -1,5 +1,5 @@
 import { type ReactElement, useMemo, useState } from 'react';
-import { Badge, Button, Card, Col, Form, InputGroup, Row, Table } from 'react-bootstrap';
+import { Badge, Button, Card, InputGroup, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import { ProviderNameCombobox } from '../../components/common/ProviderNameCombobox';
@@ -8,202 +8,14 @@ import type { LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/
 import { useAddLlmProvider, useRemoveLlmProvider, useUpdateLlmProvider } from '../../hooks/useSettings';
 import { listConfiguredModelSpecs } from '../../lib/modelRouter';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
+import { LlmProviderEditorCard } from './LlmProviderEditorCard';
 import {
   API_TYPE_DETAILS,
-  API_TYPE_OPTIONS,
   buildDefaultProviderConfig,
-  getDefaultApiTypeForProvider,
-  getSuggestedBaseUrl,
-  KNOWN_BASE_URLS,
   KNOWN_PROVIDERS,
   normalizeApiType,
   PROVIDER_NAME_PATTERN,
-  toNullableInt,
-  toNullableString,
 } from './llmProvidersSupport';
-
-interface ProviderEditorProps {
-  name: string;
-  form: LlmProviderConfig;
-  isNew: boolean;
-  showKey: boolean;
-  isSaving: boolean;
-  recommendedApiType: ReturnType<typeof getDefaultApiTypeForProvider> | null;
-  onFormChange: (form: LlmProviderConfig) => void;
-  onToggleShowKey: () => void;
-  onSave: () => void;
-  onCancel: () => void;
-}
-
-function ProviderEditor({
-  name,
-  form,
-  isNew,
-  showKey,
-  isSaving,
-  recommendedApiType,
-  onFormChange,
-  onToggleShowKey,
-  onSave,
-  onCancel,
-}: ProviderEditorProps): ReactElement {
-  const apiType = normalizeApiType(form.apiType);
-  const hasBaseUrl = (form.baseUrl ?? '').trim().length > 0;
-  const suggestedBaseUrl = getSuggestedBaseUrl(name, apiType);
-  const shouldShowUseDefaultBaseUrl = suggestedBaseUrl != null && form.baseUrl !== suggestedBaseUrl;
-  const shouldShowClearBaseUrl = apiType === 'gemini' && hasBaseUrl;
-
-  return (
-    <Card className="mb-3 border provider-editor-card">
-      <Card.Body className="p-3">
-        <h6 className="text-capitalize mb-3">{isNew ? `New provider: ${name}` : name}</h6>
-        <Row className="g-2">
-          <Col md={12}>
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-medium d-flex align-items-center gap-2">
-                <span>API Key</span>
-                {!isNew && form.apiKeyPresent === true && (
-                  <Badge bg="success-subtle" text="success">Configured</Badge>
-                )}
-                {(form.apiKey?.length ?? 0) > 0 && (
-                  <Badge bg="info-subtle" text="info">Will update on save</Badge>
-                )}
-              </Form.Label>
-              <InputGroup size="sm">
-                <Form.Control
-                  name={`llm-api-key-${name}`}
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-lpignore="true"
-                  placeholder={form.apiKeyPresent === true ? 'Secret is configured (hidden)' : 'Enter API key'}
-                  type={showKey ? 'text' : 'password'}
-                  value={form.apiKey ?? ''}
-                  onChange={(event) => onFormChange({ ...form, apiKey: toNullableString(event.target.value) })}
-                />
-                <Button type="button" variant="secondary" aria-pressed={showKey} onClick={onToggleShowKey}>
-                  {showKey ? 'Hide' : 'Show'}
-                </Button>
-              </InputGroup>
-            </Form.Group>
-          </Col>
-          <Col md={6}>
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-medium">Base URL</Form.Label>
-              <InputGroup size="sm">
-                <Form.Control
-                  type="url"
-                  value={form.baseUrl ?? ''}
-                  onChange={(event) => onFormChange({ ...form, baseUrl: toNullableString(event.target.value) })}
-                  placeholder="https://api.example.com/v1"
-                />
-                {shouldShowUseDefaultBaseUrl && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => onFormChange({ ...form, baseUrl: suggestedBaseUrl })}
-                  >
-                    Use default
-                  </Button>
-                )}
-                {shouldShowClearBaseUrl && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => onFormChange({ ...form, baseUrl: null })}
-                  >
-                    Clear
-                  </Button>
-                )}
-              </InputGroup>
-              <Form.Text className="text-body-secondary">
-                {apiType === 'gemini'
-                  ? 'Gemini uses the native Google endpoint, so Base URL is usually left empty.'
-                  : suggestedBaseUrl != null
-                    ? `Recommended endpoint: ${suggestedBaseUrl}`
-                    : 'Leave empty to use the provider default endpoint.'}
-              </Form.Text>
-            </Form.Group>
-          </Col>
-          <Col md={3}>
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-medium">API Type</Form.Label>
-              <Form.Select
-                size="sm"
-                value={apiType}
-                onChange={(event) => onFormChange({ ...form, apiType: normalizeApiType(event.target.value) })}
-              >
-                {API_TYPE_OPTIONS.map((type) => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </Form.Select>
-              <Form.Text className="text-body-secondary d-block">
-                {API_TYPE_DETAILS[apiType].help}
-              </Form.Text>
-              {recommendedApiType != null && (
-                <Form.Text
-                  className={`d-block ${recommendedApiType === apiType ? 'text-success' : 'text-warning'}`}
-                >
-                  {recommendedApiType === apiType
-                    ? `Matches recommended protocol for "${name}".`
-                    : `Recommended for "${name}": ${recommendedApiType}.`}
-                </Form.Text>
-              )}
-            </Form.Group>
-          </Col>
-          {apiType === 'openai' && (
-            <Col md={3}>
-              <Form.Group className="mb-2">
-                <Form.Label className="small fw-medium">API Endpoint</Form.Label>
-                <Form.Select
-                  size="sm"
-                  value={form.legacyApi === true ? 'legacy' : 'responses'}
-                  onChange={(event) => onFormChange({ ...form, legacyApi: event.target.value === 'legacy' || null })}
-                  title={form.legacyApi === true
-                    ? 'Legacy: /v1/chat/completions — for proxies that do not support the Responses API'
-                    : 'Default: /v1/responses — supports reasoning + tools on reasoning models'}
-                >
-                  <option value="responses">/v1/responses</option>
-                  <option value="legacy">/v1/chat/completions</option>
-                </Form.Select>
-                <Form.Text className="text-body-secondary d-block">
-                  {form.legacyApi === true
-                    ? 'For proxies without Responses API support.'
-                    : 'Supports reasoning + function tools.'}
-                </Form.Text>
-              </Form.Group>
-            </Col>
-          )}
-          <Col md={3}>
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-medium">Timeout (s)</Form.Label>
-              <Form.Control
-                size="sm"
-                type="number"
-                min={1}
-                max={3600}
-                value={form.requestTimeoutSeconds ?? 300}
-                onChange={(event) => onFormChange({
-                  ...form,
-                  requestTimeoutSeconds: toNullableInt(event.target.value) ?? 300,
-                })}
-              />
-            </Form.Group>
-          </Col>
-        </Row>
-        <div className="d-flex gap-2 mt-2">
-          <Button type="button" variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
-            {isSaving ? 'Saving...' : 'Save'}
-          </Button>
-          <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={isSaving}>
-            Cancel
-          </Button>
-        </div>
-      </Card.Body>
-    </Card>
-  );
-}
 
 export interface LlmProvidersTabProps {
   config: LlmConfig;
@@ -223,10 +35,6 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
   const [deleteProvider, setDeleteProvider] = useState<string | null>(null);
 
   const providerNames = Object.keys(config.providers ?? {});
-  const recommendedApiTypeForEditing = editingName != null && KNOWN_BASE_URLS[editingName] != null
-    ? getDefaultApiTypeForProvider(editingName)
-    : null;
-
   const knownSuggestions = useMemo(() => {
     const combined = [...KNOWN_PROVIDERS, ...providerNames];
     return Array.from(new Set(combined)).sort();
@@ -393,7 +201,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
                     </td>
                     <td data-label="Actions" className="text-end text-nowrap">
                       <div className="d-flex flex-wrap gap-1 providers-actions">
-                        <Button type="button"
+                        <Button
+                          type="button"
                           size="sm"
                           variant="secondary"
                           className="provider-action-btn"
@@ -408,7 +217,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
                         >
                           {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
                         </Button>
-                        <Button type="button"
+                        <Button
+                          type="button"
                           size="sm"
                           variant="danger"
                           className="provider-action-btn"
@@ -430,13 +240,12 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
         )}
 
         {editingName != null && editForm != null && (
-          <ProviderEditor
+          <LlmProviderEditorCard
             name={editingName}
             form={editForm}
             isNew={isNewProvider}
             showKey={showKey}
             isSaving={isSaving}
-            recommendedApiType={recommendedApiTypeForEditing}
             onFormChange={setEditForm}
             onToggleShowKey={() => setShowKey(!showKey)}
             onSave={() => { void handleSave(); }}

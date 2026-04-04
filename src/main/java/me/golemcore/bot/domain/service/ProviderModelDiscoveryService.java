@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +38,10 @@ public class ProviderModelDiscoveryService {
     private static final String USER_AGENT = "golemcore-model-discovery";
     private static final String GEMINI_GENERATE_CONTENT_METHOD = "generateContent";
     private static final int DEFAULT_MAX_INPUT_TOKENS = 128000;
+    private static final Map<String, List<Integer>> GPT_REASONING_TOKEN_LEVELS = Map.of(
+            "gpt-5", List.of(1000000, 1000000, 500000, 250000),
+            "gpt-5.1", List.of(1000000, 1000000, 500000, 250000),
+            "gpt-5.2", List.of(1000000, 1000000, 500000, 250000));
 
     private final RuntimeConfigService runtimeConfigService;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -205,8 +210,7 @@ public class ProviderModelDiscoveryService {
         }
     }
 
-    private boolean shouldAttachOpenRouterDefaults(String providerName,
-            RuntimeConfig.LlmProviderConfig providerConfig) {
+    private boolean shouldAttachOpenRouterDefaults(String providerName, RuntimeConfig.LlmProviderConfig providerConfig) {
         if (OPENROUTER_PROVIDER_NAME.equals(providerName)) {
             return true;
         }
@@ -235,19 +239,20 @@ public class ProviderModelDiscoveryService {
                 text(node, "provider"),
                 text(node, "type"));
         ModelConfigService.ModelSettings defaultSettings = attachDirectDefaults
-                ? buildOpenRouterDefaultSettings(providerName, node, displayName)
+                ? buildOpenRouterDefaultSettings(providerName, id, node, displayName)
                 : null;
         models.add(new DiscoveredModel(providerName, id, displayName, ownedBy, defaultSettings));
     }
 
-    private ModelConfigService.ModelSettings buildOpenRouterDefaultSettings(String providerName, JsonNode node,
-            String displayName) {
+    private ModelConfigService.ModelSettings buildOpenRouterDefaultSettings(String providerName, String modelId,
+            JsonNode node, String displayName) {
         ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
         settings.setProvider(providerName);
         settings.setDisplayName(displayName);
         settings.setSupportsVision(supportsVision(node));
         settings.setSupportsTemperature(supportsTemperature(node.path("supported_parameters")));
         settings.setMaxInputTokens(resolveMaxInputTokens(node));
+        settings.setReasoning(buildReasoningConfig(modelId, settings.getMaxInputTokens()));
         return settings;
     }
 
@@ -281,6 +286,26 @@ public class ProviderModelDiscoveryService {
             return topProviderContextLength;
         }
         return DEFAULT_MAX_INPUT_TOKENS;
+    }
+
+    private ModelConfigService.ReasoningConfig buildReasoningConfig(String modelId, int maxInputTokens) {
+        List<Integer> levelCaps = GPT_REASONING_TOKEN_LEVELS.get(normalizeReasoningModelId(modelId));
+        if (levelCaps == null) {
+            return null;
+        }
+        ModelConfigService.ReasoningConfig reasoningConfig = new ModelConfigService.ReasoningConfig();
+        reasoningConfig.setDefaultLevel("medium");
+        reasoningConfig.setLevels(Map.of(
+                "low", new ModelConfigService.ReasoningLevelConfig(levelCaps.get(0)),
+                "medium", new ModelConfigService.ReasoningLevelConfig(levelCaps.get(1)),
+                "high", new ModelConfigService.ReasoningLevelConfig(Math.min(levelCaps.get(2), maxInputTokens)),
+                "xhigh", new ModelConfigService.ReasoningLevelConfig(Math.min(levelCaps.get(3), maxInputTokens))));
+        return reasoningConfig;
+    }
+
+    private String normalizeReasoningModelId(String modelId) {
+        int separatorIndex = modelId.indexOf('/');
+        return separatorIndex >= 0 ? modelId.substring(separatorIndex + 1) : modelId;
     }
 
     private boolean containsArrayValue(JsonNode values, String expectedValue) {

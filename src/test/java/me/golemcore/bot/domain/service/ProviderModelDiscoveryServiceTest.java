@@ -103,6 +103,10 @@ class ProviderModelDiscoveryServiceTest {
         assertEquals(400000, model.defaultSettings().getMaxInputTokens());
         assertTrue(model.defaultSettings().isSupportsVision());
         assertFalse(model.defaultSettings().isSupportsTemperature());
+        assertNotNull(model.defaultSettings().getReasoning());
+        assertEquals("medium", model.defaultSettings().getReasoning().getDefaultLevel());
+        assertEquals(1000000,
+                model.defaultSettings().getReasoning().getLevels().get("low").getMaxInputTokens());
     }
 
     @Test
