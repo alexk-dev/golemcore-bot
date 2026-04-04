@@ -94,8 +94,7 @@ class OpenAiCompatibleEmbeddingClientTest {
                         5000,
                         List.of("planner tactic"))));
 
-        assertEquals("Failed to fetch OpenAI-compatible embeddings", exception.getMessage());
-        assertEquals("Embedding request failed with status 502", exception.getCause().getMessage());
+        assertEquals("Embedding request failed with status 502", exception.getMessage());
     }
 
     @Test
