@@ -210,7 +210,8 @@ public class ProviderModelDiscoveryService {
         }
     }
 
-    private boolean shouldAttachOpenRouterDefaults(String providerName, RuntimeConfig.LlmProviderConfig providerConfig) {
+    private boolean shouldAttachOpenRouterDefaults(String providerName,
+            RuntimeConfig.LlmProviderConfig providerConfig) {
         if (OPENROUTER_PROVIDER_NAME.equals(providerName)) {
             return true;
         }
