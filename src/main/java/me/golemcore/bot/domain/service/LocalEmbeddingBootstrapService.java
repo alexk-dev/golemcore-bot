@@ -768,6 +768,7 @@ public class LocalEmbeddingBootstrapService {
             throw new IllegalArgumentException("Embedding base URL must not be blank");
         }
         URI uri = URI.create(baseUrl.trim());
+        validateLocalBaseUrl(uri);
         String scheme = normalizeLocalScheme(uri.getScheme());
         String host = normalizeLocalHost(uri.getHost());
         if (host == null) {
@@ -777,13 +778,22 @@ public class LocalEmbeddingBootstrapService {
                 .scheme(scheme)
                 .host(host)
                 .port(resolvePort(uri.getPort(), scheme));
-        for (String segment : splitPathSegments(uri.getPath())) {
-            builder.addPathSegment(segment);
-        }
         for (String segment : splitPathSegments(path)) {
             builder.addPathSegment(segment);
         }
         return builder.build();
+    }
+
+    private void validateLocalBaseUrl(URI uri) {
+        if (trimToNull(uri.getUserInfo()) != null
+                || trimToNull(uri.getQuery()) != null
+                || trimToNull(uri.getFragment()) != null) {
+            throw new IllegalArgumentException("Embedding base URL must not contain user info, query, or fragment");
+        }
+        String normalizedPath = trimToNull(uri.getPath());
+        if (normalizedPath != null && !"/".equals(normalizedPath)) {
+            throw new IllegalArgumentException("Embedding base URL must not contain a path prefix");
+        }
     }
 
     private String normalizeLocalScheme(String scheme) {

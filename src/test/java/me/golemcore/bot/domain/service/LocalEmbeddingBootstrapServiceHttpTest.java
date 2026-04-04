@@ -140,6 +140,13 @@ class LocalEmbeddingBootstrapServiceHttpTest {
     }
 
     @Test
+    void shouldRejectLocalRuntimeEndpointsWithPathPrefixOrQuery() {
+        assertFalse(service.isRuntimeHealthy("http://127.0.0.1:11434/proxy"));
+        assertFalse(service.hasModel("http://127.0.0.1:11434/?via=proxy", "qwen3-embedding:0.6b"));
+        assertFalse(service.pullModel("http://127.0.0.1:11434/#fragment", "qwen3-embedding:0.6b"));
+    }
+
+    @Test
     void shouldReturnFalseWhenRequestedModelIsMissing() {
         server.enqueue(new MockResponse.Builder()
                 .code(200)
