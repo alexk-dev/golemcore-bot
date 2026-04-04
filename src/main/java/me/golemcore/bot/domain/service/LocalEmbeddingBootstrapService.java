@@ -32,6 +32,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.springframework.stereotype.Service;
 
+import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Arrays;
@@ -761,8 +762,27 @@ public class LocalEmbeddingBootstrapService {
         if (baseUrl == null || baseUrl.isBlank()) {
             throw new IllegalArgumentException("Embedding base URL must not be blank");
         }
+        if (!isLocalEndpoint(baseUrl)) {
+            throw new IllegalArgumentException("Embedding base URL must target a local Ollama endpoint");
+        }
         String normalizedBase = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         return normalizedBase + path;
+    }
+
+    private boolean isLocalEndpoint(String baseUrl) {
+        try {
+            URI uri = URI.create(baseUrl);
+            String host = trimToNull(uri.getHost());
+            if (host == null) {
+                return false;
+            }
+            return "127.0.0.1".equals(host)
+                    || "localhost".equalsIgnoreCase(host)
+                    || "::1".equals(host)
+                    || "[::1]".equals(host);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     private String normalizeRuntimeVersion(String output) {

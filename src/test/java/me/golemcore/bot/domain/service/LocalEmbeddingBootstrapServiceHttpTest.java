@@ -133,6 +133,13 @@ class LocalEmbeddingBootstrapServiceHttpTest {
     }
 
     @Test
+    void shouldRejectNonLocalRuntimeEndpoints() {
+        assertFalse(service.isRuntimeHealthy("http://example.com:11434"));
+        assertFalse(service.hasModel("http://example.com:11434", "qwen3-embedding:0.6b"));
+        assertFalse(service.pullModel("http://example.com:11434", "qwen3-embedding:0.6b"));
+    }
+
+    @Test
     void shouldReturnFalseWhenRequestedModelIsMissing() {
         server.enqueue(new MockResponse.Builder()
                 .code(200)
