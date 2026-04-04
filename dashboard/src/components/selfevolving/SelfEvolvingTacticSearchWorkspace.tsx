@@ -14,7 +14,6 @@ interface Props {
   selectedTacticId: string | null;
   onSelectTacticId: (tacticId: string) => void;
   onBackToResults: () => void;
-  onOpenArtifactStream: (artifactStreamId: string) => void;
 }
 
 export function SelfEvolvingTacticSearchWorkspace({
@@ -24,20 +23,18 @@ export function SelfEvolvingTacticSearchWorkspace({
   selectedTacticId,
   onSelectTacticId,
   onBackToResults,
-  onOpenArtifactStream,
 }: Props): ReactElement {
   const results = searchResponse?.results ?? [];
   const selected = results.find((result) => result.tacticId === selectedTacticId) ?? results[0] ?? null;
   const isDetailMode = selectedTacticId != null && selected != null;
 
   return (
-    <Card className="mb-4">
+    <Card>
       <Card.Body>
         {!isDetailMode && (
           <>
             <Card.Title className="h5">Tactic Search</Card.Title>
             <Form.Group controlId="tactic-search-query" className="mb-3">
-              <Form.Label>Search query</Form.Label>
               <Form.Control
                 name="tactic-search-query"
                 type="search"
@@ -45,9 +42,6 @@ export function SelfEvolvingTacticSearchWorkspace({
                 placeholder="planner, tool routing, failure recovery"
                 onChange={(event) => onQueryChange(event.currentTarget.value)}
               />
-              <Form.Text className="text-body-secondary">
-                Search by intent, tools, recovery patterns, and benchmark-backed behavior.
-              </Form.Text>
             </Form.Group>
             <SelfEvolvingTacticSearchStatusBanner status={searchResponse?.status ?? null} />
             <SelfEvolvingTacticResultsList
@@ -61,22 +55,14 @@ export function SelfEvolvingTacticSearchWorkspace({
         {isDetailMode && (
           <>
             <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-              <div>
-                <Card.Title className="h5 mb-1">{selected.title ?? selected.tacticId}</Card.Title>
-                <p className="text-body-secondary mb-0">
-                  Detailed tactic view with evidence-backed ranking and artifact drill-down.
-                </p>
-              </div>
+              <Card.Title className="h5 mb-0">{selected.title ?? selected.tacticId}</Card.Title>
               <Button variant="secondary" size="sm" onClick={onBackToResults}>
-                Back to tactics
+                Back to results
               </Button>
             </div>
             <Row className="g-3">
               <Col xl={5}>
-                <SelfEvolvingTacticDetailPanel
-                  tactic={selected}
-                  onOpenArtifactStream={onOpenArtifactStream}
-                />
+                <SelfEvolvingTacticDetailPanel tactic={selected} />
               </Col>
               <Col xl={7}>
                 <SelfEvolvingTacticWhyPanel

@@ -61,254 +61,40 @@ vi.mock('../hooks/useSelfEvolving', () => ({
     isLoading: false,
     isError: false,
   }),
-  useSelfEvolvingCampaigns: () => ({
-    data: [
-      {
-        id: 'campaign-1',
-        suiteId: 'suite-1',
-        baselineBundleId: 'bundle-1',
-        candidateBundleId: 'bundle-2',
-        status: 'created',
-        startedAt: '2026-03-31T12:03:00Z',
-        completedAt: null,
-        runIds: ['run-1'],
-      },
-    ],
-    isLoading: false,
-    isError: false,
-  }),
   usePlanSelfEvolvingPromotion: () => ({
     mutateAsync: vi.fn(() => Promise.resolve()),
     isPending: false,
     variables: null,
   }),
-  useCreateSelfEvolvingRegressionCampaign: () => ({
-    mutateAsync: vi.fn(() => Promise.resolve()),
-    isPending: false,
-  }),
-  useSelfEvolvingArtifacts: () => ({
-    data: [
-      {
-        artifactStreamId: 'stream-1',
-        originArtifactStreamId: 'stream-1',
-        artifactKey: 'skill:planner',
-        artifactAliases: ['skill:planner'],
-        artifactType: 'skill',
-        artifactSubtype: 'skill',
-        displayName: 'skill:planner',
-        latestRevisionId: 'rev-2',
-        activeRevisionId: 'rev-1',
-        latestCandidateRevisionId: 'rev-2',
-        currentLifecycleState: 'candidate',
-        currentRolloutStage: 'canary',
-        hasRegression: false,
-        hasPendingApproval: true,
-        campaignCount: 1,
-        projectionSchemaVersion: 1,
-        updatedAt: '2026-03-31T12:02:00Z',
-        projectedAt: '2026-03-31T12:02:00Z',
-      },
-    ],
-    isLoading: false,
-    isError: false,
-  }),
-  useSelfEvolvingArtifactWorkspaceSummary: () => ({
-    data: {
-      artifactStreamId: 'stream-1',
-      originArtifactStreamId: 'stream-1',
-      artifactKey: 'skill:planner',
-      artifactAliases: ['skill:planner'],
-      artifactType: 'skill',
-      artifactSubtype: 'skill',
-      activeRevisionId: 'rev-1',
-      latestCandidateRevisionId: 'rev-2',
-      currentLifecycleState: 'candidate',
-      currentRolloutStage: 'canary',
-      campaignCount: 1,
-      projectionSchemaVersion: 1,
-      updatedAt: '2026-03-31T12:02:00Z',
-      projectedAt: '2026-03-31T12:02:00Z',
-      compareOptions: {
-        artifactStreamId: 'stream-1',
-        defaultFromRevisionId: 'rev-1',
-        defaultToRevisionId: 'rev-2',
-        defaultFromNodeId: 'candidate-1:proposed',
-        defaultToNodeId: 'decision-1:shadowed',
-        revisionOptions: [{ label: 'active_vs_candidate', fromId: 'rev-1', toId: 'rev-2' }],
-        transitionOptions: [{ label: 'transition_1', fromId: 'candidate-1:proposed', toId: 'decision-1:shadowed' }],
-      },
-    },
-    isLoading: false,
-    isError: false,
-  }),
-  useSelfEvolvingArtifactLineage: () => ({
-    data: {
-      artifactStreamId: 'stream-1',
-      originArtifactStreamId: 'stream-1',
-      artifactKey: 'skill:planner',
-      nodes: [
-        {
-          nodeId: 'candidate-1:proposed',
-          contentRevisionId: 'rev-2',
-          lifecycleState: 'candidate',
-          rolloutStage: 'proposed',
-          promotionDecisionId: null,
-          originBundleId: 'bundle-1',
-          sourceRunIds: ['run-1'],
-          campaignIds: ['campaign-1'],
-          attributionMode: 'bundle_observed',
-          createdAt: '2026-03-31T12:01:00Z',
-        },
-      ],
-      edges: [],
-      railOrder: ['candidate-1:proposed'],
-      branches: [],
-      defaultSelectedNodeId: 'candidate-1:proposed',
-      defaultSelectedRevisionId: 'rev-2',
-      projectionSchemaVersion: 1,
-      projectedAt: '2026-03-31T12:02:00Z',
-    },
-    isLoading: false,
-    isError: false,
-  }),
-  useSelfEvolvingArtifactRevisionDiff: () => ({
-    data: {
-      artifactStreamId: 'stream-1',
-      artifactKey: 'skill:planner',
-      fromRevisionId: 'rev-1',
-      toRevisionId: 'rev-2',
-      summary: 'Artifact content changed',
-      semanticSections: ['planner'],
-      rawPatch: '--- from\\nplanner v1\\n+++ to\\nplanner v2',
-      changedFields: ['normalizedContent'],
-      riskSignals: ['content_changed'],
-      impactSummary: {
-        attributionMode: 'isolated',
-        campaignDelta: 1,
-        regressionIntroduced: false,
-        verdictDelta: null,
-        latencyDeltaMs: null,
-        costDeltaMicros: null,
-        projectionSchemaVersion: 1,
-        projectedAt: '2026-03-31T12:02:00Z',
-      },
-      attributionMode: 'isolated',
-      projectionSchemaVersion: 1,
-      projectedAt: '2026-03-31T12:02:00Z',
-    },
-    isLoading: false,
-    isError: false,
-  }),
-  useSelfEvolvingArtifactTransitionDiff: () => ({
-    data: null,
-    isLoading: false,
-    isError: false,
-  }),
-  useSelfEvolvingArtifactEvidence: (args: {
-    compareMode: 'revision' | 'transition';
-    fromRevisionId: string | null;
-    toRevisionId: string | null;
-  }) => {
-    const { compareMode, fromRevisionId, toRevisionId } = args;
-    return {
-      data: {
-        artifactStreamId: 'stream-1',
-        artifactKey: 'skill:planner',
-        payloadKind: compareMode === 'revision' ? 'compare' : 'transition',
-        revisionId: null,
-        fromRevisionId: compareMode === 'revision' ? fromRevisionId : null,
-        toRevisionId: compareMode === 'revision' ? toRevisionId : null,
-        fromNodeId: null,
-        toNodeId: null,
-        runIds: ['run-1'],
-        traceIds: [],
-        spanIds: [],
-        campaignIds: ['campaign-1'],
-        promotionDecisionIds: ['decision-1'],
-        approvalRequestIds: ['approval-1'],
-        findings: ['compare_evidence'],
-        projectionSchemaVersion: 1,
-        projectedAt: '2026-03-31T12:02:00Z',
-      },
-      isLoading: false,
-      isError: false,
-    };
-  },
   useSelfEvolvingTacticSearch: () => ({
-    data: {
-      query: 'planner',
-      status: {
-        mode: 'hybrid',
-        reason: null,
-        degraded: false,
-        updatedAt: '2026-03-31T12:02:00Z',
-      },
-      results: [
-        {
-          tacticId: 'planner',
-          artifactStreamId: 'stream-1',
-          originArtifactStreamId: 'stream-1',
-          artifactKey: 'skill:planner',
-          artifactType: 'skill',
-          title: 'Planner tactic',
-          aliases: ['planner'],
-          contentRevisionId: 'rev-2',
-          intentSummary: 'Plan complex work',
-          behaviorSummary: 'Produce ordered action plans',
-          toolSummary: 'filesystem, shell',
-          outcomeSummary: 'High completion rate',
-          benchmarkSummary: 'Wins planning benchmark',
-          approvalNotes: 'Approved after canary',
-          evidenceSnippets: ['trace:run-1'],
-          taskFamilies: ['planning'],
-          tags: ['core'],
-          promotionState: 'active',
-          rolloutStage: 'active',
-          successRate: 0.92,
-          benchmarkWinRate: 0.81,
-          regressionFlags: [],
-          recencyScore: 0.78,
-          golemLocalUsageSuccess: 0.88,
-          embeddingStatus: 'indexed',
-          updatedAt: '2026-03-31T12:02:00Z',
-          score: 0.98,
-          explanation: {
-            searchMode: 'hybrid',
-            degradedReason: null,
-            bm25Score: 0.61,
-            vectorScore: 0.55,
-            rrfScore: 0.74,
-            qualityPrior: 0.14,
-            mmrDiversityAdjustment: 0.08,
-            negativeMemoryPenalty: 0,
-            personalizationBoost: 0.04,
-            rerankerVerdict: 'kept',
-            matchedQueryViews: ['planner'],
-            matchedTerms: ['planner'],
-            eligible: true,
-            gatingReason: null,
-            finalScore: 0.98,
-          },
-        },
-      ],
-    },
+    data: null,
     isLoading: false,
     isError: false,
   }),
 }));
 
 describe('SelfEvolvingPage', () => {
-  it('renders the dashboard sections with compare-pair evidence state', () => {
+  it('renders the overview cards and runs tab by default', () => {
     const html = renderToStaticMarkup(<SelfEvolvingPage />);
 
+    // Header and overview
     expect(html).toContain('Self-Evolving');
-    expect(html).toContain('name="tactic-search-query"');
-    expect(html).toContain('placeholder="planner, tool routing, failure recovery"');
-    expect(html).not.toContain('name="tactic-search-query" placeholder="planner, tool routing, failure recovery" value="planner"');
-    expect(html).toContain('Planner tactic');
-    expect(html).toContain('Benchmark Lab');
-    expect(html).not.toContain('Artifact Catalog');
-    expect(html).not.toContain('Why this tactic');
-    expect(html).not.toContain('compare_evidence');
+    expect(html).toContain('Tracked Runs');
+    expect(html).toContain('Pending Promotions');
+
+    // Tab navigation
+    expect(html).toContain('Runs');
+    expect(html).toContain('Candidates');
+    expect(html).toContain('Tactics');
+
+    // Runs tab content (active by default)
+    expect(html).toContain('Recent Runs');
+    expect(html).toContain('run-1');
+    expect(html).toContain('Run run-1');
+    expect(html).toContain('Verdict Panel');
+
+    // Other tabs not rendered
+    expect(html).not.toContain('Candidate Queue');
+    expect(html).not.toContain('Tactic Search');
   });
 });

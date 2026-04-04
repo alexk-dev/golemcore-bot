@@ -86,7 +86,7 @@ class EvolutionCandidateServiceTacticRecordTest {
     }
 
     @Test
-    void shouldCreateTacticRecordsFromDerivedCandidatesWithoutTouchingCuratedSkills() {
+    void shouldSkipTacticRecordForPlaceholderDiffAndStillCreateCandidate() {
         List<EvolutionCandidate> candidates = evolutionCandidateService.deriveCandidates(
                 RunRecord.builder()
                         .id("run-derive")
@@ -107,10 +107,8 @@ class EvolutionCandidateServiceTacticRecordTest {
         List<TacticRecord> tactics = tacticRecordService.getAll();
 
         assertEquals(1, candidates.size());
-        assertEquals(1, tactics.size());
-        assertEquals(candidates.getFirst().getArtifactStreamId(), tactics.getFirst().getArtifactStreamId());
-        assertEquals("skill", tactics.getFirst().getArtifactType());
-        assertFalse(storagePort.listObjects("self-evolving", "tactics").join().isEmpty());
+        assertEquals("selfevolving:derive:skill", candidates.getFirst().getProposedDiff());
+        assertEquals(0, tactics.size());
         verify(storagePort, never()).putText(eq("skills"), anyString(), anyString());
     }
 }

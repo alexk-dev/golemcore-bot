@@ -5,10 +5,9 @@ import type { SelfEvolvingTacticSearchResult } from '../../api/selfEvolving';
 
 interface Props {
   tactic: SelfEvolvingTacticSearchResult | null;
-  onOpenArtifactStream: (artifactStreamId: string) => void;
 }
 
-export function SelfEvolvingTacticDetailPanel({ tactic, onOpenArtifactStream }: Props): ReactElement {
+export function SelfEvolvingTacticDetailPanel({ tactic }: Props): ReactElement {
   if (tactic == null) {
     return (
       <Card className="mb-3">
@@ -27,28 +26,6 @@ export function SelfEvolvingTacticDetailPanel({ tactic, onOpenArtifactStream }: 
           <div><strong>Outcome</strong>: {tactic.outcomeSummary ?? 'n/a'}</div>
           <div><strong>Promotion state</strong>: {tactic.promotionState ?? 'n/a'}</div>
           <div><strong>Evidence</strong>: {tactic.evidenceSnippets.join(', ') || 'n/a'}</div>
-          <div className="d-flex gap-3">
-            <a
-              href="#self-evolving-artifact-workspace"
-              onClick={() => {
-                if (tactic.artifactStreamId != null) {
-                  onOpenArtifactStream(tactic.artifactStreamId);
-                }
-              }}
-            >
-              Lineage
-            </a>
-            <a
-              href="#self-evolving-artifact-workspace"
-              onClick={() => {
-                if (tactic.artifactStreamId != null) {
-                  onOpenArtifactStream(tactic.artifactStreamId);
-                }
-              }}
-            >
-              Evidence
-            </a>
-          </div>
         </div>
       </Card.Body>
     </Card>

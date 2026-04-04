@@ -250,6 +250,10 @@ public class EvolutionCandidateService {
         if (candidate == null) {
             return;
         }
+        if (isPlaceholderDiff(candidate.getProposedDiff())) {
+            log.debug("[SelfEvolving] Skipping tactic emit for placeholder diff: {}", candidate.getProposedDiff());
+            return;
+        }
         tacticRecordService.save(TacticRecord.builder()
                 .tacticId(candidate.getContentRevisionId())
                 .artifactStreamId(candidate.getArtifactStreamId())
@@ -482,6 +486,13 @@ public class EvolutionCandidateService {
             tags.add(candidate.getGoal());
         }
         return tags;
+    }
+
+    private boolean isPlaceholderDiff(String proposedDiff) {
+        if (StringValueSupport.isBlank(proposedDiff)) {
+            return true;
+        }
+        return proposedDiff.matches("selfevolving:[a-z_]+:[a-z_]+");
     }
 
     private Double resolveSuccessRate(EvolutionCandidate candidate) {

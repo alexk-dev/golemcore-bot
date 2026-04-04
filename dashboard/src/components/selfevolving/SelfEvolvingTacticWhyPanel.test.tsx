@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { SelfEvolvingTacticWhyPanel } from './SelfEvolvingTacticWhyPanel';
 
 describe('SelfEvolvingTacticWhyPanel', () => {
-  it('renders all quality prior badges and ranking adjustments', () => {
+  it('renders key metrics and a toggle for scoring details', () => {
     const html = renderToStaticMarkup(
       <SelfEvolvingTacticWhyPanel
         explanation={{
@@ -33,16 +33,18 @@ describe('SelfEvolvingTacticWhyPanel', () => {
       />,
     );
 
+    // Key metrics always visible
     expect(html).toContain('Success rate');
     expect(html).toContain('Benchmark win rate');
+    expect(html).toContain('Promotion state');
+    expect(html).toContain('Recency');
+    expect(html).toContain('Final score');
     expect(html).toContain('Regression flags');
-    expect(html).toContain('Golem-local usage success');
-    expect(html).toContain('MMR diversity adjustment');
-    expect(html).toContain('Negative memory penalty');
-    expect(html).toContain('Matched query views');
-    expect(html).toContain('Matched terms');
-    expect(html).toContain('Eligible');
-    expect(html).toContain('Gating reason');
-    expect(html).toContain('Degradation reason');
+
+    // Scoring details collapsed by default
+    expect(html).toContain('Show scoring details');
+    expect(html).not.toContain('Golem-local usage');
+    expect(html).not.toContain('MMR diversity');
+    expect(html).not.toContain('Matched views');
   });
 });
