@@ -87,26 +87,45 @@ class ProviderModelDiscoveryServiceTest {
                             "context_length":400000,
                             "architecture":{"input_modalities":["text","image","file"]},
                             "supported_parameters":["include_reasoning","max_tokens","reasoning","tools"]
+                          },
+                          {
+                            "id":"google/gemini-2.5-pro",
+                            "name":"Google: Gemini 2.5 Pro",
+                            "context_length":1048576,
+                            "architecture":{"input_modalities":["text","image","file","audio","video"]},
+                            "supported_parameters":["temperature","tools"]
                           }
                         ]}
                         """));
 
         List<ProviderModelDiscoveryService.DiscoveredModel> models = service.discoverModels("openrouter");
 
-        assertEquals(1, models.size());
-        ProviderModelDiscoveryService.DiscoveredModel model = models.getFirst();
-        assertEquals("openrouter", model.provider());
-        assertEquals("openai/gpt-5", model.id());
-        assertNotNull(model.defaultSettings());
-        assertEquals("openrouter", model.defaultSettings().getProvider());
-        assertEquals("OpenAI: GPT-5", model.defaultSettings().getDisplayName());
-        assertEquals(400000, model.defaultSettings().getMaxInputTokens());
-        assertTrue(model.defaultSettings().isSupportsVision());
-        assertFalse(model.defaultSettings().isSupportsTemperature());
-        assertNotNull(model.defaultSettings().getReasoning());
-        assertEquals("medium", model.defaultSettings().getReasoning().getDefaultLevel());
+        assertEquals(2, models.size());
+        ProviderModelDiscoveryService.DiscoveredModel gpt5Model = models.stream()
+                .filter(model -> "openai/gpt-5".equals(model.id()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("openrouter", gpt5Model.provider());
+        assertNotNull(gpt5Model.defaultSettings());
+        assertEquals("openrouter", gpt5Model.defaultSettings().getProvider());
+        assertEquals("OpenAI: GPT-5", gpt5Model.defaultSettings().getDisplayName());
+        assertEquals(400000, gpt5Model.defaultSettings().getMaxInputTokens());
+        assertTrue(gpt5Model.defaultSettings().isSupportsVision());
+        assertFalse(gpt5Model.defaultSettings().isSupportsTemperature());
+        assertNotNull(gpt5Model.defaultSettings().getReasoning());
+        assertEquals("medium", gpt5Model.defaultSettings().getReasoning().getDefaultLevel());
         assertEquals(1000000,
-                model.defaultSettings().getReasoning().getLevels().get("low").getMaxInputTokens());
+                gpt5Model.defaultSettings().getReasoning().getLevels().get("low").getMaxInputTokens());
+
+        ProviderModelDiscoveryService.DiscoveredModel geminiModel = models.stream()
+                .filter(model -> "google/gemini-2.5-pro".equals(model.id()))
+                .findFirst()
+                .orElseThrow();
+        assertNotNull(geminiModel.defaultSettings());
+        assertTrue(geminiModel.defaultSettings().isSupportsTemperature());
+        assertTrue(geminiModel.defaultSettings().isSupportsVision());
+        assertEquals(1048576, geminiModel.defaultSettings().getMaxInputTokens());
+        assertEquals(null, geminiModel.defaultSettings().getReasoning());
     }
 
     @Test
