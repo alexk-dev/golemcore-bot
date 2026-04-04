@@ -73,6 +73,13 @@ class TacticRecordServiceTest {
         when(storagePort.getText(anyString(), anyString()))
                 .thenAnswer(invocation -> CompletableFuture.completedFuture(
                         persistedFiles.get(invocation.getArgument(0) + "/" + invocation.getArgument(1))));
+        when(storagePort.deleteObject(anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    String directory = invocation.getArgument(0);
+                    String path = invocation.getArgument(1);
+                    persistedFiles.remove(directory + "/" + path);
+                    return CompletableFuture.completedFuture(null);
+                });
         when(storagePort.listObjects(anyString(), anyString()))
                 .thenAnswer(invocation -> {
                     String directory = invocation.getArgument(0);
@@ -181,6 +188,32 @@ class TacticRecordServiceTest {
         assertEquals("revision-2", records.getFirst().getContentRevisionId());
         assertEquals("New planner", records.getFirst().getTitle());
         assertNull(persistedFiles.get("skills/tactic-1.json"));
+    }
+
+    @Test
+    void shouldDeactivatePersistedTacticAndTriggerRebuild() {
+        tacticRecordService.save(sampleTactic());
+
+        TacticRecord deactivated = tacticRecordService.deactivate("tactic-1");
+
+        assertEquals("inactive", deactivated.getPromotionState());
+        assertEquals("approved", deactivated.getRolloutStage());
+        assertEquals("inactive", tacticRecordService.getById("tactic-1").orElseThrow().getPromotionState());
+        verify(rebuildService, times(2)).onTacticChanged("tactic-1");
+    }
+
+    @Test
+    void shouldDeletePersistedTacticAndTriggerRebuild() {
+        tacticRecordService.save(sampleTactic());
+        tacticRecordService.getAll();
+
+        tacticRecordService.delete("tactic-1");
+
+        assertTrue(tacticRecordService.getAll().isEmpty());
+        assertTrue(tacticRecordService.getById("tactic-1").isEmpty());
+        assertFalse(persistedFiles.containsKey("self-evolving/tactics/tactic-1.json"));
+        verify(storagePort).deleteObject("self-evolving", "tactics/tactic-1.json");
+        verify(rebuildService, times(2)).onTacticChanged("tactic-1");
     }
 
     private TacticRecord sampleTactic() {

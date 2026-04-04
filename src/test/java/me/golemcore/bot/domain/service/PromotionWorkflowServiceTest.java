@@ -31,6 +31,7 @@ class PromotionWorkflowServiceTest {
     private StoragePort storagePort;
     private RuntimeConfigService runtimeConfigService;
     private EvolutionCandidateService evolutionCandidateService;
+    private TacticRecordService tacticRecordService;
     private PromotionWorkflowService promotionWorkflowService;
     private Map<String, String> persistedFiles;
     private ObjectMapper objectMapper;
@@ -54,8 +55,19 @@ class PromotionWorkflowServiceTest {
                     persistedFiles.put(fileName, content);
                     return CompletableFuture.completedFuture(null);
                 });
+        when(storagePort.listObjects(anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    String prefix = invocation.getArgument(1);
+                    List<String> keys = persistedFiles.keySet().stream()
+                            .filter(path -> path.startsWith(prefix))
+                            .sorted()
+                            .toList();
+                    return CompletableFuture.completedFuture(keys);
+                });
         when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("approval_gate");
-        evolutionCandidateService = new EvolutionCandidateService(storagePort, mock(TacticRecordService.class),
+        tacticRecordService = new TacticRecordService(storagePort,
+                Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC), null);
+        evolutionCandidateService = new EvolutionCandidateService(storagePort, tacticRecordService,
                 Clock.fixed(
                         Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
         promotionWorkflowService = new PromotionWorkflowService(
@@ -67,7 +79,7 @@ class PromotionWorkflowServiceTest {
     }
 
     @Test
-    void shouldDefaultPromotionToApprovalGateEvenWhenCandidateIsStrong() {
+    void shouldActivateCandidateImmediatelyWhenApprovalGateApprovesIt() {
         EvolutionCandidate candidate = EvolutionCandidate.builder()
                 .id("candidate-1")
                 .golemId("golem-1")
@@ -78,13 +90,15 @@ class PromotionWorkflowServiceTest {
 
         PromotionDecision decision = promotionWorkflowService.planPromotion(candidate);
 
-        assertEquals("approved_pending", decision.getState());
+        assertEquals("active", decision.getState());
         assertEquals("approval_gate", decision.getMode());
-        assertEquals("approved_pending", promotionWorkflowService.getCandidates().getFirst().getStatus());
+        EvolutionCandidate storedCandidate = promotionWorkflowService.getCandidates().getFirst();
+        assertEquals("active", storedCandidate.getStatus());
+        assertTrue(persistedFiles.containsKey("tactics/" + storedCandidate.getContentRevisionId() + ".json"));
     }
 
     @Test
-    void shouldAutoAcceptCandidateIntoShadowWhenConfigured() {
+    void shouldAutoAcceptCandidateIntoActiveTacticWhenConfigured() {
         when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("auto_accept");
         EvolutionCandidate candidate = EvolutionCandidate.builder()
                 .id("candidate-2")
@@ -97,9 +111,9 @@ class PromotionWorkflowServiceTest {
 
         PromotionDecision decision = promotionWorkflowService.planPromotion(candidate);
 
-        assertEquals("shadowed", decision.getState());
-        assertEquals("shadowed", promotionWorkflowService.getCandidates().getFirst().getStatus());
-        assertEquals("candidate-2:shadowed", decision.getBundleId());
+        assertEquals("active", decision.getState());
+        assertEquals("active", promotionWorkflowService.getCandidates().getFirst().getStatus());
+        assertEquals("bundle-2", decision.getBundleId());
         assertEquals("bundle-2", decision.getOriginBundleId());
         assertFalse(promotionWorkflowService.getPromotionDecisions().isEmpty());
     }
@@ -139,7 +153,7 @@ class PromotionWorkflowServiceTest {
         assertEquals("routing_policy:tier", decision.getArtifactSubtype());
         assertEquals("routing_policy:tier", decision.getArtifactKey());
         assertEquals("candidate", decision.getFromLifecycleState());
-        assertEquals("approved", decision.getToLifecycleState());
+        assertEquals("active", decision.getToLifecycleState());
         assertEquals("bundle-4", decision.getBundleId());
     }
 
@@ -258,7 +272,7 @@ class PromotionWorkflowServiceTest {
     }
 
     @Test
-    void shouldKeepDecisionApprovalRequestForApprovalGateOnly() {
+    void shouldSkipApprovalRequestWhenApproveImmediatelyActivatesTactic() {
         EvolutionCandidate candidate = EvolutionCandidate.builder()
                 .id("candidate-8")
                 .golemId("golem-1")
@@ -278,8 +292,8 @@ class PromotionWorkflowServiceTest {
                 .baseVersion("bundle-9")
                 .build());
 
-        assertEquals("candidate-8-approval", approvalDecision.getApprovalRequestId());
+        assertEquals(null, approvalDecision.getApprovalRequestId());
         assertEquals(null, shadowDecision.getApprovalRequestId());
-        assertEquals("candidate-9:shadowed", shadowDecision.getBundleId());
+        assertEquals("bundle-9", shadowDecision.getBundleId());
     }
 }

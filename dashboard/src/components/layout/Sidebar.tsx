@@ -20,6 +20,7 @@ import type { SessionSummary } from '../../api/sessions';
 import { useChatSessionStore } from '../../store/chatSessionStore';
 import { useSidebarStore } from '../../store/sidebarStore';
 import { useActiveSession, useCreateSession, useRecentSessions } from '../../hooks/useSessions';
+import { useRuntimeConfig } from '../../hooks/useSettings';
 import { useSystemHealth, useSystemUpdateStatus } from '../../hooks/useSystem';
 import { isLegacyCompatibleConversationKey, normalizeConversationKey } from '../../utils/conversationKey';
 import { getSidebarUpdateBadge } from '../../utils/systemUpdateUi';
@@ -137,8 +138,10 @@ export default function Sidebar() {
   const clientInstanceId = useChatSessionStore((s) => s.clientInstanceId);
   const activeSessionId = useChatSessionStore((s) => s.activeSessionId);
   const setActiveSessionId = useChatSessionStore((s) => s.setActiveSessionId);
+  const { data: runtimeConfig } = useRuntimeConfig();
   const { data: health } = useSystemHealth();
   const { data: updateStatus } = useSystemUpdateStatus();
+  const isSelfEvolvingEnabled = runtimeConfig?.selfEvolving?.enabled === true;
   const {
     data: recentSessionsData,
     isLoading: recentSessionsLoading,
@@ -211,7 +214,7 @@ export default function Sidebar() {
           </button>
         </div>
         <Nav className="flex-column flex-grow-1 px-2 py-2">
-          {links.map((link) => (
+          {links.filter((link) => link.to !== '/self-evolving' || isSelfEvolvingEnabled).map((link) => (
             <Nav.Link
               key={link.to}
               as={NavLink}

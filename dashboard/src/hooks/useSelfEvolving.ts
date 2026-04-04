@@ -6,7 +6,9 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import {
+  deactivateSelfEvolvingTactic,
   createSelfEvolvingRegressionCampaign,
+  deleteSelfEvolvingTactic,
   getSelfEvolvingArtifactCompareEvidence,
   getSelfEvolvingArtifactLineage,
   getSelfEvolvingArtifactRevisionDiff,
@@ -37,6 +39,12 @@ import {
   type SelfEvolvingTacticSearchStatus,
   type SelfEvolvingTacticSearchStatusPreview,
 } from '../api/selfEvolving';
+
+function invalidateSelfEvolvingTacticQueries(queryClient: ReturnType<typeof useQueryClient>): Promise<unknown[]> {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['self-evolving', 'tactics'] }),
+  ]);
+}
 
 export function useSelfEvolvingRuns(): UseQueryResult<SelfEvolvingRunSummary[], unknown> {
   return useQuery({
@@ -188,12 +196,12 @@ export function useSelfEvolvingTacticSearchStatus(
 }
 
 export function useInstallSelfEvolvingTacticEmbeddingModel(): UseMutationResult<SelfEvolvingTacticSearchStatus, unknown, string> {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (model: string) => installSelfEvolvingTacticEmbeddingModel(model),
     onSettled: () => Promise.all([
-      qc.invalidateQueries({ queryKey: ['self-evolving', 'tactics', 'status'] }),
-      qc.invalidateQueries({ queryKey: ['self-evolving', 'tactics'] }),
+      queryClient.invalidateQueries({ queryKey: ['self-evolving', 'tactics', 'status'] }),
+      queryClient.invalidateQueries({ queryKey: ['self-evolving', 'tactics'] }),
     ]),
   });
 }
@@ -207,6 +215,22 @@ export function usePlanSelfEvolvingPromotion(): UseMutationResult<SelfEvolvingPr
       qc.invalidateQueries({ queryKey: ['self-evolving', 'campaigns'] }),
       qc.invalidateQueries({ queryKey: ['self-evolving', 'artifacts'] }),
     ]),
+  });
+}
+
+export function useDeactivateTactic(): UseMutationResult<void, unknown, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tacticId: string) => deactivateSelfEvolvingTactic(tacticId),
+    onSuccess: () => invalidateSelfEvolvingTacticQueries(queryClient),
+  });
+}
+
+export function useDeleteTactic(): UseMutationResult<void, unknown, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tacticId: string) => deleteSelfEvolvingTactic(tacticId),
+    onSuccess: () => invalidateSelfEvolvingTacticQueries(queryClient),
   });
 }
 

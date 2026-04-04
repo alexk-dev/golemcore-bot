@@ -111,4 +111,23 @@ class EvolutionCandidateServiceTacticRecordTest {
         assertEquals(0, tactics.size());
         verify(storagePort, never()).putText(eq("skills"), anyString(), anyString());
     }
+
+    @Test
+    void shouldActivatePlaceholderCandidateAsActiveTactic() {
+        EvolutionCandidate candidate = evolutionCandidateService.ensureArtifactIdentity(EvolutionCandidate.builder()
+                .id("candidate-activate")
+                .artifactType("skill")
+                .status("proposed")
+                .expectedImpact("Promote planner tactic immediately")
+                .proposedDiff("selfevolving:derive:skill")
+                .build());
+
+        evolutionCandidateService.activateAsTactic(candidate);
+
+        TacticRecord tactic = tacticRecordService.getById(candidate.getContentRevisionId()).orElseThrow();
+        assertEquals(candidate.getContentRevisionId(), tactic.getTacticId());
+        assertEquals("active", tactic.getPromotionState());
+        assertEquals("active", tactic.getRolloutStage());
+        assertEquals("selfevolving:derive:skill", tactic.getBehaviorSummary());
+    }
 }

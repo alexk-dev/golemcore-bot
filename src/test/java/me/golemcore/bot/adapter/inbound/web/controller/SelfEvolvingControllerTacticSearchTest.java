@@ -10,6 +10,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.domain.service.BenchmarkLabService;
 import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.SelfEvolvingProjectionService;
+import me.golemcore.bot.domain.service.TacticRecordService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -26,16 +27,19 @@ import static org.mockito.Mockito.when;
 class SelfEvolvingControllerTacticSearchTest {
 
     private SelfEvolvingProjectionService projectionService;
+    private TacticRecordService tacticRecordService;
     private SelfEvolvingController controller;
 
     @BeforeEach
     void setUp() {
         projectionService = mock(SelfEvolvingProjectionService.class);
+        tacticRecordService = mock(TacticRecordService.class);
         controller = new SelfEvolvingController(
                 projectionService,
                 mock(PromotionWorkflowService.class),
                 mock(BenchmarkLabService.class),
                 null,
+                tacticRecordService,
                 null);
     }
 

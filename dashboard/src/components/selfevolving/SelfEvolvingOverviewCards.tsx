@@ -1,5 +1,4 @@
 import type { ReactElement } from 'react';
-import { Card, Col, Row } from 'react-bootstrap';
 
 import type {
   SelfEvolvingCandidate,
@@ -23,32 +22,21 @@ export function SelfEvolvingOverviewCards({
   runs,
   candidates,
 }: SelfEvolvingOverviewCardsProps): ReactElement {
+  const pendingCount = countPendingCandidates(candidates);
   return (
-    <Row className="g-3 mb-4">
-      <Col sm={4}>
-        <Card className="stat-card selfevolving-overview-card">
-          <Card.Body>
-            <div className="text-body-secondary small">Tracked Runs</div>
-            <h3>{runs.length}</h3>
-          </Card.Body>
-        </Card>
-      </Col>
-      <Col sm={4}>
-        <Card className="stat-card selfevolving-overview-card">
-          <Card.Body>
-            <div className="text-body-secondary small">Completed</div>
-            <h3>{countCompletedRuns(runs)}</h3>
-          </Card.Body>
-        </Card>
-      </Col>
-      <Col sm={4}>
-        <Card className="stat-card selfevolving-overview-card">
-          <Card.Body>
-            <div className="text-body-secondary small">Pending Promotions</div>
-            <h3>{countPendingCandidates(candidates)}</h3>
-          </Card.Body>
-        </Card>
-      </Col>
-    </Row>
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+      <div className="card card-body flex flex-col gap-1" title="Total agent sessions captured by the self-evolving pipeline">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Tracked Runs</span>
+        <span className="text-2xl font-bold">{runs.length}</span>
+      </div>
+      <div className="card card-body flex flex-col gap-1" title="Runs that finished and received a verdict from the judge">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Completed</span>
+        <span className="text-2xl font-bold">{countCompletedRuns(runs)}</span>
+      </div>
+      <div className="card card-body flex flex-col gap-1" title="Approved improvements that need your decision before going live">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Pending Promotions</span>
+        <span className={`text-2xl font-bold ${pendingCount > 0 ? 'text-warning' : ''}`}>{pendingCount}</span>
+      </div>
+    </div>
   );
 }

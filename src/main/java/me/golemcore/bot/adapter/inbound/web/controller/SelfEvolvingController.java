@@ -24,8 +24,10 @@ import me.golemcore.bot.domain.service.BenchmarkLabService;
 import me.golemcore.bot.domain.service.LocalEmbeddingBootstrapService;
 import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.SelfEvolvingProjectionService;
+import me.golemcore.bot.domain.service.TacticRecordService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -54,17 +56,20 @@ public class SelfEvolvingController {
     private final PromotionWorkflowService promotionWorkflowService;
     private final BenchmarkLabService benchmarkLabService;
     private final LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
+    private final TacticRecordService tacticRecordService;
     private final HiveEventBatchPublisher hiveEventBatchPublisher;
 
     public SelfEvolvingController(SelfEvolvingProjectionService projectionService,
             PromotionWorkflowService promotionWorkflowService,
             BenchmarkLabService benchmarkLabService,
             LocalEmbeddingBootstrapService localEmbeddingBootstrapService,
+            TacticRecordService tacticRecordService,
             HiveEventBatchPublisher hiveEventBatchPublisher) {
         this.projectionService = projectionService;
         this.promotionWorkflowService = promotionWorkflowService;
         this.benchmarkLabService = benchmarkLabService;
         this.localEmbeddingBootstrapService = localEmbeddingBootstrapService;
+        this.tacticRecordService = tacticRecordService;
         this.hiveEventBatchPublisher = hiveEventBatchPublisher;
     }
 
@@ -300,6 +305,22 @@ public class SelfEvolvingController {
             SelfEvolvingArtifactEvidenceDto evidence = projectionService.getTacticEvidence(tacticId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
             return ResponseEntity.ok(evidence);
+        });
+    }
+
+    @PostMapping("/tactics/{tacticId}/deactivate")
+    public Mono<ResponseEntity<Void>> deactivateTactic(@PathVariable String tacticId) {
+        return blocking(() -> {
+            tacticRecordService.deactivate(tacticId);
+            return ResponseEntity.ok().build();
+        });
+    }
+
+    @DeleteMapping("/tactics/{tacticId}")
+    public Mono<ResponseEntity<Void>> deleteTactic(@PathVariable String tacticId) {
+        return blocking(() -> {
+            tacticRecordService.delete(tacticId);
+            return ResponseEntity.noContent().build();
         });
     }
 

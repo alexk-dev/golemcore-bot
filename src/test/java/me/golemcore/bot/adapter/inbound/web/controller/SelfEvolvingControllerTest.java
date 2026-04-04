@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.service.BenchmarkLabService;
 import me.golemcore.bot.domain.service.LocalEmbeddingBootstrapService;
 import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.SelfEvolvingProjectionService;
+import me.golemcore.bot.domain.service.TacticRecordService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -33,6 +34,7 @@ class SelfEvolvingControllerTest {
     private PromotionWorkflowService promotionWorkflowService;
     private BenchmarkLabService benchmarkLabService;
     private LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
+    private TacticRecordService tacticRecordService;
     private SelfEvolvingController controller;
 
     @BeforeEach
@@ -41,8 +43,9 @@ class SelfEvolvingControllerTest {
         promotionWorkflowService = mock(PromotionWorkflowService.class);
         benchmarkLabService = mock(BenchmarkLabService.class);
         localEmbeddingBootstrapService = mock(LocalEmbeddingBootstrapService.class);
+        tacticRecordService = mock(TacticRecordService.class);
         controller = new SelfEvolvingController(projectionService, promotionWorkflowService, benchmarkLabService,
-                localEmbeddingBootstrapService, null);
+                localEmbeddingBootstrapService, tacticRecordService, null);
     }
 
     @Test
@@ -237,6 +240,20 @@ class SelfEvolvingControllerTest {
                     assertEquals("bge-m3", response.getBody().getModel());
                     assertTrue(Boolean.TRUE.equals(response.getBody().getModelAvailable()));
                 })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldDeactivateTactic() {
+        StepVerifier.create(controller.deactivateTactic("tactic-1"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldDeleteTactic() {
+        StepVerifier.create(controller.deleteTactic("tactic-1"))
+                .assertNext(response -> assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode()))
                 .verifyComplete();
     }
 }

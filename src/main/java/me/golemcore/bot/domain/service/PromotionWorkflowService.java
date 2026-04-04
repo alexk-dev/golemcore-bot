@@ -153,6 +153,7 @@ public class PromotionWorkflowService {
         updatedCandidate.setRolloutStage(target.rolloutStage());
         saveCandidate(updatedCandidate);
         saveDecision(decision);
+        evolutionCandidateService.activateAsTactic(updatedCandidate);
         return decision;
     }
 
@@ -190,8 +191,7 @@ public class PromotionWorkflowService {
     private PromotionTarget resolvePromotionTarget() {
         String promotionMode = runtimeConfigService.getSelfEvolvingPromotionMode();
         return switch (promotionMode) {
-        case "approval_gate" -> new PromotionTarget("approved_pending", "approved", "approved");
-        case "auto_accept" -> new PromotionTarget("shadowed", "candidate", "shadowed");
+        case "approval_gate", "auto_accept" -> new PromotionTarget("active", "active", "active");
         default -> throw new IllegalArgumentException("Unsupported promotion mode: " + promotionMode);
         };
     }
@@ -209,8 +209,9 @@ public class PromotionWorkflowService {
 
     private String buildReason(String nextState) {
         return switch (nextState) {
-        case "approved_pending" -> "Awaiting approval before rollout";
-        case "shadowed" -> "Auto-accepted into shadow rollout";
+        case "approved_pending" -> "Queued for approval";
+        case "shadowed" -> "Approved and entered shadow rollout";
+        case "active" -> "Approved and activated as tactic";
         default -> "Promotion planned";
         };
     }

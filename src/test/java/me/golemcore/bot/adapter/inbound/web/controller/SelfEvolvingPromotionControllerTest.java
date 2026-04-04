@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.service.BenchmarkLabService;
 import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.SelfEvolvingProjectionService;
+import me.golemcore.bot.domain.service.TacticRecordService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -24,6 +25,7 @@ class SelfEvolvingPromotionControllerTest {
     private SelfEvolvingProjectionService projectionService;
     private PromotionWorkflowService promotionWorkflowService;
     private BenchmarkLabService benchmarkLabService;
+    private TacticRecordService tacticRecordService;
     private SelfEvolvingController controller;
 
     @BeforeEach
@@ -31,15 +33,16 @@ class SelfEvolvingPromotionControllerTest {
         projectionService = mock(SelfEvolvingProjectionService.class);
         promotionWorkflowService = mock(PromotionWorkflowService.class);
         benchmarkLabService = mock(BenchmarkLabService.class);
+        tacticRecordService = mock(TacticRecordService.class);
         controller = new SelfEvolvingController(projectionService, promotionWorkflowService, benchmarkLabService, null,
-                null);
+                tacticRecordService, null);
     }
 
     @Test
     void shouldPlanPromotionForCandidate() {
         when(promotionWorkflowService.planPromotion("candidate-1")).thenReturn(PromotionDecision.builder()
                 .candidateId("candidate-1")
-                .state("approved_pending")
+                .state("active")
                 .mode("approval_gate")
                 .decidedAt(Instant.parse("2026-03-31T16:35:00Z"))
                 .build());
@@ -48,7 +51,7 @@ class SelfEvolvingPromotionControllerTest {
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
-                    assertEquals("approved_pending", response.getBody().getState());
+                    assertEquals("active", response.getBody().getState());
                 })
                 .verifyComplete();
     }

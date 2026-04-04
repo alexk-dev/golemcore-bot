@@ -75,6 +75,10 @@ describe('SelfEvolvingTacticSearchWorkspace', () => {
         query="planner"
         onQueryChange={vi.fn()}
         onBackToResults={vi.fn()}
+        onDeactivateTactic={vi.fn()}
+        onDeleteTactic={vi.fn()}
+        isDeactivatingTactic={false}
+        isDeletingTactic={false}
         searchResponse={{ query: 'planner', status: SEARCH_STATUS, results: [TACTIC_RESULT] }}
         selectedTacticId={null}
         onSelectTacticId={vi.fn()}
@@ -85,8 +89,8 @@ describe('SelfEvolvingTacticSearchWorkspace', () => {
     expect(html).toContain('Hybrid');
     expect(html).toContain('name="tactic-search-query"');
     expect(html).toContain('Planner tactic');
-    expect(html).toContain('Success rate');
-    expect(html).toContain('Benchmark win rate');
+    expect(html).toContain('Success');
+    expect(html).toContain('Benchmark');
     expect(html).toContain('Open tactic');
     expect(html).not.toContain('Why this tactic');
   });
@@ -97,6 +101,10 @@ describe('SelfEvolvingTacticSearchWorkspace', () => {
         query="planner"
         onQueryChange={vi.fn()}
         onBackToResults={vi.fn()}
+        onDeactivateTactic={vi.fn()}
+        onDeleteTactic={vi.fn()}
+        isDeactivatingTactic={false}
+        isDeletingTactic={false}
         searchResponse={{ query: 'planner', status: SEARCH_STATUS, results: [TACTIC_RESULT] }}
         selectedTacticId="planner"
         onSelectTacticId={vi.fn()}
@@ -110,5 +118,7 @@ describe('SelfEvolvingTacticSearchWorkspace', () => {
     expect(html).toContain('Evidence');
     expect(html).toContain('Intent');
     expect(html).toContain('Behavior');
+    expect(html).toContain('Deactivate');
+    expect(html).toContain('Delete');
   });
 });

@@ -356,14 +356,27 @@ public class SelfEvolvingProjectionService {
     }
 
     private SelfEvolvingCandidateDto toCandidateDto(EvolutionCandidate candidate) {
+        List<SelfEvolvingCandidateDto.EvidenceRefDto> evidenceRefDtos = candidate.getEvidenceRefs() == null
+                ? List.of()
+                : candidate.getEvidenceRefs().stream()
+                        .map(ref -> SelfEvolvingCandidateDto.EvidenceRefDto.builder()
+                                .traceId(ref.getTraceId())
+                                .spanId(ref.getSpanId())
+                                .outputFragment(ref.getOutputFragment())
+                                .build())
+                        .toList();
         return SelfEvolvingCandidateDto.builder()
                 .id(candidate.getId())
                 .goal(candidate.getGoal())
                 .artifactType(candidate.getArtifactType())
+                .artifactStreamId(candidate.getArtifactStreamId())
+                .artifactKey(candidate.getArtifactKey())
                 .status(candidate.getStatus())
                 .riskLevel(candidate.getRiskLevel())
                 .expectedImpact(candidate.getExpectedImpact())
+                .proposedDiff(candidate.getProposedDiff())
                 .sourceRunIds(candidate.getSourceRunIds())
+                .evidenceRefs(evidenceRefDtos)
                 .build();
     }
 

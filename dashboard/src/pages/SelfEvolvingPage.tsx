@@ -1,6 +1,4 @@
 import { type ReactElement, useDeferredValue, useEffect, useRef, useState } from 'react';
-import { Alert, Col, Row } from 'react-bootstrap';
-import toast from 'react-hot-toast';
 
 import { SelfEvolvingCandidateQueue } from '../components/selfevolving/SelfEvolvingCandidateQueue';
 import { SelfEvolvingOverviewCards } from '../components/selfevolving/SelfEvolvingOverviewCards';
@@ -8,6 +6,8 @@ import { SelfEvolvingRunTable } from '../components/selfevolving/SelfEvolvingRun
 import { SelfEvolvingTacticSearchWorkspace } from '../components/selfevolving/SelfEvolvingTacticSearchWorkspace';
 import { SelfEvolvingVerdictPanel } from '../components/selfevolving/SelfEvolvingVerdictPanel';
 import {
+  useDeactivateTactic,
+  useDeleteTactic,
   usePlanSelfEvolvingPromotion,
   useSelfEvolvingCandidates,
   useSelfEvolvingRunDetail,
@@ -16,6 +16,12 @@ import {
 } from '../hooks/useSelfEvolving';
 
 type ActiveTab = 'runs' | 'candidates' | 'tactics';
+
+const TAB_LABELS: Record<ActiveTab, { label: string; hint: string }> = {
+  runs: { label: 'Runs', hint: 'Every agent session captured and judged by the self-evolving pipeline' },
+  candidates: { label: 'Candidates', hint: 'Proposed improvements waiting for your approval before going live' },
+  tactics: { label: 'Tactics', hint: 'Search the tactic library used by the agent at runtime' },
+};
 
 export default function SelfEvolvingPage(): ReactElement {
   const [activeTab, setActiveTab] = useState<ActiveTab>('runs');
@@ -26,6 +32,8 @@ export default function SelfEvolvingPage(): ReactElement {
   const verdictPanelRef = useRef<HTMLDivElement | null>(null);
   const deferredTacticQuery = useDeferredValue(tacticQuery);
   const planPromotion = usePlanSelfEvolvingPromotion();
+  const deactivateTactic = useDeactivateTactic();
+  const deleteTactic = useDeleteTactic();
 
   const runsQuery = useSelfEvolvingRuns();
   const candidatesQuery = useSelfEvolvingCandidates();
@@ -39,9 +47,8 @@ export default function SelfEvolvingPage(): ReactElement {
 
   const hasError = runsQuery.isError || candidatesQuery.isError;
 
-  const handlePlanPromotion = async (candidateId: string): Promise<void> => {
-    await planPromotion.mutateAsync(candidateId);
-    toast.success('Promotion decision planned');
+  const handlePlanPromotion = (candidateId: string): void => {
+    planPromotion.mutate(candidateId);
   };
 
   // Scroll verdict panel into view when a run is explicitly selected.
@@ -54,84 +61,74 @@ export default function SelfEvolvingPage(): ReactElement {
 
   return (
     <div>
-      <div className="section-header d-flex align-items-center justify-content-between mb-3">
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <h4 className="mb-1">Self-Evolving</h4>
-          <p className="text-body-secondary mb-0">
-            Inspect runs, review candidates, and search tactics.
+          <h4 className="mb-1 text-lg font-semibold tracking-tight">Self-Evolving</h4>
+          <p className="text-sm text-muted-foreground">
+            Monitor how the agent learns from its runs and review proposed improvements.
           </p>
         </div>
       </div>
 
       {hasError && (
-        <Alert variant="danger" className="mb-4">
-          Failed to load Self-Evolving data. Refresh the page and check backend connectivity.
-        </Alert>
+        <div className="alert mb-4 border-destructive/40 bg-destructive/10 text-destructive">
+          Failed to load data. Refresh the page and check backend connectivity.
+        </div>
       )}
 
       <SelfEvolvingOverviewCards runs={runs} candidates={candidates} />
 
-      <ul className="nav nav-tabs mb-3">
-        <li className="nav-item">
+      <div className="flex gap-1 border-b border-border/80 mb-4" role="tablist">
+        {(Object.keys(TAB_LABELS) as ActiveTab[]).map((tab) => (
           <button
+            key={tab}
             type="button"
-            className={`nav-link ${activeTab === 'runs' ? 'active' : ''}`}
-            onClick={() => setActiveTab('runs')}
+            role="tab"
+            aria-selected={activeTab === tab}
+            title={TAB_LABELS[tab].hint}
+            className={`px-4 py-2.5 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+              activeTab === tab
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+            }`}
+            onClick={() => setActiveTab(tab)}
           >
-            Runs
+            {TAB_LABELS[tab].label}
           </button>
-        </li>
-        <li className="nav-item">
-          <button
-            type="button"
-            className={`nav-link ${activeTab === 'candidates' ? 'active' : ''}`}
-            onClick={() => setActiveTab('candidates')}
-          >
-            Candidates
-          </button>
-        </li>
-        <li className="nav-item">
-          <button
-            type="button"
-            className={`nav-link ${activeTab === 'tactics' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tactics')}
-          >
-            Tactics
-          </button>
-        </li>
-      </ul>
+        ))}
+      </div>
 
       {activeTab === 'runs' && (
-        <Row className="g-3">
-          <Col xl={7}>
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+          <div className="xl:col-span-7">
             <SelfEvolvingRunTable
               runs={runs}
               selectedRunId={activeRunId}
               onSelectRun={setSelectedRunId}
             />
-          </Col>
-          <Col xl={5}>
-            <div ref={verdictPanelRef}>
-              <SelfEvolvingVerdictPanel
-                run={activeRunQuery.data}
-                isLoading={activeRunQuery.isLoading}
-              />
-            </div>
-          </Col>
-        </Row>
+          </div>
+          <div className="xl:col-span-5" ref={verdictPanelRef}>
+            <SelfEvolvingVerdictPanel
+              run={activeRunQuery.data}
+              isLoading={activeRunQuery.isLoading}
+            />
+          </div>
+        </div>
       )}
 
       {activeTab === 'candidates' && (
         <SelfEvolvingCandidateQueue
           candidates={candidates}
           selectedCandidateId={activeCandidateId}
-          promotingCandidateId={planPromotion.variables ?? null}
+          promotingCandidateId={planPromotion.isPending ? (planPromotion.variables ?? null) : null}
+          lastPromotionResult={planPromotion.data ?? null}
+          lastPromotionError={planPromotion.isError}
           onSelectCandidate={setSelectedCandidateId}
           onSelectRun={(runId) => {
             setSelectedRunId(runId);
             setActiveTab('runs');
           }}
-          onPlanPromotion={(candidateId) => { void handlePlanPromotion(candidateId); }}
+          onPlanPromotion={handlePlanPromotion}
         />
       )}
 
@@ -146,6 +143,16 @@ export default function SelfEvolvingPage(): ReactElement {
           selectedTacticId={selectedTacticId}
           onSelectTacticId={setSelectedTacticId}
           onBackToResults={() => setSelectedTacticId(null)}
+          onDeactivateTactic={(tacticId) => {
+            deactivateTactic.mutate(tacticId);
+          }}
+          onDeleteTactic={(tacticId) => {
+            deleteTactic.mutate(tacticId, {
+              onSuccess: () => setSelectedTacticId(null),
+            });
+          }}
+          isDeactivatingTactic={deactivateTactic.isPending && deactivateTactic.variables === selectedTacticId}
+          isDeletingTactic={deleteTactic.isPending && deleteTactic.variables === selectedTacticId}
         />
       )}
     </div>

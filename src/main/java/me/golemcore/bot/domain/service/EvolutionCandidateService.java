@@ -74,12 +74,13 @@ public class EvolutionCandidateService {
         }
 
         if ("FAILED".equals(runVerdict.getOutcomeStatus())) {
+            String artifactType = resolveFixArtifactType(runVerdict);
             return List.of(buildCandidate(
                     runRecord,
                     runVerdict,
                     "fix",
-                    resolveFixArtifactType(runVerdict),
-                    "Reduce the failure mode observed in this run",
+                    artifactType,
+                    buildFixImpact(runVerdict, artifactType),
                     "high"));
         }
 
@@ -91,7 +92,7 @@ public class EvolutionCandidateService {
                     runVerdict,
                     "derive",
                     "skill",
-                    "Capture a reusable high-signal pattern from a successful run",
+                    buildDeriveImpact(runVerdict),
                     "medium"));
         }
 
@@ -117,6 +118,14 @@ public class EvolutionCandidateService {
             artifactRevisionCache.set(cached);
         }
         return cached;
+    }
+
+    public TacticRecord activateAsTactic(EvolutionCandidate candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        normalizeCandidate(candidate);
+        return tacticRecordService.save(buildTacticRecord(candidate, "active", "active"));
     }
 
     private EvolutionCandidate buildCandidate(
@@ -254,7 +263,14 @@ public class EvolutionCandidateService {
             log.debug("[SelfEvolving] Skipping tactic emit for placeholder diff: {}", candidate.getProposedDiff());
             return;
         }
-        tacticRecordService.save(TacticRecord.builder()
+        tacticRecordService.save(buildTacticRecord(
+                candidate,
+                candidate.getLifecycleState(),
+                candidate.getRolloutStage()));
+    }
+
+    private TacticRecord buildTacticRecord(EvolutionCandidate candidate, String promotionState, String rolloutStage) {
+        return TacticRecord.builder()
                 .tacticId(candidate.getContentRevisionId())
                 .artifactStreamId(candidate.getArtifactStreamId())
                 .originArtifactStreamId(candidate.getOriginArtifactStreamId())
@@ -270,13 +286,13 @@ public class EvolutionCandidateService {
                 .evidenceSnippets(resolveEvidenceSnippets(candidate))
                 .taskFamilies(resolveTaskFamilies(candidate))
                 .tags(resolveTags(candidate))
-                .promotionState(candidate.getLifecycleState())
-                .rolloutStage(candidate.getRolloutStage())
+                .promotionState(promotionState)
+                .rolloutStage(rolloutStage)
                 .successRate(resolveSuccessRate(candidate))
                 .golemLocalUsageSuccess(resolveSuccessRate(candidate))
                 .embeddingStatus("pending")
                 .updatedAt(candidate.getCreatedAt() != null ? candidate.getCreatedAt() : Instant.now(clock))
-                .build());
+                .build();
     }
 
     private List<ArtifactRevisionRecord> loadArtifactRevisions() {
@@ -322,6 +338,61 @@ public class EvolutionCandidateService {
             }
         }
         return "prompt";
+    }
+
+    private String buildFixImpact(RunVerdict runVerdict, String artifactType) {
+        String evidenceSummary = extractFirstEvidenceFragment(runVerdict);
+        String artifactLabel = resolveArtifactLabel(artifactType);
+        if (evidenceSummary != null) {
+            return "Failure observed: " + evidenceSummary + ". Proposed fix: adjust " + artifactLabel
+                    + " to prevent recurrence.";
+        }
+        String outcomeSummary = runVerdict.getOutcomeSummary();
+        if (!StringValueSupport.isBlank(outcomeSummary)) {
+            return outcomeSummary + ". Proposed fix: adjust " + artifactLabel + " to prevent recurrence.";
+        }
+        return "Adjust " + artifactLabel + " to reduce the failure mode observed in this run.";
+    }
+
+    private String buildDeriveImpact(RunVerdict runVerdict) {
+        String evidenceSummary = extractFirstEvidenceFragment(runVerdict);
+        if (evidenceSummary != null) {
+            return "Capture the successful pattern: " + evidenceSummary + ".";
+        }
+        String outcomeSummary = runVerdict.getOutcomeSummary();
+        if (!StringValueSupport.isBlank(outcomeSummary)) {
+            return "Capture a reusable pattern from: " + outcomeSummary + ".";
+        }
+        return "Capture a reusable high-signal pattern from a successful run.";
+    }
+
+    private String extractFirstEvidenceFragment(RunVerdict runVerdict) {
+        if (runVerdict.getEvidenceRefs() == null) {
+            return null;
+        }
+        for (var ref : runVerdict.getEvidenceRefs()) {
+            if (ref != null && !StringValueSupport.isBlank(ref.getOutputFragment())) {
+                String fragment = ref.getOutputFragment().trim();
+                if (fragment.length() > 200) {
+                    fragment = fragment.substring(0, 200) + "...";
+                }
+                return fragment;
+            }
+        }
+        return null;
+    }
+
+    private String resolveArtifactLabel(String artifactType) {
+        return switch (artifactType) {
+        case "tool_policy" -> "tool usage policy";
+        case "routing_policy" -> "tier routing policy";
+        case "memory_policy" -> "memory retrieval policy";
+        case "context_policy" -> "context assembly policy";
+        case "governance_policy" -> "approval policy";
+        case "prompt" -> "prompt configuration";
+        case "skill" -> "skill definition";
+        default -> artifactType;
+        };
     }
 
     private String buildProposedDiff(String goal, String artifactType) {

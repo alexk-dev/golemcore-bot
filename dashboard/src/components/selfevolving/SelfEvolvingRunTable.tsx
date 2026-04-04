@@ -1,35 +1,12 @@
 import type { ReactElement } from 'react';
-import { Badge, Button, Card, Table } from 'react-bootstrap';
 
 import type { SelfEvolvingRunSummary } from '../../api/selfEvolving';
+import { shortId, formatTimestamp, statusBadgeClass, humanizeStatus } from './selfEvolvingUi';
 
 interface SelfEvolvingRunTableProps {
   runs: SelfEvolvingRunSummary[];
   selectedRunId: string | null;
   onSelectRun: (runId: string) => void;
-}
-
-function formatTimestamp(value: string | null): string {
-  if (value == null) {
-    return 'Pending';
-  }
-  return new Date(value).toLocaleString();
-}
-
-function toBadgeVariant(status: string | null): 'secondary' | 'success' | 'warning' | 'danger' | 'primary' {
-  if (status === 'completed' || status === 'approve_gated') {
-    return 'success';
-  }
-  if (status === 'failed' || status === 'rejected') {
-    return 'danger';
-  }
-  if (status === 'shadowed' || status === 'approved_pending') {
-    return 'warning';
-  }
-  if (status === 'running') {
-    return 'primary';
-  }
-  return 'secondary';
 }
 
 export function SelfEvolvingRunTable({
@@ -38,51 +15,69 @@ export function SelfEvolvingRunTable({
   onSelectRun,
 }: SelfEvolvingRunTableProps): ReactElement {
   return (
-    <Card className="selfevolving-section-card">
-      <Card.Body>
-        <div className="d-flex align-items-center justify-content-between gap-2 mb-3">
+    <div className="card">
+      <div className="card-body">
+        <div className="flex items-center justify-between gap-2 mb-3">
           <div>
-            <h5 className="mb-1">Recent Runs</h5>
-            <p className="text-body-secondary small mb-0">Trace-backed run history with the latest outcome and promotion signal.</p>
+            <h5 className="text-base font-semibold tracking-tight mb-0.5">Recent Runs</h5>
+            <p className="text-xs text-muted-foreground">
+              Each row is an agent session that was captured, judged, and scored.
+            </p>
           </div>
-          <Badge bg="secondary">{runs.length}</Badge>
+          <span className="badge text-bg-secondary">{runs.length}</span>
         </div>
 
         {runs.length === 0 ? (
-          <div className="text-body-secondary small">No Self-Evolving runs have been captured yet.</div>
+          <p className="text-sm text-muted-foreground">No runs captured yet. Runs appear here once the agent completes a session with self-evolving enabled.</p>
         ) : (
-          <div className="table-responsive">
-            <Table hover className="align-middle selfevolving-table mb-0">
+          <div className="overflow-x-auto -mx-5">
+            <table className="table w-full">
               <thead>
                 <tr>
-                  <th>Run</th>
-                  <th>Golem</th>
-                  <th>Outcome</th>
-                  <th>Recommendation</th>
+                  <th title="Short identifier for this run — hover for full ID">Run</th>
+                  <th title="Chat session that triggered this run">Session</th>
+                  <th title="How the judge scored the run outcome">Outcome</th>
+                  <th title="Judge's recommendation on whether to promote artifacts from this run">Recommendation</th>
                   <th>Started</th>
-                  <th className="text-end">Action</th>
+                  <th className="text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {runs.map((run) => (
-                  <tr key={run.id} className={selectedRunId === run.id ? 'selfevolving-run-row active' : 'selfevolving-run-row'}>
-                    <td>{run.id}</td>
-                    <td>{run.golemId ?? 'n/a'}</td>
-                    <td><Badge bg={toBadgeVariant(run.outcomeStatus)}>{run.outcomeStatus ?? 'unknown'}</Badge></td>
-                    <td>{run.promotionRecommendation ?? 'n/a'}</td>
-                    <td>{formatTimestamp(run.startedAt)}</td>
-                    <td className="text-end">
-                      <Button type="button" size="sm" variant="primary" onClick={() => onSelectRun(run.id)}>
+                  <tr
+                    key={run.id}
+                    className={selectedRunId === run.id ? 'bg-primary/5' : 'cursor-pointer hover:bg-muted/40'}
+                    onClick={() => onSelectRun(run.id)}
+                  >
+                    <td>
+                      <span className="font-mono text-xs" title={run.id}>{shortId(run.id)}</span>
+                    </td>
+                    <td>
+                      <span className="font-mono text-xs" title={run.sessionId ?? undefined}>{shortId(run.sessionId ?? 'n/a')}</span>
+                    </td>
+                    <td>
+                      <span className={`badge ${statusBadgeClass(run.outcomeStatus)}`}>
+                        {humanizeStatus(run.outcomeStatus)}
+                      </span>
+                    </td>
+                    <td className="text-sm">{humanizeStatus(run.promotionRecommendation)}</td>
+                    <td className="text-sm text-muted-foreground">{formatTimestamp(run.startedAt)}</td>
+                    <td className="text-right">
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${selectedRunId === run.id ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={(e) => { e.stopPropagation(); onSelectRun(run.id); }}
+                      >
                         Inspect
-                      </Button>
+                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </Table>
+            </table>
           </div>
         )}
-      </Card.Body>
-    </Card>
+      </div>
+    </div>
   );
 }

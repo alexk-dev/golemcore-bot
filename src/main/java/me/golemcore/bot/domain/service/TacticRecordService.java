@@ -97,6 +97,28 @@ public class TacticRecordService {
                 .findFirst();
     }
 
+    public TacticRecord deactivate(String tacticId) {
+        TacticRecord existing = getById(tacticId)
+                .orElseThrow(() -> new IllegalArgumentException("Tactic not found: " + tacticId));
+        TacticRecord updated = copyRecord(existing);
+        updated.setPromotionState("inactive");
+        updated.setTags(null);
+        updated.setUpdatedAt(Instant.now(clock));
+        return save(updated);
+    }
+
+    public void delete(String tacticId) {
+        TacticRecord existing = getById(tacticId)
+                .orElseThrow(() -> new IllegalArgumentException("Tactic not found: " + tacticId));
+        try {
+            storagePort.deleteObject(SELF_EVOLVING_DIR, TACTICS_PREFIX + existing.getTacticId() + ".json").join();
+            removeFromCache(existing.getTacticId());
+            triggerRebuild(existing.getTacticId());
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("Failed to delete tactic record", exception);
+        }
+    }
+
     private List<TacticRecord> loadAll() {
         List<String> paths;
         try {
@@ -140,6 +162,50 @@ public class TacticRecordService {
         updated.sort(Comparator.comparing(TacticRecord::getUpdatedAt,
                 Comparator.nullsLast(Comparator.reverseOrder())));
         cache.set(updated);
+    }
+
+    private void removeFromCache(String tacticId) {
+        List<TacticRecord> current = cache.get();
+        if (current == null) {
+            return;
+        }
+        List<TacticRecord> updated = new ArrayList<>(current);
+        updated.removeIf(existing -> existing != null && tacticId.equals(existing.getTacticId()));
+        cache.set(updated);
+    }
+
+    private TacticRecord copyRecord(TacticRecord record) {
+        return TacticRecord.builder()
+                .tacticId(record.getTacticId())
+                .artifactStreamId(record.getArtifactStreamId())
+                .originArtifactStreamId(record.getOriginArtifactStreamId())
+                .artifactKey(record.getArtifactKey())
+                .artifactType(record.getArtifactType())
+                .title(record.getTitle())
+                .aliases(record.getAliases() != null ? new ArrayList<>(record.getAliases()) : new ArrayList<>())
+                .contentRevisionId(record.getContentRevisionId())
+                .intentSummary(record.getIntentSummary())
+                .behaviorSummary(record.getBehaviorSummary())
+                .toolSummary(record.getToolSummary())
+                .outcomeSummary(record.getOutcomeSummary())
+                .benchmarkSummary(record.getBenchmarkSummary())
+                .approvalNotes(record.getApprovalNotes())
+                .evidenceSnippets(record.getEvidenceSnippets() != null ? new ArrayList<>(record.getEvidenceSnippets())
+                        : new ArrayList<>())
+                .taskFamilies(record.getTaskFamilies() != null ? new ArrayList<>(record.getTaskFamilies())
+                        : new ArrayList<>())
+                .tags(record.getTags() != null ? new ArrayList<>(record.getTags()) : new ArrayList<>())
+                .promotionState(record.getPromotionState())
+                .rolloutStage(record.getRolloutStage())
+                .successRate(record.getSuccessRate())
+                .benchmarkWinRate(record.getBenchmarkWinRate())
+                .regressionFlags(record.getRegressionFlags() != null ? new ArrayList<>(record.getRegressionFlags())
+                        : new ArrayList<>())
+                .recencyScore(record.getRecencyScore())
+                .golemLocalUsageSuccess(record.getGolemLocalUsageSuccess())
+                .embeddingStatus(record.getEmbeddingStatus())
+                .updatedAt(record.getUpdatedAt())
+                .build();
     }
 
     private TacticRecord normalize(TacticRecord record) {

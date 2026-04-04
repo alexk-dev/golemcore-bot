@@ -10,6 +10,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvi
 import me.golemcore.bot.domain.service.BenchmarkLabService;
 import me.golemcore.bot.domain.service.PromotionWorkflowService;
 import me.golemcore.bot.domain.service.SelfEvolvingProjectionService;
+import me.golemcore.bot.domain.service.TacticRecordService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -31,6 +32,7 @@ class SelfEvolvingControllerArtifactWorkspaceTest {
     private SelfEvolvingProjectionService projectionService;
     private PromotionWorkflowService promotionWorkflowService;
     private BenchmarkLabService benchmarkLabService;
+    private TacticRecordService tacticRecordService;
     private SelfEvolvingController controller;
 
     @BeforeEach
@@ -38,8 +40,9 @@ class SelfEvolvingControllerArtifactWorkspaceTest {
         projectionService = mock(SelfEvolvingProjectionService.class);
         promotionWorkflowService = mock(PromotionWorkflowService.class);
         benchmarkLabService = mock(BenchmarkLabService.class);
+        tacticRecordService = mock(TacticRecordService.class);
         controller = new SelfEvolvingController(projectionService, promotionWorkflowService, benchmarkLabService, null,
-                null);
+                tacticRecordService, null);
     }
 
     @Test

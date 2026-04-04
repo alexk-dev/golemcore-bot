@@ -36,6 +36,12 @@ export interface SelfEvolvingRunDetail {
   verdict: SelfEvolvingRunDetailVerdict | null;
 }
 
+export interface SelfEvolvingCandidateEvidenceRef {
+  traceId: string | null;
+  spanId: string | null;
+  outputFragment: string | null;
+}
+
 export interface SelfEvolvingCandidate {
   id: string;
   goal: string | null;
@@ -45,7 +51,9 @@ export interface SelfEvolvingCandidate {
   status: string | null;
   riskLevel: string | null;
   expectedImpact: string | null;
+  proposedDiff: string | null;
   sourceRunIds: string[];
+  evidenceRefs: SelfEvolvingCandidateEvidenceRef[];
 }
 
 export interface SelfEvolvingCampaign {
@@ -424,6 +432,14 @@ export async function getSelfEvolvingArtifactTransitionEvidence(
 export async function planSelfEvolvingPromotion(candidateId: string): Promise<SelfEvolvingPromotionDecision> {
   const { data } = await client.post<SelfEvolvingPromotionDecision>(`/self-evolving/candidates/${candidateId}/promotion`);
   return data;
+}
+
+export async function deactivateSelfEvolvingTactic(tacticId: string): Promise<void> {
+  await client.post(`/self-evolving/tactics/${tacticId}/deactivate`);
+}
+
+export async function deleteSelfEvolvingTactic(tacticId: string): Promise<void> {
+  await client.delete(`/self-evolving/tactics/${tacticId}`);
 }
 
 export async function getSelfEvolvingCampaigns(): Promise<SelfEvolvingCampaign[]> {

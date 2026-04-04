@@ -55,21 +55,35 @@ vi.mock('../hooks/useSelfEvolving', () => ({
         status: 'approved_pending',
         riskLevel: 'medium',
         expectedImpact: 'Reduce routing failures',
+        proposedDiff: null,
         sourceRunIds: ['run-1'],
+        evidenceRefs: [],
       },
     ],
     isLoading: false,
     isError: false,
   }),
   usePlanSelfEvolvingPromotion: () => ({
-    mutateAsync: vi.fn(() => Promise.resolve()),
+    mutate: vi.fn(),
     isPending: false,
     variables: null,
+    data: null,
+    isError: false,
   }),
   useSelfEvolvingTacticSearch: () => ({
     data: null,
     isLoading: false,
     isError: false,
+  }),
+  useDeactivateTactic: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    variables: null,
+  }),
+  useDeleteTactic: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    variables: null,
   }),
 }));
 
@@ -90,11 +104,10 @@ describe('SelfEvolvingPage', () => {
     // Runs tab content (active by default)
     expect(html).toContain('Recent Runs');
     expect(html).toContain('run-1');
-    expect(html).toContain('Run run-1');
     expect(html).toContain('Verdict Panel');
 
     // Other tabs not rendered
-    expect(html).not.toContain('Candidate Queue');
+    expect(html).not.toContain('Proposed Changes');
     expect(html).not.toContain('Tactic Search');
   });
 });
