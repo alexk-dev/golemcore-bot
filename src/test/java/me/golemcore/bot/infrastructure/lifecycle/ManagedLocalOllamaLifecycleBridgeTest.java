@@ -95,6 +95,16 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     }
 
     @Test
+    void shouldTreatMissingSelfEvolvingConfigAsInactiveManagedEndpoint() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(null);
+
+        bridge.runStartupGate();
+
+        assertEquals(1, supervisor.startupCheckInvocations);
+        assertFalse(supervisor.lastLocalEmbeddingsActive);
+    }
+
+    @Test
     void shouldTreatIpv6LoopbackBaseUrlAsLocalManagedEndpoint() {
         RuntimeConfig.SelfEvolvingConfig config = localEmbeddingsConfig(true);
         config.getTactics().getSearch().getEmbeddings().setBaseUrl("http://[::1]:11434");
@@ -136,6 +146,42 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     }
 
     @Test
+    void shouldTreatNonHybridSearchModeAsInactiveManagedEndpoint() {
+        RuntimeConfig.SelfEvolvingConfig config = localEmbeddingsConfig(true);
+        config.getTactics().getSearch().setMode("keyword");
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config);
+
+        bridge.runStartupGate();
+
+        assertEquals(1, supervisor.startupCheckInvocations);
+        assertFalse(supervisor.lastLocalEmbeddingsActive);
+    }
+
+    @Test
+    void shouldTreatDisabledEmbeddingsAsInactiveManagedEndpoint() {
+        RuntimeConfig.SelfEvolvingConfig config = localEmbeddingsConfig(true);
+        config.getTactics().getSearch().getEmbeddings().setEnabled(false);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config);
+
+        bridge.runStartupGate();
+
+        assertEquals(1, supervisor.startupCheckInvocations);
+        assertFalse(supervisor.lastLocalEmbeddingsActive);
+    }
+
+    @Test
+    void shouldTreatNonOllamaProvidersAsInactiveManagedEndpoint() {
+        RuntimeConfig.SelfEvolvingConfig config = localEmbeddingsConfig(true);
+        config.getTactics().getSearch().getEmbeddings().setProvider("openai");
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config);
+
+        bridge.runStartupGate();
+
+        assertEquals(1, supervisor.startupCheckInvocations);
+        assertFalse(supervisor.lastLocalEmbeddingsActive);
+    }
+
+    @Test
     void shouldNotRunStartupGateTwiceAfterInitialization() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
 
@@ -160,6 +206,18 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     }
 
     @Test
+    void shouldRecheckStartupWhenStatusIsMissingDuringWatchdogTick() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
+        supervisor.currentStatus = null;
+
+        bridge.runWatchdogTick();
+
+        assertEquals(1, supervisor.startupCheckInvocations);
+        assertTrue(supervisor.lastLocalEmbeddingsActive);
+        assertEquals(0, supervisor.pollOwnedProcessInvocations);
+    }
+
+    @Test
     void shouldAttemptScheduledRetryAfterOwnedCrashDetection() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
         supervisor.currentStatus = status(ManagedLocalOllamaState.OWNED_READY, true);
@@ -169,6 +227,18 @@ class ManagedLocalOllamaLifecycleBridgeTest {
 
         assertEquals(1, supervisor.pollOwnedProcessInvocations);
         assertEquals(1, supervisor.attemptScheduledRetryInvocations);
+        assertEquals(0, supervisor.observeReadinessInvocations);
+    }
+
+    @Test
+    void shouldRecheckStartupForExternalStartTimeoutState() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
+        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, false);
+
+        bridge.runWatchdogTick();
+
+        assertEquals(1, supervisor.startupCheckInvocations);
+        assertEquals(0, supervisor.pollOwnedProcessInvocations);
         assertEquals(0, supervisor.observeReadinessInvocations);
     }
 
@@ -197,6 +267,31 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     }
 
     @Test
+    void shouldMonitorOwnedOutdatedRuntimeAndRetryWhenPollSchedulesBackoff() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
+        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_OUTDATED, true);
+        supervisor.pollOwnedProcessStatus = status(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF, true);
+
+        bridge.runWatchdogTick();
+
+        assertEquals(1, supervisor.pollOwnedProcessInvocations);
+        assertEquals(1, supervisor.attemptScheduledRetryInvocations);
+        assertEquals(0, supervisor.pollExternalRuntimeInvocations);
+    }
+
+    @Test
+    void shouldPollExternalRuntimeForOutdatedExternalRuntime() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
+        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_OUTDATED, false);
+
+        bridge.runWatchdogTick();
+
+        assertEquals(1, supervisor.pollExternalRuntimeInvocations);
+        assertEquals(0, supervisor.pollOwnedProcessInvocations);
+        assertEquals(0, supervisor.attemptScheduledRetryInvocations);
+    }
+
+    @Test
     void shouldMarkSupervisorDisabledWhenManagedLocalEmbeddingsAreInactive() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(false));
         supervisor.currentStatus = status(ManagedLocalOllamaState.OWNED_READY, true);
@@ -204,6 +299,32 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         bridge.runWatchdogTick();
 
         assertEquals(1, supervisor.embeddingsDisabledInvocations);
+        assertEquals(0, supervisor.pollOwnedProcessInvocations);
+        assertEquals(0, supervisor.pollExternalRuntimeInvocations);
+        assertEquals(0, supervisor.attemptScheduledRetryInvocations);
+    }
+
+    @Test
+    void shouldIgnoreStoppingStateDuringWatchdogTick() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
+        supervisor.currentStatus = status(ManagedLocalOllamaState.STOPPING, true);
+
+        bridge.runWatchdogTick();
+
+        assertEquals(0, supervisor.startupCheckInvocations);
+        assertEquals(0, supervisor.pollOwnedProcessInvocations);
+        assertEquals(0, supervisor.pollExternalRuntimeInvocations);
+        assertEquals(0, supervisor.attemptScheduledRetryInvocations);
+    }
+
+    @Test
+    void shouldIgnoreMissingBinaryStateDuringWatchdogTick() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
+        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_MISSING_BINARY, false);
+
+        bridge.runWatchdogTick();
+
+        assertEquals(0, supervisor.startupCheckInvocations);
         assertEquals(0, supervisor.pollOwnedProcessInvocations);
         assertEquals(0, supervisor.pollExternalRuntimeInvocations);
         assertEquals(0, supervisor.attemptScheduledRetryInvocations);

@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PromotionWorkflowServiceTest {
@@ -132,6 +133,39 @@ class PromotionWorkflowServiceTest {
 
         assertEquals(1, registered.size());
         assertEquals("candidate-3", promotionWorkflowService.getCandidates().getFirst().getId());
+    }
+
+    @Test
+    void shouldReturnEmptyCollectionsWhenRegisteringNullCandidates() {
+        assertTrue(promotionWorkflowService.registerCandidates(null).isEmpty());
+        assertTrue(promotionWorkflowService.registerAndPlanCandidates(null).isEmpty());
+        assertTrue(promotionWorkflowService.getCandidates().isEmpty());
+        assertTrue(promotionWorkflowService.getPromotionDecisions().isEmpty());
+    }
+
+    @Test
+    void shouldSkipBlankCandidateIdsWhenRegisteringCandidates() {
+        EvolutionCandidate blankCandidate = EvolutionCandidate.builder()
+                .id("   ")
+                .golemId("golem-1")
+                .goal("fix")
+                .artifactType("prompt")
+                .status("proposed")
+                .build();
+        EvolutionCandidate validCandidate = EvolutionCandidate.builder()
+                .id("candidate-3b")
+                .golemId("golem-1")
+                .goal("fix")
+                .artifactType("prompt")
+                .status("proposed")
+                .build();
+
+        List<EvolutionCandidate> registered = promotionWorkflowService
+                .registerCandidates(List.of(blankCandidate, validCandidate));
+
+        assertEquals(2, registered.size());
+        assertEquals(1, promotionWorkflowService.getCandidates().size());
+        assertEquals("candidate-3b", promotionWorkflowService.getCandidates().getFirst().getId());
     }
 
     @Test
@@ -272,6 +306,15 @@ class PromotionWorkflowServiceTest {
     }
 
     @Test
+    void shouldThrowWhenPlanningBlankCandidate() {
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> promotionWorkflowService.planPromotion(EvolutionCandidate.builder().id(" ").build()));
+
+        assertEquals("Candidate must not be blank", exception.getMessage());
+    }
+
+    @Test
     void shouldSkipApprovalRequestWhenApproveImmediatelyActivatesTactic() {
         EvolutionCandidate candidate = EvolutionCandidate.builder()
                 .id("candidate-8")
@@ -295,5 +338,91 @@ class PromotionWorkflowServiceTest {
         assertEquals(null, approvalDecision.getApprovalRequestId());
         assertEquals(null, shadowDecision.getApprovalRequestId());
         assertEquals("bundle-9", shadowDecision.getBundleId());
+    }
+
+    @Test
+    void shouldHydrateLegacyDecisionTargetsFromLifecycleAndRolloutFallbacks() throws Exception {
+        List<EvolutionCandidate> candidates = List.of(
+                candidate("candidate-active", "bundle-active"),
+                candidate("candidate-reverted", "bundle-reverted"),
+                candidate("candidate-approved", "bundle-approved"),
+                candidate("candidate-canary", "bundle-canary"),
+                candidate("candidate-replayed", "bundle-replayed"),
+                candidate("candidate-default", "bundle-default"));
+        List<PromotionDecision> decisions = List.of(
+                PromotionDecision.builder().id("decision-active").candidateId("candidate-active").toState("active")
+                        .build(),
+                PromotionDecision.builder().id("decision-reverted").candidateId("candidate-reverted")
+                        .toState("reverted")
+                        .build(),
+                PromotionDecision.builder().id("decision-approved").candidateId("candidate-approved")
+                        .toLifecycleState("approved").build(),
+                PromotionDecision.builder().id("decision-canary").candidateId("candidate-canary")
+                        .toRolloutStage("canary")
+                        .build(),
+                PromotionDecision.builder().id("decision-replayed").candidateId("candidate-replayed")
+                        .toRolloutStage("replayed").build(),
+                PromotionDecision.builder().id("decision-default").candidateId("candidate-default").build());
+        persistedFiles.put("candidates.json", objectMapper.writeValueAsString(candidates));
+        persistedFiles.put("promotion-decisions.json", objectMapper.writeValueAsString(decisions));
+
+        List<PromotionDecision> hydratedDecisions = promotionWorkflowService.getPromotionDecisions();
+
+        assertEquals("active", findDecision(hydratedDecisions, "decision-active").getToLifecycleState());
+        assertEquals("active", findDecision(hydratedDecisions, "decision-active").getToRolloutStage());
+        assertEquals("bundle-active", findDecision(hydratedDecisions, "decision-active").getBundleId());
+
+        assertEquals("reverted", findDecision(hydratedDecisions, "decision-reverted").getToLifecycleState());
+        assertEquals("reverted", findDecision(hydratedDecisions, "decision-reverted").getToRolloutStage());
+
+        assertEquals("approved", findDecision(hydratedDecisions, "decision-approved").getToLifecycleState());
+        assertEquals("proposed", findDecision(hydratedDecisions, "decision-approved").getToRolloutStage());
+        assertEquals("candidate-approved:proposed", findDecision(hydratedDecisions, "decision-approved").getBundleId());
+
+        assertEquals("candidate", findDecision(hydratedDecisions, "decision-canary").getToLifecycleState());
+        assertEquals("canary", findDecision(hydratedDecisions, "decision-canary").getToRolloutStage());
+        assertEquals("candidate-canary:canary", findDecision(hydratedDecisions, "decision-canary").getBundleId());
+
+        assertEquals("candidate", findDecision(hydratedDecisions, "decision-replayed").getToLifecycleState());
+        assertEquals("replayed", findDecision(hydratedDecisions, "decision-replayed").getToRolloutStage());
+        assertEquals("candidate-replayed:replayed", findDecision(hydratedDecisions, "decision-replayed").getBundleId());
+
+        assertEquals("candidate", findDecision(hydratedDecisions, "decision-default").getToLifecycleState());
+        assertEquals("proposed", findDecision(hydratedDecisions, "decision-default").getToRolloutStage());
+        assertEquals("candidate-default:proposed", findDecision(hydratedDecisions, "decision-default").getBundleId());
+    }
+
+    @Test
+    void shouldBindCandidateBaseRevisionsWhenArtifactBundleServiceIsPresent() {
+        ArtifactBundleService artifactBundleService = mock(ArtifactBundleService.class);
+        PromotionWorkflowService serviceWithBundleBinding = new PromotionWorkflowService(
+                storagePort,
+                runtimeConfigService,
+                evolutionCandidateService,
+                artifactBundleService,
+                Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
+        List<EvolutionCandidate> candidates = List.of(candidate("candidate-10", "bundle-10"));
+
+        serviceWithBundleBinding.bindCandidateBaseRevisions("bundle-10", candidates);
+
+        verify(artifactBundleService).bindBaseRevisions("bundle-10", candidates);
+    }
+
+    private EvolutionCandidate candidate(String id, String baseVersion) {
+        return EvolutionCandidate.builder()
+                .id(id)
+                .golemId("golem-1")
+                .goal("fix")
+                .artifactType("prompt")
+                .status("proposed")
+                .baseVersion(baseVersion)
+                .build();
+    }
+
+    private PromotionDecision findDecision(List<PromotionDecision> decisions, String decisionId) {
+        return decisions.stream()
+                .filter(decision -> decisionId.equals(decision.getId()))
+                .findFirst()
+                .orElseThrow();
     }
 }
