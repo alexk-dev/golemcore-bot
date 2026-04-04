@@ -100,11 +100,12 @@ class SelfEvolvingControllerTest {
     void shouldRejectMissingRunDetail() {
         when(projectionService.getRun("missing")).thenReturn(Optional.empty());
 
-        ResponseStatusException exception = assertThrows(
-                ResponseStatusException.class,
-                () -> controller.getRun("missing"));
-
-        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        StepVerifier.create(controller.getRun("missing"))
+                .expectErrorSatisfies(error -> {
+                    assertTrue(error instanceof ResponseStatusException);
+                    assertEquals(HttpStatus.NOT_FOUND, ((ResponseStatusException) error).getStatusCode());
+                })
+                .verify();
     }
 
     @Test

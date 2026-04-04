@@ -178,7 +178,8 @@ public class TacticEmbeddingIndexService {
     }
 
     private boolean isProviderConfigured(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config) {
-        return !StringValueSupport.isBlank(config.getProvider())
+        return Boolean.TRUE.equals(config.getEnabled())
+                && !StringValueSupport.isBlank(config.getProvider())
                 && !StringValueSupport.isBlank(config.getBaseUrl())
                 && !StringValueSupport.isBlank(config.getModel());
     }

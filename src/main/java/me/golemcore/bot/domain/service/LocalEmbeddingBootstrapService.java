@@ -143,6 +143,10 @@ public class LocalEmbeddingBootstrapService {
                     runtimeHealthy, runtimeVersion, baseUrl, modelAvailable, localConfig, false, false,
                     recordMetrics);
         }
+        if (!Boolean.TRUE.equals(context.embeddingsConfig().getEnabled())) {
+            return activeStatus(MODE_BM25, "embeddings disabled", provider, model, runtimeInstalled,
+                    runtimeHealthy, runtimeVersion, baseUrl, modelAvailable, localConfig, false, false, recordMetrics);
+        }
         if (provider == null || baseUrl == null || model == null) {
             return failOpenOrThrow("embedding provider configuration incomplete", provider, model, runtimeInstalled,
                     runtimeHealthy, runtimeVersion, baseUrl, modelAvailable, localConfig, false, false, recordMetrics);
@@ -657,11 +661,7 @@ public class LocalEmbeddingBootstrapService {
     }
 
     private String resolveEffectiveModel(String model, String provider) {
-        String normalizedModel = trimToNull(model);
-        if (normalizedModel != null) {
-            return normalizedModel;
-        }
-        return PROVIDER_OLLAMA.equals(provider) ? DEFAULT_OLLAMA_MODEL : null;
+        return trimToNull(model);
     }
 
     private String trimToNull(String value) {

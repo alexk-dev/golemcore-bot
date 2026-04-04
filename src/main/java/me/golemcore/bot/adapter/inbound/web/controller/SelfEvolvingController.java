@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 
@@ -69,19 +70,21 @@ public class SelfEvolvingController {
 
     @GetMapping("/runs")
     public Mono<ResponseEntity<List<SelfEvolvingRunSummaryDto>>> listRuns() {
-        return Mono.just(ResponseEntity.ok(projectionService.listRuns()));
+        return blocking(() -> ResponseEntity.ok(projectionService.listRuns()));
     }
 
     @GetMapping("/runs/{runId}")
     public Mono<ResponseEntity<SelfEvolvingRunDetailDto>> getRun(@PathVariable String runId) {
-        SelfEvolvingRunDetailDto runDetail = projectionService.getRun(runId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Run not found"));
-        return Mono.just(ResponseEntity.ok(runDetail));
+        return blocking(() -> {
+            SelfEvolvingRunDetailDto runDetail = projectionService.getRun(runId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Run not found"));
+            return ResponseEntity.ok(runDetail);
+        });
     }
 
     @GetMapping("/candidates")
     public Mono<ResponseEntity<List<SelfEvolvingCandidateDto>>> listCandidates() {
-        return Mono.just(ResponseEntity.ok(projectionService.listCandidates()));
+        return blocking(() -> ResponseEntity.ok(projectionService.listCandidates()));
     }
 
     @GetMapping("/artifacts")
@@ -94,7 +97,7 @@ public class SelfEvolvingController {
             @RequestParam(required = false) Boolean hasRegression,
             @RequestParam(required = false) Boolean benchmarked,
             @RequestParam(name = "q", required = false) String query) {
-        return Mono.just(ResponseEntity.ok(projectionService.listArtifacts(
+        return blocking(() -> ResponseEntity.ok(projectionService.listArtifacts(
                 artifactType,
                 artifactSubtype,
                 lifecycleState,
@@ -108,18 +111,24 @@ public class SelfEvolvingController {
     @GetMapping("/artifacts/{artifactStreamId}")
     public Mono<ResponseEntity<SelfEvolvingArtifactWorkspaceSummaryDto>> getArtifactWorkspaceSummary(
             @PathVariable String artifactStreamId) {
-        SelfEvolvingArtifactWorkspaceSummaryDto summary = projectionService
-                .getArtifactWorkspaceSummary(artifactStreamId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
-        return Mono.just(ResponseEntity.ok(summary));
+        return blocking(() -> {
+            SelfEvolvingArtifactWorkspaceSummaryDto summary = projectionService
+                    .getArtifactWorkspaceSummary(artifactStreamId)
+                    .orElseThrow(
+                            () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+            return ResponseEntity.ok(summary);
+        });
     }
 
     @GetMapping("/artifacts/{artifactStreamId}/lineage")
     public Mono<ResponseEntity<SelfEvolvingArtifactLineageDto>> getArtifactLineage(
             @PathVariable String artifactStreamId) {
-        SelfEvolvingArtifactLineageDto lineage = projectionService.getArtifactLineage(artifactStreamId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
-        return Mono.just(ResponseEntity.ok(lineage));
+        return blocking(() -> {
+            SelfEvolvingArtifactLineageDto lineage = projectionService.getArtifactLineage(artifactStreamId)
+                    .orElseThrow(
+                            () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+            return ResponseEntity.ok(lineage);
+        });
     }
 
     @GetMapping("/artifacts/{artifactStreamId}/diff")
@@ -129,10 +138,13 @@ public class SelfEvolvingController {
             @RequestParam String toRevisionId) {
         requireQueryParam("fromRevisionId", fromRevisionId);
         requireQueryParam("toRevisionId", toRevisionId);
-        SelfEvolvingArtifactRevisionDiffDto diff = projectionService
-                .getArtifactRevisionDiff(artifactStreamId, fromRevisionId, toRevisionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
-        return Mono.just(ResponseEntity.ok(diff));
+        return blocking(() -> {
+            SelfEvolvingArtifactRevisionDiffDto diff = projectionService
+                    .getArtifactRevisionDiff(artifactStreamId, fromRevisionId, toRevisionId)
+                    .orElseThrow(
+                            () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+            return ResponseEntity.ok(diff);
+        });
     }
 
     @GetMapping("/artifacts/{artifactStreamId}/transition-diff")
@@ -142,10 +154,13 @@ public class SelfEvolvingController {
             @RequestParam String toNodeId) {
         requireQueryParam("fromNodeId", fromNodeId);
         requireQueryParam("toNodeId", toNodeId);
-        SelfEvolvingArtifactTransitionDiffDto diff = projectionService
-                .getArtifactTransitionDiff(artifactStreamId, fromNodeId, toNodeId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
-        return Mono.just(ResponseEntity.ok(diff));
+        return blocking(() -> {
+            SelfEvolvingArtifactTransitionDiffDto diff = projectionService
+                    .getArtifactTransitionDiff(artifactStreamId, fromNodeId, toNodeId)
+                    .orElseThrow(
+                            () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+            return ResponseEntity.ok(diff);
+        });
     }
 
     @GetMapping("/artifacts/{artifactStreamId}/evidence")
@@ -153,10 +168,13 @@ public class SelfEvolvingController {
             @PathVariable String artifactStreamId,
             @RequestParam String revisionId) {
         requireQueryParam("revisionId", revisionId);
-        SelfEvolvingArtifactEvidenceDto evidence = projectionService
-                .getArtifactRevisionEvidence(artifactStreamId, revisionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
-        return Mono.just(ResponseEntity.ok(evidence));
+        return blocking(() -> {
+            SelfEvolvingArtifactEvidenceDto evidence = projectionService
+                    .getArtifactRevisionEvidence(artifactStreamId, revisionId)
+                    .orElseThrow(
+                            () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+            return ResponseEntity.ok(evidence);
+        });
     }
 
     @GetMapping("/artifacts/{artifactStreamId}/compare-evidence")
@@ -166,10 +184,13 @@ public class SelfEvolvingController {
             @RequestParam String toRevisionId) {
         requireQueryParam("fromRevisionId", fromRevisionId);
         requireQueryParam("toRevisionId", toRevisionId);
-        SelfEvolvingArtifactEvidenceDto evidence = projectionService
-                .getArtifactCompareEvidence(artifactStreamId, fromRevisionId, toRevisionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
-        return Mono.just(ResponseEntity.ok(evidence));
+        return blocking(() -> {
+            SelfEvolvingArtifactEvidenceDto evidence = projectionService
+                    .getArtifactCompareEvidence(artifactStreamId, fromRevisionId, toRevisionId)
+                    .orElseThrow(
+                            () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+            return ResponseEntity.ok(evidence);
+        });
     }
 
     @GetMapping("/artifacts/{artifactStreamId}/transition-evidence")
@@ -179,26 +200,34 @@ public class SelfEvolvingController {
             @RequestParam String toNodeId) {
         requireQueryParam("fromNodeId", fromNodeId);
         requireQueryParam("toNodeId", toNodeId);
-        SelfEvolvingArtifactEvidenceDto evidence = projectionService
-                .getArtifactTransitionEvidence(artifactStreamId, fromNodeId, toNodeId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
-        return Mono.just(ResponseEntity.ok(evidence));
+        return blocking(() -> {
+            SelfEvolvingArtifactEvidenceDto evidence = projectionService
+                    .getArtifactTransitionEvidence(artifactStreamId, fromNodeId, toNodeId)
+                    .orElseThrow(
+                            () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+            return ResponseEntity.ok(evidence);
+        });
     }
 
     @GetMapping("/artifacts/{artifactStreamId}/compare-options")
     public Mono<ResponseEntity<SelfEvolvingArtifactCompareOptionsDto>> getArtifactCompareOptions(
             @PathVariable String artifactStreamId) {
-        SelfEvolvingArtifactCompareOptionsDto compareOptions = projectionService
-                .getArtifactCompareOptions(artifactStreamId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
-        return Mono.just(ResponseEntity.ok(compareOptions));
+        return blocking(() -> {
+            SelfEvolvingArtifactCompareOptionsDto compareOptions = projectionService
+                    .getArtifactCompareOptions(artifactStreamId)
+                    .orElseThrow(
+                            () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact stream not found"));
+            return ResponseEntity.ok(compareOptions);
+        });
     }
 
     @GetMapping("/tactics")
     public Mono<ResponseEntity<List<SelfEvolvingTacticDto>>> listTactics() {
-        List<SelfEvolvingTacticDto> tactics = projectionService.listTactics();
-        publishHiveTacticCatalog(tactics);
-        return Mono.just(ResponseEntity.ok(tactics));
+        return blocking(() -> {
+            List<SelfEvolvingTacticDto> tactics = projectionService.listTactics();
+            publishHiveTacticCatalog(tactics);
+            return ResponseEntity.ok(tactics);
+        });
     }
 
     @GetMapping("/tactics/status")
@@ -206,74 +235,95 @@ public class SelfEvolvingController {
             @RequestParam(required = false) String provider,
             @RequestParam(required = false) String model,
             @RequestParam(required = false) String baseUrl) {
-        if (localEmbeddingBootstrapService == null) {
-            return Mono.just(ResponseEntity.ok(projectionService.getTacticSearchStatus()));
-        }
-        return Mono.just(ResponseEntity.ok(
-                toTacticSearchStatusDto(localEmbeddingBootstrapService.probeStatus(provider, model, baseUrl))));
+        return blocking(() -> {
+            if (localEmbeddingBootstrapService == null) {
+                return ResponseEntity.ok(projectionService.getTacticSearchStatus());
+            }
+            return ResponseEntity.ok(
+                    toTacticSearchStatusDto(localEmbeddingBootstrapService.probeStatus(provider, model, baseUrl)));
+        });
     }
 
     @PostMapping("/tactics/install")
     public Mono<ResponseEntity<SelfEvolvingTacticSearchStatusDto>> installTacticEmbeddingModel(
             @RequestBody(required = false) TacticEmbeddingInstallRequest request) {
-        String requestedModel = request != null ? request.model() : null;
-        TacticSearchStatus status = localEmbeddingBootstrapService.installModel(requestedModel);
-        return Mono.just(ResponseEntity.ok(toTacticSearchStatusDto(status)));
+        return blocking(() -> {
+            String requestedModel = request != null ? request.model() : null;
+            TacticSearchStatus status = localEmbeddingBootstrapService.installModel(requestedModel);
+            return ResponseEntity.ok(toTacticSearchStatusDto(status));
+        });
     }
 
     @GetMapping("/tactics/search")
     public Mono<ResponseEntity<SelfEvolvingTacticSearchResponseDto>> searchTactics(
             @RequestParam(name = "q", required = false) String query) {
-        SelfEvolvingTacticSearchResponseDto response = projectionService.searchTactics(query);
-        publishHiveTacticSearch(response);
-        return Mono.just(ResponseEntity.ok(response));
+        return blocking(() -> {
+            SelfEvolvingTacticSearchResponseDto response = projectionService.searchTactics(query);
+            publishHiveTacticSearch(response);
+            return ResponseEntity.ok(response);
+        });
     }
 
     @GetMapping("/tactics/{tacticId}")
     public Mono<ResponseEntity<SelfEvolvingTacticDto>> getTactic(@PathVariable String tacticId) {
-        SelfEvolvingTacticDto tactic = projectionService.getTactic(tacticId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
-        return Mono.just(ResponseEntity.ok(tactic));
+        return blocking(() -> {
+            SelfEvolvingTacticDto tactic = projectionService.getTactic(tacticId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
+            return ResponseEntity.ok(tactic);
+        });
     }
 
     @GetMapping("/tactics/{tacticId}/explanation")
     public Mono<ResponseEntity<SelfEvolvingTacticSearchExplanationDto>> getTacticExplanation(
             @PathVariable String tacticId,
             @RequestParam(name = "q", required = false) String query) {
-        SelfEvolvingTacticSearchExplanationDto explanation = projectionService.getTacticExplanation(tacticId, query)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
-        return Mono.just(ResponseEntity.ok(explanation));
+        return blocking(() -> {
+            SelfEvolvingTacticSearchExplanationDto explanation = projectionService
+                    .getTacticExplanation(tacticId, query)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
+            return ResponseEntity.ok(explanation);
+        });
     }
 
     @GetMapping("/tactics/{tacticId}/lineage")
     public Mono<ResponseEntity<SelfEvolvingArtifactLineageDto>> getTacticLineage(@PathVariable String tacticId) {
-        SelfEvolvingArtifactLineageDto lineage = projectionService.getTacticLineage(tacticId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
-        return Mono.just(ResponseEntity.ok(lineage));
+        return blocking(() -> {
+            SelfEvolvingArtifactLineageDto lineage = projectionService.getTacticLineage(tacticId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
+            return ResponseEntity.ok(lineage);
+        });
     }
 
     @GetMapping("/tactics/{tacticId}/evidence")
     public Mono<ResponseEntity<SelfEvolvingArtifactEvidenceDto>> getTacticEvidence(@PathVariable String tacticId) {
-        SelfEvolvingArtifactEvidenceDto evidence = projectionService.getTacticEvidence(tacticId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
-        return Mono.just(ResponseEntity.ok(evidence));
+        return blocking(() -> {
+            SelfEvolvingArtifactEvidenceDto evidence = projectionService.getTacticEvidence(tacticId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tactic not found"));
+            return ResponseEntity.ok(evidence);
+        });
     }
 
     @PostMapping("/candidates/{candidateId}/promotion")
     public Mono<ResponseEntity<PromotionDecision>> planPromotion(@PathVariable String candidateId) {
-        return Mono.just(ResponseEntity.ok(promotionWorkflowService.planPromotion(candidateId)));
+        return blocking(() -> ResponseEntity.ok(promotionWorkflowService.planPromotion(candidateId)));
     }
 
     @GetMapping("/benchmarks/campaigns")
     public Mono<ResponseEntity<List<SelfEvolvingCampaignDto>>> listCampaigns() {
-        return Mono.just(ResponseEntity.ok(projectionService.listCampaigns()));
+        return blocking(() -> ResponseEntity.ok(projectionService.listCampaigns()));
     }
 
     @PostMapping("/benchmarks/regression/{runId}")
     public Mono<ResponseEntity<SelfEvolvingCampaignDto>> createRegressionCampaign(@PathVariable String runId) {
-        BenchmarkCampaign campaign = benchmarkLabService.createRegressionCampaign(runId);
-        publishHiveCampaignProjection(campaign);
-        return Mono.just(ResponseEntity.ok(toCampaignDto(campaign)));
+        return blocking(() -> {
+            BenchmarkCampaign campaign = benchmarkLabService.createRegressionCampaign(runId);
+            publishHiveCampaignProjection(campaign);
+            return ResponseEntity.ok(toCampaignDto(campaign));
+        });
+    }
+
+    private <T> Mono<T> blocking(java.util.concurrent.Callable<T> callable) {
+        return Mono.fromCallable(callable).subscribeOn(Schedulers.boundedElastic());
     }
 
     private SelfEvolvingCampaignDto toCampaignDto(BenchmarkCampaign campaign) {
