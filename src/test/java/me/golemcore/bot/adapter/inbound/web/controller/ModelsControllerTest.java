@@ -136,10 +136,17 @@ class ModelsControllerTest {
 
     @Test
     void shouldDiscoverProviderModels() {
+        ModelConfigService.ModelSettings defaultSettings = new ModelConfigService.ModelSettings();
+        defaultSettings.setProvider("xmesh");
+        defaultSettings.setDisplayName("GPT-5.2");
+        defaultSettings.setSupportsVision(true);
+        defaultSettings.setSupportsTemperature(false);
+        defaultSettings.setMaxInputTokens(200000);
         List<ProviderModelDiscoveryService.DiscoveredModel> discovered = List.of(
-                new ProviderModelDiscoveryService.DiscoveredModel("xmesh", "gpt-5.2", "GPT-5.2", "openai"),
+                new ProviderModelDiscoveryService.DiscoveredModel("xmesh", "gpt-5.2", "GPT-5.2", "openai",
+                        defaultSettings),
                 new ProviderModelDiscoveryService.DiscoveredModel("xmesh", "gemini-2.5-pro", "Gemini 2.5 Pro",
-                        "google"));
+                        "google", null));
         when(providerModelDiscoveryService.discoverModels("xmesh")).thenReturn(discovered);
 
         @SuppressWarnings("unchecked")
@@ -150,6 +157,10 @@ class ModelsControllerTest {
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertNotNull(result.getBody());
         assertEquals(2, result.getBody().size());
+        Map<?, ?> firstModel = objectMapper.convertValue(result.getBody().getFirst(), Map.class);
+        Map<?, ?> firstDefaults = objectMapper.convertValue(firstModel.get("defaultSettings"), Map.class);
+        assertEquals("xmesh", firstDefaults.get("provider"));
+        assertEquals(false, firstDefaults.get("supportsTemperature"));
     }
 
     @Test

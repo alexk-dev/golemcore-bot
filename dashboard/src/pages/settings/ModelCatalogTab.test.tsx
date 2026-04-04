@@ -67,4 +67,19 @@ describe('ModelCatalogTab', () => {
     expect(html).toContain('Not configured');
     expect(html).toContain('Select a discovered model to resolve registry defaults on demand.');
   });
+
+  it('shows openrouter as an api-ready provider profile', () => {
+    const html = renderToStaticMarkup(
+      <ModelCatalogTab
+        llmConfig={llmConfig}
+        modelRegistryConfig={configuredModelRegistry}
+        isSavingModelRegistry={false}
+        onSaveModelRegistry={vi.fn(async () => {})}
+      />,
+    );
+
+    expect(html).toContain('openrouter');
+    expect(html).toContain('Provider-first discovery');
+    expect(html).toContain('API-ready');
+  });
 });

@@ -1,110 +1,26 @@
 import { type ReactElement, useMemo, useState } from 'react';
 import { Badge, Button, Card, Col, Form, InputGroup, Row, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
-import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import ConfirmModal from '../../components/common/ConfirmModal';
+import { ProviderNameCombobox } from '../../components/common/ProviderNameCombobox';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
-import { useAddLlmProvider, useUpdateLlmProvider, useRemoveLlmProvider } from '../../hooks/useSettings';
-import type { ApiType, LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
+import type { LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
+import { useAddLlmProvider, useRemoveLlmProvider, useUpdateLlmProvider } from '../../hooks/useSettings';
 import { listConfiguredModelSpecs } from '../../lib/modelRouter';
-
-const KNOWN_BASE_URLS: Record<string, string> = {
-  openai: 'https://api.openai.com/v1',
-  openrouter: 'https://openrouter.ai/api/v1',
-  anthropic: 'https://api.anthropic.com',
-  google: 'https://generativelanguage.googleapis.com/v1beta/openai',
-  kimi: 'https://api.moonshot.ai/v1',
-  groq: 'https://api.groq.com/openai/v1',
-  together: 'https://api.together.xyz/v1',
-  fireworks: 'https://api.fireworks.ai/inference/v1',
-  deepseek: 'https://api.deepseek.com/v1',
-  mistral: 'https://api.mistral.ai/v1',
-  xai: 'https://api.x.ai/v1',
-  perplexity: 'https://api.perplexity.ai',
-  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
-  qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-  cerebras: 'https://api.cerebras.ai/v1',
-  deepinfra: 'https://api.deepinfra.com/v1/openai',
-};
-
-const KNOWN_PROVIDERS: string[] = Object.keys(KNOWN_BASE_URLS);
-const PROVIDER_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
-
-const KNOWN_API_TYPES: Record<string, ApiType> = {
-  anthropic: 'anthropic',
-  google: 'gemini',
-};
-
-const API_TYPE_OPTIONS: ApiType[] = ['openai', 'anthropic', 'gemini'];
-const API_TYPE_DETAILS: Record<ApiType, { label: string; help: string; badgeBg: string; badgeText: string }> = {
-  openai: {
-    label: 'OpenAI',
-    help: 'OpenAI-compatible protocol for OpenAI, OpenRouter, Groq, DeepSeek, and similar endpoints.',
-    badgeBg: 'info-subtle',
-    badgeText: 'info',
-  },
-  anthropic: {
-    label: 'Anthropic',
-    help: 'Native Anthropic Claude protocol. Use for direct Anthropic providers.',
-    badgeBg: 'warning-subtle',
-    badgeText: 'warning',
-  },
-  gemini: {
-    label: 'Gemini',
-    help: 'Native Google Gemini protocol. Use this for direct Gemini providers.',
-    badgeBg: 'success-subtle',
-    badgeText: 'success',
-  },
-};
-
-function toNullableString(value: string): string | null {
-  return value.length > 0 ? value : null;
-}
-
-function toNullableInt(value: string): number | null {
-  const parsed = parseInt(value, 10);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function normalizeApiType(value: unknown): ApiType {
-  if (typeof value !== 'string') {
-    return 'openai';
-  }
-  const normalized = value.trim().toLowerCase();
-  if (API_TYPE_OPTIONS.includes(normalized as ApiType)) {
-    return normalized as ApiType;
-  }
-  return 'openai';
-}
-
-function getDefaultApiTypeForProvider(name: string): ApiType {
-  return KNOWN_API_TYPES[name] ?? 'openai';
-}
-
-function getSuggestedBaseUrl(name: string, apiType: ApiType): string | null {
-  if (apiType === 'gemini') {
-    return null;
-  }
-
-  const providerBaseUrl = KNOWN_BASE_URLS[name];
-  if (providerBaseUrl != null && getDefaultApiTypeForProvider(name) === apiType) {
-    return providerBaseUrl;
-  }
-
-  return apiType === 'anthropic' ? KNOWN_BASE_URLS.anthropic : KNOWN_BASE_URLS.openai;
-}
-
-function buildDefaultProviderConfig(name: string): LlmProviderConfig {
-  const defaultApiType = getDefaultApiTypeForProvider(name);
-  return {
-    apiKey: null,
-    apiKeyPresent: false,
-    baseUrl: getSuggestedBaseUrl(name, defaultApiType),
-    requestTimeoutSeconds: 300,
-    apiType: defaultApiType,
-    legacyApi: null,
-  };
-}
+import { extractErrorMessage } from '../../utils/extractErrorMessage';
+import {
+  API_TYPE_DETAILS,
+  API_TYPE_OPTIONS,
+  buildDefaultProviderConfig,
+  getDefaultApiTypeForProvider,
+  getSuggestedBaseUrl,
+  KNOWN_BASE_URLS,
+  KNOWN_PROVIDERS,
+  normalizeApiType,
+  PROVIDER_NAME_PATTERN,
+  toNullableInt,
+  toNullableString,
+} from './llmProvidersSupport';
 
 interface ProviderEditorProps {
   name: string;
@@ -112,7 +28,7 @@ interface ProviderEditorProps {
   isNew: boolean;
   showKey: boolean;
   isSaving: boolean;
-  recommendedApiType: ApiType | null;
+  recommendedApiType: ReturnType<typeof getDefaultApiTypeForProvider> | null;
   onFormChange: (form: LlmProviderConfig) => void;
   onToggleShowKey: () => void;
   onSave: () => void;
@@ -120,8 +36,16 @@ interface ProviderEditorProps {
 }
 
 function ProviderEditor({
-  name, form, isNew, showKey, isSaving, recommendedApiType,
-  onFormChange, onToggleShowKey, onSave, onCancel,
+  name,
+  form,
+  isNew,
+  showKey,
+  isSaving,
+  recommendedApiType,
+  onFormChange,
+  onToggleShowKey,
+  onSave,
+  onCancel,
 }: ProviderEditorProps): ReactElement {
   const apiType = normalizeApiType(form.apiType);
   const hasBaseUrl = (form.baseUrl ?? '').trim().length > 0;
@@ -156,7 +80,7 @@ function ProviderEditor({
                   placeholder={form.apiKeyPresent === true ? 'Secret is configured (hidden)' : 'Enter API key'}
                   type={showKey ? 'text' : 'password'}
                   value={form.apiKey ?? ''}
-                  onChange={(e) => onFormChange({ ...form, apiKey: toNullableString(e.target.value) })}
+                  onChange={(event) => onFormChange({ ...form, apiKey: toNullableString(event.target.value) })}
                 />
                 <Button type="button" variant="secondary" aria-pressed={showKey} onClick={onToggleShowKey}>
                   {showKey ? 'Hide' : 'Show'}
@@ -171,7 +95,7 @@ function ProviderEditor({
                 <Form.Control
                   type="url"
                   value={form.baseUrl ?? ''}
-                  onChange={(e) => onFormChange({ ...form, baseUrl: toNullableString(e.target.value) })}
+                  onChange={(event) => onFormChange({ ...form, baseUrl: toNullableString(event.target.value) })}
                   placeholder="https://api.example.com/v1"
                 />
                 {shouldShowUseDefaultBaseUrl && (
@@ -208,7 +132,7 @@ function ProviderEditor({
               <Form.Select
                 size="sm"
                 value={apiType}
-                onChange={(e) => onFormChange({ ...form, apiType: normalizeApiType(e.target.value) })}
+                onChange={(event) => onFormChange({ ...form, apiType: normalizeApiType(event.target.value) })}
               >
                 {API_TYPE_OPTIONS.map((type) => (
                   <option key={type} value={type}>{type}</option>
@@ -235,7 +159,7 @@ function ProviderEditor({
                 <Form.Select
                   size="sm"
                   value={form.legacyApi === true ? 'legacy' : 'responses'}
-                  onChange={(e) => onFormChange({ ...form, legacyApi: e.target.value === 'legacy' || null })}
+                  onChange={(event) => onFormChange({ ...form, legacyApi: event.target.value === 'legacy' || null })}
                   title={form.legacyApi === true
                     ? 'Legacy: /v1/chat/completions — for proxies that do not support the Responses API'
                     : 'Default: /v1/responses — supports reasoning + tools on reasoning models'}
@@ -260,9 +184,9 @@ function ProviderEditor({
                 min={1}
                 max={3600}
                 value={form.requestTimeoutSeconds ?? 300}
-                onChange={(e) => onFormChange({
+                onChange={(event) => onFormChange({
                   ...form,
-                  requestTimeoutSeconds: toNullableInt(e.target.value) ?? 300,
+                  requestTimeoutSeconds: toNullableInt(event.target.value) ?? 300,
                 })}
               />
             </Form.Group>
@@ -281,7 +205,7 @@ function ProviderEditor({
   );
 }
 
-interface LlmProvidersTabProps {
+export interface LlmProvidersTabProps {
   config: LlmConfig;
   modelRouter: ModelRouterConfig;
 }
@@ -381,8 +305,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
         toast.success(`Provider "${editingName}" updated`);
       }
       handleCancelEdit();
-    } catch (err) {
-      toast.error(`Failed to save: ${extractErrorMessage(err)}`);
+    } catch (error) {
+      toast.error(`Failed to save: ${extractErrorMessage(error)}`);
     }
   };
 
@@ -396,8 +320,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
       if (editingName === deleteProvider) {
         handleCancelEdit();
       }
-    } catch (err) {
-      toast.error(`Failed to remove: ${extractErrorMessage(err)}`);
+    } catch (error) {
+      toast.error(`Failed to remove: ${extractErrorMessage(error)}`);
     } finally {
       setDeleteProvider(null);
     }
@@ -412,24 +336,17 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
         </div>
 
         <InputGroup className="mb-3" size="sm">
-          <Form.Control
-            placeholder="Provider name (e.g. openai)"
-            list="known-llm-providers"
-            value={newProviderName}
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            aria-invalid={isProviderNameInvalid || providerAlreadyExists}
-            onChange={(e) => setNewProviderName(e.target.value.toLowerCase())}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                if (canStartAdd) {
-                  handleStartAdd();
-                }
-              }
-            }}
-          />
+          <div className="flex-grow-1">
+            <ProviderNameCombobox
+              value={newProviderName}
+              suggestions={knownSuggestions}
+              placeholder="Provider name (e.g. openai)"
+              disabled={editingName != null || isSaving}
+              hasError={isProviderNameInvalid || providerAlreadyExists}
+              onValueChange={(value) => setNewProviderName(value.toLowerCase())}
+              onSubmit={handleStartAdd}
+            />
+          </div>
           <Button type="button" variant="primary" onClick={handleStartAdd} disabled={!canStartAdd}>Add Provider</Button>
         </InputGroup>
         <div className={`small mb-3 ${isProviderNameInvalid || providerAlreadyExists ? 'text-danger' : 'text-body-secondary'}`}>
@@ -437,13 +354,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
             ? 'Name format: [a-z0-9][a-z0-9_-]*'
             : providerAlreadyExists
               ? 'Provider already exists.'
-              : 'Use lowercase provider IDs, for example: openai, anthropic, deepseek. API type is set in the editor.'}
+              : 'Use lowercase provider IDs, for example: openai, anthropic, deepseek. You can also enter a custom provider ID not present in the suggestion list.'}
         </div>
-        <datalist id="known-llm-providers">
-          {knownSuggestions.map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
 
         {providerNames.length > 0 ? (
           <Table size="sm" hover responsive className="mb-3 dashboard-table responsive-table providers-table">
