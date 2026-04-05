@@ -211,10 +211,57 @@ class TacticEmbeddingIndexServiceTest {
         List<TacticSearchResult> results = reloaded.search(query());
 
         assertEquals(List.of("planner", "rollback"), results.stream().map(TacticSearchResult::getTacticId).toList());
+        assertEquals(2,
+                indexStore.loadEntries("openai_compatible", "text-embedding-3-large").get("planner").dimensions());
+        verify(embeddingPort, times(2)).embed(any());
+    }
+
+    @Test
+    void shouldRebuildPersistedIndexWhenStoredDimensionsDoNotMatchConfig() {
+        when(runtimeConfigService.getSelfEvolvingConfig())
+                .thenReturn(hybridConfigWithDimensions("openai_compatible", 3));
+        when(tacticRecordService.getAll()).thenReturn(List.of(
+                tactic("planner", "active", "Recover with an ordered shell plan"),
+                tactic("rollback", "approved", "Rollback the last broken shell step")));
+        when(embeddingClientResolver.resolve("openai_compatible")).thenReturn(embeddingPort);
+
+        indexStore.replaceAll(
+                "openai_compatible",
+                "text-embedding-3-large",
+                2,
+                List.of(
+                        new TacticEmbeddingSqliteIndexStore.Entry(
+                                "planner",
+                                "rev-planner",
+                                List.of(1.0d, 0.0d),
+                                Instant.parse("2026-04-04T19:10:00Z")),
+                        new TacticEmbeddingSqliteIndexStore.Entry(
+                                "rollback",
+                                "rev-rollback",
+                                List.of(0.2d, 0.98d),
+                                Instant.parse("2026-04-04T19:11:00Z"))));
+
+        when(embeddingPort.embed(any()))
+                .thenReturn(new EmbeddingPort.EmbeddingResponse(
+                        "text-embedding-3-large",
+                        List.of(List.of(1.0d, 0.0d, 0.0d), List.of(0.2d, 0.98d, 0.0d))))
+                .thenReturn(new EmbeddingPort.EmbeddingResponse(
+                        "text-embedding-3-large",
+                        List.of(List.of(1.0d, 0.0d, 0.0d))));
+
+        List<TacticSearchResult> results = service.search(query());
+
+        assertEquals(List.of("planner", "rollback"), results.stream().map(TacticSearchResult::getTacticId).toList());
+        assertEquals(3,
+                indexStore.loadEntries("openai_compatible", "text-embedding-3-large").get("planner").dimensions());
         verify(embeddingPort, times(2)).embed(any());
     }
 
     private RuntimeConfig.SelfEvolvingConfig hybridConfig(String provider) {
+        return hybridConfigWithDimensions(provider, 2);
+    }
+
+    private RuntimeConfig.SelfEvolvingConfig hybridConfigWithDimensions(String provider, Integer dimensions) {
         return RuntimeConfig.SelfEvolvingConfig.builder()
                 .enabled(true)
                 .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
@@ -227,7 +274,7 @@ class TacticEmbeddingIndexServiceTest {
                                         .baseUrl("https://embeddings.example")
                                         .apiKey("test-key")
                                         .model("text-embedding-3-large")
-                                        .dimensions(2)
+                                        .dimensions(dimensions)
                                         .timeoutMs(5000)
                                         .build())
                                 .build())

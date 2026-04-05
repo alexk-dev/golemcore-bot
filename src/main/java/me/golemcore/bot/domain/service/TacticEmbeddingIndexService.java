@@ -230,7 +230,8 @@ public class TacticEmbeddingIndexService {
         for (TacticIndexDocument document : documents) {
             TacticEmbeddingSqliteIndexStore.Entry persistedEntry = persistedEntries.get(document.getTacticId());
             if (persistedEntry == null
-                    || !Objects.equals(persistedEntry.contentRevisionId(), document.getContentRevisionId())) {
+                    || !Objects.equals(persistedEntry.contentRevisionId(), document.getContentRevisionId())
+                    || !Objects.equals(persistedEntry.dimensions(), config.getDimensions())) {
                 return false;
             }
             document.setEmbeddingStatus(EMBEDDING_STATUS_INDEXED);

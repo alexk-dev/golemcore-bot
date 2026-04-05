@@ -86,7 +86,7 @@ public class TacticEmbeddingSqliteIndexStore {
         ensureInitialized();
         Map<String, Entry> entries = new LinkedHashMap<>();
         String sql = """
-                SELECT tactic_id, content_revision_id, vector_json, updated_at
+                SELECT tactic_id, content_revision_id, dimensions, vector_json, updated_at
                 FROM tactic_embedding_index
                 WHERE provider = ? AND model = ?
                 ORDER BY tactic_id
@@ -97,9 +97,12 @@ public class TacticEmbeddingSqliteIndexStore {
             statement.setString(2, model);
             try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
+                    int rawDimensions = resultSet.getInt("dimensions");
+                    Integer dimensions = resultSet.wasNull() ? null : rawDimensions;
                     entries.put(resultSet.getString("tactic_id"), new Entry(
                             resultSet.getString("tactic_id"),
                             resultSet.getString("content_revision_id"),
+                            dimensions,
                             deserializeVector(resultSet.getString("vector_json")),
                             parseInstant(resultSet.getString("updated_at"))));
                 }
@@ -251,7 +254,16 @@ public class TacticEmbeddingSqliteIndexStore {
     public record Entry(
             String tacticId,
             String contentRevisionId,
+            Integer dimensions,
             List<Double> vector,
             Instant updatedAt) {
+
+        public Entry(
+                String tacticId,
+                String contentRevisionId,
+                List<Double> vector,
+                Instant updatedAt) {
+            this(tacticId, contentRevisionId, null, vector, updatedAt);
+        }
     }
 }

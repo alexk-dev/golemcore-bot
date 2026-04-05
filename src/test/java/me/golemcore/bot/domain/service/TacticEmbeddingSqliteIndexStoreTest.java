@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TacticEmbeddingSqliteIndexStoreTest {
@@ -69,6 +70,7 @@ class TacticEmbeddingSqliteIndexStoreTest {
 
         assertEquals(List.of("planner", "rollback"), entries.keySet().stream().sorted().toList());
         assertEquals("rev-1", entries.get("planner").contentRevisionId());
+        assertEquals(1024, entries.get("planner").dimensions());
         assertEquals(List.of(1.0d, 0.0d), entries.get("planner").vector());
         assertEquals(List.of(0.2d, 0.98d), entries.get("rollback").vector());
     }
@@ -113,6 +115,7 @@ class TacticEmbeddingSqliteIndexStoreTest {
 
         TacticEmbeddingSqliteIndexStore.Entry entry = store.loadEntries("ollama", "bge-m3").get("planner");
 
+        assertNull(entry.dimensions());
         assertEquals(List.of(), entry.vector());
         assertEquals(Instant.EPOCH, entry.updatedAt());
     }
@@ -149,6 +152,7 @@ class TacticEmbeddingSqliteIndexStoreTest {
 
         TacticEmbeddingSqliteIndexStore.Entry entry = store.loadEntries("ollama", "bge-m3").get("planner");
 
+        assertEquals(1024, entry.dimensions());
         assertEquals(Instant.EPOCH, entry.updatedAt());
         assertEquals(List.of(0.1d, 0.2d), entry.vector());
     }
