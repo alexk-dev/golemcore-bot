@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
@@ -40,11 +39,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -54,14 +49,8 @@ import java.util.Set;
 public class ArtifactWorkspaceProjectionService {
 
     private static final int PROJECTION_SCHEMA_VERSION = 1;
-    private static final Comparator<ArtifactBundleRecord> BUNDLE_RECENCY_COMPARATOR = Comparator
-            .comparing(ArtifactBundleRecord::getActivatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
-            .thenComparing(ArtifactBundleRecord::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
-            .thenComparing(ArtifactBundleRecord::getId, Comparator.nullsLast(Comparator.naturalOrder()));
-
-    private final EvolutionCandidateService evolutionCandidateService;
+    private final ArtifactProjectionLookupService artifactProjectionLookupService;
     private final PromotionWorkflowService promotionWorkflowService;
-    private final ArtifactBundleService artifactBundleService;
     private final BenchmarkLabService benchmarkLabService;
     private final ArtifactLineageProjectionService artifactLineageProjectionService;
     private final ArtifactEvidenceProjectionService artifactEvidenceProjectionService;
@@ -71,9 +60,8 @@ public class ArtifactWorkspaceProjectionService {
     private final Clock clock;
 
     public ArtifactWorkspaceProjectionService(
-            EvolutionCandidateService evolutionCandidateService,
+            ArtifactProjectionLookupService artifactProjectionLookupService,
             PromotionWorkflowService promotionWorkflowService,
-            ArtifactBundleService artifactBundleService,
             BenchmarkLabService benchmarkLabService,
             ArtifactLineageProjectionService artifactLineageProjectionService,
             ArtifactEvidenceProjectionService artifactEvidenceProjectionService,
@@ -81,9 +69,8 @@ public class ArtifactWorkspaceProjectionService {
             ArtifactDiffService artifactDiffService,
             ArtifactImpactService artifactImpactService,
             Clock clock) {
-        this.evolutionCandidateService = evolutionCandidateService;
+        this.artifactProjectionLookupService = artifactProjectionLookupService;
         this.promotionWorkflowService = promotionWorkflowService;
-        this.artifactBundleService = artifactBundleService;
         this.benchmarkLabService = benchmarkLabService;
         this.artifactLineageProjectionService = artifactLineageProjectionService;
         this.artifactEvidenceProjectionService = artifactEvidenceProjectionService;
@@ -94,13 +81,15 @@ public class ArtifactWorkspaceProjectionService {
     }
 
     public List<ArtifactCatalogEntry> listCatalog() {
-        Map<String, List<ArtifactRevisionRecord>> revisionsByStream = revisionsByStream();
+        java.util.Map<String, List<ArtifactRevisionRecord>> revisionsByStream = artifactProjectionLookupService
+                .revisionsByStream();
         List<ArtifactCatalogEntry> entries = new ArrayList<>();
-        for (Map.Entry<String, List<ArtifactRevisionRecord>> entry : revisionsByStream.entrySet()) {
-            List<ArtifactRevisionRecord> revisions = sortRevisions(entry.getValue());
+        for (java.util.Map.Entry<String, List<ArtifactRevisionRecord>> entry : revisionsByStream.entrySet()) {
+            List<ArtifactRevisionRecord> revisions = artifactProjectionLookupService.sortRevisions(entry.getValue());
             ArtifactRevisionRecord latestRevision = revisions.getLast();
-            EvolutionCandidate latestCandidate = findLatestCandidate(entry.getKey()).orElse(null);
-            String activeRevisionId = resolveActiveRevisionId(entry.getKey())
+            EvolutionCandidate latestCandidate = artifactProjectionLookupService.findLatestCandidate(entry.getKey())
+                    .orElse(null);
+            String activeRevisionId = artifactProjectionLookupService.resolveActiveRevisionId(entry.getKey())
                     .orElse(revisions.getFirst().getContentRevisionId());
             entries.add(ArtifactCatalogEntry.builder()
                     .artifactStreamId(entry.getKey())
@@ -120,7 +109,7 @@ public class ArtifactWorkspaceProjectionService {
                     .hasRegression(Boolean.FALSE)
                     .hasPendingApproval(
                             latestCandidate != null && "approved_pending".equals(latestCandidate.getStatus()))
-                    .campaignCount(resolveCampaignCount(entry.getKey()))
+                    .campaignCount(artifactProjectionLookupService.resolveCampaignCount(entry.getKey()))
                     .projectionSchemaVersion(PROJECTION_SCHEMA_VERSION)
                     .updatedAt(latestRevision.getCreatedAt())
                     .projectedAt(Instant.now(clock))
@@ -131,7 +120,7 @@ public class ArtifactWorkspaceProjectionService {
     }
 
     public ArtifactLineageProjection getLineage(String artifactStreamId) {
-        EvolutionCandidate candidate = findLatestCandidate(artifactStreamId)
+        EvolutionCandidate candidate = artifactProjectionLookupService.findLatestCandidate(artifactStreamId)
                 .orElseThrow(() -> new IllegalArgumentException("Artifact stream not found: " + artifactStreamId));
         List<PromotionDecision> decisions = promotionWorkflowService.getPromotionDecisions().stream()
                 .filter(decision -> decision != null && artifactStreamId.equals(decision.getArtifactStreamId()))
@@ -144,7 +133,8 @@ public class ArtifactWorkspaceProjectionService {
     }
 
     public List<ArtifactRevisionProjection> listRevisions(String artifactStreamId) {
-        return sortRevisions(revisionsByStream().getOrDefault(artifactStreamId, List.of())).stream()
+        return artifactProjectionLookupService.sortRevisions(
+                artifactProjectionLookupService.revisionsByStream().getOrDefault(artifactStreamId, List.of())).stream()
                 .map(revision -> ArtifactRevisionProjection.builder()
                         .artifactStreamId(revision.getArtifactStreamId())
                         .originArtifactStreamId(revision.getOriginArtifactStreamId())
@@ -154,7 +144,8 @@ public class ArtifactWorkspaceProjectionService {
                         .contentRevisionId(revision.getContentRevisionId())
                         .baseContentRevisionId(revision.getBaseContentRevisionId())
                         .rawContent(revision.getRawContent())
-                        .sourceRunIds(resolveRunIdsForRevision(artifactStreamId, revision))
+                        .sourceRunIds(artifactProjectionLookupService.resolveRunIdsForRevision(artifactStreamId,
+                                revision))
                         .createdAt(revision.getCreatedAt())
                         .build())
                 .toList();
@@ -162,16 +153,18 @@ public class ArtifactWorkspaceProjectionService {
 
     public ArtifactRevisionDiffProjection getRevisionDiff(String artifactStreamId, String fromRevisionId,
             String toRevisionId) {
-        ArtifactRevisionRecord fromRevision = findRevision(artifactStreamId, fromRevisionId)
+        ArtifactRevisionRecord fromRevision = artifactProjectionLookupService.findRevision(artifactStreamId,
+                fromRevisionId)
                 .orElseThrow(() -> new IllegalArgumentException("Revision not found: " + fromRevisionId));
-        ArtifactRevisionRecord toRevision = findRevision(artifactStreamId, toRevisionId)
+        ArtifactRevisionRecord toRevision = artifactProjectionLookupService.findRevision(artifactStreamId,
+                toRevisionId)
                 .orElseThrow(() -> new IllegalArgumentException("Revision not found: " + toRevisionId));
         ArtifactImpactProjection impactProjection = artifactImpactService.summarizeImpact(
                 artifactStreamId,
                 fromRevisionId,
                 toRevisionId,
-                findBundleByRevision(artifactStreamId, fromRevisionId).orElse(null),
-                findBundleByRevision(artifactStreamId, toRevisionId).orElse(null),
+                artifactProjectionLookupService.findBundleByRevision(artifactStreamId, fromRevisionId).orElse(null),
+                artifactProjectionLookupService.findBundleByRevision(artifactStreamId, toRevisionId).orElse(null),
                 benchmarkLabService.getCampaigns(),
                 Set.of());
         ArtifactNormalizedRevisionProjection fromProjection = normalizedRevisionProjectionService
@@ -202,7 +195,7 @@ public class ArtifactWorkspaceProjectionService {
             revisionDiff = getRevisionDiff(artifactStreamId, fromNode.getContentRevisionId(),
                     toNode.getContentRevisionId());
         } else {
-            String transitionBaseRevisionId = resolveTransitionBaseRevisionId(toNode);
+            String transitionBaseRevisionId = artifactProjectionLookupService.resolveTransitionBaseRevisionId(toNode);
             if (!StringValueSupport.isBlank(transitionBaseRevisionId)
                     && !StringValueSupport.nullSafe(transitionBaseRevisionId)
                             .equals(StringValueSupport.nullSafe(toNode.getContentRevisionId()))) {
@@ -214,13 +207,15 @@ public class ArtifactWorkspaceProjectionService {
                 artifactStreamId,
                 fromNode.getContentRevisionId(),
                 toNode.getContentRevisionId(),
-                findBundleByRevision(artifactStreamId, fromNode.getContentRevisionId()).orElse(null),
-                findBundleByRevision(artifactStreamId, toNode.getContentRevisionId()).orElse(null),
+                artifactProjectionLookupService.findBundleByRevision(artifactStreamId, fromNode.getContentRevisionId())
+                        .orElse(null),
+                artifactProjectionLookupService.findBundleByRevision(artifactStreamId, toNode.getContentRevisionId())
+                        .orElse(null),
                 benchmarkLabService.getCampaigns(),
                 Set.of());
         return artifactDiffService.compareTransition(
                 artifactStreamId,
-                findRevision(artifactStreamId, toNode.getContentRevisionId())
+                artifactProjectionLookupService.findRevision(artifactStreamId, toNode.getContentRevisionId())
                         .map(ArtifactRevisionRecord::getArtifactKey)
                         .orElse(null),
                 fromNode,
@@ -250,144 +245,4 @@ public class ArtifactWorkspaceProjectionService {
                 fromNodeId,
                 toNodeId);
     }
-
-    private Map<String, List<ArtifactRevisionRecord>> revisionsByStream() {
-        Map<String, List<ArtifactRevisionRecord>> revisionsByStream = new LinkedHashMap<>();
-        for (ArtifactRevisionRecord revision : evolutionCandidateService.getArtifactRevisionRecords()) {
-            if (revision == null || StringValueSupport.isBlank(revision.getArtifactStreamId())) {
-                continue;
-            }
-            revisionsByStream.computeIfAbsent(revision.getArtifactStreamId(), ignored -> new ArrayList<>())
-                    .add(revision);
-        }
-        return revisionsByStream;
-    }
-
-    private List<ArtifactRevisionRecord> sortRevisions(List<ArtifactRevisionRecord> revisions) {
-        List<ArtifactRevisionRecord> sorted = new ArrayList<>(revisions);
-        sorted.sort(Comparator.comparing(ArtifactRevisionRecord::getCreatedAt,
-                Comparator.nullsLast(Comparator.naturalOrder())));
-        return sorted;
-    }
-
-    private Optional<EvolutionCandidate> findLatestCandidate(String artifactStreamId) {
-        return promotionWorkflowService.getCandidates().stream()
-                .filter(candidate -> candidate != null && artifactStreamId.equals(candidate.getArtifactStreamId()))
-                .max(Comparator.comparing(EvolutionCandidate::getCreatedAt,
-                        Comparator.nullsLast(Comparator.naturalOrder())));
-    }
-
-    private Optional<EvolutionCandidate> findCandidateById(String candidateId) {
-        return promotionWorkflowService.getCandidates().stream()
-                .filter(candidate -> candidate != null && candidateId.equals(candidate.getId()))
-                .findFirst();
-    }
-
-    private Optional<PromotionDecision> findDecisionById(String decisionId) {
-        return promotionWorkflowService.getPromotionDecisions().stream()
-                .filter(decision -> decision != null && decisionId.equals(decision.getId()))
-                .findFirst();
-    }
-
-    private List<String> resolveRunIdsForRevision(String artifactStreamId, ArtifactRevisionRecord revision) {
-        Set<String> runIds = new LinkedHashSet<>();
-        if (revision.getSourceRunIds() != null) {
-            runIds.addAll(revision.getSourceRunIds());
-        }
-        Set<String> candidateRunIds = new LinkedHashSet<>();
-        for (EvolutionCandidate candidate : promotionWorkflowService.getCandidates()) {
-            if (candidate == null || !artifactStreamId.equals(candidate.getArtifactStreamId())) {
-                continue;
-            }
-            if (!revision.getContentRevisionId().equals(candidate.getContentRevisionId())) {
-                continue;
-            }
-            if (candidate.getSourceRunIds() != null) {
-                candidateRunIds.addAll(candidate.getSourceRunIds());
-            }
-        }
-        if (!candidateRunIds.isEmpty()) {
-            return new ArrayList<>(candidateRunIds);
-        }
-        return new ArrayList<>(runIds);
-    }
-
-    private Optional<String> resolveActiveRevisionId(String artifactStreamId) {
-        List<ArtifactBundleRecord> bundles = artifactBundleService.getBundles().stream()
-                .filter(bundle -> bundle != null && bundle.getArtifactRevisionBindings() != null)
-                .filter(bundle -> !StringValueSupport
-                        .isBlank(bundle.getArtifactRevisionBindings().get(artifactStreamId)))
-                .toList();
-        return bundles.stream()
-                .filter(bundle -> "active".equalsIgnoreCase(bundle.getStatus()))
-                .max(BUNDLE_RECENCY_COMPARATOR)
-                .or(() -> bundles.stream()
-                        .filter(bundle -> StringValueSupport.isBlank(bundle.getStatus())
-                                || "snapshot".equalsIgnoreCase(bundle.getStatus()))
-                        .max(BUNDLE_RECENCY_COMPARATOR))
-                .or(() -> bundles.stream().max(BUNDLE_RECENCY_COMPARATOR))
-                .map(bundle -> bundle.getArtifactRevisionBindings().get(artifactStreamId));
-    }
-
-    private int resolveCampaignCount(String artifactStreamId) {
-        int campaignCount = 0;
-        for (BenchmarkCampaign campaign : benchmarkLabService.getCampaigns()) {
-            if (campaign == null) {
-                continue;
-            }
-            if (findBundleById(campaign.getBaselineBundleId())
-                    .filter(bundle -> bundle.getArtifactRevisionBindings() != null
-                            && bundle.getArtifactRevisionBindings().containsKey(artifactStreamId))
-                    .isPresent()
-                    || findBundleById(campaign.getCandidateBundleId())
-                            .filter(bundle -> bundle.getArtifactRevisionBindings() != null
-                                    && bundle.getArtifactRevisionBindings().containsKey(artifactStreamId))
-                            .isPresent()) {
-                campaignCount++;
-            }
-        }
-        return campaignCount;
-    }
-
-    private Optional<ArtifactRevisionRecord> findRevision(String artifactStreamId, String revisionId) {
-        return evolutionCandidateService.getArtifactRevisionRecords().stream()
-                .filter(revision -> revision != null && artifactStreamId.equals(revision.getArtifactStreamId()))
-                .filter(revision -> revisionId.equals(revision.getContentRevisionId()))
-                .findFirst();
-    }
-
-    private Optional<ArtifactBundleRecord> findBundleByRevision(String artifactStreamId, String revisionId) {
-        return artifactBundleService.getBundles().stream()
-                .filter(bundle -> bundle != null && bundle.getArtifactRevisionBindings() != null)
-                .filter(bundle -> revisionId.equals(bundle.getArtifactRevisionBindings().get(artifactStreamId)))
-                .max(BUNDLE_RECENCY_COMPARATOR);
-    }
-
-    private Optional<ArtifactBundleRecord> findBundleById(String bundleId) {
-        return artifactBundleService.getBundles().stream()
-                .filter(bundle -> bundle != null && bundleId.equals(bundle.getId()))
-                .findFirst();
-    }
-
-    private String resolveTransitionBaseRevisionId(ArtifactLineageNode node) {
-        if (node == null) {
-            return null;
-        }
-        if (!StringValueSupport.isBlank(node.getPromotionDecisionId())) {
-            Optional<PromotionDecision> decision = findDecisionById(node.getPromotionDecisionId());
-            if (decision.isPresent() && !StringValueSupport.isBlank(decision.get().getBaseContentRevisionId())) {
-                return decision.get().getBaseContentRevisionId();
-            }
-        }
-        int separatorIndex = node.getNodeId() != null ? node.getNodeId().indexOf(':') : -1;
-        if (separatorIndex > 0) {
-            String candidateId = node.getNodeId().substring(0, separatorIndex);
-            Optional<EvolutionCandidate> candidate = findCandidateById(candidateId);
-            if (candidate.isPresent() && !StringValueSupport.isBlank(candidate.get().getBaseContentRevisionId())) {
-                return candidate.get().getBaseContentRevisionId();
-            }
-        }
-        return null;
-    }
-
 }
