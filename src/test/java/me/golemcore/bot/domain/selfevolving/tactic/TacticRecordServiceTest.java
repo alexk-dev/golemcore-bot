@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -64,7 +65,7 @@ class TacticRecordServiceTest {
         rebuildServiceProvider = mock(ObjectProvider.class);
         when(rebuildServiceProvider.getIfAvailable()).thenReturn(rebuildService);
 
-        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), any()))
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenAnswer(invocation -> {
                     String directory = invocation.getArgument(0);
                     String path = invocation.getArgument(1);

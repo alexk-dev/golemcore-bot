@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -328,12 +329,13 @@ class SelfEvolvingRunServiceTest {
             String fileName = invocation.getArgument(1);
             return CompletableFuture.completedFuture(persistedFiles.get(fileName));
         });
-        when(persistedStorage.putTextAtomic(eq("self-evolving"), anyString(), anyString(), any())).thenAnswer(invocation -> {
-            String fileName = invocation.getArgument(1);
-            String content = invocation.getArgument(2);
-            persistedFiles.put(fileName, content);
-            return CompletableFuture.completedFuture(null);
-        });
+        when(persistedStorage.putTextAtomic(eq("self-evolving"), anyString(), anyString(), anyBoolean()))
+                .thenAnswer(invocation -> {
+                    String fileName = invocation.getArgument(1);
+                    String content = invocation.getArgument(2);
+                    persistedFiles.put(fileName, content);
+                    return CompletableFuture.completedFuture(null);
+                });
         return persistedStorage;
     }
 }

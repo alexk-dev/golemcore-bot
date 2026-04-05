@@ -122,7 +122,7 @@ public class JsonBenchmarkJournalAdapter implements BenchmarkJournalPort {
     private <T> void saveList(String fileName, List<T> items, String label) {
         try {
             String json = objectMapper.writeValueAsString(items);
-            storagePort.putText(SELF_EVOLVING_DIR, fileName, json).join();
+            storagePort.putTextAtomic(SELF_EVOLVING_DIR, fileName, json, true).join();
         } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
             throw new IllegalStateException("Failed to persist benchmark " + label, e);
         }

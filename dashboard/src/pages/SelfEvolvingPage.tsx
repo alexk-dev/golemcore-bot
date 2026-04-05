@@ -133,7 +133,7 @@ export default function SelfEvolvingPage(): ReactElement {
           selectedCandidateId={activeCandidateId}
           promotingCandidateId={planPromotion.isPending ? (planPromotion.variables ?? null) : null}
           lastPromotionResult={planPromotion.data ?? null}
-          lastPromotionError={planPromotion.isError}
+          lastPromotionErrorCandidateId={planPromotion.isError ? (planPromotion.variables ?? null) : null}
           shadowRequired={rolloutStages.shadowRequired}
           canaryRequired={rolloutStages.canaryRequired}
           onSelectCandidate={setSelectedCandidateId}

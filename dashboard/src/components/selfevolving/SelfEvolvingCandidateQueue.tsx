@@ -26,7 +26,7 @@ interface SelfEvolvingCandidateQueueProps {
   selectedCandidateId: string | null;
   promotingCandidateId: string | null;
   lastPromotionResult: SelfEvolvingPromotionDecision | null;
-  lastPromotionError: boolean;
+  lastPromotionErrorCandidateId: string | null;
   shadowRequired?: boolean;
   canaryRequired?: boolean;
   onSelectCandidate: (candidateId: string) => void;
@@ -44,7 +44,7 @@ interface CandidateDetailProps {
   candidate: SelfEvolvingCandidate;
   promotingCandidateId: string | null;
   lastPromotionResult: SelfEvolvingPromotionDecision | null;
-  lastPromotionError: boolean;
+  lastPromotionErrorCandidateId: string | null;
   shadowRequired: boolean;
   canaryRequired: boolean;
   onSelectRun: (runId: string) => void;
@@ -153,7 +153,7 @@ function CandidateDetail({
   candidate,
   promotingCandidateId,
   lastPromotionResult,
-  lastPromotionError,
+  lastPromotionErrorCandidateId,
   shadowRequired,
   canaryRequired,
   onSelectRun,
@@ -168,7 +168,7 @@ function CandidateDetail({
   const approvalNotes = resolveCandidateApprovalNotes(candidate);
   const isPromoting = promotingCandidateId === candidate.id;
   const promotionDone = lastPromotionResult?.candidateId === candidate.id;
-  const promotionFailed = lastPromotionError && promotingCandidateId == null;
+  const promotionFailed = lastPromotionErrorCandidateId === candidate.id;
   const isTerminal = candidate.status === 'active' || candidate.status === 'reverted' || candidate.status === 'rejected';
   const canApprove = !isTerminal && !promotionDone;
   const currentStage = resolveCurrentStageKey(candidate.status ?? '');
@@ -358,7 +358,7 @@ export function SelfEvolvingCandidateQueue({
   selectedCandidateId,
   promotingCandidateId,
   lastPromotionResult,
-  lastPromotionError,
+  lastPromotionErrorCandidateId,
   shadowRequired = true,
   canaryRequired = true,
   onSelectCandidate,
@@ -401,15 +401,15 @@ export function SelfEvolvingCandidateQueue({
         )}
 
         {activeCandidate != null ? (
-          <CandidateDetail
-            candidate={activeCandidate}
-            promotingCandidateId={promotingCandidateId}
-            lastPromotionResult={lastPromotionResult}
-            lastPromotionError={lastPromotionError}
-            shadowRequired={shadowRequired}
-            canaryRequired={canaryRequired}
-            onSelectRun={onSelectRun}
-            onPlanPromotion={onPlanPromotion}
+            <CandidateDetail
+              candidate={activeCandidate}
+              promotingCandidateId={promotingCandidateId}
+              lastPromotionResult={lastPromotionResult}
+              lastPromotionErrorCandidateId={lastPromotionErrorCandidateId}
+              shadowRequired={shadowRequired}
+              canaryRequired={canaryRequired}
+              onSelectRun={onSelectRun}
+              onPlanPromotion={onPlanPromotion}
           />
         ) : null}
       </div>

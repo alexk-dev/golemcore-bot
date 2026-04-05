@@ -95,7 +95,13 @@ public class LocalEmbeddingBootstrapService {
     }
 
     public TacticSearchStatus initialize() {
-        return computeStatus(true);
+        if (tacticSearchStatusProjectionService == null) {
+            return computeDirectStatus(true);
+        }
+        TacticSearchStatus bootstrapStatus = computeDirectStatus(false);
+        TacticSearchStatus status = mergeStartupBootstrapStatus(computeProjectedStatus(), bootstrapStatus);
+        metricsService.recordStatus(status);
+        return status;
     }
 
     public TacticSearchStatus probeStatus() {
@@ -114,12 +120,20 @@ public class LocalEmbeddingBootstrapService {
 
     private TacticSearchStatus computeStatus(boolean recordMetrics) {
         if (tacticSearchStatusProjectionService != null) {
-            TacticSearchStatus status = reconcileProjectedStatus(tacticSearchStatusProjectionService.projectCurrent());
+            TacticSearchStatus status = computeProjectedStatus();
             if (recordMetrics) {
                 metricsService.recordStatus(status);
             }
             return status;
         }
+        return computeDirectStatus(recordMetrics);
+    }
+
+    private TacticSearchStatus computeProjectedStatus() {
+        return reconcileProjectedStatus(tacticSearchStatusProjectionService.projectCurrent());
+    }
+
+    private TacticSearchStatus computeDirectStatus(boolean recordMetrics) {
         BootstrapContext context = resolveContext();
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = context.selfEvolvingConfig();
         RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = context.localConfig();
@@ -194,6 +208,27 @@ public class LocalEmbeddingBootstrapService {
                     status.getMode(), provider, model);
         }
         return status;
+    }
+
+    private TacticSearchStatus mergeStartupBootstrapStatus(
+            TacticSearchStatus projectedStatus,
+            TacticSearchStatus bootstrapStatus) {
+        if (bootstrapStatus == null) {
+            return projectedStatus;
+        }
+        if (projectedStatus == null) {
+            return bootstrapStatus;
+        }
+        if (!Boolean.TRUE.equals(bootstrapStatus.getPullAttempted())) {
+            return projectedStatus;
+        }
+        return projectedStatus.toBuilder()
+                .reason(Boolean.TRUE.equals(bootstrapStatus.getPullSucceeded())
+                        ? projectedStatus.getReason()
+                        : bootstrapStatus.getReason())
+                .pullAttempted(true)
+                .pullSucceeded(Boolean.TRUE.equals(bootstrapStatus.getPullSucceeded()))
+                .build();
     }
 
     public TacticSearchStatus installConfiguredModel() {

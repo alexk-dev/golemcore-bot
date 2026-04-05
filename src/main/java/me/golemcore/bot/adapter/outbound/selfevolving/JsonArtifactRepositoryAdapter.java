@@ -76,7 +76,7 @@ public class JsonArtifactRepositoryAdapter implements ArtifactRepositoryPort {
     public void saveBundles(List<ArtifactBundleRecord> bundles) {
         try {
             String json = objectMapper.writeValueAsString(bundles);
-            storagePort.putText(SELF_EVOLVING_DIR, BUNDLES_FILE, json).join();
+            storagePort.putTextAtomic(SELF_EVOLVING_DIR, BUNDLES_FILE, json, true).join();
         } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
             throw new IllegalStateException("Failed to persist artifact bundles", e);
         }
@@ -110,7 +110,8 @@ public class JsonArtifactRepositoryAdapter implements ArtifactRepositoryPort {
     @Override
     public void writeWorkspaceProjection(String relativePath, Object payload) {
         try {
-            storagePort.putText(SELF_EVOLVING_DIR, relativePath, objectMapper.writeValueAsString(payload)).join();
+            storagePort.putTextAtomic(SELF_EVOLVING_DIR, relativePath, objectMapper.writeValueAsString(payload), false)
+                    .join();
         } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
             throw new IllegalStateException("Failed to rebuild artifact workspace projections at " + relativePath, e);
         }

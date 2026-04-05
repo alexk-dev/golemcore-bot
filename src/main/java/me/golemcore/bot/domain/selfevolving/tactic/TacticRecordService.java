@@ -344,7 +344,8 @@ public class TacticRecordService {
         TacticRecord normalized = normalize(record);
         try {
             String path = TACTICS_PREFIX + normalized.getTacticId() + ".json";
-            storagePort.putText(SELF_EVOLVING_DIR, path, objectMapper.writeValueAsString(normalized)).join();
+            storagePort.putTextAtomic(SELF_EVOLVING_DIR, path, objectMapper.writeValueAsString(normalized), true)
+                    .join();
             upsertCache(normalized);
             invalidateQualityMetricsCache();
             if (triggerRebuild) {

@@ -82,7 +82,7 @@ public class JsonRunJournalAdapter implements RunJournalPort {
     public void saveRuns(List<RunRecord> runs) {
         try {
             String json = objectMapper.writeValueAsString(runs);
-            storagePort.putText(SELF_EVOLVING_DIR, RUNS_FILE, json).join();
+            storagePort.putTextAtomic(SELF_EVOLVING_DIR, RUNS_FILE, json, true).join();
         } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
             throw new IllegalStateException("Failed to persist self-evolving runs", e);
         }
@@ -127,7 +127,7 @@ public class JsonRunJournalAdapter implements RunJournalPort {
     public void saveVerdicts(Map<String, RunVerdict> verdicts) {
         try {
             String json = objectMapper.writeValueAsString(verdicts);
-            storagePort.putText(SELF_EVOLVING_DIR, RUN_VERDICTS_FILE, json).join();
+            storagePort.putTextAtomic(SELF_EVOLVING_DIR, RUN_VERDICTS_FILE, json, true).join();
         } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
             throw new IllegalStateException("Failed to persist self-evolving run verdicts", e);
         }
