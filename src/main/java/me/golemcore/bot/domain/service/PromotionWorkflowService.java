@@ -54,6 +54,7 @@ public class PromotionWorkflowService {
     private final StoragePort storagePort;
     private final RuntimeConfigService runtimeConfigService;
     private final EvolutionCandidateService evolutionCandidateService;
+    private final PromotionTargetResolver promotionTargetResolver;
     private final PromotionDecisionHydrationService promotionDecisionHydrationService;
     private final PromotionExecutionService promotionExecutionService;
     private final ArtifactBundleService artifactBundleService;
@@ -66,6 +67,7 @@ public class PromotionWorkflowService {
             StoragePort storagePort,
             RuntimeConfigService runtimeConfigService,
             EvolutionCandidateService evolutionCandidateService,
+            PromotionTargetResolver promotionTargetResolver,
             PromotionDecisionHydrationService promotionDecisionHydrationService,
             PromotionExecutionService promotionExecutionService,
             ArtifactBundleService artifactBundleService,
@@ -73,6 +75,7 @@ public class PromotionWorkflowService {
         this.storagePort = storagePort;
         this.runtimeConfigService = runtimeConfigService;
         this.evolutionCandidateService = evolutionCandidateService;
+        this.promotionTargetResolver = promotionTargetResolver;
         this.promotionDecisionHydrationService = promotionDecisionHydrationService;
         this.promotionExecutionService = promotionExecutionService;
         this.artifactBundleService = artifactBundleService;
@@ -129,7 +132,7 @@ public class PromotionWorkflowService {
         registerCandidates(List.of(candidate));
 
         EvolutionCandidate storedCandidate = findCandidate(candidate.getId()).orElse(candidate);
-        PromotionTarget target = resolvePromotionTarget(storedCandidate);
+        PromotionTarget target = promotionTargetResolver.resolve(storedCandidate);
         PromotionExecutionService.PromotionExecutionResult result = promotionExecutionService.execute(storedCandidate,
                 target, runtimeConfigService.getSelfEvolvingPromotionMode());
         saveCandidate(result.updatedCandidate());
@@ -168,51 +171,8 @@ public class PromotionWorkflowService {
                 .findFirst();
     }
 
-    private PromotionTarget resolvePromotionTarget(EvolutionCandidate candidate) {
-        String promotionMode = runtimeConfigService.getSelfEvolvingPromotionMode();
-        if (!"approval_gate".equalsIgnoreCase(promotionMode)
-                && !"auto_accept".equalsIgnoreCase(promotionMode)) {
-            throw new IllegalArgumentException("Unsupported promotion mode: " + promotionMode);
-        }
-        String currentState = resolveCurrentState(candidate);
-        if ("shadowed".equals(currentState)) {
-            return runtimeConfigService.isSelfEvolvingPromotionCanaryRequired()
-                    ? new PromotionTarget("canary", "candidate", "canary")
-                    : new PromotionTarget("active", "active", "active");
-        }
-        if ("canary".equals(currentState)) {
-            return new PromotionTarget("active", "active", "active");
-        }
-        if ("active".equals(currentState)) {
-            return new PromotionTarget("active", "active", "active");
-        }
-        if (runtimeConfigService.isSelfEvolvingPromotionShadowRequired()) {
-            return new PromotionTarget("shadowed", "candidate", "shadowed");
-        }
-        if (runtimeConfigService.isSelfEvolvingPromotionCanaryRequired()) {
-            return new PromotionTarget("canary", "candidate", "canary");
-        }
-        return new PromotionTarget("active", "active", "active");
-    }
-
     private boolean isApprovalGateMode() {
         return "approval_gate".equalsIgnoreCase(runtimeConfigService.getSelfEvolvingPromotionMode());
-    }
-
-    private String resolveCurrentState(EvolutionCandidate candidate) {
-        if (candidate == null) {
-            return "proposed";
-        }
-        if (!StringValueSupport.isBlank(candidate.getRolloutStage())
-                && !"approved".equals(candidate.getRolloutStage())) {
-            return candidate.getRolloutStage();
-        }
-        if (!StringValueSupport.isBlank(candidate.getStatus())
-                && !"approved_pending".equals(candidate.getStatus())
-                && !"approved".equals(candidate.getStatus())) {
-            return candidate.getStatus();
-        }
-        return "proposed";
     }
 
     private void saveCandidate(EvolutionCandidate candidate) {
