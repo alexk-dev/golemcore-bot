@@ -22,11 +22,9 @@ import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
-import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCompareEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactImpactProjection;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageEdge;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageNode;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactNormalizedRevisionProjection;
@@ -66,6 +64,7 @@ public class ArtifactWorkspaceProjectionService {
     private final ArtifactBundleService artifactBundleService;
     private final BenchmarkLabService benchmarkLabService;
     private final ArtifactLineageProjectionService artifactLineageProjectionService;
+    private final ArtifactEvidenceProjectionService artifactEvidenceProjectionService;
     private final ArtifactNormalizedRevisionProjectionService normalizedRevisionProjectionService;
     private final ArtifactDiffService artifactDiffService;
     private final ArtifactImpactService artifactImpactService;
@@ -77,6 +76,7 @@ public class ArtifactWorkspaceProjectionService {
             ArtifactBundleService artifactBundleService,
             BenchmarkLabService benchmarkLabService,
             ArtifactLineageProjectionService artifactLineageProjectionService,
+            ArtifactEvidenceProjectionService artifactEvidenceProjectionService,
             ArtifactNormalizedRevisionProjectionService normalizedRevisionProjectionService,
             ArtifactDiffService artifactDiffService,
             ArtifactImpactService artifactImpactService,
@@ -86,6 +86,7 @@ public class ArtifactWorkspaceProjectionService {
         this.artifactBundleService = artifactBundleService;
         this.benchmarkLabService = benchmarkLabService;
         this.artifactLineageProjectionService = artifactLineageProjectionService;
+        this.artifactEvidenceProjectionService = artifactEvidenceProjectionService;
         this.normalizedRevisionProjectionService = normalizedRevisionProjectionService;
         this.artifactDiffService = artifactDiffService;
         this.artifactImpactService = artifactImpactService;
@@ -229,132 +230,25 @@ public class ArtifactWorkspaceProjectionService {
     }
 
     public ArtifactRevisionEvidenceProjection getRevisionEvidence(String artifactStreamId, String revisionId) {
-        ArtifactRevisionRecord revision = findRevision(artifactStreamId, revisionId)
-                .orElseThrow(() -> new IllegalArgumentException("Revision not found: " + revisionId));
-        List<String> campaignIds = resolveCampaignIdsForRevision(artifactStreamId, revisionId);
-        List<String> promotionDecisionIds = promotionWorkflowService.getPromotionDecisions().stream()
-                .filter(decision -> decision != null && artifactStreamId.equals(decision.getArtifactStreamId()))
-                .filter(decision -> revisionId.equals(decision.getContentRevisionId()))
-                .map(PromotionDecision::getId)
-                .toList();
-        List<String> approvalRequestIds = promotionWorkflowService.getPromotionDecisions().stream()
-                .filter(decision -> decision != null && artifactStreamId.equals(decision.getArtifactStreamId()))
-                .filter(decision -> revisionId.equals(decision.getContentRevisionId()))
-                .map(PromotionDecision::getApprovalRequestId)
-                .filter(value -> !StringValueSupport.isBlank(value))
-                .toList();
-        Set<String> traceIds = new LinkedHashSet<>();
-        Set<String> spanIds = new LinkedHashSet<>();
-        collectRevisionEvidenceAnchorIds(revision, traceIds, spanIds);
-        findCandidateByRevision(artifactStreamId, revisionId)
-                .ifPresent(candidate -> collectEvidenceAnchorIds(candidate, traceIds, spanIds));
-        return ArtifactRevisionEvidenceProjection.builder()
-                .artifactStreamId(artifactStreamId)
-                .artifactKey(revision.getArtifactKey())
-                .revisionId(revisionId)
-                .runIds(resolveRunIdsForRevision(artifactStreamId, revision))
-                .traceIds(new ArrayList<>(traceIds))
-                .spanIds(new ArrayList<>(spanIds))
-                .campaignIds(campaignIds)
-                .promotionDecisionIds(promotionDecisionIds)
-                .approvalRequestIds(approvalRequestIds)
-                .findings(List.of("revision_evidence"))
-                .projectionSchemaVersion(PROJECTION_SCHEMA_VERSION)
-                .projectedAt(Instant.now(clock))
-                .build();
+        return artifactEvidenceProjectionService.getRevisionEvidence(artifactStreamId, revisionId);
     }
 
     public ArtifactCompareEvidenceProjection getCompareEvidence(
             String artifactStreamId,
             String fromRevisionId,
             String toRevisionId) {
-        ArtifactRevisionEvidenceProjection fromEvidence = getRevisionEvidence(artifactStreamId, fromRevisionId);
-        ArtifactRevisionEvidenceProjection toEvidence = getRevisionEvidence(artifactStreamId, toRevisionId);
-        Set<String> runIds = new LinkedHashSet<>(fromEvidence.getRunIds());
-        runIds.addAll(toEvidence.getRunIds());
-        Set<String> campaignIds = new LinkedHashSet<>(fromEvidence.getCampaignIds());
-        campaignIds.addAll(toEvidence.getCampaignIds());
-        Set<String> promotionDecisionIds = new LinkedHashSet<>(fromEvidence.getPromotionDecisionIds());
-        promotionDecisionIds.addAll(toEvidence.getPromotionDecisionIds());
-        Set<String> approvalRequestIds = new LinkedHashSet<>(fromEvidence.getApprovalRequestIds());
-        approvalRequestIds.addAll(toEvidence.getApprovalRequestIds());
-        Set<String> traceIds = new LinkedHashSet<>(fromEvidence.getTraceIds());
-        traceIds.addAll(toEvidence.getTraceIds());
-        Set<String> spanIds = new LinkedHashSet<>(fromEvidence.getSpanIds());
-        spanIds.addAll(toEvidence.getSpanIds());
-        return ArtifactCompareEvidenceProjection.builder()
-                .artifactStreamId(artifactStreamId)
-                .artifactKey(fromEvidence.getArtifactKey())
-                .fromRevisionId(fromRevisionId)
-                .toRevisionId(toRevisionId)
-                .runIds(new ArrayList<>(runIds))
-                .traceIds(new ArrayList<>(traceIds))
-                .spanIds(new ArrayList<>(spanIds))
-                .campaignIds(new ArrayList<>(campaignIds))
-                .promotionDecisionIds(new ArrayList<>(promotionDecisionIds))
-                .approvalRequestIds(new ArrayList<>(approvalRequestIds))
-                .findings(List.of("compare_evidence"))
-                .projectionSchemaVersion(PROJECTION_SCHEMA_VERSION)
-                .projectedAt(Instant.now(clock))
-                .build();
+        return artifactEvidenceProjectionService.getCompareEvidence(artifactStreamId, fromRevisionId, toRevisionId);
     }
 
     public ArtifactTransitionEvidenceProjection getTransitionEvidence(
             String artifactStreamId,
             String fromNodeId,
             String toNodeId) {
-        ArtifactLineageProjection lineage = getLineage(artifactStreamId);
-        ArtifactLineageNode fromNode = lineage.getNodes().stream()
-                .filter(node -> node != null && fromNodeId.equals(node.getNodeId()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Node not found: " + fromNodeId));
-        ArtifactLineageNode toNode = lineage.getNodes().stream()
-                .filter(node -> node != null && toNodeId.equals(node.getNodeId()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Node not found: " + toNodeId));
-        Set<String> runIds = new LinkedHashSet<>();
-        Set<String> traceIds = new LinkedHashSet<>();
-        Set<String> spanIds = new LinkedHashSet<>();
-        Set<String> campaignIds = new LinkedHashSet<>();
-        Set<String> promotionDecisionIds = new LinkedHashSet<>();
-        Set<String> approvalRequestIds = new LinkedHashSet<>();
-        collectTransitionNodeEvidence(
+        return artifactEvidenceProjectionService.getTransitionEvidence(
                 artifactStreamId,
-                fromNode,
-                runIds,
-                traceIds,
-                spanIds,
-                campaignIds,
-                promotionDecisionIds,
-                approvalRequestIds);
-        collectTransitionNodeEvidence(
-                artifactStreamId,
-                toNode,
-                runIds,
-                traceIds,
-                spanIds,
-                campaignIds,
-                promotionDecisionIds,
-                approvalRequestIds);
-        return ArtifactTransitionEvidenceProjection.builder()
-                .artifactStreamId(artifactStreamId)
-                .artifactKey(findRevision(artifactStreamId, toNode.getContentRevisionId())
-                        .map(ArtifactRevisionRecord::getArtifactKey)
-                        .orElse(null))
-                .fromNodeId(fromNodeId)
-                .toNodeId(toNodeId)
-                .fromRevisionId(fromNode.getContentRevisionId())
-                .toRevisionId(toNode.getContentRevisionId())
-                .runIds(new ArrayList<>(runIds))
-                .traceIds(new ArrayList<>(traceIds))
-                .spanIds(new ArrayList<>(spanIds))
-                .campaignIds(new ArrayList<>(campaignIds))
-                .promotionDecisionIds(new ArrayList<>(promotionDecisionIds))
-                .approvalRequestIds(new ArrayList<>(approvalRequestIds))
-                .findings(List.of("transition_evidence"))
-                .projectionSchemaVersion(PROJECTION_SCHEMA_VERSION)
-                .projectedAt(Instant.now(clock))
-                .build();
+                getLineage(artifactStreamId),
+                fromNodeId,
+                toNodeId);
     }
 
     private Map<String, List<ArtifactRevisionRecord>> revisionsByStream() {
@@ -386,13 +280,6 @@ public class ArtifactWorkspaceProjectionService {
     private Optional<EvolutionCandidate> findCandidateById(String candidateId) {
         return promotionWorkflowService.getCandidates().stream()
                 .filter(candidate -> candidate != null && candidateId.equals(candidate.getId()))
-                .findFirst();
-    }
-
-    private Optional<EvolutionCandidate> findCandidateByRevision(String artifactStreamId, String revisionId) {
-        return promotionWorkflowService.getCandidates().stream()
-                .filter(candidate -> candidate != null && artifactStreamId.equals(candidate.getArtifactStreamId()))
-                .filter(candidate -> revisionId.equals(candidate.getContentRevisionId()))
                 .findFirst();
     }
 
@@ -480,103 +367,6 @@ public class ArtifactWorkspaceProjectionService {
         return artifactBundleService.getBundles().stream()
                 .filter(bundle -> bundle != null && bundleId.equals(bundle.getId()))
                 .findFirst();
-    }
-
-    private List<String> resolveCampaignIds(String bundleId) {
-        if (StringValueSupport.isBlank(bundleId)) {
-            return List.of();
-        }
-        return benchmarkLabService.getCampaigns().stream()
-                .filter(campaign -> campaign != null)
-                .filter(campaign -> bundleId.equals(campaign.getBaselineBundleId())
-                        || bundleId.equals(campaign.getCandidateBundleId()))
-                .map(BenchmarkCampaign::getId)
-                .toList();
-    }
-
-    private List<String> resolveCampaignIdsForRevision(String artifactStreamId, String revisionId) {
-        List<String> campaignIds = new ArrayList<>();
-        for (ArtifactBundleRecord bundle : artifactBundleService.getBundles()) {
-            if (bundle == null || bundle.getArtifactRevisionBindings() == null) {
-                continue;
-            }
-            if (revisionId.equals(bundle.getArtifactRevisionBindings().get(artifactStreamId))) {
-                campaignIds.addAll(resolveCampaignIds(bundle.getId()));
-            }
-        }
-        return campaignIds.stream().distinct().toList();
-    }
-
-    private void collectTransitionNodeEvidence(
-            String artifactStreamId,
-            ArtifactLineageNode node,
-            Set<String> runIds,
-            Set<String> traceIds,
-            Set<String> spanIds,
-            Set<String> campaignIds,
-            Set<String> promotionDecisionIds,
-            Set<String> approvalRequestIds) {
-        if (node == null) {
-            return;
-        }
-        if (node.getSourceRunIds() != null) {
-            runIds.addAll(node.getSourceRunIds());
-        }
-        if (node.getCampaignIds() != null) {
-            campaignIds.addAll(node.getCampaignIds());
-        }
-        if (!StringValueSupport.isBlank(node.getContentRevisionId())) {
-            findRevision(artifactStreamId, node.getContentRevisionId())
-                    .ifPresent(revision -> collectRevisionEvidenceAnchorIds(revision, traceIds, spanIds));
-            findCandidateByRevision(artifactStreamId, node.getContentRevisionId())
-                    .ifPresent(candidate -> collectEvidenceAnchorIds(candidate, traceIds, spanIds));
-        }
-        if (!StringValueSupport.isBlank(node.getPromotionDecisionId())) {
-            promotionDecisionIds.add(node.getPromotionDecisionId());
-            findDecisionById(node.getPromotionDecisionId())
-                    .map(PromotionDecision::getApprovalRequestId)
-                    .filter(value -> !StringValueSupport.isBlank(value))
-                    .ifPresent(approvalRequestIds::add);
-        }
-    }
-
-    private void collectEvidenceAnchorIds(
-            EvolutionCandidate candidate,
-            Set<String> traceIds,
-            Set<String> spanIds) {
-        if (candidate == null || candidate.getEvidenceRefs() == null) {
-            return;
-        }
-        for (VerdictEvidenceRef evidenceRef : candidate.getEvidenceRefs()) {
-            if (evidenceRef == null) {
-                continue;
-            }
-            if (!StringValueSupport.isBlank(evidenceRef.getTraceId())) {
-                traceIds.add(evidenceRef.getTraceId());
-            }
-            if (!StringValueSupport.isBlank(evidenceRef.getSpanId())) {
-                spanIds.add(evidenceRef.getSpanId());
-            }
-        }
-    }
-
-    private void collectRevisionEvidenceAnchorIds(
-            ArtifactRevisionRecord revision,
-            Set<String> traceIds,
-            Set<String> spanIds) {
-        if (revision == null) {
-            return;
-        }
-        if (revision.getTraceIds() != null) {
-            revision.getTraceIds().stream()
-                    .filter(traceId -> !StringValueSupport.isBlank(traceId))
-                    .forEach(traceIds::add);
-        }
-        if (revision.getSpanIds() != null) {
-            revision.getSpanIds().stream()
-                    .filter(spanId -> !StringValueSupport.isBlank(spanId))
-                    .forEach(spanIds::add);
-        }
     }
 
     private String resolveTransitionBaseRevisionId(ArtifactLineageNode node) {
