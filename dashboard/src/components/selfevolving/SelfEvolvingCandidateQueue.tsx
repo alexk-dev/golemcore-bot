@@ -14,6 +14,12 @@ import {
   shortId,
   statusBadgeClass,
 } from './selfEvolvingUi';
+import {
+  SelfEvolvingRolloutPipeline,
+  resolveCurrentStageKey,
+  resolveNextStageKey,
+  stageLabel,
+} from './SelfEvolvingRolloutPipeline';
 
 interface SelfEvolvingCandidateQueueProps {
   candidates: SelfEvolvingCandidate[];
@@ -65,24 +71,25 @@ function resolveCandidateApprovalNotes(candidate: SelfEvolvingCandidate): string
   return candidate.proposal?.approvalNotes ?? null;
 }
 
-function resolvePromotionActionLabel(candidate: SelfEvolvingCandidate): string {
-  if (candidate.status === 'canary') {
-    return 'Promote to active';
-  }
-  if (candidate.status === 'shadowed' || candidate.status === 'approved' || candidate.status === 'approved_pending') {
+function resolvePromotionActionLabel(candidate: SelfEvolvingCandidate, nextStage: string | null): string {
+  if (nextStage == null) {
     return 'Advance rollout';
   }
-  return 'Approve rollout';
+  const nextLabel = stageLabel(nextStage);
+  if (nextStage === 'active') {
+    return `Promote to active (→ ${nextLabel})`;
+  }
+  if (candidate.status === 'shadowed' || candidate.status === 'approved' || candidate.status === 'approved_pending') {
+    return `Advance rollout (→ ${nextLabel})`;
+  }
+  return `Approve rollout (→ ${nextLabel})`;
 }
 
-function resolvePromotionActionTitle(candidate: SelfEvolvingCandidate): string {
-  if (candidate.status === 'canary') {
-    return 'Promote this change to full activation';
+function resolvePromotionActionTitle(currentStage: string, nextStage: string | null): string {
+  if (nextStage == null) {
+    return 'No further rollout stages';
   }
-  if (candidate.status === 'shadowed') {
-    return 'Advance this change to the next rollout stage';
-  }
-  return 'Approve this change and start its rollout';
+  return `Advance this change: ${stageLabel(currentStage)} → ${stageLabel(nextStage)}`;
 }
 
 function resolveEvidenceItems(candidate: SelfEvolvingCandidate): SelfEvolvingCandidateEvidenceRef[] {
@@ -158,8 +165,10 @@ function CandidateDetail({
   const promotionFailed = lastPromotionError && promotingCandidateId == null;
   const isTerminal = candidate.status === 'active' || candidate.status === 'reverted' || candidate.status === 'rejected';
   const canApprove = !isTerminal && !promotionDone;
-  const promotionActionLabel = resolvePromotionActionLabel(candidate);
-  const promotionActionTitle = resolvePromotionActionTitle(candidate);
+  const currentStage = resolveCurrentStageKey(candidate.status ?? '');
+  const nextStage = resolveNextStageKey(currentStage);
+  const promotionActionLabel = resolvePromotionActionLabel(candidate, nextStage);
+  const promotionActionTitle = resolvePromotionActionTitle(currentStage, nextStage);
 
   return (
     <div className="border-t border-border/80 pt-4">
@@ -266,6 +275,8 @@ function CandidateDetail({
           ) : null}
         </div>
       </div>
+
+      <SelfEvolvingRolloutPipeline currentStage={currentStage} nextStage={nextStage} />
 
       <div className="mb-4">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What happens next</span>
