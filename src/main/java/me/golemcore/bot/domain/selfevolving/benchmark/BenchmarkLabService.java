@@ -18,21 +18,16 @@ package me.golemcore.bot.domain.selfevolving.benchmark;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaignVerdict;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCase;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkSuite;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
-import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.selfevolving.BenchmarkJournalPort;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -51,46 +46,28 @@ import me.golemcore.bot.domain.service.StringValueSupport;
  * Harvests production runs into benchmark artifacts.
  */
 @Service
-@Slf4j
 public class BenchmarkLabService {
 
-    private static final String SELF_EVOLVING_DIR = "self-evolving";
-    private static final String CASES_FILE = "benchmark-cases.json";
-    private static final String SUITES_FILE = "benchmark-suites.json";
-    private static final String CAMPAIGNS_FILE = "benchmark-campaigns.json";
-    private static final String CAMPAIGN_VERDICTS_FILE = "benchmark-campaign-verdicts.json";
-    private static final TypeReference<List<BenchmarkCase>> CASE_LIST_TYPE = new TypeReference<>() {
-    };
-    private static final TypeReference<List<BenchmarkSuite>> SUITE_LIST_TYPE = new TypeReference<>() {
-    };
-    private static final TypeReference<List<BenchmarkCampaign>> CAMPAIGN_LIST_TYPE = new TypeReference<>() {
-    };
-    private static final TypeReference<List<BenchmarkCampaignVerdict>> CAMPAIGN_VERDICT_LIST_TYPE = new TypeReference<>() {
-    };
-
-    private final StoragePort storagePort;
+    private final BenchmarkJournalPort benchmarkJournal;
     private final SelfEvolvingRunService selfEvolvingRunService;
     private final PromotionWorkflowService promotionWorkflowService;
     private final ObjectProvider<TacticQualityMetricsService> qualityMetricsServiceProvider;
     private final Clock clock;
-    private final ObjectMapper objectMapper;
     private final AtomicReference<List<BenchmarkCase>> caseCache = new AtomicReference<>();
     private final AtomicReference<List<BenchmarkSuite>> suiteCache = new AtomicReference<>();
     private final AtomicReference<List<BenchmarkCampaign>> campaignCache = new AtomicReference<>();
     private final AtomicReference<List<BenchmarkCampaignVerdict>> campaignVerdictCache = new AtomicReference<>();
 
-    public BenchmarkLabService(StoragePort storagePort,
+    public BenchmarkLabService(BenchmarkJournalPort benchmarkJournal,
             SelfEvolvingRunService selfEvolvingRunService,
             PromotionWorkflowService promotionWorkflowService,
             ObjectProvider<TacticQualityMetricsService> qualityMetricsServiceProvider,
             Clock clock) {
-        this.storagePort = storagePort;
+        this.benchmarkJournal = benchmarkJournal;
         this.selfEvolvingRunService = selfEvolvingRunService;
         this.promotionWorkflowService = promotionWorkflowService;
         this.qualityMetricsServiceProvider = qualityMetricsServiceProvider;
         this.clock = clock;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     public BenchmarkCampaign createRegressionCampaign(String runId) {
@@ -138,7 +115,7 @@ public class BenchmarkLabService {
     public List<BenchmarkSuite> getSuites() {
         List<BenchmarkSuite> cached = suiteCache.get();
         if (cached == null) {
-            cached = loadSuites();
+            cached = benchmarkJournal.loadSuites();
             suiteCache.set(cached);
         }
         return cached;
@@ -178,7 +155,7 @@ public class BenchmarkLabService {
     public List<BenchmarkCampaignVerdict> getCampaignVerdicts() {
         List<BenchmarkCampaignVerdict> cached = campaignVerdictCache.get();
         if (cached == null) {
-            cached = loadCampaignVerdicts();
+            cached = benchmarkJournal.loadCampaignVerdicts();
             campaignVerdictCache.set(cached);
         }
         return cached;
@@ -196,7 +173,7 @@ public class BenchmarkLabService {
     public List<BenchmarkCampaign> getCampaigns() {
         List<BenchmarkCampaign> cached = campaignCache.get();
         if (cached == null) {
-            cached = loadCampaigns();
+            cached = benchmarkJournal.loadCampaigns();
             campaignCache.set(cached);
         }
         return cached;
@@ -244,7 +221,7 @@ public class BenchmarkLabService {
     private List<BenchmarkCase> getCases() {
         List<BenchmarkCase> cached = caseCache.get();
         if (cached == null) {
-            cached = loadCases();
+            cached = benchmarkJournal.loadCases();
             caseCache.set(cached);
         }
         return cached;
@@ -301,99 +278,23 @@ public class BenchmarkLabService {
         saveCampaigns(campaigns);
     }
 
-    private List<BenchmarkCase> loadCases() {
-        try {
-            String json = storagePort.getText(SELF_EVOLVING_DIR, CASES_FILE).join();
-            if (StringValueSupport.isBlank(json)) {
-                return new ArrayList<>();
-            }
-            List<BenchmarkCase> cases = objectMapper.readValue(json, CASE_LIST_TYPE);
-            return cases != null ? new ArrayList<>(cases) : new ArrayList<>();
-        } catch (IOException | RuntimeException e) { // NOSONAR - storage fallback
-            log.debug("[SelfEvolving] Failed to load benchmark cases: {}", e.getMessage());
-            return new ArrayList<>();
-        }
-    }
-
-    private List<BenchmarkSuite> loadSuites() {
-        try {
-            String json = storagePort.getText(SELF_EVOLVING_DIR, SUITES_FILE).join();
-            if (StringValueSupport.isBlank(json)) {
-                return new ArrayList<>();
-            }
-            List<BenchmarkSuite> suites = objectMapper.readValue(json, SUITE_LIST_TYPE);
-            return suites != null ? new ArrayList<>(suites) : new ArrayList<>();
-        } catch (IOException | RuntimeException e) { // NOSONAR - storage fallback
-            log.debug("[SelfEvolving] Failed to load benchmark suites: {}", e.getMessage());
-            return new ArrayList<>();
-        }
-    }
-
-    private List<BenchmarkCampaignVerdict> loadCampaignVerdicts() {
-        try {
-            String json = storagePort.getText(SELF_EVOLVING_DIR, CAMPAIGN_VERDICTS_FILE).join();
-            if (StringValueSupport.isBlank(json)) {
-                return new ArrayList<>();
-            }
-            List<BenchmarkCampaignVerdict> verdicts = objectMapper.readValue(json, CAMPAIGN_VERDICT_LIST_TYPE);
-            return verdicts != null ? new ArrayList<>(verdicts) : new ArrayList<>();
-        } catch (IOException | RuntimeException e) { // NOSONAR - storage fallback
-            log.debug("[SelfEvolving] Failed to load benchmark campaign verdicts: {}", e.getMessage());
-            return new ArrayList<>();
-        }
-    }
-
     private void saveCampaignVerdicts(List<BenchmarkCampaignVerdict> verdicts) {
-        try {
-            String json = objectMapper.writeValueAsString(verdicts);
-            storagePort.putText(SELF_EVOLVING_DIR, CAMPAIGN_VERDICTS_FILE, json).join();
-            campaignVerdictCache.set(new ArrayList<>(verdicts));
-        } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
-            throw new IllegalStateException("Failed to persist benchmark campaign verdicts", e);
-        }
-    }
-
-    private List<BenchmarkCampaign> loadCampaigns() {
-        try {
-            String json = storagePort.getText(SELF_EVOLVING_DIR, CAMPAIGNS_FILE).join();
-            if (StringValueSupport.isBlank(json)) {
-                return new ArrayList<>();
-            }
-            List<BenchmarkCampaign> campaigns = objectMapper.readValue(json, CAMPAIGN_LIST_TYPE);
-            return campaigns != null ? new ArrayList<>(campaigns) : new ArrayList<>();
-        } catch (IOException | RuntimeException e) { // NOSONAR - storage fallback
-            log.debug("[SelfEvolving] Failed to load benchmark campaigns: {}", e.getMessage());
-            return new ArrayList<>();
-        }
+        benchmarkJournal.saveCampaignVerdicts(verdicts);
+        campaignVerdictCache.set(new ArrayList<>(verdicts));
     }
 
     private void saveCases(List<BenchmarkCase> cases) {
-        try {
-            String json = objectMapper.writeValueAsString(cases);
-            storagePort.putText(SELF_EVOLVING_DIR, CASES_FILE, json).join();
-            caseCache.set(new ArrayList<>(cases));
-        } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
-            throw new IllegalStateException("Failed to persist benchmark cases", e);
-        }
+        benchmarkJournal.saveCases(cases);
+        caseCache.set(new ArrayList<>(cases));
     }
 
     private void saveSuites(List<BenchmarkSuite> suites) {
-        try {
-            String json = objectMapper.writeValueAsString(suites);
-            storagePort.putText(SELF_EVOLVING_DIR, SUITES_FILE, json).join();
-            suiteCache.set(new ArrayList<>(suites));
-        } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
-            throw new IllegalStateException("Failed to persist benchmark suites", e);
-        }
+        benchmarkJournal.saveSuites(suites);
+        suiteCache.set(new ArrayList<>(suites));
     }
 
     private void saveCampaigns(List<BenchmarkCampaign> campaigns) {
-        try {
-            String json = objectMapper.writeValueAsString(campaigns);
-            storagePort.putText(SELF_EVOLVING_DIR, CAMPAIGNS_FILE, json).join();
-            campaignCache.set(new ArrayList<>(campaigns));
-        } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
-            throw new IllegalStateException("Failed to persist benchmark campaigns", e);
-        }
+        benchmarkJournal.saveCampaigns(campaigns);
+        campaignCache.set(new ArrayList<>(campaigns));
     }
 }

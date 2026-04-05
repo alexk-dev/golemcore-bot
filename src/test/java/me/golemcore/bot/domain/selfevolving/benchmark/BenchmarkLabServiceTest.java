@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaignVerdict;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkSuite;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonBenchmarkJournalAdapter;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,7 +45,7 @@ class BenchmarkLabServiceTest {
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
         benchmarkLabService = new BenchmarkLabService(
-                storagePort,
+                new JsonBenchmarkJournalAdapter(storagePort),
                 selfEvolvingRunService,
                 promotionWorkflowService,
                 null,
