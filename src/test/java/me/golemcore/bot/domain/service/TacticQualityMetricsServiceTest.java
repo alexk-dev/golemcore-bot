@@ -129,4 +129,73 @@ class TacticQualityMetricsServiceTest {
         assertNull(enriched.getGolemLocalUsageSuccess());
         assertEquals(1.0d, enriched.getRecencyScore());
     }
+
+    @Test
+    void shouldFallbackToRunStatusWhenVerdictOutcomeIsNotTerminal() {
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-3")
+                .artifactStreamId("stream-3")
+                .contentRevisionId("revision-3")
+                .updatedAt(Instant.parse("2026-02-01T00:00:00Z"))
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of(
+                ArtifactBundleRecord.builder()
+                        .id("bundle-5")
+                        .artifactRevisionBindings(java.util.Map.of("stream-3", "revision-3"))
+                        .activatedAt(Instant.parse("2026-02-02T00:00:00Z"))
+                        .build()));
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of(
+                RunRecord.builder()
+                        .id("run-5")
+                        .artifactBundleId("bundle-5")
+                        .status("FAILED")
+                        .completedAt(Instant.parse("2026-02-03T00:00:00Z"))
+                        .build()));
+        when(selfEvolvingRunService.findVerdict("run-5")).thenReturn(Optional.of(RunVerdict.builder()
+                .runId("run-5")
+                .outcomeStatus("RUNNING")
+                .createdAt(Instant.parse("2026-02-03T00:05:00Z"))
+                .build()));
+
+        TacticRecord enriched = tacticQualityMetricsService.enrich(tactic);
+
+        assertEquals(0.0d, enriched.getSuccessRate());
+        assertEquals(0.0d, enriched.getGolemLocalUsageSuccess());
+        assertEquals(0.0d, enriched.getRecencyScore());
+        assertNull(enriched.getBenchmarkWinRate());
+    }
+
+    @Test
+    void shouldReturnUnavailableMetricsWhenTacticCannotMatchAnyBundles() {
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-4")
+                .artifactStreamId(" ")
+                .contentRevisionId("revision-4")
+                .build();
+        java.util.ArrayList<ArtifactBundleRecord> bundles = new java.util.ArrayList<>();
+        bundles.add(null);
+        bundles.add(ArtifactBundleRecord.builder()
+                .artifactRevisionBindings(java.util.Map.of("stream-4", "revision-4"))
+                .build());
+        bundles.add(ArtifactBundleRecord.builder()
+                .id("bundle-6")
+                .artifactRevisionBindings(java.util.Map.of())
+                .build());
+        when(artifactBundleService.getBundles()).thenReturn(bundles);
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of(
+                RunRecord.builder()
+                        .id("run-6")
+                        .artifactBundleId("bundle-6")
+                        .status("COMPLETED")
+                        .completedAt(Instant.parse("2026-04-05T11:30:00Z"))
+                        .build()));
+
+        TacticRecord enriched = tacticQualityMetricsService.enrich(tactic);
+
+        assertNull(tacticQualityMetricsService.enrich(null));
+        assertNull(enriched.getSuccessRate());
+        assertNull(enriched.getBenchmarkWinRate());
+        assertNull(enriched.getGolemLocalUsageSuccess());
+        assertNull(enriched.getRecencyScore());
+    }
 }
