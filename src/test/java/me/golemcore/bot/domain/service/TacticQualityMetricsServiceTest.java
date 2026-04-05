@@ -25,6 +25,8 @@ class TacticQualityMetricsServiceTest {
 
     private ArtifactBundleService artifactBundleService;
     private SelfEvolvingRunService selfEvolvingRunService;
+    private TacticUsageAttributionService tacticUsageAttributionService;
+    private ObservedTacticMetricsCalculator observedTacticMetricsCalculator;
     private Clock clock;
     private TacticQualityMetricsService tacticQualityMetricsService;
 
@@ -33,7 +35,13 @@ class TacticQualityMetricsServiceTest {
         artifactBundleService = mock(ArtifactBundleService.class);
         selfEvolvingRunService = mock(SelfEvolvingRunService.class);
         clock = Clock.fixed(Instant.parse("2026-04-05T12:00:00Z"), ZoneOffset.UTC);
-        tacticQualityMetricsService = new TacticQualityMetricsService(artifactBundleService, selfEvolvingRunService,
+        tacticUsageAttributionService = new TacticUsageAttributionService();
+        observedTacticMetricsCalculator = new ObservedTacticMetricsCalculator(clock);
+        tacticQualityMetricsService = new TacticQualityMetricsService(
+                artifactBundleService,
+                selfEvolvingRunService,
+                tacticUsageAttributionService,
+                observedTacticMetricsCalculator,
                 clock);
     }
 

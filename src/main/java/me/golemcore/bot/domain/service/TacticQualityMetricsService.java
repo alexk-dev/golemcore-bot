@@ -26,13 +26,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -44,11 +41,6 @@ import java.util.Set;
 @Service
 public class TacticQualityMetricsService {
 
-    private static final int REGRESSION_MIN_OBSERVATIONS = 2;
-    private static final double REGRESSION_FAILURE_RATE_THRESHOLD = 0.5d;
-    private static final String FLAG_HIGH_FAILURE_RATE = "observed-high-failure-rate";
-    private static final String FLAG_RECENT_FAILURE = "recent-failure";
-
     // Short-lived cache to amortise hot-path enrichAll calls from search.
     // Keyed on the caller's input signature; invalidated by TTL only, so
     // writes made within the TTL window observe slightly stale metrics.
@@ -56,15 +48,21 @@ public class TacticQualityMetricsService {
 
     private final ArtifactBundleService artifactBundleService;
     private final SelfEvolvingRunService selfEvolvingRunService;
+    private final TacticUsageAttributionService tacticUsageAttributionService;
+    private final ObservedTacticMetricsCalculator observedTacticMetricsCalculator;
     private final Clock clock;
     private final java.util.concurrent.atomic.AtomicReference<EnrichCacheEntry> enrichCache = new java.util.concurrent.atomic.AtomicReference<>();
 
     public TacticQualityMetricsService(
             ArtifactBundleService artifactBundleService,
             SelfEvolvingRunService selfEvolvingRunService,
+            TacticUsageAttributionService tacticUsageAttributionService,
+            ObservedTacticMetricsCalculator observedTacticMetricsCalculator,
             Clock clock) {
         this.artifactBundleService = artifactBundleService;
         this.selfEvolvingRunService = selfEvolvingRunService;
+        this.tacticUsageAttributionService = tacticUsageAttributionService;
+        this.observedTacticMetricsCalculator = observedTacticMetricsCalculator;
         this.clock = clock;
     }
 
@@ -72,7 +70,7 @@ public class TacticQualityMetricsService {
         if (record == null) {
             return null;
         }
-        ObservedMetrics metrics = resolveObservedMetrics(record);
+        ObservedTacticMetrics metrics = resolveObservedMetrics(record);
         return applyMetrics(record, metrics);
     }
 
@@ -112,31 +110,20 @@ public class TacticQualityMetricsService {
             streamRevToTacticIds.computeIfAbsent(key, k -> new ArrayList<>()).add(record.getTacticId());
         }
 
-        Map<String, List<String>> bundleIdToTacticIds = new HashMap<>();
-        for (ArtifactBundleRecord bundle : artifactBundleService.getBundles()) {
+        List<ArtifactBundleRecord> bundles = artifactBundleService.getBundles();
+        Map<String, List<String>> bundleIdToTacticIds = tacticUsageAttributionService
+                .indexBundleToTacticIds(bundles, streamRevToTacticIds);
+        for (ArtifactBundleRecord bundle : bundles) {
             if (bundle == null || StringValueSupport.isBlank(bundle.getId())) {
                 continue;
             }
-            Map<String, String> bindings = bundle.getArtifactRevisionBindings();
-            if (bindings == null || bindings.isEmpty()) {
+            List<String> matchedTacticIds = bundleIdToTacticIds.get(bundle.getId());
+            if (matchedTacticIds == null || matchedTacticIds.isEmpty()) {
                 continue;
             }
-            List<String> matchedTacticIds = new ArrayList<>();
-            for (Map.Entry<String, String> binding : bindings.entrySet()) {
-                List<String> tacticIds = streamRevToTacticIds
-                        .get(streamRevisionKey(binding.getKey(), binding.getValue()));
-                if (tacticIds != null) {
-                    matchedTacticIds.addAll(tacticIds);
-                }
-            }
-            if (matchedTacticIds.isEmpty()) {
-                continue;
-            }
-            bundleIdToTacticIds.put(bundle.getId(), matchedTacticIds);
             for (String tacticId : matchedTacticIds) {
                 TacticAggregator aggregator = aggregators.get(tacticId);
-                aggregator.latestObservation = mostRecent(aggregator.latestObservation,
-                        bundle.getActivatedAt(), bundle.getCreatedAt());
+                aggregator.noteObservation(bundle.getActivatedAt(), bundle.getCreatedAt());
             }
         }
 
@@ -144,44 +131,19 @@ public class TacticQualityMetricsService {
             if (run == null) {
                 continue;
             }
-            // Two attribution paths, deduplicated per run:
-            // 1. bundle bindings — covers promoted/baseline snapshot bundles,
-            // 2. run.appliedTacticIds — covers actual runtime tactic selection
-            // in ordinary runs (their snapshot has no revision bindings).
-            LinkedHashSet<String> attributedTacticIds = new LinkedHashSet<>();
-            List<String> viaBundle = bundleIdToTacticIds.get(run.getArtifactBundleId());
-            if (viaBundle != null) {
-                attributedTacticIds.addAll(viaBundle);
-            }
-            if (run.getAppliedTacticIds() != null) {
-                for (String appliedId : run.getAppliedTacticIds()) {
-                    if (appliedId != null && aggregators.containsKey(appliedId)) {
-                        attributedTacticIds.add(appliedId);
-                    }
-                }
-            }
+            Set<String> attributedTacticIds = tacticUsageAttributionService
+                    .resolveAttributedTacticIds(run, bundleIdToTacticIds, aggregators.keySet());
             if (attributedTacticIds.isEmpty()) {
                 continue;
             }
             Optional<RunVerdict> verdict = selfEvolvingRunService.findVerdict(run.getId());
             Instant verdictCreatedAt = verdict.map(RunVerdict::getCreatedAt).orElse(null);
-            String observedOutcome = resolveObservedOutcome(run, verdict.orElse(null));
+            String observedOutcome = observedTacticMetricsCalculator.resolveObservedOutcome(run, verdict.orElse(null));
             for (String tacticId : attributedTacticIds) {
                 TacticAggregator aggregator = aggregators.get(tacticId);
-                aggregator.latestObservation = mostRecent(aggregator.latestObservation,
-                        run.getCompletedAt(), run.getStartedAt(), verdictCreatedAt);
-                if (observedOutcome == null) {
-                    continue;
-                }
-                aggregator.observedRuns++;
-                if ("completed".equals(observedOutcome)) {
-                    aggregator.successfulRuns++;
-                }
-                Instant outcomeAt = mostRecent(null, run.getCompletedAt(), verdictCreatedAt);
-                if (outcomeAt != null
-                        && (aggregator.latestOutcomeAt == null || outcomeAt.isAfter(aggregator.latestOutcomeAt))) {
-                    aggregator.latestOutcomeAt = outcomeAt;
-                    aggregator.latestOutcomeFailed = "failed".equals(observedOutcome);
+                aggregator.noteObservation(run.getCompletedAt(), run.getStartedAt(), verdictCreatedAt);
+                if (observedOutcome != null) {
+                    aggregator.noteOutcome(observedOutcome, mostRecent(null, run.getCompletedAt(), verdictCreatedAt));
                 }
             }
         }
@@ -193,7 +155,7 @@ public class TacticQualityMetricsService {
                 continue;
             }
             TacticAggregator aggregator = aggregators.get(record.getTacticId());
-            enriched.add(applyMetrics(record, aggregator.toMetrics(recencyScore(aggregator.latestObservation))));
+            enriched.add(applyMetrics(record, toMetrics(aggregator)));
         }
         enrichCache.set(new EnrichCacheEntry(signature, nowMs, new ArrayList<>(enriched)));
         return enriched;
@@ -225,7 +187,7 @@ public class TacticQualityMetricsService {
         return streamId + "\u0000" + revisionId;
     }
 
-    private TacticRecord applyMetrics(TacticRecord record, ObservedMetrics metrics) {
+    private TacticRecord applyMetrics(TacticRecord record, ObservedTacticMetrics metrics) {
         TacticRecord enriched = copy(record);
         enriched.setSuccessRate(metrics.successRate());
         enriched.setBenchmarkWinRate(record.getBenchmarkWinRate());
@@ -241,27 +203,14 @@ public class TacticQualityMetricsService {
         return enriched;
     }
 
-    private List<String> deriveRegressionFlags(int observedRuns, int successfulRuns, boolean lastOutcomeFailed) {
-        List<String> flags = new ArrayList<>();
-        if (observedRuns >= REGRESSION_MIN_OBSERVATIONS) {
-            double failureRate = (observedRuns - successfulRuns) / (double) observedRuns;
-            if (failureRate >= REGRESSION_FAILURE_RATE_THRESHOLD) {
-                flags.add(FLAG_HIGH_FAILURE_RATE);
-            }
-        }
-        if (lastOutcomeFailed) {
-            flags.add(FLAG_RECENT_FAILURE);
-        }
-        return flags;
-    }
-
-    private ObservedMetrics resolveObservedMetrics(TacticRecord record) {
+    private ObservedTacticMetrics resolveObservedMetrics(TacticRecord record) {
         // Intentionally do not seed from record.getUpdatedAt(): save/deactivate
         // bumps updatedAt and would otherwise artificially rejuvenate recency.
         Instant latestObservation = null;
-        Set<String> matchingBundleIds = resolveMatchingBundleIds(record);
+        List<ArtifactBundleRecord> bundles = artifactBundleService.getBundles();
+        Set<String> matchingBundleIds = tacticUsageAttributionService.resolveMatchingBundleIds(record, bundles);
 
-        for (ArtifactBundleRecord bundle : artifactBundleService.getBundles()) {
+        for (ArtifactBundleRecord bundle : bundles) {
             if (bundle == null || !matchingBundleIds.contains(bundle.getId())) {
                 continue;
             }
@@ -273,26 +222,31 @@ public class TacticQualityMetricsService {
         Instant latestOutcomeAt = null;
         boolean latestOutcomeFailed = false;
         String recordTacticId = record != null ? record.getTacticId() : null;
+        Map<String, List<String>> matchingBundleAttribution = new HashMap<>();
+        if (recordTacticId != null) {
+            for (String bundleId : matchingBundleIds) {
+                matchingBundleAttribution.put(bundleId, List.of(recordTacticId));
+            }
+        }
         for (RunRecord run : selfEvolvingRunService.getRuns()) {
             if (run == null) {
                 continue;
             }
-            // Attribute via bundle bindings OR via run.appliedTacticIds (real
-            // runtime usage, since snapshot bundles have no revision bindings).
-            boolean attributedViaBundle = matchingBundleIds.contains(run.getArtifactBundleId());
-            boolean attributedViaApplied = recordTacticId != null
-                    && run.getAppliedTacticIds() != null
-                    && run.getAppliedTacticIds().contains(recordTacticId);
-            if (!attributedViaBundle && !attributedViaApplied) {
+            Set<String> attributedTacticIds = tacticUsageAttributionService.resolveAttributedTacticIds(
+                    run,
+                    matchingBundleAttribution,
+                    recordTacticId != null ? Set.of(recordTacticId) : Set.of());
+            if (!attributedTacticIds.contains(recordTacticId)) {
                 continue;
             }
             Optional<RunVerdict> verdict = selfEvolvingRunService.findVerdict(run.getId());
+            Instant verdictCreatedAt = verdict.map(RunVerdict::getCreatedAt).orElse(null);
             latestObservation = mostRecent(
                     latestObservation,
                     run.getCompletedAt(),
                     run.getStartedAt(),
-                    verdict.map(RunVerdict::getCreatedAt).orElse(null));
-            String observedOutcome = resolveObservedOutcome(run, verdict.orElse(null));
+                    verdictCreatedAt);
+            String observedOutcome = observedTacticMetricsCalculator.resolveObservedOutcome(run, verdict.orElse(null));
             if (observedOutcome == null) {
                 continue;
             }
@@ -300,77 +254,18 @@ public class TacticQualityMetricsService {
             if ("completed".equals(observedOutcome)) {
                 successfulRuns++;
             }
-            Instant outcomeAt = mostRecent(null, run.getCompletedAt(),
-                    verdict.map(RunVerdict::getCreatedAt).orElse(null));
+            Instant outcomeAt = mostRecent(null, run.getCompletedAt(), verdictCreatedAt);
             if (outcomeAt != null && (latestOutcomeAt == null || outcomeAt.isAfter(latestOutcomeAt))) {
                 latestOutcomeAt = outcomeAt;
                 latestOutcomeFailed = "failed".equals(observedOutcome);
             }
         }
 
-        Double successRate = observedRuns > 0 ? successfulRuns / (double) observedRuns : null;
-        List<String> regressionFlags = deriveRegressionFlags(observedRuns, successfulRuns, latestOutcomeFailed);
-        return new ObservedMetrics(successRate, recencyScore(latestObservation), successRate, regressionFlags);
-    }
-
-    private Set<String> resolveMatchingBundleIds(TacticRecord record) {
-        Set<String> bundleIds = new LinkedHashSet<>();
-        if (record == null
-                || StringValueSupport.isBlank(record.getArtifactStreamId())
-                || StringValueSupport.isBlank(record.getContentRevisionId())) {
-            return bundleIds;
-        }
-        for (ArtifactBundleRecord bundle : artifactBundleService.getBundles()) {
-            if (bundle == null || StringValueSupport.isBlank(bundle.getId())) {
-                continue;
-            }
-            Map<String, String> bindings = bundle.getArtifactRevisionBindings();
-            if (bindings == null || bindings.isEmpty()) {
-                continue;
-            }
-            String boundRevision = bindings.get(record.getArtifactStreamId());
-            if (record.getContentRevisionId().equals(boundRevision)) {
-                bundleIds.add(bundle.getId());
-            }
-        }
-        return bundleIds;
-    }
-
-    private String resolveObservedOutcome(RunRecord run, RunVerdict verdict) {
-        String verdictOutcome = normalizeOutcome(verdict != null ? verdict.getOutcomeStatus() : null);
-        if (isTerminalOutcome(verdictOutcome)) {
-            return verdictOutcome;
-        }
-        String runOutcome = normalizeOutcome(run != null ? run.getStatus() : null);
-        return isTerminalOutcome(runOutcome) ? runOutcome : null;
-    }
-
-    private boolean isTerminalOutcome(String outcome) {
-        return "completed".equals(outcome) || "failed".equals(outcome);
-    }
-
-    private String normalizeOutcome(String outcome) {
-        return outcome == null ? null : outcome.trim().toLowerCase(Locale.ROOT);
-    }
-
-    private Double recencyScore(Instant timestamp) {
-        if (timestamp == null) {
-            return null;
-        }
-        long days = ChronoUnit.DAYS.between(timestamp, clock.instant());
-        // Negative days (timestamp in the future relative to the clock) are
-        // treated as maximally recent rather than over-saturating the score.
-        if (days <= 0) {
-            return 1.0d;
-        }
-        if (days >= 30) {
-            return 0.0d;
-        }
-        return clamp(1.0d - (days / 30.0d));
-    }
-
-    private double clamp(double value) {
-        return Math.max(0.0d, Math.min(1.0d, value));
+        return observedTacticMetricsCalculator.calculate(
+                latestObservation,
+                observedRuns,
+                successfulRuns,
+                latestOutcomeFailed);
     }
 
     private Instant mostRecent(Instant current, Instant... candidates) {
@@ -387,6 +282,17 @@ public class TacticQualityMetricsService {
             }
         }
         return latest;
+    }
+
+    private ObservedTacticMetrics toMetrics(TacticAggregator aggregator) {
+        if (aggregator == null) {
+            return observedTacticMetricsCalculator.calculate(null, 0, 0, false);
+        }
+        return observedTacticMetricsCalculator.calculate(
+                aggregator.latestObservation,
+                aggregator.observedRuns,
+                aggregator.successfulRuns,
+                aggregator.latestOutcomeFailed);
     }
 
     private TacticRecord copy(TacticRecord record) {
@@ -435,13 +341,6 @@ public class TacticQualityMetricsService {
         }
     }
 
-    private record ObservedMetrics(
-            Double successRate,
-            Double recencyScore,
-            Double golemLocalUsageSuccess,
-            List<String> regressionFlags) {
-    }
-
     private final class TacticAggregator {
         private Instant latestObservation;
         private int observedRuns;
@@ -453,10 +352,19 @@ public class TacticQualityMetricsService {
             this.latestObservation = seedObservation;
         }
 
-        private ObservedMetrics toMetrics(Double recencyScore) {
-            Double successRate = observedRuns > 0 ? successfulRuns / (double) observedRuns : null;
-            List<String> flags = deriveRegressionFlags(observedRuns, successfulRuns, latestOutcomeFailed);
-            return new ObservedMetrics(successRate, recencyScore, successRate, flags);
+        private void noteObservation(Instant... candidates) {
+            latestObservation = mostRecent(latestObservation, candidates);
+        }
+
+        private void noteOutcome(String observedOutcome, Instant outcomeAt) {
+            observedRuns++;
+            if ("completed".equals(observedOutcome)) {
+                successfulRuns++;
+            }
+            if (outcomeAt != null && (latestOutcomeAt == null || outcomeAt.isAfter(latestOutcomeAt))) {
+                latestOutcomeAt = outcomeAt;
+                latestOutcomeFailed = "failed".equals(observedOutcome);
+            }
         }
     }
 }

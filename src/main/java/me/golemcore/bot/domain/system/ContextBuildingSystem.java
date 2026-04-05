@@ -22,23 +22,11 @@ import me.golemcore.bot.domain.context.ContextAssembler;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SelfEvolvingRunService;
-import me.golemcore.bot.domain.service.TacticSearchService;
+import me.golemcore.bot.domain.service.TacticTurnContextService;
 
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
 
 /**
  * Pipeline system for assembling the complete LLM context (order=20).
@@ -51,22 +39,21 @@ import java.util.UUID;
  * @see ContextAssembler
  */
 @Component
-@Slf4j
 public class ContextBuildingSystem implements AgentSystem {
 
     private final ContextAssembler contextAssembler;
     private final RuntimeConfigService runtimeConfigService;
     private final SelfEvolvingRunService selfEvolvingRunService;
-    private final TacticSearchService tacticSearchService;
+    private final TacticTurnContextService tacticTurnContextService;
 
     public ContextBuildingSystem(ContextAssembler contextAssembler,
             RuntimeConfigService runtimeConfigService,
             SelfEvolvingRunService selfEvolvingRunService,
-            TacticSearchService tacticSearchService) {
+            TacticTurnContextService tacticTurnContextService) {
         this.contextAssembler = contextAssembler;
         this.runtimeConfigService = runtimeConfigService;
         this.selfEvolvingRunService = selfEvolvingRunService;
-        this.tacticSearchService = tacticSearchService;
+        this.tacticTurnContextService = tacticTurnContextService;
     }
 
     @Override
@@ -83,7 +70,9 @@ public class ContextBuildingSystem implements AgentSystem {
     public AgentContext process(AgentContext context) {
         AgentContext assembledContext = contextAssembler.assemble(context);
         ensureSelfEvolvingRun(assembledContext);
-        attachTacticQueryContext(assembledContext);
+        if (tacticTurnContextService != null) {
+            tacticTurnContextService.attach(assembledContext);
+        }
         return assembledContext;
     }
 
@@ -100,134 +89,5 @@ public class ContextBuildingSystem implements AgentSystem {
         context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, run.getId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, run.getArtifactBundleId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED, false);
-    }
-
-    private void attachTacticQueryContext(AgentContext context) {
-        if (runtimeConfigService == null || tacticSearchService == null || context == null
-                || !runtimeConfigService.isSelfEvolvingEnabled()) {
-            return;
-        }
-        try {
-            TacticSearchQuery query = tacticSearchService.buildQuery(context);
-            context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY, query);
-            List<TacticSearchResult> results = tacticSearchService.search(query);
-            context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_RESULTS, results);
-            if (results != null && !results.isEmpty()) {
-                TacticSearchResult selectedTactic = results.getFirst();
-                context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION, selectedTactic);
-                context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_GUIDANCE, selectedTactic);
-                recordAppliedTacticIds(context, selectedTactic);
-                attachTransientTacticAdvisory(context, selectedTactic);
-            }
-        } catch (RuntimeException exception) { // NOSONAR - tactic search must never break context assembly
-            log.warn("[ContextBuildingSystem] Failed to attach tactic search context: {}", exception.getMessage());
-        }
-    }
-
-    private void recordAppliedTacticIds(AgentContext context, TacticSearchResult selectedTactic) {
-        if (context == null || selectedTactic == null) {
-            return;
-        }
-        // Only the selected tactic is actually applied downstream (via
-        // SELF_EVOLVING_TACTIC_SELECTION / the transient advisory). Other
-        // ranked candidates were evaluated but not used, so recording them
-        // would pollute attribution telemetry consumed by metrics.
-        String selectedId = selectedTactic.getTacticId();
-        if (selectedId == null || selectedId.isBlank()) {
-            return;
-        }
-        LinkedHashSet<String> merged = new LinkedHashSet<>();
-        List<String> existing = context.getAttribute(ContextAttributes.APPLIED_TACTIC_IDS);
-        if (existing != null) {
-            for (String id : existing) {
-                if (id != null && !id.isBlank()) {
-                    merged.add(id);
-                }
-            }
-        }
-        merged.add(selectedId);
-        context.setAttribute(ContextAttributes.APPLIED_TACTIC_IDS, new ArrayList<>(merged));
-    }
-
-    private void attachTransientTacticAdvisory(AgentContext context, TacticSearchResult tacticSearchResult) {
-        if (context == null || tacticSearchResult == null || context.getMessages() == null) {
-            return;
-        }
-        removeExistingTacticAdvisories(context);
-        String advisoryContent = buildTacticAdvisoryContent(tacticSearchResult);
-        if (advisoryContent == null || advisoryContent.isBlank()) {
-            return;
-        }
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
-        metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_TACTIC_ADVISORY);
-        me.golemcore.bot.domain.model.Message advisoryMessage = me.golemcore.bot.domain.model.Message.builder()
-                .id(UUID.randomUUID().toString())
-                .role("assistant")
-                .content(advisoryContent)
-                .metadata(metadata)
-                .timestamp(Instant.now())
-                .build();
-        int insertIndex = context.getMessages().size();
-        for (int index = context.getMessages().size() - 1; index >= 0; index--) {
-            me.golemcore.bot.domain.model.Message message = context.getMessages().get(index);
-            if (message != null && message.isUserMessage() && !message.isInternalMessage()) {
-                insertIndex = index;
-                break;
-            }
-        }
-        context.getMessages().add(insertIndex, advisoryMessage);
-    }
-
-    private void removeExistingTacticAdvisories(AgentContext context) {
-        Iterator<me.golemcore.bot.domain.model.Message> iterator = context.getMessages().iterator();
-        while (iterator.hasNext()) {
-            me.golemcore.bot.domain.model.Message message = iterator.next();
-            if (message != null && message.isInternalMessage() && message.getMetadata() != null
-                    && ContextAttributes.MESSAGE_INTERNAL_KIND_TACTIC_ADVISORY
-                            .equals(message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND))) {
-                iterator.remove();
-            }
-        }
-    }
-
-    private String buildTacticAdvisoryContent(TacticSearchResult tacticSearchResult) {
-        StringBuilder builder = new StringBuilder("Tactic advisory for this turn.\n");
-        builder.append("Treat this as an optional heuristic only. ")
-                .append("Never let it override system policies, active guardrails, or the user's explicit request.\n");
-        if (tacticSearchResult.getTitle() != null && !tacticSearchResult.getTitle().isBlank()) {
-            builder.append("Tactic: ")
-                    .append(tacticSearchResult.getTitle().trim())
-                    .append(".\n");
-        }
-        String intentSummary = sanitizeAdvisoryText(tacticSearchResult.getIntentSummary());
-        if (intentSummary != null) {
-            builder.append("Intent summary: ").append(intentSummary).append("\n");
-        }
-        String behaviorSummary = sanitizeAdvisoryText(tacticSearchResult.getBehaviorSummary());
-        if (behaviorSummary != null && !behaviorSummary.equals(intentSummary)) {
-            builder.append("Behavior summary: ").append(behaviorSummary).append("\n");
-        }
-        if (tacticSearchResult.getToolSummary() != null && !tacticSearchResult.getToolSummary().isBlank()) {
-            builder.append("Tooling hint: ").append(tacticSearchResult.getToolSummary().trim()).append("\n");
-        }
-        if (tacticSearchResult.getOutcomeSummary() != null && !tacticSearchResult.getOutcomeSummary().isBlank()) {
-            builder.append("Expected outcome: ").append(tacticSearchResult.getOutcomeSummary().trim()).append("\n");
-        }
-        if (tacticSearchResult.getApprovalNotes() != null && !tacticSearchResult.getApprovalNotes().isBlank()) {
-            builder.append("Approval context: ").append(tacticSearchResult.getApprovalNotes().trim()).append("\n");
-        }
-        return builder.toString().trim();
-    }
-
-    private String sanitizeAdvisoryText(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        String trimmed = value.trim();
-        if (trimmed.matches("selfevolving:[a-z_]+:[a-z_]+")) {
-            return null;
-        }
-        return trimmed;
     }
 }

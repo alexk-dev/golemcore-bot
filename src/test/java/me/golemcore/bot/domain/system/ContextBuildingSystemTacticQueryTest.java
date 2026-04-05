@@ -12,6 +12,7 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SelfEvolvingRunService;
 import me.golemcore.bot.domain.service.TacticSearchService;
+import me.golemcore.bot.domain.service.TacticTurnContextService;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -35,11 +36,14 @@ class ContextBuildingSystemTacticQueryTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
         TacticSearchService tacticSearchService = mock(TacticSearchService.class);
+        TacticTurnContextService tacticTurnContextService = new TacticTurnContextService(
+                runtimeConfigService,
+                tacticSearchService);
         ContextBuildingSystem system = new ContextBuildingSystem(
                 assembler,
                 runtimeConfigService,
                 selfEvolvingRunService,
-                tacticSearchService);
+                tacticTurnContextService);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("session-1")
@@ -105,11 +109,14 @@ class ContextBuildingSystemTacticQueryTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
         TacticSearchService tacticSearchService = mock(TacticSearchService.class);
+        TacticTurnContextService tacticTurnContextService = new TacticTurnContextService(
+                runtimeConfigService,
+                tacticSearchService);
         ContextBuildingSystem system = new ContextBuildingSystem(
                 assembler,
                 runtimeConfigService,
                 selfEvolvingRunService,
-                tacticSearchService);
+                tacticTurnContextService);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("session-1")
@@ -162,11 +169,14 @@ class ContextBuildingSystemTacticQueryTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
         TacticSearchService tacticSearchService = mock(TacticSearchService.class);
+        TacticTurnContextService tacticTurnContextService = new TacticTurnContextService(
+                runtimeConfigService,
+                tacticSearchService);
         ContextBuildingSystem system = new ContextBuildingSystem(
                 assembler,
                 runtimeConfigService,
                 selfEvolvingRunService,
-                tacticSearchService);
+                tacticTurnContextService);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("session-2")
@@ -218,11 +228,14 @@ class ContextBuildingSystemTacticQueryTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
         TacticSearchService tacticSearchService = mock(TacticSearchService.class);
+        TacticTurnContextService tacticTurnContextService = new TacticTurnContextService(
+                runtimeConfigService,
+                tacticSearchService);
         ContextBuildingSystem system = new ContextBuildingSystem(
                 assembler,
                 runtimeConfigService,
                 selfEvolvingRunService,
-                tacticSearchService);
+                tacticTurnContextService);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("session-applied")
@@ -269,5 +282,76 @@ class ContextBuildingSystemTacticQueryTest {
         // Only the selected (first) tactic is actually applied downstream;
         // ranked but unselected candidates are not attributed as usage.
         assertEquals(List.of("tactic-alpha"), appliedIds);
+    }
+
+    @Test
+    void shouldClearStaleTacticSelectionGuidanceAndAdvisoryWhenSearchReturnsNoResults() {
+        ContextAssembler assembler = mock(ContextAssembler.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
+        TacticSearchService tacticSearchService = mock(TacticSearchService.class);
+        TacticTurnContextService tacticTurnContextService = new TacticTurnContextService(
+                runtimeConfigService,
+                tacticSearchService);
+        ContextBuildingSystem system = new ContextBuildingSystem(
+                assembler,
+                runtimeConfigService,
+                selfEvolvingRunService,
+                tacticTurnContextService);
+        Map<String, Object> advisoryMetadata = new LinkedHashMap<>();
+        advisoryMetadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
+        advisoryMetadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
+                ContextAttributes.MESSAGE_INTERNAL_KIND_TACTIC_ADVISORY);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id("session-empty")
+                        .chatId("chat-empty")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder()
+                                .role("assistant")
+                                .content("stale tactic advisory")
+                                .metadata(advisoryMetadata)
+                                .build(),
+                        Message.builder()
+                                .role("user")
+                                .content("recover from failed shell command")
+                                .build())))
+                .build();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION, TacticSearchResult.builder()
+                .tacticId("stale-selection")
+                .build());
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_GUIDANCE, TacticSearchResult.builder()
+                .tacticId("stale-guidance")
+                .build());
+        context.setAttribute(ContextAttributes.APPLIED_TACTIC_IDS, List.of("stale-selection"));
+
+        when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder().enabled(true).build())
+                .build());
+        when(selfEvolvingRunService.startRun(context)).thenReturn(RunRecord.builder()
+                .id("run-empty")
+                .artifactBundleId("bundle-empty")
+                .build());
+        TacticSearchQuery query = TacticSearchQuery.builder()
+                .rawQuery("recover from failed shell command")
+                .queryViews(List.of("recover", "shell", "failure"))
+                .build();
+        when(tacticSearchService.buildQuery(context)).thenReturn(query);
+        when(tacticSearchService.search(query)).thenReturn(List.of());
+
+        AgentContext result = system.process(context);
+
+        assertEquals(query, result.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY));
+        assertEquals(List.of(), result.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_RESULTS));
+        assertNull(result.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION));
+        assertNull(result.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_GUIDANCE));
+        assertNull(result.getAttribute(ContextAttributes.APPLIED_TACTIC_IDS));
+        assertEquals(1, result.getMessages().size());
+        assertEquals("recover from failed shell command", result.getMessages().getFirst().getContent());
     }
 }
