@@ -64,7 +64,7 @@ class TacticRecordServiceTest {
         rebuildServiceProvider = mock(ObjectProvider.class);
         when(rebuildServiceProvider.getIfAvailable()).thenReturn(rebuildService);
 
-        when(storagePort.putText(anyString(), anyString(), anyString()))
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), any()))
                 .thenAnswer(invocation -> {
                     String directory = invocation.getArgument(0);
                     String path = invocation.getArgument(1);
@@ -110,6 +110,7 @@ class TacticRecordServiceTest {
         assertFalse(storagePort.listObjects("self-evolving", "tactics").join().isEmpty());
         assertTrue(persistedFiles.keySet().stream().anyMatch(path -> path.startsWith("self-evolving/tactics/")));
         verify(storagePort, never()).putText(eq("skills"), anyString(), anyString());
+        verify(storagePort).putTextAtomic(eq("self-evolving"), eq("tactics/tactic-1.json"), anyString(), eq(true));
         verify(rebuildService, times(1)).onTacticChanged("tactic-1");
     }
 

@@ -481,6 +481,41 @@ class LocalEmbeddingBootstrapServiceTest {
     }
 
     @Test
+    void shouldRunStartupPullBeforeReturningProjectedStatusWhenProjectionIsAvailable() {
+        SelfEvolvingTacticSearchStatusProjectionService projectionService = mock(
+                SelfEvolvingTacticSearchStatusProjectionService.class);
+        TacticSearchStatus projectedStatus = TacticSearchStatus.builder()
+                .mode("bm25")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .runtimeInstalled(true)
+                .runtimeHealthy(true)
+                .modelAvailable(false)
+                .build();
+        when(projectionService.projectCurrent()).thenReturn(projectedStatus);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
+                "ollama", true, true, false, true, "http://localhost:11434", "qwen3-embedding:0.6b"));
+
+        TestLocalEmbeddingBootstrapService projectedService = new TestLocalEmbeddingBootstrapService(
+                runtimeConfigService,
+                metricsService,
+                projectionService);
+        projectedService.runtimeProbe = new LocalEmbeddingBootstrapService.LocalRuntimeProbe(true, "0.19.0");
+        projectedService.runtimeHealthy = true;
+        projectedService.hasModelResponses.add(false);
+        projectedService.hasModelResponses.add(true);
+        projectedService.hasModelResponses.add(true);
+        projectedService.pullResult = true;
+
+        TacticSearchStatus status = projectedService.initialize();
+
+        assertEquals("hybrid", status.getMode());
+        assertTrue(status.getPullAttempted());
+        assertTrue(status.getPullSucceeded());
+        assertTrue(status.getModelAvailable());
+    }
+
+    @Test
     void shouldTreatNonOllamaRuntimeProbeAsNotApplicable() {
         LocalEmbeddingBootstrapService directService = new LocalEmbeddingBootstrapService(
                 runtimeConfigService,
@@ -1014,8 +1049,15 @@ class LocalEmbeddingBootstrapServiceTest {
         private TestLocalEmbeddingBootstrapService(
                 RuntimeConfigService runtimeConfigService,
                 TacticSearchMetricsService metricsService) {
+            this(runtimeConfigService, metricsService, null);
+        }
+
+        private TestLocalEmbeddingBootstrapService(
+                RuntimeConfigService runtimeConfigService,
+                TacticSearchMetricsService metricsService,
+                SelfEvolvingTacticSearchStatusProjectionService projectionService) {
             super(runtimeConfigService, metricsService, FIXED_CLOCK, new okhttp3.OkHttpClient(),
-                    new com.fasterxml.jackson.databind.ObjectMapper(), null, new StubOllamaProcessPort());
+                    new com.fasterxml.jackson.databind.ObjectMapper(), projectionService, new StubOllamaProcessPort());
         }
 
         @Override

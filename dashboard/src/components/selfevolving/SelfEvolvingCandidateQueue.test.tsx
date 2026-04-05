@@ -36,7 +36,7 @@ describe('SelfEvolvingCandidateQueue', () => {
         selectedCandidateId="51728b76-26a0-4e27-a759-4db742624fc8"
         promotingCandidateId={null}
         lastPromotionResult={null}
-        lastPromotionError={false}
+        lastPromotionErrorCandidateId={null}
         onSelectCandidate={vi.fn()}
         onSelectRun={vi.fn()}
         onPlanPromotion={vi.fn()}
@@ -86,7 +86,7 @@ describe('SelfEvolvingCandidateQueue', () => {
         selectedCandidateId="cand-2"
         promotingCandidateId={null}
         lastPromotionResult={null}
-        lastPromotionError={false}
+        lastPromotionErrorCandidateId={null}
         onSelectCandidate={vi.fn()}
         onSelectRun={vi.fn()}
         onPlanPromotion={vi.fn()}
@@ -140,7 +140,7 @@ describe('SelfEvolvingCandidateQueue', () => {
           reason: 'Approved and activated as tactic',
           decidedAt: '2026-04-04T12:00:00Z',
         }}
-        lastPromotionError={false}
+        lastPromotionErrorCandidateId={null}
         onSelectCandidate={vi.fn()}
         onSelectRun={vi.fn()}
         onPlanPromotion={vi.fn()}
@@ -202,7 +202,7 @@ describe('SelfEvolvingCandidateQueue', () => {
         selectedCandidateId="cand-active"
         promotingCandidateId={null}
         lastPromotionResult={null}
-        lastPromotionError={false}
+        lastPromotionErrorCandidateId={null}
         onSelectCandidate={vi.fn()}
         onSelectRun={vi.fn()}
         onPlanPromotion={vi.fn()}
@@ -213,5 +213,65 @@ describe('SelfEvolvingCandidateQueue', () => {
     expect(html).toContain('Approve rollout');
     expect(html).not.toContain('Live tactic');
     expect(html).toContain('text-bg-secondary">1<');
+  });
+
+  it('shows a promotion error only for the failed candidate', () => {
+    const html = renderToStaticMarkup(
+      <SelfEvolvingCandidateQueue
+        candidates={[
+          {
+            id: 'cand-selected',
+            goal: 'fix',
+            artifactType: 'skill',
+            status: 'proposed',
+            riskLevel: 'low',
+            expectedImpact: 'Selected candidate',
+            proposedDiff: null,
+            proposal: {
+              summary: 'Selected candidate',
+              rationale: null,
+              behaviorInstructions: 'Keep selected candidate visible.',
+              toolInstructions: null,
+              expectedOutcome: 'No error banner here.',
+              approvalNotes: null,
+              proposedPatch: null,
+              riskLevel: 'low',
+            },
+            sourceRunIds: [],
+            evidenceRefs: [],
+          },
+          {
+            id: 'cand-failed',
+            goal: 'fix',
+            artifactType: 'skill',
+            status: 'proposed',
+            riskLevel: 'medium',
+            expectedImpact: 'Failed candidate',
+            proposedDiff: null,
+            proposal: {
+              summary: 'Failed candidate',
+              rationale: null,
+              behaviorInstructions: 'This candidate failed to promote.',
+              toolInstructions: null,
+              expectedOutcome: 'Show the error only when selected.',
+              approvalNotes: null,
+              proposedPatch: null,
+              riskLevel: 'medium',
+            },
+            sourceRunIds: [],
+            evidenceRefs: [],
+          },
+        ]}
+        selectedCandidateId="cand-selected"
+        promotingCandidateId={null}
+        lastPromotionResult={null}
+        lastPromotionErrorCandidateId="cand-failed"
+        onSelectCandidate={vi.fn()}
+        onSelectRun={vi.fn()}
+        onPlanPromotion={vi.fn()}
+      />,
+    );
+
+    expect(html).not.toContain('Promotion failed. Check backend logs for details.');
   });
 });

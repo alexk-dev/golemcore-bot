@@ -58,9 +58,9 @@ class SelfEvolvingRunServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
 
         when(storagePort.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
-        when(storagePort.putText(eq("self-evolving"), eq("runs.json"), anyString()))
+        when(storagePort.putTextAtomic(eq("self-evolving"), eq("runs.json"), anyString(), eq(true)))
                 .thenReturn(CompletableFuture.completedFuture(null));
-        when(storagePort.putText(eq("self-evolving"), eq("run-verdicts.json"), anyString()))
+        when(storagePort.putTextAtomic(eq("self-evolving"), eq("run-verdicts.json"), anyString(), eq(true)))
                 .thenReturn(CompletableFuture.completedFuture(null));
     }
 
@@ -83,7 +83,7 @@ class SelfEvolvingRunServiceTest {
         assertEquals("bundle-1", run.getArtifactBundleId());
         assertEquals("RUNNING", run.getStatus());
         assertEquals(FIXED_INSTANT, run.getStartedAt());
-        verify(storagePort).putText(eq("self-evolving"), eq("runs.json"), anyString());
+        verify(storagePort).putTextAtomic(eq("self-evolving"), eq("runs.json"), anyString(), eq(true));
 
         String persistedJson = service.exportRunsJson();
         assertTrue(persistedJson.contains("\"artifactBundleId\":\"bundle-1\""));
@@ -314,7 +314,7 @@ class SelfEvolvingRunServiceTest {
     void shouldLoadRunsAsEmptyWhenStoredJsonIsInvalid() {
         StoragePort brokenStorage = mock(StoragePort.class);
         when(brokenStorage.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture("{"));
-        when(brokenStorage.putText(eq("self-evolving"), eq("runs.json"), anyString()))
+        when(brokenStorage.putTextAtomic(eq("self-evolving"), eq("runs.json"), anyString(), eq(true)))
                 .thenReturn(CompletableFuture.completedFuture(null));
         SelfEvolvingRunService brokenService = new SelfEvolvingRunService(new JsonRunJournalAdapter(brokenStorage),
                 artifactBundleService, clock);
@@ -328,7 +328,7 @@ class SelfEvolvingRunServiceTest {
             String fileName = invocation.getArgument(1);
             return CompletableFuture.completedFuture(persistedFiles.get(fileName));
         });
-        when(persistedStorage.putText(eq("self-evolving"), anyString(), anyString())).thenAnswer(invocation -> {
+        when(persistedStorage.putTextAtomic(eq("self-evolving"), anyString(), anyString(), any())).thenAnswer(invocation -> {
             String fileName = invocation.getArgument(1);
             String content = invocation.getArgument(2);
             persistedFiles.put(fileName, content);

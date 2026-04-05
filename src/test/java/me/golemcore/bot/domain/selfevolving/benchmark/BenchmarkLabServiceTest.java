@@ -23,8 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService;
 import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
@@ -42,7 +44,7 @@ class BenchmarkLabServiceTest {
         selfEvolvingRunService = mock(SelfEvolvingRunService.class);
         promotionWorkflowService = mock(PromotionWorkflowService.class);
         when(storagePort.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
-        when(storagePort.putText(anyString(), anyString(), anyString()))
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), eq(true)))
                 .thenReturn(CompletableFuture.completedFuture(null));
         benchmarkLabService = new BenchmarkLabService(
                 new JsonBenchmarkJournalAdapter(storagePort),
@@ -85,6 +87,7 @@ class BenchmarkLabServiceTest {
         assertEquals(1, suites.size());
         assertEquals(campaign.getSuiteId(), suites.getFirst().getId());
         assertEquals(1, benchmarkLabService.getCampaigns().size());
+        verify(storagePort).putTextAtomic(eq("self-evolving"), eq("benchmark-campaigns.json"), anyString(), eq(true));
     }
 
     @Test

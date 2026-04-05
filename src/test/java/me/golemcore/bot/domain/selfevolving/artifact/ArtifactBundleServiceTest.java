@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
@@ -47,7 +48,7 @@ class ArtifactBundleServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
 
         when(storagePort.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
-        when(storagePort.putText(eq("self-evolving"), eq("artifact-bundles.json"), anyString()))
+        when(storagePort.putTextAtomic(eq("self-evolving"), eq("artifact-bundles.json"), anyString(), eq(true)))
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled()).thenReturn(true);
@@ -90,6 +91,7 @@ class ArtifactBundleServiceTest {
         assertEquals("conv-1", bundle.getConfigSnapshot().get("conversationKey"));
         assertTrue(bundle.getArtifactKeyBindings().containsKey("governance_policy:approval"));
         assertFalse(service.getBundles().isEmpty());
+        verify(storagePort).putTextAtomic(eq("self-evolving"), eq("artifact-bundles.json"), anyString(), eq(true));
     }
 
     @Test

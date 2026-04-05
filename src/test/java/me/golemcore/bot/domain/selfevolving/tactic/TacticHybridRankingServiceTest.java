@@ -17,7 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -48,6 +47,7 @@ class TacticHybridRankingServiceTest {
                                         .rerank(RuntimeConfig.SelfEvolvingTacticRerankConfig.builder()
                                                 .crossEncoder(true)
                                                 .tier("deep")
+                                                .timeoutMs(15000)
                                                 .build())
                                         .build())
                                 .build())
@@ -86,7 +86,7 @@ class TacticHybridRankingServiceTest {
 
     @Test
     void shouldSurfaceCrossEncoderRerankerVerdict() {
-        when(rerankerService.rerank(any(), anyList(), eq("deep"), anyInt())).thenReturn(List.of(
+        when(rerankerService.rerank(any(), anyList(), eq("deep"), any())).thenReturn(List.of(
                 new TacticCrossEncoderRerankerService.RerankedCandidate("planner", 0.08d,
                         "tier deep via gpt-5.4/high"),
                 new TacticCrossEncoderRerankerService.RerankedCandidate("rollback", 0.01d,
@@ -101,7 +101,7 @@ class TacticHybridRankingServiceTest {
 
     @Test
     void shouldDegradeCleanlyWhenCrossEncoderRerankerIsUnavailable() {
-        when(rerankerService.rerank(any(), anyList(), eq("deep"), anyInt()))
+        when(rerankerService.rerank(any(), anyList(), eq("deep"), any()))
                 .thenThrow(new IllegalStateException("reranker unavailable"));
 
         TacticSearchResult result = rankingService.rank(query(), lexicalHits(), vectorHits()).getFirst();
@@ -150,6 +150,7 @@ class TacticHybridRankingServiceTest {
                                         .rerank(RuntimeConfig.SelfEvolvingTacticRerankConfig.builder()
                                                 .crossEncoder(false)
                                                 .tier("deep")
+                                                .timeoutMs(15000)
                                                 .build())
                                         .build())
                                 .build())

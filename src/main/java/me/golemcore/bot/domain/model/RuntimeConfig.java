@@ -937,12 +937,9 @@ public class RuntimeConfig {
     @Builder
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class SelfEvolvingTacticRerankConfig {
-        @Builder.Default
         private Boolean crossEncoder = true;
-        @Builder.Default
         private String tier = "deep";
-        @Builder.Default
-        private Integer timeoutMs = 5000;
+        private Integer timeoutMs = 15000;
     }
 
     @Data

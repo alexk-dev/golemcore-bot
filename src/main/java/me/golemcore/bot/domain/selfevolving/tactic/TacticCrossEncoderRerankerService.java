@@ -80,7 +80,8 @@ public class TacticCrossEncoderRerankerService {
             return List.of();
         }
         try {
-            ModelSelectionService.ModelSelection selection = modelSelectionService.resolveExplicitTier(tier);
+            String effectiveTier = StringValueSupport.isBlank(tier) ? "deep" : tier;
+            ModelSelectionService.ModelSelection selection = modelSelectionService.resolveExplicitTier(effectiveTier);
             LlmRequest request = LlmRequest.builder()
                     .model(selection.model())
                     .reasoningEffort(selection.reasoning())
@@ -108,7 +109,7 @@ public class TacticCrossEncoderRerankerService {
 
     private long resolveTimeoutMs(Integer timeoutMs) {
         if (timeoutMs == null || timeoutMs <= 0) {
-            return 5000L;
+            return 15000L;
         }
         return timeoutMs.longValue();
     }

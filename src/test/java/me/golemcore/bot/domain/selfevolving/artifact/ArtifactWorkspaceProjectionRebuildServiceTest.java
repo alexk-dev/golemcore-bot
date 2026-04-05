@@ -29,7 +29,7 @@ class ArtifactWorkspaceProjectionRebuildServiceTest {
     void setUp() {
         storagePort = mock(StoragePort.class);
         artifactWorkspaceProjectionService = mock(ArtifactWorkspaceProjectionService.class);
-        when(storagePort.putText(anyString(), anyString(), anyString()))
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), eq(false)))
                 .thenReturn(CompletableFuture.completedFuture(null));
         service = new ArtifactWorkspaceProjectionRebuildService(artifactWorkspaceProjectionService,
                 new JsonArtifactRepositoryAdapter(storagePort),
@@ -51,7 +51,9 @@ class ArtifactWorkspaceProjectionRebuildServiceTest {
 
         service.rebuildAll();
 
-        verify(storagePort).putText(eq("self-evolving"), eq("artifact-workspace/catalog.json"), anyString());
-        verify(storagePort).putText(eq("self-evolving"), eq("artifact-workspace/lineage/stream-1.json"), anyString());
+        verify(storagePort).putTextAtomic(eq("self-evolving"), eq("artifact-workspace/catalog.json"), anyString(),
+                eq(false));
+        verify(storagePort).putTextAtomic(eq("self-evolving"), eq("artifact-workspace/lineage/stream-1.json"),
+                anyString(), eq(false));
     }
 }
