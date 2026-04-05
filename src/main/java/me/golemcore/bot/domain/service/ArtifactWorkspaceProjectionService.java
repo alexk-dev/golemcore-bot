@@ -65,6 +65,7 @@ public class ArtifactWorkspaceProjectionService {
     private final PromotionWorkflowService promotionWorkflowService;
     private final ArtifactBundleService artifactBundleService;
     private final BenchmarkLabService benchmarkLabService;
+    private final ArtifactLineageProjectionService artifactLineageProjectionService;
     private final ArtifactNormalizedRevisionProjectionService normalizedRevisionProjectionService;
     private final ArtifactDiffService artifactDiffService;
     private final ArtifactImpactService artifactImpactService;
@@ -75,6 +76,7 @@ public class ArtifactWorkspaceProjectionService {
             PromotionWorkflowService promotionWorkflowService,
             ArtifactBundleService artifactBundleService,
             BenchmarkLabService benchmarkLabService,
+            ArtifactLineageProjectionService artifactLineageProjectionService,
             ArtifactNormalizedRevisionProjectionService normalizedRevisionProjectionService,
             ArtifactDiffService artifactDiffService,
             ArtifactImpactService artifactImpactService,
@@ -83,6 +85,7 @@ public class ArtifactWorkspaceProjectionService {
         this.promotionWorkflowService = promotionWorkflowService;
         this.artifactBundleService = artifactBundleService;
         this.benchmarkLabService = benchmarkLabService;
+        this.artifactLineageProjectionService = artifactLineageProjectionService;
         this.normalizedRevisionProjectionService = normalizedRevisionProjectionService;
         this.artifactDiffService = artifactDiffService;
         this.artifactImpactService = artifactImpactService;
@@ -131,64 +134,12 @@ public class ArtifactWorkspaceProjectionService {
                 .orElseThrow(() -> new IllegalArgumentException("Artifact stream not found: " + artifactStreamId));
         List<PromotionDecision> decisions = promotionWorkflowService.getPromotionDecisions().stream()
                 .filter(decision -> decision != null && artifactStreamId.equals(decision.getArtifactStreamId()))
-                .sorted(Comparator.comparing(PromotionDecision::getDecidedAt,
-                        Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
-
-        List<ArtifactLineageNode> nodes = new ArrayList<>();
-        List<ArtifactLineageEdge> edges = new ArrayList<>();
-        String proposedNodeId = candidate.getId() + ":proposed";
-        nodes.add(ArtifactLineageNode.builder()
-                .nodeId(proposedNodeId)
-                .contentRevisionId(candidate.getContentRevisionId())
-                .lifecycleState("candidate")
-                .rolloutStage("proposed")
-                .originBundleId(candidate.getBaseVersion())
-                .sourceRunIds(candidate.getSourceRunIds() != null ? candidate.getSourceRunIds() : List.of())
-                .campaignIds(resolveCampaignIds(candidate.getBaseVersion()))
-                .attributionMode("bundle_observed")
-                .createdAt(candidate.getCreatedAt())
-                .build());
-
-        String previousNodeId = proposedNodeId;
-        for (PromotionDecision decision : decisions) {
-            String nodeId = decision.getId() + ":" + decision.getToRolloutStage();
-            nodes.add(ArtifactLineageNode.builder()
-                    .nodeId(nodeId)
-                    .contentRevisionId(decision.getContentRevisionId())
-                    .lifecycleState(decision.getToLifecycleState())
-                    .rolloutStage(decision.getToRolloutStage())
-                    .promotionDecisionId(decision.getId())
-                    .originBundleId(decision.getOriginBundleId())
-                    .sourceRunIds(candidate.getSourceRunIds() != null ? candidate.getSourceRunIds() : List.of())
-                    .campaignIds(resolveCampaignIds(decision.getOriginBundleId()))
-                    .attributionMode("bundle_observed")
-                    .createdAt(decision.getDecidedAt())
-                    .build());
-            edges.add(ArtifactLineageEdge.builder()
-                    .edgeId(previousNodeId + "->" + nodeId)
-                    .fromNodeId(previousNodeId)
-                    .toNodeId(nodeId)
-                    .edgeType(resolveEdgeType(decision.getToRolloutStage()))
-                    .createdAt(decision.getDecidedAt())
-                    .build());
-            previousNodeId = nodeId;
-        }
-
-        List<String> railOrder = nodes.stream().map(ArtifactLineageNode::getNodeId).toList();
-        return ArtifactLineageProjection.builder()
-                .artifactStreamId(artifactStreamId)
-                .originArtifactStreamId(candidate.getOriginArtifactStreamId())
-                .artifactKey(candidate.getArtifactKey())
-                .nodes(nodes)
-                .edges(edges)
-                .railOrder(railOrder)
-                .branches(List.of())
-                .defaultSelectedNodeId(railOrder.getLast())
-                .defaultSelectedRevisionId(nodes.getLast().getContentRevisionId())
-                .projectionSchemaVersion(PROJECTION_SCHEMA_VERSION)
-                .projectedAt(Instant.now(clock))
-                .build();
+        return artifactLineageProjectionService.project(
+                artifactStreamId,
+                candidate,
+                decisions,
+                benchmarkLabService.getCampaigns());
     }
 
     public List<ArtifactRevisionProjection> listRevisions(String artifactStreamId) {
@@ -649,14 +600,4 @@ public class ArtifactWorkspaceProjectionService {
         return null;
     }
 
-    private String resolveEdgeType(String rolloutStage) {
-        return switch (rolloutStage) {
-        case "replayed" -> "replayed_as";
-        case "shadowed" -> "shadow_promoted";
-        case "canary" -> "canary_promoted";
-        case "approved" -> "approved_to_active";
-        case "reverted" -> "reverted_from";
-        default -> "derived_from";
-        };
-    }
 }

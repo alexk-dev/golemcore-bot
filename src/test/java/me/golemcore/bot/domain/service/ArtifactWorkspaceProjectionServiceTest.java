@@ -53,11 +53,14 @@ class ArtifactWorkspaceProjectionServiceTest {
         ArtifactNormalizedRevisionProjectionService normalizedRevisionProjectionService = new ArtifactNormalizedRevisionProjectionService();
         ArtifactDiffService artifactDiffService = new ArtifactDiffService(normalizedRevisionProjectionService);
         ArtifactImpactService artifactImpactService = new ArtifactImpactService();
+        ArtifactLineageProjectionService artifactLineageProjectionService = new ArtifactLineageProjectionService(
+                Clock.fixed(Instant.parse("2026-03-31T20:00:00Z"), ZoneOffset.UTC));
         service = new ArtifactWorkspaceProjectionService(
                 evolutionCandidateService,
                 promotionWorkflowService,
                 artifactBundleService,
                 benchmarkLabService,
+                artifactLineageProjectionService,
                 normalizedRevisionProjectionService,
                 artifactDiffService,
                 artifactImpactService,
