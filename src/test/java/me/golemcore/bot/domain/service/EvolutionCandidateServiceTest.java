@@ -65,6 +65,7 @@ class EvolutionCandidateServiceTest {
         evolutionCandidateService = new EvolutionCandidateService(
                 storagePort,
                 mock(TacticRecordService.class),
+                mock(ArtifactBundleService.class),
                 Clock.fixed(Instant.parse("2026-03-31T16:30:00Z"), ZoneOffset.UTC));
     }
 
@@ -322,6 +323,7 @@ class EvolutionCandidateServiceTest {
         EvolutionCandidateService reloadedService = new EvolutionCandidateService(
                 mockReloadingStoragePort(),
                 mock(TacticRecordService.class),
+                mock(ArtifactBundleService.class),
                 Clock.fixed(Instant.parse("2026-03-31T16:30:00Z"), ZoneOffset.UTC));
         assertTrue(reloadedService.getArtifactRevisionRecords().isEmpty());
     }

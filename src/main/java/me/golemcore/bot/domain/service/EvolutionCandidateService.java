@@ -83,13 +83,19 @@ public class EvolutionCandidateService {
 
     private final StoragePort storagePort;
     private final TacticRecordService tacticRecordService;
+    private final ArtifactBundleService artifactBundleService;
     private final Clock clock;
     private final ObjectMapper objectMapper;
     private final AtomicReference<List<ArtifactRevisionRecord>> artifactRevisionCache = new AtomicReference<>();
 
-    public EvolutionCandidateService(StoragePort storagePort, TacticRecordService tacticRecordService, Clock clock) {
+    public EvolutionCandidateService(
+            StoragePort storagePort,
+            TacticRecordService tacticRecordService,
+            ArtifactBundleService artifactBundleService,
+            Clock clock) {
         this.storagePort = storagePort;
         this.tacticRecordService = tacticRecordService;
+        this.artifactBundleService = artifactBundleService;
         this.clock = clock;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -167,7 +173,19 @@ public class EvolutionCandidateService {
                 .lifecycleState("active")
                 .rolloutStage("active")
                 .build();
-        return syncTacticRecord(promotedCandidate).orElse(null);
+        Optional<TacticRecord> tactic = syncTacticRecord(promotedCandidate);
+        if (tactic.isPresent() && artifactBundleService != null) {
+            try {
+                artifactBundleService.promoteCandidateBundle(
+                        UUID.randomUUID().toString(), promotedCandidate, "active");
+            } catch (RuntimeException exception) { // NOSONAR - bundle failure should not break activation
+                log.warn(
+                        "[SelfEvolving] Failed to promote bundle for activated tactic {}: {}",
+                        candidate.getContentRevisionId(),
+                        exception.getMessage());
+            }
+        }
+        return tactic.orElse(null);
     }
 
     public Optional<TacticRecord> syncTacticRecord(EvolutionCandidate candidate) {

@@ -59,7 +59,7 @@ class PromotionWorkflowServiceArtifactLineageTest {
                         CompletableFuture.completedFuture(objectMapper.writeValueAsString(List.of(legacyCandidate))));
 
         evolutionCandidateService = new EvolutionCandidateService(storagePort, mock(TacticRecordService.class),
-                FIXED_CLOCK);
+                mock(ArtifactBundleService.class), FIXED_CLOCK);
         service = new PromotionWorkflowService(storagePort, runtimeConfigService, evolutionCandidateService,
                 null, FIXED_CLOCK);
     }

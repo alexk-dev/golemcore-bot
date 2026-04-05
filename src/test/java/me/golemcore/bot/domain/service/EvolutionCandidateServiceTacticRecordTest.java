@@ -24,9 +24,11 @@ import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
+import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -38,12 +40,15 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +57,7 @@ class EvolutionCandidateServiceTacticRecordTest {
     private StoragePort storagePort;
     private Map<String, String> persistedFiles;
     private TacticRecordService tacticRecordService;
+    private ArtifactBundleService artifactBundleService;
     private EvolutionCandidateService evolutionCandidateService;
 
     @BeforeEach
@@ -93,7 +99,9 @@ class EvolutionCandidateServiceTacticRecordTest {
 
         Clock clock = Clock.fixed(Instant.parse("2026-04-01T21:15:00Z"), ZoneOffset.UTC);
         tacticRecordService = new TacticRecordService(storagePort, clock, null, null);
-        evolutionCandidateService = new EvolutionCandidateService(storagePort, tacticRecordService, clock);
+        artifactBundleService = mock(ArtifactBundleService.class);
+        evolutionCandidateService = new EvolutionCandidateService(
+                storagePort, tacticRecordService, artifactBundleService, clock);
     }
 
     @Test
@@ -143,6 +151,12 @@ class EvolutionCandidateServiceTacticRecordTest {
 
         evolutionCandidateService.activateAsTactic(candidate);
 
+        ArgumentCaptor<EvolutionCandidate> promotedCandidateCaptor = ArgumentCaptor.forClass(EvolutionCandidate.class);
+        verify(artifactBundleService, times(1))
+                .promoteCandidateBundle(anyString(), promotedCandidateCaptor.capture(), eq("active"));
+        assertEquals(candidate.getId(), promotedCandidateCaptor.getValue().getId());
+        assertEquals("active", promotedCandidateCaptor.getValue().getLifecycleState());
+
         TacticRecord tactic = tacticRecordService.getById(candidate.getContentRevisionId()).orElseThrow();
         assertEquals(candidate.getContentRevisionId(), tactic.getTacticId());
         assertEquals("active", tactic.getPromotionState());
@@ -157,5 +171,43 @@ class EvolutionCandidateServiceTacticRecordTest {
         assertNull(tactic.getSuccessRate());
         assertNull(tactic.getBenchmarkWinRate());
         assertNull(tactic.getGolemLocalUsageSuccess());
+    }
+
+    @Test
+    void shouldCreateBundleWithRevisionBindingWhenActivatingTactic() {
+        Clock clock = Clock.fixed(Instant.parse("2026-04-01T21:15:00Z"), ZoneOffset.UTC);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getSelfEvolvingJudgePrimaryTier()).thenReturn("deep");
+        when(runtimeConfigService.getSelfEvolvingJudgeTiebreakerTier()).thenReturn("deep");
+        when(runtimeConfigService.getSelfEvolvingJudgeEvolutionTier()).thenReturn("deep");
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        when(runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled()).thenReturn(false);
+        when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("approval_gate");
+        ArtifactBundleService realBundleService = new ArtifactBundleService(storagePort, runtimeConfigService, clock);
+        EvolutionCandidateService service = new EvolutionCandidateService(
+                storagePort, tacticRecordService, realBundleService, clock);
+
+        EvolutionCandidate candidate = service.ensureArtifactIdentity(EvolutionCandidate.builder()
+                .id("candidate-binding")
+                .artifactType("skill")
+                .status("proposed")
+                .expectedImpact("Promote planner tactic immediately")
+                .proposedDiff("selfevolving:derive:skill")
+                .proposal(EvolutionProposal.builder()
+                        .summary("Capture the successful planner tactic")
+                        .behaviorInstructions("Reuse the planner sequence.")
+                        .build())
+                .build());
+
+        service.activateAsTactic(candidate);
+
+        ArtifactBundleRecord promotedBundle = realBundleService.getBundles().stream()
+                .filter(bundle -> "active".equals(bundle.getStatus()))
+                .findFirst()
+                .orElseThrow();
+        assertNotNull(promotedBundle.getArtifactRevisionBindings());
+        assertTrue(promotedBundle.getArtifactRevisionBindings().containsKey(candidate.getArtifactStreamId()));
+        assertEquals(candidate.getContentRevisionId(),
+                promotedBundle.getArtifactRevisionBindings().get(candidate.getArtifactStreamId()));
     }
 }

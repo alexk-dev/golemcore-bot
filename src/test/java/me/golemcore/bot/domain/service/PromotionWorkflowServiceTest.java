@@ -82,13 +82,14 @@ class PromotionWorkflowServiceTest {
         when(runtimeConfigService.isSelfEvolvingPromotionCanaryRequired()).thenReturn(false);
         tacticRecordService = new TacticRecordService(storagePort,
                 Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC), null, null);
-        evolutionCandidateService = new EvolutionCandidateService(storagePort, tacticRecordService,
-                Clock.fixed(
-                        Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
         artifactBundleService = new ArtifactBundleService(
                 storagePort,
                 runtimeConfigService,
                 Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
+        evolutionCandidateService = new EvolutionCandidateService(storagePort, tacticRecordService,
+                artifactBundleService,
+                Clock.fixed(
+                        Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
         promotionWorkflowService = new PromotionWorkflowService(
                 storagePort,
                 runtimeConfigService,

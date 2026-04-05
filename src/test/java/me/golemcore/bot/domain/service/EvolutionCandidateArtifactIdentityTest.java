@@ -36,6 +36,7 @@ class EvolutionCandidateArtifactIdentityTest {
         service = new EvolutionCandidateService(
                 storagePort,
                 mock(TacticRecordService.class),
+                mock(ArtifactBundleService.class),
                 Clock.fixed(Instant.parse("2026-03-31T17:00:00Z"), ZoneOffset.UTC));
     }
 

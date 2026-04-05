@@ -40,6 +40,7 @@ import java.util.Map;
 public class TacticHybridRankingService {
 
     private static final double RRF_K = 60.0d;
+    private static final double RRF_SCALE = 15.0d;
 
     private final RuntimeConfigService runtimeConfigService;
     private final TacticSearchMetricsService metricsService;
@@ -207,14 +208,32 @@ public class TacticHybridRankingService {
     }
 
     private double rrf(Integer rank) {
-        return rank == null ? 0.0d : 1.0d / (RRF_K + rank);
+        return rank == null ? 0.0d : RRF_SCALE / (RRF_K + rank);
     }
 
     private double qualityPrior(TacticSearchResult candidate) {
-        double success = qualitySignal(candidate.getSuccessRate());
-        double benchmark = qualitySignal(candidate.getBenchmarkWinRate());
-        double recency = qualitySignal(candidate.getRecencyScore());
-        double local = qualitySignal(candidate.getGolemLocalUsageSuccess());
+        double weightedSum = 0.0d;
+        double weightTotal = 0.0d;
+        if (candidate.getSuccessRate() != null) {
+            weightedSum += candidate.getSuccessRate() * 0.35d;
+            weightTotal += 0.35d;
+        }
+        if (candidate.getBenchmarkWinRate() != null) {
+            weightedSum += candidate.getBenchmarkWinRate() * 0.25d;
+            weightTotal += 0.25d;
+        }
+        if (candidate.getRecencyScore() != null) {
+            weightedSum += candidate.getRecencyScore() * 0.15d;
+            weightTotal += 0.15d;
+        }
+        if (candidate.getGolemLocalUsageSuccess() != null) {
+            weightedSum += candidate.getGolemLocalUsageSuccess() * 0.15d;
+            weightTotal += 0.15d;
+        }
+        // When no signals have been observed yet, use a pessimistic prior (0.3)
+        // rather than 0.5: a brand-new tactic should not outrank tactics with
+        // at least one recorded measurement just because nothing is known.
+        double signalScore = weightTotal > 0.0d ? weightedSum / weightTotal : 0.3d;
         double promotionBoost = switch (normalize(candidate.getPromotionState())) {
         case "active" -> 0.12d;
         case "approved" -> 0.08d;
@@ -222,7 +241,7 @@ public class TacticHybridRankingService {
         case "reverted" -> -0.20d;
         default -> 0.0d;
         };
-        return success * 0.35d + benchmark * 0.25d + recency * 0.15d + local * 0.15d + promotionBoost;
+        return signalScore + promotionBoost;
     }
 
     private double negativeMemoryPenalty(TacticSearchResult candidate) {
@@ -350,16 +369,6 @@ public class TacticHybridRankingService {
             combined.addAll(right);
         }
         return combined;
-    }
-
-    private double nullSafe(Double value) {
-        return value != null ? value : 0.0d;
-    }
-
-    private double qualitySignal(Double value) {
-        // Missing quality/runtime observations should be neutral rather than
-        // indistinguishable from explicit zero-performance measurements.
-        return value != null ? value : 0.5d;
     }
 
     private String normalize(String value) {
