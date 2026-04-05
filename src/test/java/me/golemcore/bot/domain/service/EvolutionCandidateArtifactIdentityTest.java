@@ -40,8 +40,8 @@ class EvolutionCandidateArtifactIdentityTest {
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
                 new EvolutionArtifactIdentityService(storagePort, clock),
-                new EvolutionCandidateTacticMaterializer(clock),
-                clock);
+                new EvolutionCandidateDerivationService(clock),
+                new EvolutionCandidateTacticMaterializer(clock));
     }
 
     @Test

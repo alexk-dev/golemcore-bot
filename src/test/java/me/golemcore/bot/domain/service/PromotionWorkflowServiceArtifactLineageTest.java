@@ -62,8 +62,8 @@ class PromotionWorkflowServiceArtifactLineageTest {
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
                 new EvolutionArtifactIdentityService(storagePort, FIXED_CLOCK),
-                new EvolutionCandidateTacticMaterializer(FIXED_CLOCK),
-                FIXED_CLOCK);
+                new EvolutionCandidateDerivationService(FIXED_CLOCK),
+                new EvolutionCandidateTacticMaterializer(FIXED_CLOCK));
         service = new PromotionWorkflowService(storagePort, runtimeConfigService, evolutionCandidateService,
                 null, FIXED_CLOCK);
     }

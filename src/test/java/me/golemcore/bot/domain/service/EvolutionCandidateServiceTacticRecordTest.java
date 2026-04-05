@@ -104,8 +104,8 @@ class EvolutionCandidateServiceTacticRecordTest {
                 tacticRecordService,
                 artifactBundleService,
                 new EvolutionArtifactIdentityService(storagePort, clock),
-                new EvolutionCandidateTacticMaterializer(clock),
-                clock);
+                new EvolutionCandidateDerivationService(clock),
+                new EvolutionCandidateTacticMaterializer(clock));
     }
 
     @Test
@@ -192,8 +192,8 @@ class EvolutionCandidateServiceTacticRecordTest {
                 tacticRecordService,
                 realBundleService,
                 new EvolutionArtifactIdentityService(storagePort, clock),
-                new EvolutionCandidateTacticMaterializer(clock),
-                clock);
+                new EvolutionCandidateDerivationService(clock),
+                new EvolutionCandidateTacticMaterializer(clock));
 
         EvolutionCandidate candidate = service.ensureArtifactIdentity(EvolutionCandidate.builder()
                 .id("candidate-binding")
