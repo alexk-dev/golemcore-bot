@@ -56,4 +56,7 @@ public class RunRecord {
 
     @Builder.Default
     private List<String> tags = new ArrayList<>();
+
+    @Builder.Default
+    private List<String> appliedTacticIds = new ArrayList<>();
 }

@@ -80,7 +80,9 @@ public class TacticSearchService {
                 .filter(result -> Boolean.TRUE.equals(result.getExplanation().getEligible()))
                 .toList();
         List<TacticSearchResult> vectorHits = tacticEmbeddingIndexService != null
-                ? tacticEmbeddingIndexService.search(query)
+                ? tacticEmbeddingIndexService.search(query).stream()
+                        .filter(result -> isEligible(result.getPromotionState(), query))
+                        .toList()
                 : List.of();
         if (tacticHybridRankingService == null) {
             return lexicalHits;

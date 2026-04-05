@@ -237,6 +237,42 @@ class SelfEvolvingRunServiceTest {
     }
 
     @Test
+    void shouldCopyAppliedTacticIdsFromContextOnRunCompletion() {
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-applied").metadata(Map.of()).build())
+                .turnOutcome(TurnOutcome.builder().finishReason(FinishReason.SUCCESS).build())
+                .build();
+        context.setAttribute(ContextAttributes.APPLIED_TACTIC_IDS, List.of("tactic-a", "tactic-b"));
+        RunRecord run = RunRecord.builder()
+                .id("run-applied")
+                .artifactBundleId("bundle-applied")
+                .status("RUNNING")
+                .build();
+        when(artifactBundleService.refresh("bundle-applied", context)).thenReturn(ArtifactBundleRecord.builder()
+                .id("bundle-applied")
+                .build());
+
+        RunRecord completed = service.completeRun(run, context);
+
+        assertEquals(List.of("tactic-a", "tactic-b"), completed.getAppliedTacticIds());
+    }
+
+    @Test
+    void shouldSerializeAndDeserializeAppliedTacticIds() throws Exception {
+        RunRecord run = RunRecord.builder()
+                .id("run-json")
+                .golemId("golem-json")
+                .artifactBundleId("bundle-json")
+                .appliedTacticIds(List.of("tactic-x", "tactic-y"))
+                .build();
+
+        String json = objectMapper.writeValueAsString(run);
+        RunRecord restored = objectMapper.readValue(json, RunRecord.class);
+
+        assertEquals(List.of("tactic-x", "tactic-y"), restored.getAppliedTacticIds());
+    }
+
+    @Test
     void shouldReturnNullWhenCompletingMissingRun() {
         assertNull(service.completeRun(null, AgentContext.builder().build()));
     }

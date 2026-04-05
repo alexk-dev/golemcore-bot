@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionProposal;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -64,5 +66,58 @@ class EvolutionCandidateArtifactIdentityTest {
         assertNotNull(candidate.getArtifactStreamId());
         assertEquals(candidate.getArtifactStreamId(), candidate.getOriginArtifactStreamId());
         assertNotNull(candidate.getContentRevisionId());
+    }
+
+    @Test
+    void shouldProduceSameContentRevisionIdForIdenticalSemanticCandidates() {
+        EvolutionCandidate first = service.ensureArtifactIdentity(EvolutionCandidate.builder()
+                .id("first-id")
+                .artifactType("skill")
+                .proposedDiff("selfevolving:derive:skill")
+                .proposal(EvolutionProposal.builder()
+                        .summary("Capture the planner tactic")
+                        .behaviorInstructions("Reuse the planner sequence when needed")
+                        .toolInstructions("Prefer planning")
+                        .expectedOutcome("Fewer retries")
+                        .build())
+                .build());
+        EvolutionCandidate second = service.ensureArtifactIdentity(EvolutionCandidate.builder()
+                .id("second-id")
+                .artifactType("skill")
+                .proposedDiff("selfevolving:derive:skill")
+                .proposal(EvolutionProposal.builder()
+                        .summary("Capture the planner tactic")
+                        .behaviorInstructions("Reuse the planner sequence when needed")
+                        .toolInstructions("Prefer planning")
+                        .expectedOutcome("Fewer retries")
+                        .build())
+                .build());
+
+        assertNotNull(first.getContentRevisionId());
+        assertEquals(first.getContentRevisionId(), second.getContentRevisionId());
+    }
+
+    @Test
+    void shouldProduceDifferentContentRevisionIdWhenSemanticContentDiffers() {
+        EvolutionCandidate first = service.ensureArtifactIdentity(EvolutionCandidate.builder()
+                .id("first-id")
+                .artifactType("skill")
+                .proposedDiff("selfevolving:derive:skill")
+                .proposal(EvolutionProposal.builder()
+                        .summary("Capture the planner tactic")
+                        .behaviorInstructions("Reuse the planner sequence when needed")
+                        .build())
+                .build());
+        EvolutionCandidate second = service.ensureArtifactIdentity(EvolutionCandidate.builder()
+                .id("second-id")
+                .artifactType("skill")
+                .proposedDiff("selfevolving:derive:skill")
+                .proposal(EvolutionProposal.builder()
+                        .summary("Capture a different planner tactic")
+                        .behaviorInstructions("Reuse the planner sequence when needed")
+                        .build())
+                .build());
+
+        assertNotEquals(first.getContentRevisionId(), second.getContentRevisionId());
     }
 }

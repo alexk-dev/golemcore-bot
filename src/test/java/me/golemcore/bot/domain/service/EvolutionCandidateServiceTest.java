@@ -295,8 +295,11 @@ class EvolutionCandidateServiceTest {
 
         assertEquals(first.getArtifactStreamId(), second.getArtifactStreamId());
         assertEquals(first.getOriginArtifactStreamId(), second.getOriginArtifactStreamId());
-        assertEquals(first.getContentRevisionId(), second.getBaseContentRevisionId());
-        assertEquals(2, evolutionCandidateService.getArtifactRevisionRecords().size());
+        // Identical semantic inputs produce the same content revision id; the revision
+        // store
+        // deduplicates but the stream identity is still shared across derivations.
+        assertEquals(first.getContentRevisionId(), second.getContentRevisionId());
+        assertEquals(1, evolutionCandidateService.getArtifactRevisionRecords().size());
         assertTrue(
                 persistedFiles.get("artifact-revisions.json").contains("\"artifactKey\":\"memory_policy:retrieval\""));
     }

@@ -108,8 +108,26 @@ public class SelfEvolvingRunService {
         run.setArtifactBundleId(refreshedBundle.getId());
         run.setCompletedAt(Instant.now(clock));
         run.setStatus(resolveCompletionStatus(context));
+        run.setAppliedTacticIds(resolveAppliedTacticIds(context));
         save(run);
         return run;
+    }
+
+    private List<String> resolveAppliedTacticIds(AgentContext context) {
+        if (context == null) {
+            return new ArrayList<>();
+        }
+        List<String> applied = context.getAttribute(ContextAttributes.APPLIED_TACTIC_IDS);
+        if (applied == null || applied.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<String> copy = new ArrayList<>();
+        for (String id : applied) {
+            if (id != null && !id.isBlank()) {
+                copy.add(id);
+            }
+        }
+        return copy;
     }
 
     public Optional<RunVerdict> findVerdict(String runId) {

@@ -33,6 +33,9 @@ import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -259,7 +262,7 @@ public class EvolutionCandidateService {
             candidate.setBaseContentRevisionId(latestRevision.getContentRevisionId());
         }
         if (StringValueSupport.isBlank(candidate.getContentRevisionId())) {
-            candidate.setContentRevisionId(UUID.randomUUID().toString());
+            candidate.setContentRevisionId(computeContentRevisionId(candidate));
         }
         if (StringValueSupport.isBlank(candidate.getLifecycleState())) {
             candidate.setLifecycleState(resolveLifecycleState(candidate.getStatus()));
@@ -734,6 +737,48 @@ public class EvolutionCandidateService {
             return true;
         }
         return proposedDiff.matches("selfevolving:[a-z_]+:[a-z_]+");
+    }
+
+    private String computeContentRevisionId(EvolutionCandidate candidate) {
+        StringBuilder seed = new StringBuilder();
+        appendSeed(seed, candidate.getArtifactKey());
+        appendSeed(seed, candidate.getArtifactType());
+        appendSeed(seed, candidate.getArtifactSubtype());
+        appendSeed(seed, normalizeWhitespace(candidate.getProposedDiff()));
+        EvolutionProposal proposal = candidate.getProposal();
+        if (proposal != null) {
+            appendSeed(seed, normalizeWhitespace(proposal.getSummary()));
+            appendSeed(seed, normalizeWhitespace(proposal.getBehaviorInstructions()));
+            appendSeed(seed, normalizeWhitespace(proposal.getToolInstructions()));
+            appendSeed(seed, normalizeWhitespace(proposal.getExpectedOutcome()));
+        }
+        if (seed.length() == 0) {
+            return UUID.randomUUID().toString();
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(seed.toString().getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(64);
+            for (byte b : bytes) {
+                hex.append(String.format(Locale.ROOT, "%02x", b));
+            }
+            return hex.substring(0, 32);
+        } catch (NoSuchAlgorithmException exception) { // NOSONAR - SHA-256 is standard, fallback is defensive
+            return UUID.randomUUID().toString();
+        }
+    }
+
+    private void appendSeed(StringBuilder seed, String value) {
+        if (!StringValueSupport.isBlank(value)) {
+            if (seed.length() > 0) {
+                seed.append('\u0000');
+            }
+            seed.append(value.trim().toLowerCase(Locale.ROOT));
+        }
+    }
+
+    private String normalizeWhitespace(String value) {
+        return value == null ? null : value.trim().replaceAll("\\s+", " ");
     }
 
     private String firstNonBlank(String... values) {

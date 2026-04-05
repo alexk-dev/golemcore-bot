@@ -32,8 +32,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -107,17 +110,43 @@ public class ContextBuildingSystem implements AgentSystem {
         try {
             TacticSearchQuery query = tacticSearchService.buildQuery(context);
             context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY, query);
-            java.util.List<TacticSearchResult> results = tacticSearchService.search(query);
+            List<TacticSearchResult> results = tacticSearchService.search(query);
             context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_RESULTS, results);
             if (results != null && !results.isEmpty()) {
                 TacticSearchResult selectedTactic = results.getFirst();
                 context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION, selectedTactic);
                 context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_GUIDANCE, selectedTactic);
+                recordAppliedTacticIds(context, results);
                 attachTransientTacticAdvisory(context, selectedTactic);
             }
         } catch (RuntimeException exception) { // NOSONAR - tactic search must never break context assembly
             log.warn("[ContextBuildingSystem] Failed to attach tactic search context: {}", exception.getMessage());
         }
+    }
+
+    private void recordAppliedTacticIds(AgentContext context, List<TacticSearchResult> results) {
+        if (context == null || results == null || results.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        List<String> existing = context.getAttribute(ContextAttributes.APPLIED_TACTIC_IDS);
+        if (existing != null) {
+            for (String id : existing) {
+                if (id != null && !id.isBlank()) {
+                    merged.add(id);
+                }
+            }
+        }
+        for (TacticSearchResult result : results) {
+            if (result == null) {
+                continue;
+            }
+            String tacticId = result.getTacticId();
+            if (tacticId != null && !tacticId.isBlank()) {
+                merged.add(tacticId);
+            }
+        }
+        context.setAttribute(ContextAttributes.APPLIED_TACTIC_IDS, new ArrayList<>(merged));
     }
 
     private void attachTransientTacticAdvisory(AgentContext context, TacticSearchResult tacticSearchResult) {

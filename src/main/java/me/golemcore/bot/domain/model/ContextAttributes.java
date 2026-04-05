@@ -331,6 +331,12 @@ public final class ContextAttributes {
     /** TacticSearchResult ? tactic guidance carried across pipeline transitions. */
     public static final String SELF_EVOLVING_TACTIC_GUIDANCE = "selfevolving.tactic.guidance";
 
+    /**
+     * List<String> ? tactic ids surfaced to the agent during a run (for
+     * attribution).
+     */
+    public static final String APPLIED_TACTIC_IDS = "selfevolving.tactic.applied.ids";
+
     /** Map<String,Object> ? latest structured compaction details. */
     public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";
 

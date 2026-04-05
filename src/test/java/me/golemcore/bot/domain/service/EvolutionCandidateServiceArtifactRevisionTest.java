@@ -67,11 +67,14 @@ class EvolutionCandidateServiceArtifactRevisionTest {
 
         List<ArtifactRevisionRecord> records = service.getArtifactRevisionRecords();
 
-        assertEquals(2, records.size());
+        // Content hashing deduplicates identical semantic candidates to a single
+        // revision
+        // while still reusing the stream identity across derivations.
+        assertEquals(1, records.size());
         assertEquals(firstCandidate.getArtifactStreamId(), secondCandidate.getArtifactStreamId());
+        assertEquals(firstCandidate.getContentRevisionId(), secondCandidate.getContentRevisionId());
         assertNull(firstCandidate.getBaseContentRevisionId());
-        assertEquals(firstCandidate.getContentRevisionId(), secondCandidate.getBaseContentRevisionId());
-        verify(storagePort, times(2)).putTextAtomic(eq("self-evolving"), eq("artifact-revisions.json"), anyString(),
+        verify(storagePort, times(1)).putTextAtomic(eq("self-evolving"), eq("artifact-revisions.json"), anyString(),
                 eq(true));
     }
 }

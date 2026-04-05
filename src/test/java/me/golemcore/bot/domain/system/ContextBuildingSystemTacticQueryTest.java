@@ -211,4 +211,61 @@ class ContextBuildingSystemTacticQueryTest {
         assertTrue(advisory.getContent().contains("Use `command -v` before invoking shell tools."));
         assertFalse(advisory.getContent().contains("selfevolving:fix:tool_policy"));
     }
+
+    @Test
+    void shouldRecordAppliedTacticIdsWhenTacticSearchReturnsResults() {
+        ContextAssembler assembler = mock(ContextAssembler.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
+        TacticSearchService tacticSearchService = mock(TacticSearchService.class);
+        ContextBuildingSystem system = new ContextBuildingSystem(
+                assembler,
+                runtimeConfigService,
+                selfEvolvingRunService,
+                tacticSearchService);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id("session-applied")
+                        .chatId("chat-applied")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>(List.of(Message.builder()
+                        .role("user")
+                        .content("recover from failed shell command")
+                        .build())))
+                .build();
+
+        when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder().enabled(true).build())
+                .build());
+        when(selfEvolvingRunService.startRun(context)).thenReturn(RunRecord.builder()
+                .id("run-applied")
+                .artifactBundleId("bundle-applied")
+                .build());
+        TacticSearchQuery query = TacticSearchQuery.builder()
+                .rawQuery("recover from failed shell command")
+                .queryViews(List.of("recover", "shell", "failure"))
+                .build();
+        when(tacticSearchService.buildQuery(context)).thenReturn(query);
+        when(tacticSearchService.search(query)).thenReturn(List.of(
+                TacticSearchResult.builder()
+                        .tacticId("tactic-alpha")
+                        .title("Alpha")
+                        .promotionState("approved")
+                        .build(),
+                TacticSearchResult.builder()
+                        .tacticId("tactic-beta")
+                        .title("Beta")
+                        .promotionState("active")
+                        .build()));
+
+        AgentContext result = system.process(context);
+
+        List<String> appliedIds = result.getAttribute(ContextAttributes.APPLIED_TACTIC_IDS);
+        assertNotNull(appliedIds);
+        assertEquals(List.of("tactic-alpha", "tactic-beta"), appliedIds);
+    }
 }
