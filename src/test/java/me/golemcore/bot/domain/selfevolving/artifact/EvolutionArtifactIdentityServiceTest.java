@@ -21,6 +21,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
 
 class EvolutionArtifactIdentityServiceTest {
 
@@ -35,8 +36,7 @@ class EvolutionArtifactIdentityServiceTest {
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(null));
-        service = new EvolutionArtifactIdentityService(
-                storagePort,
+        service = new EvolutionArtifactIdentityService(new JsonArtifactRepositoryAdapter(storagePort),
                 Clock.fixed(Instant.parse("2026-04-05T18:00:00Z"), ZoneOffset.UTC));
     }
 

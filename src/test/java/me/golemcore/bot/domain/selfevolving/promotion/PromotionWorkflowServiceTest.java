@@ -37,6 +37,7 @@ import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateService;
 import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateTacticMaterializer;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
 
 class PromotionWorkflowServiceTest {
 
@@ -89,15 +90,14 @@ class PromotionWorkflowServiceTest {
         when(runtimeConfigService.isSelfEvolvingPromotionCanaryRequired()).thenReturn(false);
         tacticRecordService = new TacticRecordService(storagePort,
                 Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC), null, null);
-        artifactBundleService = new ArtifactBundleService(
-                storagePort,
+        artifactBundleService = new ArtifactBundleService(new JsonArtifactRepositoryAdapter(storagePort),
                 runtimeConfigService,
                 Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
         Clock clock = Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC);
         evolutionCandidateService = new EvolutionCandidateService(
                 tacticRecordService,
                 artifactBundleService,
-                new EvolutionArtifactIdentityService(storagePort, clock),
+                new EvolutionArtifactIdentityService(new JsonArtifactRepositoryAdapter(storagePort), clock),
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
         PromotionWorkflowStateService promotionWorkflowStateService = new PromotionWorkflowStateService(

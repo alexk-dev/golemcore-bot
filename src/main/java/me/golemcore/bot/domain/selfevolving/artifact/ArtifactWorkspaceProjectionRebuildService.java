@@ -18,11 +18,9 @@ package me.golemcore.bot.domain.selfevolving.artifact;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjection;
-import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.selfevolving.ArtifactRepositoryPort;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -34,41 +32,30 @@ import java.util.List;
 @Service
 public class ArtifactWorkspaceProjectionRebuildService {
 
-    private static final String SELF_EVOLVING_DIR = "self-evolving";
     private static final String ARTIFACT_WORKSPACE_DIR = "artifact-workspace";
 
     private final ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService;
-    private final StoragePort storagePort;
+    private final ArtifactRepositoryPort artifactRepository;
     private final Clock clock;
-    private final ObjectMapper objectMapper;
 
     public ArtifactWorkspaceProjectionRebuildService(
             ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService,
-            StoragePort storagePort,
+            ArtifactRepositoryPort artifactRepository,
             Clock clock) {
         this.artifactWorkspaceProjectionService = artifactWorkspaceProjectionService;
-        this.storagePort = storagePort;
+        this.artifactRepository = artifactRepository;
         this.clock = clock;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     public void rebuildAll() {
         List<ArtifactCatalogEntry> catalogEntries = artifactWorkspaceProjectionService.listCatalog();
-        putJson(ARTIFACT_WORKSPACE_DIR + "/catalog.json", catalogEntries);
+        artifactRepository.writeWorkspaceProjection(ARTIFACT_WORKSPACE_DIR + "/catalog.json", catalogEntries);
         for (ArtifactCatalogEntry catalogEntry : catalogEntries) {
             ArtifactLineageProjection lineageProjection = artifactWorkspaceProjectionService
                     .getLineage(catalogEntry.getArtifactStreamId());
-            putJson(ARTIFACT_WORKSPACE_DIR + "/lineage/" + catalogEntry.getArtifactStreamId() + ".json",
+            artifactRepository.writeWorkspaceProjection(
+                    ARTIFACT_WORKSPACE_DIR + "/lineage/" + catalogEntry.getArtifactStreamId() + ".json",
                     lineageProjection);
-        }
-    }
-
-    private void putJson(String path, Object payload) {
-        try {
-            storagePort.putText(SELF_EVOLVING_DIR, path, objectMapper.writeValueAsString(payload)).join();
-        } catch (Exception exception) { // NOSONAR - storage failure becomes runtime error
-            throw new IllegalStateException("Failed to rebuild artifact workspace projections at " + path, exception);
         }
     }
 }

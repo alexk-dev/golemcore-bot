@@ -28,6 +28,7 @@ import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateDerivati
 import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateService;
 import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateTacticMaterializer;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
 
 class EvolutionCandidateArtifactIdentityTest {
 
@@ -45,7 +46,7 @@ class EvolutionCandidateArtifactIdentityTest {
         service = new EvolutionCandidateService(
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
-                new EvolutionArtifactIdentityService(storagePort, clock),
+                new EvolutionArtifactIdentityService(new JsonArtifactRepositoryAdapter(storagePort), clock),
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
     }

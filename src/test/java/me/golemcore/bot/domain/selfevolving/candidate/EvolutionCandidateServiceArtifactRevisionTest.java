@@ -27,6 +27,7 @@ import static org.mockito.Mockito.when;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
 import me.golemcore.bot.domain.selfevolving.artifact.EvolutionArtifactIdentityService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
 
 class EvolutionCandidateServiceArtifactRevisionTest {
 
@@ -45,7 +46,7 @@ class EvolutionCandidateServiceArtifactRevisionTest {
         service = new EvolutionCandidateService(
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
-                new EvolutionArtifactIdentityService(storagePort, clock),
+                new EvolutionArtifactIdentityService(new JsonArtifactRepositoryAdapter(storagePort), clock),
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
     }

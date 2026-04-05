@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateService;
 import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateTacticMaterializer;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
 
 class PromotionWorkflowServiceArtifactLineageTest {
 
@@ -68,7 +69,7 @@ class PromotionWorkflowServiceArtifactLineageTest {
         evolutionCandidateService = new EvolutionCandidateService(
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
-                new EvolutionArtifactIdentityService(storagePort, FIXED_CLOCK),
+                new EvolutionArtifactIdentityService(new JsonArtifactRepositoryAdapter(storagePort), FIXED_CLOCK),
                 new EvolutionCandidateDerivationService(FIXED_CLOCK),
                 new EvolutionCandidateTacticMaterializer(FIXED_CLOCK));
         PromotionWorkflowStateService promotionWorkflowStateService = new PromotionWorkflowStateService(

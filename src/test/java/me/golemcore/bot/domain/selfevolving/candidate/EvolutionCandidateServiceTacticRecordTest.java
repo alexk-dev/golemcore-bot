@@ -55,6 +55,7 @@ import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
 import me.golemcore.bot.domain.selfevolving.artifact.EvolutionArtifactIdentityService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
 
 class EvolutionCandidateServiceTacticRecordTest {
 
@@ -107,7 +108,7 @@ class EvolutionCandidateServiceTacticRecordTest {
         evolutionCandidateService = new EvolutionCandidateService(
                 tacticRecordService,
                 artifactBundleService,
-                new EvolutionArtifactIdentityService(storagePort, clock),
+                new EvolutionArtifactIdentityService(new JsonArtifactRepositoryAdapter(storagePort), clock),
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
     }
@@ -191,11 +192,12 @@ class EvolutionCandidateServiceTacticRecordTest {
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled()).thenReturn(false);
         when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("approval_gate");
-        ArtifactBundleService realBundleService = new ArtifactBundleService(storagePort, runtimeConfigService, clock);
+        ArtifactBundleService realBundleService = new ArtifactBundleService(
+                new JsonArtifactRepositoryAdapter(storagePort), runtimeConfigService, clock);
         EvolutionCandidateService service = new EvolutionCandidateService(
                 tacticRecordService,
                 realBundleService,
-                new EvolutionArtifactIdentityService(storagePort, clock),
+                new EvolutionArtifactIdentityService(new JsonArtifactRepositoryAdapter(storagePort), clock),
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
 

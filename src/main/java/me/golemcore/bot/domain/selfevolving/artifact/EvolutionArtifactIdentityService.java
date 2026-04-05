@@ -18,18 +18,13 @@ package me.golemcore.bot.domain.selfevolving.artifact;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionProposal;
 import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionRecord;
-import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.selfevolving.ArtifactRepositoryPort;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -50,11 +45,8 @@ import me.golemcore.bot.domain.service.StringValueSupport;
  * the immutable artifact revision lineage they reference.
  */
 @Service
-@Slf4j
 public class EvolutionArtifactIdentityService {
 
-    private static final String SELF_EVOLVING_DIR = "self-evolving";
-    private static final String ARTIFACT_REVISIONS_FILE = "artifact-revisions.json";
     private static final Set<String> SEMANTIC_SKILL_KEY_STOPWORDS = Set.of(
             "a",
             "an",
@@ -79,19 +71,14 @@ public class EvolutionArtifactIdentityService {
             "the",
             "this",
             "without");
-    private static final TypeReference<List<ArtifactRevisionRecord>> ARTIFACT_REVISION_LIST_TYPE = new TypeReference<>() {
-    };
 
-    private final StoragePort storagePort;
+    private final ArtifactRepositoryPort artifactRepository;
     private final Clock clock;
-    private final ObjectMapper objectMapper;
     private final AtomicReference<List<ArtifactRevisionRecord>> artifactRevisionCache = new AtomicReference<>();
 
-    public EvolutionArtifactIdentityService(StoragePort storagePort, Clock clock) {
-        this.storagePort = storagePort;
+    public EvolutionArtifactIdentityService(ArtifactRepositoryPort artifactRepository, Clock clock) {
+        this.artifactRepository = artifactRepository;
         this.clock = clock;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     public EvolutionCandidate ensureArtifactIdentity(EvolutionCandidate candidate) {
@@ -106,7 +93,7 @@ public class EvolutionArtifactIdentityService {
     public List<ArtifactRevisionRecord> getArtifactRevisionRecords() {
         List<ArtifactRevisionRecord> cached = artifactRevisionCache.get();
         if (cached == null) {
-            cached = loadArtifactRevisions();
+            cached = artifactRepository.loadRevisions();
             artifactRevisionCache.set(cached);
         }
         return cached;
@@ -222,28 +209,9 @@ public class EvolutionArtifactIdentityService {
         return latest;
     }
 
-    private List<ArtifactRevisionRecord> loadArtifactRevisions() {
-        try {
-            String json = storagePort.getText(SELF_EVOLVING_DIR, ARTIFACT_REVISIONS_FILE).join();
-            if (StringValueSupport.isBlank(json)) {
-                return new ArrayList<>();
-            }
-            List<ArtifactRevisionRecord> records = objectMapper.readValue(json, ARTIFACT_REVISION_LIST_TYPE);
-            return records != null ? new ArrayList<>(records) : new ArrayList<>();
-        } catch (IOException | RuntimeException exception) { // NOSONAR - storage fallback
-            log.debug("[SelfEvolving] Failed to load artifact revisions: {}", exception.getMessage());
-            return new ArrayList<>();
-        }
-    }
-
     private void saveArtifactRevisions(List<ArtifactRevisionRecord> records) {
-        try {
-            String json = objectMapper.writeValueAsString(records);
-            storagePort.putTextAtomic(SELF_EVOLVING_DIR, ARTIFACT_REVISIONS_FILE, json, true).join();
-            artifactRevisionCache.set(new ArrayList<>(records));
-        } catch (Exception exception) { // NOSONAR - storage failure becomes runtime error
-            throw new IllegalStateException("Failed to persist artifact revisions", exception);
-        }
+        artifactRepository.saveRevisions(records);
+        artifactRevisionCache.set(new ArrayList<>(records));
     }
 
     private String resolveCanonicalArtifactType(String artifactType) {

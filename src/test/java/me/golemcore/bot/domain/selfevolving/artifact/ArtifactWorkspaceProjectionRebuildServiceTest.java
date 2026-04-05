@@ -17,6 +17,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
 
 class ArtifactWorkspaceProjectionRebuildServiceTest {
 
@@ -30,9 +31,8 @@ class ArtifactWorkspaceProjectionRebuildServiceTest {
         artifactWorkspaceProjectionService = mock(ArtifactWorkspaceProjectionService.class);
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
-        service = new ArtifactWorkspaceProjectionRebuildService(
-                artifactWorkspaceProjectionService,
-                storagePort,
+        service = new ArtifactWorkspaceProjectionRebuildService(artifactWorkspaceProjectionService,
+                new JsonArtifactRepositoryAdapter(storagePort),
                 Clock.fixed(Instant.parse("2026-03-31T21:00:00Z"), ZoneOffset.UTC));
     }
 

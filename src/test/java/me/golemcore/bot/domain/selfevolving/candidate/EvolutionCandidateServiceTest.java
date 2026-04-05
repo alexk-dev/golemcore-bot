@@ -33,6 +33,7 @@ import static org.mockito.Mockito.when;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
 import me.golemcore.bot.domain.selfevolving.artifact.EvolutionArtifactIdentityService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
 
 class EvolutionCandidateServiceTest {
 
@@ -69,7 +70,7 @@ class EvolutionCandidateServiceTest {
         evolutionCandidateService = new EvolutionCandidateService(
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
-                new EvolutionArtifactIdentityService(storagePort, clock),
+                new EvolutionArtifactIdentityService(new JsonArtifactRepositoryAdapter(storagePort), clock),
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
     }
@@ -332,7 +333,8 @@ class EvolutionCandidateServiceTest {
         EvolutionCandidateService reloadedService = new EvolutionCandidateService(
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
-                new EvolutionArtifactIdentityService(mockReloadingStoragePort(), clock),
+                new EvolutionArtifactIdentityService(new JsonArtifactRepositoryAdapter(mockReloadingStoragePort()),
+                        clock),
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
         assertTrue(reloadedService.getArtifactRevisionRecords().isEmpty());

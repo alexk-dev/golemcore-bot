@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
 
 class ArtifactBundleServiceTest {
 
@@ -58,8 +59,7 @@ class ArtifactBundleServiceTest {
 
     @Test
     void shouldSnapshotSkillAndPolicyBindingsForActiveContext() {
-        ArtifactBundleService service = new ArtifactBundleService(
-                storagePort,
+        ArtifactBundleService service = new ArtifactBundleService(new JsonArtifactRepositoryAdapter(storagePort),
                 runtimeConfigService,
                 Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
         AgentContext context = AgentContext.builder()
@@ -108,8 +108,7 @@ class ArtifactBundleServiceTest {
         when(storagePort.getText("self-evolving", "artifact-bundles.json"))
                 .thenReturn(CompletableFuture.completedFuture(objectMapper.writeValueAsString(List.of(existing))));
 
-        ArtifactBundleService service = new ArtifactBundleService(
-                storagePort,
+        ArtifactBundleService service = new ArtifactBundleService(new JsonArtifactRepositoryAdapter(storagePort),
                 runtimeConfigService,
                 Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
         AgentContext context = AgentContext.builder()
@@ -137,8 +136,7 @@ class ArtifactBundleServiceTest {
 
     @Test
     void shouldFallbackToSnapshotAndLocalSessionGolemWhenBundleIdIsBlank() {
-        ArtifactBundleService service = new ArtifactBundleService(
-                storagePort,
+        ArtifactBundleService service = new ArtifactBundleService(new JsonArtifactRepositoryAdapter(storagePort),
                 runtimeConfigService,
                 Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
         AgentContext context = AgentContext.builder()
@@ -160,8 +158,7 @@ class ArtifactBundleServiceTest {
                 .id("bundle-1")
                 .artifactRevisionBindings(Map.of())
                 .build();
-        ArtifactBundleService service = new ArtifactBundleService(
-                storagePort,
+        ArtifactBundleService service = new ArtifactBundleService(new JsonArtifactRepositoryAdapter(storagePort),
                 runtimeConfigService,
                 Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
         service.save(existing);
@@ -196,8 +193,7 @@ class ArtifactBundleServiceTest {
     void shouldIgnoreBrokenStoragePayloads() {
         when(storagePort.getText("self-evolving", "artifact-bundles.json"))
                 .thenReturn(CompletableFuture.completedFuture("not-json"));
-        ArtifactBundleService service = new ArtifactBundleService(
-                storagePort,
+        ArtifactBundleService service = new ArtifactBundleService(new JsonArtifactRepositoryAdapter(storagePort),
                 runtimeConfigService,
                 Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
 

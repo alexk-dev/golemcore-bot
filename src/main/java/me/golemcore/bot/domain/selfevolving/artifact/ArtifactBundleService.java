@@ -18,19 +18,15 @@ package me.golemcore.bot.domain.selfevolving.artifact;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
-import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.selfevolving.ArtifactRepositoryPort;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -49,23 +45,16 @@ import me.golemcore.bot.domain.service.StringValueSupport;
 @Slf4j
 public class ArtifactBundleService {
 
-    private static final String SELF_EVOLVING_DIR = "self-evolving";
-    private static final String BUNDLES_FILE = "artifact-bundles.json";
-    private static final TypeReference<List<ArtifactBundleRecord>> BUNDLE_LIST_TYPE = new TypeReference<>() {
-    };
-
-    private final StoragePort storagePort;
+    private final ArtifactRepositoryPort artifactRepository;
     private final RuntimeConfigService runtimeConfigService;
     private final Clock clock;
-    private final ObjectMapper objectMapper;
     private final AtomicReference<List<ArtifactBundleRecord>> bundleCache = new AtomicReference<>();
 
-    public ArtifactBundleService(StoragePort storagePort, RuntimeConfigService runtimeConfigService, Clock clock) {
-        this.storagePort = storagePort;
+    public ArtifactBundleService(ArtifactRepositoryPort artifactRepository, RuntimeConfigService runtimeConfigService,
+            Clock clock) {
+        this.artifactRepository = artifactRepository;
         this.runtimeConfigService = runtimeConfigService;
         this.clock = clock;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     public ArtifactBundleRecord snapshot(AgentContext context) {
@@ -100,7 +89,7 @@ public class ArtifactBundleService {
     public List<ArtifactBundleRecord> getBundles() {
         List<ArtifactBundleRecord> cached = bundleCache.get();
         if (cached == null) {
-            cached = loadBundles();
+            cached = artifactRepository.loadBundles();
             bundleCache.set(cached);
         }
         return cached;
@@ -253,28 +242,9 @@ public class ArtifactBundleService {
                 .build();
     }
 
-    private List<ArtifactBundleRecord> loadBundles() {
-        try {
-            String json = storagePort.getText(SELF_EVOLVING_DIR, BUNDLES_FILE).join();
-            if (StringValueSupport.isBlank(json)) {
-                return new ArrayList<>();
-            }
-            List<ArtifactBundleRecord> bundles = objectMapper.readValue(json, BUNDLE_LIST_TYPE);
-            return bundles != null ? new ArrayList<>(bundles) : new ArrayList<>();
-        } catch (IOException | RuntimeException e) { // NOSONAR - storage fallback
-            log.debug("[SelfEvolving] Failed to load artifact bundles: {}", e.getMessage());
-            return new ArrayList<>();
-        }
-    }
-
     private void saveBundles(List<ArtifactBundleRecord> bundles) {
-        try {
-            String json = objectMapper.writeValueAsString(bundles);
-            storagePort.putText(SELF_EVOLVING_DIR, BUNDLES_FILE, json).join();
-            bundleCache.set(new ArrayList<>(bundles));
-        } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
-            throw new IllegalStateException("Failed to persist artifact bundles", e);
-        }
+        artifactRepository.saveBundles(bundles);
+        bundleCache.set(new ArrayList<>(bundles));
     }
 
     private List<String> resolveSkillVersions(AgentContext context) {

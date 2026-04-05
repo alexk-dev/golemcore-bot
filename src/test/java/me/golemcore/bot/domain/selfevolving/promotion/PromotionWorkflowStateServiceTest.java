@@ -30,6 +30,7 @@ import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateService;
 import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateTacticMaterializer;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
 
 class PromotionWorkflowStateServiceTest {
 
@@ -76,12 +77,13 @@ class PromotionWorkflowStateServiceTest {
         Clock clock = Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         TacticRecordService tacticRecordService = new TacticRecordService(storagePort, clock, null, null);
-        ArtifactBundleService artifactBundleService = new ArtifactBundleService(storagePort, runtimeConfigService,
+        ArtifactBundleService artifactBundleService = new ArtifactBundleService(
+                new JsonArtifactRepositoryAdapter(storagePort), runtimeConfigService,
                 clock);
         EvolutionCandidateService evolutionCandidateService = new EvolutionCandidateService(
                 tacticRecordService,
                 artifactBundleService,
-                new EvolutionArtifactIdentityService(storagePort, clock),
+                new EvolutionArtifactIdentityService(new JsonArtifactRepositoryAdapter(storagePort), clock),
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
         stateService = new PromotionWorkflowStateService(
