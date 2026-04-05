@@ -450,6 +450,10 @@ export async function deactivateSelfEvolvingTactic(tacticId: string): Promise<vo
   await client.post(`/self-evolving/tactics/${tacticId}/deactivate`);
 }
 
+export async function reactivateSelfEvolvingTactic(tacticId: string): Promise<void> {
+  await client.post(`/self-evolving/tactics/${tacticId}/reactivate`);
+}
+
 export async function deleteSelfEvolvingTactic(tacticId: string): Promise<void> {
   await client.delete(`/self-evolving/tactics/${tacticId}`);
 }

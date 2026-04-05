@@ -14,8 +14,10 @@ interface Props {
   onSelectTacticId: (tacticId: string) => void;
   onBackToResults: () => void;
   onDeactivateTactic: (tacticId: string) => void;
+  onReactivateTactic: (tacticId: string) => void;
   onDeleteTactic: (tacticId: string) => void;
   isDeactivatingTactic: boolean;
+  isReactivatingTactic: boolean;
   isDeletingTactic: boolean;
 }
 
@@ -27,8 +29,10 @@ export function SelfEvolvingTacticSearchWorkspace({
   onSelectTacticId,
   onBackToResults,
   onDeactivateTactic,
+  onReactivateTactic,
   onDeleteTactic,
   isDeactivatingTactic,
+  isReactivatingTactic,
   isDeletingTactic,
 }: Props): ReactElement {
   const results = searchResponse?.results ?? [];
@@ -73,8 +77,10 @@ export function SelfEvolvingTacticSearchWorkspace({
               <SelfEvolvingTacticDetailPanel
                 tactic={selected}
                 onDeactivateTactic={onDeactivateTactic}
+                onReactivateTactic={onReactivateTactic}
                 onDeleteTactic={onDeleteTactic}
                 isDeactivating={isDeactivatingTactic}
+                isReactivating={isReactivatingTactic}
                 isDeleting={isDeletingTactic}
               />
             </div>

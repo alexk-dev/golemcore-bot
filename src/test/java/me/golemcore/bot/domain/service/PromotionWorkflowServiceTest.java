@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -52,6 +53,13 @@ class PromotionWorkflowServiceTest {
             return CompletableFuture.completedFuture(persistedFiles.get(fileName));
         });
         when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    String fileName = invocation.getArgument(1);
+                    String content = invocation.getArgument(2);
+                    persistedFiles.put(fileName, content);
+                    return CompletableFuture.completedFuture(null);
+                });
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenAnswer(invocation -> {
                     String fileName = invocation.getArgument(1);
                     String content = invocation.getArgument(2);

@@ -346,7 +346,9 @@ export function SelfEvolvingCandidateQueue({
   onSelectRun,
   onPlanPromotion,
 }: SelfEvolvingCandidateQueueProps): ReactElement {
-  const reviewableCandidates = candidates.filter((candidate) => candidate.status !== 'active');
+  const reviewableCandidates = candidates.filter(
+    (candidate) => candidate.status !== 'active' && candidate.status !== 'rejected',
+  );
   const activeCandidate =
     reviewableCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? reviewableCandidates[0] ?? null;
 

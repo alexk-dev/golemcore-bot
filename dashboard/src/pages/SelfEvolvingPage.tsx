@@ -7,6 +7,7 @@ import { SelfEvolvingTacticSearchWorkspace } from '../components/selfevolving/Se
 import { SelfEvolvingVerdictPanel } from '../components/selfevolving/SelfEvolvingVerdictPanel';
 import {
   useDeactivateTactic,
+  useReactivateTactic,
   useDeleteTactic,
   usePlanSelfEvolvingPromotion,
   useSelfEvolvingCandidates,
@@ -33,6 +34,7 @@ export default function SelfEvolvingPage(): ReactElement {
   const deferredTacticQuery = useDeferredValue(tacticQuery);
   const planPromotion = usePlanSelfEvolvingPromotion();
   const deactivateTactic = useDeactivateTactic();
+  const reactivateTactic = useReactivateTactic();
   const deleteTactic = useDeleteTactic();
 
   const runsQuery = useSelfEvolvingRuns();
@@ -146,12 +148,16 @@ export default function SelfEvolvingPage(): ReactElement {
           onDeactivateTactic={(tacticId) => {
             deactivateTactic.mutate(tacticId);
           }}
+          onReactivateTactic={(tacticId) => {
+            reactivateTactic.mutate(tacticId);
+          }}
           onDeleteTactic={(tacticId) => {
             deleteTactic.mutate(tacticId, {
               onSuccess: () => setSelectedTacticId(null),
             });
           }}
           isDeactivatingTactic={deactivateTactic.isPending && deactivateTactic.variables === selectedTacticId}
+          isReactivatingTactic={reactivateTactic.isPending && reactivateTactic.variables === selectedTacticId}
           isDeletingTactic={deleteTactic.isPending && deleteTactic.variables === selectedTacticId}
         />
       )}

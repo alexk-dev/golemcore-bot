@@ -114,6 +114,17 @@ public class TacticRecordService {
                 .orElseThrow(() -> new IllegalArgumentException("Tactic not found: " + tacticId));
         TacticRecord updated = copyRecord(existing);
         updated.setPromotionState("inactive");
+        updated.setRolloutStage("inactive");
+        updated.setUpdatedAt(Instant.now(clock));
+        return save(updated);
+    }
+
+    public TacticRecord reactivate(String tacticId) {
+        TacticRecord existing = getById(tacticId)
+                .orElseThrow(() -> new IllegalArgumentException("Tactic not found: " + tacticId));
+        TacticRecord updated = copyRecord(existing);
+        updated.setPromotionState("active");
+        updated.setRolloutStage("active");
         updated.setUpdatedAt(Instant.now(clock));
         return save(updated);
     }

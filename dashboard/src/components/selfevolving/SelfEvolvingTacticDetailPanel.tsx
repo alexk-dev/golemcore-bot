@@ -7,16 +7,20 @@ import { humanizeStatus } from './selfEvolvingUi';
 interface Props {
   tactic: SelfEvolvingTacticSearchResult | null;
   onDeactivateTactic: (tacticId: string) => void;
+  onReactivateTactic: (tacticId: string) => void;
   onDeleteTactic: (tacticId: string) => void;
   isDeactivating: boolean;
+  isReactivating: boolean;
   isDeleting: boolean;
 }
 
 export function SelfEvolvingTacticDetailPanel({
   tactic,
   onDeactivateTactic,
+  onReactivateTactic,
   onDeleteTactic,
   isDeactivating,
+  isReactivating,
   isDeleting,
 }: Props): ReactElement {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -59,14 +63,25 @@ export function SelfEvolvingTacticDetailPanel({
             <p className="mt-0.5 mb-0 font-mono text-xs">{tactic.evidenceSnippets.join(', ') || 'n/a'}</p>
           </div>
           <div className="flex flex-wrap gap-2 pt-2">
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => onDeactivateTactic(tactic.tacticId)}
-              disabled={isDeactivating || isDeleting || tactic.promotionState === 'inactive'}
-            >
-              {isDeactivating ? 'Deactivating...' : 'Deactivate'}
-            </button>
+            {tactic.promotionState === 'inactive' ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => onReactivateTactic(tactic.tacticId)}
+                disabled={isReactivating || isDeleting}
+              >
+                {isReactivating ? 'Reactivating...' : 'Reactivate'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => onDeactivateTactic(tactic.tacticId)}
+                disabled={isDeactivating || isDeleting}
+              >
+                {isDeactivating ? 'Deactivating...' : 'Deactivate'}
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-danger btn-sm"

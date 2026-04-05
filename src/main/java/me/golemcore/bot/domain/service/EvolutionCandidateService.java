@@ -346,7 +346,7 @@ public class EvolutionCandidateService {
     private void saveArtifactRevisions(List<ArtifactRevisionRecord> records) {
         try {
             String json = objectMapper.writeValueAsString(records);
-            storagePort.putText(SELF_EVOLVING_DIR, ARTIFACT_REVISIONS_FILE, json).join();
+            storagePort.putTextAtomic(SELF_EVOLVING_DIR, ARTIFACT_REVISIONS_FILE, json, true).join();
             artifactRevisionCache.set(new ArrayList<>(records));
         } catch (Exception exception) { // NOSONAR - storage failure becomes runtime error
             throw new IllegalStateException("Failed to persist artifact revisions", exception);
@@ -563,52 +563,15 @@ public class EvolutionCandidateService {
     }
 
     private String resolveLifecycleState(String status) {
-        if (StringValueSupport.isBlank(status)) {
-            return "candidate";
-        }
-        return switch (status) {
-        case "approved", "approved_pending" -> "approved";
-        case "active" -> "active";
-        case "reverted" -> "reverted";
-        default -> "candidate";
-        };
+        return CandidateLifecycleResolver.resolveLifecycleState(status);
     }
 
     private String resolveRolloutStage(String status) {
-        if (StringValueSupport.isBlank(status)) {
-            return "proposed";
-        }
-        return switch (status) {
-        case "replayed" -> "replayed";
-        case "shadowed" -> "shadowed";
-        case "canary" -> "canary";
-        case "approved", "approved_pending" -> "approved";
-        case "active" -> "active";
-        case "reverted" -> "reverted";
-        default -> "proposed";
-        };
+        return CandidateLifecycleResolver.resolveRolloutStage(status);
     }
 
     private String resolveLegacyStatus(String lifecycleState, String rolloutStage) {
-        if ("approved".equals(lifecycleState) || "approved".equals(rolloutStage)) {
-            return "approved_pending";
-        }
-        if ("active".equals(lifecycleState) || "active".equals(rolloutStage)) {
-            return "active";
-        }
-        if ("reverted".equals(lifecycleState) || "reverted".equals(rolloutStage)) {
-            return "reverted";
-        }
-        if ("shadowed".equals(rolloutStage)) {
-            return "shadowed";
-        }
-        if ("canary".equals(rolloutStage)) {
-            return "canary";
-        }
-        if ("replayed".equals(rolloutStage)) {
-            return "replayed";
-        }
-        return "proposed";
+        return CandidateLifecycleResolver.resolveLegacyStatus(lifecycleState, rolloutStage);
     }
 
     private String resolveTacticTitle(EvolutionCandidate candidate) {

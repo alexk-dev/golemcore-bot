@@ -81,6 +81,7 @@ public class PromotionWorkflowService {
         if (candidates == null) {
             return List.of();
         }
+        List<EvolutionCandidate> normalizedResults = new ArrayList<>();
         for (EvolutionCandidate candidate : candidates) {
             if (candidate == null || StringValueSupport.isBlank(candidate.getId())) {
                 continue;
@@ -88,9 +89,10 @@ public class PromotionWorkflowService {
             EvolutionCandidate normalizedCandidate = evolutionCandidateService
                     .ensureArtifactIdentity(cloneCandidate(candidate));
             upsertCandidate(storedCandidates, normalizedCandidate);
+            normalizedResults.add(normalizedCandidate);
         }
         saveCandidates(storedCandidates);
-        return new ArrayList<>(candidates);
+        return normalizedResults;
     }
 
     public List<PromotionDecision> registerAndPlanCandidates(List<EvolutionCandidate> candidates) {
@@ -352,7 +354,7 @@ public class PromotionWorkflowService {
     private void saveCandidates(List<EvolutionCandidate> candidates) {
         try {
             String json = objectMapper.writeValueAsString(candidates);
-            storagePort.putText(SELF_EVOLVING_DIR, CANDIDATES_FILE, json).join();
+            storagePort.putTextAtomic(SELF_EVOLVING_DIR, CANDIDATES_FILE, json, true).join();
             candidateCache.set(new ArrayList<>(candidates));
         } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
             throw new IllegalStateException("Failed to persist self-evolving candidates", e);
@@ -362,7 +364,7 @@ public class PromotionWorkflowService {
     private void saveDecisions(List<PromotionDecision> decisions) {
         try {
             String json = objectMapper.writeValueAsString(decisions);
-            storagePort.putText(SELF_EVOLVING_DIR, DECISIONS_FILE, json).join();
+            storagePort.putTextAtomic(SELF_EVOLVING_DIR, DECISIONS_FILE, json, true).join();
             decisionCache.set(new ArrayList<>(decisions));
         } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
             throw new IllegalStateException("Failed to persist promotion decisions", e);
@@ -453,52 +455,15 @@ public class PromotionWorkflowService {
     }
 
     private String resolveLegacyState(String lifecycleState, String rolloutStage) {
-        if ("approved".equals(lifecycleState) || "approved".equals(rolloutStage)) {
-            return "approved_pending";
-        }
-        if ("active".equals(lifecycleState) || "active".equals(rolloutStage)) {
-            return "active";
-        }
-        if ("reverted".equals(lifecycleState) || "reverted".equals(rolloutStage)) {
-            return "reverted";
-        }
-        if ("shadowed".equals(rolloutStage)) {
-            return "shadowed";
-        }
-        if ("canary".equals(rolloutStage)) {
-            return "canary";
-        }
-        if ("replayed".equals(rolloutStage)) {
-            return "replayed";
-        }
-        return "proposed";
+        return CandidateLifecycleResolver.resolveLegacyStatus(lifecycleState, rolloutStage);
     }
 
     private String resolveLifecycleState(String state) {
-        if (StringValueSupport.isBlank(state)) {
-            return "candidate";
-        }
-        return switch (state) {
-        case "approved", "approved_pending" -> "approved";
-        case "active" -> "active";
-        case "reverted" -> "reverted";
-        default -> "candidate";
-        };
+        return CandidateLifecycleResolver.resolveLifecycleState(state);
     }
 
     private String resolveRolloutStage(String state) {
-        if (StringValueSupport.isBlank(state)) {
-            return "proposed";
-        }
-        return switch (state) {
-        case "replayed" -> "replayed";
-        case "shadowed" -> "shadowed";
-        case "canary" -> "canary";
-        case "approved", "approved_pending" -> "approved";
-        case "active" -> "active";
-        case "reverted" -> "reverted";
-        default -> "proposed";
-        };
+        return CandidateLifecycleResolver.resolveRolloutStage(state);
     }
 
     private record PromotionTarget(String legacyState, String lifecycleState, String rolloutStage) {

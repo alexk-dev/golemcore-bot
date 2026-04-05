@@ -145,6 +145,9 @@ class TacticRecordServiceTest {
         assertEquals("Prompt toolloop core", normalized.getTitle());
         assertEquals("candidate", normalized.getPromotionState());
         assertEquals("proposed", normalized.getRolloutStage());
+        assertNull(records.getFirst().getSuccessRate());
+        assertNull(records.getFirst().getBenchmarkWinRate());
+        assertNull(records.getFirst().getGolemLocalUsageSuccess());
         assertEquals("pending", normalized.getEmbeddingStatus());
         assertEquals(List.of("prompt"), normalized.getTaskFamilies());
         assertEquals(List.of("prompt", "candidate"), normalized.getTags());

@@ -18,6 +18,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingPromotionDecisionDto;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.service.BenchmarkLabService;
@@ -316,6 +317,14 @@ public class SelfEvolvingController {
         });
     }
 
+    @PostMapping("/tactics/{tacticId}/reactivate")
+    public Mono<ResponseEntity<Void>> reactivateTactic(@PathVariable String tacticId) {
+        return blocking(() -> {
+            tacticRecordService.reactivate(tacticId);
+            return ResponseEntity.ok().build();
+        });
+    }
+
     @DeleteMapping("/tactics/{tacticId}")
     public Mono<ResponseEntity<Void>> deleteTactic(@PathVariable String tacticId) {
         return blocking(() -> {
@@ -325,8 +334,8 @@ public class SelfEvolvingController {
     }
 
     @PostMapping("/candidates/{candidateId}/promotion")
-    public Mono<ResponseEntity<PromotionDecision>> planPromotion(@PathVariable String candidateId) {
-        return blocking(() -> ResponseEntity.ok(promotionWorkflowService.planPromotion(candidateId)));
+    public Mono<ResponseEntity<SelfEvolvingPromotionDecisionDto>> planPromotion(@PathVariable String candidateId) {
+        return blocking(() -> ResponseEntity.ok(toPromotionDecisionDto(promotionWorkflowService.planPromotion(candidateId))));
     }
 
     @GetMapping("/benchmarks/campaigns")
@@ -345,6 +354,22 @@ public class SelfEvolvingController {
 
     private <T> Mono<T> blocking(java.util.concurrent.Callable<T> callable) {
         return Mono.fromCallable(callable).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private SelfEvolvingPromotionDecisionDto toPromotionDecisionDto(PromotionDecision decision) {
+        return SelfEvolvingPromotionDecisionDto.builder()
+                .id(decision.getId())
+                .candidateId(decision.getCandidateId())
+                .bundleId(decision.getBundleId())
+                .state(decision.getState())
+                .fromState(decision.getFromState())
+                .toState(decision.getToState())
+                .mode(decision.getMode())
+                .approvalRequestId(decision.getApprovalRequestId())
+                .actorId(decision.getActorId())
+                .reason(decision.getReason())
+                .decidedAt(decision.getDecidedAt() != null ? decision.getDecidedAt().toString() : null)
+                .build();
     }
 
     private SelfEvolvingCampaignDto toCampaignDto(BenchmarkCampaign campaign) {

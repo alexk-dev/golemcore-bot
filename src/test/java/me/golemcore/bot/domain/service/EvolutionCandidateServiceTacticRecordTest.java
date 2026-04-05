@@ -38,6 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -144,5 +145,8 @@ class EvolutionCandidateServiceTacticRecordTest {
                 tactic.getToolSummary());
         assertEquals("Increase success on multi-step tasks without extra retries.", tactic.getOutcomeSummary());
         assertEquals("Promoted after reviewing the successful derive run.", tactic.getApprovalNotes());
+        assertNull(tactic.getSuccessRate());
+        assertNull(tactic.getBenchmarkWinRate());
+        assertNull(tactic.getGolemLocalUsageSuccess());
     }
 }

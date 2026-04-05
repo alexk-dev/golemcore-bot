@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query';
 import {
   deactivateSelfEvolvingTactic,
+  reactivateSelfEvolvingTactic,
   createSelfEvolvingRegressionCampaign,
   deleteSelfEvolvingTactic,
   getSelfEvolvingArtifactCompareEvidence,
@@ -216,6 +217,14 @@ export function usePlanSelfEvolvingPromotion(): UseMutationResult<SelfEvolvingPr
       qc.invalidateQueries({ queryKey: ['self-evolving', 'artifacts'] }),
       qc.invalidateQueries({ queryKey: ['self-evolving', 'tactics'] }),
     ]),
+  });
+}
+
+export function useReactivateTactic(): UseMutationResult<void, unknown, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tacticId: string) => reactivateSelfEvolvingTactic(tacticId),
+    onSuccess: () => invalidateSelfEvolvingTacticQueries(queryClient),
   });
 }
 
