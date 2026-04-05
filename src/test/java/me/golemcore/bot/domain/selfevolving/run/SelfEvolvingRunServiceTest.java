@@ -11,6 +11,7 @@ import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonRunJournalAdapter;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,7 +53,7 @@ class SelfEvolvingRunServiceTest {
         storagePort = mock(StoragePort.class);
         artifactBundleService = mock(ArtifactBundleService.class);
         clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
-        service = new SelfEvolvingRunService(storagePort, artifactBundleService, clock);
+        service = new SelfEvolvingRunService(new JsonRunJournalAdapter(storagePort), artifactBundleService, clock);
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
 
@@ -166,7 +167,8 @@ class SelfEvolvingRunServiceTest {
         persistedFiles.put("runs.json", objectMapper.writeValueAsString(List.of(storedRun)));
 
         StoragePort persistedStorage = mapBackedStorage(persistedFiles);
-        SelfEvolvingRunService persistedService = new SelfEvolvingRunService(persistedStorage, artifactBundleService,
+        SelfEvolvingRunService persistedService = new SelfEvolvingRunService(
+                new JsonRunJournalAdapter(persistedStorage), artifactBundleService,
                 clock);
         RunRecord run = persistedService.getRuns().getFirst();
         AgentContext context = AgentContext.builder()
@@ -194,7 +196,8 @@ class SelfEvolvingRunServiceTest {
     void shouldPersistAndLoadVerdictByRunId() {
         Map<String, String> persistedFiles = new ConcurrentHashMap<>();
         StoragePort persistedStorage = mapBackedStorage(persistedFiles);
-        SelfEvolvingRunService writerService = new SelfEvolvingRunService(persistedStorage, artifactBundleService,
+        SelfEvolvingRunService writerService = new SelfEvolvingRunService(new JsonRunJournalAdapter(persistedStorage),
+                artifactBundleService,
                 clock);
         RunVerdict verdict = RunVerdict.builder()
                 .id("verdict-1")
@@ -206,7 +209,8 @@ class SelfEvolvingRunServiceTest {
 
         writerService.saveVerdict("run-6", verdict);
 
-        SelfEvolvingRunService readerService = new SelfEvolvingRunService(persistedStorage, artifactBundleService,
+        SelfEvolvingRunService readerService = new SelfEvolvingRunService(new JsonRunJournalAdapter(persistedStorage),
+                artifactBundleService,
                 clock);
         Optional<RunVerdict> storedVerdict = readerService.findVerdict("run-6");
 
@@ -227,7 +231,8 @@ class SelfEvolvingRunServiceTest {
                         .createdAt(FIXED_INSTANT)
                         .build())));
         StoragePort persistedStorage = mapBackedStorage(persistedFiles);
-        SelfEvolvingRunService readerService = new SelfEvolvingRunService(persistedStorage, artifactBundleService,
+        SelfEvolvingRunService readerService = new SelfEvolvingRunService(new JsonRunJournalAdapter(persistedStorage),
+                artifactBundleService,
                 clock);
 
         Optional<RunVerdict> storedVerdict = readerService.findVerdict("run-legacy");
@@ -311,7 +316,8 @@ class SelfEvolvingRunServiceTest {
         when(brokenStorage.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture("{"));
         when(brokenStorage.putText(eq("self-evolving"), eq("runs.json"), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
-        SelfEvolvingRunService brokenService = new SelfEvolvingRunService(brokenStorage, artifactBundleService, clock);
+        SelfEvolvingRunService brokenService = new SelfEvolvingRunService(new JsonRunJournalAdapter(brokenStorage),
+                artifactBundleService, clock);
 
         assertTrue(brokenService.getRuns().isEmpty());
     }
