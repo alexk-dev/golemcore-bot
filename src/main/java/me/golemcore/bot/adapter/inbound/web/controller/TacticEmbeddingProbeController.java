@@ -22,6 +22,7 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.outbound.embedding.OpenAiCompatibleEmbeddingClient;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.EmbeddingPort;
 import org.springframework.http.ResponseEntity;
@@ -120,8 +121,9 @@ public class TacticEmbeddingProbeController {
                 || selfEvolvingConfig.getTactics().getSearch().getEmbeddings() == null) {
             return null;
         }
-        String stored = selfEvolvingConfig.getTactics().getSearch().getEmbeddings().getApiKey();
-        return stored != null && !stored.isBlank() ? stored.trim() : null;
+        Secret stored = selfEvolvingConfig.getTactics().getSearch().getEmbeddings().getApiKey();
+        String value = Secret.valueOrEmpty(stored);
+        return value.isBlank() ? null : value.trim();
     }
 
     private String firstNonBlank(String candidate, String fallback) {

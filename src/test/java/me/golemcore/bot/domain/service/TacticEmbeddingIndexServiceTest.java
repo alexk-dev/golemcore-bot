@@ -37,6 +37,7 @@ import java.nio.file.Path;
 import java.nio.file.Files;
 import me.golemcore.bot.port.outbound.EmbeddingClientResolverPort;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
@@ -298,7 +299,7 @@ class TacticEmbeddingIndexServiceTest {
                                         .enabled(true)
                                         .provider(provider)
                                         .baseUrl("https://embeddings.example")
-                                        .apiKey("test-key")
+                                        .apiKey(Secret.of("test-key"))
                                         .model("text-embedding-3-large")
                                         .dimensions(dimensions)
                                         .timeoutMs(5000)

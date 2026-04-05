@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.port.outbound.EmbeddingClientResolverPort;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticIndexDocument;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
@@ -101,7 +102,7 @@ public class TacticEmbeddingIndexService {
             EmbeddingPort client = embeddingClientResolver.resolve(config.getProvider());
             EmbeddingPort.EmbeddingResponse response = client.embed(new EmbeddingPort.EmbeddingRequest(
                     config.getBaseUrl(),
-                    config.getApiKey(),
+                    Secret.valueOrEmpty(config.getApiKey()),
                     config.getModel(),
                     config.getDimensions(),
                     config.getTimeoutMs(),
@@ -154,7 +155,7 @@ public class TacticEmbeddingIndexService {
             EmbeddingPort client = embeddingClientResolver.resolve(config.getProvider());
             EmbeddingPort.EmbeddingResponse response = client.embed(new EmbeddingPort.EmbeddingRequest(
                     config.getBaseUrl(),
-                    config.getApiKey(),
+                    Secret.valueOrEmpty(config.getApiKey()),
                     config.getModel(),
                     config.getDimensions(),
                     config.getTimeoutMs(),

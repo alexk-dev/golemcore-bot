@@ -2634,6 +2634,18 @@ public class RuntimeConfigService {
                 }
             }
         }
+        normalizeSelfEvolvingEmbeddingsApiKey(cfg);
+    }
+
+    private void normalizeSelfEvolvingEmbeddingsApiKey(RuntimeConfig cfg) {
+        if (cfg.getSelfEvolving() == null || cfg.getSelfEvolving().getTactics() == null
+                || cfg.getSelfEvolving().getTactics().getSearch() == null
+                || cfg.getSelfEvolving().getTactics().getSearch().getEmbeddings() == null) {
+            return;
+        }
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddings = cfg.getSelfEvolving().getTactics().getSearch()
+                .getEmbeddings();
+        embeddings.setApiKey(normalizeSecret(embeddings.getApiKey()));
     }
 
     private Secret normalizeSecret(Secret secret) {
@@ -2663,5 +2675,17 @@ public class RuntimeConfigService {
                 }
             }
         }
+        redactSelfEvolvingEmbeddingsApiKey(cfg);
+    }
+
+    private void redactSelfEvolvingEmbeddingsApiKey(RuntimeConfig cfg) {
+        if (cfg.getSelfEvolving() == null || cfg.getSelfEvolving().getTactics() == null
+                || cfg.getSelfEvolving().getTactics().getSearch() == null
+                || cfg.getSelfEvolving().getTactics().getSearch().getEmbeddings() == null) {
+            return;
+        }
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddings = cfg.getSelfEvolving().getTactics().getSearch()
+                .getEmbeddings();
+        embeddings.setApiKey(Secret.redacted(embeddings.getApiKey()));
     }
 }

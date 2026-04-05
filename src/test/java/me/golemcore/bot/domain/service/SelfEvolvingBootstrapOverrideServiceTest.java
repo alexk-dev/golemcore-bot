@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,7 +66,9 @@ class SelfEvolvingBootstrapOverrideServiceTest {
         assertEquals("ollama", runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getProvider());
         assertEquals("http://localhost:11434",
                 runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getBaseUrl());
-        assertEquals("secret", runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getApiKey());
+        assertEquals("secret",
+                Secret.valueOrEmpty(
+                        runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getApiKey()));
         assertEquals("qwen3-embedding:0.6b",
                 runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getModel());
         assertEquals(768, runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getDimensions());
@@ -110,7 +113,7 @@ class SelfEvolvingBootstrapOverrideServiceTest {
         persistedConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().setEnabled(false);
         persistedConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().setProvider("openai_compatible");
         persistedConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().setBaseUrl("https://example.com");
-        persistedConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().setApiKey("persisted");
+        persistedConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().setApiKey(Secret.of("persisted"));
         persistedConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().setModel("persisted-model");
         persistedConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().setDimensions(1536);
         persistedConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().setBatchSize(32);
@@ -167,8 +170,8 @@ class SelfEvolvingBootstrapOverrideServiceTest {
                 candidateConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getProvider());
         assertEquals("https://example.com",
                 candidateConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getBaseUrl());
-        assertEquals("persisted", candidateConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings()
-                .getApiKey());
+        assertEquals("persisted", Secret.valueOrEmpty(
+                candidateConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getApiKey()));
         assertEquals("persisted-model",
                 candidateConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getModel());
         assertEquals(1536,

@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.service;
 
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.springframework.stereotype.Service;
 
@@ -271,7 +272,7 @@ public class SelfEvolvingBootstrapOverrideService {
             embeddingsConfig.setBaseUrl(source.getBaseUrl().trim());
         }
         if (isNonBlank(source.getApiKey())) {
-            embeddingsConfig.setApiKey(source.getApiKey().trim());
+            embeddingsConfig.setApiKey(Secret.of(source.getApiKey().trim()));
         }
         if (isNonBlank(source.getModel())) {
             embeddingsConfig.setModel(source.getModel().trim());

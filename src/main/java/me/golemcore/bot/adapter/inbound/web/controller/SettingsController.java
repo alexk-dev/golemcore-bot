@@ -1124,15 +1124,9 @@ public class SettingsController {
         if (patchEmbeddings == null) {
             return;
         }
-        String submitted = patchEmbeddings.getApiKey();
-        if (submitted != null && !submitted.isBlank()) {
-            return;
-        }
         RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig baselineEmbeddings = extractEmbeddings(baseline);
-        if (baselineEmbeddings == null || baselineEmbeddings.getApiKey() == null) {
-            return;
-        }
-        patchEmbeddings.setApiKey(baselineEmbeddings.getApiKey());
+        Secret baselineKey = baselineEmbeddings != null ? baselineEmbeddings.getApiKey() : null;
+        patchEmbeddings.setApiKey(mergeSecret(baselineKey, patchEmbeddings.getApiKey()));
     }
 
     private RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig extractEmbeddings(

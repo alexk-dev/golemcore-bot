@@ -176,9 +176,39 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
       apiKey: toSecretPayload(voice.apiKey ?? null),
       whisperSttApiKey: toSecretPayload(voice.whisperSttApiKey ?? null),
     },
-    selfEvolving,
+    selfEvolving: toBackendSelfEvolvingConfig(selfEvolving),
   };
   return payload;
+}
+
+function toBackendSelfEvolvingConfig(selfEvolving: UnknownRecord): UnknownRecord {
+  const tactics = selfEvolving.tactics as UnknownRecord | undefined;
+  if (tactics == null) {
+    return selfEvolving;
+  }
+  const search = tactics.search as UnknownRecord | undefined;
+  if (search == null) {
+    return selfEvolving;
+  }
+  const embeddings = search.embeddings as UnknownRecord | undefined;
+  if (embeddings == null) {
+    return selfEvolving;
+  }
+  const { apiKey, apiKeyPresent: _apiKeyPresent, ...embeddingsRest } = embeddings;
+  const apiKeyValue = typeof apiKey === 'string' ? apiKey : null;
+  return {
+    ...selfEvolving,
+    tactics: {
+      ...tactics,
+      search: {
+        ...search,
+        embeddings: {
+          ...embeddingsRest,
+          apiKey: toSecretPayload(apiKeyValue),
+        },
+      },
+    },
+  };
 }
 
 export interface SettingsResponse extends Record<string, unknown> {
@@ -858,10 +888,12 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
           enabled: tacticSearchMode === 'hybrid',
           provider: tacticEmbeddingsProvider,
           baseUrl: toNullableString(tacticsEmbeddings.baseUrl),
-          apiKey: toNullableString(tacticsEmbeddings.apiKey),
-          apiKeyPresent: typeof tacticsEmbeddings.apiKeyPresent === 'boolean'
-            ? tacticsEmbeddings.apiKeyPresent
-            : undefined,
+          apiKey: typeof tacticsEmbeddings.apiKey === 'string'
+            ? toNullableString(tacticsEmbeddings.apiKey)
+            : null,
+          apiKeyPresent: typeof tacticsEmbeddings.apiKey === 'string'
+            ? (typeof tacticsEmbeddings.apiKeyPresent === 'boolean' ? tacticsEmbeddings.apiKeyPresent : undefined)
+            : hasSecretValue(tacticsEmbeddings.apiKey),
           model: tacticEmbeddingsModel,
           dimensions: typeof tacticsEmbeddings.dimensions === 'number' ? tacticsEmbeddings.dimensions : null,
           batchSize: typeof tacticsEmbeddings.batchSize === 'number' ? tacticsEmbeddings.batchSize : null,
