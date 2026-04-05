@@ -247,6 +247,79 @@ class TacticEmbeddingIndexServiceTest {
     }
 
     @Test
+    void shouldReportMissingPersistedEntriesForCurrentTacticDocuments() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(hybridConfig("openai_compatible"));
+        when(tacticRecordService.getAll()).thenReturn(List.of(
+                tactic("planner", "active", "Recover with an ordered shell plan"),
+                tactic("rollback", "approved", "Rollback the last broken shell step")));
+
+        indexStore.replaceAll(
+                "openai_compatible",
+                "text-embedding-3-large",
+                2,
+                List.of(new TacticEmbeddingIndexPort.Entry(
+                        "planner",
+                        "rev-planner",
+                        List.of(1.0d, 0.0d),
+                        Instant.parse("2026-04-04T19:10:00Z"))));
+
+        assertEquals(List.of("rollback"), service.findMissingPersistedEntryTacticIds());
+    }
+
+    @Test
+    void shouldTreatMismatchedRevisionOrDimensionsAsMissingPersistedEntries() {
+        when(runtimeConfigService.getSelfEvolvingConfig())
+                .thenReturn(hybridConfigWithDimensions("openai_compatible", 3));
+        when(tacticRecordService.getAll()).thenReturn(List.of(
+                tactic("planner", "active", "Recover with an ordered shell plan"),
+                tactic("rollback", "approved", "Rollback the last broken shell step")));
+
+        indexStore.replaceAll(
+                "openai_compatible",
+                "text-embedding-3-large",
+                2,
+                List.of(
+                        new TacticEmbeddingIndexPort.Entry(
+                                "planner",
+                                "stale-revision",
+                                List.of(1.0d, 0.0d),
+                                Instant.parse("2026-04-04T19:10:00Z")),
+                        new TacticEmbeddingIndexPort.Entry(
+                                "rollback",
+                                "rev-rollback",
+                                List.of(0.2d, 0.98d),
+                                Instant.parse("2026-04-04T19:11:00Z"))));
+
+        assertEquals(List.of("planner", "rollback"), service.findMissingPersistedEntryTacticIds());
+    }
+
+    @Test
+    void shouldReturnNoMissingPersistedEntriesWhenStoreMatchesCurrentDocuments() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(hybridConfig("openai_compatible"));
+        when(tacticRecordService.getAll()).thenReturn(List.of(
+                tactic("planner", "active", "Recover with an ordered shell plan"),
+                tactic("rollback", "approved", "Rollback the last broken shell step")));
+
+        indexStore.replaceAll(
+                "openai_compatible",
+                "text-embedding-3-large",
+                2,
+                List.of(
+                        new TacticEmbeddingIndexPort.Entry(
+                                "planner",
+                                "rev-planner",
+                                List.of(1.0d, 0.0d),
+                                Instant.parse("2026-04-04T19:10:00Z")),
+                        new TacticEmbeddingIndexPort.Entry(
+                                "rollback",
+                                "rev-rollback",
+                                List.of(0.2d, 0.98d),
+                                Instant.parse("2026-04-04T19:11:00Z"))));
+
+        assertTrue(service.findMissingPersistedEntryTacticIds().isEmpty());
+    }
+
+    @Test
     void shouldRebuildPersistedIndexWhenStoredDimensionsDoNotMatchConfig() {
         when(runtimeConfigService.getSelfEvolvingConfig())
                 .thenReturn(hybridConfigWithDimensions("openai_compatible", 3));

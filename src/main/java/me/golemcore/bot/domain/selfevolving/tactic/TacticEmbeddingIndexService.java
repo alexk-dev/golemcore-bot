@@ -30,6 +30,7 @@ import me.golemcore.bot.port.outbound.selfevolving.TacticEmbeddingIndexPort;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -131,6 +132,31 @@ public class TacticEmbeddingIndexService {
 
     public Snapshot snapshot() {
         return snapshot.get();
+    }
+
+    List<String> findMissingPersistedEntryTacticIds() {
+        if (!isTacticsSearchEnabled()) {
+            return List.of();
+        }
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = searchConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config = embeddingsConfig(searchConfig);
+        if (!isHybridMode(searchConfig) || !Boolean.TRUE.equals(config.getEnabled()) || !isProviderConfigured(config)) {
+            return List.of();
+        }
+        List<TacticIndexDocument> documents = tacticDocuments();
+        if (documents.isEmpty()) {
+            return List.of();
+        }
+        Map<String, TacticEmbeddingIndexPort.Entry> persistedEntries = indexStore.loadEntries(
+                config.getProvider(),
+                config.getModel());
+        List<String> missingTacticIds = new ArrayList<>();
+        for (TacticIndexDocument document : documents) {
+            if (isPersistedEntryMissingOrStale(document, persistedEntries.get(document.getTacticId()), config)) {
+                missingTacticIds.add(document.getTacticId());
+            }
+        }
+        return missingTacticIds;
     }
 
     public void rebuildAll() {
@@ -278,6 +304,17 @@ public class TacticEmbeddingIndexService {
         tacticRecordService.updateEmbeddingStatuses(statusMap(documentMap.keySet(), EMBEDDING_STATUS_INDEXED));
         snapshot.set(new Snapshot(documentMap, vectorMap, updatedAt));
         return true;
+    }
+
+    private boolean isPersistedEntryMissingOrStale(
+            TacticIndexDocument document,
+            TacticEmbeddingIndexPort.Entry persistedEntry,
+            RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config) {
+        return persistedEntry == null
+                || !Objects.equals(persistedEntry.contentRevisionId(), document.getContentRevisionId())
+                || !Objects.equals(persistedEntry.dimensions(), config.getDimensions())
+                || persistedEntry.vector() == null
+                || persistedEntry.vector().isEmpty();
     }
 
     private List<TacticIndexDocument> tacticDocuments() {
