@@ -76,8 +76,10 @@ describe('SelfEvolvingTacticSearchWorkspace', () => {
         onQueryChange={vi.fn()}
         onBackToResults={vi.fn()}
         onDeactivateTactic={vi.fn()}
+        onReactivateTactic={vi.fn()}
         onDeleteTactic={vi.fn()}
         isDeactivatingTactic={false}
+        isReactivatingTactic={false}
         isDeletingTactic={false}
         searchResponse={{ query: 'planner', status: SEARCH_STATUS, results: [TACTIC_RESULT] }}
         selectedTacticId={null}
@@ -102,8 +104,10 @@ describe('SelfEvolvingTacticSearchWorkspace', () => {
         onQueryChange={vi.fn()}
         onBackToResults={vi.fn()}
         onDeactivateTactic={vi.fn()}
+        onReactivateTactic={vi.fn()}
         onDeleteTactic={vi.fn()}
         isDeactivatingTactic={false}
+        isReactivatingTactic={false}
         isDeletingTactic={false}
         searchResponse={{ query: 'planner', status: SEARCH_STATUS, results: [TACTIC_RESULT] }}
         selectedTacticId="planner"
@@ -120,5 +124,45 @@ describe('SelfEvolvingTacticSearchWorkspace', () => {
     expect(html).toContain('Behavior');
     expect(html).toContain('Deactivate');
     expect(html).toContain('Delete');
+  });
+
+  it('renders n/a only for tactic runtime metrics while keeping search score numeric', () => {
+    const html = renderToStaticMarkup(
+      <SelfEvolvingTacticSearchWorkspace
+        query="planner"
+        onQueryChange={vi.fn()}
+        onBackToResults={vi.fn()}
+        onDeactivateTactic={vi.fn()}
+        onReactivateTactic={vi.fn()}
+        onDeleteTactic={vi.fn()}
+        isDeactivatingTactic={false}
+        isReactivatingTactic={false}
+        isDeletingTactic={false}
+        searchResponse={{
+          query: 'planner',
+          status: SEARCH_STATUS,
+          results: [
+            {
+              ...TACTIC_RESULT,
+              successRate: null,
+              benchmarkWinRate: null,
+              recencyScore: null,
+              golemLocalUsageSuccess: null,
+              score: 1.18,
+              explanation: {
+                ...TACTIC_RESULT.explanation,
+                finalScore: 1.18,
+              },
+            },
+          ],
+        }}
+        selectedTacticId={null}
+        onSelectTacticId={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('Success n/a');
+    expect(html).toContain('Benchmark n/a');
+    expect(html).toContain('Score 1.18');
   });
 });

@@ -47,4 +47,41 @@ describe('SelfEvolvingTacticWhyPanel', () => {
     expect(html).not.toContain('MMR diversity');
     expect(html).not.toContain('Matched views');
   });
+
+  it('renders n/a for tactic runtime metrics while keeping computed search score visible', () => {
+    const html = renderToStaticMarkup(
+      <SelfEvolvingTacticWhyPanel
+        explanation={{
+          searchMode: 'hybrid',
+          bm25Score: 0.41,
+          vectorScore: 0.37,
+          rrfScore: 0.88,
+          qualityPrior: 0.0,
+          mmrDiversityAdjustment: -0.01,
+          negativeMemoryPenalty: 0.0,
+          personalizationBoost: 0.04,
+          rerankerVerdict: 'tier deep via gpt-5.4/high',
+          matchedQueryViews: ['planner'],
+          matchedTerms: ['planner'],
+          eligible: true,
+          gatingReason: null,
+          degradedReason: null,
+          finalScore: 0.97,
+        }}
+        successRate={null}
+        benchmarkWinRate={null}
+        regressionFlags={[]}
+        promotionState="active"
+        recencyScore={null}
+        golemLocalUsageSuccess={null}
+      />,
+    );
+
+    expect(html).toContain('Success rate');
+    expect(html).toContain('Benchmark win rate');
+    expect(html).toContain('Recency');
+    expect(html.match(/n\/a/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
+    expect(html).toContain('Final score');
+    expect(html).toContain('0.97');
+  });
 });

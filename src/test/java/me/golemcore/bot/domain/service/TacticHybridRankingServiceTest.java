@@ -106,6 +106,35 @@ class TacticHybridRankingServiceTest {
         assertTrue(result.getExplanation().getRerankerVerdict().contains("unavailable"));
     }
 
+    @Test
+    void shouldStillComputeSearchScoringWhenTacticQualityMetricsAreUnavailable() {
+        TacticSearchResult sparse = TacticSearchResult.builder()
+                .tacticId("sparse")
+                .artifactStreamId("stream-sparse")
+                .artifactKey("skill:sparse")
+                .artifactType("skill")
+                .title("Sparse")
+                .promotionState("active")
+                .rolloutStage("active")
+                .toolSummary("shell")
+                .successRate(null)
+                .benchmarkWinRate(null)
+                .regressionFlags(List.of())
+                .recencyScore(null)
+                .golemLocalUsageSuccess(null)
+                .tags(List.of("planner"))
+                .updatedAt(Instant.parse("2026-04-01T23:30:00Z"))
+                .build();
+
+        TacticSearchResult result = rankingService.rank(query(), List.of(sparse), List.of(sparse)).getFirst();
+
+        assertNotNull(result.getExplanation().getQualityPrior());
+        assertNotNull(result.getExplanation().getRrfScore());
+        assertNotNull(result.getExplanation().getFinalScore());
+        assertFalse(Double.isNaN(result.getExplanation().getFinalScore()));
+        assertEquals("hybrid", result.getExplanation().getSearchMode());
+    }
+
     private TacticSearchQuery query() {
         return TacticSearchQuery.builder()
                 .rawQuery("recover failed shell command")
