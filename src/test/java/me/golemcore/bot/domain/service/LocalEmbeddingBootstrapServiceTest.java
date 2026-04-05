@@ -123,7 +123,7 @@ class LocalEmbeddingBootstrapServiceTest {
 
     @Test
     void shouldStayBm25WhenSelfEvolvingTacticsAreDisabled() {
-        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(false, true, "hybrid", true,
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, false, "hybrid", true,
                 "ollama", true, true, false, true, "http://localhost:11434", "qwen3-embedding:0.6b"));
 
         TacticSearchStatus status = service.initialize();

@@ -89,6 +89,7 @@ public class PromotionWorkflowService {
             EvolutionCandidate normalizedCandidate = evolutionCandidateService
                     .ensureArtifactIdentity(cloneCandidate(candidate));
             upsertCandidate(storedCandidates, normalizedCandidate);
+            evolutionCandidateService.syncTacticRecord(normalizedCandidate);
             normalizedResults.add(normalizedCandidate);
         }
         saveCandidates(storedCandidates);
@@ -166,9 +167,6 @@ public class PromotionWorkflowService {
         updatedCandidate.setRolloutStage(target.rolloutStage());
         saveCandidate(updatedCandidate);
         saveDecision(decision);
-        if ("active".equals(target.legacyState())) {
-            evolutionCandidateService.activateAsTactic(updatedCandidate);
-        }
         return decision;
     }
 
@@ -271,6 +269,7 @@ public class PromotionWorkflowService {
         List<EvolutionCandidate> candidates = new ArrayList<>(getCandidates());
         upsertCandidate(candidates, candidate);
         saveCandidates(candidates);
+        evolutionCandidateService.syncTacticRecord(candidate);
     }
 
     private void saveDecision(PromotionDecision decision) {
@@ -311,6 +310,7 @@ public class PromotionWorkflowService {
                     mutated = true;
                 }
                 evolutionCandidateService.ensureArtifactIdentity(candidate);
+                evolutionCandidateService.syncTacticRecord(candidate);
             }
             if (mutated) {
                 saveCandidates(normalizedCandidates);

@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionProposal;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -210,6 +212,59 @@ class PromotionWorkflowServiceTest {
                 .orElseThrow();
         assertEquals("active", activeBundle.getStatus());
         assertEquals("rev-2", activeBundle.getArtifactRevisionBindings().get("stream-1"));
+    }
+
+    @Test
+    void shouldCreateAndRefreshTacticRecordsForRetrievableCandidatesBeforeActivation() {
+        when(runtimeConfigService.isSelfEvolvingPromotionShadowRequired()).thenReturn(true);
+        when(runtimeConfigService.isSelfEvolvingPromotionCanaryRequired()).thenReturn(true);
+        artifactBundleService.save(ArtifactBundleRecord.builder()
+                .id("bundle-tactic")
+                .status("snapshot")
+                .artifactRevisionBindings(Map.of("stream-tactic", "rev-base"))
+                .createdAt(Instant.parse("2026-03-31T15:55:00Z"))
+                .build());
+        EvolutionCandidate candidate = EvolutionCandidate.builder()
+                .id("candidate-tactic")
+                .golemId("golem-1")
+                .goal("derive")
+                .artifactType("skill")
+                .artifactStreamId("stream-tactic")
+                .originArtifactStreamId("stream-tactic")
+                .artifactKey("skill:planner")
+                .contentRevisionId("rev-tactic")
+                .baseContentRevisionId("rev-base")
+                .baseVersion("bundle-tactic")
+                .proposedDiff("Reuse planning checkpoints before executing shell tools.")
+                .status("proposed")
+                .proposal(EvolutionProposal.builder()
+                        .summary("Capture planner tactic")
+                        .behaviorInstructions("Plan the work before tool execution.")
+                        .toolInstructions("Prefer shell only after the plan is explicit.")
+                        .expectedOutcome("More reliable multi-step execution.")
+                        .build())
+                .build();
+
+        promotionWorkflowService.registerCandidates(List.of(candidate));
+
+        TacticRecord proposed = tacticRecordService.getById("rev-tactic").orElseThrow();
+        assertEquals("candidate", proposed.getPromotionState());
+        assertEquals("proposed", proposed.getRolloutStage());
+
+        promotionWorkflowService.planPromotion("candidate-tactic");
+        TacticRecord shadowed = tacticRecordService.getById("rev-tactic").orElseThrow();
+        assertEquals("candidate", shadowed.getPromotionState());
+        assertEquals("shadowed", shadowed.getRolloutStage());
+
+        promotionWorkflowService.planPromotion("candidate-tactic");
+        TacticRecord canary = tacticRecordService.getById("rev-tactic").orElseThrow();
+        assertEquals("candidate", canary.getPromotionState());
+        assertEquals("canary", canary.getRolloutStage());
+
+        promotionWorkflowService.planPromotion("candidate-tactic");
+        TacticRecord active = tacticRecordService.getById("rev-tactic").orElseThrow();
+        assertEquals("active", active.getPromotionState());
+        assertEquals("active", active.getRolloutStage());
     }
 
     @Test

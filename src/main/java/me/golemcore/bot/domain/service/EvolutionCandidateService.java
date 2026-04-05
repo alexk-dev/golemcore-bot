@@ -39,6 +39,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -161,7 +162,23 @@ public class EvolutionCandidateService {
             return null;
         }
         normalizeCandidate(candidate);
-        return tacticRecordService.save(buildTacticRecord(candidate, "active", "active"));
+        EvolutionCandidate promotedCandidate = candidate.toBuilder()
+                .status("active")
+                .lifecycleState("active")
+                .rolloutStage("active")
+                .build();
+        return syncTacticRecord(promotedCandidate).orElse(null);
+    }
+
+    public Optional<TacticRecord> syncTacticRecord(EvolutionCandidate candidate) {
+        if (candidate == null || !shouldMaterializeTactic(candidate)) {
+            return Optional.empty();
+        }
+        normalizeCandidate(candidate);
+        return Optional.of(tacticRecordService.save(buildTacticRecord(
+                candidate,
+                resolveTacticPromotionState(candidate),
+                resolveTacticRolloutStage(candidate))));
     }
 
     private EvolutionCandidate buildCandidate(
@@ -325,6 +342,43 @@ public class EvolutionCandidateService {
                 .embeddingStatus("pending")
                 .updatedAt(candidate.getCreatedAt() != null ? candidate.getCreatedAt() : Instant.now(clock))
                 .build();
+    }
+
+    private boolean shouldMaterializeTactic(EvolutionCandidate candidate) {
+        if (candidate == null) {
+            return false;
+        }
+        EvolutionProposal proposal = candidate.getProposal();
+        if (proposal != null
+                && (!StringValueSupport.isBlank(proposal.getSummary())
+                        || !StringValueSupport.isBlank(proposal.getBehaviorInstructions())
+                        || !StringValueSupport.isBlank(proposal.getToolInstructions())
+                        || !StringValueSupport.isBlank(proposal.getExpectedOutcome())
+                        || !StringValueSupport.isBlank(proposal.getApprovalNotes())
+                        || !StringValueSupport.isBlank(proposal.getProposedPatch()))) {
+            return true;
+        }
+        return !isPlaceholderDiff(candidate.getProposedDiff());
+    }
+
+    private String resolveTacticPromotionState(EvolutionCandidate candidate) {
+        if (candidate == null) {
+            return "candidate";
+        }
+        if (!StringValueSupport.isBlank(candidate.getLifecycleState())) {
+            return candidate.getLifecycleState();
+        }
+        return resolveLifecycleState(candidate.getStatus());
+    }
+
+    private String resolveTacticRolloutStage(EvolutionCandidate candidate) {
+        if (candidate == null) {
+            return "proposed";
+        }
+        if (!StringValueSupport.isBlank(candidate.getRolloutStage())) {
+            return candidate.getRolloutStage();
+        }
+        return resolveRolloutStage(candidate.getStatus());
     }
 
     private List<ArtifactRevisionRecord> loadArtifactRevisions() {

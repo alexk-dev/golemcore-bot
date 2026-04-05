@@ -35,6 +35,7 @@ import java.util.List;
 public class SelfEvolvingBootstrapOverrideService {
 
     private static final String PATH_ENABLED = "enabled";
+    private static final String PATH_TACTICS_ENABLED = "tactics.enabled";
     private static final String PATH_TACTICS_SEARCH_MODE = "tactics.search.mode";
     private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_PROVIDER = "tactics.search.embeddings.provider";
     private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_BASE_URL = "tactics.search.embeddings.baseUrl";
@@ -106,6 +107,7 @@ public class SelfEvolvingBootstrapOverrideService {
         if (tactics == null) {
             return overriddenPaths;
         }
+        addOverride(overriddenPaths, tactics.getEnabled() != null, PATH_TACTICS_ENABLED);
 
         BotProperties.SelfEvolvingBootstrapTacticSearchProperties search = tactics.getSearch();
         if (search == null) {
@@ -145,7 +147,9 @@ public class SelfEvolvingBootstrapOverrideService {
             return;
         }
         RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = ensureTacticsConfig(target);
-        tacticsConfig.setEnabled(Boolean.TRUE.equals(target.getEnabled()));
+        if (source.getEnabled() != null) {
+            tacticsConfig.setEnabled(source.getEnabled());
+        }
         overrideSearch(tacticsConfig, source.getSearch());
     }
 
@@ -159,7 +163,9 @@ public class SelfEvolvingBootstrapOverrideService {
         RuntimeConfig.SelfEvolvingTacticsConfig persistedTactics = persisted.getTactics() != null
                 ? persisted.getTactics()
                 : new RuntimeConfig.SelfEvolvingTacticsConfig();
-        candidateTactics.setEnabled(Boolean.TRUE.equals(persisted.getEnabled()));
+        if (source.getEnabled() != null) {
+            candidateTactics.setEnabled(persistedTactics.getEnabled());
+        }
         restoreSearch(candidateTactics, persistedTactics, source.getSearch());
     }
 

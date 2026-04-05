@@ -87,6 +87,19 @@ class SelfEvolvingBootstrapOverrideServiceTest {
     }
 
     @Test
+    void shouldAllowBootstrapToDisableTacticsWithoutDisablingSelfEvolving() {
+        RuntimeConfig runtimeConfig = new RuntimeConfig();
+
+        botProperties.getSelfEvolving().getBootstrap().setEnabled(true);
+        botProperties.getSelfEvolving().getBootstrap().getTactics().setEnabled(false);
+
+        service.apply(runtimeConfig);
+
+        assertTrue(runtimeConfig.getSelfEvolving().getEnabled());
+        assertFalse(runtimeConfig.getSelfEvolving().getTactics().getEnabled());
+    }
+
+    @Test
     void shouldRestorePersistedValuesForConfiguredBootstrapFields() {
         RuntimeConfig candidateConfig = new RuntimeConfig();
         RuntimeConfig persistedConfig = new RuntimeConfig();

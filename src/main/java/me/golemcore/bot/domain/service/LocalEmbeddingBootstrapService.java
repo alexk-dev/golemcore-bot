@@ -136,7 +136,8 @@ public class LocalEmbeddingBootstrapService {
                 ? hasModel(baseUrl, model)
                 : false;
 
-        if (!Boolean.TRUE.equals(selfEvolvingConfig.getEnabled())) {
+        if (!Boolean.TRUE.equals(selfEvolvingConfig.getEnabled())
+                || !Boolean.TRUE.equals(context.tacticsConfig().getEnabled())) {
             return activeStatus(MODE_BM25, "selfevolving tactics disabled", provider, model, runtimeInstalled,
                     runtimeHealthy, runtimeVersion, baseUrl, modelAvailable, localConfig, false, false, recordMetrics);
         }

@@ -100,7 +100,8 @@ public class SelfEvolvingTacticSearchStatusProjectionService {
                 endpoint,
                 model);
 
-        if (!Boolean.TRUE.equals(selfEvolvingConfig.getEnabled())) {
+        if (!Boolean.TRUE.equals(selfEvolvingConfig.getEnabled())
+                || !Boolean.TRUE.equals(tacticsConfig.getEnabled())) {
             return buildStatus(
                     MODE_BM25,
                     "selfevolving tactics disabled",

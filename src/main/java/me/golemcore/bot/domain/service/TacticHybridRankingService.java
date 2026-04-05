@@ -167,6 +167,7 @@ public class TacticHybridRankingService {
                 .getSearch()
                 .getRerank();
         if (rerankConfig == null || !Boolean.TRUE.equals(rerankConfig.getCrossEncoder())) {
+            metricsService.recordActiveMode(searchMode, null);
             ranked.forEach(result -> result.getExplanation().setRerankerVerdict("disabled"));
             return ranked;
         }
@@ -200,6 +201,7 @@ public class TacticHybridRankingService {
                 result.getExplanation().setDegradedReason(exception.getMessage());
             });
             metricsService.recordQueryFailure(exception.getMessage());
+            metricsService.recordActiveMode(searchMode, exception.getMessage());
             return ranked;
         }
     }
@@ -209,10 +211,10 @@ public class TacticHybridRankingService {
     }
 
     private double qualityPrior(TacticSearchResult candidate) {
-        double success = nullSafe(candidate.getSuccessRate());
-        double benchmark = nullSafe(candidate.getBenchmarkWinRate());
-        double recency = nullSafe(candidate.getRecencyScore());
-        double local = nullSafe(candidate.getGolemLocalUsageSuccess());
+        double success = qualitySignal(candidate.getSuccessRate());
+        double benchmark = qualitySignal(candidate.getBenchmarkWinRate());
+        double recency = qualitySignal(candidate.getRecencyScore());
+        double local = qualitySignal(candidate.getGolemLocalUsageSuccess());
         double promotionBoost = switch (normalize(candidate.getPromotionState())) {
         case "active" -> 0.12d;
         case "approved" -> 0.08d;
@@ -352,6 +354,12 @@ public class TacticHybridRankingService {
 
     private double nullSafe(Double value) {
         return value != null ? value : 0.0d;
+    }
+
+    private double qualitySignal(Double value) {
+        // Missing quality/runtime observations should be neutral rather than
+        // indistinguishable from explicit zero-performance measurements.
+        return value != null ? value : 0.5d;
     }
 
     private String normalize(String value) {

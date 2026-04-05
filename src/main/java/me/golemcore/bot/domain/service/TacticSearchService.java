@@ -100,7 +100,11 @@ public class TacticSearchService {
 
     private boolean isSearchEnabled() {
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
-        return Boolean.TRUE.equals(selfEvolvingConfig.getEnabled());
+        if (selfEvolvingConfig == null || !Boolean.TRUE.equals(selfEvolvingConfig.getEnabled())) {
+            return false;
+        }
+        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics();
+        return tacticsConfig != null && Boolean.TRUE.equals(tacticsConfig.getEnabled());
     }
 
     private boolean isEligible(String promotionState, TacticSearchQuery query) {

@@ -179,6 +179,32 @@ class TacticEmbeddingIndexServiceTest {
     }
 
     @Test
+    void shouldReturnEmptyAndMarkBm25WhenTacticsSubsystemDisabled() {
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .enabled(false)
+                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                .mode("hybrid")
+                                .embeddings(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig.builder()
+                                        .enabled(true)
+                                        .provider("openai_compatible")
+                                        .baseUrl("https://embeddings.example")
+                                        .model("text-embedding-3-large")
+                                        .build())
+                                .build())
+                        .build())
+                .build());
+
+        List<TacticSearchResult> results = service.search(query());
+
+        assertTrue(results.isEmpty());
+        assertEquals("bm25", metricsService.snapshot().activeMode());
+        assertEquals("selfevolving tactics disabled", metricsService.snapshot().lastReason());
+        verifyNoInteractions(embeddingClientResolver);
+    }
+
+    @Test
     void shouldPersistVectorsToSqliteAndReloadWarmIndexWithoutReembeddingDocuments() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(hybridConfig("openai_compatible"));
         when(tacticRecordService.getAll()).thenReturn(List.of(

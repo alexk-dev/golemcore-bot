@@ -69,10 +69,22 @@ public class TacticEmbeddingIndexService {
     }
 
     public List<TacticSearchResult> search(TacticSearchQuery query) {
+        if (!isTacticsSearchEnabled()) {
+            metricsService.recordActiveMode("bm25", "selfevolving tactics disabled");
+            return List.of();
+        }
         RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = searchConfig();
         RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config = embeddingsConfig(searchConfig);
-        if (!isHybridMode(searchConfig) || !isProviderConfigured(config)) {
+        if (!isHybridMode(searchConfig)) {
             metricsService.recordActiveMode("bm25", "embeddings disabled");
+            return List.of();
+        }
+        if (!Boolean.TRUE.equals(config.getEnabled())) {
+            metricsService.recordActiveMode("bm25", "embeddings disabled");
+            return List.of();
+        }
+        if (!isProviderConfigured(config)) {
+            metricsService.recordFallback("bm25", "embedding provider configuration incomplete");
             return List.of();
         }
         if (shouldSkipVectorSearch(config)) {
@@ -107,6 +119,7 @@ public class TacticEmbeddingIndexService {
                     .limit(5)
                     .toList();
         } catch (RuntimeException exception) {
+            metricsService.recordFallback("bm25", exception.getMessage());
             metricsService.recordQueryFailure(exception.getMessage());
             return List.of();
         }
@@ -117,6 +130,11 @@ public class TacticEmbeddingIndexService {
     }
 
     public void rebuildAll() {
+        if (!isTacticsSearchEnabled()) {
+            snapshot.set(Snapshot.empty());
+            metricsService.recordActiveMode("bm25", "selfevolving tactics disabled");
+            return;
+        }
         RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = searchConfig();
         RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config = embeddingsConfig(searchConfig);
         if (!isHybridMode(searchConfig) || !isProviderConfigured(config)) {
@@ -163,6 +181,7 @@ public class TacticEmbeddingIndexService {
             tacticRecordService.updateEmbeddingStatuses(statusMap(documents, EMBEDDING_STATUS_FAILED));
             snapshot.set(Snapshot.empty());
             metricsService.recordIndexFailure(exception.getMessage());
+            metricsService.recordActiveMode("bm25", exception.getMessage());
         }
     }
 
@@ -177,10 +196,23 @@ public class TacticEmbeddingIndexService {
     }
 
     private RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig() {
-        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = runtimeConfigService.getSelfEvolvingConfig()
-                .getTactics()
-                .getSearch();
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
+        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig != null
+                ? selfEvolvingConfig.getTactics()
+                : null;
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = tacticsConfig != null
+                ? tacticsConfig.getSearch()
+                : null;
         return searchConfig != null ? searchConfig : new RuntimeConfig.SelfEvolvingTacticSearchConfig();
+    }
+
+    private boolean isTacticsSearchEnabled() {
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
+        if (selfEvolvingConfig == null || !Boolean.TRUE.equals(selfEvolvingConfig.getEnabled())) {
+            return false;
+        }
+        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics();
+        return tacticsConfig != null && Boolean.TRUE.equals(tacticsConfig.getEnabled());
     }
 
     private RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig(

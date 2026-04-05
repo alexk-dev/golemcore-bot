@@ -2163,7 +2163,6 @@ public class RuntimeConfigService {
         if (tacticsConfig.getEnabled() == null) {
             tacticsConfig.setEnabled(DEFAULT_SELF_EVOLVING_TACTICS_ENABLED);
         }
-        tacticsConfig.setEnabled(Boolean.TRUE.equals(selfEvolvingConfig.getEnabled()));
         if (tacticsConfig.getSearch() == null) {
             tacticsConfig.setSearch(new RuntimeConfig.SelfEvolvingTacticSearchConfig());
         }

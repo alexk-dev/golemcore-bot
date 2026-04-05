@@ -154,7 +154,7 @@ class SelfEvolvingTacticSearchStatusProjectionServiceTest {
     }
 
     @Test
-    void shouldProjectHybridModeWhenSelfEvolvingIsEnabledEvenIfLegacyFlagsAreFalse() {
+    void shouldProjectDisabledStatusWhenTacticsSubsystemIsDisabled() {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         ManagedLocalOllamaSupervisor supervisor = mock(ManagedLocalOllamaSupervisor.class);
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
@@ -186,7 +186,8 @@ class SelfEvolvingTacticSearchStatusProjectionServiceTest {
 
         TacticSearchStatus status = service.projectCurrent();
 
-        assertEquals("hybrid", status.getMode());
+        assertEquals("bm25", status.getMode());
+        assertEquals("selfevolving tactics disabled", status.getReason());
         assertFalse(status.getDegraded());
         assertEquals("openai_compatible", status.getProvider());
         assertEquals("text-embedding-3-large", status.getModel());
@@ -199,6 +200,7 @@ class SelfEvolvingTacticSearchStatusProjectionServiceTest {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
                 .enabled(true)
                 .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .enabled(true)
                         .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
                                 .mode("hybrid")
                                 .embeddings(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig.builder()

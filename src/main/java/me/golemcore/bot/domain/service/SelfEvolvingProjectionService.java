@@ -513,7 +513,7 @@ public class SelfEvolvingProjectionService {
     private SelfEvolvingTacticSearchStatusDto buildTacticSearchStatusDto() {
         if (localEmbeddingBootstrapService != null) {
             TacticSearchStatus status = localEmbeddingBootstrapService.probeStatus();
-            return SelfEvolvingTacticSearchStatusDto.builder()
+            SelfEvolvingTacticSearchStatusDto bootstrapStatus = SelfEvolvingTacticSearchStatusDto.builder()
                     .mode(status.getMode())
                     .reason(status.getReason())
                     .provider(status.getProvider())
@@ -535,6 +535,7 @@ public class SelfEvolvingProjectionService {
                     .pullSucceeded(status.getPullSucceeded())
                     .updatedAt(formatInstant(status.getUpdatedAt()))
                     .build();
+            return mergeSearchMetrics(bootstrapStatus);
         }
         if (tacticSearchMetricsService == null) {
             return SelfEvolvingTacticSearchStatusDto.builder()
@@ -557,6 +558,58 @@ public class SelfEvolvingProjectionService {
                 .pullSucceeded(snapshot.pullSucceeded())
                 .updatedAt(formatInstant(snapshot.updatedAt()))
                 .build();
+    }
+
+    private SelfEvolvingTacticSearchStatusDto mergeSearchMetrics(SelfEvolvingTacticSearchStatusDto bootstrapStatus) {
+        if (bootstrapStatus == null || tacticSearchMetricsService == null) {
+            return bootstrapStatus;
+        }
+        TacticSearchMetricsService.Snapshot snapshot = tacticSearchMetricsService.snapshot();
+        if (!hasMeaningfulSearchMetrics(snapshot)) {
+            return bootstrapStatus;
+        }
+        return SelfEvolvingTacticSearchStatusDto.builder()
+                .mode(firstNonBlank(snapshot.activeMode(), bootstrapStatus.getMode()))
+                .reason(firstNonBlank(snapshot.lastReason(), bootstrapStatus.getReason()))
+                .provider(firstNonBlank(snapshot.provider(), bootstrapStatus.getProvider()))
+                .model(firstNonBlank(snapshot.model(), bootstrapStatus.getModel()))
+                .degraded(Boolean.TRUE.equals(bootstrapStatus.getDegraded()) || snapshot.degraded())
+                .runtimeState(bootstrapStatus.getRuntimeState())
+                .owned(bootstrapStatus.getOwned())
+                .runtimeInstalled(bootstrapStatus.getRuntimeInstalled())
+                .runtimeHealthy(bootstrapStatus.getRuntimeHealthy())
+                .runtimeVersion(bootstrapStatus.getRuntimeVersion())
+                .baseUrl(bootstrapStatus.getBaseUrl())
+                .modelAvailable(bootstrapStatus.getModelAvailable())
+                .restartAttempts(bootstrapStatus.getRestartAttempts())
+                .nextRetryAt(bootstrapStatus.getNextRetryAt())
+                .nextRetryTime(bootstrapStatus.getNextRetryTime())
+                .autoInstallConfigured(bootstrapStatus.getAutoInstallConfigured())
+                .pullOnStartConfigured(bootstrapStatus.getPullOnStartConfigured())
+                .pullAttempted(bootstrapStatus.getPullAttempted())
+                .pullSucceeded(bootstrapStatus.getPullSucceeded())
+                .updatedAt(firstNonBlank(formatInstant(snapshot.updatedAt()), bootstrapStatus.getUpdatedAt()))
+                .build();
+    }
+
+    private boolean hasMeaningfulSearchMetrics(TacticSearchMetricsService.Snapshot snapshot) {
+        if (snapshot == null) {
+            return false;
+        }
+        return snapshot.fallbackCount() > 0
+                || snapshot.degradedQueryFailureCount() > 0
+                || snapshot.degradedIndexFailureCount() > 0
+                || snapshot.degraded()
+                || !StringValueSupport.isBlank(snapshot.provider())
+                || !StringValueSupport.isBlank(snapshot.model())
+                || !"bm25".equalsIgnoreCase(snapshot.activeMode());
+    }
+
+    private String firstNonBlank(String primary, String fallback) {
+        if (!StringValueSupport.isBlank(primary)) {
+            return primary;
+        }
+        return fallback;
     }
 
     private SelfEvolvingCampaignDto toCampaignDto(BenchmarkCampaign campaign) {

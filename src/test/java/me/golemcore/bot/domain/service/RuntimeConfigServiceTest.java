@@ -85,6 +85,18 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldPreserveIndependentTacticsToggleWithinSelfEvolvingConfig() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getSelfEvolving().setEnabled(true);
+        config.getSelfEvolving().getTactics().setEnabled(false);
+
+        service.updateRuntimeConfig(config);
+
+        assertTrue(config.getSelfEvolving().getEnabled());
+        assertFalse(config.getSelfEvolving().getTactics().getEnabled());
+    }
+
+    @Test
     void shouldLoadModelRegistryConfigFromStorage() throws Exception {
         RuntimeConfig.ModelRegistryConfig modelRegistry = RuntimeConfig.ModelRegistryConfig.builder()
                 .repositoryUrl("https://github.com/alexk-dev/golemcore-models")

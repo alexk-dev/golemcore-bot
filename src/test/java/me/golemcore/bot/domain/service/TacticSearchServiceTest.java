@@ -121,7 +121,7 @@ class TacticSearchServiceTest {
     }
 
     @Test
-    void shouldSearchWhenSelfEvolvingIsEnabledEvenIfLegacyTacticsFlagIsFalse() {
+    void shouldNotSearchWhenTacticsSubsystemIsDisabled() {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
@@ -158,8 +158,7 @@ class TacticSearchServiceTest {
 
         List<TacticSearchResult> results = searchService.search("planner");
 
-        assertEquals(1, results.size());
-        assertEquals("approved-planner", results.getFirst().getTacticId());
+        assertTrue(results.isEmpty());
     }
 
     @Test

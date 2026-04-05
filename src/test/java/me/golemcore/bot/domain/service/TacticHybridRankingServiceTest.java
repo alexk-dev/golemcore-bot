@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -133,6 +135,69 @@ class TacticHybridRankingServiceTest {
         assertNotNull(result.getExplanation().getFinalScore());
         assertFalse(Double.isNaN(result.getExplanation().getFinalScore()));
         assertEquals("hybrid", result.getExplanation().getSearchMode());
+    }
+
+    @Test
+    void shouldTreatUnavailableQualityMetricsAsNeutralInsteadOfObservedZeros() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .enabled(true)
+                        .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                                .enabled(true)
+                                .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                        .mode("hybrid")
+                                        .rerank(RuntimeConfig.SelfEvolvingTacticRerankConfig.builder()
+                                                .crossEncoder(false)
+                                                .tier("deep")
+                                                .build())
+                                        .build())
+                                .build())
+                        .build())
+                .build();
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(runtimeConfig.getSelfEvolving());
+
+        TacticSearchResult unknownMetrics = TacticSearchResult.builder()
+                .tacticId("unknown-metrics")
+                .artifactStreamId("stream-unknown")
+                .artifactKey("skill:unknown")
+                .artifactType("skill")
+                .title("Unknown metrics")
+                .promotionState("active")
+                .rolloutStage("active")
+                .toolSummary("shell")
+                .successRate(1.0d)
+                .benchmarkWinRate(null)
+                .regressionFlags(List.of())
+                .recencyScore(1.0d)
+                .golemLocalUsageSuccess(null)
+                .updatedAt(Instant.parse("2026-04-01T23:30:00Z"))
+                .build();
+        TacticSearchResult observedZeros = TacticSearchResult.builder()
+                .tacticId("observed-zeros")
+                .artifactStreamId("stream-zero")
+                .artifactKey("skill:zeros")
+                .artifactType("skill")
+                .title("Observed zeros")
+                .promotionState("active")
+                .rolloutStage("active")
+                .toolSummary("shell")
+                .successRate(1.0d)
+                .benchmarkWinRate(0.0d)
+                .regressionFlags(List.of())
+                .recencyScore(1.0d)
+                .golemLocalUsageSuccess(0.0d)
+                .updatedAt(Instant.parse("2026-04-01T23:30:00Z"))
+                .build();
+
+        Map<String, Double> qualityPriors = rankingService.rank(
+                query(),
+                List.of(unknownMetrics, observedZeros),
+                List.of(unknownMetrics, observedZeros)).stream()
+                .collect(Collectors.toMap(
+                        TacticSearchResult::getTacticId,
+                        result -> result.getExplanation().getQualityPrior()));
+
+        assertTrue(qualityPriors.get("unknown-metrics") > qualityPriors.get("observed-zeros"));
     }
 
     private TacticSearchQuery query() {

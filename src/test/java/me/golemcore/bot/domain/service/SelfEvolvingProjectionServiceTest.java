@@ -645,6 +645,45 @@ class SelfEvolvingProjectionServiceTest {
     }
 
     @Test
+    void shouldMergeSearchMetricsIntoBootstrapStatusWhenQueryPathDegrades() {
+        LocalEmbeddingBootstrapService localEmbeddingBootstrapService = mock(LocalEmbeddingBootstrapService.class);
+        when(localEmbeddingBootstrapService.probeStatus()).thenReturn(TacticSearchStatus.builder()
+                .mode("hybrid")
+                .reason(null)
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .degraded(false)
+                .runtimeHealthy(true)
+                .modelAvailable(true)
+                .updatedAt(Instant.parse("2026-04-01T22:00:00Z"))
+                .build());
+        tacticSearchMetricsService.recordFallback("bm25", "embed request failed");
+        SelfEvolvingProjectionService projectionServiceWithBootstrap = new SelfEvolvingProjectionService(
+                runService,
+                artifactBundleService,
+                deterministicJudgeService,
+                promotionWorkflowService,
+                benchmarkLabService,
+                artifactWorkspaceProjectionService,
+                sessionPort,
+                tacticRecordService,
+                tacticSearchService,
+                tacticSearchMetricsService,
+                localEmbeddingBootstrapService);
+
+        me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto status = projectionServiceWithBootstrap
+                .getTacticSearchStatus();
+
+        assertEquals("bm25", status.getMode());
+        assertEquals("embed request failed", status.getReason());
+        assertEquals("ollama", status.getProvider());
+        assertEquals("qwen3-embedding:0.6b", status.getModel());
+        assertTrue(status.getDegraded());
+        assertTrue(status.getRuntimeHealthy());
+        assertTrue(status.getModelAvailable());
+    }
+
+    @Test
     void shouldFallbackToLocalTacticsAndDefaultStatusWhenSearchDependenciesAreMissing() {
         SelfEvolvingProjectionService noSearchProjectionService = new SelfEvolvingProjectionService(
                 runService,
