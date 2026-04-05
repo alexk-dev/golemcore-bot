@@ -266,6 +266,8 @@ class ContextBuildingSystemTacticQueryTest {
 
         List<String> appliedIds = result.getAttribute(ContextAttributes.APPLIED_TACTIC_IDS);
         assertNotNull(appliedIds);
-        assertEquals(List.of("tactic-alpha", "tactic-beta"), appliedIds);
+        // Only the selected (first) tactic is actually applied downstream;
+        // ranked but unselected candidates are not attributed as usage.
+        assertEquals(List.of("tactic-alpha"), appliedIds);
     }
 }

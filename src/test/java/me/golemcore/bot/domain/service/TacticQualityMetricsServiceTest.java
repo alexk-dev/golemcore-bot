@@ -271,4 +271,44 @@ class TacticQualityMetricsServiceTest {
         List<TacticRecord> empty = List.of();
         assertSame(empty, tacticQualityMetricsService.enrichAll(empty));
     }
+
+    @Test
+    void shouldAttributeRunToTacticViaAppliedTacticIdsEvenWithoutBundleBindings() {
+        // Ordinary runs take a fresh snapshot bundle that has no
+        // artifactRevisionBindings, so without the appliedTacticIds path
+        // the run would never count toward the tactic's successRate.
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-applied")
+                .artifactStreamId("stream-applied")
+                .contentRevisionId("revision-applied")
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of(
+                ArtifactBundleRecord.builder()
+                        .id("bundle-snapshot")
+                        .artifactRevisionBindings(java.util.Map.of())
+                        .build()));
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of(
+                RunRecord.builder()
+                        .id("run-applied-1")
+                        .artifactBundleId("bundle-snapshot")
+                        .status("COMPLETED")
+                        .completedAt(Instant.parse("2026-04-05T10:00:00Z"))
+                        .appliedTacticIds(List.of("tactic-applied"))
+                        .build(),
+                RunRecord.builder()
+                        .id("run-applied-2")
+                        .artifactBundleId("bundle-snapshot")
+                        .status("FAILED")
+                        .completedAt(Instant.parse("2026-04-05T11:00:00Z"))
+                        .appliedTacticIds(List.of("tactic-applied"))
+                        .build()));
+        when(selfEvolvingRunService.findVerdict("run-applied-1")).thenReturn(Optional.empty());
+        when(selfEvolvingRunService.findVerdict("run-applied-2")).thenReturn(Optional.empty());
+
+        TacticRecord enriched = tacticQualityMetricsService.enrichAll(List.of(tactic)).getFirst();
+
+        assertEquals(0.5d, enriched.getSuccessRate());
+        assertEquals(0.5d, enriched.getGolemLocalUsageSuccess());
+        assertEquals(1.0d, enriched.getRecencyScore());
+    }
 }

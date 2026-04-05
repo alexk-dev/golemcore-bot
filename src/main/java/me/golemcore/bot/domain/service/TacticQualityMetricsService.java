@@ -144,14 +144,29 @@ public class TacticQualityMetricsService {
             if (run == null) {
                 continue;
             }
-            List<String> tacticIds = bundleIdToTacticIds.get(run.getArtifactBundleId());
-            if (tacticIds == null) {
+            // Two attribution paths, deduplicated per run:
+            // 1. bundle bindings — covers promoted/baseline snapshot bundles,
+            // 2. run.appliedTacticIds — covers actual runtime tactic selection
+            // in ordinary runs (their snapshot has no revision bindings).
+            LinkedHashSet<String> attributedTacticIds = new LinkedHashSet<>();
+            List<String> viaBundle = bundleIdToTacticIds.get(run.getArtifactBundleId());
+            if (viaBundle != null) {
+                attributedTacticIds.addAll(viaBundle);
+            }
+            if (run.getAppliedTacticIds() != null) {
+                for (String appliedId : run.getAppliedTacticIds()) {
+                    if (appliedId != null && aggregators.containsKey(appliedId)) {
+                        attributedTacticIds.add(appliedId);
+                    }
+                }
+            }
+            if (attributedTacticIds.isEmpty()) {
                 continue;
             }
             Optional<RunVerdict> verdict = selfEvolvingRunService.findVerdict(run.getId());
             Instant verdictCreatedAt = verdict.map(RunVerdict::getCreatedAt).orElse(null);
             String observedOutcome = resolveObservedOutcome(run, verdict.orElse(null));
-            for (String tacticId : tacticIds) {
+            for (String tacticId : attributedTacticIds) {
                 TacticAggregator aggregator = aggregators.get(tacticId);
                 aggregator.latestObservation = mostRecent(aggregator.latestObservation,
                         run.getCompletedAt(), run.getStartedAt(), verdictCreatedAt);
@@ -257,8 +272,18 @@ public class TacticQualityMetricsService {
         int successfulRuns = 0;
         Instant latestOutcomeAt = null;
         boolean latestOutcomeFailed = false;
+        String recordTacticId = record != null ? record.getTacticId() : null;
         for (RunRecord run : selfEvolvingRunService.getRuns()) {
-            if (run == null || !matchingBundleIds.contains(run.getArtifactBundleId())) {
+            if (run == null) {
+                continue;
+            }
+            // Attribute via bundle bindings OR via run.appliedTacticIds (real
+            // runtime usage, since snapshot bundles have no revision bindings).
+            boolean attributedViaBundle = matchingBundleIds.contains(run.getArtifactBundleId());
+            boolean attributedViaApplied = recordTacticId != null
+                    && run.getAppliedTacticIds() != null
+                    && run.getAppliedTacticIds().contains(recordTacticId);
+            if (!attributedViaBundle && !attributedViaApplied) {
                 continue;
             }
             Optional<RunVerdict> verdict = selfEvolvingRunService.findVerdict(run.getId());

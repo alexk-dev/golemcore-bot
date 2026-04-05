@@ -116,7 +116,7 @@ public class ContextBuildingSystem implements AgentSystem {
                 TacticSearchResult selectedTactic = results.getFirst();
                 context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION, selectedTactic);
                 context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_GUIDANCE, selectedTactic);
-                recordAppliedTacticIds(context, results);
+                recordAppliedTacticIds(context, selectedTactic);
                 attachTransientTacticAdvisory(context, selectedTactic);
             }
         } catch (RuntimeException exception) { // NOSONAR - tactic search must never break context assembly
@@ -124,8 +124,16 @@ public class ContextBuildingSystem implements AgentSystem {
         }
     }
 
-    private void recordAppliedTacticIds(AgentContext context, List<TacticSearchResult> results) {
-        if (context == null || results == null || results.isEmpty()) {
+    private void recordAppliedTacticIds(AgentContext context, TacticSearchResult selectedTactic) {
+        if (context == null || selectedTactic == null) {
+            return;
+        }
+        // Only the selected tactic is actually applied downstream (via
+        // SELF_EVOLVING_TACTIC_SELECTION / the transient advisory). Other
+        // ranked candidates were evaluated but not used, so recording them
+        // would pollute attribution telemetry consumed by metrics.
+        String selectedId = selectedTactic.getTacticId();
+        if (selectedId == null || selectedId.isBlank()) {
             return;
         }
         LinkedHashSet<String> merged = new LinkedHashSet<>();
@@ -137,15 +145,7 @@ public class ContextBuildingSystem implements AgentSystem {
                 }
             }
         }
-        for (TacticSearchResult result : results) {
-            if (result == null) {
-                continue;
-            }
-            String tacticId = result.getTacticId();
-            if (tacticId != null && !tacticId.isBlank()) {
-                merged.add(tacticId);
-            }
-        }
+        merged.add(selectedId);
         context.setAttribute(ContextAttributes.APPLIED_TACTIC_IDS, new ArrayList<>(merged));
     }
 
