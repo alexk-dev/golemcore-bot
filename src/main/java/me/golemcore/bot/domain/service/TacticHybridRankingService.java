@@ -42,9 +42,38 @@ public class TacticHybridRankingService {
     private static final double RRF_K = 60.0d;
     private static final double RRF_SCALE = 15.0d;
 
+    private static final double QUALITY_WEIGHT_SUCCESS = 0.35d;
+    private static final double QUALITY_WEIGHT_BENCHMARK = 0.25d;
+    private static final double QUALITY_WEIGHT_RECENCY = 0.15d;
+    private static final double QUALITY_WEIGHT_GOLEM_LOCAL = 0.15d;
+    private static final double QUALITY_DEFAULT_SIGNAL = 0.3d;
+
+    private static final double PROMOTION_BOOST_ACTIVE = 0.12d;
+    private static final double PROMOTION_BOOST_APPROVED = 0.08d;
+    private static final double PROMOTION_BOOST_CANDIDATE = -0.05d;
+    private static final double PROMOTION_BOOST_REVERTED = -0.20d;
+
+    private static final double REGRESSION_PENALTY_PER_FLAG = 0.08d;
+    private static final double REGRESSION_PENALTY_CAP = 0.25d;
+
+    private static final double PERSONALIZATION_PER_TOOL = 0.04d;
+    private static final double PERSONALIZATION_CAP = 0.12d;
+
+    private static final double DIVERSITY_ARTIFACT_KEY_PENALTY = 0.05d;
+    private static final double DIVERSITY_OVERLAP_WEIGHT = 0.04d;
+
+    // Fail-open circuit breaker for the cross-encoder reranker: after N
+    // consecutive failures, skip the call entirely until cooldown elapses.
+    private static final int RERANKER_FAILURE_THRESHOLD = 3;
+    private static final long RERANKER_COOLDOWN_MS = 60_000L;
+
     private final RuntimeConfigService runtimeConfigService;
     private final TacticSearchMetricsService metricsService;
     private final TacticCrossEncoderRerankerService rerankerService;
+    private final java.util.concurrent.atomic.AtomicInteger rerankerConsecutiveFailures = new java.util.concurrent.atomic.AtomicInteger(
+            0);
+    private final java.util.concurrent.atomic.AtomicLong rerankerCircuitOpenUntilMs = new java.util.concurrent.atomic.AtomicLong(
+            0L);
 
     public TacticHybridRankingService(
             RuntimeConfigService runtimeConfigService,
@@ -172,6 +201,16 @@ public class TacticHybridRankingService {
             ranked.forEach(result -> result.getExplanation().setRerankerVerdict("disabled"));
             return ranked;
         }
+        if (isRerankerCircuitOpen()) {
+            String reason = "circuit open after " + RERANKER_FAILURE_THRESHOLD + " consecutive failures";
+            ranked.forEach(result -> {
+                result.getExplanation().setRerankerVerdict("unavailable: " + reason);
+                result.getExplanation().setSearchMode(searchMode);
+                result.getExplanation().setDegradedReason(reason);
+            });
+            metricsService.recordActiveMode(searchMode, reason);
+            return ranked;
+        }
         try {
             Map<String, TacticCrossEncoderRerankerService.RerankedCandidate> rerankedCandidates = rerankerService
                     .rerank(query, ranked, rerankConfig.getTier(), rerankConfig.getTimeoutMs()).stream()
@@ -194,8 +233,10 @@ public class TacticHybridRankingService {
             }
             ranked.sort(Comparator.comparing(TacticSearchResult::getScore).reversed());
             metricsService.recordActiveMode(searchMode, null);
+            recordRerankerSuccess();
             return ranked;
         } catch (RuntimeException exception) {
+            recordRerankerFailure();
             ranked.forEach(result -> {
                 result.getExplanation().setRerankerVerdict("unavailable: " + exception.getMessage());
                 result.getExplanation().setSearchMode(searchMode);
@@ -207,6 +248,33 @@ public class TacticHybridRankingService {
         }
     }
 
+    private boolean isRerankerCircuitOpen() {
+        long openUntil = rerankerCircuitOpenUntilMs.get();
+        if (openUntil == 0L) {
+            return false;
+        }
+        if (System.currentTimeMillis() >= openUntil) {
+            // Cooldown elapsed: half-open by resetting the gate so the next call tries
+            // again.
+            rerankerCircuitOpenUntilMs.set(0L);
+            rerankerConsecutiveFailures.set(0);
+            return false;
+        }
+        return true;
+    }
+
+    private void recordRerankerSuccess() {
+        rerankerConsecutiveFailures.set(0);
+        rerankerCircuitOpenUntilMs.set(0L);
+    }
+
+    private void recordRerankerFailure() {
+        int failures = rerankerConsecutiveFailures.incrementAndGet();
+        if (failures >= RERANKER_FAILURE_THRESHOLD) {
+            rerankerCircuitOpenUntilMs.set(System.currentTimeMillis() + RERANKER_COOLDOWN_MS);
+        }
+    }
+
     private double rrf(Integer rank) {
         return rank == null ? 0.0d : RRF_SCALE / (RRF_K + rank);
     }
@@ -215,30 +283,30 @@ public class TacticHybridRankingService {
         double weightedSum = 0.0d;
         double weightTotal = 0.0d;
         if (candidate.getSuccessRate() != null) {
-            weightedSum += candidate.getSuccessRate() * 0.35d;
-            weightTotal += 0.35d;
+            weightedSum += candidate.getSuccessRate() * QUALITY_WEIGHT_SUCCESS;
+            weightTotal += QUALITY_WEIGHT_SUCCESS;
         }
         if (candidate.getBenchmarkWinRate() != null) {
-            weightedSum += candidate.getBenchmarkWinRate() * 0.25d;
-            weightTotal += 0.25d;
+            weightedSum += candidate.getBenchmarkWinRate() * QUALITY_WEIGHT_BENCHMARK;
+            weightTotal += QUALITY_WEIGHT_BENCHMARK;
         }
         if (candidate.getRecencyScore() != null) {
-            weightedSum += candidate.getRecencyScore() * 0.15d;
-            weightTotal += 0.15d;
+            weightedSum += candidate.getRecencyScore() * QUALITY_WEIGHT_RECENCY;
+            weightTotal += QUALITY_WEIGHT_RECENCY;
         }
         if (candidate.getGolemLocalUsageSuccess() != null) {
-            weightedSum += candidate.getGolemLocalUsageSuccess() * 0.15d;
-            weightTotal += 0.15d;
+            weightedSum += candidate.getGolemLocalUsageSuccess() * QUALITY_WEIGHT_GOLEM_LOCAL;
+            weightTotal += QUALITY_WEIGHT_GOLEM_LOCAL;
         }
-        // When no signals have been observed yet, use a pessimistic prior (0.3)
+        // When no signals have been observed yet, use a pessimistic prior
         // rather than 0.5: a brand-new tactic should not outrank tactics with
         // at least one recorded measurement just because nothing is known.
-        double signalScore = weightTotal > 0.0d ? weightedSum / weightTotal : 0.3d;
+        double signalScore = weightTotal > 0.0d ? weightedSum / weightTotal : QUALITY_DEFAULT_SIGNAL;
         double promotionBoost = switch (normalize(candidate.getPromotionState())) {
-        case "active" -> 0.12d;
-        case "approved" -> 0.08d;
-        case "candidate" -> -0.05d;
-        case "reverted" -> -0.20d;
+        case "active" -> PROMOTION_BOOST_ACTIVE;
+        case "approved" -> PROMOTION_BOOST_APPROVED;
+        case "candidate" -> PROMOTION_BOOST_CANDIDATE;
+        case "reverted" -> PROMOTION_BOOST_REVERTED;
         default -> 0.0d;
         };
         return signalScore + promotionBoost;
@@ -246,7 +314,7 @@ public class TacticHybridRankingService {
 
     private double negativeMemoryPenalty(TacticSearchResult candidate) {
         int regressionCount = candidate.getRegressionFlags() != null ? candidate.getRegressionFlags().size() : 0;
-        return Math.min(0.25d, regressionCount * 0.08d);
+        return Math.min(REGRESSION_PENALTY_CAP, regressionCount * REGRESSION_PENALTY_PER_FLAG);
     }
 
     private double personalizationBoost(TacticSearchQuery query, TacticSearchResult candidate) {
@@ -257,17 +325,17 @@ public class TacticHybridRankingService {
         double boost = 0.0d;
         for (String tool : query.getAvailableTools()) {
             if (!StringValueSupport.isBlank(tool) && toolSummary.contains(normalize(tool))) {
-                boost += 0.04d;
+                boost += PERSONALIZATION_PER_TOOL;
             }
         }
-        return Math.min(0.12d, boost);
+        return Math.min(PERSONALIZATION_CAP, boost);
     }
 
     private double diversityPenalty(TacticSearchResult candidate, List<TacticSearchResult> selected) {
         double penalty = 0.0d;
         for (TacticSearchResult existing : selected) {
             if (normalize(candidate.getArtifactKey()).equals(normalize(existing.getArtifactKey()))) {
-                penalty = Math.max(penalty, 0.05d);
+                penalty = Math.max(penalty, DIVERSITY_ARTIFACT_KEY_PENALTY);
             }
             penalty = Math.max(penalty, overlapPenalty(candidate, existing));
         }
@@ -288,7 +356,8 @@ public class TacticHybridRankingService {
                 intersection++;
             }
         }
-        return 0.04d * ((double) intersection / Math.max(1, Math.min(leftTokens.size(), rightTokens.size())));
+        return DIVERSITY_OVERLAP_WEIGHT
+                * ((double) intersection / Math.max(1, Math.min(leftTokens.size(), rightTokens.size())));
     }
 
     private LinkedHashSet<String> tokens(String value) {

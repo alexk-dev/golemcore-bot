@@ -44,9 +44,20 @@ import java.util.Set;
 @Service
 public class TacticQualityMetricsService {
 
+    private static final int REGRESSION_MIN_OBSERVATIONS = 2;
+    private static final double REGRESSION_FAILURE_RATE_THRESHOLD = 0.5d;
+    private static final String FLAG_HIGH_FAILURE_RATE = "observed-high-failure-rate";
+    private static final String FLAG_RECENT_FAILURE = "recent-failure";
+
+    // Short-lived cache to amortise hot-path enrichAll calls from search.
+    // Keyed on the caller's input signature; invalidated by TTL only, so
+    // writes made within the TTL window observe slightly stale metrics.
+    private static final long ENRICH_CACHE_TTL_MS = 2_000L;
+
     private final ArtifactBundleService artifactBundleService;
     private final SelfEvolvingRunService selfEvolvingRunService;
     private final Clock clock;
+    private final java.util.concurrent.atomic.AtomicReference<EnrichCacheEntry> enrichCache = new java.util.concurrent.atomic.AtomicReference<>();
 
     public TacticQualityMetricsService(
             ArtifactBundleService artifactBundleService,
@@ -75,13 +86,24 @@ public class TacticQualityMetricsService {
         if (records == null || records.isEmpty()) {
             return records;
         }
+        String signature = buildCacheSignature(records);
+        long nowMs = clock.millis();
+        EnrichCacheEntry cachedEntry = enrichCache.get();
+        if (cachedEntry != null
+                && cachedEntry.signature.equals(signature)
+                && (nowMs - cachedEntry.writtenAtMs) < ENRICH_CACHE_TTL_MS) {
+            return new ArrayList<>(cachedEntry.records);
+        }
         Map<String, TacticAggregator> aggregators = new LinkedHashMap<>();
         Map<String, List<String>> streamRevToTacticIds = new HashMap<>();
         for (TacticRecord record : records) {
             if (record == null || StringValueSupport.isBlank(record.getTacticId())) {
                 continue;
             }
-            aggregators.put(record.getTacticId(), new TacticAggregator(record.getUpdatedAt()));
+            // Intentionally do not seed from record.getUpdatedAt(): save/deactivate
+            // bumps updatedAt and would otherwise artificially rejuvenate recency.
+            // Recency is derived from observed bundles/runs only.
+            aggregators.put(record.getTacticId(), new TacticAggregator(null));
             if (StringValueSupport.isBlank(record.getArtifactStreamId())
                     || StringValueSupport.isBlank(record.getContentRevisionId())) {
                 continue;
@@ -140,6 +162,12 @@ public class TacticQualityMetricsService {
                 if ("completed".equals(observedOutcome)) {
                     aggregator.successfulRuns++;
                 }
+                Instant outcomeAt = mostRecent(null, run.getCompletedAt(), verdictCreatedAt);
+                if (outcomeAt != null
+                        && (aggregator.latestOutcomeAt == null || outcomeAt.isAfter(aggregator.latestOutcomeAt))) {
+                    aggregator.latestOutcomeAt = outcomeAt;
+                    aggregator.latestOutcomeFailed = "failed".equals(observedOutcome);
+                }
             }
         }
 
@@ -152,7 +180,30 @@ public class TacticQualityMetricsService {
             TacticAggregator aggregator = aggregators.get(record.getTacticId());
             enriched.add(applyMetrics(record, aggregator.toMetrics(recencyScore(aggregator.latestObservation))));
         }
+        enrichCache.set(new EnrichCacheEntry(signature, nowMs, new ArrayList<>(enriched)));
         return enriched;
+    }
+
+    /** Invalidate the enrichAll cache eagerly, e.g. after a tactic write. */
+    public void invalidateCache() {
+        enrichCache.set(null);
+    }
+
+    private String buildCacheSignature(List<TacticRecord> records) {
+        StringBuilder builder = new StringBuilder();
+        for (TacticRecord record : records) {
+            if (record == null) {
+                builder.append("0|");
+                continue;
+            }
+            builder.append(StringValueSupport.nullSafe(record.getTacticId()))
+                    .append(':')
+                    .append(StringValueSupport.nullSafe(record.getContentRevisionId()))
+                    .append(':')
+                    .append(record.getUpdatedAt() != null ? record.getUpdatedAt().toEpochMilli() : 0L)
+                    .append('|');
+        }
+        return builder.toString();
     }
 
     private String streamRevisionKey(String streamId, String revisionId) {
@@ -169,11 +220,30 @@ public class TacticQualityMetricsService {
         // remote/fleet runs land, this metric should be computed from a
         // filtered subset (see RunRecord.runType).
         enriched.setGolemLocalUsageSuccess(metrics.golemLocalUsageSuccess());
+        if (metrics.regressionFlags() != null) {
+            enriched.setRegressionFlags(new ArrayList<>(metrics.regressionFlags()));
+        }
         return enriched;
     }
 
+    private List<String> deriveRegressionFlags(int observedRuns, int successfulRuns, boolean lastOutcomeFailed) {
+        List<String> flags = new ArrayList<>();
+        if (observedRuns >= REGRESSION_MIN_OBSERVATIONS) {
+            double failureRate = (observedRuns - successfulRuns) / (double) observedRuns;
+            if (failureRate >= REGRESSION_FAILURE_RATE_THRESHOLD) {
+                flags.add(FLAG_HIGH_FAILURE_RATE);
+            }
+        }
+        if (lastOutcomeFailed) {
+            flags.add(FLAG_RECENT_FAILURE);
+        }
+        return flags;
+    }
+
     private ObservedMetrics resolveObservedMetrics(TacticRecord record) {
-        Instant latestObservation = record.getUpdatedAt();
+        // Intentionally do not seed from record.getUpdatedAt(): save/deactivate
+        // bumps updatedAt and would otherwise artificially rejuvenate recency.
+        Instant latestObservation = null;
         Set<String> matchingBundleIds = resolveMatchingBundleIds(record);
 
         for (ArtifactBundleRecord bundle : artifactBundleService.getBundles()) {
@@ -185,6 +255,8 @@ public class TacticQualityMetricsService {
 
         int observedRuns = 0;
         int successfulRuns = 0;
+        Instant latestOutcomeAt = null;
+        boolean latestOutcomeFailed = false;
         for (RunRecord run : selfEvolvingRunService.getRuns()) {
             if (run == null || !matchingBundleIds.contains(run.getArtifactBundleId())) {
                 continue;
@@ -203,10 +275,17 @@ public class TacticQualityMetricsService {
             if ("completed".equals(observedOutcome)) {
                 successfulRuns++;
             }
+            Instant outcomeAt = mostRecent(null, run.getCompletedAt(),
+                    verdict.map(RunVerdict::getCreatedAt).orElse(null));
+            if (outcomeAt != null && (latestOutcomeAt == null || outcomeAt.isAfter(latestOutcomeAt))) {
+                latestOutcomeAt = outcomeAt;
+                latestOutcomeFailed = "failed".equals(observedOutcome);
+            }
         }
 
         Double successRate = observedRuns > 0 ? successfulRuns / (double) observedRuns : null;
-        return new ObservedMetrics(successRate, recencyScore(latestObservation), successRate);
+        List<String> regressionFlags = deriveRegressionFlags(observedRuns, successfulRuns, latestOutcomeFailed);
+        return new ObservedMetrics(successRate, recencyScore(latestObservation), successRate, regressionFlags);
     }
 
     private Set<String> resolveMatchingBundleIds(TacticRecord record) {
@@ -319,13 +398,31 @@ public class TacticQualityMetricsService {
                 .build();
     }
 
-    private record ObservedMetrics(Double successRate, Double recencyScore, Double golemLocalUsageSuccess) {
+    private static final class EnrichCacheEntry {
+        private final String signature;
+        private final long writtenAtMs;
+        private final List<TacticRecord> records;
+
+        private EnrichCacheEntry(String signature, long writtenAtMs, List<TacticRecord> records) {
+            this.signature = signature;
+            this.writtenAtMs = writtenAtMs;
+            this.records = records;
+        }
     }
 
-    private static final class TacticAggregator {
+    private record ObservedMetrics(
+            Double successRate,
+            Double recencyScore,
+            Double golemLocalUsageSuccess,
+            List<String> regressionFlags) {
+    }
+
+    private final class TacticAggregator {
         private Instant latestObservation;
         private int observedRuns;
         private int successfulRuns;
+        private Instant latestOutcomeAt;
+        private boolean latestOutcomeFailed;
 
         private TacticAggregator(Instant seedObservation) {
             this.latestObservation = seedObservation;
@@ -333,7 +430,8 @@ public class TacticQualityMetricsService {
 
         private ObservedMetrics toMetrics(Double recencyScore) {
             Double successRate = observedRuns > 0 ? successfulRuns / (double) observedRuns : null;
-            return new ObservedMetrics(successRate, recencyScore, successRate);
+            List<String> flags = deriveRegressionFlags(observedRuns, successfulRuns, latestOutcomeFailed);
+            return new ObservedMetrics(successRate, recencyScore, successRate, flags);
         }
     }
 }

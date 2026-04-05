@@ -237,6 +237,20 @@ public class EvolutionCandidateService {
     }
 
     private void normalizeCandidate(EvolutionCandidate candidate) {
+        // Short-circuit: a candidate with all artifact identity fields already
+        // resolved has been normalized. Re-running would incur a storage scan
+        // for no benefit and the body is idempotent anyway.
+        if (!StringValueSupport.isBlank(candidate.getArtifactType())
+                && !StringValueSupport.isBlank(candidate.getArtifactSubtype())
+                && !StringValueSupport.isBlank(candidate.getArtifactKey())
+                && !StringValueSupport.isBlank(candidate.getArtifactStreamId())
+                && !StringValueSupport.isBlank(candidate.getOriginArtifactStreamId())
+                && !StringValueSupport.isBlank(candidate.getContentRevisionId())
+                && !StringValueSupport.isBlank(candidate.getLifecycleState())
+                && !StringValueSupport.isBlank(candidate.getRolloutStage())
+                && !StringValueSupport.isBlank(candidate.getStatus())) {
+            return;
+        }
         String artifactType = resolveCanonicalArtifactType(candidate.getArtifactType());
         String artifactSubtype = resolveCanonicalArtifactSubtype(artifactType, candidate.getArtifactSubtype());
         String artifactKey = resolveArtifactKey(candidate, artifactType, artifactSubtype, candidate.getArtifactKey());
@@ -369,14 +383,16 @@ public class EvolutionCandidateService {
         if (candidate == null) {
             return false;
         }
+        // Tighter criteria: only materialize when the proposal carries semantic
+        // content a downstream consumer can actually act on. approvalNotes and
+        // proposedPatch alone are metadata and do not justify a tactic row —
+        // the patch content is already represented in candidate.proposedDiff.
         EvolutionProposal proposal = candidate.getProposal();
         if (proposal != null
                 && (!StringValueSupport.isBlank(proposal.getSummary())
                         || !StringValueSupport.isBlank(proposal.getBehaviorInstructions())
                         || !StringValueSupport.isBlank(proposal.getToolInstructions())
-                        || !StringValueSupport.isBlank(proposal.getExpectedOutcome())
-                        || !StringValueSupport.isBlank(proposal.getApprovalNotes())
-                        || !StringValueSupport.isBlank(proposal.getProposedPatch()))) {
+                        || !StringValueSupport.isBlank(proposal.getExpectedOutcome()))) {
             return true;
         }
         return !isPlaceholderDiff(candidate.getProposedDiff());

@@ -114,6 +114,13 @@ public class TacticRecordService {
         return qualityMetricsServiceProvider.getIfAvailable();
     }
 
+    private void invalidateQualityMetricsCache() {
+        TacticQualityMetricsService qualityMetricsService = resolveQualityMetricsService();
+        if (qualityMetricsService != null) {
+            qualityMetricsService.invalidateCache();
+        }
+    }
+
     private List<TacticRecord> getCachedRecords() {
         List<TacticRecord> cached = cache.get();
         if (cached == null) {
@@ -162,6 +169,7 @@ public class TacticRecordService {
         try {
             storagePort.deleteObject(SELF_EVOLVING_DIR, TACTICS_PREFIX + existing.getTacticId() + ".json").join();
             removeFromCache(existing.getTacticId());
+            invalidateQualityMetricsCache();
             triggerRebuild(existing.getTacticId());
         } catch (RuntimeException exception) {
             throw new IllegalStateException("Failed to delete tactic record", exception);
@@ -337,6 +345,7 @@ public class TacticRecordService {
             String path = TACTICS_PREFIX + normalized.getTacticId() + ".json";
             storagePort.putText(SELF_EVOLVING_DIR, path, objectMapper.writeValueAsString(normalized)).join();
             upsertCache(normalized);
+            invalidateQualityMetricsCache();
             if (triggerRebuild) {
                 triggerRebuild(normalized.getTacticId());
             }
