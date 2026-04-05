@@ -198,9 +198,7 @@ public class TacticEmbeddingIndexService {
 
     private RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig() {
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
-        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig != null
-                ? selfEvolvingConfig.getTactics()
-                : null;
+        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics();
         RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = tacticsConfig != null
                 ? tacticsConfig.getSearch()
                 : null;
