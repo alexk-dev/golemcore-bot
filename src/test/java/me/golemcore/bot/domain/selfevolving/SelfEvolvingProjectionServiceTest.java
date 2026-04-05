@@ -54,6 +54,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
+import me.golemcore.bot.domain.selfevolving.artifact.ArtifactProjectionService;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactWorkspaceProjectionService;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
 import me.golemcore.bot.domain.selfevolving.benchmark.DeterministicJudgeService;
@@ -98,7 +99,7 @@ class SelfEvolvingProjectionServiceTest {
                 deterministicJudgeService,
                 promotionWorkflowService,
                 benchmarkLabService,
-                artifactWorkspaceProjectionService,
+                new ArtifactProjectionService(artifactWorkspaceProjectionService),
                 sessionPort,
                 tacticRecordService,
                 tacticSearchService,
@@ -678,7 +679,7 @@ class SelfEvolvingProjectionServiceTest {
                 deterministicJudgeService,
                 promotionWorkflowService,
                 benchmarkLabService,
-                artifactWorkspaceProjectionService,
+                new ArtifactProjectionService(artifactWorkspaceProjectionService),
                 sessionPort,
                 tacticRecordService,
                 tacticSearchService,
@@ -705,7 +706,7 @@ class SelfEvolvingProjectionServiceTest {
                 deterministicJudgeService,
                 promotionWorkflowService,
                 benchmarkLabService,
-                artifactWorkspaceProjectionService,
+                new ArtifactProjectionService(artifactWorkspaceProjectionService),
                 sessionPort,
                 tacticRecordService,
                 null,
