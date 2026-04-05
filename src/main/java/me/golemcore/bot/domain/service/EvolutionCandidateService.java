@@ -322,8 +322,6 @@ public class EvolutionCandidateService {
                 .tags(resolveTags(candidate))
                 .promotionState(promotionState)
                 .rolloutStage(rolloutStage)
-                .successRate(resolveSuccessRate(candidate))
-                .golemLocalUsageSuccess(resolveSuccessRate(candidate))
                 .embeddingStatus("pending")
                 .updatedAt(candidate.getCreatedAt() != null ? candidate.getCreatedAt() : Instant.now(clock))
                 .build();
@@ -664,13 +662,6 @@ public class EvolutionCandidateService {
             return true;
         }
         return proposedDiff.matches("selfevolving:[a-z_]+:[a-z_]+");
-    }
-
-    private Double resolveSuccessRate(EvolutionCandidate candidate) {
-        if (candidate == null) {
-            return 0.0d;
-        }
-        return "derive".equals(candidate.getGoal()) ? 1.0d : 0.0d;
     }
 
     private String firstNonBlank(String... values) {

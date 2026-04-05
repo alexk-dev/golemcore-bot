@@ -19,9 +19,9 @@ package me.golemcore.bot.domain.service;
  */
 
 /**
- * Shared resolution of lifecycle state, rollout stage, and legacy status
- * for evolution candidates and promotion decisions. Eliminates duplication
- * across {@link PromotionWorkflowService} and {@link EvolutionCandidateService}.
+ * Shared resolution of lifecycle state, rollout stage, and legacy status for
+ * evolution candidates and promotion decisions. Eliminates duplication across
+ * {@link PromotionWorkflowService} and {@link EvolutionCandidateService}.
  */
 final class CandidateLifecycleResolver {
 

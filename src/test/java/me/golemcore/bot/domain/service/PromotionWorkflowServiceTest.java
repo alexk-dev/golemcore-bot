@@ -79,7 +79,7 @@ class PromotionWorkflowServiceTest {
         when(runtimeConfigService.isSelfEvolvingPromotionShadowRequired()).thenReturn(false);
         when(runtimeConfigService.isSelfEvolvingPromotionCanaryRequired()).thenReturn(false);
         tacticRecordService = new TacticRecordService(storagePort,
-                Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC), null);
+                Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC), null, null);
         evolutionCandidateService = new EvolutionCandidateService(storagePort, tacticRecordService,
                 Clock.fixed(
                         Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
@@ -256,7 +256,8 @@ class PromotionWorkflowServiceTest {
         List<EvolutionCandidate> registered = promotionWorkflowService
                 .registerCandidates(List.of(blankCandidate, validCandidate));
 
-        assertEquals(2, registered.size());
+        assertEquals(1, registered.size());
+        assertEquals("candidate-3b", registered.getFirst().getId());
         assertEquals(1, promotionWorkflowService.getCandidates().size());
         assertEquals("candidate-3b", promotionWorkflowService.getCandidates().getFirst().getId());
     }

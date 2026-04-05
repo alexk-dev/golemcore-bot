@@ -39,6 +39,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -66,6 +67,14 @@ class EvolutionCandidateServiceTacticRecordTest {
                     persistedFiles.put(directory + "/" + path, content);
                     return CompletableFuture.completedFuture(null);
                 });
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenAnswer(invocation -> {
+                    String directory = invocation.getArgument(0);
+                    String path = invocation.getArgument(1);
+                    String content = invocation.getArgument(2);
+                    persistedFiles.put(directory + "/" + path, content);
+                    return CompletableFuture.completedFuture(null);
+                });
         when(storagePort.getText(anyString(), anyString()))
                 .thenAnswer(invocation -> CompletableFuture.completedFuture(
                         persistedFiles.get(invocation.getArgument(0) + "/" + invocation.getArgument(1))));
@@ -83,7 +92,7 @@ class EvolutionCandidateServiceTacticRecordTest {
                 });
 
         Clock clock = Clock.fixed(Instant.parse("2026-04-01T21:15:00Z"), ZoneOffset.UTC);
-        tacticRecordService = new TacticRecordService(storagePort, clock, null);
+        tacticRecordService = new TacticRecordService(storagePort, clock, null, null);
         evolutionCandidateService = new EvolutionCandidateService(storagePort, tacticRecordService, clock);
     }
 

@@ -52,15 +52,18 @@ public class TacticRecordService {
     private final Clock clock;
     private final ObjectMapper objectMapper;
     private final ObjectProvider<TacticIndexRebuildService> rebuildServiceProvider;
+    private final ObjectProvider<TacticQualityMetricsService> qualityMetricsServiceProvider;
     private final AtomicReference<List<TacticRecord>> cache = new AtomicReference<>();
 
     public TacticRecordService(
             StoragePort storagePort,
             Clock clock,
-            ObjectProvider<TacticIndexRebuildService> rebuildServiceProvider) {
+            ObjectProvider<TacticIndexRebuildService> rebuildServiceProvider,
+            ObjectProvider<TacticQualityMetricsService> qualityMetricsServiceProvider) {
         this.storagePort = storagePort;
         this.clock = clock;
         this.rebuildServiceProvider = rebuildServiceProvider;
+        this.qualityMetricsServiceProvider = qualityMetricsServiceProvider;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
     }
@@ -73,7 +76,7 @@ public class TacticRecordService {
         if (embeddingStatuses == null || embeddingStatuses.isEmpty()) {
             return;
         }
-        for (TacticRecord record : getAll()) {
+        for (TacticRecord record : getCachedRecords()) {
             if (record == null) {
                 continue;
             }
@@ -92,25 +95,37 @@ public class TacticRecordService {
     }
 
     public List<TacticRecord> getAll() {
+        List<TacticRecord> records = new ArrayList<>();
+        for (TacticRecord record : getCachedRecords()) {
+            records.add(enrichMetrics(record));
+        }
+        return records;
+    }
+
+    private List<TacticRecord> getCachedRecords() {
         List<TacticRecord> cached = cache.get();
         if (cached == null) {
             cached = loadAll();
             cache.set(cached);
         }
-        return new ArrayList<>(cached);
+        return cached;
     }
 
     public java.util.Optional<TacticRecord> getById(String tacticId) {
         if (StringValueSupport.isBlank(tacticId)) {
             return java.util.Optional.empty();
         }
-        return getAll().stream()
+        return getRawById(tacticId).map(this::enrichMetrics);
+    }
+
+    private java.util.Optional<TacticRecord> getRawById(String tacticId) {
+        return getCachedRecords().stream()
                 .filter(record -> record != null && tacticId.trim().equals(record.getTacticId()))
                 .findFirst();
     }
 
     public TacticRecord deactivate(String tacticId) {
-        TacticRecord existing = getById(tacticId)
+        TacticRecord existing = getRawById(tacticId)
                 .orElseThrow(() -> new IllegalArgumentException("Tactic not found: " + tacticId));
         TacticRecord updated = copyRecord(existing);
         updated.setPromotionState("inactive");
@@ -120,7 +135,7 @@ public class TacticRecordService {
     }
 
     public TacticRecord reactivate(String tacticId) {
-        TacticRecord existing = getById(tacticId)
+        TacticRecord existing = getRawById(tacticId)
                 .orElseThrow(() -> new IllegalArgumentException("Tactic not found: " + tacticId));
         TacticRecord updated = copyRecord(existing);
         updated.setPromotionState("active");
@@ -130,7 +145,7 @@ public class TacticRecordService {
     }
 
     public void delete(String tacticId) {
-        TacticRecord existing = getById(tacticId)
+        TacticRecord existing = getRawById(tacticId)
                 .orElseThrow(() -> new IllegalArgumentException("Tactic not found: " + tacticId));
         try {
             storagePort.deleteObject(SELF_EVOLVING_DIR, TACTICS_PREFIX + existing.getTacticId() + ".json").join();
@@ -254,9 +269,6 @@ public class TacticRecordService {
         normalized.setContentRevisionId(firstNonBlank(normalized.getContentRevisionId(), tacticId));
         normalized.setPromotionState(firstNonBlank(normalized.getPromotionState(), "candidate"));
         normalized.setRolloutStage(firstNonBlank(normalized.getRolloutStage(), "proposed"));
-        normalized.setSuccessRate(normalized.getSuccessRate() != null ? normalized.getSuccessRate() : 0.0d);
-        normalized.setBenchmarkWinRate(normalized.getBenchmarkWinRate() != null ? normalized.getBenchmarkWinRate()
-                : 0.0d);
         normalized.setRegressionFlags(
                 normalized.getRegressionFlags() != null ? new ArrayList<>(normalized.getRegressionFlags())
                         : new ArrayList<>());
@@ -269,10 +281,6 @@ public class TacticRecordService {
         normalized.setEvidenceSnippets(normalized.getEvidenceSnippets() != null
                 ? new ArrayList<>(normalized.getEvidenceSnippets())
                 : new ArrayList<>());
-        normalized.setRecencyScore(normalized.getRecencyScore() != null ? normalized.getRecencyScore() : 1.0d);
-        normalized.setGolemLocalUsageSuccess(normalized.getGolemLocalUsageSuccess() != null
-                ? normalized.getGolemLocalUsageSuccess()
-                : normalized.getSuccessRate());
         normalized.setEmbeddingStatus(firstNonBlank(normalized.getEmbeddingStatus(), "pending"));
         normalized.setUpdatedAt(updatedAt);
         return normalized;
@@ -326,5 +334,19 @@ public class TacticRecordService {
         } catch (RuntimeException exception) {
             throw new IllegalStateException("Failed to persist tactic record", exception);
         }
+    }
+
+    private TacticRecord enrichMetrics(TacticRecord record) {
+        if (record == null) {
+            return null;
+        }
+        if (qualityMetricsServiceProvider == null) {
+            return copyRecord(record);
+        }
+        TacticQualityMetricsService qualityMetricsService = qualityMetricsServiceProvider.getIfAvailable();
+        if (qualityMetricsService == null) {
+            return copyRecord(record);
+        }
+        return qualityMetricsService.enrich(record);
     }
 }

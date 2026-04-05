@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.service;
  */
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +56,8 @@ public class SelfEvolvingRunService {
     private static final TypeReference<List<RunRecord>> RUN_LIST_TYPE = new TypeReference<>() {
     };
     private static final TypeReference<Map<String, RunVerdict>> RUN_VERDICT_MAP_TYPE = new TypeReference<>() {
+    };
+    private static final TypeReference<List<RunVerdict>> RUN_VERDICT_LIST_TYPE = new TypeReference<>() {
     };
 
     private final StoragePort storagePort;
@@ -199,8 +202,28 @@ public class SelfEvolvingRunService {
             if (StringValueSupport.isBlank(json)) {
                 return new LinkedHashMap<>();
             }
-            Map<String, RunVerdict> verdicts = objectMapper.readValue(json, RUN_VERDICT_MAP_TYPE);
-            return verdicts != null ? new LinkedHashMap<>(verdicts) : new LinkedHashMap<>();
+            JsonNode root = objectMapper.readTree(json);
+            if (root == null || root.isNull()) {
+                return new LinkedHashMap<>();
+            }
+            if (root.isObject()) {
+                Map<String, RunVerdict> verdicts = objectMapper.convertValue(root, RUN_VERDICT_MAP_TYPE);
+                return verdicts != null ? new LinkedHashMap<>(verdicts) : new LinkedHashMap<>();
+            }
+            if (root.isArray()) {
+                List<RunVerdict> verdicts = objectMapper.convertValue(root, RUN_VERDICT_LIST_TYPE);
+                Map<String, RunVerdict> byRunId = new LinkedHashMap<>();
+                if (verdicts != null) {
+                    for (RunVerdict verdict : verdicts) {
+                        if (verdict == null || StringValueSupport.isBlank(verdict.getRunId())) {
+                            continue;
+                        }
+                        byRunId.put(verdict.getRunId(), verdict);
+                    }
+                }
+                return byRunId;
+            }
+            return new LinkedHashMap<>();
         } catch (IOException | RuntimeException e) { // NOSONAR - storage fallback
             log.debug("[SelfEvolving] Failed to load run verdicts: {}", e.getMessage());
             return new LinkedHashMap<>();

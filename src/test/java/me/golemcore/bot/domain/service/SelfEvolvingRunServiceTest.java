@@ -216,6 +216,27 @@ class SelfEvolvingRunServiceTest {
     }
 
     @Test
+    void shouldLoadLegacyVerdictListFormatByRunId() throws Exception {
+        Map<String, String> persistedFiles = new ConcurrentHashMap<>();
+        persistedFiles.put("run-verdicts.json", objectMapper.writeValueAsString(List.of(
+                RunVerdict.builder()
+                        .id("verdict-legacy")
+                        .runId("run-legacy")
+                        .outcomeStatus("COMPLETED")
+                        .createdAt(FIXED_INSTANT)
+                        .build())));
+        StoragePort persistedStorage = mapBackedStorage(persistedFiles);
+        SelfEvolvingRunService readerService = new SelfEvolvingRunService(persistedStorage, artifactBundleService,
+                clock);
+
+        Optional<RunVerdict> storedVerdict = readerService.findVerdict("run-legacy");
+
+        assertTrue(storedVerdict.isPresent());
+        assertEquals("verdict-legacy", storedVerdict.get().getId());
+        assertEquals("COMPLETED", storedVerdict.get().getOutcomeStatus());
+    }
+
+    @Test
     void shouldReturnNullWhenCompletingMissingRun() {
         assertNull(service.completeRun(null, AgentContext.builder().build()));
     }

@@ -17,6 +17,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -34,6 +35,8 @@ class EvolutionCandidateServiceArtifactRevisionTest {
         storagePort = mock(StoragePort.class);
         when(storagePort.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
         when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(null));
         service = new EvolutionCandidateService(
                 storagePort,
@@ -67,6 +70,7 @@ class EvolutionCandidateServiceArtifactRevisionTest {
         assertEquals(firstCandidate.getArtifactStreamId(), secondCandidate.getArtifactStreamId());
         assertNull(firstCandidate.getBaseContentRevisionId());
         assertEquals(firstCandidate.getContentRevisionId(), secondCandidate.getBaseContentRevisionId());
-        verify(storagePort, times(2)).putText(eq("self-evolving"), eq("artifact-revisions.json"), anyString());
+        verify(storagePort, times(2)).putTextAtomic(eq("self-evolving"), eq("artifact-revisions.json"), anyString(),
+                eq(true));
     }
 }

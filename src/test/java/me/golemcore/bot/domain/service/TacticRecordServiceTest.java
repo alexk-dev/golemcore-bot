@@ -97,7 +97,8 @@ class TacticRecordServiceTest {
         tacticRecordService = new TacticRecordService(
                 storagePort,
                 Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC),
-                rebuildServiceProvider);
+                rebuildServiceProvider,
+                null);
     }
 
     @Test
@@ -201,7 +202,7 @@ class TacticRecordServiceTest {
         TacticRecord deactivated = tacticRecordService.deactivate("tactic-1");
 
         assertEquals("inactive", deactivated.getPromotionState());
-        assertEquals("approved", deactivated.getRolloutStage());
+        assertEquals("inactive", deactivated.getRolloutStage());
         assertEquals("inactive", tacticRecordService.getById("tactic-1").orElseThrow().getPromotionState());
         verify(rebuildService, times(2)).onTacticChanged("tactic-1");
     }

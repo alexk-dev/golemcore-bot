@@ -335,7 +335,8 @@ public class SelfEvolvingController {
 
     @PostMapping("/candidates/{candidateId}/promotion")
     public Mono<ResponseEntity<SelfEvolvingPromotionDecisionDto>> planPromotion(@PathVariable String candidateId) {
-        return blocking(() -> ResponseEntity.ok(toPromotionDecisionDto(promotionWorkflowService.planPromotion(candidateId))));
+        return blocking(
+                () -> ResponseEntity.ok(toPromotionDecisionDto(promotionWorkflowService.planPromotion(candidateId))));
     }
 
     @GetMapping("/benchmarks/campaigns")

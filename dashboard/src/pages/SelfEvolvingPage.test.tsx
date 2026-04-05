@@ -90,6 +90,11 @@ vi.mock('../hooks/useSelfEvolving', () => ({
     isPending: false,
     variables: null,
   }),
+  useReactivateTactic: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    variables: null,
+  }),
   useDeleteTactic: () => ({
     mutate: vi.fn(),
     isPending: false,
