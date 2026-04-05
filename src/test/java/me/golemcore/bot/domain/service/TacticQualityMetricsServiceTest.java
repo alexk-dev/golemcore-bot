@@ -1,6 +1,8 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
+import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
+import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaignVerdict;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
@@ -27,6 +29,8 @@ class TacticQualityMetricsServiceTest {
     private SelfEvolvingRunService selfEvolvingRunService;
     private TacticUsageAttributionService tacticUsageAttributionService;
     private ObservedTacticMetricsCalculator observedTacticMetricsCalculator;
+    private BenchmarkLabService benchmarkLabService;
+    private BenchmarkWinRateCalculator benchmarkWinRateCalculator;
     private Clock clock;
     private TacticQualityMetricsService tacticQualityMetricsService;
 
@@ -34,14 +38,19 @@ class TacticQualityMetricsServiceTest {
     void setUp() {
         artifactBundleService = mock(ArtifactBundleService.class);
         selfEvolvingRunService = mock(SelfEvolvingRunService.class);
+        benchmarkLabService = mock(BenchmarkLabService.class);
+        when(benchmarkLabService.getCampaigns()).thenReturn(List.of());
         clock = Clock.fixed(Instant.parse("2026-04-05T12:00:00Z"), ZoneOffset.UTC);
         tacticUsageAttributionService = new TacticUsageAttributionService();
         observedTacticMetricsCalculator = new ObservedTacticMetricsCalculator(clock);
+        benchmarkWinRateCalculator = new BenchmarkWinRateCalculator();
         tacticQualityMetricsService = new TacticQualityMetricsService(
                 artifactBundleService,
                 selfEvolvingRunService,
                 tacticUsageAttributionService,
                 observedTacticMetricsCalculator,
+                benchmarkLabService,
+                benchmarkWinRateCalculator,
                 clock);
     }
 
@@ -271,6 +280,90 @@ class TacticQualityMetricsServiceTest {
         // One scan each: bundle list once, run list once (not per-tactic).
         verify(artifactBundleService, times(1)).getBundles();
         verify(selfEvolvingRunService, times(1)).getRuns();
+    }
+
+    @Test
+    void shouldDeriveBenchmarkWinRateFromCampaignVerdictsWhereCandidateDiffersFromBaseline() {
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-bench")
+                .artifactStreamId("stream-bench")
+                .contentRevisionId("revision-candidate")
+                .build();
+        ArtifactBundleRecord candidateBundle = ArtifactBundleRecord.builder()
+                .id("bundle-candidate")
+                .artifactRevisionBindings(java.util.Map.of("stream-bench", "revision-candidate"))
+                .build();
+        ArtifactBundleRecord baselineBundle = ArtifactBundleRecord.builder()
+                .id("bundle-baseline")
+                .artifactRevisionBindings(java.util.Map.of("stream-bench", "revision-baseline"))
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of(candidateBundle, baselineBundle));
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of());
+        when(benchmarkLabService.getCampaigns()).thenReturn(List.of(
+                BenchmarkCampaign.builder()
+                        .id("campaign-win")
+                        .candidateBundleId("bundle-candidate")
+                        .baselineBundleId("bundle-baseline")
+                        .build(),
+                BenchmarkCampaign.builder()
+                        .id("campaign-loss")
+                        .candidateBundleId("bundle-candidate")
+                        .baselineBundleId("bundle-baseline")
+                        .build(),
+                BenchmarkCampaign.builder()
+                        .id("campaign-no-verdict")
+                        .candidateBundleId("bundle-candidate")
+                        .baselineBundleId("bundle-baseline")
+                        .build()));
+        when(benchmarkLabService.findVerdictByCampaignId("campaign-win"))
+                .thenReturn(Optional.of(BenchmarkCampaignVerdict.builder()
+                        .campaignId("campaign-win")
+                        .recommendation("promote")
+                        .build()));
+        when(benchmarkLabService.findVerdictByCampaignId("campaign-loss"))
+                .thenReturn(Optional.of(BenchmarkCampaignVerdict.builder()
+                        .campaignId("campaign-loss")
+                        .recommendation("reject")
+                        .qualityDelta(-0.2d)
+                        .build()));
+        when(benchmarkLabService.findVerdictByCampaignId("campaign-no-verdict")).thenReturn(Optional.empty());
+
+        TacticRecord enriched = tacticQualityMetricsService.enrich(tactic);
+
+        assertEquals(0.5d, enriched.getBenchmarkWinRate());
+    }
+
+    @Test
+    void shouldNotAttributeCampaignToTacticWhenBaselineAndCandidateRevisionsMatch() {
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-bench-noop")
+                .artifactStreamId("stream-noop")
+                .contentRevisionId("revision-same")
+                .build();
+        ArtifactBundleRecord candidate = ArtifactBundleRecord.builder()
+                .id("bundle-same-a")
+                .artifactRevisionBindings(java.util.Map.of("stream-noop", "revision-same"))
+                .build();
+        ArtifactBundleRecord baseline = ArtifactBundleRecord.builder()
+                .id("bundle-same-b")
+                .artifactRevisionBindings(java.util.Map.of("stream-noop", "revision-same"))
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of(candidate, baseline));
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of());
+        when(benchmarkLabService.getCampaigns()).thenReturn(List.of(BenchmarkCampaign.builder()
+                .id("campaign-same")
+                .candidateBundleId("bundle-same-a")
+                .baselineBundleId("bundle-same-b")
+                .build()));
+        when(benchmarkLabService.findVerdictByCampaignId("campaign-same"))
+                .thenReturn(Optional.of(BenchmarkCampaignVerdict.builder()
+                        .campaignId("campaign-same")
+                        .recommendation("promote")
+                        .build()));
+
+        TacticRecord enriched = tacticQualityMetricsService.enrich(tactic);
+
+        assertNull(enriched.getBenchmarkWinRate());
     }
 
     @Test

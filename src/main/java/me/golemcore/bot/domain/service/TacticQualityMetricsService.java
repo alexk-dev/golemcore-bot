@@ -19,6 +19,8 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
+import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
+import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaignVerdict;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
@@ -50,6 +52,8 @@ public class TacticQualityMetricsService {
     private final SelfEvolvingRunService selfEvolvingRunService;
     private final TacticUsageAttributionService tacticUsageAttributionService;
     private final ObservedTacticMetricsCalculator observedTacticMetricsCalculator;
+    private final BenchmarkLabService benchmarkLabService;
+    private final BenchmarkWinRateCalculator benchmarkWinRateCalculator;
     private final Clock clock;
     private final java.util.concurrent.atomic.AtomicReference<EnrichCacheEntry> enrichCache = new java.util.concurrent.atomic.AtomicReference<>();
 
@@ -58,11 +62,15 @@ public class TacticQualityMetricsService {
             SelfEvolvingRunService selfEvolvingRunService,
             TacticUsageAttributionService tacticUsageAttributionService,
             ObservedTacticMetricsCalculator observedTacticMetricsCalculator,
+            BenchmarkLabService benchmarkLabService,
+            BenchmarkWinRateCalculator benchmarkWinRateCalculator,
             Clock clock) {
         this.artifactBundleService = artifactBundleService;
         this.selfEvolvingRunService = selfEvolvingRunService;
         this.tacticUsageAttributionService = tacticUsageAttributionService;
         this.observedTacticMetricsCalculator = observedTacticMetricsCalculator;
+        this.benchmarkLabService = benchmarkLabService;
+        this.benchmarkWinRateCalculator = benchmarkWinRateCalculator;
         this.clock = clock;
     }
 
@@ -71,7 +79,8 @@ public class TacticQualityMetricsService {
             return null;
         }
         ObservedTacticMetrics metrics = resolveObservedMetrics(record);
-        return applyMetrics(record, metrics);
+        Double benchmarkWinRate = resolveBenchmarkWinRate(record);
+        return applyMetrics(record, metrics, benchmarkWinRate);
     }
 
     /**
@@ -148,6 +157,9 @@ public class TacticQualityMetricsService {
             }
         }
 
+        Map<String, int[]> benchmarkWinObserved = computeBenchmarkWinObserved(bundles, streamRevToTacticIds,
+                aggregators.keySet());
+
         List<TacticRecord> enriched = new ArrayList<>(records.size());
         for (TacticRecord record : records) {
             if (record == null || StringValueSupport.isBlank(record.getTacticId())) {
@@ -155,7 +167,11 @@ public class TacticQualityMetricsService {
                 continue;
             }
             TacticAggregator aggregator = aggregators.get(record.getTacticId());
-            enriched.add(applyMetrics(record, toMetrics(aggregator)));
+            int[] winObserved = benchmarkWinObserved.get(record.getTacticId());
+            Double benchmarkWinRate = winObserved != null
+                    ? benchmarkWinRateCalculator.calculate(winObserved[0], winObserved[1])
+                    : null;
+            enriched.add(applyMetrics(record, toMetrics(aggregator), benchmarkWinRate));
         }
         enrichCache.set(new EnrichCacheEntry(signature, nowMs, new ArrayList<>(enriched)));
         return enriched;
@@ -187,10 +203,10 @@ public class TacticQualityMetricsService {
         return streamId + "\u0000" + revisionId;
     }
 
-    private TacticRecord applyMetrics(TacticRecord record, ObservedTacticMetrics metrics) {
+    private TacticRecord applyMetrics(TacticRecord record, ObservedTacticMetrics metrics, Double benchmarkWinRate) {
         TacticRecord enriched = copy(record);
         enriched.setSuccessRate(metrics.successRate());
-        enriched.setBenchmarkWinRate(record.getBenchmarkWinRate());
+        enriched.setBenchmarkWinRate(benchmarkWinRate);
         enriched.setRecencyScore(metrics.recencyScore());
         // NOTE: golemLocalUsageSuccess currently mirrors successRate because
         // every observed run is assumed to originate from a local golem. When
@@ -201,6 +217,77 @@ public class TacticQualityMetricsService {
             enriched.setRegressionFlags(new ArrayList<>(metrics.regressionFlags()));
         }
         return enriched;
+    }
+
+    private Map<String, int[]> computeBenchmarkWinObserved(
+            List<ArtifactBundleRecord> bundles,
+            Map<String, List<String>> streamRevToTacticIds,
+            Set<String> knownTacticIds) {
+        Map<String, int[]> perTacticWinObserved = new HashMap<>();
+        if (benchmarkLabService == null || knownTacticIds.isEmpty()) {
+            return perTacticWinObserved;
+        }
+        List<BenchmarkCampaign> campaigns = benchmarkLabService.getCampaigns();
+        if (campaigns == null || campaigns.isEmpty()) {
+            return perTacticWinObserved;
+        }
+        Map<String, ArtifactBundleRecord> bundlesById = new HashMap<>();
+        if (bundles != null) {
+            for (ArtifactBundleRecord bundle : bundles) {
+                if (bundle != null && !StringValueSupport.isBlank(bundle.getId())) {
+                    bundlesById.put(bundle.getId(), bundle);
+                }
+            }
+        }
+        for (BenchmarkCampaign campaign : campaigns) {
+            if (campaign == null) {
+                continue;
+            }
+            Optional<BenchmarkCampaignVerdict> verdict = benchmarkLabService
+                    .findVerdictByCampaignId(campaign.getId());
+            if (verdict.isEmpty()) {
+                continue;
+            }
+            Set<String> campaignTacticIds = tacticUsageAttributionService
+                    .resolveCampaignTacticIds(campaign, bundlesById, streamRevToTacticIds);
+            if (campaignTacticIds.isEmpty()) {
+                continue;
+            }
+            boolean won = benchmarkWinRateCalculator.isCandidateWin(verdict.get());
+            for (String tacticId : campaignTacticIds) {
+                if (!knownTacticIds.contains(tacticId)) {
+                    continue;
+                }
+                int[] bucket = perTacticWinObserved.computeIfAbsent(tacticId, k -> new int[2]);
+                if (won) {
+                    bucket[0]++;
+                }
+                bucket[1]++;
+            }
+        }
+        return perTacticWinObserved;
+    }
+
+    private Double resolveBenchmarkWinRate(TacticRecord record) {
+        if (benchmarkLabService == null || record == null
+                || StringValueSupport.isBlank(record.getTacticId())
+                || StringValueSupport.isBlank(record.getArtifactStreamId())
+                || StringValueSupport.isBlank(record.getContentRevisionId())) {
+            return null;
+        }
+        Map<String, List<String>> streamRevToTacticIds = new HashMap<>();
+        streamRevToTacticIds.put(
+                streamRevisionKey(record.getArtifactStreamId(), record.getContentRevisionId()),
+                List.of(record.getTacticId()));
+        Map<String, int[]> perTacticWinObserved = computeBenchmarkWinObserved(
+                artifactBundleService.getBundles(),
+                streamRevToTacticIds,
+                Set.of(record.getTacticId()));
+        int[] bucket = perTacticWinObserved.get(record.getTacticId());
+        if (bucket == null) {
+            return null;
+        }
+        return benchmarkWinRateCalculator.calculate(bucket[0], bucket[1]);
     }
 
     private ObservedTacticMetrics resolveObservedMetrics(TacticRecord record) {

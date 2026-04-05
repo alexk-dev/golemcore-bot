@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
+import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import org.springframework.stereotype.Service;
@@ -114,6 +115,56 @@ public class TacticUsageAttributionService {
             }
         }
         return attributedTacticIds;
+    }
+
+    /**
+     * Attributes a benchmark campaign to tactics whose (stream, revision) appear in
+     * the candidate bundle but differ (or are absent) in the baseline bundle. A
+     * tactic is "under test" only when candidate and baseline disagree on it —
+     * otherwise the campaign is not actually exercising that tactic.
+     */
+    public Set<String> resolveCampaignTacticIds(
+            BenchmarkCampaign campaign,
+            Map<String, ArtifactBundleRecord> bundlesById,
+            Map<String, List<String>> tacticIdsByStreamRevision) {
+        Set<String> attributed = new LinkedHashSet<>();
+        if (campaign == null || bundlesById == null || bundlesById.isEmpty()
+                || tacticIdsByStreamRevision == null || tacticIdsByStreamRevision.isEmpty()
+                || StringValueSupport.isBlank(campaign.getCandidateBundleId())) {
+            return attributed;
+        }
+        ArtifactBundleRecord candidate = bundlesById.get(campaign.getCandidateBundleId());
+        if (candidate == null || candidate.getArtifactRevisionBindings() == null
+                || candidate.getArtifactRevisionBindings().isEmpty()) {
+            return attributed;
+        }
+        Map<String, String> baselineBindings = null;
+        if (!StringValueSupport.isBlank(campaign.getBaselineBundleId())
+                && !campaign.getBaselineBundleId().equals(campaign.getCandidateBundleId())) {
+            ArtifactBundleRecord baseline = bundlesById.get(campaign.getBaselineBundleId());
+            if (baseline != null) {
+                baselineBindings = baseline.getArtifactRevisionBindings();
+            }
+        }
+        for (Map.Entry<String, String> candidateBinding : candidate.getArtifactRevisionBindings().entrySet()) {
+            String streamId = candidateBinding.getKey();
+            String revisionId = candidateBinding.getValue();
+            if (StringValueSupport.isBlank(streamId) || StringValueSupport.isBlank(revisionId)) {
+                continue;
+            }
+            String baselineRevision = baselineBindings != null ? baselineBindings.get(streamId) : null;
+            if (revisionId.equals(baselineRevision)) {
+                // Tactic revision unchanged between baseline and candidate — campaign
+                // is not exercising it, so no attribution.
+                continue;
+            }
+            List<String> tacticIds = tacticIdsByStreamRevision
+                    .get(streamRevisionKey(streamId, revisionId));
+            if (tacticIds != null) {
+                attributed.addAll(tacticIds);
+            }
+        }
+        return attributed;
     }
 
     private String streamRevisionKey(String streamId, String revisionId) {

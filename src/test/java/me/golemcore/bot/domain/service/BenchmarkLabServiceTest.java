@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
+import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaignVerdict;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkSuite;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
@@ -14,9 +15,13 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -40,6 +45,7 @@ class BenchmarkLabServiceTest {
                 storagePort,
                 selfEvolvingRunService,
                 promotionWorkflowService,
+                null,
                 Clock.fixed(Instant.parse("2026-03-31T16:30:00Z"), ZoneOffset.UTC));
     }
 
@@ -76,6 +82,66 @@ class BenchmarkLabServiceTest {
         assertEquals(1, suites.size());
         assertEquals(campaign.getSuiteId(), suites.getFirst().getId());
         assertEquals(1, benchmarkLabService.getCampaigns().size());
+    }
+
+    @Test
+    void shouldRecordVerdictAndFlipCampaignToCompleted() {
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of(RunRecord.builder()
+                .id("run-v")
+                .artifactBundleId("bundle-v")
+                .traceId("trace-v")
+                .status("COMPLETED")
+                .build()));
+        BenchmarkCampaign campaign = benchmarkLabService.createRegressionCampaign("run-v");
+
+        BenchmarkCampaignVerdict stored = benchmarkLabService.recordCampaignVerdict(
+                BenchmarkCampaignVerdict.builder()
+                        .campaignId(campaign.getId())
+                        .recommendation("promote")
+                        .qualityDelta(0.12d)
+                        .build());
+
+        assertNotNull(stored.getId());
+        assertNotNull(stored.getCreatedAt());
+        Optional<BenchmarkCampaignVerdict> found = benchmarkLabService.findVerdictByCampaignId(campaign.getId());
+        assertTrue(found.isPresent());
+        assertEquals("promote", found.get().getRecommendation());
+        BenchmarkCampaign reloaded = benchmarkLabService.getCampaigns().stream()
+                .filter(c -> campaign.getId().equals(c.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("completed", reloaded.getStatus());
+        assertNotNull(reloaded.getCompletedAt());
+    }
+
+    @Test
+    void shouldReplaceExistingVerdictWhenReRecordedForSameCampaign() {
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of(RunRecord.builder()
+                .id("run-r")
+                .artifactBundleId("bundle-r")
+                .traceId("trace-r")
+                .status("COMPLETED")
+                .build()));
+        BenchmarkCampaign campaign = benchmarkLabService.createRegressionCampaign("run-r");
+        benchmarkLabService.recordCampaignVerdict(BenchmarkCampaignVerdict.builder()
+                .campaignId(campaign.getId())
+                .recommendation("reject")
+                .build());
+
+        benchmarkLabService.recordCampaignVerdict(BenchmarkCampaignVerdict.builder()
+                .campaignId(campaign.getId())
+                .recommendation("promote")
+                .build());
+
+        assertEquals(1, benchmarkLabService.getCampaignVerdicts().size());
+        assertEquals("promote",
+                benchmarkLabService.findVerdictByCampaignId(campaign.getId()).orElseThrow().getRecommendation());
+    }
+
+    @Test
+    void shouldRejectVerdictWithoutCampaignId() {
+        assertThrows(IllegalArgumentException.class, () -> benchmarkLabService.recordCampaignVerdict(
+                BenchmarkCampaignVerdict.builder().recommendation("promote").build()));
     }
 
     @Test
