@@ -18,6 +18,8 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.adapter.outbound.selfevolving.SqliteTacticEmbeddingIndexAdapter;
+import me.golemcore.bot.port.outbound.selfevolving.TacticEmbeddingIndexPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.Test;
@@ -36,14 +38,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class TacticEmbeddingSqliteIndexStoreTest {
+class SqliteTacticEmbeddingIndexAdapterTest {
 
     @TempDir
     Path tempDir;
 
     @Test
     void shouldPersistAndReloadEmbeddingRowsFromSqlite() throws Exception {
-        TacticEmbeddingSqliteIndexStore store = new TacticEmbeddingSqliteIndexStore(
+        SqliteTacticEmbeddingIndexAdapter store = new SqliteTacticEmbeddingIndexAdapter(
                 botProperties(tempDir),
                 new ObjectMapper());
 
@@ -52,12 +54,12 @@ class TacticEmbeddingSqliteIndexStoreTest {
                 "bge-m3",
                 1024,
                 List.of(
-                        new TacticEmbeddingSqliteIndexStore.Entry(
+                        new TacticEmbeddingIndexPort.Entry(
                                 "planner",
                                 "rev-1",
                                 List.of(1.0d, 0.0d),
                                 Instant.parse("2026-04-04T19:10:00Z")),
-                        new TacticEmbeddingSqliteIndexStore.Entry(
+                        new TacticEmbeddingIndexPort.Entry(
                                 "rollback",
                                 "rev-2",
                                 List.of(0.2d, 0.98d),
@@ -66,7 +68,7 @@ class TacticEmbeddingSqliteIndexStoreTest {
         assertTrue(Files.exists(store.getDatabasePath()));
         assertTrue(store.hasEntry("planner", "ollama", "bge-m3"));
 
-        Map<String, TacticEmbeddingSqliteIndexStore.Entry> entries = store.loadEntries("ollama", "bge-m3");
+        Map<String, TacticEmbeddingIndexPort.Entry> entries = store.loadEntries("ollama", "bge-m3");
 
         assertEquals(List.of("planner", "rollback"), entries.keySet().stream().sorted().toList());
         assertEquals("rev-1", entries.get("planner").contentRevisionId());
@@ -77,7 +79,7 @@ class TacticEmbeddingSqliteIndexStoreTest {
 
     @Test
     void shouldReplaceExistingRowsWithEmptyEntryBatch() {
-        TacticEmbeddingSqliteIndexStore store = new TacticEmbeddingSqliteIndexStore(
+        SqliteTacticEmbeddingIndexAdapter store = new SqliteTacticEmbeddingIndexAdapter(
                 botProperties(tempDir),
                 new ObjectMapper());
 
@@ -85,7 +87,7 @@ class TacticEmbeddingSqliteIndexStoreTest {
                 "ollama",
                 "bge-m3",
                 1024,
-                List.of(new TacticEmbeddingSqliteIndexStore.Entry(
+                List.of(new TacticEmbeddingIndexPort.Entry(
                         "planner",
                         "rev-1",
                         List.of(1.0d, 0.0d),
@@ -99,7 +101,7 @@ class TacticEmbeddingSqliteIndexStoreTest {
 
     @Test
     void shouldPersistNullDimensionsVectorAndUpdatedAtWithSafeDefaults() {
-        TacticEmbeddingSqliteIndexStore store = new TacticEmbeddingSqliteIndexStore(
+        SqliteTacticEmbeddingIndexAdapter store = new SqliteTacticEmbeddingIndexAdapter(
                 botProperties(tempDir),
                 new ObjectMapper());
 
@@ -107,13 +109,13 @@ class TacticEmbeddingSqliteIndexStoreTest {
                 "ollama",
                 "bge-m3",
                 null,
-                List.of(new TacticEmbeddingSqliteIndexStore.Entry(
+                List.of(new TacticEmbeddingIndexPort.Entry(
                         "planner",
                         "rev-1",
                         null,
                         null)));
 
-        TacticEmbeddingSqliteIndexStore.Entry entry = store.loadEntries("ollama", "bge-m3").get("planner");
+        TacticEmbeddingIndexPort.Entry entry = store.loadEntries("ollama", "bge-m3").get("planner");
 
         assertNull(entry.dimensions());
         assertEquals(List.of(), entry.vector());
@@ -122,7 +124,7 @@ class TacticEmbeddingSqliteIndexStoreTest {
 
     @Test
     void shouldTreatBlankUpdatedAtAsEpochWhenLoadingRows() throws Exception {
-        TacticEmbeddingSqliteIndexStore store = new TacticEmbeddingSqliteIndexStore(
+        SqliteTacticEmbeddingIndexAdapter store = new SqliteTacticEmbeddingIndexAdapter(
                 botProperties(tempDir),
                 new ObjectMapper());
 
@@ -150,7 +152,7 @@ class TacticEmbeddingSqliteIndexStoreTest {
                     """);
         }
 
-        TacticEmbeddingSqliteIndexStore.Entry entry = store.loadEntries("ollama", "bge-m3").get("planner");
+        TacticEmbeddingIndexPort.Entry entry = store.loadEntries("ollama", "bge-m3").get("planner");
 
         assertEquals(1024, entry.dimensions());
         assertEquals(Instant.EPOCH, entry.updatedAt());

@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.port.outbound.EmbeddingPort;
+import me.golemcore.bot.port.outbound.selfevolving.TacticEmbeddingIndexPort;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -53,7 +54,7 @@ public class TacticEmbeddingIndexService {
     private final TacticSearchDocumentAssembler documentAssembler;
     private final EmbeddingClientResolverPort embeddingClientResolver;
     private final TacticSearchMetricsService metricsService;
-    private final TacticEmbeddingSqliteIndexStore indexStore;
+    private final TacticEmbeddingIndexPort indexStore;
     private final AtomicReference<Snapshot> snapshot = new AtomicReference<>(Snapshot.empty());
 
     public TacticEmbeddingIndexService(
@@ -62,7 +63,7 @@ public class TacticEmbeddingIndexService {
             TacticSearchDocumentAssembler documentAssembler,
             EmbeddingClientResolverPort embeddingClientResolver,
             TacticSearchMetricsService metricsService,
-            TacticEmbeddingSqliteIndexStore indexStore) {
+            TacticEmbeddingIndexPort indexStore) {
         this.runtimeConfigService = runtimeConfigService;
         this.tacticRecordService = tacticRecordService;
         this.documentAssembler = documentAssembler;
@@ -251,7 +252,7 @@ public class TacticEmbeddingIndexService {
         if (documents.isEmpty()) {
             return false;
         }
-        Map<String, TacticEmbeddingSqliteIndexStore.Entry> persistedEntries = indexStore.loadEntries(
+        Map<String, TacticEmbeddingIndexPort.Entry> persistedEntries = indexStore.loadEntries(
                 config.getProvider(),
                 config.getModel());
         if (persistedEntries.size() != documents.size()) {
@@ -261,7 +262,7 @@ public class TacticEmbeddingIndexService {
         Map<String, List<Double>> vectorMap = new HashMap<>();
         Instant updatedAt = Instant.EPOCH;
         for (TacticIndexDocument document : documents) {
-            TacticEmbeddingSqliteIndexStore.Entry persistedEntry = persistedEntries.get(document.getTacticId());
+            TacticEmbeddingIndexPort.Entry persistedEntry = persistedEntries.get(document.getTacticId());
             if (persistedEntry == null
                     || !Objects.equals(persistedEntry.contentRevisionId(), document.getContentRevisionId())
                     || !Objects.equals(persistedEntry.dimensions(), config.getDimensions())) {
@@ -285,11 +286,11 @@ public class TacticEmbeddingIndexService {
                 .toList();
     }
 
-    private List<TacticEmbeddingSqliteIndexStore.Entry> toStoreEntries(
+    private List<TacticEmbeddingIndexPort.Entry> toStoreEntries(
             Map<String, TacticIndexDocument> documentMap,
             Map<String, List<Double>> vectorMap) {
         return documentMap.values().stream()
-                .map(document -> new TacticEmbeddingSqliteIndexStore.Entry(
+                .map(document -> new TacticEmbeddingIndexPort.Entry(
                         document.getTacticId(),
                         document.getContentRevisionId(),
                         vectorMap.get(document.getTacticId()),

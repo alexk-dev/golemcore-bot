@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.selfevolving.tactic;
+package me.golemcore.bot.adapter.outbound.selfevolving;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -23,7 +23,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import org.springframework.stereotype.Service;
+import me.golemcore.bot.port.outbound.selfevolving.TacticEmbeddingIndexPort;
+import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -43,12 +44,13 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Persists tactic embedding vectors in a local SQLite database under the
- * storage workspace.
+ * SQLite-backed implementation of {@link TacticEmbeddingIndexPort}. Persists
+ * tactic embedding vectors in a local SQLite database under the storage
+ * workspace.
  */
-@Service
+@Component
 @Slf4j
-public class TacticEmbeddingSqliteIndexStore {
+public class SqliteTacticEmbeddingIndexAdapter implements TacticEmbeddingIndexPort {
 
     private static final String DB_FILE_NAME = "tactic-embedding-index.sqlite";
     private static final String SELF_EVOLVING_DIR = "self-evolving";
@@ -60,11 +62,12 @@ public class TacticEmbeddingSqliteIndexStore {
 
     private final AtomicReference<Path> databasePath = new AtomicReference<>();
 
-    public TacticEmbeddingSqliteIndexStore(BotProperties botProperties, ObjectMapper objectMapper) {
+    public SqliteTacticEmbeddingIndexAdapter(BotProperties botProperties, ObjectMapper objectMapper) {
         this.botProperties = botProperties;
         this.objectMapper = objectMapper;
     }
 
+    @Override
     public void replaceAll(String provider, String model, Integer dimensions, List<Entry> entries) {
         ensureInitialized();
         try (Connection connection = openConnection()) {
@@ -82,6 +85,7 @@ public class TacticEmbeddingSqliteIndexStore {
         }
     }
 
+    @Override
     public Map<String, Entry> loadEntries(String provider, String model) {
         ensureInitialized();
         Map<String, Entry> entries = new LinkedHashMap<>();
@@ -113,6 +117,7 @@ public class TacticEmbeddingSqliteIndexStore {
         return entries;
     }
 
+    @Override
     public boolean hasEntry(String tacticId, String provider, String model) {
         return loadEntries(provider, model).containsKey(tacticId);
     }
@@ -249,21 +254,5 @@ public class TacticEmbeddingSqliteIndexStore {
             return Instant.EPOCH;
         }
         return Instant.parse(updatedAt);
-    }
-
-    public record Entry(
-            String tacticId,
-            String contentRevisionId,
-            Integer dimensions,
-            List<Double> vector,
-            Instant updatedAt) {
-
-        public Entry(
-                String tacticId,
-                String contentRevisionId,
-                List<Double> vector,
-                Instant updatedAt) {
-            this(tacticId, contentRevisionId, null, vector, updatedAt);
-        }
     }
 }

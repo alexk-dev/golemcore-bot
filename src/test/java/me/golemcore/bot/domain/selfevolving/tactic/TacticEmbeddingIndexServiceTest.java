@@ -18,6 +18,8 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.adapter.outbound.selfevolving.SqliteTacticEmbeddingIndexAdapter;
+import me.golemcore.bot.port.outbound.selfevolving.TacticEmbeddingIndexPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -54,7 +56,7 @@ class TacticEmbeddingIndexServiceTest {
     private EmbeddingClientResolverPort embeddingClientResolver;
     private EmbeddingPort embeddingPort;
     private TacticSearchMetricsService metricsService;
-    private TacticEmbeddingSqliteIndexStore indexStore;
+    private SqliteTacticEmbeddingIndexAdapter indexStore;
     private TacticEmbeddingIndexService service;
 
     @BeforeEach
@@ -69,7 +71,7 @@ class TacticEmbeddingIndexServiceTest {
         BotProperties properties = new BotProperties();
         Path tempDir = Files.createTempDirectory("tactic-embedding-index-test");
         properties.getStorage().getLocal().setBasePath(tempDir.toString());
-        indexStore = new TacticEmbeddingSqliteIndexStore(properties, new ObjectMapper());
+        indexStore = new SqliteTacticEmbeddingIndexAdapter(properties, new ObjectMapper());
         service = new TacticEmbeddingIndexService(
                 runtimeConfigService,
                 tacticRecordService,
@@ -258,12 +260,12 @@ class TacticEmbeddingIndexServiceTest {
                 "text-embedding-3-large",
                 2,
                 List.of(
-                        new TacticEmbeddingSqliteIndexStore.Entry(
+                        new TacticEmbeddingIndexPort.Entry(
                                 "planner",
                                 "rev-planner",
                                 List.of(1.0d, 0.0d),
                                 Instant.parse("2026-04-04T19:10:00Z")),
-                        new TacticEmbeddingSqliteIndexStore.Entry(
+                        new TacticEmbeddingIndexPort.Entry(
                                 "rollback",
                                 "rev-rollback",
                                 List.of(0.2d, 0.98d),
