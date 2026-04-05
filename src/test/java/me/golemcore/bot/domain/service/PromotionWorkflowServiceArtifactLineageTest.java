@@ -64,10 +64,13 @@ class PromotionWorkflowServiceArtifactLineageTest {
                 new EvolutionArtifactIdentityService(storagePort, FIXED_CLOCK),
                 new EvolutionCandidateDerivationService(FIXED_CLOCK),
                 new EvolutionCandidateTacticMaterializer(FIXED_CLOCK));
-        service = new PromotionWorkflowService(runtimeConfigService, evolutionCandidateService,
+        PromotionWorkflowStateService promotionWorkflowStateService = new PromotionWorkflowStateService(
                 new PromotionWorkflowStore(storagePort),
+                evolutionCandidateService,
+                new PromotionDecisionHydrationService());
+        service = new PromotionWorkflowService(runtimeConfigService,
+                promotionWorkflowStateService,
                 new PromotionTargetResolver(runtimeConfigService),
-                new PromotionDecisionHydrationService(),
                 new PromotionExecutionService(null, FIXED_CLOCK),
                 null);
     }

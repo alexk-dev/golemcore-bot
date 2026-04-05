@@ -27,54 +27,33 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Persists evolution candidates and rollout decisions.
+ * Orchestrates promotion planning and execution for stored evolution
+ * candidates.
  */
 @Service
 public class PromotionWorkflowService {
 
     private final RuntimeConfigService runtimeConfigService;
-    private final EvolutionCandidateService evolutionCandidateService;
-    private final PromotionWorkflowStore promotionWorkflowStore;
+    private final PromotionWorkflowStateService promotionWorkflowStateService;
     private final PromotionTargetResolver promotionTargetResolver;
-    private final PromotionDecisionHydrationService promotionDecisionHydrationService;
     private final PromotionExecutionService promotionExecutionService;
     private final ArtifactBundleService artifactBundleService;
 
     public PromotionWorkflowService(
             RuntimeConfigService runtimeConfigService,
-            EvolutionCandidateService evolutionCandidateService,
-            PromotionWorkflowStore promotionWorkflowStore,
+            PromotionWorkflowStateService promotionWorkflowStateService,
             PromotionTargetResolver promotionTargetResolver,
-            PromotionDecisionHydrationService promotionDecisionHydrationService,
             PromotionExecutionService promotionExecutionService,
             ArtifactBundleService artifactBundleService) {
         this.runtimeConfigService = runtimeConfigService;
-        this.evolutionCandidateService = evolutionCandidateService;
-        this.promotionWorkflowStore = promotionWorkflowStore;
+        this.promotionWorkflowStateService = promotionWorkflowStateService;
         this.promotionTargetResolver = promotionTargetResolver;
-        this.promotionDecisionHydrationService = promotionDecisionHydrationService;
         this.promotionExecutionService = promotionExecutionService;
         this.artifactBundleService = artifactBundleService;
     }
 
     public List<EvolutionCandidate> registerCandidates(List<EvolutionCandidate> candidates) {
-        List<EvolutionCandidate> storedCandidates = new ArrayList<>(getCandidates());
-        if (candidates == null) {
-            return List.of();
-        }
-        List<EvolutionCandidate> normalizedResults = new ArrayList<>();
-        for (EvolutionCandidate candidate : candidates) {
-            if (candidate == null || StringValueSupport.isBlank(candidate.getId())) {
-                continue;
-            }
-            EvolutionCandidate normalizedCandidate = evolutionCandidateService
-                    .ensureArtifactIdentity(cloneCandidate(candidate));
-            upsertCandidate(storedCandidates, normalizedCandidate);
-            evolutionCandidateService.syncTacticRecord(normalizedCandidate);
-            normalizedResults.add(normalizedCandidate);
-        }
-        promotionWorkflowStore.saveCandidates(storedCandidates);
-        return normalizedResults;
+        return promotionWorkflowStateService.registerCandidates(candidates);
     }
 
     public List<PromotionDecision> registerAndPlanCandidates(List<EvolutionCandidate> candidates) {
@@ -121,49 +100,15 @@ public class PromotionWorkflowService {
     }
 
     public List<EvolutionCandidate> getCandidates() {
-        List<EvolutionCandidate> normalizedCandidates = new ArrayList<>(promotionWorkflowStore.getCandidates());
-        boolean mutated = false;
-        for (EvolutionCandidate candidate : normalizedCandidates) {
-            if (candidate == null) {
-                continue;
-            }
-            if (StringValueSupport.isBlank(candidate.getArtifactStreamId())
-                    || StringValueSupport.isBlank(candidate.getContentRevisionId())
-                    || StringValueSupport.isBlank(candidate.getLifecycleState())
-                    || StringValueSupport.isBlank(candidate.getRolloutStage())) {
-                mutated = true;
-            }
-            evolutionCandidateService.ensureArtifactIdentity(candidate);
-            evolutionCandidateService.syncTacticRecord(candidate);
-        }
-        if (mutated) {
-            promotionWorkflowStore.saveCandidates(normalizedCandidates);
-        }
-        return normalizedCandidates;
+        return promotionWorkflowStateService.getCandidates();
     }
 
     public List<PromotionDecision> getPromotionDecisions() {
-        List<PromotionDecision> normalizedDecisions = new ArrayList<>(promotionWorkflowStore.getPromotionDecisions());
-        boolean mutated = false;
-        for (PromotionDecision decision : normalizedDecisions) {
-            if (decision == null) {
-                continue;
-            }
-            EvolutionCandidate candidate = findCandidate(decision.getCandidateId()).orElse(null);
-            if (promotionDecisionHydrationService.hydrate(decision, candidate)) {
-                mutated = true;
-            }
-        }
-        if (mutated) {
-            promotionWorkflowStore.savePromotionDecisions(normalizedDecisions);
-        }
-        return normalizedDecisions;
+        return promotionWorkflowStateService.getPromotionDecisions();
     }
 
     public Optional<EvolutionCandidate> findCandidate(String candidateId) {
-        return getCandidates().stream()
-                .filter(candidate -> candidate != null && candidateId.equals(candidate.getId()))
-                .findFirst();
+        return promotionWorkflowStateService.findCandidate(candidateId);
     }
 
     private boolean isApprovalGateMode() {
@@ -171,38 +116,10 @@ public class PromotionWorkflowService {
     }
 
     private void saveCandidate(EvolutionCandidate candidate) {
-        List<EvolutionCandidate> candidates = new ArrayList<>(getCandidates());
-        upsertCandidate(candidates, candidate);
-        promotionWorkflowStore.saveCandidates(candidates);
-        evolutionCandidateService.syncTacticRecord(candidate);
+        promotionWorkflowStateService.saveCandidate(candidate);
     }
 
     private void saveDecision(PromotionDecision decision) {
-        List<PromotionDecision> decisions = new ArrayList<>(getPromotionDecisions());
-        decisions.add(decision);
-        promotionWorkflowStore.savePromotionDecisions(decisions);
-    }
-
-    private void upsertCandidate(List<EvolutionCandidate> candidates, EvolutionCandidate candidate) {
-        for (int index = 0; index < candidates.size(); index++) {
-            EvolutionCandidate existing = candidates.get(index);
-            if (existing != null && candidate.getId().equals(existing.getId())) {
-                candidates.set(index, candidate);
-                return;
-            }
-        }
-        candidates.add(candidate);
-    }
-
-    private EvolutionCandidate cloneCandidate(EvolutionCandidate candidate) {
-        return candidate.toBuilder()
-                .sourceRunIds(candidate.getSourceRunIds() != null ? new ArrayList<>(candidate.getSourceRunIds())
-                        : new ArrayList<>())
-                .artifactAliases(
-                        candidate.getArtifactAliases() != null ? new ArrayList<>(candidate.getArtifactAliases())
-                                : new ArrayList<>())
-                .evidenceRefs(candidate.getEvidenceRefs() != null ? new ArrayList<>(candidate.getEvidenceRefs())
-                        : new ArrayList<>())
-                .build();
+        promotionWorkflowStateService.saveDecision(decision);
     }
 }

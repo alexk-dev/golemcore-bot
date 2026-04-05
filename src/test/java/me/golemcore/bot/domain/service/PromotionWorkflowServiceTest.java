@@ -93,12 +93,14 @@ class PromotionWorkflowServiceTest {
                 new EvolutionArtifactIdentityService(storagePort, clock),
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
+        PromotionWorkflowStateService promotionWorkflowStateService = new PromotionWorkflowStateService(
+                new PromotionWorkflowStore(storagePort),
+                evolutionCandidateService,
+                new PromotionDecisionHydrationService());
         promotionWorkflowService = new PromotionWorkflowService(
                 runtimeConfigService,
-                evolutionCandidateService,
-                new PromotionWorkflowStore(storagePort),
+                promotionWorkflowStateService,
                 new PromotionTargetResolver(runtimeConfigService),
-                new PromotionDecisionHydrationService(),
                 new PromotionExecutionService(artifactBundleService, clock),
                 artifactBundleService);
     }
@@ -550,12 +552,14 @@ class PromotionWorkflowServiceTest {
     @Test
     void shouldBindCandidateBaseRevisionsWhenArtifactBundleServiceIsPresent() {
         ArtifactBundleService artifactBundleService = mock(ArtifactBundleService.class);
+        PromotionWorkflowStateService promotionWorkflowStateService = new PromotionWorkflowStateService(
+                new PromotionWorkflowStore(storagePort),
+                evolutionCandidateService,
+                new PromotionDecisionHydrationService());
         PromotionWorkflowService serviceWithBundleBinding = new PromotionWorkflowService(
                 runtimeConfigService,
-                evolutionCandidateService,
-                new PromotionWorkflowStore(storagePort),
+                promotionWorkflowStateService,
                 new PromotionTargetResolver(runtimeConfigService),
-                new PromotionDecisionHydrationService(),
                 new PromotionExecutionService(artifactBundleService,
                         Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC)),
                 artifactBundleService);
