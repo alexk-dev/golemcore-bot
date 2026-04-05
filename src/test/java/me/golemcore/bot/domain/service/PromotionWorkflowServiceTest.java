@@ -91,6 +91,7 @@ class PromotionWorkflowServiceTest {
                 tacticRecordService,
                 artifactBundleService,
                 new EvolutionArtifactIdentityService(storagePort, clock),
+                new EvolutionCandidateTacticMaterializer(clock),
                 clock);
         promotionWorkflowService = new PromotionWorkflowService(
                 storagePort,

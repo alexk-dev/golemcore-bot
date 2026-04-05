@@ -67,6 +67,7 @@ class EvolutionCandidateServiceTest {
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
                 new EvolutionArtifactIdentityService(storagePort, clock),
+                new EvolutionCandidateTacticMaterializer(clock),
                 clock);
     }
 
@@ -329,6 +330,7 @@ class EvolutionCandidateServiceTest {
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
                 new EvolutionArtifactIdentityService(mockReloadingStoragePort(), clock),
+                new EvolutionCandidateTacticMaterializer(clock),
                 clock);
         assertTrue(reloadedService.getArtifactRevisionRecords().isEmpty());
     }
