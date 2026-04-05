@@ -22,7 +22,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -55,8 +54,9 @@ public class PromotionWorkflowService {
     private final StoragePort storagePort;
     private final RuntimeConfigService runtimeConfigService;
     private final EvolutionCandidateService evolutionCandidateService;
-    private final ArtifactBundleService artifactBundleService;
     private final PromotionDecisionHydrationService promotionDecisionHydrationService;
+    private final PromotionExecutionService promotionExecutionService;
+    private final ArtifactBundleService artifactBundleService;
     private final Clock clock;
     private final ObjectMapper objectMapper;
     private final AtomicReference<List<EvolutionCandidate>> candidateCache = new AtomicReference<>();
@@ -66,14 +66,16 @@ public class PromotionWorkflowService {
             StoragePort storagePort,
             RuntimeConfigService runtimeConfigService,
             EvolutionCandidateService evolutionCandidateService,
-            ArtifactBundleService artifactBundleService,
             PromotionDecisionHydrationService promotionDecisionHydrationService,
+            PromotionExecutionService promotionExecutionService,
+            ArtifactBundleService artifactBundleService,
             Clock clock) {
         this.storagePort = storagePort;
         this.runtimeConfigService = runtimeConfigService;
         this.evolutionCandidateService = evolutionCandidateService;
-        this.artifactBundleService = artifactBundleService;
         this.promotionDecisionHydrationService = promotionDecisionHydrationService;
+        this.promotionExecutionService = promotionExecutionService;
+        this.artifactBundleService = artifactBundleService;
         this.clock = clock;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -128,49 +130,11 @@ public class PromotionWorkflowService {
 
         EvolutionCandidate storedCandidate = findCandidate(candidate.getId()).orElse(candidate);
         PromotionTarget target = resolvePromotionTarget(storedCandidate);
-        String targetBundleId = buildTargetBundleId(storedCandidate, target);
-        if (artifactBundleService != null) {
-            ArtifactBundleRecord promotedBundle = artifactBundleService.promoteCandidateBundle(
-                    targetBundleId,
-                    storedCandidate,
-                    target.rolloutStage());
-            if (promotedBundle != null && !StringValueSupport.isBlank(promotedBundle.getId())) {
-                targetBundleId = promotedBundle.getId();
-            }
-        }
-        PromotionDecision decision = PromotionDecision.builder()
-                .id(UUID.randomUUID().toString())
-                .candidateId(storedCandidate.getId())
-                .bundleId(targetBundleId)
-                .originBundleId(storedCandidate.getBaseVersion())
-                .state(target.legacyState())
-                .fromState(storedCandidate.getStatus())
-                .toState(target.legacyState())
-                .artifactType(storedCandidate.getArtifactType())
-                .artifactSubtype(storedCandidate.getArtifactSubtype())
-                .artifactStreamId(storedCandidate.getArtifactStreamId())
-                .originArtifactStreamId(storedCandidate.getOriginArtifactStreamId())
-                .artifactKey(storedCandidate.getArtifactKey())
-                .contentRevisionId(storedCandidate.getContentRevisionId())
-                .baseContentRevisionId(storedCandidate.getBaseContentRevisionId())
-                .fromLifecycleState(storedCandidate.getLifecycleState())
-                .toLifecycleState(target.lifecycleState())
-                .fromRolloutStage(storedCandidate.getRolloutStage())
-                .toRolloutStage(target.rolloutStage())
-                .mode(runtimeConfigService.getSelfEvolvingPromotionMode())
-                .approvalRequestId(
-                        "approved_pending".equals(target.legacyState()) ? storedCandidate.getId() + "-approval" : null)
-                .reason(buildReason(target.legacyState()))
-                .decidedAt(Instant.now(clock))
-                .build();
-
-        EvolutionCandidate updatedCandidate = cloneCandidate(storedCandidate);
-        updatedCandidate.setStatus(target.legacyState());
-        updatedCandidate.setLifecycleState(target.lifecycleState());
-        updatedCandidate.setRolloutStage(target.rolloutStage());
-        saveCandidate(updatedCandidate);
-        saveDecision(decision);
-        return decision;
+        PromotionExecutionService.PromotionExecutionResult result = promotionExecutionService.execute(storedCandidate,
+                target, runtimeConfigService.getSelfEvolvingPromotionMode());
+        saveCandidate(result.updatedCandidate());
+        saveDecision(result.decision());
+        return result.decision();
     }
 
     public void bindCandidateBaseRevisions(String bundleId, List<EvolutionCandidate> candidates) {
@@ -233,23 +197,6 @@ public class PromotionWorkflowService {
 
     private boolean isApprovalGateMode() {
         return "approval_gate".equalsIgnoreCase(runtimeConfigService.getSelfEvolvingPromotionMode());
-    }
-
-    private String buildTargetBundleId(EvolutionCandidate storedCandidate, PromotionTarget target) {
-        if (storedCandidate == null || StringValueSupport.isBlank(storedCandidate.getId())) {
-            return storedCandidate != null ? storedCandidate.getBaseVersion() : null;
-        }
-        return storedCandidate.getId() + ":" + target.rolloutStage();
-    }
-
-    private String buildReason(String nextState) {
-        return switch (nextState) {
-        case "approved_pending" -> "Queued for approval";
-        case "shadowed" -> "Approved and entered shadow rollout";
-        case "canary" -> "Advanced into canary rollout";
-        case "active" -> "Approved and activated as tactic";
-        default -> "Promotion planned";
-        };
     }
 
     private String resolveCurrentState(EvolutionCandidate candidate) {
@@ -384,8 +331,5 @@ public class PromotionWorkflowService {
                 .evidenceRefs(candidate.getEvidenceRefs() != null ? new ArrayList<>(candidate.getEvidenceRefs())
                         : new ArrayList<>())
                 .build();
-    }
-
-    private record PromotionTarget(String legacyState, String lifecycleState, String rolloutStage) {
     }
 }

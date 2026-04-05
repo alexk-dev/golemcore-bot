@@ -116,6 +116,4 @@ public class PromotionDecisionHydrationService {
         return candidate.getId() + ":" + target.rolloutStage();
     }
 
-    private record PromotionTarget(String legacyState, String lifecycleState, String rolloutStage) {
-    }
 }
