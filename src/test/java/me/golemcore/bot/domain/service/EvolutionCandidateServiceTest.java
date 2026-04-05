@@ -62,11 +62,12 @@ class EvolutionCandidateServiceTest {
                     persistedFiles.put(fileName, content);
                     return CompletableFuture.completedFuture(null);
                 });
+        Clock clock = Clock.fixed(Instant.parse("2026-03-31T16:30:00Z"), ZoneOffset.UTC);
         evolutionCandidateService = new EvolutionCandidateService(
-                storagePort,
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
-                Clock.fixed(Instant.parse("2026-03-31T16:30:00Z"), ZoneOffset.UTC));
+                new EvolutionArtifactIdentityService(storagePort, clock),
+                clock);
     }
 
     @Test
@@ -323,11 +324,12 @@ class EvolutionCandidateServiceTest {
         assertEquals("revision-1", records.getFirst().getContentRevisionId());
 
         persistedFiles.put("artifact-revisions.json", "{");
+        Clock clock = Clock.fixed(Instant.parse("2026-03-31T16:30:00Z"), ZoneOffset.UTC);
         EvolutionCandidateService reloadedService = new EvolutionCandidateService(
-                mockReloadingStoragePort(),
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
-                Clock.fixed(Instant.parse("2026-03-31T16:30:00Z"), ZoneOffset.UTC));
+                new EvolutionArtifactIdentityService(mockReloadingStoragePort(), clock),
+                clock);
         assertTrue(reloadedService.getArtifactRevisionRecords().isEmpty());
     }
 

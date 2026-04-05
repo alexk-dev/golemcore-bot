@@ -86,16 +86,18 @@ class PromotionWorkflowServiceTest {
                 storagePort,
                 runtimeConfigService,
                 Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
-        evolutionCandidateService = new EvolutionCandidateService(storagePort, tacticRecordService,
+        Clock clock = Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC);
+        evolutionCandidateService = new EvolutionCandidateService(
+                tacticRecordService,
                 artifactBundleService,
-                Clock.fixed(
-                        Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
+                new EvolutionArtifactIdentityService(storagePort, clock),
+                clock);
         promotionWorkflowService = new PromotionWorkflowService(
                 storagePort,
                 runtimeConfigService,
                 evolutionCandidateService,
                 artifactBundleService,
-                Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
+                clock);
     }
 
     @Test

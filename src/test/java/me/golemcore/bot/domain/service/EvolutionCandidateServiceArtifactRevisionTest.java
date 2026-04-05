@@ -38,11 +38,12 @@ class EvolutionCandidateServiceArtifactRevisionTest {
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(null));
+        Clock clock = Clock.fixed(Instant.parse("2026-03-31T18:00:00Z"), ZoneOffset.UTC);
         service = new EvolutionCandidateService(
-                storagePort,
                 mock(TacticRecordService.class),
                 mock(ArtifactBundleService.class),
-                Clock.fixed(Instant.parse("2026-03-31T18:00:00Z"), ZoneOffset.UTC));
+                new EvolutionArtifactIdentityService(storagePort, clock),
+                clock);
     }
 
     @Test

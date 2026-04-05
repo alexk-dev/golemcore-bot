@@ -101,7 +101,10 @@ class EvolutionCandidateServiceTacticRecordTest {
         tacticRecordService = new TacticRecordService(storagePort, clock, null, null);
         artifactBundleService = mock(ArtifactBundleService.class);
         evolutionCandidateService = new EvolutionCandidateService(
-                storagePort, tacticRecordService, artifactBundleService, clock);
+                tacticRecordService,
+                artifactBundleService,
+                new EvolutionArtifactIdentityService(storagePort, clock),
+                clock);
     }
 
     @Test
@@ -185,7 +188,10 @@ class EvolutionCandidateServiceTacticRecordTest {
         when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("approval_gate");
         ArtifactBundleService realBundleService = new ArtifactBundleService(storagePort, runtimeConfigService, clock);
         EvolutionCandidateService service = new EvolutionCandidateService(
-                storagePort, tacticRecordService, realBundleService, clock);
+                tacticRecordService,
+                realBundleService,
+                new EvolutionArtifactIdentityService(storagePort, clock),
+                clock);
 
         EvolutionCandidate candidate = service.ensureArtifactIdentity(EvolutionCandidate.builder()
                 .id("candidate-binding")
