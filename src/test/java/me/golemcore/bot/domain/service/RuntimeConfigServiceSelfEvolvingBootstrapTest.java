@@ -38,6 +38,7 @@ import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService;
 
 class RuntimeConfigServiceSelfEvolvingBootstrapTest {
 

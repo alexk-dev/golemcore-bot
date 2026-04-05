@@ -35,9 +35,9 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
-import me.golemcore.bot.domain.service.LocalEmbeddingBootstrapService;
+import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
-import me.golemcore.bot.domain.service.TacticSearchMetricsService;
+import me.golemcore.bot.domain.selfevolving.tactic.TacticSearchMetricsService;
 import org.springframework.stereotype.Component;
 
 @Component

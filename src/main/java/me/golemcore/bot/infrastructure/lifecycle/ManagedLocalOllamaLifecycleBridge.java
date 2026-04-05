@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
-import me.golemcore.bot.domain.service.ManagedLocalOllamaSupervisor;
+import me.golemcore.bot.domain.selfevolving.tactic.ManagedLocalOllamaSupervisor;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

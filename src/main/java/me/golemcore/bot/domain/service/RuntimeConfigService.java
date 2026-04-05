@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService;
 
 /**
  * Service for managing application-level runtime configuration.

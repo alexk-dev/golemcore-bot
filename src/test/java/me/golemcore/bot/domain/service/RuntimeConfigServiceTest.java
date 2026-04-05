@@ -28,6 +28,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService;
 
 @SuppressWarnings("PMD.TooManyMethods") // Comprehensive test coverage for critical config service
 class RuntimeConfigServiceTest {

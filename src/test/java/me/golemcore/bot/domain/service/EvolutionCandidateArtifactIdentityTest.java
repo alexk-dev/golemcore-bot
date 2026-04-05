@@ -22,6 +22,12 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
+import me.golemcore.bot.domain.selfevolving.artifact.EvolutionArtifactIdentityService;
+import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateDerivationService;
+import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateService;
+import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateTacticMaterializer;
+import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 
 class EvolutionCandidateArtifactIdentityTest {
 

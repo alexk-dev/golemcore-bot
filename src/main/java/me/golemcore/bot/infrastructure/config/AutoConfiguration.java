@@ -19,9 +19,9 @@ package me.golemcore.bot.infrastructure.config;
  */
 
 import me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService;
-import me.golemcore.bot.domain.service.ManagedLocalOllamaSupervisor;
+import me.golemcore.bot.domain.selfevolving.tactic.ManagedLocalOllamaSupervisor;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SelfEvolvingTacticSearchStatusProjectionService;
+import me.golemcore.bot.domain.selfevolving.SelfEvolvingTacticSearchStatusProjectionService;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.infrastructure.lifecycle.ManagedLocalOllamaLifecycleBridge;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;

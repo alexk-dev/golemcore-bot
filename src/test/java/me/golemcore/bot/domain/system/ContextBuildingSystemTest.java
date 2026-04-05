@@ -17,7 +17,7 @@ import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SelfEvolvingRunService;
+import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.McpPort;

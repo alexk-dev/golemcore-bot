@@ -10,9 +10,9 @@ import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SelfEvolvingRunService;
-import me.golemcore.bot.domain.service.TacticSearchService;
-import me.golemcore.bot.domain.service.TacticTurnContextService;
+import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
+import me.golemcore.bot.domain.selfevolving.tactic.TacticSearchService;
+import me.golemcore.bot.domain.selfevolving.tactic.TacticTurnContextService;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

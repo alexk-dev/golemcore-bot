@@ -34,7 +34,7 @@ import java.util.Deque;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
-import me.golemcore.bot.domain.service.ManagedLocalOllamaSupervisor;
+import me.golemcore.bot.domain.selfevolving.tactic.ManagedLocalOllamaSupervisor;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.OllamaProcessPort;
 import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;

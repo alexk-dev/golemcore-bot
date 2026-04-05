@@ -6,11 +6,11 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunSumm
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
-import me.golemcore.bot.domain.service.BenchmarkLabService;
-import me.golemcore.bot.domain.service.LocalEmbeddingBootstrapService;
-import me.golemcore.bot.domain.service.PromotionWorkflowService;
-import me.golemcore.bot.domain.service.SelfEvolvingProjectionService;
-import me.golemcore.bot.domain.service.TacticRecordService;
+import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
+import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
+import me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService;
+import me.golemcore.bot.domain.selfevolving.SelfEvolvingProjectionService;
+import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;

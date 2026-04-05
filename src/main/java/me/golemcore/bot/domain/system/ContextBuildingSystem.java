@@ -23,8 +23,8 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SelfEvolvingRunService;
-import me.golemcore.bot.domain.service.TacticTurnContextService;
+import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
+import me.golemcore.bot.domain.selfevolving.tactic.TacticTurnContextService;
 
 import org.springframework.stereotype.Component;
 
