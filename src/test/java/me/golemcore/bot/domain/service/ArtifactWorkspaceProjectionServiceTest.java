@@ -66,15 +66,19 @@ class ArtifactWorkspaceProjectionServiceTest {
                 artifactBundleService,
                 benchmarkLabService,
                 Clock.fixed(Instant.parse("2026-03-31T20:00:00Z"), ZoneOffset.UTC));
+        ArtifactDiffProjectionService artifactDiffProjectionService = new ArtifactDiffProjectionService(
+                artifactProjectionLookupService,
+                benchmarkLabService,
+                normalizedRevisionProjectionService,
+                artifactDiffService,
+                artifactImpactService);
         service = new ArtifactWorkspaceProjectionService(
                 artifactProjectionLookupService,
                 promotionWorkflowService,
                 benchmarkLabService,
                 artifactLineageProjectionService,
                 artifactEvidenceProjectionService,
-                normalizedRevisionProjectionService,
-                artifactDiffService,
-                artifactImpactService,
+                artifactDiffProjectionService,
                 Clock.fixed(Instant.parse("2026-03-31T20:00:00Z"), ZoneOffset.UTC));
     }
 

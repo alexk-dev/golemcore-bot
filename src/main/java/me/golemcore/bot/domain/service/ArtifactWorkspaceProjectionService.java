@@ -23,10 +23,7 @@ import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCompareEvidenceProjection;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactImpactProjection;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageNode;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjection;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactNormalizedRevisionProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionDiffProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionProjection;
@@ -40,7 +37,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Materializes artifact workspace projections from SelfEvolving source records.
@@ -54,9 +50,7 @@ public class ArtifactWorkspaceProjectionService {
     private final BenchmarkLabService benchmarkLabService;
     private final ArtifactLineageProjectionService artifactLineageProjectionService;
     private final ArtifactEvidenceProjectionService artifactEvidenceProjectionService;
-    private final ArtifactNormalizedRevisionProjectionService normalizedRevisionProjectionService;
-    private final ArtifactDiffService artifactDiffService;
-    private final ArtifactImpactService artifactImpactService;
+    private final ArtifactDiffProjectionService artifactDiffProjectionService;
     private final Clock clock;
 
     public ArtifactWorkspaceProjectionService(
@@ -65,18 +59,14 @@ public class ArtifactWorkspaceProjectionService {
             BenchmarkLabService benchmarkLabService,
             ArtifactLineageProjectionService artifactLineageProjectionService,
             ArtifactEvidenceProjectionService artifactEvidenceProjectionService,
-            ArtifactNormalizedRevisionProjectionService normalizedRevisionProjectionService,
-            ArtifactDiffService artifactDiffService,
-            ArtifactImpactService artifactImpactService,
+            ArtifactDiffProjectionService artifactDiffProjectionService,
             Clock clock) {
         this.artifactProjectionLookupService = artifactProjectionLookupService;
         this.promotionWorkflowService = promotionWorkflowService;
         this.benchmarkLabService = benchmarkLabService;
         this.artifactLineageProjectionService = artifactLineageProjectionService;
         this.artifactEvidenceProjectionService = artifactEvidenceProjectionService;
-        this.normalizedRevisionProjectionService = normalizedRevisionProjectionService;
-        this.artifactDiffService = artifactDiffService;
-        this.artifactImpactService = artifactImpactService;
+        this.artifactDiffProjectionService = artifactDiffProjectionService;
         this.clock = clock;
     }
 
@@ -153,75 +143,16 @@ public class ArtifactWorkspaceProjectionService {
 
     public ArtifactRevisionDiffProjection getRevisionDiff(String artifactStreamId, String fromRevisionId,
             String toRevisionId) {
-        ArtifactRevisionRecord fromRevision = artifactProjectionLookupService.findRevision(artifactStreamId,
-                fromRevisionId)
-                .orElseThrow(() -> new IllegalArgumentException("Revision not found: " + fromRevisionId));
-        ArtifactRevisionRecord toRevision = artifactProjectionLookupService.findRevision(artifactStreamId,
-                toRevisionId)
-                .orElseThrow(() -> new IllegalArgumentException("Revision not found: " + toRevisionId));
-        ArtifactImpactProjection impactProjection = artifactImpactService.summarizeImpact(
-                artifactStreamId,
-                fromRevisionId,
-                toRevisionId,
-                artifactProjectionLookupService.findBundleByRevision(artifactStreamId, fromRevisionId).orElse(null),
-                artifactProjectionLookupService.findBundleByRevision(artifactStreamId, toRevisionId).orElse(null),
-                benchmarkLabService.getCampaigns(),
-                Set.of());
-        ArtifactNormalizedRevisionProjection fromProjection = normalizedRevisionProjectionService
-                .normalize(fromRevision);
-        ArtifactNormalizedRevisionProjection toProjection = normalizedRevisionProjectionService.normalize(toRevision);
-        return artifactDiffService.compareRevisions(
-                artifactStreamId,
-                fromRevision.getArtifactKey(),
-                fromProjection,
-                toProjection,
-                impactProjection);
+        return artifactDiffProjectionService.getRevisionDiff(artifactStreamId, fromRevisionId, toRevisionId);
     }
 
     public ArtifactTransitionDiffProjection getTransitionDiff(String artifactStreamId, String fromNodeId,
             String toNodeId) {
-        ArtifactLineageProjection lineage = getLineage(artifactStreamId);
-        ArtifactLineageNode fromNode = lineage.getNodes().stream()
-                .filter(node -> node != null && fromNodeId.equals(node.getNodeId()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Node not found: " + fromNodeId));
-        ArtifactLineageNode toNode = lineage.getNodes().stream()
-                .filter(node -> node != null && toNodeId.equals(node.getNodeId()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Node not found: " + toNodeId));
-        ArtifactRevisionDiffProjection revisionDiff = null;
-        if (!StringValueSupport.nullSafe(fromNode.getContentRevisionId())
-                .equals(StringValueSupport.nullSafe(toNode.getContentRevisionId()))) {
-            revisionDiff = getRevisionDiff(artifactStreamId, fromNode.getContentRevisionId(),
-                    toNode.getContentRevisionId());
-        } else {
-            String transitionBaseRevisionId = artifactProjectionLookupService.resolveTransitionBaseRevisionId(toNode);
-            if (!StringValueSupport.isBlank(transitionBaseRevisionId)
-                    && !StringValueSupport.nullSafe(transitionBaseRevisionId)
-                            .equals(StringValueSupport.nullSafe(toNode.getContentRevisionId()))) {
-                revisionDiff = getRevisionDiff(artifactStreamId, transitionBaseRevisionId,
-                        toNode.getContentRevisionId());
-            }
-        }
-        ArtifactImpactProjection impactProjection = artifactImpactService.summarizeImpact(
+        return artifactDiffProjectionService.getTransitionDiff(
                 artifactStreamId,
-                fromNode.getContentRevisionId(),
-                toNode.getContentRevisionId(),
-                artifactProjectionLookupService.findBundleByRevision(artifactStreamId, fromNode.getContentRevisionId())
-                        .orElse(null),
-                artifactProjectionLookupService.findBundleByRevision(artifactStreamId, toNode.getContentRevisionId())
-                        .orElse(null),
-                benchmarkLabService.getCampaigns(),
-                Set.of());
-        return artifactDiffService.compareTransition(
-                artifactStreamId,
-                artifactProjectionLookupService.findRevision(artifactStreamId, toNode.getContentRevisionId())
-                        .map(ArtifactRevisionRecord::getArtifactKey)
-                        .orElse(null),
-                fromNode,
-                toNode,
-                revisionDiff,
-                impactProjection);
+                getLineage(artifactStreamId),
+                fromNodeId,
+                toNodeId);
     }
 
     public ArtifactRevisionEvidenceProjection getRevisionEvidence(String artifactStreamId, String revisionId) {
