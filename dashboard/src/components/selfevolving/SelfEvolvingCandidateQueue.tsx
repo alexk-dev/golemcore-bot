@@ -27,6 +27,8 @@ interface SelfEvolvingCandidateQueueProps {
   promotingCandidateId: string | null;
   lastPromotionResult: SelfEvolvingPromotionDecision | null;
   lastPromotionError: boolean;
+  shadowRequired?: boolean;
+  canaryRequired?: boolean;
   onSelectCandidate: (candidateId: string) => void;
   onSelectRun: (runId: string) => void;
   onPlanPromotion: (candidateId: string) => void;
@@ -43,6 +45,8 @@ interface CandidateDetailProps {
   promotingCandidateId: string | null;
   lastPromotionResult: SelfEvolvingPromotionDecision | null;
   lastPromotionError: boolean;
+  shadowRequired: boolean;
+  canaryRequired: boolean;
   onSelectRun: (runId: string) => void;
   onPlanPromotion: (candidateId: string) => void;
 }
@@ -150,6 +154,8 @@ function CandidateDetail({
   promotingCandidateId,
   lastPromotionResult,
   lastPromotionError,
+  shadowRequired,
+  canaryRequired,
   onSelectRun,
   onPlanPromotion,
 }: CandidateDetailProps): ReactElement {
@@ -166,7 +172,7 @@ function CandidateDetail({
   const isTerminal = candidate.status === 'active' || candidate.status === 'reverted' || candidate.status === 'rejected';
   const canApprove = !isTerminal && !promotionDone;
   const currentStage = resolveCurrentStageKey(candidate.status ?? '');
-  const nextStage = resolveNextStageKey(currentStage);
+  const nextStage = resolveNextStageKey(currentStage, shadowRequired, canaryRequired);
   const promotionActionLabel = resolvePromotionActionLabel(candidate, nextStage);
   const promotionActionTitle = resolvePromotionActionTitle(currentStage, nextStage);
 
@@ -353,6 +359,8 @@ export function SelfEvolvingCandidateQueue({
   promotingCandidateId,
   lastPromotionResult,
   lastPromotionError,
+  shadowRequired = true,
+  canaryRequired = true,
   onSelectCandidate,
   onSelectRun,
   onPlanPromotion,
@@ -398,6 +406,8 @@ export function SelfEvolvingCandidateQueue({
             promotingCandidateId={promotingCandidateId}
             lastPromotionResult={lastPromotionResult}
             lastPromotionError={lastPromotionError}
+            shadowRequired={shadowRequired}
+            canaryRequired={canaryRequired}
             onSelectRun={onSelectRun}
             onPlanPromotion={onPlanPromotion}
           />

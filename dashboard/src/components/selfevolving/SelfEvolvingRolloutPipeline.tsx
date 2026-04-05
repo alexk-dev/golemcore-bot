@@ -20,17 +20,27 @@ export function resolveCurrentStageKey(status: string): string {
   return 'proposed';
 }
 
-export function resolveNextStageKey(currentStage: string): string | null {
+export function resolveNextStageKey(
+  currentStage: string,
+  shadowRequired: boolean,
+  canaryRequired: boolean,
+): string | null {
+  if (currentStage === 'active' || currentStage === 'reverted') {
+    return null;
+  }
   if (currentStage === 'canary') {
     return 'active';
   }
   if (currentStage === 'shadowed') {
-    return 'canary';
+    return canaryRequired ? 'canary' : 'active';
   }
-  if (currentStage === 'proposed') {
+  if (shadowRequired) {
     return 'shadowed';
   }
-  return null;
+  if (canaryRequired) {
+    return 'canary';
+  }
+  return 'active';
 }
 
 export function stageLabel(stageKey: string): string {

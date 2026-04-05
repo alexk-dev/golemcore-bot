@@ -1,4 +1,4 @@
-import { type ReactElement, useDeferredValue, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 import { SelfEvolvingCandidateQueue } from '../components/selfevolving/SelfEvolvingCandidateQueue';
 import { SelfEvolvingOverviewCards } from '../components/selfevolving/SelfEvolvingOverviewCards';
@@ -15,6 +15,7 @@ import {
   useSelfEvolvingRuns,
   useSelfEvolvingTacticSearch,
 } from '../hooks/useSelfEvolving';
+import { useRuntimeConfig } from '../hooks/useSettings';
 
 type ActiveTab = 'runs' | 'candidates' | 'tactics';
 
@@ -40,6 +41,14 @@ export default function SelfEvolvingPage(): ReactElement {
   const runsQuery = useSelfEvolvingRuns();
   const candidatesQuery = useSelfEvolvingCandidates();
   const tacticSearchQuery = useSelfEvolvingTacticSearch(deferredTacticQuery);
+  const runtimeConfigQuery = useRuntimeConfig();
+  const rolloutStages = useMemo(
+    () => ({
+      shadowRequired: runtimeConfigQuery.data?.selfEvolving.promotion.shadowRequired ?? true,
+      canaryRequired: runtimeConfigQuery.data?.selfEvolving.promotion.canaryRequired ?? true,
+    }),
+    [runtimeConfigQuery.data],
+  );
 
   const runs = runsQuery.data ?? [];
   const candidates = candidatesQuery.data ?? [];
@@ -125,6 +134,8 @@ export default function SelfEvolvingPage(): ReactElement {
           promotingCandidateId={planPromotion.isPending ? (planPromotion.variables ?? null) : null}
           lastPromotionResult={planPromotion.data ?? null}
           lastPromotionError={planPromotion.isError}
+          shadowRequired={rolloutStages.shadowRequired}
+          canaryRequired={rolloutStages.canaryRequired}
           onSelectCandidate={setSelectedCandidateId}
           onSelectRun={(runId) => {
             setSelectedRunId(runId);
