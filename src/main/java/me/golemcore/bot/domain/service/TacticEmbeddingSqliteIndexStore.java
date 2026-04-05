@@ -40,6 +40,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Persists tactic embedding vectors in a local SQLite database under the
@@ -57,7 +58,7 @@ public class TacticEmbeddingSqliteIndexStore {
     private final BotProperties botProperties;
     private final ObjectMapper objectMapper;
 
-    private volatile Path databasePath;
+    private final AtomicReference<Path> databasePath = new AtomicReference<>();
 
     public TacticEmbeddingSqliteIndexStore(BotProperties botProperties, ObjectMapper objectMapper) {
         this.botProperties = botProperties;
@@ -115,15 +116,17 @@ public class TacticEmbeddingSqliteIndexStore {
 
     public Path getDatabasePath() {
         ensureInitialized();
-        return databasePath;
+        return databasePath.get();
     }
 
     private void ensureInitialized() {
-        if (databasePath != null) {
+        Path currentPath = databasePath.get();
+        if (currentPath != null) {
             return;
         }
         synchronized (this) {
-            if (databasePath != null) {
+            currentPath = databasePath.get();
+            if (currentPath != null) {
                 return;
             }
             String configuredBasePath = botProperties.getStorage().getLocal().getBasePath();
@@ -136,7 +139,7 @@ public class TacticEmbeddingSqliteIndexStore {
             } catch (IOException exception) {
                 throw new IllegalStateException("Failed to initialize tactic embedding index directory", exception);
             }
-            databasePath = directory.resolve(DB_FILE_NAME);
+            databasePath.set(directory.resolve(DB_FILE_NAME));
             initializeSchema();
         }
     }
@@ -167,7 +170,11 @@ public class TacticEmbeddingSqliteIndexStore {
     }
 
     private Connection openConnection() throws SQLException {
-        return DriverManager.getConnection("jdbc:sqlite:" + databasePath.toAbsolutePath());
+        Path currentPath = databasePath.get();
+        if (currentPath == null) {
+            throw new IllegalStateException("Tactic embedding index database path is not initialized");
+        }
+        return DriverManager.getConnection("jdbc:sqlite:" + currentPath.toAbsolutePath());
     }
 
     private void deleteExistingEntries(Connection connection, String provider, String model) throws SQLException {
