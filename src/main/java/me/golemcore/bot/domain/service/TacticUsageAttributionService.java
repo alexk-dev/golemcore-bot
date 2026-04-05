@@ -21,7 +21,6 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -66,31 +65,6 @@ public class TacticUsageAttributionService {
             }
         }
         return bundleIdToTacticIds;
-    }
-
-    public Set<String> resolveMatchingBundleIds(TacticRecord record, List<ArtifactBundleRecord> bundles) {
-        Set<String> bundleIds = new LinkedHashSet<>();
-        if (record == null
-                || StringValueSupport.isBlank(record.getArtifactStreamId())
-                || StringValueSupport.isBlank(record.getContentRevisionId())
-                || bundles == null
-                || bundles.isEmpty()) {
-            return bundleIds;
-        }
-        for (ArtifactBundleRecord bundle : bundles) {
-            if (bundle == null || StringValueSupport.isBlank(bundle.getId())) {
-                continue;
-            }
-            Map<String, String> bindings = bundle.getArtifactRevisionBindings();
-            if (bindings == null || bindings.isEmpty()) {
-                continue;
-            }
-            String boundRevision = bindings.get(record.getArtifactStreamId());
-            if (record.getContentRevisionId().equals(boundRevision)) {
-                bundleIds.add(bundle.getId());
-            }
-        }
-        return bundleIds;
     }
 
     public LinkedHashSet<String> resolveAttributedTacticIds(

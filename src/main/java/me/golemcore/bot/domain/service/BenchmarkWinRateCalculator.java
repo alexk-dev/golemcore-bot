@@ -24,23 +24,16 @@ import org.springframework.stereotype.Service;
 import java.util.Locale;
 
 /**
- * Computes per-tactic benchmarkWinRate from campaign verdicts.
+ * Encapsulates the "what counts as a candidate win" decision for benchmark
+ * campaign verdicts.
  *
  * <p>
- * Isolating the "what counts as a win" decision here keeps the enrichment
- * pipeline honest: richer verdict signals (confidence thresholds, multi-metric
- * deltas) only touch this class.
+ * Arithmetic aggregation lives on {@link TacticMetricsAggregator} — keeping the
+ * decision isolated here means richer verdict signals (confidence thresholds,
+ * multi-metric deltas) only touch this class.
  */
 @Service
 public class BenchmarkWinRateCalculator {
-
-    /** Returns wins / observed, or {@code null} when no campaigns observed. */
-    public Double calculate(int wonCampaigns, int observedCampaigns) {
-        if (observedCampaigns <= 0) {
-            return null;
-        }
-        return wonCampaigns / (double) observedCampaigns;
-    }
 
     /**
      * A verdict is a candidate win when the campaign recommends promoting the

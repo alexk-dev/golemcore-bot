@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Derives user-facing tactic quality/runtime metrics from observed runtime
@@ -55,7 +56,7 @@ public class TacticQualityMetricsService {
     private final BenchmarkLabService benchmarkLabService;
     private final BenchmarkWinRateCalculator benchmarkWinRateCalculator;
     private final Clock clock;
-    private final java.util.concurrent.atomic.AtomicReference<EnrichCacheEntry> enrichCache = new java.util.concurrent.atomic.AtomicReference<>();
+    private final AtomicReference<EnrichCacheEntry> enrichCache = new AtomicReference<>();
 
     public TacticQualityMetricsService(
             ArtifactBundleService artifactBundleService,
@@ -78,16 +79,15 @@ public class TacticQualityMetricsService {
         if (record == null) {
             return null;
         }
-        ObservedTacticMetrics metrics = resolveObservedMetrics(record);
-        Double benchmarkWinRate = resolveBenchmarkWinRate(record);
-        return applyMetrics(record, metrics, benchmarkWinRate);
+        return enrichAll(List.of(record)).getFirst();
     }
 
     /**
      * Batched enrichment that amortises bundle/run lookups across the whole list.
-     * Prefer this over calling {@link #enrich(TacticRecord)} in a loop: the
-     * single-record variant rescans bundles and runs per call, which is O(T × (B +
-     * R)); this method is O(B + R + T).
+     * Runs three attribution passes — bundles, runs, benchmark campaigns — into
+     * per-tactic {@link TacticMetricsAggregator}s, then projects each aggregator
+     * through {@link ObservedTacticMetricsCalculator} into the user-facing
+     * {@link ObservedTacticMetrics}. Complexity is O(B + R + C + T).
      */
     public List<TacticRecord> enrichAll(List<TacticRecord> records) {
         if (records == null || records.isEmpty()) {
@@ -101,8 +101,33 @@ public class TacticQualityMetricsService {
                 && (nowMs - cachedEntry.writtenAtMs) < ENRICH_CACHE_TTL_MS) {
             return new ArrayList<>(cachedEntry.records);
         }
-        Map<String, TacticAggregator> aggregators = new LinkedHashMap<>();
+
+        Map<String, TacticMetricsAggregator> aggregators = new LinkedHashMap<>();
         Map<String, List<String>> streamRevToTacticIds = new HashMap<>();
+        seedAggregators(records, aggregators, streamRevToTacticIds);
+
+        List<ArtifactBundleRecord> bundles = artifactBundleService.getBundles();
+        Map<String, List<String>> bundleIdToTacticIds = tacticUsageAttributionService
+                .indexBundleToTacticIds(bundles, streamRevToTacticIds);
+
+        attributeBundles(aggregators, bundles, bundleIdToTacticIds);
+        attributeRuns(aggregators, bundleIdToTacticIds);
+        attributeCampaigns(aggregators, bundles, streamRevToTacticIds);
+
+        List<TacticRecord> enriched = applyMetricsToRecords(records, aggregators);
+        enrichCache.set(new EnrichCacheEntry(signature, nowMs, new ArrayList<>(enriched)));
+        return enriched;
+    }
+
+    /** Invalidate the enrichAll cache eagerly, e.g. after a tactic write. */
+    public void invalidateCache() {
+        enrichCache.set(null);
+    }
+
+    private void seedAggregators(
+            List<TacticRecord> records,
+            Map<String, TacticMetricsAggregator> aggregators,
+            Map<String, List<String>> streamRevToTacticIds) {
         for (TacticRecord record : records) {
             if (record == null || StringValueSupport.isBlank(record.getTacticId())) {
                 continue;
@@ -110,7 +135,7 @@ public class TacticQualityMetricsService {
             // Intentionally do not seed from record.getUpdatedAt(): save/deactivate
             // bumps updatedAt and would otherwise artificially rejuvenate recency.
             // Recency is derived from observed bundles/runs only.
-            aggregators.put(record.getTacticId(), new TacticAggregator(null));
+            aggregators.put(record.getTacticId(), new TacticMetricsAggregator());
             if (StringValueSupport.isBlank(record.getArtifactStreamId())
                     || StringValueSupport.isBlank(record.getContentRevisionId())) {
                 continue;
@@ -118,10 +143,12 @@ public class TacticQualityMetricsService {
             String key = streamRevisionKey(record.getArtifactStreamId(), record.getContentRevisionId());
             streamRevToTacticIds.computeIfAbsent(key, k -> new ArrayList<>()).add(record.getTacticId());
         }
+    }
 
-        List<ArtifactBundleRecord> bundles = artifactBundleService.getBundles();
-        Map<String, List<String>> bundleIdToTacticIds = tacticUsageAttributionService
-                .indexBundleToTacticIds(bundles, streamRevToTacticIds);
+    private void attributeBundles(
+            Map<String, TacticMetricsAggregator> aggregators,
+            List<ArtifactBundleRecord> bundles,
+            Map<String, List<String>> bundleIdToTacticIds) {
         for (ArtifactBundleRecord bundle : bundles) {
             if (bundle == null || StringValueSupport.isBlank(bundle.getId())) {
                 continue;
@@ -131,11 +158,14 @@ public class TacticQualityMetricsService {
                 continue;
             }
             for (String tacticId : matchedTacticIds) {
-                TacticAggregator aggregator = aggregators.get(tacticId);
-                aggregator.noteObservation(bundle.getActivatedAt(), bundle.getCreatedAt());
+                aggregators.get(tacticId).noteObservation(bundle.getActivatedAt(), bundle.getCreatedAt());
             }
         }
+    }
 
+    private void attributeRuns(
+            Map<String, TacticMetricsAggregator> aggregators,
+            Map<String, List<String>> bundleIdToTacticIds) {
         for (RunRecord run : selfEvolvingRunService.getRuns()) {
             if (run == null) {
                 continue;
@@ -148,38 +178,88 @@ public class TacticQualityMetricsService {
             Optional<RunVerdict> verdict = selfEvolvingRunService.findVerdict(run.getId());
             Instant verdictCreatedAt = verdict.map(RunVerdict::getCreatedAt).orElse(null);
             String observedOutcome = observedTacticMetricsCalculator.resolveObservedOutcome(run, verdict.orElse(null));
+            Instant outcomeAt = mostRecentOf(run.getCompletedAt(), verdictCreatedAt);
             for (String tacticId : attributedTacticIds) {
-                TacticAggregator aggregator = aggregators.get(tacticId);
+                TacticMetricsAggregator aggregator = aggregators.get(tacticId);
                 aggregator.noteObservation(run.getCompletedAt(), run.getStartedAt(), verdictCreatedAt);
-                if (observedOutcome != null) {
-                    aggregator.noteOutcome(observedOutcome, mostRecent(null, run.getCompletedAt(), verdictCreatedAt));
+                aggregator.noteRunOutcome(observedOutcome, outcomeAt);
+            }
+        }
+    }
+
+    private void attributeCampaigns(
+            Map<String, TacticMetricsAggregator> aggregators,
+            List<ArtifactBundleRecord> bundles,
+            Map<String, List<String>> streamRevToTacticIds) {
+        if (benchmarkLabService == null) {
+            return;
+        }
+        List<BenchmarkCampaign> campaigns = benchmarkLabService.getCampaigns();
+        if (campaigns == null || campaigns.isEmpty()) {
+            return;
+        }
+        Map<String, ArtifactBundleRecord> bundlesById = indexBundlesById(bundles);
+        for (BenchmarkCampaign campaign : campaigns) {
+            if (campaign == null) {
+                continue;
+            }
+            Optional<BenchmarkCampaignVerdict> verdict = benchmarkLabService
+                    .findVerdictByCampaignId(campaign.getId());
+            if (verdict.isEmpty()) {
+                continue;
+            }
+            Set<String> campaignTacticIds = tacticUsageAttributionService
+                    .resolveCampaignTacticIds(campaign, bundlesById, streamRevToTacticIds);
+            if (campaignTacticIds.isEmpty()) {
+                continue;
+            }
+            boolean won = benchmarkWinRateCalculator.isCandidateWin(verdict.get());
+            for (String tacticId : campaignTacticIds) {
+                TacticMetricsAggregator aggregator = aggregators.get(tacticId);
+                if (aggregator != null) {
+                    aggregator.noteCampaignOutcome(won);
                 }
             }
         }
+    }
 
-        Map<String, int[]> benchmarkWinObserved = computeBenchmarkWinObserved(bundles, streamRevToTacticIds,
-                aggregators.keySet());
-
+    private List<TacticRecord> applyMetricsToRecords(
+            List<TacticRecord> records,
+            Map<String, TacticMetricsAggregator> aggregators) {
         List<TacticRecord> enriched = new ArrayList<>(records.size());
         for (TacticRecord record : records) {
             if (record == null || StringValueSupport.isBlank(record.getTacticId())) {
                 enriched.add(record);
                 continue;
             }
-            TacticAggregator aggregator = aggregators.get(record.getTacticId());
-            int[] winObserved = benchmarkWinObserved.get(record.getTacticId());
-            Double benchmarkWinRate = winObserved != null
-                    ? benchmarkWinRateCalculator.calculate(winObserved[0], winObserved[1])
-                    : null;
-            enriched.add(applyMetrics(record, toMetrics(aggregator), benchmarkWinRate));
+            ObservedTacticMetrics metrics = observedTacticMetricsCalculator
+                    .calculate(aggregators.get(record.getTacticId()));
+            enriched.add(applyMetrics(record, metrics));
         }
-        enrichCache.set(new EnrichCacheEntry(signature, nowMs, new ArrayList<>(enriched)));
         return enriched;
     }
 
-    /** Invalidate the enrichAll cache eagerly, e.g. after a tactic write. */
-    public void invalidateCache() {
-        enrichCache.set(null);
+    private Map<String, ArtifactBundleRecord> indexBundlesById(List<ArtifactBundleRecord> bundles) {
+        Map<String, ArtifactBundleRecord> bundlesById = new HashMap<>();
+        if (bundles == null) {
+            return bundlesById;
+        }
+        for (ArtifactBundleRecord bundle : bundles) {
+            if (bundle != null && !StringValueSupport.isBlank(bundle.getId())) {
+                bundlesById.put(bundle.getId(), bundle);
+            }
+        }
+        return bundlesById;
+    }
+
+    private Instant mostRecentOf(Instant a, Instant b) {
+        if (a == null) {
+            return b;
+        }
+        if (b == null) {
+            return a;
+        }
+        return a.isAfter(b) ? a : b;
     }
 
     private String buildCacheSignature(List<TacticRecord> records) {
@@ -203,10 +283,10 @@ public class TacticQualityMetricsService {
         return streamId + "\u0000" + revisionId;
     }
 
-    private TacticRecord applyMetrics(TacticRecord record, ObservedTacticMetrics metrics, Double benchmarkWinRate) {
+    private TacticRecord applyMetrics(TacticRecord record, ObservedTacticMetrics metrics) {
         TacticRecord enriched = copy(record);
         enriched.setSuccessRate(metrics.successRate());
-        enriched.setBenchmarkWinRate(benchmarkWinRate);
+        enriched.setBenchmarkWinRate(metrics.benchmarkWinRate());
         enriched.setRecencyScore(metrics.recencyScore());
         // NOTE: golemLocalUsageSuccess currently mirrors successRate because
         // every observed run is assumed to originate from a local golem. When
@@ -217,169 +297,6 @@ public class TacticQualityMetricsService {
             enriched.setRegressionFlags(new ArrayList<>(metrics.regressionFlags()));
         }
         return enriched;
-    }
-
-    private Map<String, int[]> computeBenchmarkWinObserved(
-            List<ArtifactBundleRecord> bundles,
-            Map<String, List<String>> streamRevToTacticIds,
-            Set<String> knownTacticIds) {
-        Map<String, int[]> perTacticWinObserved = new HashMap<>();
-        if (benchmarkLabService == null || knownTacticIds.isEmpty()) {
-            return perTacticWinObserved;
-        }
-        List<BenchmarkCampaign> campaigns = benchmarkLabService.getCampaigns();
-        if (campaigns == null || campaigns.isEmpty()) {
-            return perTacticWinObserved;
-        }
-        Map<String, ArtifactBundleRecord> bundlesById = new HashMap<>();
-        if (bundles != null) {
-            for (ArtifactBundleRecord bundle : bundles) {
-                if (bundle != null && !StringValueSupport.isBlank(bundle.getId())) {
-                    bundlesById.put(bundle.getId(), bundle);
-                }
-            }
-        }
-        for (BenchmarkCampaign campaign : campaigns) {
-            if (campaign == null) {
-                continue;
-            }
-            Optional<BenchmarkCampaignVerdict> verdict = benchmarkLabService
-                    .findVerdictByCampaignId(campaign.getId());
-            if (verdict.isEmpty()) {
-                continue;
-            }
-            Set<String> campaignTacticIds = tacticUsageAttributionService
-                    .resolveCampaignTacticIds(campaign, bundlesById, streamRevToTacticIds);
-            if (campaignTacticIds.isEmpty()) {
-                continue;
-            }
-            boolean won = benchmarkWinRateCalculator.isCandidateWin(verdict.get());
-            for (String tacticId : campaignTacticIds) {
-                if (!knownTacticIds.contains(tacticId)) {
-                    continue;
-                }
-                int[] bucket = perTacticWinObserved.computeIfAbsent(tacticId, k -> new int[2]);
-                if (won) {
-                    bucket[0]++;
-                }
-                bucket[1]++;
-            }
-        }
-        return perTacticWinObserved;
-    }
-
-    private Double resolveBenchmarkWinRate(TacticRecord record) {
-        if (benchmarkLabService == null || record == null
-                || StringValueSupport.isBlank(record.getTacticId())
-                || StringValueSupport.isBlank(record.getArtifactStreamId())
-                || StringValueSupport.isBlank(record.getContentRevisionId())) {
-            return null;
-        }
-        Map<String, List<String>> streamRevToTacticIds = new HashMap<>();
-        streamRevToTacticIds.put(
-                streamRevisionKey(record.getArtifactStreamId(), record.getContentRevisionId()),
-                List.of(record.getTacticId()));
-        Map<String, int[]> perTacticWinObserved = computeBenchmarkWinObserved(
-                artifactBundleService.getBundles(),
-                streamRevToTacticIds,
-                Set.of(record.getTacticId()));
-        int[] bucket = perTacticWinObserved.get(record.getTacticId());
-        if (bucket == null) {
-            return null;
-        }
-        return benchmarkWinRateCalculator.calculate(bucket[0], bucket[1]);
-    }
-
-    private ObservedTacticMetrics resolveObservedMetrics(TacticRecord record) {
-        // Intentionally do not seed from record.getUpdatedAt(): save/deactivate
-        // bumps updatedAt and would otherwise artificially rejuvenate recency.
-        Instant latestObservation = null;
-        List<ArtifactBundleRecord> bundles = artifactBundleService.getBundles();
-        Set<String> matchingBundleIds = tacticUsageAttributionService.resolveMatchingBundleIds(record, bundles);
-
-        for (ArtifactBundleRecord bundle : bundles) {
-            if (bundle == null || !matchingBundleIds.contains(bundle.getId())) {
-                continue;
-            }
-            latestObservation = mostRecent(latestObservation, bundle.getActivatedAt(), bundle.getCreatedAt());
-        }
-
-        int observedRuns = 0;
-        int successfulRuns = 0;
-        Instant latestOutcomeAt = null;
-        boolean latestOutcomeFailed = false;
-        String recordTacticId = record != null ? record.getTacticId() : null;
-        Map<String, List<String>> matchingBundleAttribution = new HashMap<>();
-        if (recordTacticId != null) {
-            for (String bundleId : matchingBundleIds) {
-                matchingBundleAttribution.put(bundleId, List.of(recordTacticId));
-            }
-        }
-        for (RunRecord run : selfEvolvingRunService.getRuns()) {
-            if (run == null) {
-                continue;
-            }
-            Set<String> attributedTacticIds = tacticUsageAttributionService.resolveAttributedTacticIds(
-                    run,
-                    matchingBundleAttribution,
-                    recordTacticId != null ? Set.of(recordTacticId) : Set.of());
-            if (!attributedTacticIds.contains(recordTacticId)) {
-                continue;
-            }
-            Optional<RunVerdict> verdict = selfEvolvingRunService.findVerdict(run.getId());
-            Instant verdictCreatedAt = verdict.map(RunVerdict::getCreatedAt).orElse(null);
-            latestObservation = mostRecent(
-                    latestObservation,
-                    run.getCompletedAt(),
-                    run.getStartedAt(),
-                    verdictCreatedAt);
-            String observedOutcome = observedTacticMetricsCalculator.resolveObservedOutcome(run, verdict.orElse(null));
-            if (observedOutcome == null) {
-                continue;
-            }
-            observedRuns++;
-            if ("completed".equals(observedOutcome)) {
-                successfulRuns++;
-            }
-            Instant outcomeAt = mostRecent(null, run.getCompletedAt(), verdictCreatedAt);
-            if (outcomeAt != null && (latestOutcomeAt == null || outcomeAt.isAfter(latestOutcomeAt))) {
-                latestOutcomeAt = outcomeAt;
-                latestOutcomeFailed = "failed".equals(observedOutcome);
-            }
-        }
-
-        return observedTacticMetricsCalculator.calculate(
-                latestObservation,
-                observedRuns,
-                successfulRuns,
-                latestOutcomeFailed);
-    }
-
-    private Instant mostRecent(Instant current, Instant... candidates) {
-        Instant latest = current;
-        if (candidates == null) {
-            return latest;
-        }
-        for (Instant candidate : candidates) {
-            if (candidate == null) {
-                continue;
-            }
-            if (latest == null || candidate.isAfter(latest)) {
-                latest = candidate;
-            }
-        }
-        return latest;
-    }
-
-    private ObservedTacticMetrics toMetrics(TacticAggregator aggregator) {
-        if (aggregator == null) {
-            return observedTacticMetricsCalculator.calculate(null, 0, 0, false);
-        }
-        return observedTacticMetricsCalculator.calculate(
-                aggregator.latestObservation,
-                aggregator.observedRuns,
-                aggregator.successfulRuns,
-                aggregator.latestOutcomeFailed);
     }
 
     private TacticRecord copy(TacticRecord record) {
@@ -425,33 +342,6 @@ public class TacticQualityMetricsService {
             this.signature = signature;
             this.writtenAtMs = writtenAtMs;
             this.records = records;
-        }
-    }
-
-    private final class TacticAggregator {
-        private Instant latestObservation;
-        private int observedRuns;
-        private int successfulRuns;
-        private Instant latestOutcomeAt;
-        private boolean latestOutcomeFailed;
-
-        private TacticAggregator(Instant seedObservation) {
-            this.latestObservation = seedObservation;
-        }
-
-        private void noteObservation(Instant... candidates) {
-            latestObservation = mostRecent(latestObservation, candidates);
-        }
-
-        private void noteOutcome(String observedOutcome, Instant outcomeAt) {
-            observedRuns++;
-            if ("completed".equals(observedOutcome)) {
-                successfulRuns++;
-            }
-            if (outcomeAt != null && (latestOutcomeAt == null || outcomeAt.isAfter(latestOutcomeAt))) {
-                latestOutcomeAt = outcomeAt;
-                latestOutcomeFailed = "failed".equals(observedOutcome);
-            }
         }
     }
 }

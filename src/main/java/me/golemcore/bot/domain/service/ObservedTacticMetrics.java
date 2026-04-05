@@ -20,4 +20,4 @@ package me.golemcore.bot.domain.service;
 
 import java.util.List;
 
-record ObservedTacticMetrics(Double successRate,Double recencyScore,Double golemLocalUsageSuccess,List<String>regressionFlags){}
+record ObservedTacticMetrics(Double successRate,Double recencyScore,Double golemLocalUsageSuccess,Double benchmarkWinRate,List<String>regressionFlags){}

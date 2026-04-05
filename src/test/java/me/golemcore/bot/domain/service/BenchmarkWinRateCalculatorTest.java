@@ -3,26 +3,12 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaignVerdict;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BenchmarkWinRateCalculatorTest {
 
     private final BenchmarkWinRateCalculator calculator = new BenchmarkWinRateCalculator();
-
-    @Test
-    void shouldReturnNullWhenNoCampaignsObserved() {
-        assertNull(calculator.calculate(0, 0));
-    }
-
-    @Test
-    void shouldDivideWinsByObservations() {
-        assertEquals(0.5d, calculator.calculate(1, 2));
-        assertEquals(1.0d, calculator.calculate(3, 3));
-        assertEquals(0.0d, calculator.calculate(0, 4));
-    }
 
     @Test
     void shouldTreatPositiveQualityDeltaAsWin() {

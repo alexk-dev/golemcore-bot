@@ -30,7 +30,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Converts observed runtime signals into user-facing tactic quality metrics.
+ * Converts an aggregated {@link TacticMetricsAggregator} into the user-facing
+ * {@link ObservedTacticMetrics}.
  */
 @Service
 public class ObservedTacticMetricsCalculator {
@@ -46,14 +47,26 @@ public class ObservedTacticMetricsCalculator {
         this.clock = clock;
     }
 
-    public ObservedTacticMetrics calculate(
-            Instant latestObservation,
-            int observedRuns,
-            int successfulRuns,
-            boolean lastOutcomeFailed) {
-        Double successRate = observedRuns > 0 ? successfulRuns / (double) observedRuns : null;
-        List<String> regressionFlags = deriveRegressionFlags(observedRuns, successfulRuns, lastOutcomeFailed);
-        return new ObservedTacticMetrics(successRate, recencyScore(latestObservation), successRate, regressionFlags);
+    public ObservedTacticMetrics calculate(TacticMetricsAggregator aggregator) {
+        if (aggregator == null) {
+            return new ObservedTacticMetrics(null, null, null, null, new ArrayList<>());
+        }
+        Double successRate = aggregator.observedRuns() > 0
+                ? aggregator.successfulRuns() / (double) aggregator.observedRuns()
+                : null;
+        Double benchmarkWinRate = aggregator.observedCampaigns() > 0
+                ? aggregator.wonCampaigns() / (double) aggregator.observedCampaigns()
+                : null;
+        List<String> regressionFlags = deriveRegressionFlags(
+                aggregator.observedRuns(),
+                aggregator.successfulRuns(),
+                aggregator.latestOutcomeFailed());
+        return new ObservedTacticMetrics(
+                successRate,
+                recencyScore(aggregator.latestObservation()),
+                successRate,
+                benchmarkWinRate,
+                regressionFlags);
     }
 
     public String resolveObservedOutcome(RunRecord run, RunVerdict verdict) {
