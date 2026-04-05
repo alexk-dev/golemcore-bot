@@ -7,8 +7,6 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
-import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
-import me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService;
 import me.golemcore.bot.domain.selfevolving.SelfEvolvingProjectionService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,19 +26,13 @@ class SelfEvolvingControllerTacticSearchTest {
 
     private SelfEvolvingProjectionService projectionService;
     private TacticRecordService tacticRecordService;
-    private SelfEvolvingController controller;
+    private SelfEvolvingTacticsController controller;
 
     @BeforeEach
     void setUp() {
         projectionService = mock(SelfEvolvingProjectionService.class);
         tacticRecordService = mock(TacticRecordService.class);
-        controller = new SelfEvolvingController(
-                projectionService,
-                mock(PromotionWorkflowService.class),
-                mock(BenchmarkLabService.class),
-                null,
-                tacticRecordService,
-                null);
+        controller = new SelfEvolvingTacticsController(projectionService, null, tacticRecordService, null);
     }
 
     @Test

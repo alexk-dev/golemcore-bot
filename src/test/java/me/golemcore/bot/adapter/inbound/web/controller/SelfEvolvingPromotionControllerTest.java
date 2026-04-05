@@ -6,7 +6,6 @@ import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
 import me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService;
 import me.golemcore.bot.domain.selfevolving.SelfEvolvingProjectionService;
-import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -25,17 +24,16 @@ class SelfEvolvingPromotionControllerTest {
     private SelfEvolvingProjectionService projectionService;
     private PromotionWorkflowService promotionWorkflowService;
     private BenchmarkLabService benchmarkLabService;
-    private TacticRecordService tacticRecordService;
-    private SelfEvolvingController controller;
+    private SelfEvolvingRunsController runsController;
+    private SelfEvolvingBenchmarksController benchmarksController;
 
     @BeforeEach
     void setUp() {
         projectionService = mock(SelfEvolvingProjectionService.class);
         promotionWorkflowService = mock(PromotionWorkflowService.class);
         benchmarkLabService = mock(BenchmarkLabService.class);
-        tacticRecordService = mock(TacticRecordService.class);
-        controller = new SelfEvolvingController(projectionService, promotionWorkflowService, benchmarkLabService, null,
-                tacticRecordService, null);
+        runsController = new SelfEvolvingRunsController(projectionService, promotionWorkflowService);
+        benchmarksController = new SelfEvolvingBenchmarksController(projectionService, benchmarkLabService, null);
     }
 
     @Test
@@ -47,7 +45,7 @@ class SelfEvolvingPromotionControllerTest {
                 .decidedAt(Instant.parse("2026-03-31T16:35:00Z"))
                 .build());
 
-        StepVerifier.create(controller.planPromotion("candidate-1"))
+        StepVerifier.create(runsController.planPromotion("candidate-1"))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
@@ -65,7 +63,7 @@ class SelfEvolvingPromotionControllerTest {
                 .runIds(List.of("run-1"))
                 .build());
 
-        StepVerifier.create(controller.createRegressionCampaign("run-1"))
+        StepVerifier.create(benchmarksController.createRegressionCampaign("run-1"))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());

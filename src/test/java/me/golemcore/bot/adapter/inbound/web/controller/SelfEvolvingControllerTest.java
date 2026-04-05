@@ -23,7 +23,6 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -35,7 +34,9 @@ class SelfEvolvingControllerTest {
     private BenchmarkLabService benchmarkLabService;
     private LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
     private TacticRecordService tacticRecordService;
-    private SelfEvolvingController controller;
+    private SelfEvolvingRunsController runsController;
+    private SelfEvolvingBenchmarksController benchmarksController;
+    private SelfEvolvingTacticsController tacticsController;
 
     @BeforeEach
     void setUp() {
@@ -44,8 +45,10 @@ class SelfEvolvingControllerTest {
         benchmarkLabService = mock(BenchmarkLabService.class);
         localEmbeddingBootstrapService = mock(LocalEmbeddingBootstrapService.class);
         tacticRecordService = mock(TacticRecordService.class);
-        controller = new SelfEvolvingController(projectionService, promotionWorkflowService, benchmarkLabService,
-                localEmbeddingBootstrapService, tacticRecordService, null);
+        runsController = new SelfEvolvingRunsController(projectionService, promotionWorkflowService);
+        benchmarksController = new SelfEvolvingBenchmarksController(projectionService, benchmarkLabService, null);
+        tacticsController = new SelfEvolvingTacticsController(projectionService, localEmbeddingBootstrapService,
+                tacticRecordService, null);
     }
 
     @Test
@@ -55,7 +58,7 @@ class SelfEvolvingControllerTest {
                 .status("COMPLETED")
                 .build()));
 
-        StepVerifier.create(controller.listRuns())
+        StepVerifier.create(runsController.listRuns())
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     List<SelfEvolvingRunSummaryDto> body = response.getBody();
@@ -76,7 +79,7 @@ class SelfEvolvingControllerTest {
                         .build())
                 .build()));
 
-        StepVerifier.create(controller.getRun("run-1"))
+        StepVerifier.create(runsController.getRun("run-1"))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
@@ -90,7 +93,7 @@ class SelfEvolvingControllerTest {
     void shouldListEmptyCandidateQueue() {
         when(projectionService.listCandidates()).thenReturn(List.of(SelfEvolvingCandidateDto.builder().build()));
 
-        StepVerifier.create(controller.listCandidates())
+        StepVerifier.create(runsController.listCandidates())
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
@@ -103,7 +106,7 @@ class SelfEvolvingControllerTest {
     void shouldRejectMissingRunDetail() {
         when(projectionService.getRun("missing")).thenReturn(Optional.empty());
 
-        StepVerifier.create(controller.getRun("missing"))
+        StepVerifier.create(runsController.getRun("missing"))
                 .expectErrorSatisfies(error -> {
                     assertTrue(error instanceof ResponseStatusException);
                     assertEquals(HttpStatus.NOT_FOUND, ((ResponseStatusException) error).getStatusCode());
@@ -120,7 +123,7 @@ class SelfEvolvingControllerTest {
                 .build());
         when(projectionService.listCampaigns()).thenReturn(List.of());
 
-        StepVerifier.create(controller.planPromotion("candidate-1"))
+        StepVerifier.create(runsController.planPromotion("candidate-1"))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
@@ -129,7 +132,7 @@ class SelfEvolvingControllerTest {
                 })
                 .verifyComplete();
 
-        StepVerifier.create(controller.listCampaigns())
+        StepVerifier.create(benchmarksController.listCampaigns())
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
@@ -146,7 +149,7 @@ class SelfEvolvingControllerTest {
                 .runIds(List.of("run-9"))
                 .build());
 
-        StepVerifier.create(controller.createRegressionCampaign("run-9"))
+        StepVerifier.create(benchmarksController.createRegressionCampaign("run-9"))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
@@ -171,8 +174,8 @@ class SelfEvolvingControllerTest {
                 .pullSucceeded(true)
                 .build());
 
-        StepVerifier.create(controller.installTacticEmbeddingModel(
-                new SelfEvolvingController.TacticEmbeddingInstallRequest("bge-m3")))
+        StepVerifier.create(tacticsController.installTacticEmbeddingModel(
+                new SelfEvolvingTacticsController.TacticEmbeddingInstallRequest("bge-m3")))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
@@ -203,7 +206,7 @@ class SelfEvolvingControllerTest {
                 .degraded(true)
                 .build());
 
-        StepVerifier.create(controller.getTacticSearchStatus(null, null, null))
+        StepVerifier.create(tacticsController.getTacticSearchStatus(null, null, null))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
@@ -233,7 +236,7 @@ class SelfEvolvingControllerTest {
                         .degraded(false)
                         .build());
 
-        StepVerifier.create(controller.getTacticSearchStatus("ollama", "bge-m3", null))
+        StepVerifier.create(tacticsController.getTacticSearchStatus("ollama", "bge-m3", null))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
@@ -246,14 +249,14 @@ class SelfEvolvingControllerTest {
 
     @Test
     void shouldDeactivateTactic() {
-        StepVerifier.create(controller.deactivateTactic("tactic-1"))
+        StepVerifier.create(tacticsController.deactivateTactic("tactic-1"))
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
     }
 
     @Test
     void shouldDeleteTactic() {
-        StepVerifier.create(controller.deleteTactic("tactic-1"))
+        StepVerifier.create(tacticsController.deleteTactic("tactic-1"))
                 .assertNext(response -> assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode()))
                 .verifyComplete();
     }
