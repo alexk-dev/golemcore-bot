@@ -129,7 +129,7 @@ It shows:
 - readonly tactic result ranking with operator-visible `BM25`, vector, `RRF`, quality prior, `MMR`, negative-memory, personalization, and reranker signals
 - a `Why this tactic` panel that exposes `success rate`, `benchmark win rate`, `regression flags`, `promotion state`, `recency`, and `golem-local usage success`
 - a workspace-first artifact browser where `artifactStreamId` is the canonical identity for deep links, compare flows, and evidence joins
-- an artifact catalog left rail for evolved `skills`, `prompts`, `routing policies`, `tool policies`, `memory policies`, `context policies`, and `governance policies`
+- an artifact catalog left rail for evolved `skills`, `prompts`, `routing policies`, `tool policies`, and `memory policies`
 - a lineage rail that shows the full `candidate -> approved -> active -> reverted` history as rollout nodes over immutable content revisions
 - diff, evidence, and impact tabs that combine semantic diff, raw diff fallback, benchmark impact, promotion history, and run-level evidence
 - readonly run list with verdict summaries as supporting context
