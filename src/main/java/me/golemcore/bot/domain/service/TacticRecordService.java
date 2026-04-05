@@ -95,11 +95,23 @@ public class TacticRecordService {
     }
 
     public List<TacticRecord> getAll() {
-        List<TacticRecord> records = new ArrayList<>();
-        for (TacticRecord record : getCachedRecords()) {
-            records.add(enrichMetrics(record));
+        List<TacticRecord> cached = getCachedRecords();
+        TacticQualityMetricsService qualityMetricsService = resolveQualityMetricsService();
+        if (qualityMetricsService == null) {
+            List<TacticRecord> copies = new ArrayList<>(cached.size());
+            for (TacticRecord record : cached) {
+                copies.add(copyRecord(record));
+            }
+            return copies;
         }
-        return records;
+        return new ArrayList<>(qualityMetricsService.enrichAll(cached));
+    }
+
+    private TacticQualityMetricsService resolveQualityMetricsService() {
+        if (qualityMetricsServiceProvider == null) {
+            return null;
+        }
+        return qualityMetricsServiceProvider.getIfAvailable();
     }
 
     private List<TacticRecord> getCachedRecords() {
@@ -340,10 +352,7 @@ public class TacticRecordService {
         if (record == null) {
             return null;
         }
-        if (qualityMetricsServiceProvider == null) {
-            return copyRecord(record);
-        }
-        TacticQualityMetricsService qualityMetricsService = qualityMetricsServiceProvider.getIfAvailable();
+        TacticQualityMetricsService qualityMetricsService = resolveQualityMetricsService();
         if (qualityMetricsService == null) {
             return copyRecord(record);
         }

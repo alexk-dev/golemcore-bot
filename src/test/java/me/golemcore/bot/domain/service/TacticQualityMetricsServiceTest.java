@@ -15,7 +15,10 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TacticQualityMetricsServiceTest {
@@ -197,5 +200,75 @@ class TacticQualityMetricsServiceTest {
         assertNull(enriched.getBenchmarkWinRate());
         assertNull(enriched.getGolemLocalUsageSuccess());
         assertNull(enriched.getRecencyScore());
+    }
+
+    @Test
+    void shouldEnrichAllRecordsWithSingleScanOfBundlesAndRuns() {
+        TacticRecord tacticA = TacticRecord.builder()
+                .tacticId("tactic-a")
+                .artifactStreamId("stream-a")
+                .contentRevisionId("revision-a")
+                .updatedAt(Instant.parse("2026-04-01T00:00:00Z"))
+                .build();
+        TacticRecord tacticB = TacticRecord.builder()
+                .tacticId("tactic-b")
+                .artifactStreamId("stream-b")
+                .contentRevisionId("revision-b")
+                .updatedAt(Instant.parse("2026-03-01T00:00:00Z"))
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of(
+                ArtifactBundleRecord.builder()
+                        .id("bundle-a")
+                        .artifactRevisionBindings(java.util.Map.of("stream-a", "revision-a"))
+                        .activatedAt(Instant.parse("2026-04-05T09:00:00Z"))
+                        .build(),
+                ArtifactBundleRecord.builder()
+                        .id("bundle-b")
+                        .artifactRevisionBindings(java.util.Map.of("stream-b", "revision-b"))
+                        .activatedAt(Instant.parse("2026-03-02T09:00:00Z"))
+                        .build()));
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of(
+                RunRecord.builder()
+                        .id("run-a1")
+                        .artifactBundleId("bundle-a")
+                        .status("COMPLETED")
+                        .completedAt(Instant.parse("2026-04-05T10:00:00Z"))
+                        .build(),
+                RunRecord.builder()
+                        .id("run-a2")
+                        .artifactBundleId("bundle-a")
+                        .status("FAILED")
+                        .completedAt(Instant.parse("2026-04-05T10:30:00Z"))
+                        .build(),
+                RunRecord.builder()
+                        .id("run-b1")
+                        .artifactBundleId("bundle-b")
+                        .status("COMPLETED")
+                        .completedAt(Instant.parse("2026-03-02T10:00:00Z"))
+                        .build()));
+        when(selfEvolvingRunService.findVerdict("run-a1")).thenReturn(Optional.empty());
+        when(selfEvolvingRunService.findVerdict("run-a2")).thenReturn(Optional.empty());
+        when(selfEvolvingRunService.findVerdict("run-b1")).thenReturn(Optional.empty());
+
+        List<TacticRecord> enriched = tacticQualityMetricsService.enrichAll(List.of(tacticA, tacticB));
+
+        assertEquals(2, enriched.size());
+        assertEquals(0.5d, enriched.get(0).getSuccessRate());
+        assertEquals(0.5d, enriched.get(0).getGolemLocalUsageSuccess());
+        assertEquals(1.0d, enriched.get(0).getRecencyScore());
+        assertEquals(1.0d, enriched.get(1).getSuccessRate());
+        assertEquals(1.0d, enriched.get(1).getGolemLocalUsageSuccess());
+        // tactic-b was last observed on 2026-03-02, clock is 2026-04-05 → 34 days → 0.0
+        assertEquals(0.0d, enriched.get(1).getRecencyScore());
+        // One scan each: bundle list once, run list once (not per-tactic).
+        verify(artifactBundleService, times(1)).getBundles();
+        verify(selfEvolvingRunService, times(1)).getRuns();
+    }
+
+    @Test
+    void shouldReturnSameListWhenEnrichAllReceivesNullOrEmpty() {
+        assertNull(tacticQualityMetricsService.enrichAll(null));
+        List<TacticRecord> empty = List.of();
+        assertSame(empty, tacticQualityMetricsService.enrichAll(empty));
     }
 }
