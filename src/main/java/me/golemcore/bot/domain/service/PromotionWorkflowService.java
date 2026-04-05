@@ -18,70 +18,43 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
-import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-import java.time.Clock;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Persists evolution candidates and rollout decisions.
  */
 @Service
-@Slf4j
 public class PromotionWorkflowService {
 
-    private static final String SELF_EVOLVING_DIR = "self-evolving";
-    private static final String CANDIDATES_FILE = "candidates.json";
-    private static final String DECISIONS_FILE = "promotion-decisions.json";
-    private static final TypeReference<List<EvolutionCandidate>> CANDIDATE_LIST_TYPE = new TypeReference<>() {
-    };
-    private static final TypeReference<List<PromotionDecision>> DECISION_LIST_TYPE = new TypeReference<>() {
-    };
-
-    private final StoragePort storagePort;
     private final RuntimeConfigService runtimeConfigService;
     private final EvolutionCandidateService evolutionCandidateService;
+    private final PromotionWorkflowStore promotionWorkflowStore;
     private final PromotionTargetResolver promotionTargetResolver;
     private final PromotionDecisionHydrationService promotionDecisionHydrationService;
     private final PromotionExecutionService promotionExecutionService;
     private final ArtifactBundleService artifactBundleService;
-    private final Clock clock;
-    private final ObjectMapper objectMapper;
-    private final AtomicReference<List<EvolutionCandidate>> candidateCache = new AtomicReference<>();
-    private final AtomicReference<List<PromotionDecision>> decisionCache = new AtomicReference<>();
 
     public PromotionWorkflowService(
-            StoragePort storagePort,
             RuntimeConfigService runtimeConfigService,
             EvolutionCandidateService evolutionCandidateService,
+            PromotionWorkflowStore promotionWorkflowStore,
             PromotionTargetResolver promotionTargetResolver,
             PromotionDecisionHydrationService promotionDecisionHydrationService,
             PromotionExecutionService promotionExecutionService,
-            ArtifactBundleService artifactBundleService,
-            Clock clock) {
-        this.storagePort = storagePort;
+            ArtifactBundleService artifactBundleService) {
         this.runtimeConfigService = runtimeConfigService;
         this.evolutionCandidateService = evolutionCandidateService;
+        this.promotionWorkflowStore = promotionWorkflowStore;
         this.promotionTargetResolver = promotionTargetResolver;
         this.promotionDecisionHydrationService = promotionDecisionHydrationService;
         this.promotionExecutionService = promotionExecutionService;
         this.artifactBundleService = artifactBundleService;
-        this.clock = clock;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     public List<EvolutionCandidate> registerCandidates(List<EvolutionCandidate> candidates) {
@@ -100,7 +73,7 @@ public class PromotionWorkflowService {
             evolutionCandidateService.syncTacticRecord(normalizedCandidate);
             normalizedResults.add(normalizedCandidate);
         }
-        saveCandidates(storedCandidates);
+        promotionWorkflowStore.saveCandidates(storedCandidates);
         return normalizedResults;
     }
 
@@ -148,21 +121,43 @@ public class PromotionWorkflowService {
     }
 
     public List<EvolutionCandidate> getCandidates() {
-        List<EvolutionCandidate> cached = candidateCache.get();
-        if (cached == null) {
-            cached = loadCandidates();
-            candidateCache.set(cached);
+        List<EvolutionCandidate> normalizedCandidates = new ArrayList<>(promotionWorkflowStore.getCandidates());
+        boolean mutated = false;
+        for (EvolutionCandidate candidate : normalizedCandidates) {
+            if (candidate == null) {
+                continue;
+            }
+            if (StringValueSupport.isBlank(candidate.getArtifactStreamId())
+                    || StringValueSupport.isBlank(candidate.getContentRevisionId())
+                    || StringValueSupport.isBlank(candidate.getLifecycleState())
+                    || StringValueSupport.isBlank(candidate.getRolloutStage())) {
+                mutated = true;
+            }
+            evolutionCandidateService.ensureArtifactIdentity(candidate);
+            evolutionCandidateService.syncTacticRecord(candidate);
         }
-        return cached;
+        if (mutated) {
+            promotionWorkflowStore.saveCandidates(normalizedCandidates);
+        }
+        return normalizedCandidates;
     }
 
     public List<PromotionDecision> getPromotionDecisions() {
-        List<PromotionDecision> cached = decisionCache.get();
-        if (cached == null) {
-            cached = loadDecisions();
-            decisionCache.set(cached);
+        List<PromotionDecision> normalizedDecisions = new ArrayList<>(promotionWorkflowStore.getPromotionDecisions());
+        boolean mutated = false;
+        for (PromotionDecision decision : normalizedDecisions) {
+            if (decision == null) {
+                continue;
+            }
+            EvolutionCandidate candidate = findCandidate(decision.getCandidateId()).orElse(null);
+            if (promotionDecisionHydrationService.hydrate(decision, candidate)) {
+                mutated = true;
+            }
         }
-        return cached;
+        if (mutated) {
+            promotionWorkflowStore.savePromotionDecisions(normalizedDecisions);
+        }
+        return normalizedDecisions;
     }
 
     public Optional<EvolutionCandidate> findCandidate(String candidateId) {
@@ -178,14 +173,14 @@ public class PromotionWorkflowService {
     private void saveCandidate(EvolutionCandidate candidate) {
         List<EvolutionCandidate> candidates = new ArrayList<>(getCandidates());
         upsertCandidate(candidates, candidate);
-        saveCandidates(candidates);
+        promotionWorkflowStore.saveCandidates(candidates);
         evolutionCandidateService.syncTacticRecord(candidate);
     }
 
     private void saveDecision(PromotionDecision decision) {
         List<PromotionDecision> decisions = new ArrayList<>(getPromotionDecisions());
         decisions.add(decision);
-        saveDecisions(decisions);
+        promotionWorkflowStore.savePromotionDecisions(decisions);
     }
 
     private void upsertCandidate(List<EvolutionCandidate> candidates, EvolutionCandidate candidate) {
@@ -197,88 +192,6 @@ public class PromotionWorkflowService {
             }
         }
         candidates.add(candidate);
-    }
-
-    private List<EvolutionCandidate> loadCandidates() {
-        try {
-            String json = storagePort.getText(SELF_EVOLVING_DIR, CANDIDATES_FILE).join();
-            if (StringValueSupport.isBlank(json)) {
-                return new ArrayList<>();
-            }
-            List<EvolutionCandidate> candidates = objectMapper.readValue(json, CANDIDATE_LIST_TYPE);
-            List<EvolutionCandidate> normalizedCandidates = candidates != null ? new ArrayList<>(candidates)
-                    : new ArrayList<>();
-            boolean mutated = false;
-            for (EvolutionCandidate candidate : normalizedCandidates) {
-                if (candidate == null) {
-                    continue;
-                }
-                if (StringValueSupport.isBlank(candidate.getArtifactStreamId())
-                        || StringValueSupport.isBlank(candidate.getContentRevisionId())
-                        || StringValueSupport.isBlank(candidate.getLifecycleState())
-                        || StringValueSupport.isBlank(candidate.getRolloutStage())) {
-                    mutated = true;
-                }
-                evolutionCandidateService.ensureArtifactIdentity(candidate);
-                evolutionCandidateService.syncTacticRecord(candidate);
-            }
-            if (mutated) {
-                saveCandidates(normalizedCandidates);
-            }
-            return normalizedCandidates;
-        } catch (IOException | RuntimeException e) { // NOSONAR - storage fallback
-            log.debug("[SelfEvolving] Failed to load candidates: {}", e.getMessage());
-            return new ArrayList<>();
-        }
-    }
-
-    private List<PromotionDecision> loadDecisions() {
-        try {
-            String json = storagePort.getText(SELF_EVOLVING_DIR, DECISIONS_FILE).join();
-            if (StringValueSupport.isBlank(json)) {
-                return new ArrayList<>();
-            }
-            List<PromotionDecision> decisions = objectMapper.readValue(json, DECISION_LIST_TYPE);
-            List<PromotionDecision> normalizedDecisions = decisions != null ? new ArrayList<>(decisions)
-                    : new ArrayList<>();
-            boolean mutated = false;
-            for (PromotionDecision decision : normalizedDecisions) {
-                if (decision == null) {
-                    continue;
-                }
-                EvolutionCandidate candidate = findCandidate(decision.getCandidateId()).orElse(null);
-                if (promotionDecisionHydrationService.hydrate(decision, candidate)) {
-                    mutated = true;
-                }
-            }
-            if (mutated) {
-                saveDecisions(normalizedDecisions);
-            }
-            return normalizedDecisions;
-        } catch (IOException | RuntimeException e) { // NOSONAR - storage fallback
-            log.debug("[SelfEvolving] Failed to load promotion decisions: {}", e.getMessage());
-            return new ArrayList<>();
-        }
-    }
-
-    private void saveCandidates(List<EvolutionCandidate> candidates) {
-        try {
-            String json = objectMapper.writeValueAsString(candidates);
-            storagePort.putTextAtomic(SELF_EVOLVING_DIR, CANDIDATES_FILE, json, true).join();
-            candidateCache.set(new ArrayList<>(candidates));
-        } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
-            throw new IllegalStateException("Failed to persist self-evolving candidates", e);
-        }
-    }
-
-    private void saveDecisions(List<PromotionDecision> decisions) {
-        try {
-            String json = objectMapper.writeValueAsString(decisions);
-            storagePort.putTextAtomic(SELF_EVOLVING_DIR, DECISIONS_FILE, json, true).join();
-            decisionCache.set(new ArrayList<>(decisions));
-        } catch (Exception e) { // NOSONAR - storage failure becomes runtime error
-            throw new IllegalStateException("Failed to persist promotion decisions", e);
-        }
     }
 
     private EvolutionCandidate cloneCandidate(EvolutionCandidate candidate) {

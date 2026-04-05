@@ -94,14 +94,13 @@ class PromotionWorkflowServiceTest {
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
         promotionWorkflowService = new PromotionWorkflowService(
-                storagePort,
                 runtimeConfigService,
                 evolutionCandidateService,
+                new PromotionWorkflowStore(storagePort),
                 new PromotionTargetResolver(runtimeConfigService),
                 new PromotionDecisionHydrationService(),
                 new PromotionExecutionService(artifactBundleService, clock),
-                artifactBundleService,
-                clock);
+                artifactBundleService);
     }
 
     @Test
@@ -552,15 +551,14 @@ class PromotionWorkflowServiceTest {
     void shouldBindCandidateBaseRevisionsWhenArtifactBundleServiceIsPresent() {
         ArtifactBundleService artifactBundleService = mock(ArtifactBundleService.class);
         PromotionWorkflowService serviceWithBundleBinding = new PromotionWorkflowService(
-                storagePort,
                 runtimeConfigService,
                 evolutionCandidateService,
+                new PromotionWorkflowStore(storagePort),
                 new PromotionTargetResolver(runtimeConfigService),
                 new PromotionDecisionHydrationService(),
                 new PromotionExecutionService(artifactBundleService,
                         Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC)),
-                artifactBundleService,
-                Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
+                artifactBundleService);
         List<EvolutionCandidate> candidates = List.of(candidate("candidate-10", "bundle-10"));
 
         serviceWithBundleBinding.bindCandidateBaseRevisions("bundle-10", candidates);
