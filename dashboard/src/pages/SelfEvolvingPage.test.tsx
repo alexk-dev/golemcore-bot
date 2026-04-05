@@ -102,6 +102,21 @@ vi.mock('../hooks/useSelfEvolving', () => ({
   }),
 }));
 
+vi.mock('../hooks/useSettings', () => ({
+  useRuntimeConfig: () => ({
+    data: {
+      selfEvolving: {
+        promotion: {
+          shadowRequired: true,
+          canaryRequired: true,
+        },
+      },
+    },
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 describe('SelfEvolvingPage', () => {
   it('renders the overview cards and runs tab by default', () => {
     const html = renderToStaticMarkup(<SelfEvolvingPage />);
