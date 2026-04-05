@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -33,6 +34,7 @@ class PromotionWorkflowServiceTest {
     private RuntimeConfigService runtimeConfigService;
     private EvolutionCandidateService evolutionCandidateService;
     private TacticRecordService tacticRecordService;
+    private ArtifactBundleService artifactBundleService;
     private PromotionWorkflowService promotionWorkflowService;
     private Map<String, String> persistedFiles;
     private ObjectMapper objectMapper;
@@ -66,16 +68,22 @@ class PromotionWorkflowServiceTest {
                     return CompletableFuture.completedFuture(keys);
                 });
         when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("approval_gate");
+        when(runtimeConfigService.isSelfEvolvingPromotionShadowRequired()).thenReturn(false);
+        when(runtimeConfigService.isSelfEvolvingPromotionCanaryRequired()).thenReturn(false);
         tacticRecordService = new TacticRecordService(storagePort,
                 Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC), null);
         evolutionCandidateService = new EvolutionCandidateService(storagePort, tacticRecordService,
                 Clock.fixed(
                         Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
+        artifactBundleService = new ArtifactBundleService(
+                storagePort,
+                runtimeConfigService,
+                Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
         promotionWorkflowService = new PromotionWorkflowService(
                 storagePort,
                 runtimeConfigService,
                 evolutionCandidateService,
-                null,
+                artifactBundleService,
                 Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
     }
 
@@ -113,7 +121,7 @@ class PromotionWorkflowServiceTest {
 
         assertEquals("active", decision.getState());
         assertEquals("active", promotionWorkflowService.getCandidates().getFirst().getStatus());
-        assertEquals("bundle-2", decision.getBundleId());
+        assertEquals("candidate-2:active", decision.getBundleId());
         assertEquals("bundle-2", decision.getOriginBundleId());
         assertFalse(promotionWorkflowService.getPromotionDecisions().isEmpty());
     }
@@ -135,6 +143,65 @@ class PromotionWorkflowServiceTest {
         assertEquals("active", decision.getState());
         assertEquals("approval_gate", decision.getMode());
         assertEquals("active", promotionWorkflowService.findCandidate("candidate-manual").orElseThrow().getStatus());
+    }
+
+    @Test
+    void shouldAdvanceCandidateThroughShadowCanaryAndActiveWhenRolloutStagesAreRequired() {
+        when(runtimeConfigService.isSelfEvolvingPromotionShadowRequired()).thenReturn(true);
+        when(runtimeConfigService.isSelfEvolvingPromotionCanaryRequired()).thenReturn(true);
+        artifactBundleService.save(ArtifactBundleRecord.builder()
+                .id("bundle-rollout")
+                .status("snapshot")
+                .artifactRevisionBindings(Map.of("stream-1", "rev-1"))
+                .createdAt(Instant.parse("2026-03-31T15:55:00Z"))
+                .build());
+        EvolutionCandidate candidate = EvolutionCandidate.builder()
+                .id("candidate-rollout")
+                .golemId("golem-1")
+                .goal("fix")
+                .artifactType("tool_policy")
+                .artifactSubtype("tool_policy:usage")
+                .artifactStreamId("stream-1")
+                .originArtifactStreamId("stream-1")
+                .artifactKey("tool_policy:usage")
+                .contentRevisionId("rev-2")
+                .baseContentRevisionId("rev-1")
+                .baseVersion("bundle-rollout")
+                .proposedDiff("Verify tool availability before shell execution.")
+                .status("proposed")
+                .build();
+        promotionWorkflowService.registerCandidates(List.of(candidate));
+
+        PromotionDecision shadowDecision = promotionWorkflowService.planPromotion("candidate-rollout");
+        PromotionDecision canaryDecision = promotionWorkflowService.planPromotion("candidate-rollout");
+        PromotionDecision activeDecision = promotionWorkflowService.planPromotion("candidate-rollout");
+
+        assertEquals("shadowed", shadowDecision.getState());
+        assertEquals("candidate", shadowDecision.getToLifecycleState());
+        assertEquals("shadowed", shadowDecision.getToRolloutStage());
+        assertEquals("canary", canaryDecision.getState());
+        assertEquals("candidate", canaryDecision.getToLifecycleState());
+        assertEquals("canary", canaryDecision.getToRolloutStage());
+        assertEquals("active", activeDecision.getState());
+        assertEquals("active", activeDecision.getToLifecycleState());
+        assertEquals("active", activeDecision.getToRolloutStage());
+        assertEquals("active", promotionWorkflowService.findCandidate("candidate-rollout").orElseThrow().getStatus());
+        assertEquals("shadowed", artifactBundleService.getBundles().stream()
+                .filter(bundle -> "candidate-rollout:shadowed".equals(bundle.getId()))
+                .findFirst()
+                .orElseThrow()
+                .getStatus());
+        assertEquals("canary", artifactBundleService.getBundles().stream()
+                .filter(bundle -> "candidate-rollout:canary".equals(bundle.getId()))
+                .findFirst()
+                .orElseThrow()
+                .getStatus());
+        ArtifactBundleRecord activeBundle = artifactBundleService.getBundles().stream()
+                .filter(bundle -> "candidate-rollout:active".equals(bundle.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("active", activeBundle.getStatus());
+        assertEquals("rev-2", activeBundle.getArtifactRevisionBindings().get("stream-1"));
     }
 
     @Test
@@ -206,7 +273,7 @@ class PromotionWorkflowServiceTest {
         assertEquals("routing_policy:tier", decision.getArtifactKey());
         assertEquals("candidate", decision.getFromLifecycleState());
         assertEquals("active", decision.getToLifecycleState());
-        assertEquals("bundle-4", decision.getBundleId());
+        assertEquals("candidate-4:active", decision.getBundleId());
     }
 
     @Test
@@ -264,7 +331,7 @@ class PromotionWorkflowServiceTest {
         assertEquals("approved", hydrated.getToRolloutStage());
         assertEquals("candidate", hydrated.getFromLifecycleState());
         assertEquals("shadowed", hydrated.getFromRolloutStage());
-        assertEquals("bundle-5", hydrated.getBundleId());
+        assertEquals("candidate-5:approved", hydrated.getBundleId());
         assertTrue(persistedFiles.get("promotion-decisions.json").contains("\"artifactKey\":\"routing_policy:tier\""));
     }
 
@@ -355,7 +422,7 @@ class PromotionWorkflowServiceTest {
 
         assertEquals(null, approvalDecision.getApprovalRequestId());
         assertEquals(null, shadowDecision.getApprovalRequestId());
-        assertEquals("bundle-9", shadowDecision.getBundleId());
+        assertEquals("candidate-9:active", shadowDecision.getBundleId());
     }
 
     @Test
@@ -388,7 +455,7 @@ class PromotionWorkflowServiceTest {
 
         assertEquals("active", findDecision(hydratedDecisions, "decision-active").getToLifecycleState());
         assertEquals("active", findDecision(hydratedDecisions, "decision-active").getToRolloutStage());
-        assertEquals("bundle-active", findDecision(hydratedDecisions, "decision-active").getBundleId());
+        assertEquals("candidate-active:active", findDecision(hydratedDecisions, "decision-active").getBundleId());
 
         assertEquals("reverted", findDecision(hydratedDecisions, "decision-reverted").getToLifecycleState());
         assertEquals("reverted", findDecision(hydratedDecisions, "decision-reverted").getToRolloutStage());

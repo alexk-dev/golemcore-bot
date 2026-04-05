@@ -214,6 +214,7 @@ export function usePlanSelfEvolvingPromotion(): UseMutationResult<SelfEvolvingPr
       qc.invalidateQueries({ queryKey: ['self-evolving', 'candidates'] }),
       qc.invalidateQueries({ queryKey: ['self-evolving', 'campaigns'] }),
       qc.invalidateQueries({ queryKey: ['self-evolving', 'artifacts'] }),
+      qc.invalidateQueries({ queryKey: ['self-evolving', 'tactics'] }),
     ]),
   });
 }

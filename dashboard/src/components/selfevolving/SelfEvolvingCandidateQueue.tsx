@@ -65,6 +65,26 @@ function resolveCandidateApprovalNotes(candidate: SelfEvolvingCandidate): string
   return candidate.proposal?.approvalNotes ?? null;
 }
 
+function resolvePromotionActionLabel(candidate: SelfEvolvingCandidate): string {
+  if (candidate.status === 'canary') {
+    return 'Promote to active';
+  }
+  if (candidate.status === 'shadowed' || candidate.status === 'approved' || candidate.status === 'approved_pending') {
+    return 'Advance rollout';
+  }
+  return 'Approve rollout';
+}
+
+function resolvePromotionActionTitle(candidate: SelfEvolvingCandidate): string {
+  if (candidate.status === 'canary') {
+    return 'Promote this change to full activation';
+  }
+  if (candidate.status === 'shadowed') {
+    return 'Advance this change to the next rollout stage';
+  }
+  return 'Approve this change and start its rollout';
+}
+
 function resolveEvidenceItems(candidate: SelfEvolvingCandidate): SelfEvolvingCandidateEvidenceRef[] {
   return candidate.evidenceRefs ?? [];
 }
@@ -136,7 +156,10 @@ function CandidateDetail({
   const isPromoting = promotingCandidateId === candidate.id;
   const promotionDone = lastPromotionResult?.candidateId === candidate.id;
   const promotionFailed = lastPromotionError && promotingCandidateId == null;
-  const canApprove = candidate.status !== 'active' && !promotionDone;
+  const isTerminal = candidate.status === 'active' || candidate.status === 'reverted' || candidate.status === 'rejected';
+  const canApprove = !isTerminal && !promotionDone;
+  const promotionActionLabel = resolvePromotionActionLabel(candidate);
+  const promotionActionTitle = resolvePromotionActionTitle(candidate);
 
   return (
     <div className="border-t border-border/80 pt-4">
@@ -275,12 +298,15 @@ function CandidateDetail({
       {promotionDone ? (
         <div className="rounded-xl border border-green-300/40 bg-green-50/60 dark:border-green-500/30 dark:bg-green-950/30 p-4 mb-3">
           <p className="text-sm font-semibold mb-2 text-green-800 dark:text-green-300">
-            Change approved and activated
+            Rollout advanced
           </p>
           <p className="text-sm text-green-700 dark:text-green-400">
             Status: <span className="font-medium">{humanizeStatus(lastPromotionResult.toState)}</span>.
             {lastPromotionResult.toState === 'shadowed'
               ? ' The change is now running in shadow mode alongside the current version. If metrics hold, it will be promoted to full traffic.'
+              : null}
+            {lastPromotionResult.toState === 'canary'
+              ? ' The change is now in canary rollout with limited exposure before full activation.'
               : null}
             {lastPromotionResult.toState === 'active'
               ? ' The change is now live and serving all traffic.'
@@ -299,11 +325,11 @@ function CandidateDetail({
         <button
           type="button"
           className="btn btn-primary"
-          title="Approve this change and activate it as a tactic immediately"
+          title={promotionActionTitle}
           onClick={() => onPlanPromotion(candidate.id)}
           disabled={isPromoting}
         >
-          {isPromoting ? 'Approving…' : 'Approve and activate'}
+          {isPromoting ? 'Advancing…' : promotionActionLabel}
         </button>
       ) : null}
     </div>
@@ -320,27 +346,29 @@ export function SelfEvolvingCandidateQueue({
   onSelectRun,
   onPlanPromotion,
 }: SelfEvolvingCandidateQueueProps): ReactElement {
-  const activeCandidate = candidates.find((candidate) => candidate.id === selectedCandidateId) ?? null;
+  const reviewableCandidates = candidates.filter((candidate) => candidate.status !== 'active');
+  const activeCandidate =
+    reviewableCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? reviewableCandidates[0] ?? null;
 
   return (
     <div className="card">
       <div className="card-body">
         <div className="flex items-center justify-between gap-2 mb-1">
           <h5 className="text-base font-semibold tracking-tight mb-0">Proposed Changes</h5>
-          <span className="badge text-bg-secondary">{candidates.length}</span>
+          <span className="badge text-bg-secondary">{reviewableCandidates.length}</span>
         </div>
         <p className="text-xs text-muted-foreground mb-4">
           Recent judged runs produced concrete proposals. Review the summary, rationale, evidence, and activation
           status before promoting a change.
         </p>
 
-        {candidates.length === 0 ? (
+        {reviewableCandidates.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No proposed changes yet. They appear here when judged runs produce a concrete improvement proposal.
           </p>
         ) : (
           <div className="flex flex-col gap-2 mb-4">
-            {candidates.map((candidate) => (
+            {reviewableCandidates.map((candidate) => (
               <CandidateCard
                 key={candidate.id}
                 candidate={candidate}

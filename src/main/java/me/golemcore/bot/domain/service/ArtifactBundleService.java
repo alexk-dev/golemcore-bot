@@ -139,6 +139,34 @@ public class ArtifactBundleService {
         }
     }
 
+    public ArtifactBundleRecord promoteCandidateBundle(String bundleId, EvolutionCandidate candidate, String status) {
+        if (StringValueSupport.isBlank(bundleId) || candidate == null) {
+            return null;
+        }
+        ArtifactBundleRecord baseBundle = getBundles().stream()
+                .filter(bundle -> bundle != null && candidate.getBaseVersion() != null)
+                .filter(bundle -> candidate.getBaseVersion().equals(bundle.getId()))
+                .findFirst()
+                .orElse(null);
+        ArtifactBundleRecord promotedBundle = copyBundle(baseBundle, bundleId, candidate);
+        Map<String, String> bindings = promotedBundle.getArtifactRevisionBindings() != null
+                ? new LinkedHashMap<>(promotedBundle.getArtifactRevisionBindings())
+                : new LinkedHashMap<>();
+        if (!StringValueSupport.isBlank(candidate.getArtifactStreamId())
+                && !StringValueSupport.isBlank(candidate.getContentRevisionId())) {
+            bindings.put(candidate.getArtifactStreamId(), candidate.getContentRevisionId());
+        }
+        promotedBundle.setArtifactRevisionBindings(bindings);
+        promotedBundle.setStatus(StringValueSupport.isBlank(status) ? "snapshot" : status.trim().toLowerCase());
+        promotedBundle.setActivatedAt(Instant.now(clock));
+        promotedBundle.setSourceCandidateId(candidate.getId());
+        if (candidate.getSourceRunIds() != null && !candidate.getSourceRunIds().isEmpty()) {
+            promotedBundle.setSourceRunId(candidate.getSourceRunIds().getFirst());
+        }
+        save(promotedBundle);
+        return promotedBundle;
+    }
+
     private ArtifactBundleRecord buildSnapshot(String bundleId, AgentContext context) {
         return ArtifactBundleRecord.builder()
                 .id(bundleId)
@@ -177,6 +205,50 @@ public class ArtifactBundleService {
             bundle.setArtifactRevisionBindings(bindings);
         }
         return updated;
+    }
+
+    private ArtifactBundleRecord copyBundle(ArtifactBundleRecord baseBundle, String bundleId,
+            EvolutionCandidate candidate) {
+        if (baseBundle == null) {
+            return ArtifactBundleRecord.builder()
+                    .id(bundleId)
+                    .golemId(candidate.getGolemId())
+                    .status("snapshot")
+                    .createdAt(Instant.now(clock))
+                    .build();
+        }
+        return ArtifactBundleRecord.builder()
+                .id(bundleId)
+                .golemId(baseBundle.getGolemId())
+                .sourceRunId(baseBundle.getSourceRunId())
+                .sourceCandidateId(baseBundle.getSourceCandidateId())
+                .status(baseBundle.getStatus())
+                .createdAt(Instant.now(clock))
+                .activatedAt(baseBundle.getActivatedAt())
+                .skillVersions(baseBundle.getSkillVersions() != null ? new ArrayList<>(baseBundle.getSkillVersions())
+                        : new ArrayList<>())
+                .promptVersions(baseBundle.getPromptVersions() != null ? new ArrayList<>(baseBundle.getPromptVersions())
+                        : new ArrayList<>())
+                .policyVersions(baseBundle.getPolicyVersions() != null ? new ArrayList<>(baseBundle.getPolicyVersions())
+                        : new ArrayList<>())
+                .artifactRevisionBindings(baseBundle.getArtifactRevisionBindings() != null
+                        ? new LinkedHashMap<>(baseBundle.getArtifactRevisionBindings())
+                        : new LinkedHashMap<>())
+                .artifactKeyBindings(baseBundle.getArtifactKeyBindings() != null
+                        ? new LinkedHashMap<>(baseBundle.getArtifactKeyBindings())
+                        : new LinkedHashMap<>())
+                .artifactTypeBindings(baseBundle.getArtifactTypeBindings() != null
+                        ? new LinkedHashMap<>(baseBundle.getArtifactTypeBindings())
+                        : new LinkedHashMap<>())
+                .artifactSubtypeBindings(baseBundle.getArtifactSubtypeBindings() != null
+                        ? new LinkedHashMap<>(baseBundle.getArtifactSubtypeBindings())
+                        : new LinkedHashMap<>())
+                .tierBindings(baseBundle.getTierBindings() != null ? new LinkedHashMap<>(baseBundle.getTierBindings())
+                        : new LinkedHashMap<>())
+                .configSnapshot(
+                        baseBundle.getConfigSnapshot() != null ? new LinkedHashMap<>(baseBundle.getConfigSnapshot())
+                                : new LinkedHashMap<>())
+                .build();
     }
 
     private List<ArtifactBundleRecord> loadBundles() {

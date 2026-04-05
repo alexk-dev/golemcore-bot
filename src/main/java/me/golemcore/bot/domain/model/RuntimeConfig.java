@@ -1022,9 +1022,9 @@ public class RuntimeConfig {
         @Builder.Default
         private Boolean allowAutoAccept = true;
         @Builder.Default
-        private Boolean shadowRequired = true;
+        private Boolean shadowRequired = false;
         @Builder.Default
-        private Boolean canaryRequired = true;
+        private Boolean canaryRequired = false;
         @Builder.Default
         private Boolean hiveApprovalPreferred = true;
     }

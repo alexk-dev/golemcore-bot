@@ -230,8 +230,8 @@ public class RuntimeConfigService {
             "memory_policy");
     private static final String DEFAULT_SELF_EVOLVING_PROMOTION_MODE = "approval_gate";
     private static final boolean DEFAULT_SELF_EVOLVING_ALLOW_AUTO_ACCEPT = true;
-    private static final boolean DEFAULT_SELF_EVOLVING_SHADOW_REQUIRED = true;
-    private static final boolean DEFAULT_SELF_EVOLVING_CANARY_REQUIRED = true;
+    private static final boolean DEFAULT_SELF_EVOLVING_SHADOW_REQUIRED = false;
+    private static final boolean DEFAULT_SELF_EVOLVING_CANARY_REQUIRED = false;
     private static final boolean DEFAULT_SELF_EVOLVING_HIVE_APPROVAL_PREFERRED = true;
     private static final boolean DEFAULT_SELF_EVOLVING_BENCHMARK_ENABLED = true;
     private static final boolean DEFAULT_SELF_EVOLVING_HARVEST_PRODUCTION_RUNS = true;
@@ -375,6 +375,16 @@ public class RuntimeConfigService {
     public String getSelfEvolvingPromotionMode() {
         String promotionMode = getSelfEvolvingConfig().getPromotion().getMode();
         return promotionMode != null ? promotionMode : DEFAULT_SELF_EVOLVING_PROMOTION_MODE;
+    }
+
+    public boolean isSelfEvolvingPromotionShadowRequired() {
+        Boolean shadowRequired = getSelfEvolvingConfig().getPromotion().getShadowRequired();
+        return shadowRequired != null ? shadowRequired : Boolean.FALSE;
+    }
+
+    public boolean isSelfEvolvingPromotionCanaryRequired() {
+        Boolean canaryRequired = getSelfEvolvingConfig().getPromotion().getCanaryRequired();
+        return canaryRequired != null ? canaryRequired : Boolean.FALSE;
     }
 
     // ==================== Telegram ====================

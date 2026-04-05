@@ -294,6 +294,7 @@ public class ArtifactWorkspaceProjectionService {
                 .toList();
         Set<String> traceIds = new LinkedHashSet<>();
         Set<String> spanIds = new LinkedHashSet<>();
+        collectRevisionEvidenceAnchorIds(revision, traceIds, spanIds);
         findCandidateByRevision(artifactStreamId, revisionId)
                 .ifPresent(candidate -> collectEvidenceAnchorIds(candidate, traceIds, spanIds));
         return ArtifactRevisionEvidenceProjection.builder()
@@ -474,11 +475,19 @@ public class ArtifactWorkspaceProjectionService {
     }
 
     private Optional<String> resolveActiveRevisionId(String artifactStreamId) {
-        return artifactBundleService.getBundles().stream()
+        List<ArtifactBundleRecord> bundles = artifactBundleService.getBundles().stream()
                 .filter(bundle -> bundle != null && bundle.getArtifactRevisionBindings() != null)
                 .filter(bundle -> !StringValueSupport
                         .isBlank(bundle.getArtifactRevisionBindings().get(artifactStreamId)))
+                .toList();
+        return bundles.stream()
+                .filter(bundle -> "active".equalsIgnoreCase(bundle.getStatus()))
                 .max(BUNDLE_RECENCY_COMPARATOR)
+                .or(() -> bundles.stream()
+                        .filter(bundle -> StringValueSupport.isBlank(bundle.getStatus())
+                                || "snapshot".equalsIgnoreCase(bundle.getStatus()))
+                        .max(BUNDLE_RECENCY_COMPARATOR))
+                .or(() -> bundles.stream().max(BUNDLE_RECENCY_COMPARATOR))
                 .map(bundle -> bundle.getArtifactRevisionBindings().get(artifactStreamId));
     }
 
@@ -566,6 +575,8 @@ public class ArtifactWorkspaceProjectionService {
             campaignIds.addAll(node.getCampaignIds());
         }
         if (!StringValueSupport.isBlank(node.getContentRevisionId())) {
+            findRevision(artifactStreamId, node.getContentRevisionId())
+                    .ifPresent(revision -> collectRevisionEvidenceAnchorIds(revision, traceIds, spanIds));
             findCandidateByRevision(artifactStreamId, node.getContentRevisionId())
                     .ifPresent(candidate -> collectEvidenceAnchorIds(candidate, traceIds, spanIds));
         }
@@ -595,6 +606,25 @@ public class ArtifactWorkspaceProjectionService {
             if (!StringValueSupport.isBlank(evidenceRef.getSpanId())) {
                 spanIds.add(evidenceRef.getSpanId());
             }
+        }
+    }
+
+    private void collectRevisionEvidenceAnchorIds(
+            ArtifactRevisionRecord revision,
+            Set<String> traceIds,
+            Set<String> spanIds) {
+        if (revision == null) {
+            return;
+        }
+        if (revision.getTraceIds() != null) {
+            revision.getTraceIds().stream()
+                    .filter(traceId -> !StringValueSupport.isBlank(traceId))
+                    .forEach(traceIds::add);
+        }
+        if (revision.getSpanIds() != null) {
+            revision.getSpanIds().stream()
+                    .filter(spanId -> !StringValueSupport.isBlank(spanId))
+                    .forEach(spanIds::add);
         }
     }
 

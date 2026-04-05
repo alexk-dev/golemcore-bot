@@ -178,6 +178,79 @@ class ArtifactWorkspaceProjectionServiceTest {
     }
 
     @Test
+    void shouldPreferLatestActiveBundleOverNewerCanaryBundleWhenResolvingActiveRevision() {
+        when(evolutionCandidateService.getArtifactRevisionRecords()).thenReturn(List.of(
+                revision("rev-1", null, "planner v1", Instant.parse("2026-03-31T18:00:00Z")),
+                revision("rev-2", "rev-1", "planner v2", Instant.parse("2026-03-31T19:00:00Z"))));
+        when(promotionWorkflowService.getCandidates()).thenReturn(List.of(EvolutionCandidate.builder()
+                .id("candidate-1")
+                .artifactType("skill")
+                .artifactSubtype("skill")
+                .artifactStreamId("stream-1")
+                .originArtifactStreamId("stream-1")
+                .artifactKey("skill:planner")
+                .artifactAliases(List.of("skill:planner"))
+                .contentRevisionId("rev-2")
+                .baseContentRevisionId("rev-1")
+                .status("canary")
+                .lifecycleState("candidate")
+                .rolloutStage("canary")
+                .sourceRunIds(List.of("run-2"))
+                .createdAt(Instant.parse("2026-03-31T19:00:00Z"))
+                .build()));
+        when(artifactBundleService.getBundles()).thenReturn(List.of(
+                ArtifactBundleRecord.builder()
+                        .id("bundle-active")
+                        .status("active")
+                        .artifactRevisionBindings(Map.of("stream-1", "rev-1"))
+                        .createdAt(Instant.parse("2026-03-31T18:05:00Z"))
+                        .build(),
+                ArtifactBundleRecord.builder()
+                        .id("bundle-canary")
+                        .status("canary")
+                        .artifactRevisionBindings(Map.of("stream-1", "rev-2"))
+                        .createdAt(Instant.parse("2026-03-31T19:05:00Z"))
+                        .build()));
+        when(benchmarkLabService.getCampaigns()).thenReturn(List.of());
+
+        ArtifactCatalogEntry catalogEntry = service.listCatalog().getFirst();
+
+        assertEquals("rev-1", catalogEntry.getActiveRevisionId());
+        assertEquals("rev-2", catalogEntry.getLatestCandidateRevisionId());
+    }
+
+    @Test
+    void shouldReadEvidenceAnchorsFromPersistedRevisionWhenCandidateRecordIsMissing() {
+        when(evolutionCandidateService.getArtifactRevisionRecords()).thenReturn(List.of(ArtifactRevisionRecord.builder()
+                .artifactStreamId("stream-1")
+                .originArtifactStreamId("stream-1")
+                .artifactKey("skill:planner")
+                .artifactType("skill")
+                .artifactSubtype("skill")
+                .contentRevisionId("rev-1")
+                .rawContent("planner v1")
+                .sourceRunIds(List.of("run-1"))
+                .traceIds(List.of("trace-persisted"))
+                .spanIds(List.of("span-persisted"))
+                .createdAt(Instant.parse("2026-03-31T18:00:00Z"))
+                .build()));
+        when(promotionWorkflowService.getCandidates()).thenReturn(List.of());
+        when(promotionWorkflowService.getPromotionDecisions()).thenReturn(List.of());
+        when(artifactBundleService.getBundles()).thenReturn(List.of(ArtifactBundleRecord.builder()
+                .id("bundle-active")
+                .status("active")
+                .artifactRevisionBindings(Map.of("stream-1", "rev-1"))
+                .createdAt(Instant.parse("2026-03-31T18:05:00Z"))
+                .build()));
+        when(benchmarkLabService.getCampaigns()).thenReturn(List.of());
+
+        ArtifactRevisionEvidenceProjection evidence = service.getRevisionEvidence("stream-1", "rev-1");
+
+        assertEquals(List.of("trace-persisted"), evidence.getTraceIds());
+        assertEquals(List.of("span-persisted"), evidence.getSpanIds());
+    }
+
+    @Test
     void shouldBuildRevisionAndTransitionCompareViewsFromLineage() {
         when(evolutionCandidateService.getArtifactRevisionRecords()).thenReturn(List.of(
                 revision("rev-1", null, "planner v1", Instant.parse("2026-03-31T18:00:00Z")),

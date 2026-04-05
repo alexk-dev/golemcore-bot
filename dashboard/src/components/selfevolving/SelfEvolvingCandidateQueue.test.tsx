@@ -52,7 +52,7 @@ describe('SelfEvolvingCandidateQueue', () => {
     expect(html).toContain('allow: [shell, browser]');
     expect(html).toContain('What the judge observed');
     expect(html).toContain('Browser tool was blocked by policy');
-    expect(html).toContain('Approve and activate');
+    expect(html).toContain('Approve rollout');
   });
 
   it('renders evidence when no real diff is available', () => {
@@ -93,7 +93,7 @@ describe('SelfEvolvingCandidateQueue', () => {
       />,
     );
 
-    expect(html).not.toContain('Proposed diff');
+    expect(html).not.toContain('Proposed patch');
     expect(html).toContain('Capture the successful planner tactic as reusable guidance');
     expect(html).toContain('What the judge observed');
     expect(html).toContain('Planner produced suboptimal step ordering');
@@ -147,9 +147,71 @@ describe('SelfEvolvingCandidateQueue', () => {
       />,
     );
 
-    expect(html).toContain('Change approved and activated');
-    expect(html).toContain('Active');
-    expect(html).toContain('serving all traffic');
-    expect(html).not.toContain('Approve and activate');
+    expect(html).toContain('No proposed changes yet');
+    expect(html).not.toContain('Approve rollout');
+  });
+
+  it('hides already active candidates from the proposed changes list', () => {
+    const html = renderToStaticMarkup(
+      <SelfEvolvingCandidateQueue
+        candidates={[
+          {
+            id: 'cand-active',
+            goal: 'fix',
+            artifactType: 'skill',
+            status: 'active',
+            riskLevel: 'low',
+            expectedImpact: 'Already live',
+            proposedDiff: null,
+            proposal: {
+              summary: 'Live tactic',
+              rationale: null,
+              behaviorInstructions: 'Keep current behavior.',
+              toolInstructions: null,
+              expectedOutcome: 'Stay live.',
+              approvalNotes: 'Already active.',
+              proposedPatch: null,
+              riskLevel: 'low',
+            },
+            sourceRunIds: [],
+            evidenceRefs: [],
+          },
+          {
+            id: 'cand-review',
+            goal: 'fix',
+            artifactType: 'tool_policy',
+            artifactKey: 'tool_policy:shell',
+            status: 'proposed',
+            riskLevel: 'medium',
+            expectedImpact: 'Reviewable change',
+            proposedDiff: null,
+            proposal: {
+              summary: 'Reviewable candidate',
+              rationale: 'This one should stay visible.',
+              behaviorInstructions: 'Inspect before rollout.',
+              toolInstructions: null,
+              expectedOutcome: 'Safer command execution.',
+              approvalNotes: 'Anchored to trace-review/span-review.',
+              proposedPatch: null,
+              riskLevel: 'medium',
+            },
+            sourceRunIds: ['run-review'],
+            evidenceRefs: [],
+          },
+        ]}
+        selectedCandidateId="cand-active"
+        promotingCandidateId={null}
+        lastPromotionResult={null}
+        lastPromotionError={false}
+        onSelectCandidate={vi.fn()}
+        onSelectRun={vi.fn()}
+        onPlanPromotion={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('Reviewable candidate');
+    expect(html).toContain('Approve rollout');
+    expect(html).not.toContain('Live tactic');
+    expect(html).toContain('text-bg-secondary">1<');
   });
 });

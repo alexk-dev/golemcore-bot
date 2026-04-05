@@ -190,8 +190,8 @@ class RuntimeConfigServiceSelfEvolvingTest {
         assertEquals(List.of("skill", "tool_policy"), normalized.getSelfEvolving().getEvolution().getArtifactTypes());
         assertEquals("approval_gate", normalized.getSelfEvolving().getPromotion().getMode());
         assertTrue(normalized.getSelfEvolving().getPromotion().getAllowAutoAccept());
-        assertTrue(normalized.getSelfEvolving().getPromotion().getShadowRequired());
-        assertTrue(normalized.getSelfEvolving().getPromotion().getCanaryRequired());
+        assertFalse(normalized.getSelfEvolving().getPromotion().getShadowRequired());
+        assertFalse(normalized.getSelfEvolving().getPromotion().getCanaryRequired());
         assertTrue(normalized.getSelfEvolving().getPromotion().getHiveApprovalPreferred());
         assertTrue(normalized.getSelfEvolving().getBenchmark().getEnabled());
         assertTrue(normalized.getSelfEvolving().getBenchmark().getHarvestProductionRuns());

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -69,8 +70,34 @@ class LlmEvolutionServiceTest {
 
         assertNotNull(proposal);
         assertEquals("medium", proposal.getRiskLevel());
-        assertTrue(proposal.getSummary().contains("successful"));
-        assertTrue(proposal.getBehaviorInstructions().contains("reusable"));
-        assertTrue(proposal.getExpectedOutcome().contains("successful"));
+        assertTrue(proposal.getSummary().contains("Planner tactic"));
+        assertTrue(proposal.getBehaviorInstructions().contains("Planner tactic"));
+        assertTrue(proposal.getExpectedOutcome().contains("Planner tactic"));
+    }
+
+    @Test
+    void shouldBuildRunSpecificSuccessfulProposalInsteadOfPlannerTemplate() {
+        EvolutionProposal proposal = llmEvolutionService.propose(
+                RunRecord.builder()
+                        .id("run-success-specific")
+                        .golemId("golem-1")
+                        .build(),
+                RunVerdict.builder()
+                        .outcomeStatus("COMPLETED")
+                        .processStatus("CLEAN")
+                        .confidence(0.97)
+                        .outcomeSummary("Deployment verification sequence completed without retries")
+                        .evidenceRefs(List.of(VerdictEvidenceRef.builder()
+                                .traceId("trace-success")
+                                .spanId("skill-2")
+                                .outputFragment("Deployment verification sequence completed without retries")
+                                .build()))
+                        .build());
+
+        assertNotNull(proposal);
+        assertTrue(proposal.getSummary().contains("Deployment verification"));
+        assertTrue(proposal.getBehaviorInstructions().contains("Deployment verification"));
+        assertTrue(proposal.getProposedPatch().contains("Deployment verification"));
+        assertFalse(proposal.getSummary().toLowerCase().contains("planner"));
     }
 }

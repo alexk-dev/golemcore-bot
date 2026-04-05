@@ -50,5 +50,11 @@ public class ArtifactRevisionRecord {
     @Builder.Default
     private List<String> sourceRunIds = new ArrayList<>();
 
+    @Builder.Default
+    private List<String> traceIds = new ArrayList<>();
+
+    @Builder.Default
+    private List<String> spanIds = new ArrayList<>();
+
     private Instant createdAt;
 }

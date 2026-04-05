@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -156,6 +157,38 @@ class EvolutionCandidateServiceTest {
         assertEquals(1, candidates.size());
         assertEquals("selfevolving:fix:tool_policy", candidates.getFirst().getProposedDiff());
         assertEquals(proposal.getSummary(), candidates.getFirst().getProposal().getSummary());
+    }
+
+    @Test
+    void shouldDeriveSemanticSkillKeyForSuccessfulProposalInsteadOfUsingSkillDefault() {
+        RunRecord runRecord = RunRecord.builder()
+                .id("run-success-key")
+                .golemId("golem-1")
+                .build();
+        RunVerdict verdict = RunVerdict.builder()
+                .outcomeStatus("COMPLETED")
+                .processStatus("CLEAN")
+                .confidence(0.96)
+                .evidenceRefs(List.of(VerdictEvidenceRef.builder()
+                        .traceId("trace-success-key")
+                        .spanId("skill-success-key")
+                        .outputFragment("Deployment verification sequence completed without retries")
+                        .build()))
+                .build();
+        EvolutionProposal proposal = EvolutionProposal.builder()
+                .summary("Capture the successful Deployment verification sequence as reusable guidance")
+                .behaviorInstructions("Reuse the Deployment verification sequence when release validation is required.")
+                .expectedOutcome("Reuse the successful deployment verification flow.")
+                .proposedPatch("Document the Deployment verification sequence as a reusable tactic.")
+                .riskLevel("medium")
+                .build();
+
+        List<EvolutionCandidate> candidates = evolutionCandidateService.deriveCandidates(runRecord, verdict, proposal);
+
+        assertEquals(1, candidates.size());
+        assertEquals("skill", candidates.getFirst().getArtifactType());
+        assertNotEquals("skill:default", candidates.getFirst().getArtifactKey());
+        assertTrue(candidates.getFirst().getArtifactKey().contains("deployment"));
     }
 
     @Test

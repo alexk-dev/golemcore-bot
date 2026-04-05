@@ -64,10 +64,10 @@ export function describeGoal(goal: string | null): string {
 
 const STATUS_DESCRIPTIONS: Record<string, string> = {
   proposed: 'Newly generated from a judged run. Review the proposal summary, rationale, and evidence before approving activation.',
-  approved_pending: 'Legacy queued state from the old rollout flow. Approve it again to activate the tactic immediately.',
-  approved: 'Legacy approved state from the old rollout flow. Activate it manually if you want it live now.',
-  shadowed: 'Legacy shadow-rollout state. Shadow automation is not active in this build, so activate it manually if you want the tactic live.',
-  canary: 'Legacy canary state from the old rollout flow. Promote it manually if you want full activation.',
+  approved_pending: 'Approved and waiting for the next rollout step.',
+  approved: 'Approved and waiting for the next rollout step.',
+  shadowed: 'Running in shadow rollout. Review the results, then advance it manually when you want to continue.',
+  canary: 'Running in canary rollout with limited exposure. Advance it manually when you are ready for full activation.',
   active: 'Approved and activated as a tactic. It is live now and can be used by the agent immediately.',
   reverted: 'Rolled back after activation due to regressions or manual intervention.',
   rejected: 'Rejected by the judge or operator. This change will not be promoted.',

@@ -36,7 +36,10 @@ import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -50,6 +53,30 @@ public class EvolutionCandidateService {
 
     private static final String SELF_EVOLVING_DIR = "self-evolving";
     private static final String ARTIFACT_REVISIONS_FILE = "artifact-revisions.json";
+    private static final Set<String> SEMANTIC_SKILL_KEY_STOPWORDS = Set.of(
+            "a",
+            "an",
+            "and",
+            "as",
+            "capture",
+            "cleanly",
+            "demonstrated",
+            "document",
+            "flow",
+            "from",
+            "guidance",
+            "in",
+            "observed",
+            "pattern",
+            "retries",
+            "reusable",
+            "run",
+            "sequence",
+            "successful",
+            "tactic",
+            "the",
+            "this",
+            "without");
     private static final TypeReference<List<ArtifactRevisionRecord>> ARTIFACT_REVISION_LIST_TYPE = new TypeReference<>() {
     };
 
@@ -97,12 +124,13 @@ public class EvolutionCandidateService {
         if ("COMPLETED".equals(runVerdict.getOutcomeStatus())
                 && "CLEAN".equals(runVerdict.getProcessStatus())
                 && (runVerdict.getConfidence() == null || runVerdict.getConfidence() >= 0.8)) {
+            String artifactType = resolveDeriveArtifactType(runVerdict, proposal);
             return List.of(buildCandidate(
                     runRecord,
                     runVerdict,
                     proposal,
                     "derive",
-                    "skill",
+                    artifactType,
                     buildDeriveImpact(runVerdict),
                     "medium"));
         }
@@ -115,10 +143,7 @@ public class EvolutionCandidateService {
             return null;
         }
         normalizeCandidate(candidate);
-        boolean newRevision = ensureArtifactRevision(candidate);
-        if (newRevision) {
-            emitTacticRecord(candidate);
-        }
+        ensureArtifactRevision(candidate);
         return candidate;
     }
 
@@ -169,17 +194,14 @@ public class EvolutionCandidateService {
                 .evidenceRefs(runVerdict.getEvidenceRefs())
                 .build();
         normalizeCandidate(candidate);
-        boolean newRevision = ensureArtifactRevision(candidate);
-        if (newRevision) {
-            emitTacticRecord(candidate);
-        }
+        ensureArtifactRevision(candidate);
         return candidate;
     }
 
     private void normalizeCandidate(EvolutionCandidate candidate) {
         String artifactType = resolveCanonicalArtifactType(candidate.getArtifactType());
         String artifactSubtype = resolveCanonicalArtifactSubtype(artifactType, candidate.getArtifactSubtype());
-        String artifactKey = resolveArtifactKey(artifactType, artifactSubtype, candidate.getArtifactKey());
+        String artifactKey = resolveArtifactKey(candidate, artifactType, artifactSubtype, candidate.getArtifactKey());
         ArtifactRevisionRecord latestRevision = findLatestRevision(artifactKey, artifactType, artifactSubtype);
 
         candidate.setArtifactType(artifactType);
@@ -236,6 +258,8 @@ public class EvolutionCandidateService {
                 .rawContent(candidate.getProposedDiff())
                 .sourceRunIds(candidate.getSourceRunIds() != null ? new ArrayList<>(candidate.getSourceRunIds())
                         : new ArrayList<>())
+                .traceIds(resolveEvidenceTraceIds(candidate))
+                .spanIds(resolveEvidenceSpanIds(candidate))
                 .createdAt(candidate.getCreatedAt() != null ? candidate.getCreatedAt() : Instant.now(clock))
                 .build();
         records.add(record);
@@ -269,25 +293,6 @@ public class EvolutionCandidateService {
             }
         }
         return latest;
-    }
-
-    private void emitTacticRecord(EvolutionCandidate candidate) {
-        if (candidate == null) {
-            return;
-        }
-        if (!"active".equals(candidate.getStatus())
-                && !"active".equals(candidate.getLifecycleState())
-                && !"active".equals(candidate.getRolloutStage())) {
-            return;
-        }
-        if (isPlaceholderDiff(candidate.getProposedDiff())) {
-            log.debug("[SelfEvolving] Skipping tactic emit for placeholder diff: {}", candidate.getProposedDiff());
-            return;
-        }
-        tacticRecordService.save(buildTacticRecord(
-                candidate,
-                candidate.getLifecycleState(),
-                candidate.getRolloutStage()));
     }
 
     private TacticRecord buildTacticRecord(EvolutionCandidate candidate, String promotionState, String rolloutStage) {
@@ -395,6 +400,41 @@ public class EvolutionCandidateService {
         return "Capture a reusable high-signal pattern from a successful run.";
     }
 
+    private String resolveDeriveArtifactType(RunVerdict runVerdict, EvolutionProposal proposal) {
+        String hint = firstNonBlank(
+                proposal != null ? proposal.getSummary() : null,
+                proposal != null ? proposal.getBehaviorInstructions() : null);
+        if (StringValueSupport.isBlank(hint)) {
+            hint = firstNonBlank(extractFirstEvidenceFragment(runVerdict), runVerdict.getOutcomeSummary());
+        }
+        String normalizedHint = StringValueSupport.nullSafe(hint).trim().toLowerCase(Locale.ROOT);
+        if (normalizedHint.contains("shell")
+                || normalizedHint.contains("command")
+                || normalizedHint.contains("tool")) {
+            return "tool_policy";
+        }
+        if (normalizedHint.contains("route")
+                || normalizedHint.contains("tier")
+                || normalizedHint.contains("model")) {
+            return "routing_policy";
+        }
+        if (normalizedHint.contains("memory")
+                || normalizedHint.contains("retriev")) {
+            return "memory_policy";
+        }
+        if (normalizedHint.contains("context")) {
+            return "context_policy";
+        }
+        if (normalizedHint.contains("approval")
+                || normalizedHint.contains("governance")) {
+            return "governance_policy";
+        }
+        if (normalizedHint.contains("prompt")) {
+            return "prompt";
+        }
+        return "skill";
+    }
+
     private String extractFirstEvidenceFragment(RunVerdict runVerdict) {
         if (runVerdict.getEvidenceRefs() == null) {
             return null;
@@ -464,12 +504,16 @@ public class EvolutionCandidateService {
         };
     }
 
-    private String resolveArtifactKey(String artifactType, String artifactSubtype, String artifactKey) {
+    private String resolveArtifactKey(
+            EvolutionCandidate candidate,
+            String artifactType,
+            String artifactSubtype,
+            String artifactKey) {
         if (!StringValueSupport.isBlank(artifactKey)) {
             return artifactKey;
         }
         return switch (artifactType) {
-        case "skill" -> "skill:default";
+        case "skill" -> resolveSemanticSkillKey(candidate);
         case "prompt" -> artifactSubtype;
         case "routing_policy" -> "routing_policy:tier";
         case "tool_policy" -> "tool_policy:usage";
@@ -478,6 +522,44 @@ public class EvolutionCandidateService {
         case "governance_policy" -> "governance_policy:approval";
         default -> artifactSubtype;
         };
+    }
+
+    private String resolveSemanticSkillKey(EvolutionCandidate candidate) {
+        if (candidate == null) {
+            return "skill:default";
+        }
+        EvolutionProposal proposal = candidate.getProposal();
+        String semanticSource = firstNonBlank(
+                proposal != null ? proposal.getSummary() : null,
+                proposal != null ? proposal.getBehaviorInstructions() : null,
+                candidate.getExpectedImpact());
+        if (StringValueSupport.isBlank(semanticSource)
+                && !isPlaceholderDiff(candidate.getProposedDiff())) {
+            semanticSource = candidate.getProposedDiff();
+        }
+        if (StringValueSupport.isBlank(semanticSource)) {
+            return "skill:default";
+        }
+        String normalized = semanticSource.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim();
+        if (normalized.isEmpty()) {
+            return "skill:default";
+        }
+        List<String> tokens = new ArrayList<>();
+        for (String token : normalized.split("\\s+")) {
+            if (token.length() < 3 || SEMANTIC_SKILL_KEY_STOPWORDS.contains(token)) {
+                continue;
+            }
+            tokens.add(token);
+            if (tokens.size() == 4) {
+                break;
+            }
+        }
+        if (tokens.isEmpty()) {
+            return "skill:default";
+        }
+        return "skill:" + String.join("-", tokens);
     }
 
     private String resolveLifecycleState(String status) {
@@ -564,6 +646,32 @@ public class EvolutionCandidateService {
         return snippets;
     }
 
+    private List<String> resolveEvidenceTraceIds(EvolutionCandidate candidate) {
+        Set<String> traceIds = new LinkedHashSet<>();
+        if (candidate == null || candidate.getEvidenceRefs() == null) {
+            return new ArrayList<>();
+        }
+        for (VerdictEvidenceRef evidenceRef : candidate.getEvidenceRefs()) {
+            if (evidenceRef != null && !StringValueSupport.isBlank(evidenceRef.getTraceId())) {
+                traceIds.add(evidenceRef.getTraceId().trim());
+            }
+        }
+        return new ArrayList<>(traceIds);
+    }
+
+    private List<String> resolveEvidenceSpanIds(EvolutionCandidate candidate) {
+        Set<String> spanIds = new LinkedHashSet<>();
+        if (candidate == null || candidate.getEvidenceRefs() == null) {
+            return new ArrayList<>();
+        }
+        for (VerdictEvidenceRef evidenceRef : candidate.getEvidenceRefs()) {
+            if (evidenceRef != null && !StringValueSupport.isBlank(evidenceRef.getSpanId())) {
+                spanIds.add(evidenceRef.getSpanId().trim());
+            }
+        }
+        return new ArrayList<>(spanIds);
+    }
+
     private List<String> resolveTaskFamilies(EvolutionCandidate candidate) {
         if (candidate == null || StringValueSupport.isBlank(candidate.getArtifactType())) {
             return List.of();
@@ -602,10 +710,15 @@ public class EvolutionCandidateService {
         return "derive".equals(candidate.getGoal()) ? 1.0d : 0.0d;
     }
 
-    private String firstNonBlank(String primary, String fallback) {
-        if (!StringValueSupport.isBlank(primary)) {
-            return primary;
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
         }
-        return fallback;
+        for (String value : values) {
+            if (!StringValueSupport.isBlank(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 }

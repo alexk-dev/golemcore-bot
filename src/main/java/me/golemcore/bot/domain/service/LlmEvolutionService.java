@@ -66,20 +66,19 @@ public class LlmEvolutionService {
         if ("COMPLETED".equals(runVerdict.getOutcomeStatus())
                 && "CLEAN".equals(runVerdict.getProcessStatus())
                 && (runVerdict.getConfidence() == null || runVerdict.getConfidence() >= 0.8)) {
-            String evidenceSummary = extractFirstEvidenceFragment(runVerdict);
-            String summary = "Capture the successful planner tactic as reusable guidance";
+            String successFocus = extractSuccessFocus(runVerdict);
+            String summary = "Capture successful tactic from run: " + successFocus;
             String rationale = "The run completed cleanly"
-                    + (StringValueSupport.isBlank(evidenceSummary) ? "."
-                            : " with high-signal evidence: " + evidenceSummary + ".");
-            String behaviorInstructions = "Capture the reusable successful sequence and apply it when a similar "
-                    + "multi-step task appears again.";
-            String toolInstructions = "Prefer planning before tool execution when the task spans multiple steps or "
-                    + "when earlier evidence shows that decomposition improved execution.";
-            String expectedOutcome = "Reuse a successful pattern on similar tasks while keeping the run clean and "
-                    + "predictable.";
+                    + (StringValueSupport.isBlank(successFocus) ? "."
+                            : " with reusable evidence: " + successFocus + ".");
+            String behaviorInstructions = "Reuse the successful sequence demonstrated in this run when a similar "
+                    + "task appears: " + successFocus;
+            String toolInstructions = buildSuccessfulToolInstructions(successFocus);
+            String expectedOutcome = "Reuse the successful pattern from " + successFocus
+                    + " on similar tasks while keeping the run predictable.";
             String approvalNotes = buildApprovalNotes(runVerdict, "medium");
-            String proposedPatch = "Capture the successful planner sequence as a reusable tactic with clear entry "
-                    + "conditions and expected checkpoints.";
+            String proposedPatch = "Document and reuse this successful sequence with clear entry conditions and "
+                    + "checkpoints: " + successFocus + ".";
             return EvolutionProposal.builder()
                     .summary(summary)
                     .rationale(rationale)
@@ -148,6 +147,15 @@ public class LlmEvolutionService {
         }
         String traceId = StringValueSupport.nullSafe(evidenceRef.getTraceId()).trim();
         String spanId = StringValueSupport.nullSafe(evidenceRef.getSpanId()).trim();
+        if (traceId.isEmpty() && spanId.isEmpty()) {
+            return "Risk: " + riskLevel + ". Evidence anchor recorded for this reviewed run.";
+        }
+        if (traceId.isEmpty()) {
+            return "Risk: " + riskLevel + ". Evidence anchored to span " + spanId + ".";
+        }
+        if (spanId.isEmpty()) {
+            return "Risk: " + riskLevel + ". Evidence anchored to trace " + traceId + ".";
+        }
         return "Risk: " + riskLevel + ". Evidence anchored to trace " + traceId + " span " + spanId + ".";
     }
 
@@ -174,6 +182,36 @@ public class LlmEvolutionService {
             }
         }
         return null;
+    }
+
+    private String extractSuccessFocus(RunVerdict runVerdict) {
+        String focus = extractFirstEvidenceFragment(runVerdict);
+        if (StringValueSupport.isBlank(focus)) {
+            focus = runVerdict.getOutcomeSummary();
+        }
+        if (StringValueSupport.isBlank(focus)) {
+            return "the reviewed run";
+        }
+        String trimmed = focus.trim();
+        if (trimmed.length() > 120) {
+            trimmed = trimmed.substring(0, 120).trim() + "...";
+        }
+        return trimmed;
+    }
+
+    private String buildSuccessfulToolInstructions(String successFocus) {
+        String normalizedFocus = StringValueSupport.nullSafe(successFocus).toLowerCase();
+        if (normalizedFocus.contains("shell")
+                || normalizedFocus.contains("command")
+                || normalizedFocus.contains("tool")) {
+            return "Prefer the validated shell tool chain and checkpoints demonstrated by this successful run.";
+        }
+        if (normalizedFocus.contains("deploy")
+                || normalizedFocus.contains("verification")
+                || normalizedFocus.contains("release")) {
+            return "Preserve the same verification checkpoints before marking similar release work as complete.";
+        }
+        return "Preserve the successful sequence and checkpoints shown by this run when the task shape matches.";
     }
 
     private String resolveFixArtifactType(RunVerdict runVerdict) {

@@ -114,7 +114,6 @@ public class TacticRecordService {
                 .orElseThrow(() -> new IllegalArgumentException("Tactic not found: " + tacticId));
         TacticRecord updated = copyRecord(existing);
         updated.setPromotionState("inactive");
-        updated.setTags(null);
         updated.setUpdatedAt(Instant.now(clock));
         return save(updated);
     }
