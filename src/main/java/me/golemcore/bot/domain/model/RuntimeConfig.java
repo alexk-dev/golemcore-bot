@@ -908,6 +908,11 @@ public class RuntimeConfig {
         private Boolean autoFallbackToBm25 = true;
         @Builder.Default
         private SelfEvolvingTacticEmbeddingsLocalConfig local = new SelfEvolvingTacticEmbeddingsLocalConfig();
+
+        @com.fasterxml.jackson.annotation.JsonProperty(value = "apiKeyPresent", access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public boolean isApiKeyPresent() {
+            return apiKey != null && !apiKey.isBlank();
+        }
     }
 
     @Data

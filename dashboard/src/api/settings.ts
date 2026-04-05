@@ -456,6 +456,7 @@ export interface SelfEvolvingTacticEmbeddingsConfig {
   provider: string | null;
   baseUrl: string | null;
   apiKey: string | null;
+  apiKeyPresent?: boolean;
   model: string | null;
   dimensions: number | null;
   batchSize: number | null;
@@ -858,6 +859,9 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
           provider: tacticEmbeddingsProvider,
           baseUrl: toNullableString(tacticsEmbeddings.baseUrl),
           apiKey: toNullableString(tacticsEmbeddings.apiKey),
+          apiKeyPresent: typeof tacticsEmbeddings.apiKeyPresent === 'boolean'
+            ? tacticsEmbeddings.apiKeyPresent
+            : undefined,
           model: tacticEmbeddingsModel,
           dimensions: typeof tacticsEmbeddings.dimensions === 'number' ? tacticsEmbeddings.dimensions : null,
           batchSize: typeof tacticsEmbeddings.batchSize === 'number' ? tacticsEmbeddings.batchSize : null,

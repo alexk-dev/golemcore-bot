@@ -18,6 +18,12 @@ const DEFAULT_REMOTE_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_REMOTE_MODEL = 'text-embedding-3-large';
 const DEFAULT_EMBEDDING_DIMENSIONS = 1024;
 const DEFAULT_EMBEDDING_BATCH_SIZE = 32;
+const REMOTE_EMBEDDING_MODEL_DATALIST_ID = 'self-evolving-remote-embedding-models';
+const REMOTE_EMBEDDING_MODEL_SUGGESTIONS: readonly string[] = [
+  'text-embedding-3-large',
+  'text-embedding-3-small',
+  'text-embedding-ada-002',
+];
 
 export interface OllamaEmbeddingPreset {
   value: string;
@@ -98,6 +104,7 @@ export function EmbeddingProviderSelector({
         disabled={disabled}
         onChange={(event) => updateEmbeddings((current) => {
           const nextProvider = event.target.value;
+          const previousProvider = current.provider ?? 'ollama';
           const nextPreset = presets[0];
           if (nextProvider === 'ollama') {
             return {
@@ -109,11 +116,16 @@ export function EmbeddingProviderSelector({
               batchSize: current.batchSize ?? nextPreset.batchSize,
             };
           }
+          const switchingFromLocal = previousProvider === 'ollama';
           return {
             ...current,
             provider: nextProvider,
-            baseUrl: current.baseUrl ?? DEFAULT_REMOTE_BASE_URL,
-            model: current.model ?? DEFAULT_REMOTE_MODEL,
+            baseUrl: switchingFromLocal || current.baseUrl == null || current.baseUrl.length === 0
+              ? DEFAULT_REMOTE_BASE_URL
+              : current.baseUrl,
+            model: switchingFromLocal || current.model == null || current.model.length === 0
+              ? DEFAULT_REMOTE_MODEL
+              : current.model,
           };
         })}
       >
@@ -203,16 +215,25 @@ export function RemoteEmbeddingFields({
       <Col md={3}>
         <Form.Group controlId="self-evolving-embedding-model">
           <Form.Label className="small fw-medium">
-            Embedding model <HelpTip text="Choose the remote model used for tactic indexing and retrieval." />
+            Embedding model <HelpTip text={`Pick a remote embedding model. Recommended: ${DEFAULT_REMOTE_MODEL}.`} />
           </Form.Label>
           <Form.Control
             size="sm"
             type="text"
+            list={REMOTE_EMBEDDING_MODEL_DATALIST_ID}
             placeholder={DEFAULT_REMOTE_MODEL}
             value={embeddings.model ?? ''}
             disabled={disabled}
             onChange={(event) => updateEmbeddings((current) => ({ ...current, model: event.target.value || null }))}
           />
+          <datalist id={REMOTE_EMBEDDING_MODEL_DATALIST_ID}>
+            {REMOTE_EMBEDDING_MODEL_SUGGESTIONS.map((suggestion) => (
+              <option key={suggestion} value={suggestion} />
+            ))}
+          </datalist>
+          <div className="text-body-secondary small mt-1">
+            Recommended: <code>{DEFAULT_REMOTE_MODEL}</code>
+          </div>
         </Form.Group>
       </Col>
       <Col md={3}>
@@ -230,7 +251,12 @@ export function RemoteEmbeddingFields({
       </Col>
       <Col md={3}>
         <Form.Group controlId="self-evolving-embedding-api-key">
-          <Form.Label className="small fw-medium">Embedding API key</Form.Label>
+          <Form.Label className="small fw-medium">
+            Embedding API key
+            {embeddings.apiKeyPresent === true && (embeddings.apiKey == null || embeddings.apiKey.length === 0) ? (
+              <span className="badge bg-success ms-2">Saved</span>
+            ) : null}
+          </Form.Label>
           <InputGroup size="sm">
             <Form.Control
               type={showApiKey ? 'text' : 'password'}
@@ -238,7 +264,7 @@ export function RemoteEmbeddingFields({
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
-              placeholder="Enter API key"
+              placeholder={embeddings.apiKeyPresent === true ? 'Key stored — leave blank to keep' : 'Enter API key'}
               value={embeddings.apiKey ?? ''}
               disabled={disabled}
               onChange={(event) => updateEmbeddings((current) => ({ ...current, apiKey: event.target.value || null }))}
@@ -373,3 +399,4 @@ export function EmbeddingDimensionSettings({
     </Row>
   );
 }
+

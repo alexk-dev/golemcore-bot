@@ -368,6 +368,33 @@ export async function installSelfEvolvingTacticEmbeddingModel(model: string): Pr
   return data;
 }
 
+export interface SelfEvolvingRemoteEmbeddingProbeRequest {
+  baseUrl: string | null;
+  apiKey: string | null;
+  model: string | null;
+  dimensions: number | null;
+  timeoutMs: number | null;
+}
+
+export interface SelfEvolvingRemoteEmbeddingProbeResponse {
+  ok: boolean;
+  model: string | null;
+  dimensions: number | null;
+  vectorLength: number | null;
+  baseUrl: string | null;
+  error: string | null;
+}
+
+export async function probeSelfEvolvingRemoteEmbedding(
+  request: SelfEvolvingRemoteEmbeddingProbeRequest,
+): Promise<SelfEvolvingRemoteEmbeddingProbeResponse> {
+  const { data } = await client.post<SelfEvolvingRemoteEmbeddingProbeResponse>(
+    '/self-evolving/tactics/embeddings/probe',
+    request,
+  );
+  return data;
+}
+
 export async function getSelfEvolvingArtifacts(): Promise<SelfEvolvingArtifactCatalogEntry[]> {
   const { data } = await client.get<SelfEvolvingArtifactCatalogEntry[]>('/self-evolving/artifacts');
   return data;

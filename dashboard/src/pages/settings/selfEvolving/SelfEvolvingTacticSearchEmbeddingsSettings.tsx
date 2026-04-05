@@ -13,6 +13,7 @@ import {
   RemoteEmbeddingFields,
   SearchModeSettings,
 } from './SelfEvolvingTacticSearchEmbeddingsSections';
+import { RemoteEmbeddingProbeSection } from './SelfEvolvingRemoteEmbeddingProbeSection';
 
 const DEFAULT_EMBEDDING_DIMENSIONS = 1024;
 const DEFAULT_EMBEDDING_BATCH_SIZE = 32;
@@ -404,6 +405,10 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
       </div>
 
       <LocalDiagnosticsAlert diagnostics={usesLocalRuntime ? localDiagnostics : null} />
+
+      {!usesLocalRuntime ? (
+        <RemoteEmbeddingProbeSection embeddings={embeddings} disabled={embeddingFieldsManaged} />
+      ) : null}
 
       <SearchModeSettings
         mode={form.tactics.search.mode}
