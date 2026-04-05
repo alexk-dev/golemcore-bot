@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -208,6 +209,19 @@ class TacticRecordServiceTest {
     }
 
     @Test
+    void shouldReactivatePersistedTacticAndTriggerRebuild() {
+        tacticRecordService.save(sampleTactic());
+        tacticRecordService.deactivate("tactic-1");
+
+        TacticRecord reactivated = tacticRecordService.reactivate("tactic-1");
+
+        assertEquals("active", reactivated.getPromotionState());
+        assertEquals("active", reactivated.getRolloutStage());
+        assertEquals("active", tacticRecordService.getById("tactic-1").orElseThrow().getPromotionState());
+        verify(rebuildService, times(3)).onTacticChanged("tactic-1");
+    }
+
+    @Test
     void shouldDeletePersistedTacticAndTriggerRebuild() {
         tacticRecordService.save(sampleTactic());
         tacticRecordService.getAll();
@@ -232,6 +246,47 @@ class TacticRecordServiceTest {
         assertTrue(
                 persistedFiles.get("self-evolving/tactics/tactic-1.json").contains("\"embeddingStatus\":\"indexed\""));
         verify(rebuildService, never()).onTacticChanged("tactic-1");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldEnrichReturnedRecordsWhenQualityMetricsServiceIsAvailable() {
+        ObjectProvider<TacticQualityMetricsService> qualityMetricsServiceProvider = mock(ObjectProvider.class);
+        TacticQualityMetricsService qualityMetricsService = mock(TacticQualityMetricsService.class);
+        when(qualityMetricsServiceProvider.getIfAvailable()).thenReturn(qualityMetricsService);
+        when(qualityMetricsService.enrich(any(TacticRecord.class))).thenAnswer(invocation -> {
+            TacticRecord input = invocation.getArgument(0);
+            TacticRecord enriched = TacticRecord.builder()
+                    .tacticId(input.getTacticId())
+                    .artifactStreamId(input.getArtifactStreamId())
+                    .originArtifactStreamId(input.getOriginArtifactStreamId())
+                    .artifactKey(input.getArtifactKey())
+                    .artifactType(input.getArtifactType())
+                    .title(input.getTitle())
+                    .aliases(input.getAliases())
+                    .contentRevisionId(input.getContentRevisionId())
+                    .intentSummary(input.getIntentSummary())
+                    .behaviorSummary(input.getBehaviorSummary())
+                    .promotionState(input.getPromotionState())
+                    .rolloutStage(input.getRolloutStage())
+                    .updatedAt(input.getUpdatedAt())
+                    .successRate(0.75d)
+                    .golemLocalUsageSuccess(0.75d)
+                    .build();
+            return enriched;
+        });
+        TacticRecordService enrichedService = new TacticRecordService(
+                storagePort,
+                Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC),
+                rebuildServiceProvider,
+                qualityMetricsServiceProvider);
+        enrichedService.save(sampleTactic());
+
+        TacticRecord record = enrichedService.getById("tactic-1").orElseThrow();
+
+        assertEquals(0.75d, record.getSuccessRate());
+        assertEquals(0.75d, record.getGolemLocalUsageSuccess());
+        verify(qualityMetricsService).enrich(any(TacticRecord.class));
     }
 
     private TacticRecord sampleTactic() {
