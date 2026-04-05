@@ -59,7 +59,6 @@ public class TacticQualityMetricsService {
     private final TacticUsageAttributionService tacticUsageAttributionService;
     private final ObservedTacticMetricsCalculator observedTacticMetricsCalculator;
     private final BenchmarkLabService benchmarkLabService;
-    private final BenchmarkWinRateCalculator benchmarkWinRateCalculator;
     private final Clock clock;
     private final AtomicReference<EnrichCacheEntry> enrichCache = new AtomicReference<>();
 
@@ -69,14 +68,12 @@ public class TacticQualityMetricsService {
             TacticUsageAttributionService tacticUsageAttributionService,
             ObservedTacticMetricsCalculator observedTacticMetricsCalculator,
             BenchmarkLabService benchmarkLabService,
-            BenchmarkWinRateCalculator benchmarkWinRateCalculator,
             Clock clock) {
         this.artifactBundleService = artifactBundleService;
         this.selfEvolvingRunService = selfEvolvingRunService;
         this.tacticUsageAttributionService = tacticUsageAttributionService;
         this.observedTacticMetricsCalculator = observedTacticMetricsCalculator;
         this.benchmarkLabService = benchmarkLabService;
-        this.benchmarkWinRateCalculator = benchmarkWinRateCalculator;
         this.clock = clock;
     }
 
@@ -218,7 +215,7 @@ public class TacticQualityMetricsService {
             if (campaignTacticIds.isEmpty()) {
                 continue;
             }
-            boolean won = benchmarkWinRateCalculator.isCandidateWin(verdict.get());
+            boolean won = BenchmarkWinRateCalculator.isCandidateWin(verdict.get());
             for (String tacticId : campaignTacticIds) {
                 TacticMetricsAggregator aggregator = aggregators.get(tacticId);
                 if (aggregator != null) {

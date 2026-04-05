@@ -8,11 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BenchmarkWinRateCalculatorTest {
 
-    private final BenchmarkWinRateCalculator calculator = new BenchmarkWinRateCalculator();
-
     @Test
     void shouldTreatPositiveQualityDeltaAsWin() {
-        assertTrue(calculator.isCandidateWin(BenchmarkCampaignVerdict.builder()
+        assertTrue(BenchmarkWinRateCalculator.isCandidateWin(BenchmarkCampaignVerdict.builder()
                 .qualityDelta(0.01d)
                 .recommendation("reject")
                 .build()));
@@ -20,22 +18,29 @@ class BenchmarkWinRateCalculatorTest {
 
     @Test
     void shouldTreatPromoteLikeRecommendationsAsWin() {
-        assertTrue(calculator.isCandidateWin(BenchmarkCampaignVerdict.builder().recommendation("promote").build()));
-        assertTrue(calculator.isCandidateWin(BenchmarkCampaignVerdict.builder().recommendation("Ship").build()));
-        assertTrue(calculator.isCandidateWin(BenchmarkCampaignVerdict.builder().recommendation("ACCEPT").build()));
+        assertTrue(BenchmarkWinRateCalculator
+                .isCandidateWin(BenchmarkCampaignVerdict.builder().recommendation("promote").build()));
+        assertTrue(BenchmarkWinRateCalculator
+                .isCandidateWin(BenchmarkCampaignVerdict.builder().recommendation("Ship").build()));
+        assertTrue(BenchmarkWinRateCalculator
+                .isCandidateWin(BenchmarkCampaignVerdict.builder().recommendation("ACCEPT").build()));
     }
 
     @Test
     void shouldTreatOtherRecommendationsAsLoss() {
-        assertFalse(calculator.isCandidateWin(BenchmarkCampaignVerdict.builder().recommendation("reject").build()));
-        assertFalse(calculator.isCandidateWin(BenchmarkCampaignVerdict.builder().recommendation("hold").build()));
-        assertFalse(calculator.isCandidateWin(BenchmarkCampaignVerdict.builder().build()));
-        assertFalse(calculator.isCandidateWin(null));
+        assertFalse(BenchmarkWinRateCalculator
+                .isCandidateWin(BenchmarkCampaignVerdict.builder().recommendation("reject").build()));
+        assertFalse(BenchmarkWinRateCalculator
+                .isCandidateWin(BenchmarkCampaignVerdict.builder().recommendation("hold").build()));
+        assertFalse(BenchmarkWinRateCalculator.isCandidateWin(BenchmarkCampaignVerdict.builder().build()));
+        assertFalse(BenchmarkWinRateCalculator.isCandidateWin(null));
     }
 
     @Test
     void shouldNotTreatNonPositiveQualityDeltaAsWin() {
-        assertFalse(calculator.isCandidateWin(BenchmarkCampaignVerdict.builder().qualityDelta(0.0d).build()));
-        assertFalse(calculator.isCandidateWin(BenchmarkCampaignVerdict.builder().qualityDelta(-0.1d).build()));
+        assertFalse(BenchmarkWinRateCalculator
+                .isCandidateWin(BenchmarkCampaignVerdict.builder().qualityDelta(0.0d).build()));
+        assertFalse(BenchmarkWinRateCalculator
+                .isCandidateWin(BenchmarkCampaignVerdict.builder().qualityDelta(-0.1d).build()));
     }
 }

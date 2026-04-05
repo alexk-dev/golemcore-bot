@@ -19,7 +19,6 @@ package me.golemcore.bot.domain.selfevolving.benchmark;
  */
 
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaignVerdict;
-import org.springframework.stereotype.Service;
 
 import java.util.Locale;
 
@@ -32,15 +31,17 @@ import java.util.Locale;
  * decision isolated here means richer verdict signals (confidence thresholds,
  * multi-metric deltas) only touch this class.
  */
-@Service
-public class BenchmarkWinRateCalculator {
+public final class BenchmarkWinRateCalculator {
+
+    private BenchmarkWinRateCalculator() {
+    }
 
     /**
      * A verdict is a candidate win when the campaign recommends promoting the
      * candidate OR when the measured quality delta is strictly positive. Null
      * verdicts never count as wins.
      */
-    public boolean isCandidateWin(BenchmarkCampaignVerdict verdict) {
+    public static boolean isCandidateWin(BenchmarkCampaignVerdict verdict) {
         if (verdict == null) {
             return false;
         }

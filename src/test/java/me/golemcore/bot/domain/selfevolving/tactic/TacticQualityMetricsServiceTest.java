@@ -24,7 +24,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
-import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkWinRateCalculator;
 import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
 
 class TacticQualityMetricsServiceTest {
@@ -34,7 +33,6 @@ class TacticQualityMetricsServiceTest {
     private TacticUsageAttributionService tacticUsageAttributionService;
     private ObservedTacticMetricsCalculator observedTacticMetricsCalculator;
     private BenchmarkLabService benchmarkLabService;
-    private BenchmarkWinRateCalculator benchmarkWinRateCalculator;
     private Clock clock;
     private TacticQualityMetricsService tacticQualityMetricsService;
 
@@ -47,14 +45,12 @@ class TacticQualityMetricsServiceTest {
         clock = Clock.fixed(Instant.parse("2026-04-05T12:00:00Z"), ZoneOffset.UTC);
         tacticUsageAttributionService = new TacticUsageAttributionService();
         observedTacticMetricsCalculator = new ObservedTacticMetricsCalculator(clock);
-        benchmarkWinRateCalculator = new BenchmarkWinRateCalculator();
         tacticQualityMetricsService = new TacticQualityMetricsService(
                 artifactBundleService,
                 selfEvolvingRunService,
                 tacticUsageAttributionService,
                 observedTacticMetricsCalculator,
                 benchmarkLabService,
-                benchmarkWinRateCalculator,
                 clock);
     }
 
