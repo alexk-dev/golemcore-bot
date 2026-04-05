@@ -98,6 +98,7 @@ class PromotionWorkflowServiceTest {
                 runtimeConfigService,
                 evolutionCandidateService,
                 artifactBundleService,
+                new PromotionDecisionHydrationService(),
                 clock);
     }
 
@@ -553,6 +554,7 @@ class PromotionWorkflowServiceTest {
                 runtimeConfigService,
                 evolutionCandidateService,
                 artifactBundleService,
+                new PromotionDecisionHydrationService(),
                 Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC));
         List<EvolutionCandidate> candidates = List.of(candidate("candidate-10", "bundle-10"));
 

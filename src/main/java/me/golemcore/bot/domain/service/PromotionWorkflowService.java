@@ -56,6 +56,7 @@ public class PromotionWorkflowService {
     private final RuntimeConfigService runtimeConfigService;
     private final EvolutionCandidateService evolutionCandidateService;
     private final ArtifactBundleService artifactBundleService;
+    private final PromotionDecisionHydrationService promotionDecisionHydrationService;
     private final Clock clock;
     private final ObjectMapper objectMapper;
     private final AtomicReference<List<EvolutionCandidate>> candidateCache = new AtomicReference<>();
@@ -66,11 +67,13 @@ public class PromotionWorkflowService {
             RuntimeConfigService runtimeConfigService,
             EvolutionCandidateService evolutionCandidateService,
             ArtifactBundleService artifactBundleService,
+            PromotionDecisionHydrationService promotionDecisionHydrationService,
             Clock clock) {
         this.storagePort = storagePort;
         this.runtimeConfigService = runtimeConfigService;
         this.evolutionCandidateService = evolutionCandidateService;
         this.artifactBundleService = artifactBundleService;
+        this.promotionDecisionHydrationService = promotionDecisionHydrationService;
         this.clock = clock;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -337,7 +340,7 @@ public class PromotionWorkflowService {
                     continue;
                 }
                 EvolutionCandidate candidate = findCandidate(decision.getCandidateId()).orElse(null);
-                if (hydrateDecisionFromCandidate(decision, candidate)) {
+                if (promotionDecisionHydrationService.hydrate(decision, candidate)) {
                     mutated = true;
                 }
             }
@@ -381,89 +384,6 @@ public class PromotionWorkflowService {
                 .evidenceRefs(candidate.getEvidenceRefs() != null ? new ArrayList<>(candidate.getEvidenceRefs())
                         : new ArrayList<>())
                 .build();
-    }
-
-    private boolean hydrateDecisionFromCandidate(PromotionDecision decision, EvolutionCandidate candidate) {
-        boolean mutated = false;
-        if (candidate != null) {
-            if (StringValueSupport.isBlank(decision.getArtifactType())) {
-                decision.setArtifactType(candidate.getArtifactType());
-                mutated = true;
-            }
-            if (StringValueSupport.isBlank(decision.getArtifactSubtype())) {
-                decision.setArtifactSubtype(candidate.getArtifactSubtype());
-                mutated = true;
-            }
-            if (StringValueSupport.isBlank(decision.getArtifactStreamId())) {
-                decision.setArtifactStreamId(candidate.getArtifactStreamId());
-                mutated = true;
-            }
-            if (StringValueSupport.isBlank(decision.getOriginArtifactStreamId())) {
-                decision.setOriginArtifactStreamId(candidate.getOriginArtifactStreamId());
-                mutated = true;
-            }
-            if (StringValueSupport.isBlank(decision.getArtifactKey())) {
-                decision.setArtifactKey(candidate.getArtifactKey());
-                mutated = true;
-            }
-            if (StringValueSupport.isBlank(decision.getContentRevisionId())) {
-                decision.setContentRevisionId(candidate.getContentRevisionId());
-                mutated = true;
-            }
-            if (StringValueSupport.isBlank(decision.getBaseContentRevisionId())) {
-                decision.setBaseContentRevisionId(candidate.getBaseContentRevisionId());
-                mutated = true;
-            }
-            if (StringValueSupport.isBlank(decision.getOriginBundleId())) {
-                decision.setOriginBundleId(candidate.getBaseVersion());
-                mutated = true;
-            }
-            if (StringValueSupport.isBlank(decision.getBundleId())) {
-                decision.setBundleId(buildTargetBundleId(candidate, resolvePromotionTargetFromDecision(decision)));
-                mutated = true;
-            }
-            if (StringValueSupport.isBlank(decision.getFromLifecycleState())) {
-                decision.setFromLifecycleState(candidate.getLifecycleState());
-                mutated = true;
-            }
-            if (StringValueSupport.isBlank(decision.getFromRolloutStage())) {
-                decision.setFromRolloutStage(candidate.getRolloutStage());
-                mutated = true;
-            }
-        }
-        if (StringValueSupport.isBlank(decision.getToLifecycleState())) {
-            decision.setToLifecycleState(resolveLifecycleState(decision.getToState()));
-            mutated = true;
-        }
-        if (StringValueSupport.isBlank(decision.getToRolloutStage())) {
-            decision.setToRolloutStage(resolveRolloutStage(decision.getToState()));
-            mutated = true;
-        }
-        return mutated;
-    }
-
-    private PromotionTarget resolvePromotionTargetFromDecision(PromotionDecision decision) {
-        String toState = decision != null ? decision.getToState() : null;
-        String toLifecycleState = decision != null ? decision.getToLifecycleState() : null;
-        String toRolloutStage = decision != null ? decision.getToRolloutStage() : null;
-        return new PromotionTarget(
-                !StringValueSupport.isBlank(toState)
-                        ? toState
-                        : resolveLegacyState(toLifecycleState, toRolloutStage),
-                !StringValueSupport.isBlank(toLifecycleState) ? toLifecycleState : resolveLifecycleState(toState),
-                !StringValueSupport.isBlank(toRolloutStage) ? toRolloutStage : resolveRolloutStage(toState));
-    }
-
-    private String resolveLegacyState(String lifecycleState, String rolloutStage) {
-        return CandidateLifecycleResolver.resolveLegacyStatus(lifecycleState, rolloutStage);
-    }
-
-    private String resolveLifecycleState(String state) {
-        return CandidateLifecycleResolver.resolveLifecycleState(state);
-    }
-
-    private String resolveRolloutStage(String state) {
-        return CandidateLifecycleResolver.resolveRolloutStage(state);
     }
 
     private record PromotionTarget(String legacyState, String lifecycleState, String rolloutStage) {
