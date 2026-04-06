@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.selfevolving.artifact;
+package me.golemcore.bot.adapter.inbound.web.projection;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -39,6 +39,7 @@ import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionEvide
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionDiffProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionEvidenceProjection;
+import me.golemcore.bot.domain.selfevolving.artifact.ArtifactWorkspaceProjectionService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import org.springframework.stereotype.Service;
 

@@ -12,7 +12,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
-import me.golemcore.bot.domain.selfevolving.SelfEvolvingProjectionService;
+import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
 import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import org.springframework.http.HttpStatus;

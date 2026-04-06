@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.system;
+package me.golemcore.bot.adapter.outbound.hive;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -26,7 +26,6 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.HiveSessionState;
@@ -34,10 +33,11 @@ import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
 import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticSearchMetricsService;
+import me.golemcore.bot.domain.system.AgentSystem;
 import org.springframework.stereotype.Component;
 
 @Component

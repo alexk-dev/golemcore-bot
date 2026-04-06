@@ -7,7 +7,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvi
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactRevisionDiffDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactTransitionDiffDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactWorkspaceSummaryDto;
-import me.golemcore.bot.domain.selfevolving.SelfEvolvingProjectionService;
+import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;

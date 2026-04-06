@@ -5,7 +5,7 @@ import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
 import me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService;
-import me.golemcore.bot.domain.selfevolving.SelfEvolvingProjectionService;
+import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;

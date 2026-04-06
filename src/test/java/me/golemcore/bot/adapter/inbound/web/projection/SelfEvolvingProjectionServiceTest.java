@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.selfevolving;
+package me.golemcore.bot.adapter.inbound.web.projection;
 
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunSummaryDto;
@@ -54,7 +54,6 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
-import me.golemcore.bot.domain.selfevolving.artifact.ArtifactProjectionService;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactWorkspaceProjectionService;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
 import me.golemcore.bot.domain.selfevolving.benchmark.DeterministicJudgeService;

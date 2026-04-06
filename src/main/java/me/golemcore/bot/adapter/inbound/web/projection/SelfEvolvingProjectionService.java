@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.selfevolving;
+package me.golemcore.bot.adapter.inbound.web.projection;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -53,7 +53,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
-import me.golemcore.bot.domain.selfevolving.artifact.ArtifactProjectionService;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
 import me.golemcore.bot.domain.selfevolving.benchmark.DeterministicJudgeService;
 import me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService;

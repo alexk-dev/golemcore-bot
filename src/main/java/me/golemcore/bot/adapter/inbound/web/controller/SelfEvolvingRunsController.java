@@ -8,7 +8,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingPromoti
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingRunSummaryDto;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
-import me.golemcore.bot.domain.selfevolving.SelfEvolvingProjectionService;
+import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
 import me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
