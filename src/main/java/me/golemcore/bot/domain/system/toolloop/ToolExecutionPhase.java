@@ -289,6 +289,10 @@ class ToolExecutionPhase {
             if (toolCall.getId() != null) {
                 attributes.put("tool.callId", toolCall.getId());
             }
+            putIfPresent(attributes, ContextAttributes.SELF_EVOLVING_RUN_ID,
+                    readContextAttribute(context, ContextAttributes.SELF_EVOLVING_RUN_ID));
+            putIfPresent(attributes, ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID,
+                    readContextAttribute(context, ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
             TraceContext toolSpan = startChildSpan(context, "tool." + toolCall.getName(), TraceSpanKind.TOOL,
                     attributes);
             captureToolSnapshot(context, toolSpan, tracingConfig, "input", toolCall);
@@ -526,5 +530,20 @@ class ToolExecutionPhase {
             } catch (Exception e) { // NOSONAR - tracing must not break tool loop
                 return String.valueOf(payload).getBytes(StandardCharsets.UTF_8);
             }
+        }
+
+        private String readContextAttribute(AgentContext context, String key) {
+            if (context == null || context.getAttributes() == null || key == null || key.isBlank()) {
+                return null;
+            }
+            Object value = context.getAttributes().get(key);
+            return value instanceof String stringValue && !stringValue.isBlank() ? stringValue : null;
+        }
+
+        private void putIfPresent(Map<String, Object> attributes, String key, String value) {
+            if (attributes == null || key == null || key.isBlank() || value == null || value.isBlank()) {
+                return;
+            }
+            attributes.put(key, value);
         }
 }

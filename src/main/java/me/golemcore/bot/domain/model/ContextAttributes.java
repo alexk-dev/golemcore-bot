@@ -202,6 +202,12 @@ public final class ContextAttributes {
      */
     public static final String MESSAGE_INTERNAL_KIND_TOOL_RECOVERY = "tool_recovery";
 
+    /**
+     * String value for {@link #MESSAGE_INTERNAL_KIND}: transient tactic advisory
+     * guidance for the current turn.
+     */
+    public static final String MESSAGE_INTERNAL_KIND_TACTIC_ADVISORY = "tactic_advisory";
+
     /** Boolean ? current inbound message is an internal runtime-only message. */
     public static final String TURN_INPUT_INTERNAL = "turn.input.internal";
 
@@ -299,6 +305,37 @@ public final class ContextAttributes {
 
     /** String ? Hive golem identifier for the active control-plane session. */
     public static final String HIVE_GOLEM_ID = "hive.golem.id";
+
+    /** String ? SelfEvolving run identifier bound to the current turn. */
+    public static final String SELF_EVOLVING_RUN_ID = "selfevolving.run.id";
+
+    /**
+     * String ? SelfEvolving artifact bundle identifier bound to the current turn.
+     */
+    public static final String SELF_EVOLVING_ARTIFACT_BUNDLE_ID = "selfevolving.artifact.bundle.id";
+
+    /** Boolean ? whether post-run SelfEvolving analysis already completed. */
+    public static final String SELF_EVOLVING_ANALYSIS_COMPLETED = "selfevolving.analysis.completed";
+
+    /** TacticSearchQuery ? expanded tactic search query for the active turn. */
+    public static final String SELF_EVOLVING_TACTIC_QUERY = "selfevolving.tactic.query";
+
+    /**
+     * List<TacticSearchResult> ? tactic-search candidates prepared for the turn.
+     */
+    public static final String SELF_EVOLVING_TACTIC_RESULTS = "selfevolving.tactic.results";
+
+    /** TacticSearchResult ? selected tactic candidate for runtime guidance. */
+    public static final String SELF_EVOLVING_TACTIC_SELECTION = "selfevolving.tactic.selection";
+
+    /** TacticSearchResult ? tactic guidance carried across pipeline transitions. */
+    public static final String SELF_EVOLVING_TACTIC_GUIDANCE = "selfevolving.tactic.guidance";
+
+    /**
+     * List<String> ? tactic ids surfaced to the agent during a run (for
+     * attribution).
+     */
+    public static final String APPLIED_TACTIC_IDS = "selfevolving.tactic.applied.ids";
 
     /** Map<String,Object> ? latest structured compaction details. */
     public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";

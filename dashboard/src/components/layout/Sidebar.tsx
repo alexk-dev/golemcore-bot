@@ -11,6 +11,7 @@ import {
   FiList,
   FiMessageSquare,
   FiSettings,
+  FiShuffle,
   FiTerminal,
   FiX,
   FiZap,
@@ -19,6 +20,7 @@ import type { SessionSummary } from '../../api/sessions';
 import { useChatSessionStore } from '../../store/chatSessionStore';
 import { useSidebarStore } from '../../store/sidebarStore';
 import { useActiveSession, useCreateSession, useRecentSessions } from '../../hooks/useSessions';
+import { useRuntimeConfig } from '../../hooks/useSettings';
 import { useSystemHealth, useSystemUpdateStatus } from '../../hooks/useSystem';
 import { isLegacyCompatibleConversationKey, normalizeConversationKey } from '../../utils/conversationKey';
 import { getSidebarUpdateBadge } from '../../utils/systemUpdateUi';
@@ -33,6 +35,7 @@ const links = [
   { to: '/scheduler', icon: <FiCalendar size={20} />, label: 'Scheduler' },
   { to: '/webhooks', icon: <FiGlobe size={20} />, label: 'Webhooks' },
   { to: '/analytics', icon: <FiBarChart2 size={20} />, label: 'Analytics' },
+  { to: '/self-evolving', icon: <FiShuffle size={20} />, label: 'Self-Evolving' },
   { to: '/prompts', icon: <FiFileText size={20} />, label: 'Prompts' },
   { to: '/skills', icon: <FiZap size={20} />, label: 'Skills' },
   { to: '/diagnostics', icon: <FiActivity size={20} />, label: 'Diagnostics' },
@@ -135,8 +138,10 @@ export default function Sidebar() {
   const clientInstanceId = useChatSessionStore((s) => s.clientInstanceId);
   const activeSessionId = useChatSessionStore((s) => s.activeSessionId);
   const setActiveSessionId = useChatSessionStore((s) => s.setActiveSessionId);
+  const { data: runtimeConfig } = useRuntimeConfig();
   const { data: health } = useSystemHealth();
   const { data: updateStatus } = useSystemUpdateStatus();
+  const isSelfEvolvingEnabled = runtimeConfig?.selfEvolving?.enabled === true;
   const {
     data: recentSessionsData,
     isLoading: recentSessionsLoading,
@@ -209,7 +214,7 @@ export default function Sidebar() {
           </button>
         </div>
         <Nav className="flex-column flex-grow-1 px-2 py-2">
-          {links.map((link) => (
+          {links.filter((link) => link.to !== '/self-evolving' || isSelfEvolvingEnabled).map((link) => (
             <Nav.Link
               key={link.to}
               as={NavLink}

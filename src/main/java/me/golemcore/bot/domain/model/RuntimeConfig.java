@@ -87,6 +87,9 @@ public class RuntimeConfig {
     @Builder.Default
     private HiveConfig hive = new HiveConfig();
 
+    @Builder.Default
+    private SelfEvolvingConfig selfEvolving = new SelfEvolvingConfig();
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -817,6 +820,241 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingConfig {
+        @Builder.Default
+        private Boolean enabled = false;
+        @Builder.Default
+        private Boolean tracePayloadOverride = true;
+        @Builder.Default
+        private Boolean managedByProperties = false;
+        @Builder.Default
+        private List<String> overriddenPaths = new ArrayList<>();
+        @Builder.Default
+        private SelfEvolvingTacticsConfig tactics = new SelfEvolvingTacticsConfig();
+        @Builder.Default
+        private SelfEvolvingCaptureConfig capture = new SelfEvolvingCaptureConfig();
+        @Builder.Default
+        private SelfEvolvingJudgeConfig judge = new SelfEvolvingJudgeConfig();
+        @Builder.Default
+        private SelfEvolvingEvolutionConfig evolution = new SelfEvolvingEvolutionConfig();
+        @Builder.Default
+        private SelfEvolvingPromotionConfig promotion = new SelfEvolvingPromotionConfig();
+        @Builder.Default
+        private SelfEvolvingBenchmarkConfig benchmark = new SelfEvolvingBenchmarkConfig();
+        @Builder.Default
+        private SelfEvolvingHiveConfig hive = new SelfEvolvingHiveConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticsConfig {
+        @Builder.Default
+        private Boolean enabled = false;
+        @Builder.Default
+        private SelfEvolvingTacticSearchConfig search = new SelfEvolvingTacticSearchConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticSearchConfig {
+        @Builder.Default
+        private String mode = "hybrid";
+        @Builder.Default
+        private SelfEvolvingTacticBm25Config bm25 = new SelfEvolvingTacticBm25Config();
+        @Builder.Default
+        private SelfEvolvingTacticEmbeddingsConfig embeddings = new SelfEvolvingTacticEmbeddingsConfig();
+        @Builder.Default
+        private SelfEvolvingTacticRerankConfig rerank = new SelfEvolvingTacticRerankConfig();
+        @Builder.Default
+        private SelfEvolvingToggleConfig personalization = new SelfEvolvingToggleConfig();
+        @Builder.Default
+        private SelfEvolvingToggleConfig negativeMemory = new SelfEvolvingToggleConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticBm25Config {
+        @Builder.Default
+        private Boolean enabled = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticEmbeddingsConfig {
+        @Builder.Default
+        private Boolean enabled = false;
+        private String provider;
+        private String baseUrl;
+        private Secret apiKey;
+        private String model;
+        private Integer dimensions;
+        private Integer batchSize;
+        private Integer timeoutMs;
+        @Builder.Default
+        private Boolean autoFallbackToBm25 = true;
+        @Builder.Default
+        private SelfEvolvingTacticEmbeddingsLocalConfig local = new SelfEvolvingTacticEmbeddingsLocalConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticEmbeddingsLocalConfig {
+        @Builder.Default
+        private Boolean autoInstall = false;
+        @Builder.Default
+        private Boolean pullOnStart = false;
+        @Builder.Default
+        private Boolean requireHealthyRuntime = true;
+        @Builder.Default
+        private Boolean failOpen = true;
+        @Builder.Default
+        private Integer startupTimeoutMs = 5000;
+        @Builder.Default
+        private Integer initialRestartBackoffMs = 1000;
+        @Builder.Default
+        private String minimumRuntimeVersion = "0.19.0";
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticRerankConfig {
+        private Boolean crossEncoder = true;
+        private String tier = "deep";
+        private Integer timeoutMs = 15000;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingToggleConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingCaptureConfig {
+        @Builder.Default
+        private String llm = "full";
+        @Builder.Default
+        private String tool = "full";
+        @Builder.Default
+        private String context = "full";
+        @Builder.Default
+        private String skill = "full";
+        @Builder.Default
+        private String tier = "full";
+        @Builder.Default
+        private String infra = "meta_only";
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingJudgeConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private String primaryTier = "smart";
+        @Builder.Default
+        private String tiebreakerTier = "deep";
+        @Builder.Default
+        private String evolutionTier = "deep";
+        @Builder.Default
+        private Boolean requireEvidenceAnchors = true;
+        @Builder.Default
+        private Double uncertaintyThreshold = 0.22d;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingEvolutionConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private List<String> modes = new ArrayList<>(List.of("fix", "derive", "tune"));
+        @Builder.Default
+        private List<String> artifactTypes = new ArrayList<>(
+                List.of("skill", "prompt", "routing_policy", "tool_policy", "memory_policy"));
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingPromotionConfig {
+        @Builder.Default
+        private String mode = "approval_gate";
+        @Builder.Default
+        private Boolean allowAutoAccept = true;
+        @Builder.Default
+        private Boolean shadowRequired = false;
+        @Builder.Default
+        private Boolean canaryRequired = false;
+        @Builder.Default
+        private Boolean hiveApprovalPreferred = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingBenchmarkConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private Boolean harvestProductionRuns = true;
+        @Builder.Default
+        private Boolean autoCreateRegressionCases = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingHiveConfig {
+        @Builder.Default
+        private Boolean publishInspectionProjection = true;
+        @Builder.Default
+        private Boolean readonlyInspection = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class PlanConfig {
         @Builder.Default
         private Boolean enabled = false;
@@ -879,7 +1117,9 @@ public class RuntimeConfig {
                                                                                                         "delayed-actions",
                                                                                                         DelayedActionsConfig.class), HIVE(
                                                                                                                 "hive",
-                                                                                                                HiveConfig.class);
+                                                                                                                HiveConfig.class), SELF_EVOLVING(
+                                                                                                                        "self-evolving",
+                                                                                                                        SelfEvolvingConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

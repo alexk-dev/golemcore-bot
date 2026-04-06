@@ -1,0 +1,175 @@
+package me.golemcore.bot.domain.system;
+
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
+import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionProposal;
+import me.golemcore.bot.domain.model.selfevolving.RunRecord;
+import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.selfevolving.benchmark.DeterministicJudgeService;
+import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateService;
+import me.golemcore.bot.domain.selfevolving.candidate.LlmEvolutionService;
+import me.golemcore.bot.domain.selfevolving.benchmark.LlmJudgeService;
+import me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Minimal post-turn hook that materializes a SelfEvolving run record.
+ */
+@Component
+@Slf4j
+public class PostRunAnalysisSystem implements AgentSystem {
+
+    private final RuntimeConfigService runtimeConfigService;
+    private final SelfEvolvingRunService selfEvolvingRunService;
+    private final DeterministicJudgeService deterministicJudgeService;
+    private final LlmJudgeService llmJudgeService;
+    private final LlmEvolutionService llmEvolutionService;
+    private final EvolutionCandidateService evolutionCandidateService;
+    private final PromotionWorkflowService promotionWorkflowService;
+    private final SelfEvolvingProjectionPublishPort projectionPublishPort;
+
+    public PostRunAnalysisSystem(RuntimeConfigService runtimeConfigService,
+            SelfEvolvingRunService selfEvolvingRunService,
+            DeterministicJudgeService deterministicJudgeService,
+            LlmJudgeService llmJudgeService,
+            LlmEvolutionService llmEvolutionService,
+            EvolutionCandidateService evolutionCandidateService,
+            PromotionWorkflowService promotionWorkflowService,
+            SelfEvolvingProjectionPublishPort projectionPublishPort) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.selfEvolvingRunService = selfEvolvingRunService;
+        this.deterministicJudgeService = deterministicJudgeService;
+        this.llmJudgeService = llmJudgeService;
+        this.llmEvolutionService = llmEvolutionService;
+        this.evolutionCandidateService = evolutionCandidateService;
+        this.promotionWorkflowService = promotionWorkflowService;
+        this.projectionPublishPort = projectionPublishPort;
+    }
+
+    @Override
+    public String getName() {
+        return "PostRunAnalysisSystem";
+    }
+
+    @Override
+    public int getOrder() {
+        return 58;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return runtimeConfigService.isSelfEvolvingEnabled();
+    }
+
+    @Override
+    public boolean shouldProcess(AgentContext context) {
+        if (!isEnabled()) {
+            return false;
+        }
+        if (context == null || context.getTurnOutcome() == null) {
+            return false;
+        }
+        return !Boolean.TRUE.equals(context.getAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED));
+    }
+
+    @Override
+    public AgentContext process(AgentContext context) {
+        if (!shouldProcess(context)) {
+            return context;
+        }
+        RunRecord startedRun = resolveRun(context);
+        RunRecord completedRun = selfEvolvingRunService.completeRun(startedRun, context);
+        TraceRecord traceRecord = resolveTrace(context, completedRun);
+        RunVerdict deterministicVerdict = deterministicJudgeService.evaluate(completedRun, traceRecord);
+        RunVerdict llmVerdict = llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict);
+        selfEvolvingRunService.saveVerdict(completedRun.getId(), llmVerdict);
+        EvolutionProposal proposal = llmEvolutionService.propose(completedRun, llmVerdict);
+        List<EvolutionCandidate> candidates = evolutionCandidateService
+                .deriveCandidates(completedRun, llmVerdict, proposal);
+        if (isAutoAcceptMode()) {
+            promotionWorkflowService.registerAndPlanCandidates(candidates);
+        } else {
+            promotionWorkflowService.registerCandidates(candidates);
+        }
+        if (!candidates.isEmpty()) {
+            bindRunBundleToCandidateBaselines(completedRun, candidates);
+        }
+        try {
+            projectionPublishPort.publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
+        } catch (RuntimeException exception) {
+            log.debug("[Hive] Skipping SelfEvolving projection publish: {}", exception.getMessage());
+        }
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, completedRun.getId());
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, completedRun.getArtifactBundleId());
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED, true);
+        return context;
+    }
+
+    private boolean isAutoAcceptMode() {
+        return "auto_accept".equalsIgnoreCase(runtimeConfigService.getSelfEvolvingPromotionMode());
+    }
+
+    private RunRecord resolveRun(AgentContext context) {
+        String runId = context != null ? context.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID) : null;
+        Optional<RunRecord> existingRun = selfEvolvingRunService.findRun(runId);
+        if (existingRun.isPresent()) {
+            return existingRun.get();
+        }
+        return selfEvolvingRunService.startRun(context);
+    }
+
+    private TraceRecord resolveTrace(AgentContext context, RunRecord completedRun) {
+        if (context == null || context.getSession() == null || context.getSession().getTraces() == null) {
+            return null;
+        }
+        if (completedRun != null && completedRun.getTraceId() != null && !completedRun.getTraceId().isBlank()) {
+            return context.getSession().getTraces().stream()
+                    .filter(trace -> trace != null && completedRun.getTraceId().equals(trace.getTraceId()))
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (context.getTraceContext() == null || context.getTraceContext().getTraceId() == null
+                || context.getTraceContext().getTraceId().isBlank()) {
+            return null;
+        }
+        return context.getSession().getTraces().stream()
+                .filter(trace -> trace != null && context.getTraceContext().getTraceId().equals(trace.getTraceId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void bindRunBundleToCandidateBaselines(RunRecord completedRun, List<EvolutionCandidate> candidates) {
+        if (completedRun == null || completedRun.getArtifactBundleId() == null
+                || completedRun.getArtifactBundleId().isBlank()) {
+            return;
+        }
+        promotionWorkflowService.bindCandidateBaseRevisions(completedRun.getArtifactBundleId(), candidates);
+    }
+}

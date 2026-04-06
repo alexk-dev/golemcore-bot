@@ -29,4 +29,8 @@ public final class StringValueSupport {
     public static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
+
+    public static String nullSafe(String value) {
+        return value != null ? value : "";
+    }
 }

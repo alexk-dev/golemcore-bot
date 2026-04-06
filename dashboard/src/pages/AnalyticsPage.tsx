@@ -1,5 +1,6 @@
 import { type ReactElement, useMemo, useState } from 'react';
 import { Card, Row, Col, ButtonGroup, Button, Spinner, Placeholder } from 'react-bootstrap';
+import { Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useUsageStats, useUsageByModel } from '../hooks/useUsage';
 import type { UsageByModelEntry } from '../api/usage';
@@ -182,6 +183,24 @@ export default function AnalyticsPage(): ReactElement {
           </Col>
         </Row>
       )}
+
+      <Row className="g-3 mt-1">
+        <Col>
+          <Card className="selfevolving-launch-card">
+            <Card.Body className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
+              <div>
+                <Card.Title className="mb-1">Self-Evolving Workspace</Card.Title>
+                <Card.Text className="text-body-secondary mb-0">
+                  Open the trace-first judge workspace to inspect runs, queue promotions, and create regression campaigns.
+                </Card.Text>
+              </div>
+              <Link to="/self-evolving" className="btn btn-primary">
+                Open Self-Evolving
+              </Link>
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 }

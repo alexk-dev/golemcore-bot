@@ -62,6 +62,8 @@
         <sonar.organization>alexk-dev</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.projectKey>alexk-dev_golemcore-bot</sonar.projectKey>
+        <sonar.sources>src/main/java,src/main/resources</sonar.sources>
+        <sonar.tests>src/test/java</sonar.tests>
         <sonar.java.coveragePlugin>jacoco</sonar.java.coveragePlugin>
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <sonar.java.pmd.reportPaths>${project.build.directory}/pmd.xml</sonar.java.pmd.reportPaths>
@@ -212,6 +214,12 @@
             <groupId>com.github.luben</groupId>
             <artifactId>zstd-jni</artifactId>
             <version>1.5.7-7</version>
+        </dependency>
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>3.50.3.0</version>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- Testing -->

@@ -7,6 +7,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const SetupPage = lazy(() => import('./pages/SetupPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const SelfEvolvingPage = lazy(() => import('./pages/SelfEvolvingPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const PromptsPage = lazy(() => import('./pages/PromptsPage'));
 const SkillsPage = lazy(() => import('./pages/SkillsPage'));
@@ -51,6 +52,7 @@ export default function App() {
                   <Route path="/chat" element={<ChatPage />} />
                   <Route path="/setup" element={<SetupPage />} />
                   <Route path="/analytics" element={<AnalyticsPage />} />
+                  <Route path="/self-evolving" element={<SelfEvolvingPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/settings/:section" element={<SettingsPage />} />
                   <Route path="/prompts" element={<PromptsPage />} />

@@ -1,4 +1,4 @@
-import type { ExplicitModelTierId } from '../lib/modelTiers';
+import { isExplicitModelTier, type ExplicitModelTierId } from '../lib/modelTiers';
 import client from './client';
 
 interface SecretPayload {
@@ -25,6 +25,9 @@ function hasSecretValue(secret: unknown): boolean {
   const present = (secret as UnknownRecord).present;
   return Boolean(present) || (typeof value === 'string' && value.length > 0);
 }
+
+const DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDING_PROVIDER = 'ollama';
+const DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MODEL = 'qwen3-embedding:0.6b';
 
 const SUPPORTED_LLM_API_TYPES = ['openai', 'anthropic', 'gemini'] as const;
 type SupportedLlmApiType = (typeof SUPPORTED_LLM_API_TYPES)[number];
@@ -79,6 +82,7 @@ interface RuntimeConfigUiRecord extends UnknownRecord {
   tools?: UnknownRecord;
   voice?: UnknownRecord;
   hive?: UnknownRecord;
+  selfEvolving?: unknown;
   modelRegistry?: unknown;
 }
 
@@ -127,6 +131,7 @@ function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
     };
   }
   cfg.modelRouter = toModelRouterConfig(cfg.modelRouter);
+  cfg.selfEvolving = toSelfEvolvingConfig(cfg.selfEvolving);
   cfg.modelRegistry = toModelRegistryConfig(cfg.modelRegistry);
   return cfg as unknown as RuntimeConfig;
 }
@@ -135,6 +140,12 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
   const { tokenPresent: _telegramTokenPresent, ...telegram } = config.telegram;
   const { apiKeyPresent: _voiceApiKeyPresent, whisperSttApiKeyPresent: _whisperSttApiKeyPresent, ...voice } = config.voice;
   const tools = config.tools;
+  const normalizedSelfEvolving = toSelfEvolvingConfig(config.selfEvolving);
+  const {
+    managedByProperties: _selfEvolvingManagedByProperties,
+    overriddenPaths: _selfEvolvingOverriddenPaths,
+    ...selfEvolving
+  } = normalizedSelfEvolving;
 
   const payload: UnknownRecord = {
     ...config,
@@ -165,8 +176,39 @@ function toBackendRuntimeConfig(config: RuntimeConfig): UnknownRecord {
       apiKey: toSecretPayload(voice.apiKey ?? null),
       whisperSttApiKey: toSecretPayload(voice.whisperSttApiKey ?? null),
     },
+    selfEvolving: toBackendSelfEvolvingConfig(selfEvolving),
   };
   return payload;
+}
+
+function toBackendSelfEvolvingConfig(selfEvolving: UnknownRecord): UnknownRecord {
+  const tactics = selfEvolving.tactics as UnknownRecord | undefined;
+  if (tactics == null) {
+    return selfEvolving;
+  }
+  const search = tactics.search as UnknownRecord | undefined;
+  if (search == null) {
+    return selfEvolving;
+  }
+  const embeddings = search.embeddings as UnknownRecord | undefined;
+  if (embeddings == null) {
+    return selfEvolving;
+  }
+  const { apiKey, apiKeyPresent: _apiKeyPresent, ...embeddingsRest } = embeddings;
+  const apiKeyValue = typeof apiKey === 'string' ? apiKey : null;
+  return {
+    ...selfEvolving,
+    tactics: {
+      ...tactics,
+      search: {
+        ...search,
+        embeddings: {
+          ...embeddingsRest,
+          apiKey: toSecretPayload(apiKeyValue),
+        },
+      },
+    },
+  };
 }
 
 export interface SettingsResponse extends Record<string, unknown> {
@@ -212,6 +254,7 @@ export interface RuntimeConfig {
   mcp: McpConfig;
   plan: PlanConfig;
   hive: HiveConfig;
+  selfEvolving: SelfEvolvingConfig;
   autoMode: AutoModeConfig;
   tracing: TracingConfig;
   rateLimit: RateLimitConfig;
@@ -380,6 +423,112 @@ export interface HiveConfig {
   hostLabel: string | null;
   autoConnect: boolean | null;
   managedByProperties: boolean | null;
+}
+
+export interface SelfEvolvingConfig {
+  enabled: boolean | null;
+  tracePayloadOverride: boolean | null;
+  managedByProperties?: boolean | null;
+  overriddenPaths?: string[];
+  capture: SelfEvolvingCaptureConfig;
+  judge: SelfEvolvingJudgeConfig;
+  evolution: SelfEvolvingEvolutionConfig;
+  tactics: SelfEvolvingTacticsConfig;
+  promotion: SelfEvolvingPromotionConfig;
+  benchmark: SelfEvolvingBenchmarkConfig;
+  hive: SelfEvolvingHiveConfig;
+}
+
+export interface SelfEvolvingCaptureConfig {
+  llm: string | null;
+  tool: string | null;
+  context: string | null;
+  skill: string | null;
+  tier: string | null;
+  infra: string | null;
+}
+
+export interface SelfEvolvingJudgeConfig {
+  enabled: boolean | null;
+  primaryTier: string | null;
+  tiebreakerTier: string | null;
+  evolutionTier: string | null;
+  requireEvidenceAnchors: boolean | null;
+  uncertaintyThreshold: number | null;
+}
+
+export interface SelfEvolvingEvolutionConfig {
+  enabled: boolean | null;
+  modes: string[];
+  artifactTypes: string[];
+}
+
+export interface SelfEvolvingTacticsConfig {
+  enabled: boolean | null;
+  search: SelfEvolvingTacticSearchConfig;
+}
+
+export interface SelfEvolvingTacticSearchConfig {
+  mode: 'bm25' | 'hybrid' | null;
+  bm25: SelfEvolvingTacticBm25Config;
+  embeddings: SelfEvolvingTacticEmbeddingsConfig;
+  rerank: SelfEvolvingTacticRerankConfig;
+  personalization: SelfEvolvingToggleConfig;
+  negativeMemory: SelfEvolvingToggleConfig;
+}
+
+export interface SelfEvolvingTacticBm25Config {
+  enabled: boolean | null;
+}
+
+export interface SelfEvolvingTacticEmbeddingsConfig {
+  enabled: boolean | null;
+  provider: string | null;
+  baseUrl: string | null;
+  apiKey: string | null;
+  apiKeyPresent?: boolean;
+  model: string | null;
+  dimensions: number | null;
+  batchSize: number | null;
+  timeoutMs: number | null;
+  autoFallbackToBm25: boolean | null;
+  local: SelfEvolvingTacticEmbeddingsLocalConfig;
+}
+
+export interface SelfEvolvingTacticEmbeddingsLocalConfig {
+  autoInstall: boolean | null;
+  pullOnStart: boolean | null;
+  requireHealthyRuntime: boolean | null;
+  failOpen: boolean | null;
+}
+
+export interface SelfEvolvingTacticRerankConfig {
+  crossEncoder: boolean | null;
+  tier: string | null;
+  timeoutMs: number | null;
+}
+
+export interface SelfEvolvingToggleConfig {
+  enabled: boolean | null;
+}
+
+export interface SelfEvolvingPromotionConfig {
+  mode: 'approval_gate' | 'auto_accept' | null;
+  allowAutoAccept: boolean | null;
+  shadowRequired: boolean | null;
+  canaryRequired: boolean | null;
+  hiveApprovalPreferred: boolean | null;
+}
+
+export interface SelfEvolvingBenchmarkConfig {
+  enabled: boolean | null;
+  harvestProductionRuns: boolean | null;
+  autoCreateRegressionCases: boolean | null;
+}
+
+export interface SelfEvolvingHiveConfig {
+  publishInspectionProjection: boolean | null;
+  readonlyInspection: boolean | null;
 }
 
 export interface AutoModeConfig {
@@ -617,6 +766,210 @@ function toModelRegistryConfig(value: unknown): ModelRegistryConfig {
     repositoryUrl: toNullableString(record.repositoryUrl),
     branch: toNullableString(record.branch) ?? 'main',
   };
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function normalizeSelfEvolvingJudgeTier(
+  value: unknown,
+  fallback: ExplicitModelTierId,
+): ExplicitModelTierId {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'standard') {
+    return 'smart';
+  }
+  if (normalized === 'premium') {
+    return 'deep';
+  }
+  return isExplicitModelTier(normalized) ? normalized : fallback;
+}
+
+function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
+  const record = value != null && typeof value === 'object' ? value as UnknownRecord : {};
+  const capture = record.capture != null && typeof record.capture === 'object'
+    ? record.capture as UnknownRecord
+    : {};
+  const judge = record.judge != null && typeof record.judge === 'object'
+    ? record.judge as UnknownRecord
+    : {};
+  const evolution = record.evolution != null && typeof record.evolution === 'object'
+    ? record.evolution as UnknownRecord
+    : {};
+  const tactics = record.tactics != null && typeof record.tactics === 'object'
+    ? record.tactics as UnknownRecord
+    : {};
+  const tacticsSearch = tactics.search != null && typeof tactics.search === 'object'
+    ? tactics.search as UnknownRecord
+    : {};
+  const tacticsBm25 = tacticsSearch.bm25 != null && typeof tacticsSearch.bm25 === 'object'
+    ? tacticsSearch.bm25 as UnknownRecord
+    : {};
+  const tacticsEmbeddings = tacticsSearch.embeddings != null && typeof tacticsSearch.embeddings === 'object'
+    ? tacticsSearch.embeddings as UnknownRecord
+    : {};
+  const tacticsEmbeddingsLocal = tacticsEmbeddings.local != null && typeof tacticsEmbeddings.local === 'object'
+    ? tacticsEmbeddings.local as UnknownRecord
+    : {};
+  const tacticsRerank = tacticsSearch.rerank != null && typeof tacticsSearch.rerank === 'object'
+    ? tacticsSearch.rerank as UnknownRecord
+    : {};
+  const tacticsPersonalization = tacticsSearch.personalization != null && typeof tacticsSearch.personalization === 'object'
+    ? tacticsSearch.personalization as UnknownRecord
+    : {};
+  const tacticsNegativeMemory = tacticsSearch.negativeMemory != null && typeof tacticsSearch.negativeMemory === 'object'
+    ? tacticsSearch.negativeMemory as UnknownRecord
+    : {};
+  const promotion = record.promotion != null && typeof record.promotion === 'object'
+    ? record.promotion as UnknownRecord
+    : {};
+  const benchmark = record.benchmark != null && typeof record.benchmark === 'object'
+    ? record.benchmark as UnknownRecord
+    : {};
+  const hive = record.hive != null && typeof record.hive === 'object'
+    ? record.hive as UnknownRecord
+    : {};
+
+  const selfEvolvingEnabled = typeof record.enabled === 'boolean' ? record.enabled : false;
+  const tacticSearchMode = (toNullableString(tacticsSearch.mode) as 'bm25' | 'hybrid' | null) ?? 'hybrid';
+  const tacticEmbeddingsProvider = normalizeSelfEvolvingEmbeddingProvider(
+    toNullableString(tacticsEmbeddings.provider),
+    tacticSearchMode,
+  );
+  const tacticEmbeddingsModel = normalizeSelfEvolvingEmbeddingModel(
+    toNullableString(tacticsEmbeddings.model),
+    tacticEmbeddingsProvider,
+  );
+
+  return {
+    enabled: selfEvolvingEnabled,
+    tracePayloadOverride: typeof record.tracePayloadOverride === 'boolean' ? record.tracePayloadOverride : true,
+    managedByProperties: typeof record.managedByProperties === 'boolean' ? record.managedByProperties : false,
+    overriddenPaths: toStringArray(record.overriddenPaths),
+    capture: {
+      llm: toNullableString(capture.llm) ?? 'full',
+      tool: toNullableString(capture.tool) ?? 'full',
+      context: toNullableString(capture.context) ?? 'full',
+      skill: toNullableString(capture.skill) ?? 'full',
+      tier: toNullableString(capture.tier) ?? 'full',
+      infra: toNullableString(capture.infra) ?? 'meta_only',
+    },
+    judge: {
+      enabled: typeof judge.enabled === 'boolean' ? judge.enabled : true,
+      primaryTier: normalizeSelfEvolvingJudgeTier(judge.primaryTier, 'smart'),
+      tiebreakerTier: normalizeSelfEvolvingJudgeTier(judge.tiebreakerTier, 'deep'),
+      evolutionTier: normalizeSelfEvolvingJudgeTier(judge.evolutionTier, 'deep'),
+      requireEvidenceAnchors: typeof judge.requireEvidenceAnchors === 'boolean' ? judge.requireEvidenceAnchors : true,
+      uncertaintyThreshold: typeof judge.uncertaintyThreshold === 'number' ? judge.uncertaintyThreshold : 0.22,
+    },
+    evolution: {
+      enabled: typeof evolution.enabled === 'boolean' ? evolution.enabled : true,
+      modes: toStringArray(evolution.modes),
+      artifactTypes: toStringArray(evolution.artifactTypes),
+    },
+    tactics: {
+      enabled: selfEvolvingEnabled,
+      search: {
+        mode: tacticSearchMode,
+        bm25: {
+          enabled: typeof tacticsBm25.enabled === 'boolean' ? tacticsBm25.enabled : true,
+        },
+        embeddings: {
+          enabled: tacticSearchMode === 'hybrid',
+          provider: tacticEmbeddingsProvider,
+          baseUrl: toNullableString(tacticsEmbeddings.baseUrl),
+          apiKey: typeof tacticsEmbeddings.apiKey === 'string'
+            ? toNullableString(tacticsEmbeddings.apiKey)
+            : null,
+          apiKeyPresent: typeof tacticsEmbeddings.apiKey === 'string'
+            ? (typeof tacticsEmbeddings.apiKeyPresent === 'boolean' ? tacticsEmbeddings.apiKeyPresent : undefined)
+            : hasSecretValue(tacticsEmbeddings.apiKey),
+          model: tacticEmbeddingsModel,
+          dimensions: typeof tacticsEmbeddings.dimensions === 'number' ? tacticsEmbeddings.dimensions : null,
+          batchSize: typeof tacticsEmbeddings.batchSize === 'number' ? tacticsEmbeddings.batchSize : null,
+          timeoutMs: typeof tacticsEmbeddings.timeoutMs === 'number' ? tacticsEmbeddings.timeoutMs : null,
+          autoFallbackToBm25: typeof tacticsEmbeddings.autoFallbackToBm25 === 'boolean'
+            ? tacticsEmbeddings.autoFallbackToBm25
+            : true,
+          local: {
+            autoInstall: typeof tacticsEmbeddingsLocal.autoInstall === 'boolean'
+              ? tacticsEmbeddingsLocal.autoInstall
+              : false,
+            pullOnStart: typeof tacticsEmbeddingsLocal.pullOnStart === 'boolean'
+              ? tacticsEmbeddingsLocal.pullOnStart
+              : false,
+            requireHealthyRuntime: typeof tacticsEmbeddingsLocal.requireHealthyRuntime === 'boolean'
+              ? tacticsEmbeddingsLocal.requireHealthyRuntime
+              : true,
+            failOpen: typeof tacticsEmbeddingsLocal.failOpen === 'boolean'
+              ? tacticsEmbeddingsLocal.failOpen
+              : true,
+          },
+        },
+        rerank: {
+          crossEncoder: typeof tacticsRerank.crossEncoder === 'boolean' ? tacticsRerank.crossEncoder : true,
+          tier: normalizeSelfEvolvingJudgeTier(tacticsRerank.tier, 'deep'),
+          timeoutMs: typeof tacticsRerank.timeoutMs === 'number' ? tacticsRerank.timeoutMs : 5000,
+        },
+        personalization: {
+          enabled: typeof tacticsPersonalization.enabled === 'boolean' ? tacticsPersonalization.enabled : true,
+        },
+        negativeMemory: {
+          enabled: typeof tacticsNegativeMemory.enabled === 'boolean' ? tacticsNegativeMemory.enabled : true,
+        },
+      },
+    },
+    promotion: {
+      mode: toNullableString(promotion.mode) as 'approval_gate' | 'auto_accept' | null ?? 'approval_gate',
+      allowAutoAccept: typeof promotion.allowAutoAccept === 'boolean' ? promotion.allowAutoAccept : true,
+      shadowRequired: typeof promotion.shadowRequired === 'boolean' ? promotion.shadowRequired : true,
+      canaryRequired: typeof promotion.canaryRequired === 'boolean' ? promotion.canaryRequired : true,
+      hiveApprovalPreferred: typeof promotion.hiveApprovalPreferred === 'boolean' ? promotion.hiveApprovalPreferred : true,
+    },
+    benchmark: {
+      enabled: typeof benchmark.enabled === 'boolean' ? benchmark.enabled : true,
+      harvestProductionRuns: typeof benchmark.harvestProductionRuns === 'boolean' ? benchmark.harvestProductionRuns : true,
+      autoCreateRegressionCases: typeof benchmark.autoCreateRegressionCases === 'boolean' ? benchmark.autoCreateRegressionCases : true,
+    },
+    hive: {
+      publishInspectionProjection: typeof hive.publishInspectionProjection === 'boolean'
+        ? hive.publishInspectionProjection
+        : true,
+      readonlyInspection: typeof hive.readonlyInspection === 'boolean' ? hive.readonlyInspection : true,
+    },
+  };
+}
+
+function normalizeSelfEvolvingEmbeddingProvider(
+  provider: string | null,
+  mode: 'bm25' | 'hybrid',
+): string | null {
+  if (provider != null && provider.length > 0) {
+    return provider.trim().toLowerCase();
+  }
+  return mode === 'hybrid' ? DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDING_PROVIDER : null;
+}
+
+function normalizeSelfEvolvingEmbeddingModel(
+  model: string | null,
+  provider: string | null,
+): string | null {
+  if (model != null && model.length > 0) {
+    return model;
+  }
+  return provider === DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDING_PROVIDER
+    ? DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MODEL
+    : null;
 }
 
 function toTierBinding(value: unknown): TierBinding {

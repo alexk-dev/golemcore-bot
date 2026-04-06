@@ -1,6 +1,7 @@
 package me.golemcore.bot.security;
 
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
@@ -194,7 +195,7 @@ class AllowlistValidatorTest {
         private List<String> telegramAllowedUsers;
 
         StubRuntimeConfigService() {
-            super(mock(StoragePort.class));
+            super(mock(StoragePort.class), new SelfEvolvingBootstrapOverrideService(new BotProperties()));
         }
 
         @Override
