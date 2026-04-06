@@ -7,6 +7,7 @@ const suggestion: DiscoveredProviderModel = {
   id: 'openai/gpt-4o',
   displayName: 'GPT-4o',
   ownedBy: 'openai',
+  defaultSettings: null,
 };
 
 describe('createDraftFromSuggestion', () => {

@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import static me.golemcore.bot.adapter.inbound.web.controller.SelfEvolvingControllerSupport.blocking;
 
+import java.time.Instant;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactEvidenceDto;
@@ -9,12 +10,15 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvi
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchExplanationDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -42,16 +46,16 @@ public class SelfEvolvingTacticsController {
     private final SelfEvolvingProjectionService projectionService;
     private final LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
     private final TacticRecordService tacticRecordService;
-    private final HiveEventBatchPublisher hiveEventBatchPublisher;
+    private final HiveEventPublishPort hiveEventPublishPort;
 
     public SelfEvolvingTacticsController(SelfEvolvingProjectionService projectionService,
             LocalEmbeddingBootstrapService localEmbeddingBootstrapService,
             TacticRecordService tacticRecordService,
-            HiveEventBatchPublisher hiveEventBatchPublisher) {
+            HiveEventPublishPort hiveEventPublishPort) {
         this.projectionService = projectionService;
         this.localEmbeddingBootstrapService = localEmbeddingBootstrapService;
         this.tacticRecordService = tacticRecordService;
-        this.hiveEventBatchPublisher = hiveEventBatchPublisher;
+        this.hiveEventPublishPort = hiveEventPublishPort;
     }
 
     @GetMapping("/tactics")
@@ -186,24 +190,132 @@ public class SelfEvolvingTacticsController {
     }
 
     private void publishHiveTacticCatalog(List<SelfEvolvingTacticDto> tactics) {
-        if (hiveEventBatchPublisher == null || tactics == null || tactics.isEmpty()) {
+        if (hiveEventPublishPort == null || tactics == null || tactics.isEmpty()) {
             return;
         }
         try {
-            hiveEventBatchPublisher.publishSelfEvolvingTacticCatalogProjection(tactics);
+            hiveEventPublishPort.publishSelfEvolvingTacticCatalogProjection(tactics);
         } catch (RuntimeException exception) {
             log.debug("[Hive] Skipping SelfEvolving tactic catalog publish: {}", exception.getMessage());
         }
     }
 
     private void publishHiveTacticSearch(SelfEvolvingTacticSearchResponseDto response) {
-        if (hiveEventBatchPublisher == null || response == null) {
+        if (hiveEventPublishPort == null || response == null) {
             return;
         }
         try {
-            hiveEventBatchPublisher.publishSelfEvolvingTacticSearchProjection(response);
+            hiveEventPublishPort.publishSelfEvolvingTacticSearchProjection(
+                    response.getQuery(),
+                    toDomainTacticSearchStatus(response.getStatus()),
+                    toDomainTacticSearchResults(response.getResults()));
         } catch (RuntimeException exception) {
             log.debug("[Hive] Skipping SelfEvolving tactic search publish: {}", exception.getMessage());
+        }
+    }
+
+    private TacticSearchStatus toDomainTacticSearchStatus(SelfEvolvingTacticSearchStatusDto status) {
+        if (status == null) {
+            return null;
+        }
+        return TacticSearchStatus.builder()
+                .mode(status.getMode())
+                .reason(status.getReason())
+                .provider(status.getProvider())
+                .model(status.getModel())
+                .degraded(status.getDegraded())
+                .runtimeState(status.getRuntimeState())
+                .owned(status.getOwned())
+                .runtimeInstalled(status.getRuntimeInstalled())
+                .runtimeHealthy(status.getRuntimeHealthy())
+                .runtimeVersion(status.getRuntimeVersion())
+                .baseUrl(status.getBaseUrl())
+                .modelAvailable(status.getModelAvailable())
+                .restartAttempts(status.getRestartAttempts())
+                .nextRetryAt(parseInstant(status.getNextRetryAt()))
+                .nextRetryTime(status.getNextRetryTime())
+                .autoInstallConfigured(status.getAutoInstallConfigured())
+                .pullOnStartConfigured(status.getPullOnStartConfigured())
+                .pullAttempted(status.getPullAttempted())
+                .pullSucceeded(status.getPullSucceeded())
+                .updatedAt(parseInstant(status.getUpdatedAt()))
+                .build();
+    }
+
+    private List<TacticSearchResult> toDomainTacticSearchResults(List<SelfEvolvingTacticSearchResultDto> results) {
+        if (results == null || results.isEmpty()) {
+            return List.of();
+        }
+        return results.stream()
+                .map(this::toDomainTacticSearchResult)
+                .toList();
+    }
+
+    private TacticSearchResult toDomainTacticSearchResult(SelfEvolvingTacticSearchResultDto result) {
+        return TacticSearchResult.builder()
+                .tacticId(result.getTacticId())
+                .artifactStreamId(result.getArtifactStreamId())
+                .originArtifactStreamId(result.getOriginArtifactStreamId())
+                .artifactKey(result.getArtifactKey())
+                .artifactType(result.getArtifactType())
+                .title(result.getTitle())
+                .aliases(result.getAliases())
+                .contentRevisionId(result.getContentRevisionId())
+                .intentSummary(result.getIntentSummary())
+                .behaviorSummary(result.getBehaviorSummary())
+                .toolSummary(result.getToolSummary())
+                .outcomeSummary(result.getOutcomeSummary())
+                .benchmarkSummary(result.getBenchmarkSummary())
+                .approvalNotes(result.getApprovalNotes())
+                .evidenceSnippets(result.getEvidenceSnippets())
+                .taskFamilies(result.getTaskFamilies())
+                .tags(result.getTags())
+                .promotionState(result.getPromotionState())
+                .rolloutStage(result.getRolloutStage())
+                .score(result.getScore())
+                .successRate(result.getSuccessRate())
+                .benchmarkWinRate(result.getBenchmarkWinRate())
+                .regressionFlags(result.getRegressionFlags())
+                .recencyScore(result.getRecencyScore())
+                .golemLocalUsageSuccess(result.getGolemLocalUsageSuccess())
+                .embeddingStatus(result.getEmbeddingStatus())
+                .updatedAt(parseInstant(result.getUpdatedAt()))
+                .explanation(toDomainTacticSearchExplanation(result.getExplanation()))
+                .build();
+    }
+
+    private TacticSearchExplanation toDomainTacticSearchExplanation(
+            SelfEvolvingTacticSearchExplanationDto explanation) {
+        if (explanation == null) {
+            return null;
+        }
+        return TacticSearchExplanation.builder()
+                .searchMode(explanation.getSearchMode())
+                .degradedReason(explanation.getDegradedReason())
+                .bm25Score(explanation.getBm25Score())
+                .vectorScore(explanation.getVectorScore())
+                .rrfScore(explanation.getRrfScore())
+                .qualityPrior(explanation.getQualityPrior())
+                .mmrDiversityAdjustment(explanation.getMmrDiversityAdjustment())
+                .negativeMemoryPenalty(explanation.getNegativeMemoryPenalty())
+                .personalizationBoost(explanation.getPersonalizationBoost())
+                .rerankerVerdict(explanation.getRerankerVerdict())
+                .matchedQueryViews(explanation.getMatchedQueryViews())
+                .matchedTerms(explanation.getMatchedTerms())
+                .eligible(explanation.getEligible())
+                .gatingReason(explanation.getGatingReason())
+                .finalScore(explanation.getFinalScore())
+                .build();
+    }
+
+    private Instant parseInstant(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (RuntimeException exception) {
+            return null;
         }
     }
 }

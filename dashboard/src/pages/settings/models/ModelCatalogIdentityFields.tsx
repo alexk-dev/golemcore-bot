@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { Badge } from '../../../components/ui/badge';
 import { Input } from '../../../components/ui/field';
-import { Form } from '../../../lib/react-bootstrap';
+import { Form } from '../../../components/ui/bootstrap-form';
 import type { ProviderProfileSummary } from './modelCatalogProviderProfiles';
 import type { ModelDraft } from './modelCatalogTypes';
 

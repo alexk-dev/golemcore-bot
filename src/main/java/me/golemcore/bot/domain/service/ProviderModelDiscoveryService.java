@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
+import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -31,8 +33,15 @@ public class ProviderModelDiscoveryService {
     private static final String DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
     private static final String DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
     private static final String DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+    private static final String OPENROUTER_HOST = "openrouter.ai";
+    private static final String OPENROUTER_PROVIDER_NAME = "openrouter";
     private static final String USER_AGENT = "golemcore-model-discovery";
     private static final String GEMINI_GENERATE_CONTENT_METHOD = "generateContent";
+    private static final int DEFAULT_MAX_INPUT_TOKENS = 128000;
+    private static final Map<String, List<Integer>> GPT_REASONING_TOKEN_LEVELS = Map.of(
+            "gpt-5", List.of(1000000, 1000000, 500000, 250000),
+            "gpt-5.1", List.of(1000000, 1000000, 500000, 250000),
+            "gpt-5.2", List.of(1000000, 1000000, 500000, 250000));
 
     private final RuntimeConfigService runtimeConfigService;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -54,7 +63,7 @@ public class ProviderModelDiscoveryService {
                     + "' with status " + response.statusCode());
         }
 
-        List<DiscoveredModel> models = parseModels(normalizedProvider, response.body());
+        List<DiscoveredModel> models = parseModels(normalizedProvider, providerConfig, response.body());
         log.info("[ModelDiscovery] Discovered {} models for provider {}", models.size(), normalizedProvider);
         return models;
     }
@@ -81,7 +90,8 @@ public class ProviderModelDiscoveryService {
     protected record DiscoveryResponse(int statusCode, String body) {
     }
 
-    public record DiscoveredModel(String provider, String id, String displayName, String ownedBy) {
+    public record DiscoveredModel(String provider, String id, String displayName, String ownedBy,
+            ModelConfigService.ModelSettings defaultSettings) {
     }
 
     private RuntimeConfig.LlmProviderConfig requireConfiguredProvider(String providerName) {
@@ -175,13 +185,15 @@ public class ProviderModelDiscoveryService {
         return providerName.trim().toLowerCase(Locale.ROOT);
     }
 
-    private List<DiscoveredModel> parseModels(String providerName, String responseBody) {
+    private List<DiscoveredModel> parseModels(String providerName, RuntimeConfig.LlmProviderConfig providerConfig,
+            String responseBody) {
         try {
             JsonNode root = objectMapper.readTree(responseBody);
             List<DiscoveredModel> models = new ArrayList<>();
+            boolean attachDirectDefaults = shouldAttachOpenRouterDefaults(providerName, providerConfig);
             JsonNode dataArray = root.path("data");
             if (dataArray.isArray()) {
-                dataArray.forEach(node -> addOpenAiLikeModel(models, providerName, node));
+                dataArray.forEach(node -> addOpenAiLikeModel(models, providerName, node, attachDirectDefaults));
             }
 
             JsonNode geminiModels = root.path("models");
@@ -198,7 +210,22 @@ public class ProviderModelDiscoveryService {
         }
     }
 
-    private void addOpenAiLikeModel(List<DiscoveredModel> models, String providerName, JsonNode node) {
+    private boolean shouldAttachOpenRouterDefaults(String providerName,
+            RuntimeConfig.LlmProviderConfig providerConfig) {
+        if (OPENROUTER_PROVIDER_NAME.equals(providerName)) {
+            return true;
+        }
+        try {
+            String resolvedBaseUrl = resolveBaseUrl(providerConfig.getBaseUrl(), getApiType(providerConfig));
+            URI baseUri = URI.create(resolvedBaseUrl);
+            return OPENROUTER_HOST.equalsIgnoreCase(baseUri.getHost());
+        } catch (IllegalArgumentException _) {
+            return false;
+        }
+    }
+
+    private void addOpenAiLikeModel(List<DiscoveredModel> models, String providerName, JsonNode node,
+            boolean attachDirectDefaults) {
         String id = text(node, "id");
         if (id == null || id.isBlank()) {
             return;
@@ -212,7 +239,87 @@ public class ProviderModelDiscoveryService {
                 text(node, "owned_by"),
                 text(node, "provider"),
                 text(node, "type"));
-        models.add(new DiscoveredModel(providerName, id, displayName, ownedBy));
+        ModelConfigService.ModelSettings defaultSettings = attachDirectDefaults
+                ? buildOpenRouterDefaultSettings(providerName, id, node, displayName)
+                : null;
+        models.add(new DiscoveredModel(providerName, id, displayName, ownedBy, defaultSettings));
+    }
+
+    private ModelConfigService.ModelSettings buildOpenRouterDefaultSettings(String providerName, String modelId,
+            JsonNode node, String displayName) {
+        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        settings.setProvider(providerName);
+        settings.setDisplayName(displayName);
+        settings.setSupportsVision(supportsVision(node));
+        settings.setSupportsTemperature(supportsTemperature(node.path("supported_parameters")));
+        settings.setMaxInputTokens(resolveMaxInputTokens(node));
+        settings.setReasoning(buildReasoningConfig(modelId, settings.getMaxInputTokens()));
+        return settings;
+    }
+
+    private boolean supportsVision(JsonNode node) {
+        JsonNode inputModalities = node.path("architecture").path("input_modalities");
+        if (containsArrayValue(inputModalities, "image") || containsArrayValue(inputModalities, "video")) {
+            return true;
+        }
+        String modality = text(node.path("architecture"), "modality");
+        if (modality == null) {
+            return false;
+        }
+        String normalizedModality = modality.toLowerCase(Locale.ROOT);
+        return normalizedModality.contains("image") || normalizedModality.contains("video");
+    }
+
+    private boolean supportsTemperature(JsonNode supportedParameters) {
+        if (!supportedParameters.isArray()) {
+            return true;
+        }
+        return containsArrayValue(supportedParameters, "temperature");
+    }
+
+    private int resolveMaxInputTokens(JsonNode node) {
+        int contextLength = node.path("context_length").asInt(0);
+        if (contextLength > 0) {
+            return contextLength;
+        }
+        int topProviderContextLength = node.path("top_provider").path("context_length").asInt(0);
+        if (topProviderContextLength > 0) {
+            return topProviderContextLength;
+        }
+        return DEFAULT_MAX_INPUT_TOKENS;
+    }
+
+    private ModelConfigService.ReasoningConfig buildReasoningConfig(String modelId, int maxInputTokens) {
+        List<Integer> levelCaps = GPT_REASONING_TOKEN_LEVELS.get(normalizeReasoningModelId(modelId));
+        if (levelCaps == null) {
+            return null;
+        }
+        ModelConfigService.ReasoningConfig reasoningConfig = new ModelConfigService.ReasoningConfig();
+        reasoningConfig.setDefaultLevel("medium");
+        reasoningConfig.setLevels(Map.of(
+                "low", new ModelConfigService.ReasoningLevelConfig(levelCaps.get(0)),
+                "medium", new ModelConfigService.ReasoningLevelConfig(levelCaps.get(1)),
+                "high", new ModelConfigService.ReasoningLevelConfig(Math.min(levelCaps.get(2), maxInputTokens)),
+                "xhigh", new ModelConfigService.ReasoningLevelConfig(Math.min(levelCaps.get(3), maxInputTokens))));
+        return reasoningConfig;
+    }
+
+    private String normalizeReasoningModelId(String modelId) {
+        int separatorIndex = modelId.indexOf('/');
+        return separatorIndex >= 0 ? modelId.substring(separatorIndex + 1) : modelId;
+    }
+
+    private boolean containsArrayValue(JsonNode values, String expectedValue) {
+        if (!values.isArray()) {
+            return false;
+        }
+        for (JsonNode valueNode : values) {
+            String value = valueNode.asText();
+            if (expectedValue.equalsIgnoreCase(value)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void addGeminiModel(List<DiscoveredModel> models, String providerName, JsonNode node) {
@@ -230,7 +337,7 @@ public class ProviderModelDiscoveryService {
 
         String displayName = firstNonBlank(text(node, "displayName"), id);
         String ownedBy = firstNonBlank(text(node, "publisher"), "google");
-        models.add(new DiscoveredModel(providerName, id, displayName, ownedBy));
+        models.add(new DiscoveredModel(providerName, id, displayName, ownedBy, null));
     }
 
     private boolean supportsGenerateContent(JsonNode methodsNode) {

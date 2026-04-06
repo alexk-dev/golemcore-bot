@@ -18,7 +18,7 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -79,7 +79,7 @@ public class SessionRunCoordinator {
     private final RuntimeConfigService runtimeConfigService;
     private final DelayedSessionActionService delayedSessionActionService;
 
-    private final HiveEventBatchPublisher hiveEventBatchPublisher;
+    private final HiveEventPublishPort hiveEventPublishPort;
 
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
     private final Map<Message, List<CompletableFuture<Void>>> pendingCompletions = Collections
@@ -90,14 +90,14 @@ public class SessionRunCoordinator {
     public SessionRunCoordinator(SessionPort sessionPort, AgentLoop agentLoop, ExecutorService sessionRunExecutor,
             RuntimeEventService runtimeEventService, RuntimeConfigService runtimeConfigService,
             DelayedSessionActionService delayedSessionActionService,
-            HiveEventBatchPublisher hiveEventBatchPublisher) {
+            HiveEventPublishPort hiveEventPublishPort) {
         this.sessionPort = sessionPort;
         this.agentLoop = agentLoop;
         this.sessionRunExecutor = sessionRunExecutor;
         this.runtimeEventService = runtimeEventService;
         this.runtimeConfigService = runtimeConfigService;
         this.delayedSessionActionService = delayedSessionActionService;
-        this.hiveEventBatchPublisher = hiveEventBatchPublisher;
+        this.hiveEventPublishPort = hiveEventPublishPort;
     }
 
     public void enqueue(Message inbound) {
@@ -837,7 +837,7 @@ public class SessionRunCoordinator {
         RuntimeEvent runtimeEvent = runtimeEventService.emitForSession(session, RuntimeEventType.TURN_FINISHED,
                 Map.of("reason", "user_interrupt"));
         try {
-            hiveEventBatchPublisher.publishRuntimeEvents(List.of(runtimeEvent), metadata);
+            hiveEventPublishPort.publishRuntimeEvents(List.of(runtimeEvent), metadata);
         } catch (RuntimeException exception) {
             log.warn("[Hive] Failed to publish interruption fallback: {}", exception.getMessage());
         }

@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.service;
 
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -57,7 +57,7 @@ class SessionRunCoordinatorStopIntegrationTest {
 
         try (ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, null, mock(HiveEventBatchPublisher.class));
+                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
 
             AgentSession session = AgentSession.builder()
                     .id("s-stop-llm")

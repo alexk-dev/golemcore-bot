@@ -103,7 +103,7 @@ public class ModelsController {
                     .discoverModels(provider);
             List<DiscoveredModelDto> response = discoveredModels.stream()
                     .map(model -> new DiscoveredModelDto(model.provider(), model.id(), model.displayName(),
-                            model.ownedBy()))
+                            model.ownedBy(), model.defaultSettings()))
                     .toList();
             return Mono.just(ResponseEntity.ok(response));
         } catch (IllegalArgumentException e) {
@@ -158,6 +158,7 @@ public class ModelsController {
             List<String> reasoningLevels, boolean supportsVision) {
     }
 
-    private record DiscoveredModelDto(String provider, String id, String displayName, String ownedBy) {
+    private record DiscoveredModelDto(String provider, String id, String displayName, String ownedBy,
+            ModelConfigService.ModelSettings defaultSettings) {
     }
 }

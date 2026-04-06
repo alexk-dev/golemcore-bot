@@ -8,7 +8,7 @@ import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -22,7 +22,7 @@ public class HiveInspectionCommandHandler {
     private static final int DEFAULT_KEEP_LAST = 20;
 
     private final SessionInspectionService sessionInspectionService;
-    private final HiveEventBatchPublisher hiveEventBatchPublisher;
+    private final HiveEventPublishPort hiveEventPublishPort;
 
     public void handle(HiveControlCommandEnvelope envelope) {
         String operation = resolveOperation(envelope);
@@ -42,7 +42,7 @@ public class HiveInspectionCommandHandler {
         } catch (RuntimeException exception) {
             response = buildErrorResponse(envelope, operation, exception);
         }
-        hiveEventBatchPublisher.publishInspectionResponse(response);
+        hiveEventPublishPort.publishInspectionResponse(response);
     }
 
     private Object execute(String operation, HiveInspectionRequestBody inspection) {

@@ -18,17 +18,18 @@ import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.ProgressUpdateType;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class HiveChannelAdapterTest {
 
-    private HiveEventBatchPublisher publisher;
+    private HiveEventPublishPort publisher;
     private HiveChannelAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        publisher = mock(HiveEventBatchPublisher.class);
+        publisher = mock(HiveEventPublishPort.class);
         adapter = new HiveChannelAdapter(publisher);
     }
 

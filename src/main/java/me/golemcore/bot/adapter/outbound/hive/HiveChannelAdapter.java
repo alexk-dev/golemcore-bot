@@ -26,13 +26,14 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
 public class HiveChannelAdapter implements ChannelPort {
 
-    private final HiveEventBatchPublisher hiveEventBatchPublisher;
+    private final HiveEventPublishPort hiveEventPublishPort;
 
     private volatile boolean running = true;
 
@@ -64,7 +65,7 @@ public class HiveChannelAdapter implements ChannelPort {
     @Override
     public CompletableFuture<Void> sendMessage(String chatId, String content, Map<String, Object> hints) {
         try {
-            hiveEventBatchPublisher.publishThreadMessage(chatId, content, hints);
+            hiveEventPublishPort.publishThreadMessage(chatId, content, hints);
             return CompletableFuture.completedFuture(null);
         } catch (RuntimeException exception) {
             return CompletableFuture.failedFuture(exception);
@@ -77,7 +78,7 @@ public class HiveChannelAdapter implements ChannelPort {
             return CompletableFuture.completedFuture(null);
         }
         try {
-            hiveEventBatchPublisher.publishThreadMessage(message.getChatId(), message.getContent(),
+            hiveEventPublishPort.publishThreadMessage(message.getChatId(), message.getContent(),
                     message.getMetadata());
             return CompletableFuture.completedFuture(null);
         } catch (RuntimeException exception) {
@@ -93,7 +94,7 @@ public class HiveChannelAdapter implements ChannelPort {
     @Override
     public CompletableFuture<Void> sendRuntimeEvent(String chatId, RuntimeEvent event) {
         try {
-            hiveEventBatchPublisher.publishRuntimeEvents(
+            hiveEventPublishPort.publishRuntimeEvents(
                     event != null ? java.util.List.of(event) : java.util.List.of(),
                     event != null ? event.payload() : Map.of());
             return CompletableFuture.completedFuture(null);
@@ -105,7 +106,7 @@ public class HiveChannelAdapter implements ChannelPort {
     @Override
     public CompletableFuture<Void> sendProgressUpdate(String chatId, ProgressUpdate update) {
         try {
-            hiveEventBatchPublisher.publishProgressUpdate(chatId, update);
+            hiveEventPublishPort.publishProgressUpdate(chatId, update);
             return CompletableFuture.completedFuture(null);
         } catch (RuntimeException exception) {
             return CompletableFuture.failedFuture(exception);

@@ -235,10 +235,12 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
 
   async function handleSuggestionSelect(suggestion: DiscoveredProviderModel): Promise<void> {
     try {
-      const resolvedRegistry = await resolveModelRegistry.mutateAsync({
-        provider: suggestion.provider,
-        modelId: suggestion.id,
-      });
+      const resolvedRegistry = suggestion.defaultSettings != null
+        ? { defaultSettings: suggestion.defaultSettings, configSource: 'provider' as const, cacheStatus: 'remote-hit' as const }
+        : await resolveModelRegistry.mutateAsync({
+          provider: suggestion.provider,
+          modelId: suggestion.id,
+        });
       const nextDraft = createDraftFromSuggestion(
         suggestion,
         modelsConfig,
@@ -260,17 +262,13 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
     const selectedSettings = isExisting ? modelsConfig?.models[selectedModelId] : null;
     startTransition(() => {
       setSelectedProviderName(providerName);
-      if (selectedSettings?.provider === providerName) {
-        return;
-      }
-      setSelectedModelId(NEW_MODEL_SELECTION);
-      setDraft(createEmptyModelDraft(providerName));
+      setSelectedModelId(selectedSettings?.provider === providerName && isExisting ? selectedModelId : NEW_MODEL_SELECTION);
+      setDraft(
+        selectedSettings?.provider === providerName && isExisting
+          ? toModelDraft(selectedModelId, selectedSettings)
+          : createEmptyModelDraft(providerName)
+      );
     });
-  }
-
-  function handleDraftChange(nextDraft: typeof draft): void {
-    setSelectedProviderName(nextDraft.provider.trim());
-    setDraft(nextDraft);
   }
 
   if (modelsLoading) {
@@ -303,7 +301,7 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
         onReload={() => { void handleReload(); }}
         onSelectProvider={handleSelectProvider}
         onSelectModel={handleSelectModel}
-        onDraftChange={handleDraftChange}
+        onDraftChange={setDraft}
         onSave={() => { void handleSave(); }}
         onDelete={() => { void handleDelete(); }}
       />
