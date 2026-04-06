@@ -24,6 +24,11 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TraceService;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -34,7 +39,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 
 /**
  * Attaches tactic-search query, selection, attribution, and transient advisory
@@ -46,12 +50,15 @@ public class TacticTurnContextService {
 
     private final RuntimeConfigService runtimeConfigService;
     private final TacticSearchService tacticSearchService;
+    private final TraceService traceService;
 
     public TacticTurnContextService(
             RuntimeConfigService runtimeConfigService,
-            TacticSearchService tacticSearchService) {
+            TacticSearchService tacticSearchService,
+            TraceService traceService) {
         this.runtimeConfigService = runtimeConfigService;
         this.tacticSearchService = tacticSearchService;
+        this.traceService = traceService;
     }
 
     public void attach(AgentContext context) {
@@ -63,6 +70,8 @@ public class TacticTurnContextService {
                 || !runtimeConfigService.isSelfEvolvingEnabled()) {
             return;
         }
+        Instant startedAt = Instant.now();
+        TraceContext spanContext = startTacticEnrichSpan(context, startedAt);
         try {
             TacticSearchQuery query = tacticSearchService.buildQuery(context);
             context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY, query);
@@ -77,9 +86,14 @@ public class TacticTurnContextService {
                 context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_GUIDANCE, selectedTactic);
                 recordAppliedTacticIds(context, selectedTactic);
                 attachTransientTacticAdvisory(context, selectedTactic);
+                recordTacticSpanAttributes(context, spanContext, selectedTactic, results.size());
+            } else {
+                recordTacticSpanAttributes(context, spanContext, null, 0);
             }
+            finishTacticEnrichSpan(context, spanContext, TraceStatusCode.OK, null);
         } catch (RuntimeException exception) { // NOSONAR - tactic search must never break context assembly
             log.warn("[ContextBuildingSystem] Failed to attach tactic search context: {}", exception.getMessage());
+            finishTacticEnrichSpan(context, spanContext, TraceStatusCode.ERROR, exception.getMessage());
         }
     }
 
@@ -203,5 +217,64 @@ public class TacticTurnContextService {
             return null;
         }
         return trimmed;
+    }
+
+    private TraceContext startTacticEnrichSpan(AgentContext context, Instant startedAt) {
+        if (traceService == null || context.getSession() == null || context.getTraceContext() == null
+                || !runtimeConfigService.isTracingEnabled()) {
+            return null;
+        }
+        try {
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            attributes.put("component", "tactic.enrich");
+            return traceService.startSpan(context.getSession(), context.getTraceContext(),
+                    "tactic.enrich", TraceSpanKind.INTERNAL, startedAt, attributes);
+        } catch (RuntimeException exception) { // NOSONAR - tracing must not break tactic enrichment
+            log.debug("[TacticTurnContextService] Failed to start tactic.enrich span: {}", exception.getMessage());
+            return null;
+        }
+    }
+
+    private void recordTacticSpanAttributes(AgentContext context, TraceContext spanContext,
+            TacticSearchResult selectedTactic, int resultCount) {
+        if (traceService == null || spanContext == null || context.getSession() == null) {
+            return;
+        }
+        try {
+            Map<String, Object> eventAttributes = new LinkedHashMap<>();
+            eventAttributes.put("tactic.result_count", resultCount);
+            if (selectedTactic != null) {
+                eventAttributes.put("tactic.selected_id", selectedTactic.getTacticId());
+                eventAttributes.put("tactic.selected_title", selectedTactic.getTitle());
+                eventAttributes.put("tactic.promotion_state", selectedTactic.getPromotionState());
+                if (selectedTactic.getExplanation() != null) {
+                    eventAttributes.put("tactic.search_mode", selectedTactic.getExplanation().getSearchMode());
+                    if (selectedTactic.getExplanation().getFinalScore() != null) {
+                        eventAttributes.put("tactic.final_score", selectedTactic.getExplanation().getFinalScore());
+                    }
+                    if (selectedTactic.getExplanation().getRerankerVerdict() != null) {
+                        eventAttributes.put("tactic.reranker_verdict",
+                                selectedTactic.getExplanation().getRerankerVerdict());
+                    }
+                }
+            }
+            traceService.appendEvent(context.getSession(), spanContext,
+                    "tactic.search.completed", Instant.now(), eventAttributes);
+        } catch (RuntimeException exception) { // NOSONAR - tracing must not break tactic enrichment
+            log.debug("[TacticTurnContextService] Failed to record tactic span attributes: {}",
+                    exception.getMessage());
+        }
+    }
+
+    private void finishTacticEnrichSpan(AgentContext context, TraceContext spanContext,
+            TraceStatusCode statusCode, String statusMessage) {
+        if (traceService == null || spanContext == null || context == null || context.getSession() == null) {
+            return;
+        }
+        try {
+            traceService.finishSpan(context.getSession(), spanContext, statusCode, statusMessage, Instant.now());
+        } catch (RuntimeException exception) { // NOSONAR - tracing must not break tactic enrichment
+            log.debug("[TacticTurnContextService] Failed to finish tactic.enrich span: {}", exception.getMessage());
+        }
     }
 }

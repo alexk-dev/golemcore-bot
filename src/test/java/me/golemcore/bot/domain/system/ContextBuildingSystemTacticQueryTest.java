@@ -38,7 +38,8 @@ class ContextBuildingSystemTacticQueryTest {
         TacticSearchService tacticSearchService = mock(TacticSearchService.class);
         TacticTurnContextService tacticTurnContextService = new TacticTurnContextService(
                 runtimeConfigService,
-                tacticSearchService);
+                tacticSearchService,
+                null);
         ContextBuildingSystem system = new ContextBuildingSystem(
                 assembler,
                 runtimeConfigService,
@@ -111,7 +112,8 @@ class ContextBuildingSystemTacticQueryTest {
         TacticSearchService tacticSearchService = mock(TacticSearchService.class);
         TacticTurnContextService tacticTurnContextService = new TacticTurnContextService(
                 runtimeConfigService,
-                tacticSearchService);
+                tacticSearchService,
+                null);
         ContextBuildingSystem system = new ContextBuildingSystem(
                 assembler,
                 runtimeConfigService,
@@ -171,7 +173,8 @@ class ContextBuildingSystemTacticQueryTest {
         TacticSearchService tacticSearchService = mock(TacticSearchService.class);
         TacticTurnContextService tacticTurnContextService = new TacticTurnContextService(
                 runtimeConfigService,
-                tacticSearchService);
+                tacticSearchService,
+                null);
         ContextBuildingSystem system = new ContextBuildingSystem(
                 assembler,
                 runtimeConfigService,
@@ -230,7 +233,8 @@ class ContextBuildingSystemTacticQueryTest {
         TacticSearchService tacticSearchService = mock(TacticSearchService.class);
         TacticTurnContextService tacticTurnContextService = new TacticTurnContextService(
                 runtimeConfigService,
-                tacticSearchService);
+                tacticSearchService,
+                null);
         ContextBuildingSystem system = new ContextBuildingSystem(
                 assembler,
                 runtimeConfigService,
@@ -292,7 +296,8 @@ class ContextBuildingSystemTacticQueryTest {
         TacticSearchService tacticSearchService = mock(TacticSearchService.class);
         TacticTurnContextService tacticTurnContextService = new TacticTurnContextService(
                 runtimeConfigService,
-                tacticSearchService);
+                tacticSearchService,
+                null);
         ContextBuildingSystem system = new ContextBuildingSystem(
                 assembler,
                 runtimeConfigService,
