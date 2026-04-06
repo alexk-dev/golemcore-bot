@@ -1,6 +1,5 @@
 package me.golemcore.bot.domain.selfevolving.tactic;
 
-import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
@@ -16,44 +15,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 
 class TacticHybridRankingServiceTest {
 
-    private RuntimeConfigService runtimeConfigService;
     private TacticSearchMetricsService metricsService;
-    private TacticCrossEncoderRerankerService rerankerService;
     private TacticHybridRankingService rankingService;
 
     @BeforeEach
     void setUp() {
-        runtimeConfigService = mock(RuntimeConfigService.class);
         metricsService = mock(TacticSearchMetricsService.class);
-        rerankerService = mock(TacticCrossEncoderRerankerService.class);
-        rankingService = new TacticHybridRankingService(runtimeConfigService, metricsService, rerankerService);
-
-        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
-                        .enabled(true)
-                        .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
-                                .enabled(true)
-                                .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
-                                        .mode("hybrid")
-                                        .rerank(RuntimeConfig.SelfEvolvingTacticRerankConfig.builder()
-                                                .crossEncoder(true)
-                                                .tier("deep")
-                                                .timeoutMs(15000)
-                                                .build())
-                                        .build())
-                                .build())
-                        .build())
-                .build();
-        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(runtimeConfig.getSelfEvolving());
+        rankingService = new TacticHybridRankingService(metricsService);
     }
 
     @Test
@@ -82,31 +54,6 @@ class TacticHybridRankingServiceTest {
         TacticSearchResult result = rankingService.rank(query(), lexicalHits(), List.of()).getFirst();
 
         assertEquals("bm25", result.getExplanation().getSearchMode());
-    }
-
-    @Test
-    void shouldSurfaceCrossEncoderRerankerVerdict() {
-        when(rerankerService.rerank(any(), anyList(), eq("deep"), any())).thenReturn(List.of(
-                new TacticCrossEncoderRerankerService.RerankedCandidate("planner", 0.08d,
-                        "tier deep via gpt-5.4/high"),
-                new TacticCrossEncoderRerankerService.RerankedCandidate("rollback", 0.01d,
-                        "tier deep via gpt-5.4/high")));
-
-        TacticSearchExplanation explanation = rankingService.rank(query(), lexicalHits(), vectorHits())
-                .getFirst()
-                .getExplanation();
-
-        assertTrue(explanation.getRerankerVerdict().contains("gpt-5.4"));
-    }
-
-    @Test
-    void shouldDegradeCleanlyWhenCrossEncoderRerankerIsUnavailable() {
-        when(rerankerService.rerank(any(), anyList(), eq("deep"), any()))
-                .thenThrow(new IllegalStateException("reranker unavailable"));
-
-        TacticSearchResult result = rankingService.rank(query(), lexicalHits(), vectorHits()).getFirst();
-
-        assertTrue(result.getExplanation().getRerankerVerdict().contains("unavailable"));
     }
 
     @Test
@@ -140,24 +87,6 @@ class TacticHybridRankingServiceTest {
 
     @Test
     void shouldTreatUnavailableQualityMetricsAsNeutralInsteadOfObservedZeros() {
-        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
-                        .enabled(true)
-                        .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
-                                .enabled(true)
-                                .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
-                                        .mode("hybrid")
-                                        .rerank(RuntimeConfig.SelfEvolvingTacticRerankConfig.builder()
-                                                .crossEncoder(false)
-                                                .tier("deep")
-                                                .timeoutMs(15000)
-                                                .build())
-                                        .build())
-                                .build())
-                        .build())
-                .build();
-        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(runtimeConfig.getSelfEvolving());
-
         TacticSearchResult unknownMetrics = TacticSearchResult.builder()
                 .tacticId("unknown-metrics")
                 .artifactStreamId("stream-unknown")

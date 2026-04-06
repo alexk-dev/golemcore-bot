@@ -40,7 +40,6 @@ const TACTIC_RESULT = {
     mmrDiversityAdjustment: -0.01,
     negativeMemoryPenalty: 0.0,
     personalizationBoost: 0.08,
-    rerankerVerdict: 'tier deep via gpt-5.4/high',
     matchedQueryViews: ['planner'],
     matchedTerms: ['planner'],
     eligible: true,

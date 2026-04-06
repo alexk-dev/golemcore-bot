@@ -533,7 +533,6 @@ class SelfEvolvingProjectionServiceTest {
                 .mmrDiversityAdjustment(-0.1d)
                 .negativeMemoryPenalty(-0.05d)
                 .personalizationBoost(0.2d)
-                .rerankerVerdict("prefer tactic-1")
                 .matchedQueryViews(List.of("intent", "tool"))
                 .matchedTerms(List.of("planner", "shell"))
                 .eligible(true)
@@ -615,7 +614,6 @@ class SelfEvolvingProjectionServiceTest {
         assertTrue(response.getStatus().getDegraded());
         assertEquals("embeddings unavailable", response.getStatus().getReason());
         assertEquals(1, response.getResults().size());
-        assertEquals("prefer tactic-1", response.getResults().getFirst().getExplanation().getRerankerVerdict());
         assertTrue(explanationDto.isPresent());
         assertEquals(0.95d, explanationDto.get().getFinalScore());
         assertTrue(lineage.isPresent());

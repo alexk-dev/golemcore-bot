@@ -26,7 +26,6 @@ public class SelfEvolvingTacticSearchExplanationDto {
     private Double mmrDiversityAdjustment;
     private Double negativeMemoryPenalty;
     private Double personalizationBoost;
-    private String rerankerVerdict;
     @Builder.Default
     private List<String> matchedQueryViews = new ArrayList<>();
     @Builder.Default

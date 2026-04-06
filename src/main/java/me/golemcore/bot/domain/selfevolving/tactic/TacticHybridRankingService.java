@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
@@ -31,7 +30,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 
 /**
@@ -64,26 +62,10 @@ public class TacticHybridRankingService {
     private static final double DIVERSITY_ARTIFACT_KEY_PENALTY = 0.05d;
     private static final double DIVERSITY_OVERLAP_WEIGHT = 0.04d;
 
-    // Fail-open circuit breaker for the cross-encoder reranker: after N
-    // consecutive failures, skip the call entirely until cooldown elapses.
-    private static final int RERANKER_FAILURE_THRESHOLD = 3;
-    private static final long RERANKER_COOLDOWN_MS = 60_000L;
-
-    private final RuntimeConfigService runtimeConfigService;
     private final TacticSearchMetricsService metricsService;
-    private final TacticCrossEncoderRerankerService rerankerService;
-    private final java.util.concurrent.atomic.AtomicInteger rerankerConsecutiveFailures = new java.util.concurrent.atomic.AtomicInteger(
-            0);
-    private final java.util.concurrent.atomic.AtomicLong rerankerCircuitOpenUntilMs = new java.util.concurrent.atomic.AtomicLong(
-            0L);
 
-    public TacticHybridRankingService(
-            RuntimeConfigService runtimeConfigService,
-            TacticSearchMetricsService metricsService,
-            TacticCrossEncoderRerankerService rerankerService) {
-        this.runtimeConfigService = runtimeConfigService;
+    public TacticHybridRankingService(TacticSearchMetricsService metricsService) {
         this.metricsService = metricsService;
-        this.rerankerService = rerankerService;
     }
 
     public List<TacticSearchResult> rank(
@@ -99,8 +81,10 @@ public class TacticHybridRankingService {
                 .sorted(Comparator.comparing(TacticSearchResult::getScore).reversed())
                 .toList();
 
+        String searchMode = vectorRanks.isEmpty() ? "bm25" : "hybrid";
         List<TacticSearchResult> diversified = applyMmr(prelim);
-        return applyRerankerVerdict(query, diversified, vectorHits != null && !vectorHits.isEmpty());
+        metricsService.recordActiveMode(searchMode, null);
+        return diversified;
     }
 
     private Map<String, Integer> rankMap(List<TacticSearchResult> hits) {
@@ -187,94 +171,6 @@ public class TacticHybridRankingService {
         }
         selected.sort(Comparator.comparing(TacticSearchResult::getScore).reversed());
         return selected;
-    }
-
-    private List<TacticSearchResult> applyRerankerVerdict(
-            TacticSearchQuery query,
-            List<TacticSearchResult> ranked,
-            boolean vectorAvailable) {
-        String searchMode = vectorAvailable ? "hybrid" : "bm25";
-        RuntimeConfig.SelfEvolvingTacticRerankConfig rerankConfig = runtimeConfigService.getSelfEvolvingConfig()
-                .getTactics()
-                .getSearch()
-                .getRerank();
-        if (rerankConfig == null || !Boolean.TRUE.equals(rerankConfig.getCrossEncoder())) {
-            metricsService.recordActiveMode(searchMode, null);
-            ranked.forEach(result -> result.getExplanation().setRerankerVerdict("disabled"));
-            return ranked;
-        }
-        if (isRerankerCircuitOpen()) {
-            String reason = "circuit open after " + RERANKER_FAILURE_THRESHOLD + " consecutive failures";
-            ranked.forEach(result -> {
-                result.getExplanation().setRerankerVerdict("unavailable: " + reason);
-                result.getExplanation().setSearchMode(searchMode);
-                result.getExplanation().setDegradedReason(reason);
-            });
-            metricsService.recordActiveMode(searchMode, reason);
-            return ranked;
-        }
-        try {
-            Map<String, TacticCrossEncoderRerankerService.RerankedCandidate> rerankedCandidates = rerankerService
-                    .rerank(query, ranked, rerankConfig.getTier(), rerankConfig.getTimeoutMs()).stream()
-                    .collect(java.util.stream.Collectors.toMap(
-                            TacticCrossEncoderRerankerService.RerankedCandidate::tacticId,
-                            candidate -> candidate,
-                            (left, right) -> left,
-                            LinkedHashMap::new));
-            for (TacticSearchResult result : ranked) {
-                TacticCrossEncoderRerankerService.RerankedCandidate rerankedCandidate = rerankedCandidates
-                        .get(result.getTacticId());
-                if (rerankedCandidate != null) {
-                    result.setScore(result.getScore() + rerankedCandidate.score());
-                    result.getExplanation().setRerankerVerdict(rerankedCandidate.verdict());
-                } else {
-                    result.getExplanation().setRerankerVerdict("no rerank result");
-                }
-                result.getExplanation().setSearchMode(searchMode);
-                result.getExplanation().setFinalScore(result.getScore());
-            }
-            ranked.sort(Comparator.comparing(TacticSearchResult::getScore).reversed());
-            metricsService.recordActiveMode(searchMode, null);
-            recordRerankerSuccess();
-            return ranked;
-        } catch (RuntimeException exception) {
-            recordRerankerFailure();
-            ranked.forEach(result -> {
-                result.getExplanation().setRerankerVerdict("unavailable: " + exception.getMessage());
-                result.getExplanation().setSearchMode(searchMode);
-                result.getExplanation().setDegradedReason(exception.getMessage());
-            });
-            metricsService.recordQueryFailure(exception.getMessage());
-            metricsService.recordActiveMode(searchMode, exception.getMessage());
-            return ranked;
-        }
-    }
-
-    private boolean isRerankerCircuitOpen() {
-        long openUntil = rerankerCircuitOpenUntilMs.get();
-        if (openUntil == 0L) {
-            return false;
-        }
-        if (System.currentTimeMillis() >= openUntil) {
-            // Cooldown elapsed: half-open by resetting the gate so the next call tries
-            // again.
-            rerankerCircuitOpenUntilMs.set(0L);
-            rerankerConsecutiveFailures.set(0);
-            return false;
-        }
-        return true;
-    }
-
-    private void recordRerankerSuccess() {
-        rerankerConsecutiveFailures.set(0);
-        rerankerCircuitOpenUntilMs.set(0L);
-    }
-
-    private void recordRerankerFailure() {
-        int failures = rerankerConsecutiveFailures.incrementAndGet();
-        if (failures >= RERANKER_FAILURE_THRESHOLD) {
-            rerankerCircuitOpenUntilMs.set(System.currentTimeMillis() + RERANKER_COOLDOWN_MS);
-        }
     }
 
     private double rrf(Integer rank) {

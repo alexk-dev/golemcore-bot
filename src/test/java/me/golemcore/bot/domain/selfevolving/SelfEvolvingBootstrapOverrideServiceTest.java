@@ -49,8 +49,6 @@ class SelfEvolvingBootstrapOverrideServiceTest {
                 .setRequireHealthyRuntime(false);
         botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getEmbeddings().getLocal()
                 .setFailOpen(false);
-        botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getRerank().setCrossEncoder(false);
-        botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getRerank().setTier("deep");
         botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getPersonalization()
                 .setEnabled(false);
         botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getNegativeMemory()
@@ -83,8 +81,6 @@ class SelfEvolvingBootstrapOverrideServiceTest {
         assertFalse(runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
                 .getRequireHealthyRuntime());
         assertFalse(runtimeConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal().getFailOpen());
-        assertFalse(runtimeConfig.getSelfEvolving().getTactics().getSearch().getRerank().getCrossEncoder());
-        assertEquals("deep", runtimeConfig.getSelfEvolving().getTactics().getSearch().getRerank().getTier());
         assertFalse(runtimeConfig.getSelfEvolving().getTactics().getSearch().getPersonalization().getEnabled());
         assertFalse(runtimeConfig.getSelfEvolving().getTactics().getSearch().getNegativeMemory().getEnabled());
     }
@@ -124,8 +120,6 @@ class SelfEvolvingBootstrapOverrideServiceTest {
         persistedConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
                 .setRequireHealthyRuntime(true);
         persistedConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal().setFailOpen(true);
-        persistedConfig.getSelfEvolving().getTactics().getSearch().getRerank().setCrossEncoder(true);
-        persistedConfig.getSelfEvolving().getTactics().getSearch().getRerank().setTier("standard");
         persistedConfig.getSelfEvolving().getTactics().getSearch().getPersonalization().setEnabled(true);
         persistedConfig.getSelfEvolving().getTactics().getSearch().getNegativeMemory().setEnabled(true);
 
@@ -152,8 +146,6 @@ class SelfEvolvingBootstrapOverrideServiceTest {
                 .setRequireHealthyRuntime(false);
         botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getEmbeddings().getLocal()
                 .setFailOpen(false);
-        botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getRerank().setCrossEncoder(false);
-        botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getRerank().setTier("deep");
         botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getPersonalization()
                 .setEnabled(false);
         botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getNegativeMemory()
@@ -187,8 +179,6 @@ class SelfEvolvingBootstrapOverrideServiceTest {
         assertTrue(candidateConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
                 .getRequireHealthyRuntime());
         assertTrue(candidateConfig.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal().getFailOpen());
-        assertTrue(candidateConfig.getSelfEvolving().getTactics().getSearch().getRerank().getCrossEncoder());
-        assertEquals("standard", candidateConfig.getSelfEvolving().getTactics().getSearch().getRerank().getTier());
         assertTrue(candidateConfig.getSelfEvolving().getTactics().getSearch().getPersonalization().getEnabled());
         assertTrue(candidateConfig.getSelfEvolving().getTactics().getSearch().getNegativeMemory().getEnabled());
     }

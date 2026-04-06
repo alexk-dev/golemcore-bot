@@ -192,8 +192,6 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_BM25_ENABLED = true;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_ENABLED = false;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_AUTO_FALLBACK_TO_BM25 = true;
-    private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_RERANK_CROSS_ENCODER = true;
-    private static final String DEFAULT_SELF_EVOLVING_TACTIC_RERANK_TIER = "deep";
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_PERSONALIZATION_ENABLED = true;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_NEGATIVE_MEMORY_ENABLED = true;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_AUTO_INSTALL = false;
@@ -2222,16 +2220,6 @@ public class RuntimeConfigService {
         localConfig.setMinimumRuntimeVersion(normalizeNonBlankString(
                 localConfig.getMinimumRuntimeVersion(),
                 DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MINIMUM_RUNTIME_VERSION));
-        if (searchConfig.getRerank() == null) {
-            searchConfig.setRerank(new RuntimeConfig.SelfEvolvingTacticRerankConfig());
-        }
-        RuntimeConfig.SelfEvolvingTacticRerankConfig rerankConfig = searchConfig.getRerank();
-        if (rerankConfig.getCrossEncoder() == null) {
-            rerankConfig.setCrossEncoder(DEFAULT_SELF_EVOLVING_TACTIC_RERANK_CROSS_ENCODER);
-        }
-        rerankConfig.setTier(normalizeNonBlankString(
-                rerankConfig.getTier(),
-                DEFAULT_SELF_EVOLVING_TACTIC_RERANK_TIER));
         if (searchConfig.getPersonalization() == null) {
             searchConfig.setPersonalization(new RuntimeConfig.SelfEvolvingToggleConfig());
         }

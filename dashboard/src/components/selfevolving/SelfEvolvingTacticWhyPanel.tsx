@@ -37,7 +37,6 @@ function ScoringDetails({
       <MetricRow label="MMR diversity" value={formatNumber(explanation?.mmrDiversityAdjustment)} hint="Adjustment to avoid duplicate-like results" />
       <MetricRow label="Memory penalty" value={formatNumber(explanation?.negativeMemoryPenalty)} hint="Penalty from negative memory entries about this tactic" />
       <MetricRow label="Personalization" value={formatNumber(explanation?.personalizationBoost)} hint="Boost based on this golem's usage patterns" />
-      <MetricRow label="Reranker" value={explanation?.rerankerVerdict ?? 'n/a'} hint="LLM reranker tier and confidence" />
       <MetricRow label="Matched views" value={formatList(explanation?.matchedQueryViews)} />
       <MetricRow label="Matched terms" value={formatList(explanation?.matchedTerms)} />
       <MetricRow label="Eligible" value={explanation?.eligible == null ? 'n/a' : explanation.eligible ? 'yes' : 'no'} hint="Whether this tactic passed gating checks" />

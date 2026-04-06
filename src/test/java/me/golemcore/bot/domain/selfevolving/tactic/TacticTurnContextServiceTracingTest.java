@@ -67,7 +67,6 @@ class TacticTurnContextServiceTracingTest {
                 .explanation(TacticSearchExplanation.builder()
                         .searchMode("hybrid")
                         .finalScore(0.85d)
-                        .rerankerVerdict("tier deep via gpt-5.4/high")
                         .build())
                 .build()));
 
@@ -102,7 +101,6 @@ class TacticTurnContextServiceTracingTest {
                 .explanation(TacticSearchExplanation.builder()
                         .searchMode("hybrid")
                         .finalScore(0.85d)
-                        .rerankerVerdict("tier deep via gpt-5.4/high")
                         .build())
                 .build()));
 
@@ -119,8 +117,6 @@ class TacticTurnContextServiceTracingTest {
         assertEquals("hybrid", tacticSpan.getEvents().getFirst().getAttributes().get("tactic.search_mode"));
         assertEquals(0.85d, tacticSpan.getEvents().getFirst().getAttributes().get("tactic.final_score"));
         assertEquals(1, tacticSpan.getEvents().getFirst().getAttributes().get("tactic.result_count"));
-        assertEquals("tier deep via gpt-5.4/high",
-                tacticSpan.getEvents().getFirst().getAttributes().get("tactic.reranker_verdict"));
     }
 
     @Test

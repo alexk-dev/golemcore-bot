@@ -286,7 +286,6 @@ export interface SelfEvolvingTacticSearchExplanation {
   mmrDiversityAdjustment: number | null;
   negativeMemoryPenalty: number | null;
   personalizationBoost: number | null;
-  rerankerVerdict: string | null;
   matchedQueryViews: string[];
   matchedTerms: string[];
   eligible: boolean | null;

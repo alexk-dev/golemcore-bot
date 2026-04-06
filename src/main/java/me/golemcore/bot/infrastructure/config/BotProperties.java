@@ -296,7 +296,6 @@ public class BotProperties {
     public static class SelfEvolvingBootstrapTacticSearchProperties {
         private String mode;
         private SelfEvolvingBootstrapTacticEmbeddingsProperties embeddings = new SelfEvolvingBootstrapTacticEmbeddingsProperties();
-        private SelfEvolvingBootstrapTacticRerankProperties rerank = new SelfEvolvingBootstrapTacticRerankProperties();
         private SelfEvolvingBootstrapToggleProperties personalization = new SelfEvolvingBootstrapToggleProperties();
         private SelfEvolvingBootstrapToggleProperties negativeMemory = new SelfEvolvingBootstrapToggleProperties();
     }
@@ -324,12 +323,6 @@ public class BotProperties {
         private Integer startupTimeoutMs;
         private Integer initialRestartBackoffMs;
         private String minimumRuntimeVersion;
-    }
-
-    @Data
-    public static class SelfEvolvingBootstrapTacticRerankProperties {
-        private Boolean crossEncoder;
-        private String tier;
     }
 
     @Data

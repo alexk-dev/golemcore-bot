@@ -60,11 +60,6 @@ const config: SelfEvolvingConfig = {
           failOpen: true,
         },
       },
-      rerank: {
-        crossEncoder: true,
-        tier: 'deep',
-        timeoutMs: 5000,
-      },
       personalization: {
         enabled: true,
       },

@@ -63,8 +63,6 @@ public class TacticSearchExplanation {
     @Builder.Default
     private Double personalizationBoost = 0.0d;
 
-    private String rerankerVerdict;
-
     @Builder.Default
     private List<String> matchedQueryViews = new ArrayList<>();
 

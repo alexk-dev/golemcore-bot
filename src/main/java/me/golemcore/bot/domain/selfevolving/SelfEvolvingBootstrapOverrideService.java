@@ -51,8 +51,6 @@ public class SelfEvolvingBootstrapOverrideService {
     private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_FAIL_OPEN = "tactics.search.embeddings.local.failOpen";
     private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_INITIAL_RESTART_BACKOFF_MS = "tactics.search.embeddings.local.initialRestartBackoffMs";
     private static final String PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_MINIMUM_RUNTIME_VERSION = "tactics.search.embeddings.local.minimumRuntimeVersion";
-    private static final String PATH_TACTICS_SEARCH_RERANK_CROSS_ENCODER = "tactics.search.rerank.crossEncoder";
-    private static final String PATH_TACTICS_SEARCH_RERANK_TIER = "tactics.search.rerank.tier";
     private static final String PATH_TACTICS_SEARCH_PERSONALIZATION_ENABLED = "tactics.search.personalization.enabled";
     private static final String PATH_TACTICS_SEARCH_NEGATIVE_MEMORY_ENABLED = "tactics.search.negativeMemory.enabled";
 
@@ -117,7 +115,6 @@ public class SelfEvolvingBootstrapOverrideService {
 
         addOverride(overriddenPaths, isNonBlank(search.getMode()), PATH_TACTICS_SEARCH_MODE);
         describeEmbeddingsOverrides(overriddenPaths, search.getEmbeddings());
-        describeRerankOverrides(overriddenPaths, search.getRerank());
         describeToggleOverride(overriddenPaths, search.getPersonalization(),
                 PATH_TACTICS_SEARCH_PERSONALIZATION_ENABLED);
         describeToggleOverride(overriddenPaths, search.getNegativeMemory(),
@@ -200,15 +197,6 @@ public class SelfEvolvingBootstrapOverrideService {
                 PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_MINIMUM_RUNTIME_VERSION);
     }
 
-    private void describeRerankOverrides(List<String> overriddenPaths,
-            BotProperties.SelfEvolvingBootstrapTacticRerankProperties rerank) {
-        if (rerank == null) {
-            return;
-        }
-        addOverride(overriddenPaths, rerank.getCrossEncoder() != null, PATH_TACTICS_SEARCH_RERANK_CROSS_ENCODER);
-        addOverride(overriddenPaths, isNonBlank(rerank.getTier()), PATH_TACTICS_SEARCH_RERANK_TIER);
-    }
-
     private void describeToggleOverride(List<String> overriddenPaths,
             BotProperties.SelfEvolvingBootstrapToggleProperties toggle,
             String path) {
@@ -232,7 +220,6 @@ public class SelfEvolvingBootstrapOverrideService {
         }
         overrideEmbeddings(searchConfig, source.getEmbeddings());
         ensureEmbeddingsConfig(searchConfig).setEnabled("hybrid".equalsIgnoreCase(searchConfig.getMode()));
-        overrideRerank(searchConfig, source.getRerank());
         overrideToggle(searchConfig.getPersonalization(), source.getPersonalization());
         overrideToggle(searchConfig.getNegativeMemory(), source.getNegativeMemory());
     }
@@ -252,7 +239,6 @@ public class SelfEvolvingBootstrapOverrideService {
         }
         restoreEmbeddings(candidateSearch, persistedSearch, source.getEmbeddings());
         ensureEmbeddingsConfig(candidateSearch).setEnabled("hybrid".equalsIgnoreCase(candidateSearch.getMode()));
-        restoreRerank(candidateSearch, persistedSearch, source.getRerank());
         restoreToggle(candidateSearch.getPersonalization(), persistedSearch.getPersonalization(),
                 source.getPersonalization());
         restoreToggle(candidateSearch.getNegativeMemory(), persistedSearch.getNegativeMemory(),
@@ -387,38 +373,6 @@ public class SelfEvolvingBootstrapOverrideService {
         }
     }
 
-    private void overrideRerank(RuntimeConfig.SelfEvolvingTacticSearchConfig target,
-            BotProperties.SelfEvolvingBootstrapTacticRerankProperties source) {
-        if (source == null) {
-            return;
-        }
-        RuntimeConfig.SelfEvolvingTacticRerankConfig rerankConfig = ensureRerankConfig(target);
-        if (source.getCrossEncoder() != null) {
-            rerankConfig.setCrossEncoder(source.getCrossEncoder());
-        }
-        if (isNonBlank(source.getTier())) {
-            rerankConfig.setTier(source.getTier().trim());
-        }
-    }
-
-    private void restoreRerank(RuntimeConfig.SelfEvolvingTacticSearchConfig target,
-            RuntimeConfig.SelfEvolvingTacticSearchConfig persisted,
-            BotProperties.SelfEvolvingBootstrapTacticRerankProperties source) {
-        if (source == null) {
-            return;
-        }
-        RuntimeConfig.SelfEvolvingTacticRerankConfig candidateRerank = ensureRerankConfig(target);
-        RuntimeConfig.SelfEvolvingTacticRerankConfig persistedRerank = persisted.getRerank() != null
-                ? persisted.getRerank()
-                : new RuntimeConfig.SelfEvolvingTacticRerankConfig();
-        if (source.getCrossEncoder() != null) {
-            candidateRerank.setCrossEncoder(persistedRerank.getCrossEncoder());
-        }
-        if (source.getTier() != null) {
-            candidateRerank.setTier(persistedRerank.getTier());
-        }
-    }
-
     private void overrideToggle(RuntimeConfig.SelfEvolvingToggleConfig target,
             BotProperties.SelfEvolvingBootstrapToggleProperties source) {
         if (target == null || source == null) {
@@ -476,14 +430,6 @@ public class SelfEvolvingBootstrapOverrideService {
             config.setLocal(new RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig());
         }
         return config.getLocal();
-    }
-
-    private RuntimeConfig.SelfEvolvingTacticRerankConfig ensureRerankConfig(
-            RuntimeConfig.SelfEvolvingTacticSearchConfig config) {
-        if (config.getRerank() == null) {
-            config.setRerank(new RuntimeConfig.SelfEvolvingTacticRerankConfig());
-        }
-        return config.getRerank();
     }
 
     private boolean isNonBlank(String value) {

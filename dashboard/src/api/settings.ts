@@ -472,7 +472,6 @@ export interface SelfEvolvingTacticSearchConfig {
   mode: 'bm25' | 'hybrid' | null;
   bm25: SelfEvolvingTacticBm25Config;
   embeddings: SelfEvolvingTacticEmbeddingsConfig;
-  rerank: SelfEvolvingTacticRerankConfig;
   personalization: SelfEvolvingToggleConfig;
   negativeMemory: SelfEvolvingToggleConfig;
 }
@@ -500,12 +499,6 @@ export interface SelfEvolvingTacticEmbeddingsLocalConfig {
   pullOnStart: boolean | null;
   requireHealthyRuntime: boolean | null;
   failOpen: boolean | null;
-}
-
-export interface SelfEvolvingTacticRerankConfig {
-  crossEncoder: boolean | null;
-  tier: string | null;
-  timeoutMs: number | null;
 }
 
 export interface SelfEvolvingToggleConfig {
@@ -821,9 +814,6 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
   const tacticsEmbeddingsLocal = tacticsEmbeddings.local != null && typeof tacticsEmbeddings.local === 'object'
     ? tacticsEmbeddings.local as UnknownRecord
     : {};
-  const tacticsRerank = tacticsSearch.rerank != null && typeof tacticsSearch.rerank === 'object'
-    ? tacticsSearch.rerank as UnknownRecord
-    : {};
   const tacticsPersonalization = tacticsSearch.personalization != null && typeof tacticsSearch.personalization === 'object'
     ? tacticsSearch.personalization as UnknownRecord
     : {};
@@ -915,11 +905,6 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
               ? tacticsEmbeddingsLocal.failOpen
               : true,
           },
-        },
-        rerank: {
-          crossEncoder: typeof tacticsRerank.crossEncoder === 'boolean' ? tacticsRerank.crossEncoder : true,
-          tier: normalizeSelfEvolvingJudgeTier(tacticsRerank.tier, 'deep'),
-          timeoutMs: typeof tacticsRerank.timeoutMs === 'number' ? tacticsRerank.timeoutMs : 5000,
         },
         personalization: {
           enabled: typeof tacticsPersonalization.enabled === 'boolean' ? tacticsPersonalization.enabled : true,
