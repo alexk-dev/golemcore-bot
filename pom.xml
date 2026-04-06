@@ -43,7 +43,7 @@
         <java.version>25</java.version>
         <feign.version>13.11</feign.version>
         <okhttp.version>5.3.2</okhttp.version>
-        <telegram.version>9.4.0</telegram.version>
+        <telegram.version>9.5.0</telegram.version>
         <langchain4j.version>1.12.2</langchain4j.version>
         <jjwt.version>0.13.0</jjwt.version>
         <totp.version>1.7.1</totp.version>
