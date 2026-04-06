@@ -160,20 +160,17 @@ class RuntimeConfigServiceSelfEvolvingBootstrapTest {
                 "tactics", Map.of(
                         "enabled", false,
                         "search", Map.of(
-                                "mode", "bm25",
-                                "rerank", Map.of("tier", "standard"))))));
+                                "mode", "bm25")))));
 
         botProperties.getSelfEvolving().getBootstrap().setEnabled(true);
         botProperties.getSelfEvolving().getBootstrap().setTracePayloadOverride(false);
         botProperties.getSelfEvolving().getBootstrap().getTactics().setEnabled(true);
-        botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getRerank().setTier("deep");
 
         RuntimeConfig config = service.reloadRuntimeConfig();
 
         assertTrue(config.getSelfEvolving().getEnabled());
         assertTrue(config.getSelfEvolving().getTracePayloadOverride());
         assertTrue(config.getSelfEvolving().getTactics().getEnabled());
-        assertEquals("deep", config.getSelfEvolving().getTactics().getSearch().getRerank().getTier());
     }
 
     @Test
@@ -201,13 +198,11 @@ class RuntimeConfigServiceSelfEvolvingBootstrapTest {
                 "tactics", Map.of(
                         "enabled", false,
                         "search", Map.of(
-                                "mode", "bm25",
-                                "rerank", Map.of("tier", "standard"))))));
+                                "mode", "bm25")))));
 
         botProperties.getSelfEvolving().getBootstrap().setEnabled(true);
         botProperties.getSelfEvolving().getBootstrap().setTracePayloadOverride(false);
         botProperties.getSelfEvolving().getBootstrap().getTactics().setEnabled(true);
-        botProperties.getSelfEvolving().getBootstrap().getTactics().getSearch().getRerank().setTier("deep");
 
         RuntimeConfig config = service.reloadRuntimeConfig();
         service.updateRuntimeConfig(config);
@@ -219,9 +214,5 @@ class RuntimeConfigServiceSelfEvolvingBootstrapTest {
 
         Map<?, ?> persistedTactics = (Map<?, ?>) persistedSelfEvolving.get("tactics");
         assertEquals(false, persistedTactics.get("enabled"));
-
-        Map<?, ?> persistedSearch = (Map<?, ?>) persistedTactics.get("search");
-        Map<?, ?> persistedRerank = (Map<?, ?>) persistedSearch.get("rerank");
-        assertEquals("standard", persistedRerank.get("tier"));
     }
 }

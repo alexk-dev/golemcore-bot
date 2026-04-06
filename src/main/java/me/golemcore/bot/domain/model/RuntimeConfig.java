@@ -871,8 +871,6 @@ public class RuntimeConfig {
         @Builder.Default
         private SelfEvolvingTacticEmbeddingsConfig embeddings = new SelfEvolvingTacticEmbeddingsConfig();
         @Builder.Default
-        private SelfEvolvingTacticRerankConfig rerank = new SelfEvolvingTacticRerankConfig();
-        @Builder.Default
         private SelfEvolvingToggleConfig personalization = new SelfEvolvingToggleConfig();
         @Builder.Default
         private SelfEvolvingToggleConfig negativeMemory = new SelfEvolvingToggleConfig();
@@ -929,17 +927,6 @@ public class RuntimeConfig {
         private Integer initialRestartBackoffMs = 1000;
         @Builder.Default
         private String minimumRuntimeVersion = "0.19.0";
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Builder
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class SelfEvolvingTacticRerankConfig {
-        private Boolean crossEncoder = true;
-        private String tier = "deep";
-        private Integer timeoutMs = 15000;
     }
 
     @Data

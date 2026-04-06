@@ -719,7 +719,6 @@ public class HiveEventBatchPublisher implements HiveEventPublishPort {
                 .mmrDiversityAdjustment(explanation.getMmrDiversityAdjustment())
                 .negativeMemoryPenalty(explanation.getNegativeMemoryPenalty())
                 .personalizationBoost(explanation.getPersonalizationBoost())
-                .rerankerVerdict(explanation.getRerankerVerdict())
                 .matchedQueryViews(explanation.getMatchedQueryViews())
                 .matchedTerms(explanation.getMatchedTerms())
                 .eligible(explanation.getEligible())

@@ -54,11 +54,6 @@ function buildConfig(provider: string | null, model: string | null): SelfEvolvin
             failOpen: true,
           },
         },
-        rerank: {
-          crossEncoder: true,
-          tier: 'deep',
-          timeoutMs: 5000,
-        },
         personalization: {
           enabled: true,
         },

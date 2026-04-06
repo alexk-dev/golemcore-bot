@@ -252,10 +252,6 @@ public class TacticTurnContextService {
                     if (selectedTactic.getExplanation().getFinalScore() != null) {
                         eventAttributes.put("tactic.final_score", selectedTactic.getExplanation().getFinalScore());
                     }
-                    if (selectedTactic.getExplanation().getRerankerVerdict() != null) {
-                        eventAttributes.put("tactic.reranker_verdict",
-                                selectedTactic.getExplanation().getRerankerVerdict());
-                    }
                 }
             }
             traceService.appendEvent(context.getSession(), spanContext,
