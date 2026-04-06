@@ -27,9 +27,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
-import me.golemcore.bot.adapter.outbound.hive.HiveEvidenceRef;
-import me.golemcore.bot.adapter.outbound.hive.HiveLifecycleSignalRequest;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
+import me.golemcore.bot.domain.model.hive.HiveEvidenceRef;
+import me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -53,11 +53,11 @@ public class HiveLifecycleSignalTool implements ToolComponent {
             "WORK_FAILED");
     private static final Set<String> ALLOWED_SIGNAL_TYPES = Set.copyOf(SUPPORTED_SIGNAL_TYPES);
 
-    private final HiveEventBatchPublisher hiveEventBatchPublisher;
+    private final HiveEventPublishPort hiveEventPublishPort;
     private final Clock clock;
 
-    public HiveLifecycleSignalTool(HiveEventBatchPublisher hiveEventBatchPublisher, Clock clock) {
-        this.hiveEventBatchPublisher = hiveEventBatchPublisher;
+    public HiveLifecycleSignalTool(HiveEventPublishPort hiveEventPublishPort, Clock clock) {
+        this.hiveEventPublishPort = hiveEventPublishPort;
         this.clock = clock;
     }
 
@@ -125,7 +125,7 @@ public class HiveLifecycleSignalTool implements ToolComponent {
 
         List<HiveEvidenceRef> evidenceRefs = parseEvidenceRefs(parameters.get("evidence_refs"));
         Map<String, Object> metadata = buildHiveMetadata(context);
-        hiveEventBatchPublisher.publishLifecycleSignal(
+        hiveEventPublishPort.publishLifecycleSignal(
                 new HiveLifecycleSignalRequest(signalType, summary, details, blockerCode, evidenceRefs,
                         Instant.now(clock)),
                 metadata);

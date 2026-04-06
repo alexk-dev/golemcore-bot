@@ -14,7 +14,7 @@ import java.time.ZoneOffset;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
@@ -26,7 +26,7 @@ class HiveControlCommandDispatcherTest {
     void shouldEnqueueHiveInboundMessageAndAcknowledgeCommand() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
         when(coordinator.submit(any(Message.class), any(Runnable.class))).thenAnswer(invocation -> {
             Runnable onStart = invocation.getArgument(1);
@@ -75,7 +75,7 @@ class HiveControlCommandDispatcherTest {
     void shouldRequestStopForStopControlEvent() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
         HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
                 coordinator,
@@ -103,7 +103,7 @@ class HiveControlCommandDispatcherTest {
     void shouldRouteInspectionRequestToDedicatedHandler() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
         HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
                 coordinator,
@@ -134,7 +134,7 @@ class HiveControlCommandDispatcherTest {
     void shouldRejectUnsupportedEventType() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
         HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
                 coordinator,
@@ -159,7 +159,7 @@ class HiveControlCommandDispatcherTest {
     void shouldMarkInspectionRequestFailedWhenHandlerThrows() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
         RuntimeException failure = new IllegalStateException("inspection failed");
         org.mockito.Mockito.doThrow(failure).when(inspectionCommandHandler)
@@ -188,7 +188,7 @@ class HiveControlCommandDispatcherTest {
     void shouldMarkCancelledCommandProcessedWhenRunIsAlreadyStopped() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
         when(coordinator.submit(any(Message.class), any(Runnable.class))).thenReturn(
                 CompletableFuture.failedFuture(new IllegalStateException("Cancelled by Hive control command")));

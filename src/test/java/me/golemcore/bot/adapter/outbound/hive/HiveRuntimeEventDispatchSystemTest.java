@@ -14,7 +14,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -27,13 +26,15 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
 import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
+import me.golemcore.bot.domain.system.HiveRuntimeEventDispatchSystem;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.junit.jupiter.api.Test;
 
 class HiveRuntimeEventDispatchSystemTest {
 
     @Test
     void shouldDispatchHiveRuntimeEventsWithTurnMetadata() {
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null, null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
@@ -68,7 +69,7 @@ class HiveRuntimeEventDispatchSystemTest {
 
     @Test
     void shouldSkipNonHiveSessions() {
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null, null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
@@ -87,7 +88,7 @@ class HiveRuntimeEventDispatchSystemTest {
 
     @Test
     void shouldPublishRuntimeTacticSearchProjectionFromContextAttributes() {
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
         LocalEmbeddingBootstrapService localEmbeddingBootstrapService = mock(LocalEmbeddingBootstrapService.class);
         when(sessionStateStore.load())
@@ -145,16 +146,18 @@ class HiveRuntimeEventDispatchSystemTest {
 
         system.process(context);
 
-        verify(publisher).publishSelfEvolvingTacticSearchProjection(argThat(response -> response != null
-                && response.getStatus() != null
-                && "degraded_restart_backoff".equals(response.getStatus().getRuntimeState())
-                && Boolean.TRUE.equals(response.getStatus().getOwned())
-                && Integer.valueOf(2).equals(response.getStatus().getRestartAttempts())));
+        verify(publisher).publishSelfEvolvingTacticSearchProjection(
+                argThat(query -> "recover failed shell command".equals(query)),
+                argThat(status -> status != null
+                        && "degraded_restart_backoff".equals(status.getRuntimeState())
+                        && Boolean.TRUE.equals(status.getOwned())
+                        && Integer.valueOf(2).equals(status.getRestartAttempts())),
+                anyList());
     }
 
     @Test
     void shouldSkipRuntimeTacticSearchProjectionWhenHiveSessionIsUnavailable() {
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
         when(sessionStateStore.load()).thenReturn(java.util.Optional.empty());
         HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
@@ -198,7 +201,7 @@ class HiveRuntimeEventDispatchSystemTest {
 
     @Test
     void shouldSkipRuntimeTacticSearchProjectionWhenHiveSessionIsIncomplete() {
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
         when(sessionStateStore.load())
                 .thenReturn(java.util.Optional.of(HiveSessionState.builder()
@@ -232,7 +235,7 @@ class HiveRuntimeEventDispatchSystemTest {
 
     @Test
     void shouldPublishRuntimeTacticSearchProjectionUsingQueryViewsWhenRawQueryIsBlank() {
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
         when(sessionStateStore.load())
                 .thenReturn(java.util.Optional.of(HiveSessionState.builder()
@@ -261,13 +264,15 @@ class HiveRuntimeEventDispatchSystemTest {
 
         system.process(context);
 
-        verify(publisher).publishSelfEvolvingTacticSearchProjection(argThat(response -> "recover shell".equals(
-                response.getQuery()) && response.getResults() != null && response.getResults().isEmpty()));
+        verify(publisher).publishSelfEvolvingTacticSearchProjection(
+                argThat(query -> "recover shell".equals(query)),
+                any(TacticSearchStatus.class),
+                anyList());
     }
 
     @Test
     void shouldSwallowRuntimeTacticSearchProjectionPublishFailures() {
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
         when(sessionStateStore.load())
                 .thenReturn(java.util.Optional.of(HiveSessionState.builder()
@@ -277,7 +282,7 @@ class HiveRuntimeEventDispatchSystemTest {
                         .build()));
         doThrow(new IllegalStateException("publish failed"))
                 .when(publisher)
-                .publishSelfEvolvingTacticSearchProjection(any(SelfEvolvingTacticSearchResponseDto.class));
+                .publishSelfEvolvingTacticSearchProjection(any(String.class), any(TacticSearchStatus.class), anyList());
         HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
                 publisher,
                 null,

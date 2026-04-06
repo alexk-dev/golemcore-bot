@@ -26,7 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.Message;
@@ -45,7 +45,7 @@ public class HiveControlCommandDispatcher {
 
     private final SessionRunCoordinator sessionRunCoordinator;
     private final HiveControlInboxService hiveControlInboxService;
-    private final HiveEventBatchPublisher hiveEventBatchPublisher;
+    private final HiveEventPublishPort hiveEventPublishPort;
     private final HiveInspectionCommandHandler hiveInspectionCommandHandler;
     private final Clock clock;
 
@@ -55,7 +55,7 @@ public class HiveControlCommandDispatcher {
         if (isStopEvent(eventType)) {
             sessionRunCoordinator.requestStop("hive", envelope.getThreadId(), envelope.getRunId(),
                     envelope.getCommandId());
-            hiveEventBatchPublisher.publishCommandAcknowledged(envelope);
+            hiveEventPublishPort.publishCommandAcknowledged(envelope);
             log.info("[Hive] Requested stop for control command: commandId={}, threadId={}, runId={}, eventType={}",
                     envelope.getCommandId(), envelope.getThreadId(), envelope.getRunId(), eventType);
             return;
@@ -78,7 +78,7 @@ public class HiveControlCommandDispatcher {
         Message inbound = buildInboundMessage(envelope);
         sessionRunCoordinator.submit(inbound, () -> hiveControlInboxService.markProcessed(trackingId))
                 .whenComplete((ignored, failure) -> finalizeCommandDispatch(envelope, failure));
-        hiveEventBatchPublisher.publishCommandAcknowledged(envelope);
+        hiveEventPublishPort.publishCommandAcknowledged(envelope);
         log.info("[Hive] Enqueued control command: commandId={}, threadId={}, runId={}",
                 envelope.getCommandId(), envelope.getThreadId(), envelope.getRunId());
     }

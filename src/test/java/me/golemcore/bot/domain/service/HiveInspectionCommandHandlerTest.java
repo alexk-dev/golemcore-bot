@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 import java.util.Map;
 import java.util.List;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
@@ -26,7 +26,7 @@ class HiveInspectionCommandHandlerTest {
     @Test
     void shouldPublishSessionListInspectionResponse() {
         SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(sessionInspectionService, publisher);
         when(sessionInspectionService.listSessions("web")).thenReturn(List.of(SessionSummaryDto.builder()
                 .id("web:conv-1")
@@ -67,7 +67,7 @@ class HiveInspectionCommandHandlerTest {
     @Test
     void shouldPublishTypedErrorResponseWhenInspectionOperationFails() {
         SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(sessionInspectionService, publisher);
         when(sessionInspectionService.getSessionTraceSummary("missing"))
                 .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
@@ -95,7 +95,7 @@ class HiveInspectionCommandHandlerTest {
     @Test
     void shouldPublishSnapshotExportAndSessionMutationResponses() {
         SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(sessionInspectionService, publisher);
         when(sessionInspectionService.exportSessionTraceSnapshotPayload("web:conv-1", "snap-1"))
                 .thenReturn(new SessionInspectionService.SnapshotPayloadExport(
@@ -137,7 +137,7 @@ class HiveInspectionCommandHandlerTest {
     @Test
     void shouldPublishInvalidRequestErrorForUnsupportedOperation() {
         SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(sessionInspectionService, publisher);
 
         handler.handle(inspection("req-bad", "unknown.operation", body -> {

@@ -21,6 +21,13 @@ package me.golemcore.bot.adapter.outbound.hive;
 import java.time.Instant;
 import java.util.List;
 
-public record HiveLifecycleSignalRequest(String signalType,String summary,String details,String blockerCode,List<HiveEvidenceRef>evidenceRefs,Instant createdAt){
+/**
+ * Adapter compatibility wrapper for legacy Hive lifecycle request type.
+ */
+@Deprecated(forRemoval=false)public record HiveLifecycleSignalRequest(String signalType,String summary,String details,String blockerCode,List<HiveEvidenceRef>evidenceRefs,Instant createdAt){
 
-public HiveLifecycleSignalRequest{evidenceRefs=evidenceRefs!=null?List.copyOf(evidenceRefs):List.of();}}
+public HiveLifecycleSignalRequest{evidenceRefs=evidenceRefs!=null?List.copyOf(evidenceRefs):List.of();}
+
+public me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest toDomain(){List<me.golemcore.bot.domain.model.hive.HiveEvidenceRef>refs=evidenceRefs.stream().map(HiveEvidenceRef::toDomain).toList();return new me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest(signalType,summary,details,blockerCode,refs,createdAt);}
+
+public static HiveLifecycleSignalRequest fromDomain(me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest request){if(request==null){return null;}List<HiveEvidenceRef>refs=request.evidenceRefs().stream().map(HiveEvidenceRef::fromDomain).toList();return new HiveLifecycleSignalRequest(request.signalType(),request.summary(),request.details(),request.blockerCode(),refs,request.createdAt());}}

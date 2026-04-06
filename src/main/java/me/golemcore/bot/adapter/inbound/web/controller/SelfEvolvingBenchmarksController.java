@@ -5,10 +5,10 @@ import static me.golemcore.bot.adapter.inbound.web.controller.SelfEvolvingContro
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingCampaignDto;
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
-import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
+import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,14 +27,14 @@ public class SelfEvolvingBenchmarksController {
 
     private final SelfEvolvingProjectionService projectionService;
     private final BenchmarkLabService benchmarkLabService;
-    private final HiveEventBatchPublisher hiveEventBatchPublisher;
+    private final HiveEventPublishPort hiveEventPublishPort;
 
     public SelfEvolvingBenchmarksController(SelfEvolvingProjectionService projectionService,
             BenchmarkLabService benchmarkLabService,
-            HiveEventBatchPublisher hiveEventBatchPublisher) {
+            HiveEventPublishPort hiveEventPublishPort) {
         this.projectionService = projectionService;
         this.benchmarkLabService = benchmarkLabService;
-        this.hiveEventBatchPublisher = hiveEventBatchPublisher;
+        this.hiveEventPublishPort = hiveEventPublishPort;
     }
 
     @GetMapping("/benchmarks/campaigns")
@@ -65,11 +65,11 @@ public class SelfEvolvingBenchmarksController {
     }
 
     private void publishHiveCampaignProjection(BenchmarkCampaign campaign) {
-        if (hiveEventBatchPublisher == null || campaign == null) {
+        if (hiveEventPublishPort == null || campaign == null) {
             return;
         }
         try {
-            hiveEventBatchPublisher.publishSelfEvolvingCampaignProjection(null, campaign);
+            hiveEventPublishPort.publishSelfEvolvingCampaignProjection(null, campaign);
         } catch (RuntimeException exception) {
             log.debug("[Hive] Skipping SelfEvolving campaign projection publish: {}", exception.getMessage());
         }

@@ -1,4 +1,4 @@
-package me.golemcore.bot.adapter.outbound.hive;
+package me.golemcore.bot.domain.system;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -22,39 +22,34 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchExplanationDto;
-import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
-import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
-import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.RuntimeEvent;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
 import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticSearchMetricsService;
-import me.golemcore.bot.domain.system.AgentSystem;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.springframework.stereotype.Component;
 
 @Component
 @Slf4j
 public class HiveRuntimeEventDispatchSystem implements AgentSystem {
 
-    private final HiveEventBatchPublisher hiveEventBatchPublisher;
+    private final HiveEventPublishPort hiveEventPublishPort;
     private final TacticSearchMetricsService tacticSearchMetricsService;
     private final HiveSessionStateStore hiveSessionStateStore;
     private final LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
 
     public HiveRuntimeEventDispatchSystem(
-            HiveEventBatchPublisher hiveEventBatchPublisher,
+            HiveEventPublishPort hiveEventPublishPort,
             TacticSearchMetricsService tacticSearchMetricsService,
             HiveSessionStateStore hiveSessionStateStore,
             LocalEmbeddingBootstrapService localEmbeddingBootstrapService) {
-        this.hiveEventBatchPublisher = hiveEventBatchPublisher;
+        this.hiveEventPublishPort = hiveEventPublishPort;
         this.tacticSearchMetricsService = tacticSearchMetricsService;
         this.hiveSessionStateStore = hiveSessionStateStore;
         this.localEmbeddingBootstrapService = localEmbeddingBootstrapService;
@@ -82,7 +77,7 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
             return context;
         }
         try {
-            hiveEventBatchPublisher.publishRuntimeEvents(runtimeEvents, buildMetadata(context));
+            hiveEventPublishPort.publishRuntimeEvents(runtimeEvents, buildMetadata(context));
         } catch (RuntimeException exception) {
             log.warn("[Hive] Failed to dispatch runtime event batch: {}", exception.getMessage());
         }
@@ -106,12 +101,10 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
         }
         List<TacticSearchResult> results = extractTacticResults(context);
         try {
-            hiveEventBatchPublisher
-                    .publishSelfEvolvingTacticSearchProjection(SelfEvolvingTacticSearchResponseDto.builder()
-                            .query(query)
-                            .status(buildTacticSearchStatusDto())
-                            .results(results.stream().map(this::toSearchResultDto).toList())
-                            .build());
+            hiveEventPublishPort.publishSelfEvolvingTacticSearchProjection(
+                    query,
+                    buildTacticSearchStatus(),
+                    results);
         } catch (RuntimeException exception) {
             log.warn("[Hive] Failed to publish tactic search projection: {}", exception.getMessage());
         }
@@ -175,40 +168,18 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
         return null;
     }
 
-    private SelfEvolvingTacticSearchStatusDto buildTacticSearchStatusDto() {
+    private TacticSearchStatus buildTacticSearchStatus() {
         if (localEmbeddingBootstrapService != null) {
-            TacticSearchStatus status = localEmbeddingBootstrapService.probeStatus();
-            return SelfEvolvingTacticSearchStatusDto.builder()
-                    .mode(status.getMode())
-                    .reason(status.getReason())
-                    .provider(status.getProvider())
-                    .model(status.getModel())
-                    .degraded(status.getDegraded())
-                    .runtimeState(status.getRuntimeState())
-                    .owned(status.getOwned())
-                    .runtimeInstalled(status.getRuntimeInstalled())
-                    .runtimeHealthy(status.getRuntimeHealthy())
-                    .runtimeVersion(status.getRuntimeVersion())
-                    .baseUrl(status.getBaseUrl())
-                    .modelAvailable(status.getModelAvailable())
-                    .restartAttempts(status.getRestartAttempts())
-                    .nextRetryAt(status.getNextRetryAt() != null ? status.getNextRetryAt().toString() : null)
-                    .nextRetryTime(status.getNextRetryTime())
-                    .autoInstallConfigured(status.getAutoInstallConfigured())
-                    .pullOnStartConfigured(status.getPullOnStartConfigured())
-                    .pullAttempted(status.getPullAttempted())
-                    .pullSucceeded(status.getPullSucceeded())
-                    .updatedAt(status.getUpdatedAt() != null ? status.getUpdatedAt().toString() : null)
-                    .build();
+            return localEmbeddingBootstrapService.probeStatus();
         }
         if (tacticSearchMetricsService == null) {
-            return SelfEvolvingTacticSearchStatusDto.builder()
+            return TacticSearchStatus.builder()
                     .mode("bm25")
                     .degraded(false)
                     .build();
         }
         TacticSearchMetricsService.Snapshot snapshot = tacticSearchMetricsService.snapshot();
-        return SelfEvolvingTacticSearchStatusDto.builder()
+        return TacticSearchStatus.builder()
                 .mode(snapshot.activeMode())
                 .reason(snapshot.lastReason())
                 .provider(snapshot.provider())
@@ -220,63 +191,7 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
                 .pullOnStartConfigured(snapshot.pullOnStartConfigured())
                 .pullAttempted(snapshot.pullAttempted())
                 .pullSucceeded(snapshot.pullSucceeded())
-                .updatedAt(snapshot.updatedAt() != null ? snapshot.updatedAt().toString() : null)
-                .build();
-    }
-
-    private SelfEvolvingTacticSearchResultDto toSearchResultDto(TacticSearchResult result) {
-        return SelfEvolvingTacticSearchResultDto.builder()
-                .tacticId(result.getTacticId())
-                .artifactStreamId(result.getArtifactStreamId())
-                .originArtifactStreamId(result.getOriginArtifactStreamId())
-                .artifactKey(result.getArtifactKey())
-                .artifactType(result.getArtifactType())
-                .title(result.getTitle())
-                .aliases(result.getAliases())
-                .contentRevisionId(result.getContentRevisionId())
-                .intentSummary(result.getIntentSummary())
-                .behaviorSummary(result.getBehaviorSummary())
-                .toolSummary(result.getToolSummary())
-                .outcomeSummary(result.getOutcomeSummary())
-                .benchmarkSummary(result.getBenchmarkSummary())
-                .approvalNotes(result.getApprovalNotes())
-                .evidenceSnippets(result.getEvidenceSnippets())
-                .taskFamilies(result.getTaskFamilies())
-                .tags(result.getTags())
-                .promotionState(result.getPromotionState())
-                .rolloutStage(result.getRolloutStage())
-                .score(result.getScore())
-                .successRate(result.getSuccessRate())
-                .benchmarkWinRate(result.getBenchmarkWinRate())
-                .regressionFlags(result.getRegressionFlags())
-                .recencyScore(result.getRecencyScore())
-                .golemLocalUsageSuccess(result.getGolemLocalUsageSuccess())
-                .embeddingStatus(result.getEmbeddingStatus())
-                .updatedAt(result.getUpdatedAt() != null ? result.getUpdatedAt().toString() : null)
-                .explanation(toExplanationDto(result.getExplanation()))
-                .build();
-    }
-
-    private SelfEvolvingTacticSearchExplanationDto toExplanationDto(TacticSearchExplanation explanation) {
-        if (explanation == null) {
-            return null;
-        }
-        return SelfEvolvingTacticSearchExplanationDto.builder()
-                .searchMode(explanation.getSearchMode())
-                .degradedReason(explanation.getDegradedReason())
-                .bm25Score(explanation.getBm25Score())
-                .vectorScore(explanation.getVectorScore())
-                .rrfScore(explanation.getRrfScore())
-                .qualityPrior(explanation.getQualityPrior())
-                .mmrDiversityAdjustment(explanation.getMmrDiversityAdjustment())
-                .negativeMemoryPenalty(explanation.getNegativeMemoryPenalty())
-                .personalizationBoost(explanation.getPersonalizationBoost())
-                .rerankerVerdict(explanation.getRerankerVerdict())
-                .matchedQueryViews(explanation.getMatchedQueryViews())
-                .matchedTerms(explanation.getMatchedTerms())
-                .eligible(explanation.getEligible())
-                .gatingReason(explanation.getGatingReason())
-                .finalScore(explanation.getFinalScore())
+                .updatedAt(snapshot.updatedAt())
                 .build();
     }
 }
