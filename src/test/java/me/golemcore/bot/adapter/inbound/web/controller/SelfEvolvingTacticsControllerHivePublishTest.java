@@ -1,26 +1,25 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.util.List;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchExplanationDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 class SelfEvolvingTacticsControllerHivePublishTest {
 
@@ -98,5 +97,76 @@ class SelfEvolvingTacticsControllerHivePublishTest {
                 argThat(query -> "planner".equals(query)),
                 any(TacticSearchStatus.class),
                 anyList());
+    }
+
+    @Test
+    void shouldMapNullStatusAndExplanationAndInvalidInstantsForHivePublish() {
+        when(projectionService.searchTactics("planner")).thenReturn(SelfEvolvingTacticSearchResponseDto.builder()
+                .query("planner")
+                .status(null)
+                .results(List.of(SelfEvolvingTacticSearchResultDto.builder()
+                        .tacticId("planner")
+                        .artifactKey("skill:planner")
+                        .updatedAt("not-an-instant")
+                        .explanation(null)
+                        .build()))
+                .build());
+
+        controller.searchTactics("planner").block();
+
+        verify(hiveEventPublishPort).publishSelfEvolvingTacticSearchProjection(
+                argThat(query -> "planner".equals(query)),
+                argThat(status -> status == null),
+                argThat(results -> results != null
+                        && results.size() == 1
+                        && results.getFirst().getUpdatedAt() == null
+                        && results.getFirst().getExplanation() == null));
+    }
+
+    @Test
+    void shouldSkipTacticCatalogPublishWhenPortMissingOrListEmpty() {
+        SelfEvolvingTacticsController controllerWithoutPort = new SelfEvolvingTacticsController(
+                projectionService,
+                null,
+                tacticRecordService,
+                null);
+        when(projectionService.listTactics()).thenReturn(List.of(SelfEvolvingTacticDto.builder()
+                .tacticId("planner")
+                .artifactKey("skill:planner")
+                .title("Planner")
+                .build()));
+
+        controllerWithoutPort.listTactics().block();
+
+        when(projectionService.listTactics()).thenReturn(List.of());
+        controller.listTactics().block();
+    }
+
+    @Test
+    void shouldPublishTacticCatalogWhenPortAvailable() {
+        List<SelfEvolvingTacticDto> tactics = List.of(SelfEvolvingTacticDto.builder()
+                .tacticId("planner")
+                .artifactKey("skill:planner")
+                .title("Planner")
+                .build());
+        when(projectionService.listTactics()).thenReturn(tactics);
+
+        controller.listTactics().block();
+
+        verify(hiveEventPublishPort).publishSelfEvolvingTacticCatalogProjection(tactics);
+    }
+
+    @Test
+    void shouldSwallowHiveTacticSearchPublishFailures() {
+        when(projectionService.searchTactics("planner")).thenReturn(SelfEvolvingTacticSearchResponseDto.builder()
+                .query("planner")
+                .status(SelfEvolvingTacticSearchStatusDto.builder().mode("bm25").build())
+                .results(List.of())
+                .build());
+        doThrow(new IllegalStateException("publish failed"))
+                .when(hiveEventPublishPort)
+                .publishSelfEvolvingTacticSearchProjection(any(String.class), any(), anyList());
+
+        controller.searchTactics("planner").block();
     }
 }

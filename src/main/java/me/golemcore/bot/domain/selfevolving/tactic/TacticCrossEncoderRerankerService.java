@@ -20,21 +20,17 @@ package me.golemcore.bot.domain.selfevolving.tactic;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.List;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
-import me.golemcore.bot.port.outbound.LlmPort;
-import org.springframework.stereotype.Service;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.port.outbound.LlmPort;
+import org.springframework.stereotype.Service;
 
 /**
  * Executes a tier-resolved LLM reranking pass for tactic candidates.
@@ -92,7 +88,7 @@ public class TacticCrossEncoderRerankerService {
                             .build()))
                     .temperature(0.1d)
                     .build();
-            LlmResponse response = llmPort.chat(request).get(resolveTimeoutMs(timeoutMs), TimeUnit.MILLISECONDS);
+            LlmResponse response = llmPort.chat(request).get();
             if (response == null || StringValueSupport.isBlank(response.getContent())) {
                 throw new IllegalArgumentException("Cross-encoder reranker returned empty response");
             }
@@ -100,18 +96,9 @@ public class TacticCrossEncoderRerankerService {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Cross-encoder reranker interrupted", exception);
-        } catch (TimeoutException exception) {
-            throw new IllegalStateException("Cross-encoder reranker timed out", exception);
-        } catch (ExecutionException exception) {
+        } catch (java.util.concurrent.ExecutionException exception) {
             throw new IllegalStateException("Cross-encoder reranker failed", exception);
         }
-    }
-
-    private long resolveTimeoutMs(Integer timeoutMs) {
-        if (timeoutMs == null || timeoutMs <= 0) {
-            return 15000L;
-        }
-        return timeoutMs.longValue();
     }
 
     private String buildPrompt(TacticSearchQuery query, List<TacticSearchResult> candidates, String tier) {

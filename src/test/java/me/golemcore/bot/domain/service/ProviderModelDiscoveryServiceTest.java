@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import org.junit.jupiter.api.Test;
@@ -402,6 +403,34 @@ class ProviderModelDiscoveryServiceTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.discoverModels("xmesh"));
         assertEquals("Provider 'xmesh' does not have an API key configured", ex.getMessage());
+    }
+
+    @Test
+    void shouldTreatInvalidOpenRouterBaseUrlAsNonOpenRouterAndUseDefaultMaxTokensFallback() throws Exception {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.LlmProviderConfig invalidProviderConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("custom-key"))
+                .baseUrl("://not-a-uri")
+                .requestTimeoutSeconds(20)
+                .apiType("openai")
+                .build();
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService);
+
+        java.lang.reflect.Method shouldAttachMethod = ProviderModelDiscoveryService.class.getDeclaredMethod(
+                "shouldAttachOpenRouterDefaults",
+                String.class,
+                RuntimeConfig.LlmProviderConfig.class);
+        shouldAttachMethod.setAccessible(true);
+        boolean shouldAttach = (boolean) shouldAttachMethod.invoke(service, "customrouter", invalidProviderConfig);
+        assertFalse(shouldAttach);
+
+        java.lang.reflect.Method resolveMaxInputTokensMethod = ProviderModelDiscoveryService.class.getDeclaredMethod(
+                "resolveMaxInputTokens",
+                com.fasterxml.jackson.databind.JsonNode.class);
+        resolveMaxInputTokensMethod.setAccessible(true);
+        com.fasterxml.jackson.databind.JsonNode emptyNode = new ObjectMapper().readTree("{}");
+        int maxTokens = (int) resolveMaxInputTokensMethod.invoke(service, emptyNode);
+        assertEquals(128000, maxTokens);
     }
 
     private static final class StubProviderModelDiscoveryService extends ProviderModelDiscoveryService {

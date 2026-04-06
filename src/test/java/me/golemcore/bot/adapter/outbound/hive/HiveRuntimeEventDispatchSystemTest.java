@@ -1,15 +1,16 @@
 package me.golemcore.bot.adapter.outbound.hive;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,6 +27,7 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
 import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
+import me.golemcore.bot.domain.selfevolving.tactic.TacticSearchMetricsService;
 import me.golemcore.bot.domain.system.HiveRuntimeEventDispatchSystem;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.junit.jupiter.api.Test;
@@ -303,5 +305,50 @@ class HiveRuntimeEventDispatchSystemTest {
                 .build());
 
         assertDoesNotThrow(() -> system.process(context));
+    }
+
+    @Test
+    void shouldBuildFallbackTacticStatusFromMetricsSnapshot() {
+        TacticSearchMetricsService metricsService = new TacticSearchMetricsService(Clock.systemUTC());
+        metricsService.recordStatus(TacticSearchStatus.builder()
+                .mode("hybrid")
+                .reason("degraded by metrics")
+                .provider("ollama")
+                .model("qwen3-embedding:0.6b")
+                .degraded(true)
+                .runtimeHealthy(false)
+                .modelAvailable(false)
+                .autoInstallConfigured(true)
+                .pullOnStartConfigured(true)
+                .pullAttempted(true)
+                .pullSucceeded(false)
+                .updatedAt(Instant.parse("2026-04-06T04:00:00Z"))
+                .build());
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, metricsService, null,
+                null);
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id("web:chat-1")
+                        .channelType("web")
+                        .chatId("chat-1")
+                        .messages(new ArrayList<>())
+                        .build())
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY, TacticSearchQuery.builder()
+                .rawQuery("recover failed shell command")
+                .build());
+
+        system.process(context);
+
+        verify(publisher).publishSelfEvolvingTacticSearchProjection(
+                argThat(query -> "recover failed shell command".equals(query)),
+                argThat(status -> status != null
+                        && "hybrid".equals(status.getMode())
+                        && "degraded by metrics".equals(status.getReason())
+                        && Boolean.TRUE.equals(status.getDegraded())
+                        && Instant.parse("2026-04-06T04:00:00Z").equals(status.getUpdatedAt())),
+                anyList());
     }
 }
