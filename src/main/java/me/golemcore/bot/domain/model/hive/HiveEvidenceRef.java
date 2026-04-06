@@ -1,4 +1,4 @@
-package me.golemcore.bot.adapter.outbound.hive;
+package me.golemcore.bot.domain.model.hive;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -19,10 +19,6 @@ package me.golemcore.bot.adapter.outbound.hive;
  */
 
 /**
- * Adapter compatibility wrapper for legacy Hive evidence reference type.
+ * Evidence reference attached to a Hive lifecycle signal.
  */
-@Deprecated(forRemoval=false)public record HiveEvidenceRef(String kind,String ref){
-
-public me.golemcore.bot.domain.model.hive.HiveEvidenceRef toDomain(){return new me.golemcore.bot.domain.model.hive.HiveEvidenceRef(kind,ref);}
-
-public static HiveEvidenceRef fromDomain(me.golemcore.bot.domain.model.hive.HiveEvidenceRef ref){if(ref==null){return null;}return new HiveEvidenceRef(ref.kind(),ref.ref());}}
+public record HiveEvidenceRef(String kind,String ref){}

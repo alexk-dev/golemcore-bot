@@ -87,7 +87,7 @@ class ContextBuildingSystemTest {
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
 
         HiveLifecycleSignalTool hiveLifecycleSignalTool = new HiveLifecycleSignalTool(
-                mock(me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher.class),
+                mock(me.golemcore.bot.port.outbound.HiveEventPublishPort.class),
                 Clock.systemUTC());
         when(toolCallExecutionService.listTools()).thenReturn(List.of(hiveLifecycleSignalTool));
 

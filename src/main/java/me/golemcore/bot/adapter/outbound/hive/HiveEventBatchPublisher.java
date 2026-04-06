@@ -30,7 +30,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto;
-import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResponseDto;
+import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchExplanationDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -53,13 +53,19 @@ import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionDiffP
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionDiffProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionEvidenceProjection;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+import me.golemcore.bot.domain.model.hive.HiveEvidenceRef;
+import me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
 import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class HiveEventBatchPublisher implements me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort {
+public class HiveEventBatchPublisher implements HiveEventPublishPort {
 
     private static final Integer SCHEMA_VERSION = 1;
     private static final String EVENT_TYPE_RUNTIME_EVENT = "runtime_event";
@@ -85,6 +91,7 @@ public class HiveEventBatchPublisher implements me.golemcore.bot.port.outbound.S
     private final HiveEventOutboxService hiveEventOutboxService;
     private final ObjectMapper objectMapper;
 
+    @Override
     public void publishCommandAcknowledged(HiveControlCommandEnvelope envelope) {
         if (envelope == null || isBlank(envelope.getThreadId()) || isBlank(envelope.getCommandId())) {
             return;
@@ -107,6 +114,7 @@ public class HiveEventBatchPublisher implements me.golemcore.bot.port.outbound.S
         publishBatch(List.of(event));
     }
 
+    @Override
     public void publishInspectionResponse(HiveInspectionResponse response) {
         if (response == null || isBlank(response.threadId()) || isBlank(response.requestId())) {
             return;
@@ -130,6 +138,7 @@ public class HiveEventBatchPublisher implements me.golemcore.bot.port.outbound.S
         publishBatch(List.of(event));
     }
 
+    @Override
     public void publishRuntimeEvents(List<RuntimeEvent> runtimeEvents, Map<String, Object> metadata) {
         if (runtimeEvents == null || runtimeEvents.isEmpty()) {
             return;
@@ -169,6 +178,7 @@ public class HiveEventBatchPublisher implements me.golemcore.bot.port.outbound.S
         publishBatch(events);
     }
 
+    @Override
     public void publishLifecycleSignal(HiveLifecycleSignalRequest request, Map<String, Object> metadata) {
         if (request == null) {
             return;
@@ -181,6 +191,7 @@ public class HiveEventBatchPublisher implements me.golemcore.bot.port.outbound.S
         publishBatch(List.of(payload));
     }
 
+    @Override
     public void publishThreadMessage(String threadId, String content, Map<String, Object> metadata) {
         if (isBlank(threadId) || isBlank(content)) {
             return;
@@ -208,6 +219,7 @@ public class HiveEventBatchPublisher implements me.golemcore.bot.port.outbound.S
         publishBatch(events);
     }
 
+    @Override
     public void publishProgressUpdate(String threadId, ProgressUpdate update) {
         if (isBlank(threadId) || update == null) {
             return;
@@ -540,6 +552,53 @@ public class HiveEventBatchPublisher implements me.golemcore.bot.port.outbound.S
                 projection.getProjectedAt());
     }
 
+    @Override
+    public void publishSelfEvolvingArtifactProjection(String golemId, ArtifactCatalogEntry artifact) {
+        publishBatch(List.of(buildSelfEvolvingArtifactCatalogProjection(golemId, artifact)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactNormalizedRevisionProjection(String golemId,
+            ArtifactNormalizedRevisionProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactNormalizedRevisionProjection(golemId, projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactLineageProjection(String golemId, ArtifactLineageProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactLineageProjection(golemId, projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactRevisionDiffProjection(String golemId,
+            ArtifactRevisionDiffProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactRevisionDiffProjection(golemId, projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactTransitionDiffProjection(String golemId,
+            ArtifactTransitionDiffProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactTransitionDiffProjection(golemId, projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactRevisionEvidenceProjection(String golemId,
+            ArtifactRevisionEvidenceProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactEvidenceProjection(golemId, "revision", projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactTransitionEvidenceProjection(String golemId,
+            ArtifactTransitionEvidenceProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactEvidenceProjection(golemId, "transition", projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactCompareEvidenceProjection(String golemId,
+            ArtifactCompareEvidenceProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactEvidenceProjection(golemId, "compare", projection)));
+    }
+
+    @Override
     public void publishSelfEvolvingProjection(
             RunRecord runRecord,
             RunVerdict verdict,
@@ -555,10 +614,12 @@ public class HiveEventBatchPublisher implements me.golemcore.bot.port.outbound.S
         publishBatch(events);
     }
 
+    @Override
     public void publishSelfEvolvingCampaignProjection(String golemId, BenchmarkCampaign campaign) {
         publishBatch(List.of(buildSelfEvolvingCampaignProjection(golemId, campaign)));
     }
 
+    @Override
     public void publishSelfEvolvingTacticCatalogProjection(List<SelfEvolvingTacticDto> tactics) {
         if (tactics == null || tactics.isEmpty()) {
             return;
@@ -570,18 +631,101 @@ public class HiveEventBatchPublisher implements me.golemcore.bot.port.outbound.S
         publishBatch(events);
     }
 
-    public void publishSelfEvolvingTacticSearchProjection(SelfEvolvingTacticSearchResponseDto response) {
-        if (response == null) {
-            return;
-        }
+    @Override
+    public void publishSelfEvolvingTacticSearchProjection(String query, TacticSearchStatus status,
+            List<TacticSearchResult> results) {
         List<HiveEventPayload> events = new ArrayList<>();
-        events.add(buildSelfEvolvingTacticSearchStatusProjection(null, response.getQuery(), response.getStatus()));
-        if (response.getResults() != null) {
-            for (SelfEvolvingTacticSearchResultDto result : response.getResults()) {
-                events.add(buildSelfEvolvingTacticProjection(null, response.getQuery(), result));
+        events.add(buildSelfEvolvingTacticSearchStatusProjection(null, query, toStatusDto(status)));
+        if (results != null) {
+            for (TacticSearchResult result : results) {
+                events.add(buildSelfEvolvingTacticProjection(null, query, toSearchResultDto(result)));
             }
         }
         publishBatch(events);
+    }
+
+    private SelfEvolvingTacticSearchStatusDto toStatusDto(TacticSearchStatus status) {
+        if (status == null) {
+            return null;
+        }
+        return SelfEvolvingTacticSearchStatusDto.builder()
+                .mode(status.getMode())
+                .reason(status.getReason())
+                .provider(status.getProvider())
+                .model(status.getModel())
+                .degraded(status.getDegraded())
+                .runtimeState(status.getRuntimeState())
+                .owned(status.getOwned())
+                .runtimeInstalled(status.getRuntimeInstalled())
+                .runtimeHealthy(status.getRuntimeHealthy())
+                .runtimeVersion(status.getRuntimeVersion())
+                .baseUrl(status.getBaseUrl())
+                .modelAvailable(status.getModelAvailable())
+                .restartAttempts(status.getRestartAttempts())
+                .nextRetryAt(status.getNextRetryAt() != null ? status.getNextRetryAt().toString() : null)
+                .nextRetryTime(status.getNextRetryTime())
+                .autoInstallConfigured(status.getAutoInstallConfigured())
+                .pullOnStartConfigured(status.getPullOnStartConfigured())
+                .pullAttempted(status.getPullAttempted())
+                .pullSucceeded(status.getPullSucceeded())
+                .updatedAt(status.getUpdatedAt() != null ? status.getUpdatedAt().toString() : null)
+                .build();
+    }
+
+    private SelfEvolvingTacticSearchResultDto toSearchResultDto(TacticSearchResult result) {
+        return SelfEvolvingTacticSearchResultDto.builder()
+                .tacticId(result.getTacticId())
+                .artifactStreamId(result.getArtifactStreamId())
+                .originArtifactStreamId(result.getOriginArtifactStreamId())
+                .artifactKey(result.getArtifactKey())
+                .artifactType(result.getArtifactType())
+                .title(result.getTitle())
+                .aliases(result.getAliases())
+                .contentRevisionId(result.getContentRevisionId())
+                .intentSummary(result.getIntentSummary())
+                .behaviorSummary(result.getBehaviorSummary())
+                .toolSummary(result.getToolSummary())
+                .outcomeSummary(result.getOutcomeSummary())
+                .benchmarkSummary(result.getBenchmarkSummary())
+                .approvalNotes(result.getApprovalNotes())
+                .evidenceSnippets(result.getEvidenceSnippets())
+                .taskFamilies(result.getTaskFamilies())
+                .tags(result.getTags())
+                .promotionState(result.getPromotionState())
+                .rolloutStage(result.getRolloutStage())
+                .score(result.getScore())
+                .successRate(result.getSuccessRate())
+                .benchmarkWinRate(result.getBenchmarkWinRate())
+                .regressionFlags(result.getRegressionFlags())
+                .recencyScore(result.getRecencyScore())
+                .golemLocalUsageSuccess(result.getGolemLocalUsageSuccess())
+                .embeddingStatus(result.getEmbeddingStatus())
+                .updatedAt(result.getUpdatedAt() != null ? result.getUpdatedAt().toString() : null)
+                .explanation(toExplanationDto(result.getExplanation()))
+                .build();
+    }
+
+    private SelfEvolvingTacticSearchExplanationDto toExplanationDto(TacticSearchExplanation explanation) {
+        if (explanation == null) {
+            return null;
+        }
+        return SelfEvolvingTacticSearchExplanationDto.builder()
+                .searchMode(explanation.getSearchMode())
+                .degradedReason(explanation.getDegradedReason())
+                .bm25Score(explanation.getBm25Score())
+                .vectorScore(explanation.getVectorScore())
+                .rrfScore(explanation.getRrfScore())
+                .qualityPrior(explanation.getQualityPrior())
+                .mmrDiversityAdjustment(explanation.getMmrDiversityAdjustment())
+                .negativeMemoryPenalty(explanation.getNegativeMemoryPenalty())
+                .personalizationBoost(explanation.getPersonalizationBoost())
+                .rerankerVerdict(explanation.getRerankerVerdict())
+                .matchedQueryViews(explanation.getMatchedQueryViews())
+                .matchedTerms(explanation.getMatchedTerms())
+                .eligible(explanation.getEligible())
+                .gatingReason(explanation.getGatingReason())
+                .finalScore(explanation.getFinalScore())
+                .build();
     }
 
     private HiveEventPayload buildSelfEvolvingArtifactEvidencePayload(

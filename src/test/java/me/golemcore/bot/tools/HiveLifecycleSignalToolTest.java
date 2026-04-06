@@ -12,7 +12,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -44,7 +44,7 @@ class HiveLifecycleSignalToolTest {
 
     @Test
     void shouldPublishLifecycleSignalForHiveSession() {
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveLifecycleSignalTool tool = new HiveLifecycleSignalTool(
                 publisher,
                 Clock.fixed(Instant.parse("2026-03-18T12:00:00Z"), ZoneOffset.UTC));
@@ -77,7 +77,7 @@ class HiveLifecycleSignalToolTest {
 
     @Test
     void shouldDenyLifecycleSignalOutsideHiveSession() {
-        HiveEventBatchPublisher publisher = mock(HiveEventBatchPublisher.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveLifecycleSignalTool tool = new HiveLifecycleSignalTool(publisher, Clock.systemUTC());
 
         AgentContextHolder.set(AgentContext.builder()

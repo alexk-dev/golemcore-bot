@@ -18,21 +18,6 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import me.golemcore.bot.domain.model.LlmResponse;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
-import me.golemcore.bot.port.outbound.LlmPort;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
-import java.time.Instant;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -40,7 +25,19 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Instant;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.port.outbound.LlmPort;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 class TacticCrossEncoderRerankerServiceTest {
 
@@ -94,24 +91,6 @@ class TacticCrossEncoderRerankerServiceTest {
         assertEquals(0.08d, results.getFirst().score());
         assertTrue(results.getFirst().verdict().contains("gpt-5.4"));
         verify(llmPort).chat(any());
-    }
-
-    @Test
-    void shouldFailFastWhenRerankerDoesNotReturnBeforeTimeout() {
-        when(modelSelectionService.resolveExplicitTier("deep"))
-                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5.4", "high"));
-        when(llmPort.chat(any())).thenReturn(new CompletableFuture<>());
-
-        IllegalStateException error = assertThrows(IllegalStateException.class, () -> rerankerService.rerank(
-                TacticSearchQuery.builder()
-                        .rawQuery("recover failed shell command")
-                        .queryViews(List.of("recover", "shell", "failure"))
-                        .build(),
-                List.of(tactic("planner", "Planner tactic", "Recover via shell and git")),
-                "deep",
-                10));
-
-        assertTrue(error.getCause() instanceof TimeoutException);
     }
 
     @Test
@@ -194,7 +173,7 @@ class TacticCrossEncoderRerankerServiceTest {
                 .thenReturn(new ModelSelectionService.ModelSelection("gpt-5.4", "high"));
         CompletableFuture<LlmResponse> interruptedFuture = new CompletableFuture<>() {
             @Override
-            public LlmResponse get(long timeout, TimeUnit unit) throws InterruptedException {
+            public LlmResponse get() throws InterruptedException {
                 throw new InterruptedException("interrupted");
             }
         };

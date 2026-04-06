@@ -1,4 +1,4 @@
-package me.golemcore.bot.adapter.outbound.hive;
+package me.golemcore.bot.domain.model.hive;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -20,7 +20,10 @@ package me.golemcore.bot.adapter.outbound.hive;
 
 import java.time.Instant;
 import java.util.List;
-import lombok.Builder;
-import me.golemcore.bot.domain.model.hive.HiveEvidenceRef;
 
-@Builder public record HiveEventPayload(Integer schemaVersion,String eventType,String golemId,String runtimeEventType,String signalId,String cardId,String commandId,String requestId,String runId,String threadId,String signalType,String summary,String details,String blockerCode,List<HiveEvidenceRef>evidenceRefs,Long inputTokens,Long outputTokens,Long accumulatedCostMicros,String operation,Boolean success,String errorCode,String errorMessage,Object payload,Instant createdAt){}
+/**
+ * Domain request for a Hive lifecycle signal.
+ */
+public record HiveLifecycleSignalRequest(String signalType,String summary,String details,String blockerCode,List<HiveEvidenceRef>evidenceRefs,Instant createdAt){
+
+public HiveLifecycleSignalRequest{evidenceRefs=evidenceRefs!=null?List.copyOf(evidenceRefs):List.of();}}

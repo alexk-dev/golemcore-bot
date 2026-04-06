@@ -32,6 +32,7 @@ export interface DiscoveredProviderModel {
   id: string;
   displayName: string;
   ownedBy: string | null;
+  defaultSettings: ModelSettings | null;
 }
 
 export interface ResolveModelRegistryRequest {
