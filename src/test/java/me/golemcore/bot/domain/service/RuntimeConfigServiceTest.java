@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
+import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService;
 
 @SuppressWarnings("PMD.TooManyMethods") // Comprehensive test coverage for critical config service
 class RuntimeConfigServiceTest {
@@ -58,7 +60,7 @@ class RuntimeConfigServiceTest {
                     return CompletableFuture.completedFuture(persistedSections.get(fileName));
                 });
 
-        service = new RuntimeConfigService(storagePort);
+        service = new RuntimeConfigService(storagePort, new SelfEvolvingBootstrapOverrideService(new BotProperties()));
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
     }
@@ -81,6 +83,18 @@ class RuntimeConfigServiceTest {
         assertTrue(config.getTracing().getEnabled());
         assertFalse(config.getTracing().getPayloadSnapshotsEnabled());
         assertEquals(128, config.getTracing().getSessionTraceBudgetMb());
+    }
+
+    @Test
+    void shouldPreserveIndependentTacticsToggleWithinSelfEvolvingConfig() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getSelfEvolving().setEnabled(true);
+        config.getSelfEvolving().getTactics().setEnabled(false);
+
+        service.updateRuntimeConfig(config);
+
+        assertTrue(config.getSelfEvolving().getEnabled());
+        assertFalse(config.getSelfEvolving().getTactics().getEnabled());
     }
 
     @Test

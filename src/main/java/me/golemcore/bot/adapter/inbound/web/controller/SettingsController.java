@@ -1103,7 +1103,38 @@ public class SettingsController {
                 .delayedActions(mergeSection(patch.getDelayedActions(), baseline.getDelayedActions(),
                         RuntimeConfig.DelayedActionsConfig::new))
                 .hive(mergeSection(patch.getHive(), baseline.getHive(), RuntimeConfig.HiveConfig::new))
+                .selfEvolving(mergeSelfEvolvingSection(patch.getSelfEvolving(), baseline.getSelfEvolving()))
                 .build();
+    }
+
+    private RuntimeConfig.SelfEvolvingConfig mergeSelfEvolvingSection(
+            RuntimeConfig.SelfEvolvingConfig patch,
+            RuntimeConfig.SelfEvolvingConfig baseline) {
+        if (patch == null) {
+            return baseline;
+        }
+        preserveSelfEvolvingEmbeddingsApiKey(patch, baseline);
+        return patch;
+    }
+
+    private void preserveSelfEvolvingEmbeddingsApiKey(
+            RuntimeConfig.SelfEvolvingConfig patch,
+            RuntimeConfig.SelfEvolvingConfig baseline) {
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig patchEmbeddings = extractEmbeddings(patch);
+        if (patchEmbeddings == null) {
+            return;
+        }
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig baselineEmbeddings = extractEmbeddings(baseline);
+        Secret baselineKey = baselineEmbeddings != null ? baselineEmbeddings.getApiKey() : null;
+        patchEmbeddings.setApiKey(mergeSecret(baselineKey, patchEmbeddings.getApiKey()));
+    }
+
+    private RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig extractEmbeddings(
+            RuntimeConfig.SelfEvolvingConfig config) {
+        if (config == null || config.getTactics() == null || config.getTactics().getSearch() == null) {
+            return null;
+        }
+        return config.getTactics().getSearch().getEmbeddings();
     }
 
     private <T> T mergeSection(T incoming, T current, Supplier<T> emptySupplier) {

@@ -31,6 +31,7 @@ export const SETTINGS_SECTIONS = [
   { key: 'usage', title: 'Usage Tracking', description: 'Enable/disable analytics usage tracking', icon: FiBarChart2 },
   { key: 'mcp', title: 'MCP', description: 'MCP server catalog and runtime defaults', icon: FiTool },
   { key: 'hive', title: 'Hive', description: 'Hive control-plane integration and managed join settings', icon: FiLink },
+  { key: 'self-evolving', title: 'Self-Evolving', description: 'Judge tiers, promotion workflow, and benchmark harvesting', icon: FiActivity },
   { key: 'plan', title: 'Plan Mode', description: 'Review-before-execute plan workflow settings', icon: FiPlayCircle },
   { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and constraints', icon: FiPlayCircle },
   { key: 'tracing', title: 'Tracing', description: 'Request traces, payload snapshots, and session budgets', icon: FiActivity },
@@ -72,7 +73,7 @@ export const SETTINGS_BLOCKS: SettingsBlock[] = [
     key: 'runtime',
     title: 'Runtime',
     description: 'Agent execution, memory, usage, and autonomy',
-    sections: ['memory', 'skills', 'turn', 'usage', 'mcp', 'hive', 'plan', 'auto', 'tracing', 'updates'],
+    sections: ['memory', 'skills', 'turn', 'usage', 'mcp', 'hive', 'self-evolving', 'plan', 'auto', 'tracing', 'updates'],
   },
   {
     key: 'advanced',

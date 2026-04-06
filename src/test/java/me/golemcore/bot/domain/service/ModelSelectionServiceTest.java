@@ -284,6 +284,13 @@ class ModelSelectionServiceTest {
     }
 
     @Test
+    void shouldReturnNullProviderWhenModelSpecIsNull() {
+        String provider = service.resolveProviderForModel(null);
+
+        assertNull(provider);
+    }
+
+    @Test
     void shouldSkipOverrideWhenOverrideModelIsNull() {
         // Arrange
         Map<String, UserPreferences.TierOverride> overrides = new HashMap<>();
@@ -324,6 +331,14 @@ class ModelSelectionServiceTest {
 
         // Assert
         assertEquals("openai/gpt-5.2", model);
+    }
+
+    @Test
+    void shouldResolveExplicitTierThroughAliasMethod() {
+        ModelSelectionService.ModelSelection selection = service.resolveExplicitTier("balanced");
+
+        assertEquals("openai/gpt-5.1", selection.model());
+        assertEquals("medium", selection.reasoning());
     }
 
     @Test

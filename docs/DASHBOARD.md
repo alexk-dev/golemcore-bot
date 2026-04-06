@@ -21,6 +21,7 @@ How to use the built-in web dashboard for chat, setup, settings, scheduler manag
 - `/dashboard/skills` - skill library
 - `/dashboard/prompts` - prompt configuration
 - `/dashboard/analytics` - analytics view
+- `/dashboard/self-evolving` - SelfEvolving workspace
 - `/dashboard/diagnostics` - diagnostics utilities
 
 ## Authentication
@@ -83,7 +84,66 @@ The Settings page is now organized into catalog blocks instead of a flat tab lis
 - `Extensions` - Plugin Marketplace plus plugin-contributed settings pages
 - `Tools` - filesystem, shell, automation, goal management, voice routing
 - `Runtime` - memory, skills, turn budget, usage, MCP, auto mode, updates
+- `Runtime` also includes `SelfEvolving` for judge tiers, promotion policy, benchmark harvesting, and trace payload override
 - `Advanced` - rate limiting, security, compaction
+
+### SelfEvolving Settings
+
+`Settings -> SelfEvolving` controls the native eval and promotion runtime:
+
+- keep the whole pipeline disabled by default until explicitly enabled
+- enable or disable the `SelfEvolving` pipeline
+- choose judge tiers for primary, tiebreaker, and evolution passes
+- configure approval-gated or automatic promotion behavior
+- enable benchmark harvesting from production runs
+- force trace payload capture for evaluation-relevant spans while keeping redaction active
+- tune tactic search defaults such as `BM25-only` versus `hybrid`, rerank tier, personalization, negative memory, and optional embeddings
+
+For local embeddings, `Settings -> Self-Evolving -> Tactics` is also the main diagnostics surface. It shows:
+
+- whether the runtime is external or managed by the bot
+- current runtime state such as ready, startup timeout, restart backoff, or outdated version
+- selected model and whether that model is installed
+- last degraded reason
+- restart attempts and next retry timing when the bot owns the runtime
+- install gating for the selected embedding model
+
+Lifecycle rules exposed in the UI:
+
+- the bot never installs or updates `ollama` itself
+- the bot only stops a local `ollama` process if it started that process itself
+- the first `5s` of startup are reserved for local runtime readiness; after that the bot stays healthy even if embeddings remain degraded
+- model install is available only when the runtime is ready
+
+Startup-only `bot.self-evolving.bootstrap.*` overrides win over editable runtime settings for the effective process configuration. This is the right place to force tactic search on a deployed worker without rewriting its stored preferences.
+
+### SelfEvolving Workspace
+
+`/dashboard/self-evolving` is the operator workspace for bot-local `SelfEvolving` state.
+
+It shows:
+
+- overview cards for runs, candidates, campaigns, and approval pressure
+- a tactic search workspace that stays separate from `/dashboard/skills`
+- search state banners for `Hybrid`, `BM25-only`, and `Embeddings degraded`
+- readonly tactic result ranking with operator-visible `BM25`, vector, `RRF`, quality prior, `MMR`, negative-memory, personalization, and reranker signals
+- a `Why this tactic` panel that exposes `success rate`, `benchmark win rate`, `regression flags`, `promotion state`, `recency`, and `golem-local usage success`
+- a workspace-first artifact browser where `artifactStreamId` is the canonical identity for deep links, compare flows, and evidence joins
+- an artifact catalog left rail for evolved `skills`, `prompts`, `routing policies`, `tool policies`, and `memory policies`
+- a lineage rail that shows the full `candidate -> approved -> active -> reverted` history as rollout nodes over immutable content revisions
+- diff, evidence, and impact tabs that combine semantic diff, raw diff fallback, benchmark impact, promotion history, and run-level evidence
+- readonly run list with verdict summaries as supporting context
+- candidate queue and current promotion states as supporting context
+- benchmark lab campaigns harvested from production or curated suites, with selection wired back into the chosen artifact stream
+
+The workspace is bot-local and remains the primary working screen. Hive mirrors the same artifact workspace as a readonly inspection view when the golem is connected.
+Tactic search follows the same rule: tune and inspect it in the bot first, then use Hive as the shared readonly observation window.
+
+Diff behavior is split deliberately:
+
+- bounded rollout and default compare pairs are precomputed for fast navigation
+- arbitrary revision compare is computed on demand and cached by normalized content hash pair
+- transition compare remains node-aware, so rollout metadata and evidence do not get flattened into plain revision diff output
 
 Plugin settings pages are discovered dynamically from `/api/plugins/settings/catalog`.
 

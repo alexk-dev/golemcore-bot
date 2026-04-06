@@ -251,6 +251,6 @@ class PlanWorkLifecycleBddTest {
         ContextAssembler contextAssembler = new ContextAssembler(
                 skillResolver, tierResolver, layers, new PromptComposer());
 
-        return new ContextBuildingSystem(contextAssembler);
+        return new ContextBuildingSystem(contextAssembler, null, null, null);
     }
 }

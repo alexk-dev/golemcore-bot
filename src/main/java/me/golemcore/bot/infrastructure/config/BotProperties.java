@@ -71,6 +71,7 @@ public class BotProperties {
     private UpdateProperties update = new UpdateProperties();
     private PluginsProperties plugins = new PluginsProperties();
     private HiveProperties hive = new HiveProperties();
+    private SelfEvolvingProperties selfEvolving = new SelfEvolvingProperties();
 
     @Data
     public static class LlmProperties {
@@ -271,6 +272,69 @@ public class BotProperties {
         private String displayName = "";
         private String hostLabel = "";
         private Boolean autoConnectOnStartup;
+    }
+
+    @Data
+    public static class SelfEvolvingProperties {
+        private SelfEvolvingBootstrapProperties bootstrap = new SelfEvolvingBootstrapProperties();
+    }
+
+    @Data
+    public static class SelfEvolvingBootstrapProperties {
+        private Boolean enabled;
+        private Boolean tracePayloadOverride;
+        private SelfEvolvingBootstrapTacticsProperties tactics = new SelfEvolvingBootstrapTacticsProperties();
+    }
+
+    @Data
+    public static class SelfEvolvingBootstrapTacticsProperties {
+        private Boolean enabled;
+        private SelfEvolvingBootstrapTacticSearchProperties search = new SelfEvolvingBootstrapTacticSearchProperties();
+    }
+
+    @Data
+    public static class SelfEvolvingBootstrapTacticSearchProperties {
+        private String mode;
+        private SelfEvolvingBootstrapTacticEmbeddingsProperties embeddings = new SelfEvolvingBootstrapTacticEmbeddingsProperties();
+        private SelfEvolvingBootstrapTacticRerankProperties rerank = new SelfEvolvingBootstrapTacticRerankProperties();
+        private SelfEvolvingBootstrapToggleProperties personalization = new SelfEvolvingBootstrapToggleProperties();
+        private SelfEvolvingBootstrapToggleProperties negativeMemory = new SelfEvolvingBootstrapToggleProperties();
+    }
+
+    @Data
+    public static class SelfEvolvingBootstrapTacticEmbeddingsProperties {
+        private Boolean enabled;
+        private String provider;
+        private String baseUrl;
+        private String apiKey;
+        private String model;
+        private Integer dimensions;
+        private Integer batchSize;
+        private Integer timeoutMs;
+        private Boolean autoFallbackToBm25;
+        private SelfEvolvingBootstrapTacticEmbeddingsLocalProperties local = new SelfEvolvingBootstrapTacticEmbeddingsLocalProperties();
+    }
+
+    @Data
+    public static class SelfEvolvingBootstrapTacticEmbeddingsLocalProperties {
+        private Boolean autoInstall;
+        private Boolean pullOnStart;
+        private Boolean requireHealthyRuntime;
+        private Boolean failOpen;
+        private Integer startupTimeoutMs;
+        private Integer initialRestartBackoffMs;
+        private String minimumRuntimeVersion;
+    }
+
+    @Data
+    public static class SelfEvolvingBootstrapTacticRerankProperties {
+        private Boolean crossEncoder;
+        private String tier;
+    }
+
+    @Data
+    public static class SelfEvolvingBootstrapToggleProperties {
+        private Boolean enabled;
     }
 
     // ==================== PLUGINS ====================

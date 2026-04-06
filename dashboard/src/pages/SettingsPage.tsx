@@ -25,10 +25,16 @@ import McpTab from './settings/McpTab';
 import HiveTab from './settings/HiveTab';
 import AutoModeTab from './settings/AutoModeTab';
 import PlanModeTab from './settings/PlanModeTab';
+import SelfEvolvingTab from './settings/SelfEvolvingTab';
 import TracingTab from './settings/TracingTab';
 import { UpdatesTab } from './settings/UpdatesTab';
 import PluginSettingsPanel from './settings/PluginSettingsPanel';
 import PluginsMarketplaceTab from './settings/PluginsMarketplaceTab';
+import {
+  useInstallSelfEvolvingTacticEmbeddingModel,
+  useSelfEvolvingTacticSearchStatus,
+} from '../hooks/useSelfEvolving';
+import type { SelfEvolvingTacticSearchStatusPreview } from '../api/selfEvolving';
 import {
   SETTINGS_BLOCKS,
   SETTINGS_SECTIONS,
@@ -110,8 +116,15 @@ export default function SettingsPage(): ReactElement {
   const { data: me } = useMe();
   const qc = useQueryClient();
   const marketplaceBadge = buildMarketplaceBadge(pluginMarketplace);
+  const installTacticEmbeddingModel = useInstallSelfEvolvingTacticEmbeddingModel();
+  const [selfEvolvingTacticStatusPreview, setSelfEvolvingTacticStatusPreview] =
+    useState<SelfEvolvingTacticSearchStatusPreview | null>(null);
 
   const staticSection = isSettingsSectionKey(section) ? section : null;
+  const { data: selfEvolvingTacticSearchStatus } = useSelfEvolvingTacticSearchStatus(
+    staticSection === 'self-evolving',
+    selfEvolvingTacticStatusPreview,
+  );
   const pluginSection = staticSection == null && section != null
     ? pluginCatalog.find((item) => item.routeKey === section) ?? null
     : null;
@@ -335,6 +348,24 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
       {staticSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
       {staticSection === 'hive' && rc != null && <HiveTab config={rc.hive} />}
+      {staticSection === 'self-evolving' && rc != null && (
+        <SelfEvolvingTab
+          config={rc.selfEvolving}
+          tacticSearchStatus={selfEvolvingTacticSearchStatus ?? null}
+          isInstallingTacticEmbedding={installTacticEmbeddingModel.isPending}
+          onTacticSearchStatusPreviewChange={setSelfEvolvingTacticStatusPreview}
+          onInstallTacticEmbedding={async (model) => {
+            await installTacticEmbeddingModel.mutateAsync(model);
+          }}
+          isSaving={updateRuntimeConfig.isPending}
+          onSave={async (selfEvolving) => {
+            await updateRuntimeConfig.mutateAsync({
+              ...rc,
+              selfEvolving,
+            });
+          }}
+        />
+      )}
       {staticSection === 'plan' && rc != null && <PlanModeTab config={rc.plan} />}
       {staticSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
       {staticSection === 'tracing' && rc != null && <TracingTab config={rc.tracing} />}

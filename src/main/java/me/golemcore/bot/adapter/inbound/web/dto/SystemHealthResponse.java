@@ -18,6 +18,7 @@ public class SystemHealthResponse {
     private String buildTime;
     private long uptimeMs;
     private Map<String, ChannelStatus> channels;
+    private SelfEvolvingEmbeddingsStatus selfEvolvingEmbeddings;
 
     @Data
     @Builder
@@ -27,5 +28,24 @@ public class SystemHealthResponse {
         private String type;
         private boolean running;
         private boolean enabled;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SelfEvolvingEmbeddingsStatus {
+        private String mode;
+        private String reason;
+        private boolean degraded;
+        private String runtimeState;
+        private boolean owned;
+        private boolean runtimeInstalled;
+        private boolean runtimeHealthy;
+        private String runtimeVersion;
+        private String model;
+        private boolean modelAvailable;
+        private Integer restartAttempts;
+        private String nextRetryTime;
     }
 }

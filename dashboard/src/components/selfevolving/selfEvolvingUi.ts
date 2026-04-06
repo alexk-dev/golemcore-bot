@@ -1,0 +1,104 @@
+/** Truncate a UUID to its first 8 characters for display. */
+export function shortId(id: string): string {
+  return id.length > 8 ? id.slice(0, 8) : id;
+}
+
+export function formatTimestamp(value: string | null): string {
+  if (value == null) {
+    return 'Pending';
+  }
+  return new Date(value).toLocaleString();
+}
+
+/** Convert snake_case status values to Title Case. */
+export function humanizeStatus(value: string | null): string {
+  if (value == null || value.trim().length === 0) {
+    return 'n/a';
+  }
+  return value
+    .split('_')
+    .map((part) => (part.length > 0 ? `${part[0].toUpperCase()}${part.slice(1)}` : part))
+    .join(' ');
+}
+
+export function statusBadgeClass(status: string | null): string {
+  if (status === 'completed' || status === 'approve_gated' || status === 'healthy' || status === 'active') {
+    return 'text-bg-success';
+  }
+  if (status === 'failed' || status === 'rejected' || status === 'regression') {
+    return 'text-bg-primary';
+  }
+  if (status === 'shadowed' || status === 'approved_pending' || status === 'degraded') {
+    return 'text-bg-warning';
+  }
+  if (status === 'running') {
+    return 'text-bg-info';
+  }
+  return 'text-bg-secondary';
+}
+
+export function formatPercent(value: number | null | undefined): string {
+  return value == null ? 'n/a' : `${Math.round(value * 100)}%`;
+}
+
+export function formatNumber(value: number | null | undefined): string {
+  return value == null ? 'n/a' : value.toFixed(2);
+}
+
+export function formatList(values: string[] | null | undefined): string {
+  return values == null || values.length === 0 ? 'n/a' : values.join(', ');
+}
+
+const GOAL_LABELS: Record<string, string> = {
+  fix: 'Fix a problem found during the run',
+  derive: 'Derive a new artifact from run observations',
+  tune: 'Fine-tune an existing artifact based on results',
+};
+
+export function describeGoal(goal: string | null): string {
+  if (goal == null) {
+    return 'Unknown goal';
+  }
+  return GOAL_LABELS[goal] ?? humanizeStatus(goal);
+}
+
+const STATUS_DESCRIPTIONS: Record<string, string> = {
+  proposed: 'Newly generated from a judged run. Review the proposal summary, rationale, and evidence before approving activation.',
+  approved_pending: 'Approved and waiting for the next rollout step.',
+  approved: 'Approved and waiting for the next rollout step.',
+  shadowed: 'Running in shadow rollout. Review the results, then advance it manually when you want to continue.',
+  canary: 'Running in canary rollout with limited exposure. Advance it manually when you are ready for full activation.',
+  active: 'Approved and activated as a tactic. It is live now and can be used by the agent immediately.',
+  reverted: 'Rolled back after activation due to regressions or manual intervention.',
+  rejected: 'Rejected by the judge or operator. This change will not be promoted.',
+};
+
+export function describeCandidateStatus(status: string | null): string {
+  if (status == null) {
+    return 'No status information available.';
+  }
+  return STATUS_DESCRIPTIONS[status] ?? 'No additional context for this status.';
+}
+
+const PLACEHOLDER_DIFF_PATTERN = /^selfevolving:[a-z_]+:[a-z_]+$/;
+
+/** Returns true when the diff is empty or just a placeholder tag like "selfevolving:derive:skill". */
+export function isPlaceholderDiff(diff: string | null): boolean {
+  if (diff == null || diff.trim().length === 0) {
+    return true;
+  }
+  return PLACEHOLDER_DIFF_PATTERN.test(diff);
+}
+
+const RISK_LABELS: Record<string, { label: string; className: string }> = {
+  low: { label: 'Low risk', className: 'text-bg-success' },
+  medium: { label: 'Medium risk', className: 'text-bg-warning' },
+  high: { label: 'High risk', className: 'text-bg-primary' },
+};
+
+export function riskBadge(level: string | null): { label: string; className: string } {
+  if (level == null) {
+    return { label: 'Unknown', className: 'text-bg-secondary' };
+  }
+  return RISK_LABELS[level] ?? { label: humanizeStatus(level), className: 'text-bg-secondary' };
+}
