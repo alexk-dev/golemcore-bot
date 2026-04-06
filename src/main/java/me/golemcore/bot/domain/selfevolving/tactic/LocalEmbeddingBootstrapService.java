@@ -18,22 +18,15 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.port.outbound.OllamaProcessPort;
-import okhttp3.HttpUrl;
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
+import me.golemcore.bot.port.outbound.OllamaRuntimeModelPort;
+import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
 import org.springframework.stereotype.Service;
 
-import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Arrays;
@@ -50,7 +43,6 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 @Slf4j
 public class LocalEmbeddingBootstrapService {
 
-    private static final MediaType JSON = MediaType.get("application/json");
     private static final String MODE_BM25 = "bm25";
     private static final String MODE_HYBRID = "hybrid";
     private static final String PROVIDER_OLLAMA = "ollama";
@@ -62,23 +54,23 @@ public class LocalEmbeddingBootstrapService {
     private final RuntimeConfigService runtimeConfigService;
     private final TacticSearchMetricsService metricsService;
     private final Clock clock;
-    private final OkHttpClient okHttpClient;
-    private final ObjectMapper objectMapper;
+    private final OllamaRuntimeProbePort ollamaRuntimeProbePort;
+    private final OllamaRuntimeModelPort ollamaRuntimeModelPort;
     private final SelfEvolvingTacticSearchStatusProjectionService tacticSearchStatusProjectionService;
     private final OllamaProcessPort ollamaProcessPort;
 
     public LocalEmbeddingBootstrapService(RuntimeConfigService runtimeConfigService,
             TacticSearchMetricsService metricsService,
             Clock clock,
-            OkHttpClient okHttpClient,
-            ObjectMapper objectMapper,
+            OllamaRuntimeProbePort ollamaRuntimeProbePort,
+            OllamaRuntimeModelPort ollamaRuntimeModelPort,
             SelfEvolvingTacticSearchStatusProjectionService tacticSearchStatusProjectionService,
             OllamaProcessPort ollamaProcessPort) {
         this.runtimeConfigService = runtimeConfigService;
         this.metricsService = metricsService;
         this.clock = clock;
-        this.okHttpClient = okHttpClient;
-        this.objectMapper = objectMapper;
+        this.ollamaRuntimeProbePort = ollamaRuntimeProbePort;
+        this.ollamaRuntimeModelPort = ollamaRuntimeModelPort;
         this.tacticSearchStatusProjectionService = tacticSearchStatusProjectionService;
         this.ollamaProcessPort = ollamaProcessPort;
     }
@@ -495,13 +487,9 @@ public class LocalEmbeddingBootstrapService {
 
     protected boolean isRuntimeHealthy(String baseUrl) {
         try {
-            Request request = new Request.Builder()
-                    .url(buildLocalApiUrl(baseUrl, "/api/tags"))
-                    .get()
-                    .build();
-            try (Response response = okHttpClient.newCall(request).execute()) {
-                return response.isSuccessful();
-            }
+            return ollamaRuntimeProbePort != null
+                    && ollamaRuntimeProbePort.isRuntimeReachable(baseUrl,
+                            Duration.ofSeconds(LOCAL_RUNTIME_PROBE_TIMEOUT_SECONDS));
         } catch (Exception exception) {
             return false;
         }
@@ -509,23 +497,9 @@ public class LocalEmbeddingBootstrapService {
 
     protected boolean hasModel(String baseUrl, String model) {
         try {
-            Request request = new Request.Builder()
-                    .url(buildLocalApiUrl(baseUrl, "/api/tags"))
-                    .get()
-                    .build();
-            try (Response response = okHttpClient.newCall(request).execute()) {
-                if (!response.isSuccessful() || response.body() == null) {
-                    return false;
-                }
-                JsonNode json = objectMapper.readTree(response.body().bytes());
-                for (JsonNode node : json.path("models")) {
-                    String candidate = node.path("name").asText();
-                    if (matchesModelName(model, candidate)) {
-                        return true;
-                    }
-                }
-                return false;
-            }
+            return ollamaRuntimeProbePort != null
+                    && ollamaRuntimeProbePort.hasModel(baseUrl, model,
+                            Duration.ofSeconds(LOCAL_RUNTIME_PROBE_TIMEOUT_SECONDS));
         } catch (Exception exception) {
             return false;
         }
@@ -533,16 +507,8 @@ public class LocalEmbeddingBootstrapService {
 
     protected boolean pullModel(String baseUrl, String model) {
         try {
-            byte[] payload = objectMapper.writeValueAsBytes(java.util.Map.of(
-                    "model", model,
-                    "stream", false));
-            Request request = new Request.Builder()
-                    .url(buildLocalApiUrl(baseUrl, "/api/pull"))
-                    .post(RequestBody.create(payload, JSON))
-                    .build();
-            try (Response response = buildPullClient().newCall(request).execute()) {
-                return response.isSuccessful();
-            }
+            return ollamaRuntimeModelPort != null
+                    && ollamaRuntimeModelPort.pullModel(baseUrl, model, MODEL_PULL_TIMEOUT);
         } catch (Exception exception) {
             return false;
         }
@@ -801,85 +767,6 @@ public class LocalEmbeddingBootstrapService {
         return value.trim();
     }
 
-    private HttpUrl buildLocalApiUrl(String baseUrl, String path) {
-        if (baseUrl == null || baseUrl.isBlank()) {
-            throw new IllegalArgumentException("Embedding base URL must not be blank");
-        }
-        URI uri = URI.create(baseUrl.trim());
-        validateLocalBaseUrl(uri);
-        String scheme = normalizeLocalScheme(uri.getScheme());
-        String host = normalizeLocalHost(uri.getHost());
-        if (host == null) {
-            throw new IllegalArgumentException("Embedding base URL must target a local Ollama endpoint");
-        }
-        HttpUrl.Builder builder = new HttpUrl.Builder()
-                .scheme(scheme)
-                .host(host)
-                .port(resolvePort(uri.getPort(), scheme));
-        for (String segment : splitPathSegments(path)) {
-            builder.addPathSegment(segment);
-        }
-        return builder.build();
-    }
-
-    private void validateLocalBaseUrl(URI uri) {
-        if (trimToNull(uri.getUserInfo()) != null
-                || trimToNull(uri.getQuery()) != null
-                || trimToNull(uri.getFragment()) != null) {
-            throw new IllegalArgumentException("Embedding base URL must not contain user info, query, or fragment");
-        }
-        String normalizedPath = trimToNull(uri.getPath());
-        if (normalizedPath != null && !"/".equals(normalizedPath)) {
-            throw new IllegalArgumentException("Embedding base URL must not contain a path prefix");
-        }
-    }
-
-    private String normalizeLocalScheme(String scheme) {
-        String normalizedScheme = trimToNull(scheme);
-        if (normalizedScheme == null) {
-            return "http";
-        }
-        if ("http".equalsIgnoreCase(normalizedScheme) || "https".equalsIgnoreCase(normalizedScheme)) {
-            return normalizedScheme.toLowerCase(Locale.ROOT);
-        }
-        throw new IllegalArgumentException("Embedding base URL must use http or https");
-    }
-
-    private String normalizeLocalHost(String host) {
-        String normalizedHost = trimToNull(host);
-        if (normalizedHost == null) {
-            return null;
-        }
-        if ("127.0.0.1".equals(normalizedHost)) {
-            return normalizedHost;
-        }
-        if ("localhost".equalsIgnoreCase(normalizedHost)) {
-            return "localhost";
-        }
-        if ("::1".equals(normalizedHost) || "[::1]".equals(normalizedHost)) {
-            return "::1";
-        }
-        return null;
-    }
-
-    private int resolvePort(int port, String scheme) {
-        if (port > 0 && port <= 65535) {
-            return port;
-        }
-        return "https".equals(scheme) ? 443 : 80;
-    }
-
-    private java.util.List<String> splitPathSegments(String path) {
-        String normalizedPath = trimToNull(path);
-        if (normalizedPath == null) {
-            return java.util.List.of();
-        }
-        return Arrays.stream(normalizedPath.split("/"))
-                .map(String::trim)
-                .filter(segment -> !segment.isEmpty())
-                .toList();
-    }
-
     private String normalizeRuntimeVersion(String output) {
         if (output == null || output.isBlank()) {
             return null;
@@ -896,27 +783,6 @@ public class LocalEmbeddingBootstrapService {
             return firstLine.substring("ollama version ".length()).trim();
         }
         return firstLine;
-    }
-
-    private OkHttpClient buildPullClient() {
-        return okHttpClient.newBuilder()
-                .callTimeout(MODEL_PULL_TIMEOUT)
-                .readTimeout(MODEL_PULL_TIMEOUT)
-                .writeTimeout(MODEL_PULL_TIMEOUT)
-                .build();
-    }
-
-    private boolean matchesModelName(String requestedModel, String candidateModel) {
-        String normalizedRequested = trimToNull(requestedModel);
-        String normalizedCandidate = trimToNull(candidateModel);
-        if (normalizedRequested == null || normalizedCandidate == null) {
-            return false;
-        }
-        if (normalizedRequested.equals(normalizedCandidate)) {
-            return true;
-        }
-        return normalizedCandidate.equals(normalizedRequested + ":latest")
-                || normalizedRequested.equals(normalizedCandidate + ":latest");
     }
 
     private TacticSearchStatus mergeProjectedRuntimeMetadata(TacticSearchStatus status) {

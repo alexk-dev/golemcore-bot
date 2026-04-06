@@ -34,6 +34,8 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.port.outbound.OllamaProcessPort;
+import me.golemcore.bot.port.outbound.OllamaRuntimeModelPort;
+import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
@@ -439,8 +441,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 projectionService,
                 new StubOllamaProcessPort());
 
@@ -469,8 +471,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 projectionService,
                 new StubOllamaProcessPort());
 
@@ -521,8 +523,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 null,
                 new StubOllamaProcessPort());
         LocalEmbeddingBootstrapService.LocalRuntimeProbe probe = directService.probeLocalRuntime("openai_compatible");
@@ -537,8 +539,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 null,
                 null);
 
@@ -554,8 +556,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 null,
                 new OllamaProcessPort() {
                     @Override
@@ -599,8 +601,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 null,
                 new OllamaProcessPort() {
                     @Override
@@ -658,8 +660,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 projectionService,
                 new StubOllamaProcessPort());
 
@@ -690,8 +692,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 projectionService,
                 new StubOllamaProcessPort()) {
             @Override
@@ -733,8 +735,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 projectionService,
                 new StubOllamaProcessPort()) {
             private final Deque<Boolean> modelChecks = new ArrayDeque<>(java.util.List.of(false, true, true));
@@ -790,8 +792,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 projectionService,
                 new StubOllamaProcessPort());
 
@@ -819,8 +821,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 projectionService,
                 new StubOllamaProcessPort());
 
@@ -847,8 +849,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 projectionService,
                 new StubOllamaProcessPort());
 
@@ -878,8 +880,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 projectionService,
                 new StubOllamaProcessPort()) {
             @Override
@@ -917,8 +919,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 projectionService,
                 new StubOllamaProcessPort()) {
             private int checks;
@@ -968,8 +970,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 runtimeConfigService,
                 metricsService,
                 FIXED_CLOCK,
-                new okhttp3.OkHttpClient(),
-                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new StubOllamaRuntimeApiPort(),
+                new StubOllamaRuntimeApiPort(),
                 projectionService,
                 new StubOllamaProcessPort()) {
             private int checks;
@@ -1056,8 +1058,8 @@ class LocalEmbeddingBootstrapServiceTest {
                 RuntimeConfigService runtimeConfigService,
                 TacticSearchMetricsService metricsService,
                 SelfEvolvingTacticSearchStatusProjectionService projectionService) {
-            super(runtimeConfigService, metricsService, FIXED_CLOCK, new okhttp3.OkHttpClient(),
-                    new com.fasterxml.jackson.databind.ObjectMapper(), projectionService, new StubOllamaProcessPort());
+            super(runtimeConfigService, metricsService, FIXED_CLOCK, new StubOllamaRuntimeApiPort(),
+                    new StubOllamaRuntimeApiPort(), projectionService, new StubOllamaProcessPort());
         }
 
         @Override
@@ -1109,6 +1111,29 @@ class LocalEmbeddingBootstrapServiceTest {
 
         @Override
         public void stopOwnedProcess() {
+        }
+    }
+
+    private static final class StubOllamaRuntimeApiPort implements OllamaRuntimeProbePort, OllamaRuntimeModelPort {
+
+        @Override
+        public boolean isRuntimeReachable(String endpoint, java.time.Duration timeout) {
+            return false;
+        }
+
+        @Override
+        public String getRuntimeVersion(String endpoint, java.time.Duration timeout) {
+            return null;
+        }
+
+        @Override
+        public boolean hasModel(String endpoint, String model, java.time.Duration timeout) {
+            return false;
+        }
+
+        @Override
+        public boolean pullModel(String endpoint, String model, java.time.Duration timeout) {
+            return false;
         }
     }
 }

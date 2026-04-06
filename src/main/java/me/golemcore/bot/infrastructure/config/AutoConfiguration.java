@@ -19,6 +19,7 @@ package me.golemcore.bot.infrastructure.config;
  */
 
 import me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService;
+import me.golemcore.bot.adapter.outbound.embedding.OllamaRuntimeProbeAdapter;
 import me.golemcore.bot.domain.selfevolving.tactic.ManagedLocalOllamaSupervisor;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.selfevolving.SelfEvolvingTacticSearchStatusProjectionService;
@@ -28,6 +29,7 @@ import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.plugin.runtime.PluginManager;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.OllamaProcessPort;
+import me.golemcore.bot.port.outbound.OllamaRuntimeApiPort;
 import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -105,8 +107,9 @@ public class AutoConfiguration {
     }
 
     @Bean
-    public OllamaRuntimeProbePort ollamaRuntimeProbePort(okhttp3.OkHttpClient okHttpClient, ObjectMapper objectMapper) {
-        return new me.golemcore.bot.adapter.outbound.embedding.OllamaRuntimeProbeAdapter(okHttpClient, objectMapper);
+    public OllamaRuntimeApiPort ollamaRuntimeApiPort(okhttp3.OkHttpClient okHttpClient,
+            ObjectMapper objectMapper) {
+        return new OllamaRuntimeProbeAdapter(okHttpClient, objectMapper);
     }
 
     @Bean

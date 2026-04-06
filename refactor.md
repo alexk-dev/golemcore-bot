@@ -52,3 +52,36 @@
 - [done] Full verification:
   `./mvnw clean test`
   Result: `Tests run: 3910, Failures: 0, Errors: 0, Skipped: 0`
+
+## Cycle 3
+
+### Findings
+
+- [fixed] `src/main/java/me/golemcore/bot/domain/selfevolving/tactic/LocalEmbeddingBootstrapService.java`
+  performed direct OkHttp/Ollama HTTP calls from the domain layer. Moved local
+  runtime probing and model pull behavior behind outbound Ollama ports so the
+  service now stays focused on bootstrap orchestration.
+- [fixed] `src/main/java/me/golemcore/bot/adapter/outbound/embedding/OllamaRuntimeProbeAdapter.java`
+  now owns loopback-only Ollama endpoint canonicalization and request building.
+  This made the SSRF boundary explicit and addressed the failing GitHub
+  `CodeQL` check that flagged runtime URL usage in the previous design.
+- [fixed] The first full `./mvnw clean test` after introducing separate Ollama
+  probe/model beans failed in `ApplicationSmokeTest` with Spring wiring
+  ambiguity (`No qualifying bean ... found 3`). Collapsed that wiring into a
+  single composite `OllamaRuntimeApiPort` bean so both probe and model actions
+  resolve to one adapter instance cleanly.
+- [fixed] `src/test/java/me/golemcore/bot/domain/selfevolving/tactic/LocalEmbeddingBootstrapServiceHttpTest.java`
+  was adapter-level HTTP behavior living under domain tests. Removed it and
+  moved the coverage into
+  `src/test/java/me/golemcore/bot/adapter/outbound/embedding/OllamaRuntimeProbeAdapterTest.java`
+  to match the new hexagonal boundary.
+
+### Verification
+
+- [done] Focused verification:
+  `./mvnw -Dtest=OllamaRuntimeProbeAdapterTest,LocalEmbeddingBootstrapServiceTest,ManagedLocalOllamaSupervisorTest,ManagedLocalOllamaLifecycleBridgeTest test`
+- [done] Focused smoke verification after Spring wiring fix:
+  `./mvnw -Dtest=ApplicationSmokeTest,OllamaRuntimeProbeAdapterTest,LocalEmbeddingBootstrapServiceTest test`
+- [done] Full verification:
+  `./mvnw clean test`
+  Result: `Tests run: 3907, Failures: 0, Errors: 0, Skipped: 0`
