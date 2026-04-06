@@ -51,33 +51,60 @@ public class LlmJudgeService {
 
     private static final String OUTCOME_SYSTEM_PROMPT = """
             You are the outcome judge for a golem SelfEvolving run.
-            Return only JSON matching the RunVerdict schema fields you can justify.
-            Always include evidenceRefs when evidence anchors are required.
-            Score completion, correctness, and rollout recommendation from the supplied trace evidence.
+            You receive structured trace data including tool call sequences, error details, LLM call summaries, \
+            and span breakdowns extracted from the full execution trace.
+
+            Your task:
+            1. Assess whether the run achieved its goal based on the tool outcomes and error evidence.
+            2. Score task_completion (0.0-1.0) and correctness from the supplied trace evidence.
+            3. Recommend a rollout action: "approve_gated", "reject", or "observe".
+            4. Anchor every claim to specific spanIds from the trace digest.
+
+            Return only JSON matching the RunVerdict schema. Include evidenceRefs with spanId and outputFragment \
+            for each cited span. Set confidence to reflect how conclusive the evidence is.
             """;
     private static final String PROCESS_SYSTEM_PROMPT = """
             You are the process judge for a golem SelfEvolving run.
-            Return only JSON matching the RunVerdict schema fields you can justify.
-            Focus on skill choice, tier switching, tool churn, and process findings.
-            Always include evidenceRefs when evidence anchors are required.
+            You receive structured trace data including tool call sequences, error details, LLM call summaries, \
+            and span breakdowns extracted from the full execution trace.
+
+            Your task:
+            1. Evaluate the agent's process: Was the tool sequence efficient? Were there unnecessary retries or churn?
+            2. Check skill choice: Did the agent pick appropriate skills for the task?
+            3. Check tier routing: Were LLM calls routed to appropriate model tiers?
+            4. Identify process anti-patterns: tool loops, excessive errors, wasted LLM calls, timeout patterns.
+            5. List each finding as a processFindings entry (e.g., "tool_churn:shell", "tier_overuse:deep").
+
+            Return only JSON matching the RunVerdict schema. Anchor every finding to specific spanIds. \
+            Set confidence based on how clear the process signal is.
             """;
     private static final String TIEBREAKER_SYSTEM_PROMPT = """
             You are the arbitration judge for a golem SelfEvolving run.
-            Return only JSON matching the RunVerdict schema fields you can justify.
-            Resolve disagreements from prior judges and keep evidenceRefs anchored to the trace.
+            You receive the same structured trace data as the prior judges, plus their merged verdict.
+
+            Your task:
+            1. Resolve disagreements between outcome and process judges.
+            2. Re-examine the trace evidence where judges conflict.
+            3. Produce a final verdict that is internally consistent.
+            4. Keep evidenceRefs anchored to specific spanIds from the trace.
+
+            Return only JSON matching the RunVerdict schema.
             """;
 
     private final LlmPort llmPort;
     private final JudgeTierResolver judgeTierResolver;
+    private final JudgeTraceDigestService judgeTraceDigestService;
     private final RuntimeConfigService runtimeConfigService;
     private final ObjectMapper objectMapper;
 
     public LlmJudgeService(
             LlmPort llmPort,
             JudgeTierResolver judgeTierResolver,
+            JudgeTraceDigestService judgeTraceDigestService,
             RuntimeConfigService runtimeConfigService) {
         this.llmPort = llmPort;
         this.judgeTierResolver = judgeTierResolver;
+        this.judgeTraceDigestService = judgeTraceDigestService;
         this.runtimeConfigService = runtimeConfigService;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.findAndRegisterModules();
@@ -361,16 +388,22 @@ public class LlmJudgeService {
         }
         if (traceRecord != null) {
             promptBuilder.append("traceId=").append(traceRecord.getTraceId()).append('\n');
-            promptBuilder.append("traceTruncated=").append(traceRecord.isTruncated()).append('\n');
-            promptBuilder.append("spanCount=")
-                    .append(traceRecord.getSpans() != null ? traceRecord.getSpans().size() : 0)
-                    .append('\n');
         }
         if (seedVerdict != null) {
             promptBuilder.append("seedOutcomeStatus=").append(seedVerdict.getOutcomeStatus()).append('\n');
             promptBuilder.append("seedProcessStatus=").append(seedVerdict.getProcessStatus()).append('\n');
             promptBuilder.append("seedProcessFindings=").append(seedVerdict.getProcessFindings()).append('\n');
         }
+
+        String traceDigest = judgeTraceDigestService.buildDigest(runRecord, traceRecord);
+        if (!StringValueSupport.isBlank(traceDigest)) {
+            promptBuilder.append('\n');
+            promptBuilder.append("=== TRACE DIGEST ===\n");
+            promptBuilder.append(traceDigest);
+            promptBuilder.append("=== END TRACE DIGEST ===\n");
+        }
+
+        promptBuilder.append('\n');
         promptBuilder.append("Return strict JSON only.");
         return promptBuilder.toString();
     }

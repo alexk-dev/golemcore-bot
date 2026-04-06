@@ -42,6 +42,11 @@ class TacticSearchDocumentAssemblerTest {
         assertTrue(document.getLexicalText().contains("project planner"));
         assertTrue(document.getLexicalText().contains("shell git"));
         assertTrue(document.getLexicalText().contains("won benchmark campaign 8/10"));
-        assertTrue(document.getSemanticText().contains("produces step-by-step execution plans"));
+        assertTrue(document.getSemanticText().contains("[behavior] produces step-by-step execution plans"));
+        assertTrue(document.getSemanticText().contains("[intent] plan and sequence delivery work"));
+        assertTrue(document.getSemanticText().contains("[tooling] shell git"));
+        assertTrue(document.getSemanticText().contains("[outcome] lower failure rate for multi-step work"));
+        assertTrue(document.getSemanticText().contains("[benchmark] won benchmark campaign 8/10"));
+        assertTrue(document.getSemanticText().contains("[evidence] used git diff before applying changes"));
     }
 }

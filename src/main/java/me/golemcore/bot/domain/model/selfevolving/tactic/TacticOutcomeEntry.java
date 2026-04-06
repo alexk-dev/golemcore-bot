@@ -24,36 +24,26 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 /**
- * Expanded tactic-search query with query views and runtime search context.
+ * A single observed turn outcome attributed to a tactic selection. Recorded
+ * after every turn where tactic search produced a selection, regardless of
+ * whether the turn was a self-evolving run or a regular conversation.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class TacticSearchQuery {
+public class TacticOutcomeEntry {
 
+    private String tacticId;
     private String rawQuery;
-
-    @Builder.Default
-    private List<String> queryViews = new ArrayList<>();
-
-    @Builder.Default
-    private Map<String, String> viewQueries = new LinkedHashMap<>();
-
-    private String golemId;
-
-    private String executionPhase;
-
-    @Builder.Default
-    private Boolean shadowMode = false;
-
-    @Builder.Default
-    private List<String> availableTools = new ArrayList<>();
+    private List<String> queryViews;
+    private String searchMode;
+    private Double finalScore;
+    private String finishReason;
+    private Instant recordedAt;
 }

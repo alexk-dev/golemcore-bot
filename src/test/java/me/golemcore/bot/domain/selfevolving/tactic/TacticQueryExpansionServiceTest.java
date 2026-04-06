@@ -1,10 +1,12 @@
 package me.golemcore.bot.domain.selfevolving.tactic;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +15,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class TacticQueryExpansionServiceTest {
 
@@ -20,7 +24,9 @@ class TacticQueryExpansionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new TacticQueryExpansionService();
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isTacticQueryExpansionEnabled()).thenReturn(false);
+        service = new TacticQueryExpansionService(runtimeConfigService, null, null, new ObjectMapper());
     }
 
     @Test
@@ -32,6 +38,7 @@ class TacticQueryExpansionServiceTest {
         assertEquals("fix docker maven failure git rollback", query.getViewQueries().get("domain"));
         assertEquals("docker maven git", query.getViewQueries().get("tool"));
         assertEquals("fix failure rollback", query.getViewQueries().get("failure-recovery"));
+        assertTrue(query.getViewQueries().containsKey("phase"));
         assertTrue(query.getQueryViews().containsAll(List.of(
                 "fix",
                 "docker",
@@ -62,6 +69,7 @@ class TacticQueryExpansionServiceTest {
         assertEquals("golem-42", query.getGolemId());
         assertEquals("git shell", query.getViewQueries().get("tool"));
         assertEquals("recover failure", query.getViewQueries().get("failure-recovery"));
+        assertEquals("recovery", query.getExecutionPhase());
     }
 
     @Test
@@ -83,5 +91,37 @@ class TacticQueryExpansionServiceTest {
         assertTrue(query.getQueryViews().isEmpty());
         assertTrue(query.getViewQueries().containsKey("intent"));
         assertEquals("", query.getViewQueries().get("intent"));
+    }
+
+    @Test
+    void shouldDetectRecoveryPhaseFromFailureTerms() {
+        TacticSearchQuery query = service.expand("Fix Docker Maven failure with git rollback");
+
+        assertEquals("recovery", query.getExecutionPhase());
+        assertTrue(query.getViewQueries().containsKey("phase"));
+        assertTrue(query.getQueryViews().contains("recovery"));
+    }
+
+    @Test
+    void shouldDetectPlanningPhaseFromPlanningTerms() {
+        TacticSearchQuery query = service.expand("Plan the architecture for new service design");
+
+        assertEquals("planning", query.getExecutionPhase());
+        assertTrue(query.getViewQueries().containsKey("phase"));
+    }
+
+    @Test
+    void shouldDetectOptimizationPhaseFromOptimizationTerms() {
+        TacticSearchQuery query = service.expand("Optimize and refactor the search performance");
+
+        assertEquals("optimization", query.getExecutionPhase());
+        assertTrue(query.getViewQueries().containsKey("phase"));
+    }
+
+    @Test
+    void shouldDefaultToExecutionPhaseWhenNoStrongSignal() {
+        TacticSearchQuery query = service.expand("Run the deploy script for production");
+
+        assertEquals("execution", query.getExecutionPhase());
     }
 }

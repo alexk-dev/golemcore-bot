@@ -474,6 +474,13 @@ export interface SelfEvolvingTacticSearchConfig {
   embeddings: SelfEvolvingTacticEmbeddingsConfig;
   personalization: SelfEvolvingToggleConfig;
   negativeMemory: SelfEvolvingToggleConfig;
+  queryExpansion: SelfEvolvingTacticQueryExpansionConfig;
+  advisoryCount: number | null;
+}
+
+export interface SelfEvolvingTacticQueryExpansionConfig {
+  enabled: boolean | null;
+  tier: string | null;
 }
 
 export interface SelfEvolvingTacticBm25Config {
@@ -820,6 +827,9 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
   const tacticsNegativeMemory = tacticsSearch.negativeMemory != null && typeof tacticsSearch.negativeMemory === 'object'
     ? tacticsSearch.negativeMemory as UnknownRecord
     : {};
+  const tacticsQueryExpansion = tacticsSearch.queryExpansion != null && typeof tacticsSearch.queryExpansion === 'object'
+    ? tacticsSearch.queryExpansion as UnknownRecord
+    : {};
   const promotion = record.promotion != null && typeof record.promotion === 'object'
     ? record.promotion as UnknownRecord
     : {};
@@ -912,6 +922,17 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
         negativeMemory: {
           enabled: typeof tacticsNegativeMemory.enabled === 'boolean' ? tacticsNegativeMemory.enabled : true,
         },
+        queryExpansion: {
+          enabled: typeof tacticsQueryExpansion.enabled === 'boolean'
+            ? tacticsQueryExpansion.enabled
+            : true,
+          tier: typeof tacticsQueryExpansion.tier === 'string'
+            ? tacticsQueryExpansion.tier
+            : 'balanced',
+        },
+        advisoryCount: typeof tacticsSearch.advisoryCount === 'number'
+          ? tacticsSearch.advisoryCount
+          : 1,
       },
     },
     promotion: {

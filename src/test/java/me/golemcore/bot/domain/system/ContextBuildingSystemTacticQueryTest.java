@@ -59,6 +59,7 @@ class ContextBuildingSystemTacticQueryTest {
         context.setSystemPrompt("Base prompt");
 
         when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.getTacticAdvisoryCount()).thenReturn(1);
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
                 .enabled(true)
@@ -132,6 +133,7 @@ class ContextBuildingSystemTacticQueryTest {
                 .build();
 
         when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.getTacticAdvisoryCount()).thenReturn(1);
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
                 .enabled(true)
@@ -193,6 +195,7 @@ class ContextBuildingSystemTacticQueryTest {
                 .build();
 
         when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.getTacticAdvisoryCount()).thenReturn(1);
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
                 .enabled(true)
@@ -253,6 +256,7 @@ class ContextBuildingSystemTacticQueryTest {
                 .build();
 
         when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.getTacticAdvisoryCount()).thenReturn(1);
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
                 .enabled(true)
@@ -333,6 +337,7 @@ class ContextBuildingSystemTacticQueryTest {
         context.setAttribute(ContextAttributes.APPLIED_TACTIC_IDS, List.of("stale-selection"));
 
         when(assembler.assemble(context)).thenReturn(context);
+        when(runtimeConfigService.getTacticAdvisoryCount()).thenReturn(1);
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(RuntimeConfig.SelfEvolvingConfig.builder()
                 .enabled(true)

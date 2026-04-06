@@ -874,6 +874,10 @@ public class RuntimeConfig {
         private SelfEvolvingToggleConfig personalization = new SelfEvolvingToggleConfig();
         @Builder.Default
         private SelfEvolvingToggleConfig negativeMemory = new SelfEvolvingToggleConfig();
+        @Builder.Default
+        private SelfEvolvingTacticQueryExpansionConfig queryExpansion = new SelfEvolvingTacticQueryExpansionConfig();
+        @Builder.Default
+        private Integer advisoryCount = 1;
     }
 
     @Data
@@ -937,6 +941,18 @@ public class RuntimeConfig {
     public static class SelfEvolvingToggleConfig {
         @Builder.Default
         private Boolean enabled = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticQueryExpansionConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private String tier = "balanced";
     }
 
     @Data

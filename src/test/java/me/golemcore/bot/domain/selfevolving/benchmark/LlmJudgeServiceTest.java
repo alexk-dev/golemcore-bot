@@ -30,6 +30,7 @@ class LlmJudgeServiceTest {
 
     private LlmPort llmPort;
     private JudgeTierResolver judgeTierResolver;
+    private JudgeTraceDigestService judgeTraceDigestService;
     private RuntimeConfigService runtimeConfigService;
     private LlmJudgeService llmJudgeService;
 
@@ -37,6 +38,7 @@ class LlmJudgeServiceTest {
     void setUp() {
         llmPort = mock(LlmPort.class);
         judgeTierResolver = mock(JudgeTierResolver.class);
+        judgeTraceDigestService = new JudgeTraceDigestService();
         runtimeConfigService = mock(RuntimeConfigService.class);
         RuntimeConfig.SelfEvolvingJudgeConfig judgeConfig = RuntimeConfig.SelfEvolvingJudgeConfig.builder()
                 .enabled(true)
@@ -47,7 +49,8 @@ class LlmJudgeServiceTest {
                 .judge(judgeConfig)
                 .build();
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(selfEvolvingConfig);
-        llmJudgeService = new LlmJudgeService(llmPort, judgeTierResolver, runtimeConfigService);
+        llmJudgeService = new LlmJudgeService(llmPort, judgeTierResolver, judgeTraceDigestService,
+                runtimeConfigService);
     }
 
     @Test

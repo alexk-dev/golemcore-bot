@@ -25,17 +25,24 @@ import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionProposal;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticOutcomeEntry;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.selfevolving.benchmark.DeterministicJudgeService;
-import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateService;
-import me.golemcore.bot.domain.selfevolving.candidate.LlmEvolutionService;
 import me.golemcore.bot.domain.selfevolving.benchmark.LlmJudgeService;
+import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateService;
+import me.golemcore.bot.domain.selfevolving.candidate.EvolutionGateService;
+import me.golemcore.bot.domain.selfevolving.candidate.LlmEvolutionService;
 import me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService;
+import me.golemcore.bot.domain.selfevolving.tactic.TacticOutcomeJournalService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -52,7 +59,9 @@ public class PostRunAnalysisSystem implements AgentSystem {
     private final LlmJudgeService llmJudgeService;
     private final LlmEvolutionService llmEvolutionService;
     private final EvolutionCandidateService evolutionCandidateService;
+    private final EvolutionGateService evolutionGateService;
     private final PromotionWorkflowService promotionWorkflowService;
+    private final TacticOutcomeJournalService tacticOutcomeJournalService;
     private final SelfEvolvingProjectionPublishPort projectionPublishPort;
 
     public PostRunAnalysisSystem(RuntimeConfigService runtimeConfigService,
@@ -61,7 +70,9 @@ public class PostRunAnalysisSystem implements AgentSystem {
             LlmJudgeService llmJudgeService,
             LlmEvolutionService llmEvolutionService,
             EvolutionCandidateService evolutionCandidateService,
+            EvolutionGateService evolutionGateService,
             PromotionWorkflowService promotionWorkflowService,
+            TacticOutcomeJournalService tacticOutcomeJournalService,
             SelfEvolvingProjectionPublishPort projectionPublishPort) {
         this.runtimeConfigService = runtimeConfigService;
         this.selfEvolvingRunService = selfEvolvingRunService;
@@ -69,7 +80,9 @@ public class PostRunAnalysisSystem implements AgentSystem {
         this.llmJudgeService = llmJudgeService;
         this.llmEvolutionService = llmEvolutionService;
         this.evolutionCandidateService = evolutionCandidateService;
+        this.evolutionGateService = evolutionGateService;
         this.promotionWorkflowService = promotionWorkflowService;
+        this.tacticOutcomeJournalService = tacticOutcomeJournalService;
         this.projectionPublishPort = projectionPublishPort;
     }
 
@@ -110,9 +123,14 @@ public class PostRunAnalysisSystem implements AgentSystem {
         RunVerdict deterministicVerdict = deterministicJudgeService.evaluate(completedRun, traceRecord);
         RunVerdict llmVerdict = llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict);
         selfEvolvingRunService.saveVerdict(completedRun.getId(), llmVerdict);
+        recordTacticOutcomes(context, completedRun, llmVerdict);
         EvolutionProposal proposal = llmEvolutionService.propose(completedRun, llmVerdict);
-        List<EvolutionCandidate> candidates = evolutionCandidateService
-                .deriveCandidates(completedRun, llmVerdict, proposal);
+        List<EvolutionCandidate> candidates;
+        if (evolutionGateService.shouldEvolve(completedRun, llmVerdict, proposal)) {
+            candidates = evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, proposal);
+        } else {
+            candidates = List.of();
+        }
         if (isAutoAcceptMode()) {
             promotionWorkflowService.registerAndPlanCandidates(candidates);
         } else {
@@ -130,6 +148,57 @@ public class PostRunAnalysisSystem implements AgentSystem {
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, completedRun.getArtifactBundleId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED, true);
         return context;
+    }
+
+    private void recordTacticOutcomes(AgentContext context, RunRecord completedRun, RunVerdict verdict) {
+        List<String> appliedTacticIds = completedRun != null ? completedRun.getAppliedTacticIds() : null;
+        if (appliedTacticIds == null || appliedTacticIds.isEmpty()) {
+            return;
+        }
+        String finishReason = mapVerdictToFinishReason(verdict);
+        TacticSearchQuery query = context != null ? context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY)
+                : null;
+        TacticSearchResult selection = context != null
+                ? context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION)
+                : null;
+        for (String tacticId : appliedTacticIds) {
+            if (tacticId == null || tacticId.isBlank()) {
+                continue;
+            }
+            try {
+                TacticOutcomeEntry entry = TacticOutcomeEntry.builder()
+                        .tacticId(tacticId)
+                        .rawQuery(query != null ? query.getRawQuery() : null)
+                        .queryViews(query != null ? new ArrayList<>(query.getQueryViews()) : null)
+                        .searchMode(
+                                selection != null && selection.getExplanation() != null
+                                        ? selection.getExplanation().getSearchMode()
+                                        : null)
+                        .finalScore(
+                                selection != null && selection.getExplanation() != null
+                                        ? selection.getExplanation().getFinalScore()
+                                        : null)
+                        .finishReason(finishReason)
+                        .recordedAt(Instant.now())
+                        .build();
+                tacticOutcomeJournalService.record(entry);
+            } catch (RuntimeException exception) { // NOSONAR - journal must not break pipeline
+                log.debug("[PostRunAnalysis] Failed to record tactic outcome for {}: {}", tacticId,
+                        exception.getMessage());
+            }
+        }
+    }
+
+    private String mapVerdictToFinishReason(RunVerdict verdict) {
+        if (verdict == null || verdict.getOutcomeStatus() == null) {
+            return "unknown";
+        }
+        return switch (verdict.getOutcomeStatus().toUpperCase()) {
+        case "COMPLETED", "SUCCESS" -> "success";
+        case "FAILED", "ERROR" -> "failure";
+        case "PARTIAL" -> "partial";
+        default -> verdict.getOutcomeStatus().toLowerCase();
+        };
     }
 
     private boolean isAutoAcceptMode() {
