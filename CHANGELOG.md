@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.56.1 - 2026-04-06
+#### Bug Fixes
+- (**selfevolving**) remove LLM cross-encoder reranker (#240) - (228ae31) - Alex Kuleshov
+#### Miscellaneous
+- (**deps**) bump docker/login-action from 4.0.0 to 4.1.0 - (67d494f) - dependabot[bot]
+- (**deps**) bump lodash from 4.17.23 to 4.18.1 in /dashboard - (4a591dc) - dependabot[bot]
+- (**deps**) bump org.telegram:telegrambots-meta from 9.4.0 to 9.5.0 (#238) - (e99ba8e) - dependabot[bot]
+- (**deps**) bump org.xerial:sqlite-jdbc from 3.50.3.0 to 3.51.3.0 (#239) - (c540232) - dependabot[bot]
+- (**deps-dev**) bump io.github.git-commit-id:git-commit-id-maven-plugin from 9.1.0 to 10.0.0 - (f661816) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
