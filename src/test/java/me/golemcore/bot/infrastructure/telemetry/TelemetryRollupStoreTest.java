@@ -67,11 +67,10 @@ class TelemetryRollupStoreTest {
 
         assertEquals(1, readyRollups.size());
         TelemetryRollupStore.BackendRollup rollup = readyRollups.getFirst();
-        assertEquals(1L, rollup.getTierUsage().get("balanced"));
         assertEquals(1L, rollup.getPluginUsage().get("install:browser"));
-        assertTrue(rollup.getModelUsage().containsKey("unknown-model"));
+        assertTrue(rollup.getModelUsage().containsKey("unknown-model|balanced"));
 
-        TelemetryRollupStore.ModelUsageSummary summary = rollup.getModelUsage().get("unknown-model");
+        TelemetryRollupStore.ModelUsageSummary summary = rollup.getModelUsage().get("unknown-model|balanced");
         assertEquals(1L, summary.getRequestCount());
         assertEquals(0L, summary.getInputTokens());
         assertEquals(20L, summary.getOutputTokens());
@@ -87,7 +86,6 @@ class TelemetryRollupStoreTest {
                 Instant.parse("2026-04-06T10:00:00Z"),
                 60,
                 new java.util.LinkedHashMap<>(),
-                new java.util.LinkedHashMap<>(),
                 new java.util.LinkedHashMap<>());
         TelemetryRollupStore.ModelUsageSummary usageSummary = new TelemetryRollupStore.ModelUsageSummary();
         usageSummary.setRequestCount(2L);
@@ -98,8 +96,7 @@ class TelemetryRollupStoreTest {
                 Instant.parse("2026-04-06T10:00:00Z"),
                 Instant.parse("2026-04-06T11:00:00Z"),
                 60,
-                new java.util.LinkedHashMap<>(Map.of("gpt-5", usageSummary)),
-                new java.util.LinkedHashMap<>(Map.of("smart", 2L)),
+                new java.util.LinkedHashMap<>(Map.of("gpt-5|smart", usageSummary)),
                 new java.util.LinkedHashMap<>());
 
         store.restoreReadyRollups(List.of(emptyRollup, populatedRollup));
@@ -108,8 +105,7 @@ class TelemetryRollupStoreTest {
         List<TelemetryRollupStore.BackendRollup> restored = store.collectReadyRollups();
 
         assertEquals(1, restored.size());
-        assertNotEquals(99L, restored.getFirst().getModelUsage().get("gpt-5").getRequestCount());
-        assertEquals(2L, restored.getFirst().getTierUsage().get("smart"));
+        assertNotEquals(99L, restored.getFirst().getModelUsage().get("gpt-5|smart").getRequestCount());
     }
 
     private static final class MutableClock extends Clock {

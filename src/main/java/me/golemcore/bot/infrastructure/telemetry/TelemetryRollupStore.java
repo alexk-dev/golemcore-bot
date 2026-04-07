@@ -60,13 +60,13 @@ public class TelemetryRollupStore implements TelemetryRollupPort {
 
         String normalizedModelId = normalizeKey(modelId, "unknown-model");
         String normalizedTier = normalizeKey(tier, "balanced");
+        String compositeKey = normalizedModelId + "|" + normalizedTier;
         ModelUsageSummary summary = currentBucket.getModelUsage()
-                .computeIfAbsent(normalizedModelId, ignored -> new ModelUsageSummary());
+                .computeIfAbsent(compositeKey, ignored -> new ModelUsageSummary());
         summary.setRequestCount(summary.getRequestCount() + 1);
         summary.setInputTokens(summary.getInputTokens() + Math.max(0, inputTokens));
         summary.setOutputTokens(summary.getOutputTokens() + Math.max(0, outputTokens));
         summary.setTotalTokens(summary.getTotalTokens() + Math.max(0, totalTokens));
-        currentBucket.getTierUsage().merge(normalizedTier, 1L, Long::sum);
     }
 
     @Override
@@ -135,7 +135,7 @@ public class TelemetryRollupStore implements TelemetryRollupPort {
     private BackendRollup createEmptyBucket(Instant reference) {
         Instant start = reference.truncatedTo(ChronoUnit.HOURS);
         Instant end = start.plus(1, ChronoUnit.HOURS);
-        return new BackendRollup(start, end, 60, new LinkedHashMap<>(), new LinkedHashMap<>(), new LinkedHashMap<>());
+        return new BackendRollup(start, end, 60, new LinkedHashMap<>(), new LinkedHashMap<>());
     }
 
     private String loadOrCreateAnonymousInstanceId() {
@@ -170,11 +170,10 @@ public class TelemetryRollupStore implements TelemetryRollupPort {
         private Instant periodEnd;
         private int bucketMinutes;
         private Map<String, ModelUsageSummary> modelUsage;
-        private Map<String, Long> tierUsage;
         private Map<String, Long> pluginUsage;
 
         boolean hasData() {
-            return !modelUsage.isEmpty() || !tierUsage.isEmpty() || !pluginUsage.isEmpty();
+            return !modelUsage.isEmpty() || !pluginUsage.isEmpty();
         }
 
         BackendRollup copy() {
@@ -185,7 +184,6 @@ public class TelemetryRollupStore implements TelemetryRollupPort {
                     periodEnd,
                     bucketMinutes,
                     copiedModelUsage,
-                    new LinkedHashMap<>(tierUsage),
                     new LinkedHashMap<>(pluginUsage));
         }
     }

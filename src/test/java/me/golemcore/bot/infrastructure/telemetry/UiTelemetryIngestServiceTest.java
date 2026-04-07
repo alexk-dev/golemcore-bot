@@ -4,6 +4,7 @@ import me.golemcore.bot.domain.model.telemetry.UiTelemetryRollup;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatcher;
 
 import java.time.Instant;
@@ -11,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -38,48 +40,49 @@ class UiTelemetryIngestServiceTest {
 
         service.ingest(sampleRequest());
 
-        verify(publisher, never()).publishAnonymousEvent(eq("ui_usage_rollup"), eq("ui:anon-123"), argThat(anyMap()));
+        verify(publisher, never()).publishAnonymousEvent(eq("ui_counter"), eq("ui:anon-123"), argThat(anyMap()));
         verify(publisher, never()).publishAnonymousEvent(eq("ui_error_rollup"), eq("ui:anon-123"), argThat(anyMap()));
     }
 
     @Test
-    void shouldPublishAnonymousUsageAndErrorRollups() {
+    void shouldPublishFlatCounterAndErrorEvents() {
         when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
 
         service.ingest(sampleRequest());
 
         verify(publisher).publishAnonymousEvent(
-                eq("ui_usage_rollup"),
+                eq("ui_counter"),
                 eq("ui:anon-123"),
-                argThat((ArgumentMatcher<Map<String, Object>>) properties -> {
-                    Object counters = properties.get("counters");
-                    Object keyedCounters = properties.get("keyed_counters");
-                    return counters instanceof Map<?, ?> counterMap
-                            && keyedCounters instanceof Map<?, ?> keyedCounterMap
-                            && counterMap.get("settings_open_count").equals(2L)
-                            && keyedCounterMap.containsKey("settings_section_views_by_key")
-                            && keyedCounterMap.get("route_view_count") instanceof Map<?, ?> routeViewCount
-                            && routeViewCount.get("/sessions/:id").equals(1L);
-                }));
+                argThat((ArgumentMatcher<Map<String, Object>>) properties -> "settings_open_count"
+                        .equals(properties.get("counter_name"))
+                        && Long.valueOf(2L).equals(properties.get("count"))
+                        && !properties.containsKey("counter_key")));
 
         verify(publisher).publishAnonymousEvent(
-                eq("ui_error_rollup"),
+                eq("ui_counter"),
                 eq("ui:anon-123"),
-                argThat((ArgumentMatcher<Map<String, Object>>) properties -> {
-                    Object errorGroups = properties.get("error_groups");
-                    if (!(errorGroups instanceof List<?> groups) || groups.isEmpty()) {
-                        return false;
-                    }
-                    Object first = groups.getFirst();
-                    if (!(first instanceof Map<?, ?> firstGroup)) {
-                        return false;
-                    }
-                    return firstGroup.get("fingerprint").equals("window|/sessions/:id|TypeError")
-                            && firstGroup.get("route").equals("/sessions/:id")
-                            && firstGroup.get("count").equals(3L)
-                            && !firstGroup.containsKey("message")
-                            && !firstGroup.containsKey("componentStack");
-                }));
+                argThat((ArgumentMatcher<Map<String, Object>>) properties -> "settings_section_views_by_key"
+                        .equals(properties.get("counter_name"))
+                        && "telemetry".equals(properties.get("counter_key"))
+                        && Long.valueOf(1L).equals(properties.get("count"))));
+
+        verify(publisher).publishAnonymousEvent(
+                eq("ui_counter"),
+                eq("ui:anon-123"),
+                argThat((ArgumentMatcher<Map<String, Object>>) properties -> "route_view_count"
+                        .equals(properties.get("counter_name"))
+                        && "/sessions/:id".equals(properties.get("counter_key"))
+                        && Long.valueOf(1L).equals(properties.get("count"))));
+
+        ArgumentCaptor<Map<String, Object>> errorCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(publisher).publishAnonymousEvent(eq("ui_error_rollup"), eq("ui:anon-123"), errorCaptor.capture());
+        Map<String, Object> errorProps = errorCaptor.getValue();
+        List<?> errorGroups = (List<?>) errorProps.get("error_groups");
+        assertEquals(1, errorGroups.size());
+        Map<?, ?> firstGroup = (Map<?, ?>) errorGroups.getFirst();
+        assertEquals("window|/sessions/:id|TypeError", firstGroup.get("fingerprint"));
+        assertEquals("/sessions/:id", firstGroup.get("route"));
+        assertEquals(3L, firstGroup.get("count"));
     }
 
     @Test
@@ -112,7 +115,7 @@ class UiTelemetryIngestServiceTest {
 
         service.ingest(request);
 
-        verify(publisher, never()).publishAnonymousEvent(eq("ui_usage_rollup"), eq("ui:anon-123"), argThat(anyMap()));
+        verify(publisher, never()).publishAnonymousEvent(eq("ui_counter"), eq("ui:anon-123"), argThat(anyMap()));
         verify(publisher, never()).publishAnonymousEvent(eq("ui_error_rollup"), eq("ui:anon-123"), argThat(anyMap()));
     }
 

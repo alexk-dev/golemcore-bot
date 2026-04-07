@@ -25,10 +25,7 @@ public class UiTelemetryIngestService {
         }
 
         String distinctId = "ui:" + request.getAnonymousId().trim();
-        Map<String, Object> usageProperties = buildUsageProperties(request);
-        if (hasUsageData(usageProperties)) {
-            telemetryEventPublisher.publishAnonymousEvent("ui_usage_rollup", distinctId, usageProperties);
-        }
+        publishFlatCounters(request, distinctId);
         Map<String, Object> errorProperties = buildErrorProperties(request);
         if (hasErrorData(errorProperties)) {
             telemetryEventPublisher.publishAnonymousEvent("ui_error_rollup", distinctId, errorProperties);
@@ -53,25 +50,32 @@ public class UiTelemetryIngestService {
         }
     }
 
-    private boolean hasUsageData(Map<String, Object> usageProperties) {
-        Object counters = usageProperties.get("counters");
-        Object keyedCounters = usageProperties.get("keyed_counters");
-        return (counters instanceof Map<?, ?> countersMap && !countersMap.isEmpty())
-                || (keyedCounters instanceof Map<?, ?> keyedCountersMap && !keyedCountersMap.isEmpty());
+    private void publishFlatCounters(UiTelemetryRollup request, String distinctId) {
+        Map<String, Long> counters = sanitizeCounters(
+                request.getUsage() != null ? request.getUsage().getCounters() : Map.of());
+        for (Map.Entry<String, Long> entry : counters.entrySet()) {
+            Map<String, Object> properties = baseProperties(request);
+            properties.put("counter_name", entry.getKey());
+            properties.put("count", entry.getValue());
+            telemetryEventPublisher.publishAnonymousEvent("ui_counter", distinctId, properties);
+        }
+
+        Map<String, Map<String, Long>> keyedCounters = sanitizeKeyedCounters(
+                request.getUsage() != null ? request.getUsage().getByRoute() : Map.of());
+        for (Map.Entry<String, Map<String, Long>> outer : keyedCounters.entrySet()) {
+            for (Map.Entry<String, Long> inner : outer.getValue().entrySet()) {
+                Map<String, Object> properties = baseProperties(request);
+                properties.put("counter_name", outer.getKey());
+                properties.put("counter_key", inner.getKey());
+                properties.put("count", inner.getValue());
+                telemetryEventPublisher.publishAnonymousEvent("ui_counter", distinctId, properties);
+            }
+        }
     }
 
     private boolean hasErrorData(Map<String, Object> errorProperties) {
         Object errorGroups = errorProperties.get("error_groups");
         return errorGroups instanceof List<?> groups && !groups.isEmpty();
-    }
-
-    private Map<String, Object> buildUsageProperties(UiTelemetryRollup request) {
-        Map<String, Object> properties = baseProperties(request);
-        properties.put("counters",
-                sanitizeCounters(request.getUsage() != null ? request.getUsage().getCounters() : Map.of()));
-        properties.put("keyed_counters",
-                sanitizeKeyedCounters(request.getUsage() != null ? request.getUsage().getByRoute() : Map.of()));
-        return properties;
     }
 
     private Map<String, Object> buildErrorProperties(UiTelemetryRollup request) {

@@ -4,6 +4,8 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.info.BuildProperties;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -23,11 +25,16 @@ class TelemetryEventPublisherTest {
     private PostHogTelemetryClient postHogTelemetryClient;
     private TelemetryEventPublisher publisher;
 
+    @SuppressWarnings("unchecked")
     @BeforeEach
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
         postHogTelemetryClient = mock(PostHogTelemetryClient.class);
-        publisher = new TelemetryEventPublisher(runtimeConfigService, postHogTelemetryClient);
+        ObjectProvider<BuildProperties> buildPropertiesProvider = mock(ObjectProvider.class);
+        BuildProperties buildProperties = mock(BuildProperties.class);
+        when(buildProperties.getVersion()).thenReturn("1.0.0-test");
+        when(buildPropertiesProvider.getIfAvailable()).thenReturn(buildProperties);
+        publisher = new TelemetryEventPublisher(runtimeConfigService, postHogTelemetryClient, buildPropertiesProvider);
     }
 
     @Test
@@ -60,6 +67,7 @@ class TelemetryEventPublisherTest {
         ArgumentCaptor<Map<String, Object>> propertiesCaptor = ArgumentCaptor.forClass(Map.class);
         verify(postHogTelemetryClient).capture(eq("ui_usage_rollup"), eq("ui:anon-123"), propertiesCaptor.capture());
         assertEquals(15, propertiesCaptor.getValue().get("bucket_minutes"));
+        assertEquals("1.0.0-test", propertiesCaptor.getValue().get("app_version"));
         assertEquals(true, propertiesCaptor.getValue().get("$geoip_disable"));
         assertFalse(properties.containsKey("$geoip_disable"));
     }
