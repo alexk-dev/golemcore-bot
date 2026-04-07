@@ -86,6 +86,27 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldDefaultTelemetryToTrueForFreshInstall() {
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getTelemetry());
+        assertTrue(Boolean.TRUE.equals(config.getTelemetry().getEnabled()));
+    }
+
+    @Test
+    void shouldDefaultTelemetryToFalseForUpgradeWithoutTelemetrySection() throws Exception {
+        RuntimeConfig.UsageConfig usage = RuntimeConfig.UsageConfig.builder()
+                .enabled(true)
+                .build();
+        persistedSections.put("usage.json", objectMapper.writeValueAsString(usage));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getTelemetry());
+        assertFalse(Boolean.TRUE.equals(config.getTelemetry().getEnabled()));
+    }
+
+    @Test
     void shouldPreserveIndependentTacticsToggleWithinSelfEvolvingConfig() {
         RuntimeConfig config = service.getRuntimeConfig();
         config.getSelfEvolving().setEnabled(true);
