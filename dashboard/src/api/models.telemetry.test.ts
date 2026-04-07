@@ -46,7 +46,7 @@ describe('model catalog telemetry metadata', () => {
       reasoning: null,
     });
 
-    const call = clientPost.mock.calls[0] as [string, SaveModelRequest, SaveModelConfig] | undefined;
+    const call = clientPost.mock.calls[0] as unknown as [string, SaveModelRequest, SaveModelConfig] | undefined;
     if (call == null) {
       throw new Error('Expected saveModel to call client.post');
     }
