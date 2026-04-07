@@ -146,6 +146,11 @@ public class ToolCallExecutionService {
         try {
             CompletableFuture<ToolResult> future = tool.execute(toolCall.getArguments());
             return future.get(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.info("[Tools] Tool execution interrupted: {}", toolCall.getName());
+            return ToolResult.failure(ToolFailureKind.EXECUTION_FAILED,
+                    "Tool execution interrupted");
         } catch (Exception e) {
             log.error("Tool execution failed: {}", toolCall.getName(), e);
             return ToolResult.failure(ToolFailureKind.EXECUTION_FAILED,
