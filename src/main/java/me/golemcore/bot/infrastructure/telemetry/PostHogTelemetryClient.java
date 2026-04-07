@@ -21,6 +21,7 @@ public class PostHogTelemetryClient {
 
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
     private static final String POSTHOG_API_HOST = "https://us.i.posthog.com";
+    @SuppressWarnings("java:S6418") // Not a secret — public-facing, write-only PostHog ingest token
     private static final String POSTHOG_PROJECT_TOKEN = "phc_xHNGFVgA7U95Ec6nFg56cWNNbUHxDtMTpy8BXnjQRSP5";
 
     private final OkHttpClient okHttpClient;
