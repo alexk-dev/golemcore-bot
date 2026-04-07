@@ -225,12 +225,19 @@ public class LlmJudgeService {
             traceAttributes.put("judge.parent_trace_id", parentTraceId);
         }
         TraceContext rootTrace = traceService.startRootTrace(judgeSession,
-                "judge:" + judgeType, TraceSpanKind.LLM, now, traceAttributes);
+                "judge:" + judgeType, TraceSpanKind.INTERNAL, now, traceAttributes);
 
         log.debug("[SelfEvolving] Starting {} judge in session {} (parent trace: {})",
                 judgeType, judgeSession.getId(), parentTraceId);
 
         String prompt = buildPrompt(judgeType, runRecord, traceRecord, seedVerdict, userQuery, assistantResponse);
+
+        Map<String, Object> llmAttributes = new LinkedHashMap<>();
+        llmAttributes.put("llm.model", selection.model());
+        llmAttributes.put("llm.reasoning", selection.reasoning());
+        TraceContext llmSpan = traceService.startSpan(judgeSession, rootTrace,
+                "llm.chat", TraceSpanKind.LLM, Instant.now(), llmAttributes);
+
         LlmRequest request = LlmRequest.builder()
                 .model(selection.model())
                 .reasoningEffort(selection.reasoning())
@@ -241,15 +248,16 @@ public class LlmJudgeService {
                         .build()))
                 .temperature(0.1)
                 .sessionId(judgeSession.getId())
-                .traceId(rootTrace.getTraceId())
-                .traceSpanId(rootTrace.getSpanId())
+                .traceId(llmSpan.getTraceId())
+                .traceSpanId(llmSpan.getSpanId())
                 .traceRootKind("judge_" + judgeType)
                 .build();
 
-        captureSnapshot(judgeSession, rootTrace, "request", request);
+        captureSnapshot(judgeSession, llmSpan, "request", request);
         try {
             LlmResponse response = llmPort.chat(request).get();
-            captureSnapshot(judgeSession, rootTrace, "response", response);
+            captureSnapshot(judgeSession, llmSpan, "response", response);
+            traceService.finishSpan(judgeSession, llmSpan, TraceStatusCode.OK, null, Instant.now());
             traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.OK, null, Instant.now());
             if (response == null || StringValueSupport.isBlank(response.getContent())) {
                 throw new IllegalArgumentException("Judge returned empty response");
@@ -258,6 +266,8 @@ public class LlmJudgeService {
             validate(parsedVerdict);
             return parsedVerdict;
         } catch (InterruptedException | ExecutionException | RuntimeException exception) {
+            traceService.finishSpan(judgeSession, llmSpan, TraceStatusCode.ERROR,
+                    exception.getMessage(), Instant.now());
             traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.ERROR,
                     exception.getMessage(), Instant.now());
             throw exception;
