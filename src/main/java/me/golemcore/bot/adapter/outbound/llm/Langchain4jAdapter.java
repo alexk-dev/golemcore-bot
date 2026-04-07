@@ -395,6 +395,19 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 throw new RuntimeException("Langchain4j adapter not available");
             }
 
+            String effectiveModelId = request.getModel() != null ? request.getModel() : currentModel;
+            if (log.isDebugEnabled() && effectiveModelId != null) {
+                try {
+                    String provider = getProvider(effectiveModelId);
+                    RuntimeConfig.LlmProviderConfig providerConfig = getProviderConfig(provider);
+                    log.debug("[LLM] API call: provider={}, model={}, baseUrl={}",
+                            provider, effectiveModelId, providerConfig.getBaseUrl());
+                } catch (Exception e) {
+                    log.debug("[LLM] API call: model={} (provider resolution failed: {})",
+                            effectiveModelId, e.getMessage());
+                }
+            }
+
             boolean useResponsesApi = isResponsesApiRequest(request);
             ChatModel modelToUse = useResponsesApi ? null : getModelForRequest(request);
             boolean geminiApiType = !useResponsesApi && isGeminiRequest(request);

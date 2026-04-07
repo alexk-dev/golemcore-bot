@@ -154,8 +154,9 @@ public class ModelConfigService {
     }
 
     /**
-     * Get settings for a model. Tries exact match first, then prefix match, then
-     * defaults.
+     * Get settings for a model. Tries exact match first, then stripped-prefix exact
+     * match, then prefix match. Throws if the model is not found in the catalog —
+     * no silent fallback to defaults.
      */
     public ModelSettings getModelSettings(String modelName) {
         if (modelName == null) {
@@ -182,7 +183,9 @@ public class ModelConfigService {
                 .filter(entry -> name.startsWith(entry.getKey()))
                 .max(java.util.Comparator.comparingInt(e -> e.getKey().length()))
                 .map(Map.Entry::getValue)
-                .orElse(config.getDefaults());
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Model '" + modelName
+                                + "' is not in the catalog — add it via discovery or manual configuration"));
     }
 
     /**
