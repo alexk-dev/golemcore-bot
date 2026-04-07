@@ -1,0 +1,170 @@
+import {
+  createContext,
+  type ReactElement,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useRef,
+} from 'react';
+
+import { postTelemetryRollup } from '../../api/telemetry';
+import { createTelemetryAggregator, type TelemetryAggregator } from './telemetryAggregator';
+import { clearTelemetryRecorder, setTelemetryRecorder } from './telemetryBridge';
+import type { TelemetryRecorder, UiErrorInput } from './telemetryTypes';
+
+interface TelemetryProviderProps {
+  enabled: boolean;
+  children: ReactNode;
+}
+
+const NOOP_RECORDER: TelemetryRecorder = {
+  recordCounter: () => {},
+  recordCounterByRoute: () => {},
+  recordUiError: () => {},
+};
+
+const TelemetryContext = createContext<TelemetryRecorder>(NOOP_RECORDER);
+
+function normalizeUnknownError(reason: unknown): { errorName: string; message: string } {
+  if (reason instanceof Error) {
+    return {
+      errorName: reason.name,
+      message: reason.message,
+    };
+  }
+  if (typeof reason === 'string') {
+    return {
+      errorName: 'UnhandledRejection',
+      message: reason,
+    };
+  }
+  return {
+    errorName: 'UnhandledRejection',
+    message: 'Unknown rejection reason',
+  };
+}
+
+function buildWindowErrorPayload(event: ErrorEvent): UiErrorInput {
+  return {
+    route: window.location.pathname,
+    errorName: event.error instanceof Error ? event.error.name : 'WindowError',
+    message: event.message,
+    source: 'window',
+  };
+}
+
+function buildRejectionPayload(event: PromiseRejectionEvent): UiErrorInput {
+  const normalized = normalizeUnknownError(event.reason);
+  return {
+    route: window.location.pathname,
+    errorName: normalized.errorName,
+    message: normalized.message,
+    source: 'unhandledrejection',
+  };
+}
+
+export function TelemetryProvider({ enabled, children }: TelemetryProviderProps): ReactElement {
+  const aggregatorRef = useRef<TelemetryAggregator | null>(null);
+
+  if (aggregatorRef.current == null) {
+    aggregatorRef.current = createTelemetryAggregator();
+  }
+
+  const recorder: TelemetryRecorder = {
+    recordCounter(key: string) {
+      aggregatorRef.current?.recordCounter(key);
+    },
+    recordCounterByRoute(key: string, route: string) {
+      aggregatorRef.current?.recordCounterByRoute(key, route);
+    },
+    recordUiError(input: UiErrorInput) {
+      aggregatorRef.current?.recordUiError(input);
+    },
+  };
+
+  useEffect(() => {
+    if (!enabled) {
+      aggregatorRef.current?.reset();
+      clearTelemetryRecorder();
+      return;
+    }
+
+    setTelemetryRecorder(recorder);
+    return () => {
+      clearTelemetryRecorder();
+    };
+  }, [enabled, recorder]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    // Flush completed 15-minute buckets on a light interval and when the page becomes visible again.
+    async function flushReadyRollups(): Promise<void> {
+      const rollups = aggregatorRef.current?.collectReadyRollups() ?? [];
+      if (rollups.length === 0) {
+        return;
+      }
+
+      try {
+        for (const rollup of rollups) {
+          await postTelemetryRollup(rollup);
+        }
+      } catch (error) {
+        console.error('Failed to send telemetry rollups', error);
+        aggregatorRef.current?.restoreReadyRollups(rollups);
+      }
+    }
+
+    void flushReadyRollups();
+
+    function handleVisibilityChange(): void {
+      if (document.visibilityState === 'visible') {
+        void flushReadyRollups();
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void flushReadyRollups();
+    }, 60_000);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    // Capture uncaught window errors and promise rejections into the aggregated UI error bucket.
+    function handleWindowError(event: ErrorEvent): void {
+      recorder.recordUiError(buildWindowErrorPayload(event));
+    }
+
+    function handleUnhandledRejection(event: PromiseRejectionEvent): void {
+      recorder.recordUiError(buildRejectionPayload(event));
+    }
+
+    window.addEventListener('error', handleWindowError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => {
+      window.removeEventListener('error', handleWindowError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, [enabled, recorder]);
+
+  return (
+    <TelemetryContext.Provider value={enabled ? recorder : NOOP_RECORDER}>
+      {children}
+    </TelemetryContext.Provider>
+  );
+}
+
+export function useTelemetry(): TelemetryRecorder {
+  return useContext(TelemetryContext);
+}
