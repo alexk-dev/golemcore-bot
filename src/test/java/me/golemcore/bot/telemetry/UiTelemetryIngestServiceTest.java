@@ -1,6 +1,6 @@
 package me.golemcore.bot.telemetry;
 
-import me.golemcore.bot.adapter.inbound.web.dto.TelemetryRollupRequest;
+import me.golemcore.bot.domain.model.telemetry.UiTelemetryRollup;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -85,14 +85,39 @@ class UiTelemetryIngestServiceTest {
     @Test
     void shouldRejectBlankAnonymousIds() {
         when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
-        TelemetryRollupRequest request = sampleRequest();
+        UiTelemetryRollup request = sampleRequest();
         request.setAnonymousId("   ");
 
         assertThrows(IllegalArgumentException.class, () -> service.ingest(request));
     }
 
-    private TelemetryRollupRequest sampleRequest() {
-        TelemetryRollupRequest request = new TelemetryRollupRequest();
+    @Test
+    void shouldRejectInvalidPeriodWindow() {
+        when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
+        UiTelemetryRollup request = sampleRequest();
+        request.setPeriodEnd(request.getPeriodStart());
+
+        assertThrows(IllegalArgumentException.class, () -> service.ingest(request));
+    }
+
+    @Test
+    void shouldSkipPublishingWhenCountersAndErrorsCollapseToEmpty() {
+        when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
+        UiTelemetryRollup request = sampleRequest();
+        request.getUsage().setCounters(new LinkedHashMap<>(Map.of(" ", 1L, "negative", -1L)));
+        request.getUsage().setByRoute(new LinkedHashMap<>(Map.of(
+                "route_view_count",
+                new LinkedHashMap<>(Map.of(" ", 2L, "/sessions/123e4567-e89b-12d3-a456-426614174000", -1L)))));
+        request.getErrors().setGroups(List.of(UiTelemetryRollup.ErrorGroup.builder().count(0).build()));
+
+        service.ingest(request);
+
+        verify(publisher, never()).publishAnonymousEvent(eq("ui_usage_rollup"), eq("ui:anon-123"), argThat(anyMap()));
+        verify(publisher, never()).publishAnonymousEvent(eq("ui_error_rollup"), eq("ui:anon-123"), argThat(anyMap()));
+    }
+
+    private UiTelemetryRollup sampleRequest() {
+        UiTelemetryRollup request = new UiTelemetryRollup();
         request.setAnonymousId("anon-123");
         request.setSchemaVersion(1);
         request.setBucketMinutes(15);
@@ -100,7 +125,7 @@ class UiTelemetryIngestServiceTest {
         request.setPeriodStart(Instant.parse("2026-04-06T10:00:00Z"));
         request.setPeriodEnd(Instant.parse("2026-04-06T10:15:00Z"));
 
-        TelemetryRollupRequest.Usage usage = new TelemetryRollupRequest.Usage();
+        UiTelemetryRollup.Usage usage = new UiTelemetryRollup.Usage();
         usage.setCounters(new LinkedHashMap<>(Map.of("settings_open_count", 2L)));
         usage.setByRoute(new LinkedHashMap<>(Map.of(
                 "settings_section_views_by_key", new LinkedHashMap<>(Map.of("telemetry", 1L)),
@@ -108,7 +133,7 @@ class UiTelemetryIngestServiceTest {
                 new LinkedHashMap<>(Map.of("/sessions/123e4567-e89b-12d3-a456-426614174000", 1L)))));
         request.setUsage(usage);
 
-        TelemetryRollupRequest.ErrorGroup errorGroup = new TelemetryRollupRequest.ErrorGroup();
+        UiTelemetryRollup.ErrorGroup errorGroup = new UiTelemetryRollup.ErrorGroup();
         errorGroup.setFingerprint("spoofed");
         errorGroup.setRoute("/sessions/123e4567-e89b-12d3-a456-426614174000");
         errorGroup.setErrorName("TypeError");
@@ -116,7 +141,7 @@ class UiTelemetryIngestServiceTest {
         errorGroup.setSource("window");
         errorGroup.setComponentStack("at TelemetryTab");
         errorGroup.setCount(3);
-        TelemetryRollupRequest.Errors errors = new TelemetryRollupRequest.Errors();
+        UiTelemetryRollup.Errors errors = new UiTelemetryRollup.Errors();
         errors.setGroups(List.of(errorGroup));
         request.setErrors(errors);
         return request;

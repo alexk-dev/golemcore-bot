@@ -1,7 +1,7 @@
 package me.golemcore.bot.telemetry;
 
 import lombok.RequiredArgsConstructor;
-import me.golemcore.bot.adapter.inbound.web.dto.TelemetryRollupRequest;
+import me.golemcore.bot.domain.model.telemetry.UiTelemetryRollup;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.springframework.stereotype.Service;
 
@@ -18,22 +18,24 @@ public class UiTelemetryIngestService {
     private final RuntimeConfigService runtimeConfigService;
     private final TelemetryEventPublisher telemetryEventPublisher;
 
-    public void ingest(TelemetryRollupRequest request) {
+    public void ingest(UiTelemetryRollup request) {
         validate(request);
         if (!runtimeConfigService.isTelemetryEnabled()) {
             return;
         }
 
         String distinctId = "ui:" + request.getAnonymousId().trim();
-        if (hasUsageData(request)) {
-            telemetryEventPublisher.publishAnonymousEvent("ui_usage_rollup", distinctId, buildUsageProperties(request));
+        Map<String, Object> usageProperties = buildUsageProperties(request);
+        if (hasUsageData(usageProperties)) {
+            telemetryEventPublisher.publishAnonymousEvent("ui_usage_rollup", distinctId, usageProperties);
         }
-        if (hasErrorData(request)) {
-            telemetryEventPublisher.publishAnonymousEvent("ui_error_rollup", distinctId, buildErrorProperties(request));
+        Map<String, Object> errorProperties = buildErrorProperties(request);
+        if (hasErrorData(errorProperties)) {
+            telemetryEventPublisher.publishAnonymousEvent("ui_error_rollup", distinctId, errorProperties);
         }
     }
 
-    private void validate(TelemetryRollupRequest request) {
+    private void validate(UiTelemetryRollup request) {
         if (request == null) {
             throw new IllegalArgumentException("Telemetry rollup is required");
         }
@@ -51,19 +53,19 @@ public class UiTelemetryIngestService {
         }
     }
 
-    private boolean hasUsageData(TelemetryRollupRequest request) {
-        TelemetryRollupRequest.Usage usage = request.getUsage();
-        return usage != null
-                && ((!usage.getCounters().isEmpty())
-                        || usage.getByRoute().values().stream().anyMatch(map -> !map.isEmpty()));
+    private boolean hasUsageData(Map<String, Object> usageProperties) {
+        Object counters = usageProperties.get("counters");
+        Object keyedCounters = usageProperties.get("keyed_counters");
+        return (counters instanceof Map<?, ?> countersMap && !countersMap.isEmpty())
+                || (keyedCounters instanceof Map<?, ?> keyedCountersMap && !keyedCountersMap.isEmpty());
     }
 
-    private boolean hasErrorData(TelemetryRollupRequest request) {
-        return request.getErrors() != null && request.getErrors().getGroups() != null
-                && !request.getErrors().getGroups().isEmpty();
+    private boolean hasErrorData(Map<String, Object> errorProperties) {
+        Object errorGroups = errorProperties.get("error_groups");
+        return errorGroups instanceof List<?> groups && !groups.isEmpty();
     }
 
-    private Map<String, Object> buildUsageProperties(TelemetryRollupRequest request) {
+    private Map<String, Object> buildUsageProperties(UiTelemetryRollup request) {
         Map<String, Object> properties = baseProperties(request);
         properties.put("counters",
                 sanitizeCounters(request.getUsage() != null ? request.getUsage().getCounters() : Map.of()));
@@ -72,10 +74,10 @@ public class UiTelemetryIngestService {
         return properties;
     }
 
-    private Map<String, Object> buildErrorProperties(TelemetryRollupRequest request) {
+    private Map<String, Object> buildErrorProperties(UiTelemetryRollup request) {
         Map<String, Object> properties = baseProperties(request);
         List<Map<String, Object>> errorGroups = new ArrayList<>();
-        for (TelemetryRollupRequest.ErrorGroup group : request.getErrors().getGroups()) {
+        for (UiTelemetryRollup.ErrorGroup group : request.getErrors().getGroups()) {
             if (group == null || group.getCount() == null || group.getCount() <= 0) {
                 continue;
             }
@@ -95,7 +97,7 @@ public class UiTelemetryIngestService {
         return properties;
     }
 
-    private Map<String, Object> baseProperties(TelemetryRollupRequest request) {
+    private Map<String, Object> baseProperties(UiTelemetryRollup request) {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("schema_version", request.getSchemaVersion());
         properties.put("period_start", toIsoString(request.getPeriodStart()));

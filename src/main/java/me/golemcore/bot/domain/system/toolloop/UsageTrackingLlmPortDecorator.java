@@ -20,7 +20,7 @@ import java.util.concurrent.CompletableFuture;
  * Decorator around {@link LlmPort} that records token usage via
  * {@link UsageTrackingPort} after each chat completion call.
  */
-class UsageTrackingLlmPortDecorator implements LlmPort {
+public class UsageTrackingLlmPortDecorator implements LlmPort {
 
     private static final Logger log = LoggerFactory.getLogger(UsageTrackingLlmPortDecorator.class);
 
@@ -28,7 +28,7 @@ class UsageTrackingLlmPortDecorator implements LlmPort {
     private final UsageTrackingPort usageTracker;
     private final TelemetryRollupStore telemetryRollupStore;
 
-    UsageTrackingLlmPortDecorator(LlmPort delegate, UsageTrackingPort usageTracker,
+    public UsageTrackingLlmPortDecorator(LlmPort delegate, UsageTrackingPort usageTracker,
             TelemetryRollupStore telemetryRollupStore) {
         this.delegate = delegate;
         this.usageTracker = usageTracker;
