@@ -36,6 +36,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
@@ -1966,6 +1968,30 @@ class Langchain4jAdapterTest {
     }
 
     @Test
+    void shouldTimeoutSyncResponsesApiChatWhenStreamingNeverCompletes() {
+        String model = OPENAI + "/gpt-5.4";
+        StreamingChatModel streamingModel = mockStreamingModelWithoutTerminalEvent();
+        injectResponsesStreamingModel(model, null, streamingModel);
+        when(modelConfig.getProvider(model)).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of(KEY))
+                        .apiType(OPENAI)
+                        .requestTimeoutSeconds(1)
+                        .build());
+
+        LlmRequest request = LlmRequest.builder()
+                .model(model)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        ExecutionException ex = assertTimeoutPreemptively(Duration.ofSeconds(2),
+                () -> assertThrows(ExecutionException.class, () -> adapter.chat(request).get()));
+
+        assertTrue(ex.getCause().getMessage().toLowerCase().contains("timed out"));
+    }
+
+    @Test
     void shouldFallToLegacyPathWhenLegacyApiIsTrue() throws Exception {
         String model = OPENAI + "/gpt-5.1";
         ChatModel chatModel = mock(ChatModel.class);
@@ -2127,6 +2153,13 @@ class Langchain4jAdapterTest {
             handler.onError(error);
             return null;
         }).when(model).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
+        return model;
+    }
+
+    private StreamingChatModel mockStreamingModelWithoutTerminalEvent() {
+        StreamingChatModel model = mock(StreamingChatModel.class);
+        doAnswer(invocation -> null)
+                .when(model).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
         return model;
     }
 

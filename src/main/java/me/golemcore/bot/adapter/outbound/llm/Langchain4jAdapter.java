@@ -45,6 +45,8 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.http.client.HttpClientBuilder;
+import dev.langchain4j.http.client.HttpClientBuilderLoader;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -68,6 +70,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -80,6 +83,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * LLM adapter using the langchain4j library.
@@ -222,11 +227,19 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for OpenAI Responses provider in runtime config");
         }
+        Duration timeout = resolveRequestTimeout(config);
         OpenAiResponsesStreamingChatModel.Builder builder = OpenAiResponsesStreamingChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .logRequests(true)
                 .logResponses(true);
+
+        HttpClientBuilder httpClientBuilder = HttpClientBuilderLoader.loadHttpClientBuilder();
+        if (httpClientBuilder != null) {
+            builder.httpClientBuilder(httpClientBuilder
+                    .connectTimeout(timeout)
+                    .readTimeout(timeout));
+        }
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -384,9 +397,11 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         String effectiveModel = requestToUse.getModel() != null
                                 ? requestToUse.getModel()
                                 : currentModel;
+                        RuntimeConfig.LlmProviderConfig providerConfig = getProviderConfig(getProvider(effectiveModel));
                         StreamingChatModel streamingModel = getResponsesStreamingModel(
                                 effectiveModel, requestToUse.getReasoningEffort());
-                        response = chatViaStreaming(streamingModel, messages, tools);
+                        response = chatViaStreaming(streamingModel, messages, tools,
+                                resolveRequestTimeout(providerConfig));
                     } else if (tools != null && !tools.isEmpty()) {
                         log.trace("Calling LLM with {} tools", tools.size());
                         ChatRequest chatRequest = ChatRequest.builder()
@@ -587,7 +602,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
      * retry loop.
      */
     private ChatResponse chatViaStreaming(StreamingChatModel model,
-            List<ChatMessage> messages, List<ToolSpecification> tools) {
+            List<ChatMessage> messages, List<ToolSpecification> tools, Duration timeout) {
         CompletableFuture<ChatResponse> future = new CompletableFuture<>();
         ChatRequest.Builder requestBuilder = ChatRequest.builder().messages(messages);
         if (tools != null && !tools.isEmpty()) {
@@ -605,7 +620,22 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 future.completeExceptionally(error);
             }
         });
-        return future.join();
+        try {
+            return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException exception) {
+            throw new IllegalStateException(
+                    "Responses API streaming timed out after " + timeout.toSeconds() + " second(s)", exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Responses API streaming interrupted while waiting for completion",
+                    exception);
+        } catch (java.util.concurrent.ExecutionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Responses API streaming failed", cause != null ? cause : exception);
+        }
     }
 
     /**
@@ -881,6 +911,13 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     private String nonNullText(String text) {
         return text != null ? text : "";
+    }
+
+    private Duration resolveRequestTimeout(RuntimeConfig.LlmProviderConfig config) {
+        int timeoutSeconds = config != null && config.getRequestTimeoutSeconds() != null
+                ? config.getRequestTimeoutSeconds()
+                : 300;
+        return Duration.ofSeconds(timeoutSeconds);
     }
 
     private int findFirstTrailingToolMessageIndex(List<Message> messages) {
