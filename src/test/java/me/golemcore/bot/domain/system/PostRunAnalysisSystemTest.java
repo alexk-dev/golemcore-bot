@@ -140,7 +140,7 @@ class PostRunAnalysisSystemTest {
         when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, proposal)).thenReturn(candidates);
 
         assertTrue(system.shouldProcess(context));
-        AgentContext result = system.process(context);
+        AgentContext result = processAndAwait(context);
 
         verify(selfEvolvingRunService).startRun(context);
         verify(selfEvolvingRunService).completeRun(startedRun, context);
@@ -190,7 +190,7 @@ class PostRunAnalysisSystemTest {
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
 
         assertTrue(system.shouldProcess(context));
-        AgentContext result = system.process(context);
+        AgentContext result = processAndAwait(context);
 
         verify(selfEvolvingRunService, never()).startRun(context);
         verify(selfEvolvingRunService).findRun("run-1");
@@ -217,7 +217,7 @@ class PostRunAnalysisSystemTest {
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(false);
         AgentContext context = buildContext();
 
-        AgentContext result = system.process(context);
+        AgentContext result = processAndAwait(context);
 
         assertTrue(result == context);
         verify(selfEvolvingRunService, never()).startRun(context);
@@ -249,7 +249,7 @@ class PostRunAnalysisSystemTest {
         when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
 
-        AgentContext result = system.process(context);
+        AgentContext result = processAndAwait(context);
 
         verify(selfEvolvingRunService).findRun("missing-run");
         verify(selfEvolvingRunService).startRun(context);
@@ -282,7 +282,7 @@ class PostRunAnalysisSystemTest {
         doThrow(new IllegalStateException("hive offline")).when(projectionPublishPort)
                 .publishSelfEvolvingProjection(completedRun, llmVerdict, List.of());
 
-        AgentContext result = system.process(context);
+        AgentContext result = processAndAwait(context);
 
         verify(evolutionCandidateService, never()).deriveCandidates(completedRun, llmVerdict, null);
         verify(promotionWorkflowService).registerCandidates(List.of());
@@ -328,7 +328,7 @@ class PostRunAnalysisSystemTest {
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(proposal);
         when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, proposal)).thenReturn(candidates);
 
-        system.process(context);
+        processAndAwait(context);
 
         verify(promotionWorkflowService).registerAndPlanCandidates(candidates);
         verify(promotionWorkflowService, never()).registerCandidates(candidates);
@@ -356,7 +356,7 @@ class PostRunAnalysisSystemTest {
         when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(proposal);
 
-        system.process(context);
+        processAndAwait(context);
 
         verify(evolutionCandidateService, never()).deriveCandidates(completedRun, llmVerdict, proposal);
         verify(promotionWorkflowService).registerCandidates(List.of());
@@ -384,12 +384,20 @@ class PostRunAnalysisSystemTest {
         when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
 
-        system.process(context);
+        processAndAwait(context);
 
         verify(tacticOutcomeJournalService).record(org.mockito.ArgumentMatchers.argThat(
                 entry -> "tactic-a".equals(entry.getTacticId()) && "success".equals(entry.getFinishReason())));
         verify(tacticOutcomeJournalService).record(org.mockito.ArgumentMatchers.argThat(
                 entry -> "tactic-b".equals(entry.getTacticId()) && "success".equals(entry.getFinishReason())));
+    }
+
+    private AgentContext processAndAwait(AgentContext context) {
+        AgentContext result = system.process(context);
+        if (system.getLastBackgroundAnalysis() != null) {
+            system.getLastBackgroundAnalysis().join();
+        }
+        return result;
     }
 
     private AgentContext buildContext() {

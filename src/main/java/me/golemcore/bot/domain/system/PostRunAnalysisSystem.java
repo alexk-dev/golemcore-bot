@@ -45,6 +45,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Minimal post-turn hook that materializes a SelfEvolving run record.
@@ -63,6 +64,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
     private final PromotionWorkflowService promotionWorkflowService;
     private final TacticOutcomeJournalService tacticOutcomeJournalService;
     private final SelfEvolvingProjectionPublishPort projectionPublishPort;
+    private volatile CompletableFuture<Void> lastBackgroundAnalysis;
 
     public PostRunAnalysisSystem(RuntimeConfigService runtimeConfigService,
             SelfEvolvingRunService selfEvolvingRunService,
@@ -121,46 +123,65 @@ public class PostRunAnalysisSystem implements AgentSystem {
         RunRecord completedRun = selfEvolvingRunService.completeRun(startedRun, context);
         TraceRecord traceRecord = resolveTrace(context, completedRun);
         RunVerdict deterministicVerdict = deterministicJudgeService.evaluate(completedRun, traceRecord);
-        RunVerdict llmVerdict = llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict);
-        selfEvolvingRunService.saveVerdict(completedRun.getId(), llmVerdict);
-        recordTacticOutcomes(context, completedRun, llmVerdict);
-        EvolutionProposal proposal = llmEvolutionService.propose(completedRun, llmVerdict);
-        List<EvolutionCandidate> candidates;
-        if (evolutionGateService.shouldEvolve(completedRun, llmVerdict, proposal)) {
-            candidates = evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, proposal);
-        } else {
-            candidates = List.of();
-        }
-        if (isAutoAcceptMode()) {
-            promotionWorkflowService.registerAndPlanCandidates(candidates);
-        } else {
-            promotionWorkflowService.registerCandidates(candidates);
-        }
-        if (!candidates.isEmpty()) {
-            bindRunBundleToCandidateBaselines(completedRun, candidates);
-        }
-        try {
-            projectionPublishPort.publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
-        } catch (RuntimeException exception) {
-            log.debug("[Hive] Skipping SelfEvolving projection publish: {}", exception.getMessage());
-        }
+
         context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, completedRun.getId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, completedRun.getArtifactBundleId());
         context.setAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED, true);
+
+        // LLM judge + evolution pipeline runs in the background so the main
+        // session completes immediately and the chat does not hang.
+        TacticSearchQuery tacticQuery = context != null
+                ? context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY)
+                : null;
+        TacticSearchResult tacticSelection = context != null
+                ? context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION)
+                : null;
+        lastBackgroundAnalysis = CompletableFuture.runAsync(() -> runAnalysisInBackground(
+                completedRun, traceRecord, deterministicVerdict, tacticQuery, tacticSelection));
+
         return context;
     }
 
-    private void recordTacticOutcomes(AgentContext context, RunRecord completedRun, RunVerdict verdict) {
+    private void runAnalysisInBackground(RunRecord completedRun, TraceRecord traceRecord,
+            RunVerdict deterministicVerdict, TacticSearchQuery tacticQuery, TacticSearchResult tacticSelection) {
+        try {
+            RunVerdict llmVerdict = llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict);
+            selfEvolvingRunService.saveVerdict(completedRun.getId(), llmVerdict);
+            recordTacticOutcomes(completedRun, llmVerdict, tacticQuery, tacticSelection);
+            EvolutionProposal proposal = llmEvolutionService.propose(completedRun, llmVerdict);
+            List<EvolutionCandidate> candidates;
+            if (evolutionGateService.shouldEvolve(completedRun, llmVerdict, proposal)) {
+                candidates = evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, proposal);
+            } else {
+                candidates = List.of();
+            }
+            if (isAutoAcceptMode()) {
+                promotionWorkflowService.registerAndPlanCandidates(candidates);
+            } else {
+                promotionWorkflowService.registerCandidates(candidates);
+            }
+            if (!candidates.isEmpty()) {
+                bindRunBundleToCandidateBaselines(completedRun, candidates);
+            }
+            try {
+                projectionPublishPort.publishSelfEvolvingProjection(completedRun, llmVerdict, candidates);
+            } catch (RuntimeException exception) {
+                log.debug("[Hive] Skipping SelfEvolving projection publish: {}", exception.getMessage());
+            }
+            log.info("[SelfEvolving] Background analysis completed for run {}", completedRun.getId());
+        } catch (RuntimeException exception) { // NOSONAR - background task must not propagate
+            log.warn("[SelfEvolving] Background analysis failed for run {}: {}", completedRun.getId(),
+                    exception.getMessage());
+        }
+    }
+
+    private void recordTacticOutcomes(RunRecord completedRun, RunVerdict verdict,
+            TacticSearchQuery query, TacticSearchResult selection) {
         List<String> appliedTacticIds = completedRun != null ? completedRun.getAppliedTacticIds() : null;
         if (appliedTacticIds == null || appliedTacticIds.isEmpty()) {
             return;
         }
         String finishReason = mapVerdictToFinishReason(verdict);
-        TacticSearchQuery query = context != null ? context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY)
-                : null;
-        TacticSearchResult selection = context != null
-                ? context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION)
-                : null;
         for (String tacticId : appliedTacticIds) {
             if (tacticId == null || tacticId.isBlank()) {
                 continue;
@@ -232,6 +253,13 @@ public class PostRunAnalysisSystem implements AgentSystem {
                 .filter(trace -> trace != null && context.getTraceContext().getTraceId().equals(trace.getTraceId()))
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * Awaits the last background analysis. Visible for testing only.
+     */
+    CompletableFuture<Void> getLastBackgroundAnalysis() {
+        return lastBackgroundAnalysis;
     }
 
     private void bindRunBundleToCandidateBaselines(RunRecord completedRun, List<EvolutionCandidate> candidates) {

@@ -166,6 +166,11 @@ public class LlmJudgeService {
             RunRecord runRecord,
             TraceRecord traceRecord,
             RunVerdict seedVerdict) throws InterruptedException, ExecutionException {
+        String runId = runRecord != null ? runRecord.getId() : "unknown";
+        String judgeSessionId = "judge_" + judgeType + "_" + runId;
+        String parentTraceId = runRecord != null ? runRecord.getTraceId() : null;
+        log.debug("[SelfEvolving] Starting {} judge in session {} (parent trace: {})",
+                judgeType, judgeSessionId, parentTraceId);
         LlmRequest request = LlmRequest.builder()
                 .model(selection.model())
                 .reasoningEffort(selection.reasoning())
@@ -175,8 +180,10 @@ public class LlmJudgeService {
                         .content(buildPrompt(judgeType, runRecord, traceRecord, seedVerdict))
                         .build()))
                 .temperature(0.1)
-                .sessionId(runRecord != null ? runRecord.getSessionId() : null)
-                .traceId(runRecord != null ? runRecord.getTraceId() : null)
+                .sessionId(judgeSessionId)
+                .traceId(parentTraceId)
+                .traceParentSpanId(runRecord != null ? runRecord.getTraceId() : null)
+                .traceRootKind("judge_" + judgeType)
                 .build();
 
         LlmResponse response = llmPort.chat(request).get();
