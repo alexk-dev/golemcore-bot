@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
@@ -58,22 +59,31 @@ public class ModelsController {
     /**
      * Add or update a single model definition.
      */
-    @PostMapping("/{id}")
+    @PostMapping
     public Mono<ResponseEntity<Void>> saveModel(
-            @PathVariable String id,
-            @RequestBody ModelConfigService.ModelSettings settings) {
-        modelConfigService.saveModel(id, settings);
+            @RequestBody SaveModelRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
+        }
+        String id = requireValue(request.id(), "id");
+        String previousId = optionalValue(request.previousId());
+        ModelConfigService.ModelSettings settings = request.settings();
+        if (settings == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "settings is required");
+        }
+        modelConfigService.saveModel(id, previousId, settings);
         return Mono.just(ResponseEntity.ok().build());
     }
 
     /**
      * Delete a model definition.
      */
-    @DeleteMapping("/{id}")
-    public Mono<ResponseEntity<Void>> deleteModel(@PathVariable String id) {
-        boolean deleted = modelConfigService.deleteModel(id);
+    @DeleteMapping
+    public Mono<ResponseEntity<Void>> deleteModel(@RequestParam String id) {
+        String normalizedId = requireValue(id, "id");
+        boolean deleted = modelConfigService.deleteModel(normalizedId);
         if (!deleted) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Model '" + id + "' not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Model '" + normalizedId + "' not found");
         }
         return Mono.just(ResponseEntity.ok().build());
     }
@@ -147,7 +157,17 @@ public class ModelsController {
         return value.trim();
     }
 
+    private String optionalValue(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        return value.trim();
+    }
+
     public record ResolveRegistryRequest(String provider, String modelId) {
+    }
+
+    public record SaveModelRequest(String id, String previousId, ModelConfigService.ModelSettings settings) {
     }
 
     public record ResolveRegistryResponse(ModelConfigService.ModelSettings defaultSettings, String configSource,
