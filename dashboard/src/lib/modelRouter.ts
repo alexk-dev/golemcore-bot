@@ -1,4 +1,8 @@
-import type { ModelRouterConfig, TierBinding } from '../api/settings';
+import {
+  modelReferenceToSpec,
+  type ModelRouterConfig,
+  type TierBinding,
+} from '../api/settings';
 import { EXPLICIT_MODEL_TIER_ORDER, type ExplicitModelTierId } from './modelTiers';
 
 function hasText(value: string | null | undefined): value is string {
@@ -14,7 +18,7 @@ export function createEmptyTierBinding(): TierBinding {
 
 export function normalizeTierBinding(binding: TierBinding | null | undefined): TierBinding {
   return {
-    model: binding?.model ?? null,
+    model: binding?.model != null ? { ...binding.model } : null,
     reasoning: binding?.reasoning ?? null,
   };
 }
@@ -58,13 +62,15 @@ export function updateTierBinding(
 
 export function listConfiguredModelSpecs(config: ModelRouterConfig): string[] {
   const models: string[] = [];
-  if (hasText(config.routing.model)) {
-    models.push(config.routing.model);
+  const routingModel = modelReferenceToSpec(config.routing.model);
+  if (hasText(routingModel)) {
+    models.push(routingModel);
   }
   EXPLICIT_MODEL_TIER_ORDER.forEach((tier) => {
     const binding = config.tiers[tier];
-    if (hasText(binding?.model)) {
-      models.push(binding.model);
+    const model = modelReferenceToSpec(binding?.model);
+    if (hasText(model)) {
+      models.push(model);
     }
   });
   return models;

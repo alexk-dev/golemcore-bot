@@ -2517,15 +2517,12 @@ public class RuntimeConfigService {
         RuntimeConfig.TierBinding normalized = binding != null
                 ? binding
                 : RuntimeConfig.TierBinding.builder().build();
-        if (normalized.getModel() != null) {
-            String trimmedModel = normalized.getModel().trim();
-            normalized.setModel(trimmedModel.isEmpty() ? null : trimmedModel);
-        }
+        normalized.setModelReference(RuntimeConfig.ModelReference.normalize(normalized.getModelReference()));
         if (normalized.getReasoning() != null) {
             String trimmedReasoning = normalized.getReasoning().trim();
             normalized.setReasoning(trimmedReasoning.isEmpty() ? null : trimmedReasoning);
         }
-        if (normalized.getModel() == null && defaultModel != null) {
+        if (normalized.getModelReference() == null && defaultModel != null) {
             normalized.setModel(defaultModel);
         }
         if (normalized.getReasoning() == null) {

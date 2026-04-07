@@ -368,8 +368,13 @@ export interface ModelRouterConfig {
   dynamicTierEnabled: boolean | null;
 }
 
+export interface ModelReference {
+  provider: string | null;
+  id: string | null;
+}
+
 export interface TierBinding {
-  model: string | null;
+  model: ModelReference | null;
   reasoning: string | null;
 }
 
@@ -753,6 +758,42 @@ function toNullableString(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+export function modelReferenceToSpec(model: ModelReference | null | undefined): string | null {
+  if (model == null) {
+    return null;
+  }
+  const id = toNullableString(model.id);
+  if (id == null) {
+    return null;
+  }
+  const provider = toNullableString(model.provider);
+  if (provider == null || id.startsWith(`${provider}/`)) {
+    return id;
+  }
+  return `${provider}/${id}`;
+}
+
+export function modelReferenceFromSpec(
+  modelSpec: string | null | undefined,
+  providerHint: string | null = null,
+): ModelReference | null {
+  const normalizedModelSpec = toNullableString(modelSpec);
+  if (normalizedModelSpec == null) {
+    return null;
+  }
+  const normalizedProvider = toNullableString(providerHint);
+  if (normalizedProvider != null && normalizedModelSpec.startsWith(`${normalizedProvider}/`)) {
+    return {
+      provider: normalizedProvider,
+      id: normalizedModelSpec.slice(normalizedProvider.length + 1),
+    };
+  }
+  return {
+    provider: normalizedProvider,
+    id: normalizedModelSpec,
+  };
+}
+
 function toModelRegistryConfig(value: unknown): ModelRegistryConfig {
   const record = value != null && typeof value === 'object' ? value as UnknownRecord : {};
   return {
@@ -957,6 +998,25 @@ function normalizeSelfEvolvingEmbeddingModel(
     : null;
 }
 
+function toModelReference(value: unknown): ModelReference | null {
+  if (typeof value === 'string') {
+    return modelReferenceFromSpec(value);
+  }
+  if (value == null || typeof value !== 'object') {
+    return null;
+  }
+  const record = value as UnknownRecord;
+  const provider = toNullableString(record.provider);
+  const id = toNullableString(record.id);
+  if (provider == null && id == null) {
+    return null;
+  }
+  return {
+    provider,
+    id,
+  };
+}
+
 function toTierBinding(value: unknown): TierBinding {
   if (value == null || typeof value !== 'object') {
     return {
@@ -966,7 +1026,7 @@ function toTierBinding(value: unknown): TierBinding {
   }
   const record = value as UnknownRecord;
   return {
-    model: toNullableString(record.model),
+    model: toModelReference(record.model),
     reasoning: toNullableString(record.reasoning),
   };
 }

@@ -13,6 +13,15 @@ const availableModels = {
       supportsVision: true,
     },
   ],
+  openrouter: [
+    {
+      id: 'openrouter/qwen/model-name:version',
+      displayName: 'Qwen Model',
+      hasReasoning: false,
+      reasoningLevels: [],
+      supportsVision: true,
+    },
+  ],
 };
 
 vi.mock('../../hooks/useSettings', () => ({
@@ -46,20 +55,28 @@ const llmConfig: LlmConfig = {
       apiType: 'anthropic',
       legacyApi: null,
     },
+    openrouter: {
+      apiKey: null,
+      apiKeyPresent: true,
+      baseUrl: 'https://openrouter.ai/api/v1',
+      requestTimeoutSeconds: 30,
+      apiType: 'openai',
+      legacyApi: null,
+    },
   },
 };
 
 const modelRouterConfig: ModelRouterConfig = {
   temperature: 0.7,
   routing: {
-    model: 'openai/gpt-5.1',
+    model: { provider: 'openai', id: 'gpt-5.1' },
     reasoning: 'none',
   },
   tiers: {
-    balanced: { model: 'openai/gpt-5.1', reasoning: 'none' },
-    smart: { model: 'openai/gpt-5.1', reasoning: 'medium' },
-    deep: { model: 'openai/gpt-5.1', reasoning: 'medium' },
-    coding: { model: 'openai/gpt-5.1', reasoning: 'medium' },
+    balanced: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'none' },
+    smart: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'medium' },
+    deep: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'medium' },
+    coding: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'medium' },
     special1: { model: null, reasoning: null },
     special2: { model: null, reasoning: null },
     special3: { model: null, reasoning: null },
@@ -83,7 +100,7 @@ describe('ModelsTab', () => {
   });
 
   it('keeps unavailable configured special tiers visible instead of pretending they are empty', () => {
-    modelRouterConfig.tiers.special1 = { model: 'anthropic/claude-sonnet-4', reasoning: null };
+    modelRouterConfig.tiers.special1 = { model: { provider: 'anthropic', id: 'claude-sonnet-4' }, reasoning: null };
 
     const html = renderToStaticMarkup(
       <ModelsTab config={modelRouterConfig} llmConfig={llmConfig} />,
@@ -91,5 +108,19 @@ describe('ModelsTab', () => {
 
     expect(html).toContain('anthropic (unavailable)');
     expect(html).toContain('anthropic/claude-sonnet-4 (unavailable)');
+  });
+
+  it('hides the implicit openrouter prefix in routing model selects', () => {
+    modelRouterConfig.routing = {
+      model: { provider: 'openrouter', id: 'qwen/model-name:version' },
+      reasoning: null,
+    };
+
+    const html = renderToStaticMarkup(
+      <ModelsTab config={modelRouterConfig} llmConfig={llmConfig} />,
+    );
+
+    expect(html).toContain('qwen/model-name:version');
+    expect(html).not.toContain('openrouter/qwen/model-name:version');
   });
 });
