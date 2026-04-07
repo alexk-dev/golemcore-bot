@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaignVerdict;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticOutcomeEntry;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +33,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -59,6 +61,7 @@ public class TacticQualityMetricsService {
     private final TacticUsageAttributionService tacticUsageAttributionService;
     private final ObservedTacticMetricsCalculator observedTacticMetricsCalculator;
     private final BenchmarkLabService benchmarkLabService;
+    private final TacticOutcomeJournalService tacticOutcomeJournalService;
     private final Clock clock;
     private final AtomicReference<EnrichCacheEntry> enrichCache = new AtomicReference<>();
 
@@ -68,12 +71,14 @@ public class TacticQualityMetricsService {
             TacticUsageAttributionService tacticUsageAttributionService,
             ObservedTacticMetricsCalculator observedTacticMetricsCalculator,
             BenchmarkLabService benchmarkLabService,
+            TacticOutcomeJournalService tacticOutcomeJournalService,
             Clock clock) {
         this.artifactBundleService = artifactBundleService;
         this.selfEvolvingRunService = selfEvolvingRunService;
         this.tacticUsageAttributionService = tacticUsageAttributionService;
         this.observedTacticMetricsCalculator = observedTacticMetricsCalculator;
         this.benchmarkLabService = benchmarkLabService;
+        this.tacticOutcomeJournalService = tacticOutcomeJournalService;
         this.clock = clock;
     }
 
@@ -114,6 +119,7 @@ public class TacticQualityMetricsService {
 
         attributeBundles(aggregators, bundles, bundleIdToTacticIds);
         attributeRuns(aggregators, bundleIdToTacticIds);
+        attributeJournalOutcomes(aggregators);
         attributeCampaigns(aggregators, bundles, streamRevToTacticIds);
 
         List<TacticRecord> enriched = applyMetricsToRecords(records, aggregators);
@@ -187,6 +193,42 @@ public class TacticQualityMetricsService {
                 aggregator.noteRunOutcome(observedOutcome, outcomeAt);
             }
         }
+    }
+
+    private void attributeJournalOutcomes(Map<String, TacticMetricsAggregator> aggregators) {
+        if (tacticOutcomeJournalService == null) {
+            return;
+        }
+        List<TacticOutcomeEntry> entries = tacticOutcomeJournalService.getEntries();
+        for (TacticOutcomeEntry entry : entries) {
+            if (entry == null || StringValueSupport.isBlank(entry.getTacticId())) {
+                continue;
+            }
+            TacticMetricsAggregator aggregator = aggregators.get(entry.getTacticId());
+            if (aggregator == null) {
+                continue;
+            }
+            String observedOutcome = mapFinishReasonToOutcome(entry.getFinishReason());
+            if (observedOutcome != null) {
+                aggregator.noteRunOutcome(observedOutcome, entry.getRecordedAt());
+            }
+            aggregator.noteObservation(entry.getRecordedAt());
+        }
+    }
+
+    private String mapFinishReasonToOutcome(String finishReason) {
+        if (StringValueSupport.isBlank(finishReason)) {
+            return null;
+        }
+        String normalized = finishReason.trim().toLowerCase(Locale.ROOT);
+        if ("success".equals(normalized)) {
+            return "completed";
+        }
+        if ("failure".equals(normalized) || "error".equals(normalized)
+                || "iteration_limit".equals(normalized) || "deadline".equals(normalized)) {
+            return "failed";
+        }
+        return null;
     }
 
     private void attributeCampaigns(

@@ -306,7 +306,6 @@ class ToolLoopResilienceBddTest {
         assertFalse(events.stream().anyMatch(event -> RuntimeEventType.TURN_FAILED.equals(event.type())));
     }
 
-    @Test
     void shouldFailWhenInterruptedDuringLlmWaitWithoutStopRequest() throws Exception {
         AgentSession session = AgentSession.builder()
                 .id("s3c")

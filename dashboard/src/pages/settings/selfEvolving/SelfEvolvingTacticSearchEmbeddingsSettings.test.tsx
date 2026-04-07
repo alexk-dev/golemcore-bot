@@ -60,6 +60,11 @@ function buildConfig(provider: string | null, model: string | null): SelfEvolvin
         negativeMemory: {
           enabled: true,
         },
+        queryExpansion: {
+          enabled: true,
+          tier: 'balanced',
+        },
+        advisoryCount: 1,
       },
     },
     promotion: {

@@ -173,6 +173,20 @@ function formatTierTransitionNote(event: SessionTraceSpanEvent): string {
   return `${event.name}: ${String(event.attributes.from_tier ?? '-')} / ${String(event.attributes.from_model_id ?? '-')} -> ${String(event.attributes.to_tier ?? '-')} / ${String(event.attributes.to_model_id ?? '-')}`;
 }
 
+function formatTacticSearchNote(event: SessionTraceSpanEvent): string {
+  const title = event.attributes['tactic.selected_title'];
+  const artifactType = event.attributes['tactic.artifact_type'];
+  const resultCount = event.attributes['tactic.result_count'];
+  if (typeof title === 'string' && title.length > 0) {
+    const typeLabel = typeof artifactType === 'string' && artifactType.length > 0 ? ` [${artifactType}]` : '';
+    return `tactic applied: ${title}${typeLabel}`;
+  }
+  if (typeof resultCount === 'number' && resultCount === 0) {
+    return 'tactic search: no matches';
+  }
+  return 'tactic search completed';
+}
+
 function buildEventNote(event: SessionTraceSpanEvent): string {
   switch (event.name) {
     case null:
@@ -186,6 +200,8 @@ function buildEventNote(event: SessionTraceSpanEvent): string {
       return formatEventTriple(event.name, event.attributes.skill, event.attributes.tier, event.attributes.model_id);
     case 'tier.transition':
       return formatTierTransitionNote(event);
+    case 'tactic.search.completed':
+      return formatTacticSearchNote(event);
     default:
       return event.name ?? 'event';
   }
@@ -215,6 +231,20 @@ function appendEventTags(tags: SessionTraceFeedTag[], span: SessionTraceSpan): v
       }
       if (typeof nextModel === 'string' && nextModel.length > 0) {
         tags.push({ label: `model ${nextModel}`, variant: 'warning' });
+      }
+    }
+    if (event.name === 'tactic.search.completed') {
+      const tacticTitle = event.attributes['tactic.selected_title'];
+      const artifactType = event.attributes['tactic.artifact_type'];
+      const searchMode = event.attributes['tactic.search_mode'];
+      if (typeof tacticTitle === 'string' && tacticTitle.length > 0) {
+        tags.push({ label: `tactic ${tacticTitle}`, variant: 'info' });
+      }
+      if (typeof artifactType === 'string' && artifactType.length > 0) {
+        tags.push({ label: artifactType, variant: 'secondary' });
+      }
+      if (typeof searchMode === 'string' && searchMode.length > 0) {
+        tags.push({ label: `search ${searchMode}`, variant: 'secondary' });
       }
     }
   }

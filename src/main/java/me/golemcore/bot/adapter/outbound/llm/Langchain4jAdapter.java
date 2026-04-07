@@ -31,6 +31,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -70,6 +71,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -142,7 +144,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     }
 
     private final RuntimeConfigService runtimeConfigService;
-    private final ModelConfigService modelConfig;
+    private final ModelConfigPort modelConfig;
     private final ToolArtifactService toolArtifactService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -394,6 +396,19 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 throw new RuntimeException("Langchain4j adapter not available");
             }
 
+            String effectiveModelId = request.getModel() != null ? request.getModel() : currentModel;
+            if (log.isDebugEnabled() && effectiveModelId != null) {
+                try {
+                    String provider = getProvider(effectiveModelId);
+                    RuntimeConfig.LlmProviderConfig providerConfig = getProviderConfig(provider);
+                    log.debug("[LLM] API call: provider={}, model={}, baseUrl={}",
+                            provider, effectiveModelId, providerConfig.getBaseUrl());
+                } catch (Exception e) {
+                    log.debug("[LLM] API call: model={} (provider resolution failed: {})",
+                            effectiveModelId, e.getMessage());
+                }
+            }
+
             boolean useResponsesApi = isResponsesApiRequest(request);
             ChatModel modelToUse = useResponsesApi ? null : getModelForRequest(request);
             boolean geminiApiType = !useResponsesApi && isGeminiRequest(request);
@@ -451,8 +466,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         long backoffMs = resetSeconds > 0
                                 ? Math.max(resetSeconds * 1000 + 1000, exponentialBackoffMs)
                                 : exponentialBackoffMs;
-                        log.warn("[LLM] Rate limit hit (attempt {}/{}), retrying in {}ms{}...",
-                                attempt + 1, MAX_RETRIES, backoffMs,
+                        log.warn("[LLM] Rate limit hit for {} (attempt {}/{}), retrying in {}ms{}...",
+                                request.getModel(), attempt + 1, MAX_RETRIES, backoffMs,
                                 resetSeconds > 0 ? " (server requested " + resetSeconds + "s)" : "");
                         try {
                             sleepBeforeRetry(backoffMs);
@@ -609,11 +624,6 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         });
     }
 
-    /**
-     * Execute a chat request via a streaming model, blocking until the full
-     * response is available. This bridges {@link StreamingChatModel} into the sync
-     * retry loop.
-     */
     private ChatResponse chatViaStreaming(StreamingChatModel model,
             List<ChatMessage> messages, List<ToolSpecification> tools) {
         CompletableFuture<ChatResponse> future = new CompletableFuture<>();

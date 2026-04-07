@@ -684,6 +684,24 @@ class ToolCallExecutionServiceTest {
         assertTrue(!toolResult.getError().contains("null"));
     }
 
+    // ==================== interrupt propagation ====================
+
+    @Test
+    void shouldPreserveInterruptFlagWhenToolGetThrowsInterruptedException() {
+        AgentContext context = buildContext();
+        Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
+        CompletableFuture<ToolResult> neverCompletes = new CompletableFuture<>();
+        when(toolComponent.execute(any())).thenReturn(neverCompletes);
+
+        Thread.currentThread().interrupt();
+        ToolCallExecutionResult result = service.execute(context, toolCall);
+
+        assertTrue(Thread.interrupted(), "Interrupt flag must be preserved after InterruptedException");
+        assertNotNull(result);
+        assertEquals(ToolFailureKind.EXECUTION_FAILED, result.toolResult().getFailureKind());
+        assertTrue(result.toolResult().getError().contains("interrupted"));
+    }
+
     // ==================== AgentContextHolder lifecycle ====================
 
     @Test

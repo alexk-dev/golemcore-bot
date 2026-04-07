@@ -2,6 +2,7 @@ import { type UseMutationResult, type UseQueryResult, useQuery, useMutation, use
 import {
   type ModelSettings,
   type ResolveModelRegistryRequest,
+  type TestModelResponse,
   discoverProviderModels,
   getModelsConfig,
   getAvailableModels,
@@ -9,6 +10,7 @@ import {
   saveModel,
   deleteModel,
   reloadModels,
+  testModel,
 } from '../api/models';
 
 export function useModelsConfig(): UseQueryResult<Awaited<ReturnType<typeof getModelsConfig>>, unknown> {
@@ -65,6 +67,12 @@ export function useDeleteModel(): UseMutationResult<Awaited<ReturnType<typeof de
       void qc.invalidateQueries({ queryKey: ['models-config'] });
       void qc.invalidateQueries({ queryKey: ['models-available'] });
     },
+  });
+}
+
+export function useTestModel(): UseMutationResult<TestModelResponse, unknown, string> {
+  return useMutation({
+    mutationFn: (model: string) => testModel(model),
   });
 }
 

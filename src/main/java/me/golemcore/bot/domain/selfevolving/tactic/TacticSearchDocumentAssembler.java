@@ -86,13 +86,33 @@ public class TacticSearchDocumentAssembler {
 
     private String buildSemanticText(TacticRecord record) {
         List<String> segments = new ArrayList<>();
-        append(segments, record.getIntentSummary());
-        append(segments, record.getBehaviorSummary());
-        append(segments, record.getToolSummary());
-        append(segments, record.getOutcomeSummary());
-        append(segments, record.getBenchmarkSummary());
-        append(segments, record.getEvidenceSnippets());
+        appendLabeled(segments, "intent", record.getIntentSummary());
+        appendLabeled(segments, "behavior", record.getBehaviorSummary());
+        appendLabeled(segments, "tooling", record.getToolSummary());
+        appendLabeled(segments, "outcome", record.getOutcomeSummary());
+        appendLabeled(segments, "benchmark", record.getBenchmarkSummary());
+        appendLabeled(segments, "evidence", record.getEvidenceSnippets());
         return normalize(String.join(" ", segments));
+    }
+
+    private void appendLabeled(List<String> segments, String label, String value) {
+        if (!StringValueSupport.isBlank(value)) {
+            segments.add("[" + label + "] " + value.trim());
+        }
+    }
+
+    private void appendLabeled(List<String> segments, String label, List<String> values) {
+        if (values == null) {
+            return;
+        }
+        String joined = values.stream()
+                .filter(value -> !StringValueSupport.isBlank(value))
+                .map(String::trim)
+                .reduce((a, b) -> a + " " + b)
+                .orElse(null);
+        if (joined != null) {
+            segments.add("[" + label + "] " + joined);
+        }
     }
 
     private void append(List<String> segments, String value) {

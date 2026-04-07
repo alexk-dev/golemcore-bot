@@ -112,7 +112,7 @@ describe('createDraftFromSuggestion', () => {
     expect(toPersistedModelId(draft)).toBe('openrouter/qwen/model-name:version');
   });
 
-  it('keeps provider-scoped ids for non-openrouter collisions', () => {
+  it('keeps provider-scoped persisted ids for collisions while showing raw id in editor', () => {
     const collidingSuggestion: DiscoveredProviderModel = {
       provider: 'anthropic',
       id: 'gpt-4o',
@@ -143,7 +143,8 @@ describe('createDraftFromSuggestion', () => {
 
     const draft = createDraftFromSuggestion(collidingSuggestion, existingModels, null);
 
-    expect(draft.id).toBe('anthropic/gpt-4o');
+    expect(draft.id).toBe('gpt-4o');
+    expect(toPersistedModelId(draft)).toBe('anthropic/gpt-4o');
   });
 });
 

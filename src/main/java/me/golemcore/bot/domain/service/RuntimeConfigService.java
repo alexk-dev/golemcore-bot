@@ -68,15 +68,15 @@ public class RuntimeConfigService {
     private static final String INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int INVITE_CODE_LENGTH = 20;
     private static final String REASONING_NONE = "none";
-    private static final String DEFAULT_BALANCED_MODEL = "openai/gpt-5.1";
+    private static final String DEFAULT_BALANCED_MODEL = null;
     private static final String DEFAULT_BALANCED_REASONING = REASONING_NONE;
-    private static final String DEFAULT_ROUTING_MODEL = "openai/gpt-5.2-codex";
+    private static final String DEFAULT_ROUTING_MODEL = null;
     private static final String DEFAULT_ROUTING_REASONING = REASONING_NONE;
-    private static final String DEFAULT_SMART_MODEL = "openai/gpt-5.1";
+    private static final String DEFAULT_SMART_MODEL = null;
     private static final String DEFAULT_SMART_REASONING = REASONING_NONE;
-    private static final String DEFAULT_CODING_MODEL = "openai/gpt-5.2";
+    private static final String DEFAULT_CODING_MODEL = null;
     private static final String DEFAULT_CODING_REASONING = REASONING_NONE;
-    private static final String DEFAULT_DEEP_MODEL = "openai/gpt-5.2";
+    private static final String DEFAULT_DEEP_MODEL = null;
     private static final String DEFAULT_DEEP_REASONING = REASONING_NONE;
     private static final double DEFAULT_TEMPERATURE = 0.7;
     private static final String DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
@@ -203,6 +203,8 @@ public class RuntimeConfigService {
     private static final String DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MINIMUM_RUNTIME_VERSION = "0.19.0";
     private static final String DEFAULT_SELF_EVOLVING_CAPTURE_MODE_FULL = "full";
     private static final String DEFAULT_SELF_EVOLVING_CAPTURE_MODE_META_ONLY = "meta_only";
+    private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_QUERY_EXPANSION_ENABLED = true;
+    private static final String DEFAULT_SELF_EVOLVING_TACTIC_QUERY_EXPANSION_TIER = "balanced";
     private static final boolean DEFAULT_SELF_EVOLVING_JUDGE_ENABLED = true;
     private static final String DEFAULT_SELF_EVOLVING_JUDGE_PRIMARY_TIER = "smart";
     private static final String DEFAULT_SELF_EVOLVING_JUDGE_TIEBREAKER_TIER = "deep";
@@ -384,6 +386,34 @@ public class RuntimeConfigService {
     public boolean isSelfEvolvingPromotionCanaryRequired() {
         Boolean canaryRequired = getSelfEvolvingConfig().getPromotion().getCanaryRequired();
         return canaryRequired != null ? canaryRequired : Boolean.FALSE;
+    }
+
+    // ==================== Tactic Query Expansion ====================
+
+    public boolean isTacticQueryExpansionEnabled() {
+        RuntimeConfig.SelfEvolvingTacticQueryExpansionConfig queryExpansion = getSelfEvolvingConfig().getTactics()
+                .getSearch().getQueryExpansion();
+        if (queryExpansion == null) {
+            return DEFAULT_SELF_EVOLVING_TACTIC_QUERY_EXPANSION_ENABLED;
+        }
+        Boolean enabled = queryExpansion.getEnabled();
+        return enabled != null ? enabled : DEFAULT_SELF_EVOLVING_TACTIC_QUERY_EXPANSION_ENABLED;
+    }
+
+    public String getTacticQueryExpansionTier() {
+        RuntimeConfig.SelfEvolvingTacticQueryExpansionConfig queryExpansion = getSelfEvolvingConfig().getTactics()
+                .getSearch().getQueryExpansion();
+        if (queryExpansion == null) {
+            return DEFAULT_SELF_EVOLVING_TACTIC_QUERY_EXPANSION_TIER;
+        }
+        String tier = queryExpansion.getTier();
+        return tier != null ? tier : DEFAULT_SELF_EVOLVING_TACTIC_QUERY_EXPANSION_TIER;
+    }
+
+    public int getTacticAdvisoryCount() {
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = getSelfEvolvingConfig().getTactics().getSearch();
+        Integer count = searchConfig.getAdvisoryCount();
+        return count != null && count >= 1 ? Math.min(count, 5) : 1;
     }
 
     // ==================== Telegram ====================

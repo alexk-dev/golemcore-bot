@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.selfevolving.tactic;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
@@ -60,7 +61,8 @@ class TacticSearchServiceTest {
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(runtimeConfig.getSelfEvolving());
 
-        queryExpansionService = new TacticQueryExpansionService();
+        when(runtimeConfigService.isTacticQueryExpansionEnabled()).thenReturn(false);
+        queryExpansionService = new TacticQueryExpansionService(runtimeConfigService, null, null, new ObjectMapper());
         tacticSearchService = new TacticSearchService(queryExpansionService, bm25IndexService, runtimeConfigService,
                 null, null, null);
     }

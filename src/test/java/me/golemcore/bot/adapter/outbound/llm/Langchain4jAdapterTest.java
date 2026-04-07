@@ -11,6 +11,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.Content;
@@ -49,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
@@ -82,14 +84,14 @@ class Langchain4jAdapterTest {
     private static final String TEST = "test";
     private static final String TEST_CAPITALIZED = "Test";
 
-    private ModelConfigService modelConfig;
+    private ModelConfigPort modelConfig;
     private RuntimeConfigService runtimeConfigService;
     private ToolArtifactService toolArtifactService;
     private Langchain4jAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        modelConfig = mock(ModelConfigService.class);
+        modelConfig = mock(ModelConfigPort.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         toolArtifactService = mock(ToolArtifactService.class);
         when(modelConfig.supportsTemperature(anyString())).thenReturn(true);
@@ -2052,7 +2054,6 @@ class Langchain4jAdapterTest {
         String model = OPENAI + "/gpt-5.4";
         StreamingChatModel streamingModel = mockStreamingModel("default model response");
         injectResponsesStreamingModel(model, null, streamingModel);
-        injectChatModel(null, model);
 
         when(modelConfig.getProvider(model)).thenReturn(OPENAI);
         when(runtimeConfigService.getLlmProviderConfig(OPENAI))
@@ -2073,7 +2074,6 @@ class Langchain4jAdapterTest {
     // ===== Responses streaming model helpers =====
 
     private void setupResponsesApiProvider(String model) {
-        injectChatModel(null, model);
         when(modelConfig.getProvider(model)).thenReturn(OPENAI);
         when(runtimeConfigService.getLlmProviderConfig(OPENAI))
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
@@ -2085,7 +2085,8 @@ class Langchain4jAdapterTest {
     @SuppressWarnings(SUPPRESS_UNCHECKED)
     private void injectResponsesStreamingModel(String model, String reasoningEffort,
             StreamingChatModel streamingModel) {
-        injectChatModel(null, model);
+        ReflectionTestUtils.setField(adapter, "currentModel", model);
+        ReflectionTestUtils.setField(adapter, "initialized", true);
         Map<String, StreamingChatModel> cache = (Map<String, StreamingChatModel>) ReflectionTestUtils.getField(adapter,
                 "responsesStreamingModels");
         String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "");
@@ -2156,6 +2157,13 @@ class Langchain4jAdapterTest {
             handler.onError(error);
             return null;
         }).when(model).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
+        return model;
+    }
+
+    private StreamingChatModel mockStreamingModelWithoutTerminalEvent() {
+        StreamingChatModel model = mock(StreamingChatModel.class);
+        doAnswer(invocation -> null)
+                .when(model).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
         return model;
     }
 

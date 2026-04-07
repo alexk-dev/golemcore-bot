@@ -6,7 +6,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.annotation.JsonSetter;
-import com.fasterxml.jackson.databind.JsonNode;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -53,6 +52,14 @@ public class RuntimeConfig {
     @Builder.Default
     private UpdateConfig update = new UpdateConfig();
 
+    /**
+     * Raw tracing config from persisted runtime-config JSON.
+     * <p>
+     * <b>Warning:</b> do not use this directly for snapshot capture decisions —
+     * self-evolving overrides (forcePayloadCapture) are not applied here. Use
+     * {@code TraceRuntimeConfigSupport.resolve(runtimeConfigService)} instead.
+     * </p>
+     */
     @Builder.Default
     private TracingConfig tracing = new TracingConfig();
 
@@ -384,8 +391,8 @@ public class RuntimeConfig {
         }
 
         @JsonSetter("model")
-        public void setPersistedModel(JsonNode modelNode) {
-            this.modelReference = ModelReference.fromJsonNode(modelNode);
+        public void setPersistedModel(Object modelNode) {
+            this.modelReference = ModelReference.fromRawValue(modelNode);
         }
 
         @JsonIgnore
@@ -451,20 +458,25 @@ public class RuntimeConfig {
                     .build();
         }
 
-        public static ModelReference fromJsonNode(JsonNode modelNode) {
-            if (modelNode == null || modelNode.isNull()) {
+        @SuppressWarnings("unchecked")
+        public static ModelReference fromRawValue(Object modelNode) {
+            if (modelNode == null) {
                 return null;
             }
-            if (modelNode.isTextual()) {
-                return fromLegacyString(modelNode.asText());
+            if (modelNode instanceof String text) {
+                return fromLegacyString(text);
             }
-            if (modelNode.isObject()) {
+            if (modelNode instanceof ModelReference ref) {
+                return normalize(ref);
+            }
+            if (modelNode instanceof java.util.Map<?, ?> map) {
                 return normalize(ModelReference.builder()
-                        .provider(trimToNull(modelNode.path("provider").asText(null)))
-                        .id(trimToNull(modelNode.path("id").asText(null)))
+                        .provider(trimToNull(map.get("provider") instanceof String s ? s : null))
+                        .id(trimToNull(map.get("id") instanceof String s ? s : null))
                         .build());
             }
-            throw new IllegalArgumentException("model must be a string or object");
+            throw new IllegalArgumentException(
+                    "model must be a string or object, got: " + modelNode.getClass().getName());
         }
 
         public static ModelReference normalize(ModelReference reference) {
@@ -992,6 +1004,10 @@ public class RuntimeConfig {
         private SelfEvolvingToggleConfig personalization = new SelfEvolvingToggleConfig();
         @Builder.Default
         private SelfEvolvingToggleConfig negativeMemory = new SelfEvolvingToggleConfig();
+        @Builder.Default
+        private SelfEvolvingTacticQueryExpansionConfig queryExpansion = new SelfEvolvingTacticQueryExpansionConfig();
+        @Builder.Default
+        private Integer advisoryCount = 1;
     }
 
     @Data
@@ -1055,6 +1071,18 @@ public class RuntimeConfig {
     public static class SelfEvolvingToggleConfig {
         @Builder.Default
         private Boolean enabled = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticQueryExpansionConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private String tier = "balanced";
     }
 
     @Data

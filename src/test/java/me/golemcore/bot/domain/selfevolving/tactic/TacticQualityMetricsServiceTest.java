@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaignVerdict;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticOutcomeEntry;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -33,6 +35,7 @@ class TacticQualityMetricsServiceTest {
     private TacticUsageAttributionService tacticUsageAttributionService;
     private ObservedTacticMetricsCalculator observedTacticMetricsCalculator;
     private BenchmarkLabService benchmarkLabService;
+    private TacticOutcomeJournalService tacticOutcomeJournalService;
     private Clock clock;
     private TacticQualityMetricsService tacticQualityMetricsService;
 
@@ -41,7 +44,9 @@ class TacticQualityMetricsServiceTest {
         artifactBundleService = mock(ArtifactBundleService.class);
         selfEvolvingRunService = mock(SelfEvolvingRunService.class);
         benchmarkLabService = mock(BenchmarkLabService.class);
+        tacticOutcomeJournalService = mock(TacticOutcomeJournalService.class);
         when(benchmarkLabService.getCampaigns()).thenReturn(List.of());
+        when(tacticOutcomeJournalService.getEntries()).thenReturn(List.of());
         clock = Clock.fixed(Instant.parse("2026-04-05T12:00:00Z"), ZoneOffset.UTC);
         tacticUsageAttributionService = new TacticUsageAttributionService();
         observedTacticMetricsCalculator = new ObservedTacticMetricsCalculator(clock);
@@ -51,6 +56,7 @@ class TacticQualityMetricsServiceTest {
                 tacticUsageAttributionService,
                 observedTacticMetricsCalculator,
                 benchmarkLabService,
+                tacticOutcomeJournalService,
                 clock);
     }
 
@@ -411,5 +417,178 @@ class TacticQualityMetricsServiceTest {
         assertEquals(0.5d, enriched.getSuccessRate());
         assertEquals(0.5d, enriched.getGolemLocalUsageSuccess());
         assertEquals(1.0d, enriched.getRecencyScore());
+    }
+
+    @Test
+    void shouldAttributeJournalOutcomesToMatchingTacticSuccessRate() {
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-journal")
+                .artifactStreamId("stream-journal")
+                .contentRevisionId("revision-journal")
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of());
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of());
+        when(tacticOutcomeJournalService.getEntries()).thenReturn(List.of(
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-journal")
+                        .finishReason("success")
+                        .recordedAt(Instant.parse("2026-04-05T10:00:00Z"))
+                        .build(),
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-journal")
+                        .finishReason("success")
+                        .recordedAt(Instant.parse("2026-04-05T10:30:00Z"))
+                        .build(),
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-journal")
+                        .finishReason("error")
+                        .recordedAt(Instant.parse("2026-04-05T11:00:00Z"))
+                        .build()));
+
+        TacticRecord enriched = tacticQualityMetricsService.enrich(tactic);
+
+        // 2 success + 1 error = 2/3 ≈ 0.6667
+        assertEquals(2.0d / 3.0d, enriched.getSuccessRate(), 0.001d);
+        assertEquals(1.0d, enriched.getRecencyScore());
+    }
+
+    @Test
+    void shouldMapIterationLimitAndDeadlineAsFailedOutcomes() {
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-fail-modes")
+                .artifactStreamId("stream-fm")
+                .contentRevisionId("revision-fm")
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of());
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of());
+        when(tacticOutcomeJournalService.getEntries()).thenReturn(List.of(
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-fail-modes")
+                        .finishReason("iteration_limit")
+                        .recordedAt(Instant.parse("2026-04-05T10:00:00Z"))
+                        .build(),
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-fail-modes")
+                        .finishReason("deadline")
+                        .recordedAt(Instant.parse("2026-04-05T11:00:00Z"))
+                        .build()));
+
+        TacticRecord enriched = tacticQualityMetricsService.enrich(tactic);
+
+        assertEquals(0.0d, enriched.getSuccessRate());
+        assertTrue(enriched.getRegressionFlags().contains("observed-high-failure-rate"));
+        assertTrue(enriched.getRegressionFlags().contains("recent-failure"));
+    }
+
+    @Test
+    void shouldTreatFailureFinishReasonAsFailedOutcome() {
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-failure")
+                .artifactStreamId("stream-failure")
+                .contentRevisionId("revision-failure")
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of());
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of());
+        when(tacticOutcomeJournalService.getEntries()).thenReturn(List.of(
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-failure")
+                        .finishReason("success")
+                        .recordedAt(Instant.parse("2026-04-05T10:00:00Z"))
+                        .build(),
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-failure")
+                        .finishReason("failure")
+                        .recordedAt(Instant.parse("2026-04-05T11:00:00Z"))
+                        .build()));
+
+        TacticRecord enriched = tacticQualityMetricsService.enrich(tactic);
+
+        assertEquals(0.5d, enriched.getSuccessRate());
+        assertTrue(enriched.getRegressionFlags().contains("recent-failure"));
+    }
+
+    @Test
+    void shouldIgnoreJournalEntriesForUnknownTacticIds() {
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-known")
+                .artifactStreamId("stream-known")
+                .contentRevisionId("revision-known")
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of());
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of());
+        when(tacticOutcomeJournalService.getEntries()).thenReturn(List.of(
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-unknown")
+                        .finishReason("success")
+                        .recordedAt(Instant.parse("2026-04-05T10:00:00Z"))
+                        .build()));
+
+        TacticRecord enriched = tacticQualityMetricsService.enrich(tactic);
+
+        assertNull(enriched.getSuccessRate());
+    }
+
+    @Test
+    void shouldIgnoreJournalEntriesWithNonTerminalFinishReasons() {
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-plan")
+                .artifactStreamId("stream-plan")
+                .contentRevisionId("revision-plan")
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of());
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of());
+        when(tacticOutcomeJournalService.getEntries()).thenReturn(List.of(
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-plan")
+                        .finishReason("plan_mode")
+                        .recordedAt(Instant.parse("2026-04-05T10:00:00Z"))
+                        .build(),
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-plan")
+                        .finishReason("policy_denied")
+                        .recordedAt(Instant.parse("2026-04-05T11:00:00Z"))
+                        .build()));
+
+        TacticRecord enriched = tacticQualityMetricsService.enrich(tactic);
+
+        // plan_mode and policy_denied are not terminal outcomes — no run outcome
+        // recorded
+        assertNull(enriched.getSuccessRate());
+        // but recency should still be updated from noteObservation
+        assertEquals(1.0d, enriched.getRecencyScore());
+    }
+
+    @Test
+    void shouldCombineRunAndJournalOutcomesIntoSingleSuccessRate() {
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-combined")
+                .artifactStreamId("stream-combined")
+                .contentRevisionId("revision-combined")
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of(
+                ArtifactBundleRecord.builder()
+                        .id("bundle-combined")
+                        .artifactRevisionBindings(java.util.Map.of("stream-combined", "revision-combined"))
+                        .activatedAt(Instant.parse("2026-04-05T08:00:00Z"))
+                        .build()));
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of(
+                RunRecord.builder()
+                        .id("run-combined")
+                        .artifactBundleId("bundle-combined")
+                        .status("COMPLETED")
+                        .completedAt(Instant.parse("2026-04-05T09:00:00Z"))
+                        .build()));
+        when(selfEvolvingRunService.findVerdict("run-combined")).thenReturn(Optional.empty());
+        when(tacticOutcomeJournalService.getEntries()).thenReturn(List.of(
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-combined")
+                        .finishReason("error")
+                        .recordedAt(Instant.parse("2026-04-05T10:00:00Z"))
+                        .build()));
+
+        TacticRecord enriched = tacticQualityMetricsService.enrich(tactic);
+
+        // 1 success (run) + 1 failure (journal) = 0.5
+        assertEquals(0.5d, enriched.getSuccessRate());
     }
 }
