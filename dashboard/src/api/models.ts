@@ -73,18 +73,18 @@ export async function resolveModelRegistryDefaults(
   return data;
 }
 
-export async function saveModel(id: string, settings: ModelSettings): Promise<void> {
+export async function saveModel(id: string, settings: ModelSettings, previousId: string | null = null): Promise<void> {
   const telemetryConfig: TelemetryRequestConfig = {
     _telemetry: {
       counterKey: 'settings_save_count_by_section',
       value: 'model-catalog',
     },
   };
-  await client.post(`/models/${id}`, settings, telemetryConfig);
+  await client.post('/models', { id, previousId, settings }, telemetryConfig);
 }
 
 export async function deleteModel(id: string): Promise<void> {
-  await client.delete(`/models/${id}`);
+  await client.delete('/models', { params: { id } });
 }
 
 export async function reloadModels(): Promise<void> {

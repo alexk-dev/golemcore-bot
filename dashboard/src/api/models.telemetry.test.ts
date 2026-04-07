@@ -32,9 +32,13 @@ describe('model catalog telemetry metadata', () => {
     });
 
     expect(clientPost).toHaveBeenCalledWith(
-      '/models/gpt-4.1',
+      '/models',
       expect.objectContaining({
-        provider: 'openai',
+        id: 'gpt-4.1',
+        previousId: null,
+        settings: expect.objectContaining({
+          provider: 'openai',
+        }),
       }),
       expect.objectContaining({
         _telemetry: {

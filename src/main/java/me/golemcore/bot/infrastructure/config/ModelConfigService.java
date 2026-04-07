@@ -143,6 +143,17 @@ public class ModelConfigService {
      * Add or update a single model definition.
      */
     public void saveModel(String id, ModelSettings settings) {
+        saveModel(id, null, settings);
+    }
+
+    /**
+     * Add or update a single model definition, optionally migrating it from a
+     * previous id.
+     */
+    public void saveModel(String id, String previousId, ModelSettings settings) {
+        if (previousId != null && !previousId.isBlank() && !previousId.trim().equals(id)) {
+            config.getModels().remove(previousId.trim());
+        }
         config.getModels().put(id, settings);
         saveConfig();
     }

@@ -20,8 +20,10 @@ import type { ProviderProfileSummary } from './modelCatalogProviderProfiles';
 import {
   createDraftFromSuggestion,
   createEmptyModelDraft,
+  findExistingModelId,
   getGroupedCatalogModels,
   isModelDraftDirty,
+  resolvePersistedModelId,
   toModelDraft,
   toModelSettings,
   validateModelDraft,
@@ -175,9 +177,13 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
       return;
     }
 
-    const targetId = draft.id.trim();
+    const targetId = resolvePersistedModelId(draft, modelsConfig?.models ?? {}, isExisting ? selectedModelId : null);
     try {
-      await saveModel.mutateAsync({ id: targetId, settings: toModelSettings(draft) });
+      await saveModel.mutateAsync({
+        id: targetId,
+        previousId: isExisting ? selectedModelId : null,
+        settings: toModelSettings(draft),
+      });
       await refetchModelsConfig();
       telemetry.recordCounter('model_catalog_edit_count');
       startTransition(() => {
@@ -250,10 +256,10 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
         modelsConfig,
         resolvedRegistry.defaultSettings,
       );
-      const existingModel = modelsConfig?.models[nextDraft.id];
+      const existingModelId = findExistingModelId(modelsConfig?.models ?? {}, nextDraft);
       startTransition(() => {
         setSelectedProviderName(suggestion.provider);
-        setSelectedModelId(existingModel != null ? nextDraft.id : NEW_MODEL_SELECTION);
+        setSelectedModelId(existingModelId ?? NEW_MODEL_SELECTION);
         setDraft(nextDraft);
         setIsInsertModalOpen(false);
       });

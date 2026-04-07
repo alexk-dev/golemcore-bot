@@ -75,9 +75,46 @@ class ModelsControllerTest {
     void shouldSaveModel() {
         ModelConfigService.ModelSettings settings = mock(ModelConfigService.ModelSettings.class);
 
-        ResponseEntity<Void> result = controller.saveModel("gpt-5", settings).block();
+        ResponseEntity<Void> result = controller
+                .saveModel(new ModelsController.SaveModelRequest("gpt-5", null, settings))
+                .block();
 
-        verify(modelConfigService).saveModel("gpt-5", settings);
+        verify(modelConfigService).saveModel("gpt-5", null, settings);
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+    }
+
+    @Test
+    void shouldSaveModelWithSlashHeavyId() {
+        ModelConfigService.ModelSettings settings = mock(ModelConfigService.ModelSettings.class);
+
+        ResponseEntity<Void> result = controller
+                .saveModel(new ModelsController.SaveModelRequest(
+                        "openrouter/qwen/model-name:version",
+                        null,
+                        settings))
+                .block();
+
+        verify(modelConfigService).saveModel("openrouter/qwen/model-name:version", null, settings);
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+    }
+
+    @Test
+    void shouldSaveModelWithPreviousIdForRename() {
+        ModelConfigService.ModelSettings settings = mock(ModelConfigService.ModelSettings.class);
+
+        ResponseEntity<Void> result = controller
+                .saveModel(new ModelsController.SaveModelRequest(
+                        "openrouter/qwen/model-name:version",
+                        "qwen/model-name:version",
+                        settings))
+                .block();
+
+        verify(modelConfigService).saveModel(
+                "openrouter/qwen/model-name:version",
+                "qwen/model-name:version",
+                settings);
         assertNotNull(result);
         assertEquals(HttpStatus.OK, result.getStatusCode());
     }

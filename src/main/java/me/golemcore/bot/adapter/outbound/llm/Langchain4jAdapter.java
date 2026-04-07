@@ -45,8 +45,11 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.http.client.HttpClientBuilder;
+import dev.langchain4j.http.client.HttpClientBuilderLoader;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.json.JsonArraySchema;
 import dev.langchain4j.model.chat.request.json.JsonBooleanSchema;
@@ -57,12 +60,11 @@ import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
-import dev.langchain4j.model.output.TokenUsage;
-import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
+import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiResponsesStreamingChatModel;
+import dev.langchain4j.model.output.TokenUsage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -76,10 +78,11 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.time.Duration;
 
 /**
  * LLM adapter using the langchain4j library.
@@ -222,11 +225,15 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for OpenAI Responses provider in runtime config");
         }
+        Duration timeout = Duration.ofSeconds(
+                config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300);
         OpenAiResponsesStreamingChatModel.Builder builder = OpenAiResponsesStreamingChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .logRequests(true)
                 .logResponses(true);
+
+        builder.httpClientBuilder(createResponsesCompatibilityHttpClientBuilder(timeout));
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -241,6 +248,27 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         return builder.build();
+    }
+
+    private HttpClientBuilder createResponsesCompatibilityHttpClientBuilder(Duration timeout) {
+        HttpClientBuilder baseBuilder = HttpClientBuilderLoader.loadHttpClientBuilder();
+        if (baseBuilder == null) {
+            baseBuilder = instantiateJdkHttpClientBuilder();
+        }
+        baseBuilder.connectTimeout(timeout);
+        baseBuilder.readTimeout(timeout);
+        return new ResponsesCompatibilityHttpClientBuilder(baseBuilder, objectMapper);
+    }
+
+    private HttpClientBuilder instantiateJdkHttpClientBuilder() {
+        try {
+            Class<?> builderClass = Class.forName("dev.langchain4j.http.client.jdk.JdkHttpClientBuilder");
+            return (HttpClientBuilder) builderClass.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            throw new IllegalStateException(
+                    "No HttpClientBuilder implementation available for OpenAI Responses compatibility layer",
+                    exception);
+        }
     }
 
     private String stripProviderPrefix(String model) {

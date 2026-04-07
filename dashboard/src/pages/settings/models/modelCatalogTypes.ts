@@ -1,4 +1,10 @@
 import type { DiscoveredProviderModel, ModelSettings, ModelsConfig } from '../../../api/models';
+import {
+  toEditorModelIdForProvider,
+  toPersistedModelIdForProvider,
+  toProviderScopedModelId,
+  usesImplicitProviderPrefix,
+} from '../../../lib/providerModelIds';
 
 const DEFAULT_MAX_INPUT_TOKENS = '128000';
 
@@ -56,7 +62,7 @@ export function toModelDraft(id: string, settings: ModelSettings): ModelDraft {
     : [];
 
   return {
-    id,
+    id: toEditorModelIdForProvider(id, settings.provider),
     provider: settings.provider,
     displayName: settings.displayName ?? '',
     supportsVision: settings.supportsVision ?? true,
@@ -97,7 +103,7 @@ export function validateModelDraft(
   existingModels: Record<string, ModelSettings>,
   selectedModelId: string | null,
 ): string | null {
-  const id = draft.id.trim();
+  const id = resolvePersistedModelId(draft, existingModels, selectedModelId);
   const provider = draft.provider.trim();
   if (id.length === 0) {
     return 'Model ID is required.';
@@ -191,9 +197,9 @@ export function getGroupedCatalogModels(
     .map(([provider, items]) => ({
       provider,
       items: items.sort((left, right) => {
-        const leftLabel = left.settings.displayName ?? left.id;
-        const rightLabel = right.settings.displayName ?? right.id;
-        return leftLabel.localeCompare(rightLabel);
+        const normalizedLeftLabel = left.settings.displayName ?? toEditorModelIdForProvider(left.id, left.settings.provider);
+        const normalizedRightLabel = right.settings.displayName ?? toEditorModelIdForProvider(right.id, right.settings.provider);
+        return normalizedLeftLabel.localeCompare(normalizedRightLabel);
       }),
     }));
 }
@@ -221,7 +227,7 @@ export function createDraftFromSuggestion(
 
   const maxInputTokens = DEFAULT_MAX_INPUT_TOKENS;
   return {
-    id: targetId,
+    id: toEditorModelIdForProvider(targetId, suggestion.provider),
     provider: suggestion.provider,
     displayName: suggestion.displayName,
     supportsVision: true,
@@ -231,6 +237,60 @@ export function createDraftFromSuggestion(
     reasoningDefault: '',
     reasoningLevels: [],
   };
+}
+
+export function toPersistedModelId(draft: Pick<ModelDraft, 'id' | 'provider'>): string {
+  return toPersistedModelIdForProvider(draft.id, draft.provider);
+}
+
+export function resolvePersistedModelId(
+  draft: Pick<ModelDraft, 'id' | 'provider'>,
+  existingModels: Record<string, ModelSettings>,
+  selectedModelId: string | null,
+): string {
+  const provider = draft.provider.trim();
+  const selectedId = selectedModelId?.trim() ?? '';
+  const persistedId = toPersistedModelId(draft);
+  if (provider.length === 0 || persistedId.length === 0) {
+    return persistedId;
+  }
+
+  const matchingExistingId = findExistingModelId(existingModels, draft);
+  if (matchingExistingId != null && (selectedId.length === 0 || matchingExistingId !== selectedId)) {
+    return matchingExistingId;
+  }
+
+  const persistedSettings = existingModels[persistedId];
+  if (persistedSettings != null && persistedSettings.provider !== provider && persistedId !== selectedId) {
+    return toProviderScopedModelId(draft.id, provider);
+  }
+
+  return persistedId;
+}
+
+export function findExistingModelId(
+  existingModels: Record<string, ModelSettings>,
+  draft: Pick<ModelDraft, 'id' | 'provider'>,
+): string | null {
+  const normalizedProvider = draft.provider.trim();
+  if (normalizedProvider.length === 0) {
+    return null;
+  }
+
+  const rawId = draft.id.trim();
+  const canonicalId = toPersistedModelId(draft);
+  const providerScopedId = toProviderScopedModelId(rawId, normalizedProvider);
+  const preferredCandidates = usesImplicitProviderPrefix(normalizedProvider)
+    ? [canonicalId, rawId]
+    : [rawId, providerScopedId, canonicalId];
+
+  for (const candidate of Array.from(new Set(preferredCandidates.filter((value) => value.length > 0)))) {
+    const existing = existingModels[candidate];
+    if (existing?.provider === normalizedProvider) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 function emptyToNull(value: string): string | null {
@@ -251,17 +311,8 @@ function resolveSuggestedModelId(
   suggestion: DiscoveredProviderModel,
   existingModels: Record<string, ModelSettings>,
 ): string {
-  const exactMatch = existingModels[suggestion.id];
-  if (exactMatch == null) {
-    return suggestion.id;
-  }
-  if (exactMatch.provider === suggestion.provider) {
-    return suggestion.id;
-  }
-
-  const providerScopedId = `${suggestion.provider}/${suggestion.id}`;
-  if (Object.prototype.hasOwnProperty.call(existingModels, providerScopedId)) {
-    return providerScopedId;
-  }
-  return providerScopedId;
+  return resolvePersistedModelId({
+    id: suggestion.id,
+    provider: suggestion.provider,
+  }, existingModels, null);
 }

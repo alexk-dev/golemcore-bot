@@ -30,10 +30,16 @@ export function useDiscoveredProviderModels(
   });
 }
 
-export function useSaveModel(): UseMutationResult<Awaited<ReturnType<typeof saveModel>>, unknown, { id: string; settings: ModelSettings }> {
+export function useSaveModel(): UseMutationResult<
+  Awaited<ReturnType<typeof saveModel>>,
+  unknown,
+  { id: string; previousId: string | null; settings: ModelSettings }
+> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, settings }: { id: string; settings: ModelSettings }) => saveModel(id, settings),
+    mutationFn: (
+      { id, previousId, settings }: { id: string; previousId: string | null; settings: ModelSettings },
+    ) => saveModel(id, settings, previousId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['models-config'] });
       void qc.invalidateQueries({ queryKey: ['models-available'] });
