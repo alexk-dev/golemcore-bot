@@ -108,6 +108,9 @@ public class LlmJudgeService {
             """;
 
     private static final String JUDGE_CHANNEL_PREFIX = "judge_";
+    private static final int MAX_JUDGE_RETRIES = 3;
+    private static final long INITIAL_BACKOFF_MS = 5_000;
+    private static final double BACKOFF_MULTIPLIER = 2.0;
 
     private final LlmPort llmPort;
     private final JudgeTierResolver judgeTierResolver;
@@ -232,48 +235,106 @@ public class LlmJudgeService {
 
         String prompt = buildPrompt(judgeType, runRecord, traceRecord, seedVerdict, userQuery, assistantResponse);
 
-        Map<String, Object> llmAttributes = new LinkedHashMap<>();
-        llmAttributes.put("llm.model", selection.model());
-        llmAttributes.put("llm.reasoning", selection.reasoning());
-        TraceContext llmSpan = traceService.startSpan(judgeSession, rootTrace,
-                "llm.chat", TraceSpanKind.LLM, Instant.now(), llmAttributes);
-
-        LlmRequest request = LlmRequest.builder()
-                .model(selection.model())
-                .reasoningEffort(selection.reasoning())
-                .systemPrompt(resolveSystemPrompt(judgeType))
-                .messages(List.of(Message.builder()
-                        .role("user")
-                        .content(prompt)
-                        .build()))
-                .temperature(0.1)
-                .sessionId(judgeSession.getId())
-                .traceId(llmSpan.getTraceId())
-                .traceSpanId(llmSpan.getSpanId())
-                .traceRootKind("judge_" + judgeType)
+        Message userMessage = Message.builder()
+                .role("user")
+                .content(prompt)
                 .build();
+        judgeSession.addMessage(userMessage);
 
-        captureSnapshot(judgeSession, llmSpan, "request", request);
-        try {
-            LlmResponse response = llmPort.chat(request).get();
-            captureSnapshot(judgeSession, llmSpan, "response", response);
-            traceService.finishSpan(judgeSession, llmSpan, TraceStatusCode.OK, null, Instant.now());
-            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.OK, null, Instant.now());
-            if (response == null || StringValueSupport.isBlank(response.getContent())) {
-                throw new IllegalArgumentException("Judge returned empty response");
-            }
-            RunVerdict parsedVerdict = parseVerdict(response.getContent(), runRecord);
-            validate(parsedVerdict);
-            return parsedVerdict;
-        } catch (InterruptedException | ExecutionException | RuntimeException exception) {
-            traceService.finishSpan(judgeSession, llmSpan, TraceStatusCode.ERROR,
-                    exception.getMessage(), Instant.now());
-            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.ERROR,
-                    exception.getMessage(), Instant.now());
-            throw exception;
-        } finally {
-            saveJudgeSession(judgeSession);
+        LlmResponse response = executeJudgeLlmCall(judgeSession, rootTrace, judgeType, selection, prompt);
+
+        String responseContent = response != null ? response.getContent() : null;
+        if (responseContent != null && !responseContent.isBlank()) {
+            judgeSession.addMessage(Message.builder()
+                    .role("assistant")
+                    .content(responseContent)
+                    .build());
         }
+
+        traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.OK, null, Instant.now());
+        saveJudgeSession(judgeSession);
+
+        if (response == null || StringValueSupport.isBlank(responseContent)) {
+            throw new IllegalArgumentException("Judge returned empty response");
+        }
+        RunVerdict parsedVerdict = parseVerdict(responseContent, runRecord);
+        validate(parsedVerdict);
+        return parsedVerdict;
+    }
+
+    private LlmResponse executeJudgeLlmCall(
+            AgentSession judgeSession,
+            TraceContext rootTrace,
+            String judgeType,
+            ModelSelectionService.ModelSelection selection,
+            String prompt) throws InterruptedException, ExecutionException {
+        int attempt = 0;
+        while (true) {
+            Map<String, Object> llmAttributes = new LinkedHashMap<>();
+            llmAttributes.put("llm.model", selection.model());
+            llmAttributes.put("llm.reasoning", selection.reasoning());
+            if (attempt > 0) {
+                llmAttributes.put("llm.retry_attempt", attempt);
+            }
+            TraceContext llmSpan = traceService.startSpan(judgeSession, rootTrace,
+                    "llm.chat", TraceSpanKind.LLM, Instant.now(), llmAttributes);
+
+            LlmRequest request = LlmRequest.builder()
+                    .model(selection.model())
+                    .reasoningEffort(selection.reasoning())
+                    .systemPrompt(resolveSystemPrompt(judgeType))
+                    .messages(List.of(Message.builder()
+                            .role("user")
+                            .content(prompt)
+                            .build()))
+                    .temperature(0.1)
+                    .sessionId(judgeSession.getId())
+                    .traceId(llmSpan.getTraceId())
+                    .traceSpanId(llmSpan.getSpanId())
+                    .traceRootKind("judge_" + judgeType)
+                    .build();
+
+            captureSnapshot(judgeSession, llmSpan, "request", request);
+            try {
+                LlmResponse response = llmPort.chat(request).get();
+                log.debug("[SelfEvolving] Judge {} LLM call returned, content length: {}",
+                        judgeType,
+                        response != null && response.getContent() != null ? response.getContent().length() : 0);
+                captureSnapshot(judgeSession, llmSpan, "response", response);
+                traceService.finishSpan(judgeSession, llmSpan, TraceStatusCode.OK, null, Instant.now());
+                return response;
+            } catch (ExecutionException | RuntimeException exception) {
+                traceService.finishSpan(judgeSession, llmSpan, TraceStatusCode.ERROR,
+                        exception.getMessage(), Instant.now());
+                if (attempt < MAX_JUDGE_RETRIES && isRetryableError(exception)) {
+                    long backoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
+                    log.warn("[SelfEvolving] Judge {} rate limited (attempt {}/{}), retrying in {}ms",
+                            judgeType, attempt + 1, MAX_JUDGE_RETRIES, backoffMs);
+                    Thread.sleep(backoffMs);
+                    attempt++;
+                } else {
+                    traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.ERROR,
+                            exception.getMessage(), Instant.now());
+                    saveJudgeSession(judgeSession);
+                    throw exception;
+                }
+            }
+        }
+    }
+
+    private boolean isRetryableError(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String msg = current.getMessage();
+            if (msg != null && (msg.contains("rate_limit") || msg.contains("429")
+                    || msg.contains("Too Many Requests") || msg.contains("token_quota_exceeded")
+                    || msg.contains("model_cooldown") || msg.contains("cooling down")
+                    || msg.contains("overloaded") || msg.contains("503"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private void captureSnapshot(AgentSession session, TraceContext spanContext, String role, Object payload) {
@@ -286,7 +347,7 @@ public class LlmJudgeService {
             traceService.captureSnapshot(session, spanContext, tracingConfig,
                     role, "application/json", data);
         } catch (Exception exception) { // NOSONAR - tracing must not break judge flow
-            log.debug("[SelfEvolving] Failed to capture {} snapshot: {}", role, exception.getMessage());
+            log.warn("[SelfEvolving] Failed to capture {} snapshot: {}", role, exception.getMessage(), exception);
         }
     }
 

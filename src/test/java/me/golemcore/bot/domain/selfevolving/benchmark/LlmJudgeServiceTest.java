@@ -71,6 +71,11 @@ class LlmJudgeServiceTest {
                         .traceId("judge-trace-1")
                         .spanId("judge-span-1")
                         .build());
+        when(traceService.startSpan(any(), any(), anyString(), any(), any(), any())).thenReturn(
+                TraceContext.builder()
+                        .traceId("judge-trace-1")
+                        .spanId("llm-span-1")
+                        .build());
         llmJudgeService = new LlmJudgeService(llmPort, judgeTierResolver, judgeTraceDigestService,
                 runtimeConfigService, sessionService, traceService);
     }
