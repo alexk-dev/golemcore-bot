@@ -73,12 +73,12 @@ export async function resolveModelRegistryDefaults(
   return data;
 }
 
-export async function saveModel(id: string, settings: ModelSettings): Promise<void> {
-  await client.post(`/models/${id}`, settings);
+export async function saveModel(id: string, settings: ModelSettings, previousId: string | null = null): Promise<void> {
+  await client.post('/models', { id, previousId, settings });
 }
 
 export async function deleteModel(id: string): Promise<void> {
-  await client.delete(`/models/${id}`);
+  await client.delete('/models', { params: { id } });
 }
 
 export async function reloadModels(): Promise<void> {

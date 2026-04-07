@@ -254,6 +254,17 @@ class ModelConfigServiceTest {
         assertNotNull(service.getAllModels());
     }
 
+    @Test
+    void shouldRenameModelWhenPreviousIdDiffers() {
+        ModelConfigService.ModelSettings settings = standardModel("openrouter", "Qwen Model", true, 128000);
+        service.getAllModels().put("qwen/model-name:version", settings);
+
+        service.saveModel("openrouter/qwen/model-name:version", "qwen/model-name:version", settings);
+
+        assertFalse(service.getAllModels().containsKey("qwen/model-name:version"));
+        assertEquals(settings, service.getAllModels().get("openrouter/qwen/model-name:version"));
+    }
+
     // ===== ModelSettings constructors =====
 
     @Test

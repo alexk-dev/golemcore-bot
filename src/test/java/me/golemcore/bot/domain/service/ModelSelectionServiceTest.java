@@ -226,6 +226,22 @@ class ModelSelectionServiceTest {
     }
 
     @Test
+    void shouldResolveLegacyBareSpecialTierModelToUniqueCanonicalOpenrouterModel() {
+        modelRegistry.put("openrouter/qwen/qwen3.6-plus:free", modelSettings("openrouter"));
+        when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openrouter"));
+        when(runtimeConfigService.getModelTierBinding("special1"))
+                .thenReturn(RuntimeConfig.TierBinding.builder()
+                        .model("qwen3.6-plus")
+                        .reasoning("none")
+                        .build());
+
+        ModelSelectionService.ModelSelection result = service.resolveForTier("special1");
+
+        assertEquals("openrouter/qwen/qwen3.6-plus:free", result.model());
+        assertEquals("none", result.reasoning());
+    }
+
+    @Test
     void shouldRejectExplicitSpecialTierWhenUnconfigured() {
         when(runtimeConfigService.getModelTierBinding("special3"))
                 .thenReturn(RuntimeConfig.TierBinding.builder()
@@ -668,6 +684,22 @@ class ModelSelectionServiceTest {
         ModelSelectionService.ValidationResult result = service.validateModel("gpt-5.1-preview");
 
         // Assert
+        assertTrue(result.valid());
+        assertNull(result.error());
+    }
+
+    @Test
+    void shouldReturnValidWhenLegacyBareModelUniquelyMatchesCanonicalOpenrouterEntry() {
+        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        settings.setProvider("openrouter");
+        when(modelConfigService.getModelSettings("openrouter/qwen/qwen3.6-plus:free")).thenReturn(settings);
+
+        Map<String, ModelConfigService.ModelSettings> allModels = new HashMap<>();
+        allModels.put("openrouter/qwen/qwen3.6-plus:free", settings);
+        when(modelConfigService.getAllModels()).thenReturn(allModels);
+
+        ModelSelectionService.ValidationResult result = service.validateModel("qwen3.6-plus", List.of("openrouter"));
+
         assertTrue(result.valid());
         assertNull(result.error());
     }
