@@ -136,16 +136,23 @@ public class PostRunAnalysisSystem implements AgentSystem {
         TacticSearchResult tacticSelection = context != null
                 ? context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION)
                 : null;
+        String userQuery = resolveLastUserMessage(context);
+        String assistantResponse = context.getTurnOutcome() != null
+                ? context.getTurnOutcome().getAssistantText()
+                : null;
         lastBackgroundAnalysis = CompletableFuture.runAsync(() -> runAnalysisInBackground(
-                completedRun, traceRecord, deterministicVerdict, tacticQuery, tacticSelection));
+                completedRun, traceRecord, deterministicVerdict, tacticQuery, tacticSelection,
+                userQuery, assistantResponse));
 
         return context;
     }
 
     private void runAnalysisInBackground(RunRecord completedRun, TraceRecord traceRecord,
-            RunVerdict deterministicVerdict, TacticSearchQuery tacticQuery, TacticSearchResult tacticSelection) {
+            RunVerdict deterministicVerdict, TacticSearchQuery tacticQuery, TacticSearchResult tacticSelection,
+            String userQuery, String assistantResponse) {
         try {
-            RunVerdict llmVerdict = llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict);
+            RunVerdict llmVerdict = llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict,
+                    userQuery, assistantResponse);
             selfEvolvingRunService.saveVerdict(completedRun.getId(), llmVerdict);
             recordTacticOutcomes(completedRun, llmVerdict, tacticQuery, tacticSelection);
             EvolutionProposal proposal = llmEvolutionService.propose(completedRun, llmVerdict);
@@ -260,6 +267,19 @@ public class PostRunAnalysisSystem implements AgentSystem {
      */
     CompletableFuture<Void> getLastBackgroundAnalysis() {
         return lastBackgroundAnalysis;
+    }
+
+    private String resolveLastUserMessage(AgentContext context) {
+        if (context == null || context.getMessages() == null || context.getMessages().isEmpty()) {
+            return null;
+        }
+        for (int i = context.getMessages().size() - 1; i >= 0; i--) {
+            me.golemcore.bot.domain.model.Message message = context.getMessages().get(i);
+            if (message != null && message.isUserMessage() && message.getContent() != null) {
+                return message.getContent();
+            }
+        }
+        return null;
     }
 
     private void bindRunBundleToCandidateBaselines(RunRecord completedRun, List<EvolutionCandidate> candidates) {

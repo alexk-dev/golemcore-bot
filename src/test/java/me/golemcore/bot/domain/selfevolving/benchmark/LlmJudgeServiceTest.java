@@ -124,7 +124,9 @@ class LlmJudgeServiceTest {
                         .runId("run-1")
                         .outcomeStatus("COMPLETED")
                         .evidenceRefs(List.of(VerdictEvidenceRef.builder().traceId("trace-1").spanId("seed").build()))
-                        .build());
+                        .build(),
+                "What is the weather?",
+                "The weather is sunny today.");
 
         assertEquals(0.92, verdict.getConfidence());
         assertEquals("shadow", verdict.getPromotionRecommendation());
@@ -153,7 +155,8 @@ class LlmJudgeServiceTest {
         RunVerdict verdict = llmJudgeService.judge(
                 RunRecord.builder().id("run-1").traceId("trace-1").status("FAILED").build(),
                 TraceRecord.builder().traceId("trace-1").build(),
-                deterministicVerdict);
+                deterministicVerdict,
+                null, null);
 
         assertEquals("FAILED", verdict.getOutcomeStatus());
         assertEquals("ISSUES_FOUND", verdict.getProcessStatus());

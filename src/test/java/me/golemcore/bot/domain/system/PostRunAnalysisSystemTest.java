@@ -31,6 +31,9 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -135,7 +138,8 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(proposal);
         when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, proposal)).thenReturn(candidates);
 
@@ -145,7 +149,7 @@ class PostRunAnalysisSystemTest {
         verify(selfEvolvingRunService).startRun(context);
         verify(selfEvolvingRunService).completeRun(startedRun, context);
         verify(deterministicJudgeService).evaluate(completedRun, traceRecord);
-        verify(llmJudgeService).judge(completedRun, traceRecord, deterministicVerdict);
+        verify(llmJudgeService).judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any());
         verify(selfEvolvingRunService).saveVerdict("run-1", llmVerdict);
         verify(llmEvolutionService).propose(completedRun, llmVerdict);
         verify(evolutionCandidateService).deriveCandidates(completedRun, llmVerdict, proposal);
@@ -186,7 +190,8 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.findRun("run-1")).thenReturn(java.util.Optional.of(existingRun));
         when(selfEvolvingRunService.completeRun(existingRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
 
         assertTrue(system.shouldProcess(context));
@@ -246,7 +251,8 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
 
         AgentContext result = processAndAwait(context);
@@ -277,7 +283,8 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
         doThrow(new IllegalStateException("hive offline")).when(projectionPublishPort)
                 .publishSelfEvolvingProjection(completedRun, llmVerdict, List.of());
@@ -324,7 +331,8 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(proposal);
         when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, proposal)).thenReturn(candidates);
 
@@ -353,7 +361,8 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(proposal);
 
         processAndAwait(context);
@@ -381,7 +390,8 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
 
         processAndAwait(context);

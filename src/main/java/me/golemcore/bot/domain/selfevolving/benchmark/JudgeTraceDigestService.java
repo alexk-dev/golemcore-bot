@@ -126,10 +126,20 @@ public class JudgeTraceDigestService {
             TraceSpanRecord span = toolSpans.get(i);
             String status = span.getStatusCode() == TraceStatusCode.ERROR ? "ERROR" : "OK";
             String name = defaultIfBlank(span.getName(), span.getSpanId());
-            digest.append(i + 1).append(". ").append(name).append(" [").append(status).append("]");
+            digest.append(i + 1).append(". ").append(name);
+            digest.append(" [").append(status).append("]");
+            digest.append(" spanId=").append(span.getSpanId());
             if (span.getStartedAt() != null && span.getEndedAt() != null) {
                 Duration spanDuration = Duration.between(span.getStartedAt(), span.getEndedAt());
                 digest.append(" (").append(formatDuration(spanDuration)).append(')');
+            }
+            String toolName = resolveSpanAttribute(span, "tool.name");
+            if (!StringValueSupport.isBlank(toolName)) {
+                digest.append(" tool=").append(toolName);
+            }
+            String toolInput = resolveSpanAttribute(span, "tool.input");
+            if (!StringValueSupport.isBlank(toolInput)) {
+                digest.append(" input=").append(truncate(toolInput, MAX_ATTRIBUTE_VALUE_LENGTH));
             }
             if (span.getStatusCode() == TraceStatusCode.ERROR && !StringValueSupport.isBlank(span.getStatusMessage())) {
                 digest.append(" -> ").append(truncate(span.getStatusMessage(), MAX_STATUS_MESSAGE_LENGTH));
@@ -183,7 +193,7 @@ public class JudgeTraceDigestService {
         digest.append("--- LLM CALLS ---\n");
         Map<String, List<TraceSpanRecord>> byModel = new LinkedHashMap<>();
         for (TraceSpanRecord span : llmSpans) {
-            String model = resolveSpanAttribute(span, "llm.model", "llm.provider", "model");
+            String model = resolveSpanAttribute(span, "llm.model", "model_id", "llm.provider", "model");
             String key = StringValueSupport.isBlank(model) ? "unknown" : model;
             byModel.computeIfAbsent(key, ignored -> new ArrayList<>()).add(span);
         }
@@ -206,6 +216,21 @@ public class JudgeTraceDigestService {
                 digest.append(" totalTokens=").append(totalTokens);
             }
             digest.append('\n');
+
+            for (TraceSpanRecord span : modelSpans) {
+                String tier = resolveSpanAttribute(span, "tier", "tier.name");
+                String reasoning = resolveSpanAttribute(span, "reasoning", "llm.reasoning");
+                if (!StringValueSupport.isBlank(tier) || !StringValueSupport.isBlank(reasoning)) {
+                    digest.append("  spanId=").append(span.getSpanId());
+                    if (!StringValueSupport.isBlank(tier)) {
+                        digest.append(" tier=").append(tier);
+                    }
+                    if (!StringValueSupport.isBlank(reasoning)) {
+                        digest.append(" reasoning=").append(reasoning);
+                    }
+                    digest.append('\n');
+                }
+            }
 
             List<TraceSpanRecord> llmErrors = modelSpans.stream()
                     .filter(span -> span.getStatusCode() == TraceStatusCode.ERROR)
@@ -246,6 +271,7 @@ public class JudgeTraceDigestService {
 
     private void appendKeyEvents(StringBuilder digest, List<TraceSpanRecord> spans) {
         List<String> keyEvents = new ArrayList<>();
+        Map<String, Integer> eventCounts = new LinkedHashMap<>();
         for (TraceSpanRecord span : spans) {
             if (span.getEvents() == null) {
                 continue;
@@ -264,7 +290,11 @@ public class JudgeTraceDigestService {
                                         .collect(Collectors.joining(", "));
                                 eventLine += " {" + attrSummary + "}";
                             }
-                            keyEvents.add(eventLine);
+                            int count = eventCounts.getOrDefault(eventLine, 0);
+                            eventCounts.put(eventLine, count + 1);
+                            if (count == 0) {
+                                keyEvents.add(eventLine);
+                            }
                         }
                     });
         }
@@ -275,7 +305,13 @@ public class JudgeTraceDigestService {
         digest.append("--- KEY EVENTS ---\n");
         int limit = Math.min(keyEvents.size(), 15);
         for (int i = 0; i < limit; i++) {
-            digest.append("- ").append(keyEvents.get(i)).append('\n');
+            String eventLine = keyEvents.get(i);
+            int count = eventCounts.getOrDefault(eventLine, 1);
+            digest.append("- ").append(eventLine);
+            if (count > 1) {
+                digest.append(" (x").append(count).append(')');
+            }
+            digest.append('\n');
         }
         if (keyEvents.size() > limit) {
             digest.append("... and ").append(keyEvents.size() - limit).append(" more events\n");

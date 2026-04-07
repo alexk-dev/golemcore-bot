@@ -40,7 +40,6 @@ import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -58,38 +57,45 @@ import java.util.concurrent.ExecutionException;
 @Slf4j
 public class LlmJudgeService {
 
+    private static final int MAX_CONVERSATION_SNIPPET_LENGTH = 2000;
+
     private static final String OUTCOME_SYSTEM_PROMPT = """
             You are the outcome judge for a golem SelfEvolving run.
-            You receive structured trace data including tool call sequences, error details, LLM call summaries, \
-            and span breakdowns extracted from the full execution trace.
+            You receive the user's original request, the assistant's response, and structured trace data \
+            including tool call sequences, error details, LLM call summaries, and span breakdowns.
 
             Your task:
-            1. Assess whether the run achieved its goal based on the tool outcomes and error evidence.
-            2. Score task_completion (0.0-1.0) and correctness from the supplied trace evidence.
+            1. Assess whether the assistant's response actually fulfils the user's request.
+            2. Score task_completion (0.0-1.0) and correctness based on the conversation and trace evidence.
             3. Recommend a rollout action: "approve_gated", "reject", or "observe".
             4. Anchor every claim to specific spanIds from the trace digest.
 
-            Return only JSON matching the RunVerdict schema. Include evidenceRefs with spanId and outputFragment \
-            for each cited span. Set confidence to reflect how conclusive the evidence is.
+            Return only valid JSON matching the RunVerdict schema:
+            {"outcomeStatus":"COMPLETED|FAILED|PARTIAL","outcomeSummary":"...","confidence":0.0-1.0,\
+            "promotionRecommendation":"approve_gated|reject|observe",\
+            "evidenceRefs":[{"traceId":"...","spanId":"...","outputFragment":"..."}],\
+            "processFindings":[]}
             """;
     private static final String PROCESS_SYSTEM_PROMPT = """
             You are the process judge for a golem SelfEvolving run.
-            You receive structured trace data including tool call sequences, error details, LLM call summaries, \
-            and span breakdowns extracted from the full execution trace.
+            You receive the user's original request, the assistant's response, and structured trace data \
+            including tool call sequences, error details, LLM call summaries, and span breakdowns.
 
             Your task:
             1. Evaluate the agent's process: Was the tool sequence efficient? Were there unnecessary retries or churn?
             2. Check skill choice: Did the agent pick appropriate skills for the task?
-            3. Check tier routing: Were LLM calls routed to appropriate model tiers?
+            3. Check tier routing: Were LLM calls routed to appropriate model tiers for the task complexity?
             4. Identify process anti-patterns: tool loops, excessive errors, wasted LLM calls, timeout patterns.
             5. List each finding as a processFindings entry (e.g., "tool_churn:shell", "tier_overuse:deep").
 
-            Return only JSON matching the RunVerdict schema. Anchor every finding to specific spanIds. \
-            Set confidence based on how clear the process signal is.
+            Return only valid JSON matching the RunVerdict schema:
+            {"processStatus":"EFFICIENT|ISSUES_FOUND|INEFFICIENT","processSummary":"...","confidence":0.0-1.0,\
+            "evidenceRefs":[{"traceId":"...","spanId":"...","outputFragment":"..."}],\
+            "processFindings":["finding:detail"]}
             """;
     private static final String TIEBREAKER_SYSTEM_PROMPT = """
             You are the arbitration judge for a golem SelfEvolving run.
-            You receive the same structured trace data as the prior judges, plus their merged verdict.
+            You receive the same data as the prior judges, plus their merged verdict.
 
             Your task:
             1. Resolve disagreements between outcome and process judges.
@@ -97,7 +103,7 @@ public class LlmJudgeService {
             3. Produce a final verdict that is internally consistent.
             4. Keep evidenceRefs anchored to specific spanIds from the trace.
 
-            Return only JSON matching the RunVerdict schema.
+            Return only valid JSON matching the RunVerdict schema.
             """;
 
     private static final String JUDGE_CHANNEL_PREFIX = "judge_";
@@ -127,44 +133,63 @@ public class LlmJudgeService {
         this.objectMapper.findAndRegisterModules();
     }
 
-    public RunVerdict judge(RunRecord runRecord, TraceRecord traceRecord, RunVerdict deterministicVerdict) {
+    public RunVerdict judge(RunRecord runRecord, TraceRecord traceRecord, RunVerdict deterministicVerdict,
+            String userQuery, String assistantResponse) {
         if (!isJudgeEnabled() || llmPort == null || !llmPort.isAvailable()) {
             return deterministicVerdict;
         }
 
+        ModelSelectionService.ModelSelection primarySelection;
         try {
-            ModelSelectionService.ModelSelection primarySelection = judgeTierResolver.resolveSelection("primary");
-            RunVerdict outcomeVerdict = requestJudgeVerdict(
-                    "outcome",
-                    primarySelection,
-                    runRecord,
-                    traceRecord,
-                    deterministicVerdict);
-            RunVerdict processVerdict = requestJudgeVerdict(
-                    "process",
-                    primarySelection,
-                    runRecord,
-                    traceRecord,
-                    deterministicVerdict);
-            RunVerdict mergedVerdict = mergeVerdicts(deterministicVerdict, outcomeVerdict, processVerdict);
-            if (shouldEscalate(mergedVerdict)) {
+            primarySelection = judgeTierResolver.resolveSelection("primary");
+        } catch (RuntimeException exception) {
+            log.warn("[SelfEvolving] Failed to resolve judge tier: {}", exception.getMessage());
+            return deterministicVerdict;
+        }
+
+        RunVerdict outcomeVerdict = requestJudgeVerdictSafe(
+                "outcome", primarySelection, runRecord, traceRecord, deterministicVerdict,
+                userQuery, assistantResponse);
+        RunVerdict processVerdict = requestJudgeVerdictSafe(
+                "process", primarySelection, runRecord, traceRecord, deterministicVerdict,
+                userQuery, assistantResponse);
+
+        RunVerdict mergedVerdict = mergeVerdicts(deterministicVerdict, outcomeVerdict, processVerdict);
+        if (shouldEscalate(mergedVerdict)) {
+            try {
                 ModelSelectionService.ModelSelection tiebreakerSelection = judgeTierResolver.resolveSelection(
                         "tiebreaker");
                 RunVerdict tiebreakerVerdict = requestJudgeVerdict(
-                        "tiebreaker",
-                        tiebreakerSelection,
-                        runRecord,
-                        traceRecord,
-                        mergedVerdict);
+                        "tiebreaker", tiebreakerSelection, runRecord, traceRecord, mergedVerdict,
+                        userQuery, assistantResponse);
                 mergedVerdict = applyOverride(mergedVerdict, tiebreakerVerdict);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            } catch (ExecutionException | RuntimeException exception) {
+                log.debug("[SelfEvolving] Tiebreaker judge failed, using merged verdict: {}", exception.getMessage());
             }
-            return mergedVerdict;
-        } catch (InterruptedException e) {
+        }
+        return mergedVerdict;
+    }
+
+    private RunVerdict requestJudgeVerdictSafe(
+            String judgeType,
+            ModelSelectionService.ModelSelection selection,
+            RunRecord runRecord,
+            TraceRecord traceRecord,
+            RunVerdict seedVerdict,
+            String userQuery,
+            String assistantResponse) {
+        try {
+            return requestJudgeVerdict(judgeType, selection, runRecord, traceRecord, seedVerdict,
+                    userQuery, assistantResponse);
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            return deterministicVerdict;
-        } catch (ExecutionException | RuntimeException e) {
-            log.debug("[SelfEvolving] Falling back to deterministic verdict: {}", e.getMessage());
-            return deterministicVerdict;
+            log.debug("[SelfEvolving] {} judge interrupted", judgeType);
+            return null;
+        } catch (ExecutionException | RuntimeException exception) {
+            log.warn("[SelfEvolving] {} judge failed: {}", judgeType, exception.getMessage());
+            return null;
         }
     }
 
@@ -182,7 +207,9 @@ public class LlmJudgeService {
             ModelSelectionService.ModelSelection selection,
             RunRecord runRecord,
             TraceRecord traceRecord,
-            RunVerdict seedVerdict) throws InterruptedException, ExecutionException {
+            RunVerdict seedVerdict,
+            String userQuery,
+            String assistantResponse) throws InterruptedException, ExecutionException {
         String runId = runRecord != null ? runRecord.getId() : "unknown";
         String channelType = JUDGE_CHANNEL_PREFIX + judgeType;
         String parentTraceId = runRecord != null ? runRecord.getTraceId() : null;
@@ -202,7 +229,7 @@ public class LlmJudgeService {
         log.debug("[SelfEvolving] Starting {} judge in session {} (parent trace: {})",
                 judgeType, judgeSession.getId(), parentTraceId);
 
-        String prompt = buildPrompt(judgeType, runRecord, traceRecord, seedVerdict);
+        String prompt = buildPrompt(judgeType, runRecord, traceRecord, seedVerdict, userQuery, assistantResponse);
         LlmRequest request = LlmRequest.builder()
                 .model(selection.model())
                 .reasoningEffort(selection.reasoning())
@@ -451,7 +478,8 @@ public class LlmJudgeService {
         };
     }
 
-    private String buildPrompt(String judgeType, RunRecord runRecord, TraceRecord traceRecord, RunVerdict seedVerdict) {
+    private String buildPrompt(String judgeType, RunRecord runRecord, TraceRecord traceRecord,
+            RunVerdict seedVerdict, String userQuery, String assistantResponse) {
         StringBuilder promptBuilder = new StringBuilder();
         promptBuilder.append("judgeType=").append(judgeType).append('\n');
         if (runRecord != null) {
@@ -468,6 +496,19 @@ public class LlmJudgeService {
             promptBuilder.append("seedProcessFindings=").append(seedVerdict.getProcessFindings()).append('\n');
         }
 
+        if (!StringValueSupport.isBlank(userQuery)) {
+            promptBuilder.append('\n');
+            promptBuilder.append("=== USER REQUEST ===\n");
+            promptBuilder.append(truncateSnippet(userQuery)).append('\n');
+            promptBuilder.append("=== END USER REQUEST ===\n");
+        }
+        if (!StringValueSupport.isBlank(assistantResponse)) {
+            promptBuilder.append('\n');
+            promptBuilder.append("=== ASSISTANT RESPONSE ===\n");
+            promptBuilder.append(truncateSnippet(assistantResponse)).append('\n');
+            promptBuilder.append("=== END ASSISTANT RESPONSE ===\n");
+        }
+
         String traceDigest = judgeTraceDigestService.buildDigest(runRecord, traceRecord);
         if (!StringValueSupport.isBlank(traceDigest)) {
             promptBuilder.append('\n');
@@ -479,5 +520,15 @@ public class LlmJudgeService {
         promptBuilder.append('\n');
         promptBuilder.append("Return strict JSON only.");
         return promptBuilder.toString();
+    }
+
+    private String truncateSnippet(String text) {
+        if (text == null) {
+            return "";
+        }
+        if (text.length() <= MAX_CONVERSATION_SNIPPET_LENGTH) {
+            return text;
+        }
+        return text.substring(0, MAX_CONVERSATION_SNIPPET_LENGTH) + "\n... [truncated]";
     }
 }
