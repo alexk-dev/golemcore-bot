@@ -7,6 +7,7 @@ import { SaveStateHint } from '../../../components/common/SettingsSaveBar';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
+import { Modal } from '../../../components/ui/bootstrap-overlay';
 import { Form } from '../../../lib/react-bootstrap';
 import { useTestModel } from '../../../hooks/useModels';
 import type { ProviderProfileSummary } from './modelCatalogProviderProfiles';
@@ -233,20 +234,30 @@ export function ModelCatalogForm({
             <SaveStateHint isDirty={isDirty} />
           </div>
 
-          {testResult != null && (
-            <div className={`rounded-2xl border px-4 py-3 text-sm ${
-              testResult.success
-                ? 'border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300'
-                : 'border-destructive/30 bg-destructive/10 text-destructive dark:text-red-300'
-            }`}>
-              <div className="font-medium mb-1">{testResult.success ? 'Model responded' : 'Test failed'}</div>
-              <div className="whitespace-pre-wrap break-words">
-                {testResult.success ? testResult.reply : testResult.error}
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
+
+      <Modal show={testResult != null} onHide={() => setTestResult(null)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>{testResult?.success ? 'Model Response' : 'Test Failed'}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className={`rounded-2xl border px-4 py-3 text-sm ${
+            testResult?.success
+              ? 'border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300'
+              : 'border-destructive/30 bg-destructive/10 text-destructive dark:text-red-300'
+          }`}>
+            <div className="whitespace-pre-wrap break-words">
+              {testResult?.success ? testResult.reply : testResult?.error}
+            </div>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" size="sm" onClick={() => setTestResult(null)}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
 
       <ConfirmModal
         show={isDeleteConfirmOpen}
