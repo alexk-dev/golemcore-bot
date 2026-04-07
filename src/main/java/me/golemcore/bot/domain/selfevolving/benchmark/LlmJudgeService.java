@@ -241,25 +241,28 @@ public class LlmJudgeService {
                 .build();
         judgeSession.addMessage(userMessage);
 
-        LlmResponse response = executeJudgeLlmCall(judgeSession, rootTrace, judgeType, selection, prompt);
+        try {
+            LlmResponse response = executeJudgeLlmCall(judgeSession, rootTrace, judgeType, selection, prompt);
 
-        String responseContent = response != null ? response.getContent() : null;
-        if (responseContent != null && !responseContent.isBlank()) {
-            judgeSession.addMessage(Message.builder()
-                    .role("assistant")
-                    .content(responseContent)
-                    .build());
+            String responseContent = response != null ? response.getContent() : null;
+            if (responseContent != null && !responseContent.isBlank()) {
+                judgeSession.addMessage(Message.builder()
+                        .role("assistant")
+                        .content(responseContent)
+                        .build());
+            }
+
+            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.OK, null, Instant.now());
+
+            if (response == null || StringValueSupport.isBlank(responseContent)) {
+                throw new IllegalArgumentException("Judge returned empty response");
+            }
+            RunVerdict parsedVerdict = parseVerdict(responseContent, runRecord);
+            validate(parsedVerdict);
+            return parsedVerdict;
+        } finally {
+            saveJudgeSession(judgeSession);
         }
-
-        traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.OK, null, Instant.now());
-        saveJudgeSession(judgeSession);
-
-        if (response == null || StringValueSupport.isBlank(responseContent)) {
-            throw new IllegalArgumentException("Judge returned empty response");
-        }
-        RunVerdict parsedVerdict = parseVerdict(responseContent, runRecord);
-        validate(parsedVerdict);
-        return parsedVerdict;
     }
 
     private LlmResponse executeJudgeLlmCall(
@@ -315,7 +318,6 @@ public class LlmJudgeService {
                 } else {
                     traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.ERROR,
                             exception.getMessage(), Instant.now());
-                    saveJudgeSession(judgeSession);
                     throw exception;
                 }
             }
