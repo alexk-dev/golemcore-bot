@@ -49,6 +49,7 @@ import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.http.client.HttpClientBuilderLoader;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.json.JsonArraySchema;
 import dev.langchain4j.model.chat.request.json.JsonBooleanSchema;
@@ -59,12 +60,11 @@ import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
-import dev.langchain4j.model.output.TokenUsage;
-import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
+import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiResponsesStreamingChatModel;
+import dev.langchain4j.model.output.TokenUsage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -79,12 +79,11 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.time.Duration;
 
 /**
  * LLM adapter using the langchain4j library.
@@ -227,19 +226,15 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for OpenAI Responses provider in runtime config");
         }
-        Duration timeout = resolveRequestTimeout(config);
+        Duration timeout = Duration.ofSeconds(
+                config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300);
         OpenAiResponsesStreamingChatModel.Builder builder = OpenAiResponsesStreamingChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .logRequests(true)
                 .logResponses(true);
 
-        HttpClientBuilder httpClientBuilder = HttpClientBuilderLoader.loadHttpClientBuilder();
-        if (httpClientBuilder != null) {
-            builder.httpClientBuilder(httpClientBuilder
-                    .connectTimeout(timeout)
-                    .readTimeout(timeout));
-        }
+        builder.httpClientBuilder(createResponsesCompatibilityHttpClientBuilder(timeout));
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -254,6 +249,27 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         return builder.build();
+    }
+
+    private HttpClientBuilder createResponsesCompatibilityHttpClientBuilder(Duration timeout) {
+        HttpClientBuilder baseBuilder = HttpClientBuilderLoader.loadHttpClientBuilder();
+        if (baseBuilder == null) {
+            baseBuilder = instantiateJdkHttpClientBuilder();
+        }
+        baseBuilder.connectTimeout(timeout);
+        baseBuilder.readTimeout(timeout);
+        return new ResponsesCompatibilityHttpClientBuilder(baseBuilder, objectMapper);
+    }
+
+    private HttpClientBuilder instantiateJdkHttpClientBuilder() {
+        try {
+            Class<?> builderClass = Class.forName("dev.langchain4j.http.client.jdk.JdkHttpClientBuilder");
+            return (HttpClientBuilder) builderClass.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            throw new IllegalStateException(
+                    "No HttpClientBuilder implementation available for OpenAI Responses compatibility layer",
+                    exception);
+        }
     }
 
     private String stripProviderPrefix(String model) {
@@ -275,20 +291,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         case API_TYPE_GEMINI:
             return createGeminiModel(modelName, config);
         default:
-            if (!Boolean.TRUE.equals(config.getLegacyApi())) {
-                return createResponsesSyncModel(model, reasoningEffort, config);
-            }
             return createOpenAiModel(modelName, model, reasoningEffort, config);
         }
-    }
-
-    private ChatModel createResponsesSyncModel(String fullModel, String reasoningEffort,
-            RuntimeConfig.LlmProviderConfig config) {
-        StreamingChatModel streaming = getResponsesStreamingModel(fullModel, reasoningEffort);
-        Duration timeout = resolveRequestTimeout(config);
-        log.info("[LLM] Creating OpenAI Responses sync wrapper for: {} (timeout: {}s)", fullModel,
-                timeout.toSeconds());
-        return new ResponsesSyncChatModel(streaming, timeout);
     }
 
     private String getApiType(RuntimeConfig.LlmProviderConfig config) {
@@ -391,8 +395,9 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 throw new RuntimeException("Langchain4j adapter not available");
             }
 
-            ChatModel modelToUse = getModelForRequest(request);
-            boolean geminiApiType = isGeminiRequest(request);
+            boolean useResponsesApi = isResponsesApiRequest(request);
+            ChatModel modelToUse = useResponsesApi ? null : getModelForRequest(request);
+            boolean geminiApiType = !useResponsesApi && isGeminiRequest(request);
             LlmRequest requestToUse = request;
             MessageConversionResult conversionResult = buildChatMessages(requestToUse);
             List<ChatMessage> messages = conversionResult.messages();
@@ -404,7 +409,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             while (attempt <= MAX_RETRIES) {
                 try {
                     ChatResponse response;
-                    if (tools != null && !tools.isEmpty()) {
+                    if (useResponsesApi) {
+                        String effectiveModel = requestToUse.getModel() != null
+                                ? requestToUse.getModel()
+                                : currentModel;
+                        StreamingChatModel streamingModel = getResponsesStreamingModel(
+                                effectiveModel, requestToUse.getReasoningEffort());
+                        response = chatViaStreaming(streamingModel, messages, tools);
+                    } else if (tools != null && !tools.isEmpty()) {
                         log.trace("Calling LLM with {} tools", tools.size());
                         ChatRequest chatRequest = ChatRequest.builder()
                                 .messages(messages)
@@ -596,6 +608,28 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 }
             });
         });
+    }
+
+    private ChatResponse chatViaStreaming(StreamingChatModel model,
+            List<ChatMessage> messages, List<ToolSpecification> tools) {
+        CompletableFuture<ChatResponse> future = new CompletableFuture<>();
+        ChatRequest.Builder requestBuilder = ChatRequest.builder().messages(messages);
+        if (tools != null && !tools.isEmpty()) {
+            log.trace("Calling Responses API with {} tools", tools.size());
+            requestBuilder.toolSpecifications(tools);
+        }
+        model.chat(requestBuilder.build(), new StreamingChatResponseHandler() {
+            @Override
+            public void onCompleteResponse(ChatResponse chatResponse) {
+                future.complete(chatResponse);
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                future.completeExceptionally(error);
+            }
+        });
+        return future.join();
     }
 
     /**
@@ -871,13 +905,6 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     private String nonNullText(String text) {
         return text != null ? text : "";
-    }
-
-    private Duration resolveRequestTimeout(RuntimeConfig.LlmProviderConfig config) {
-        int timeoutSeconds = config != null && config.getRequestTimeoutSeconds() != null
-                ? config.getRequestTimeoutSeconds()
-                : 300;
-        return Duration.ofSeconds(timeoutSeconds);
     }
 
     private int findFirstTrailingToolMessageIndex(List<Message> messages) {
@@ -1413,56 +1440,5 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     protected void sleepBeforeRetry(long backoffMs) throws InterruptedException {
         Thread.sleep(backoffMs);
-    }
-
-    /**
-     * Sync {@link ChatModel} wrapper around {@link StreamingChatModel}. Bridges
-     * streaming callbacks into a blocking call with a configurable timeout, so that
-     * OpenAI Responses API can be used through the same uniform {@code ChatModel}
-     * interface as Anthropic and Gemini.
-     */
-    static class ResponsesSyncChatModel implements ChatModel {
-
-        private final StreamingChatModel delegate;
-        private final Duration timeout;
-
-        ResponsesSyncChatModel(StreamingChatModel delegate, Duration timeout) {
-            this.delegate = delegate;
-            this.timeout = timeout;
-        }
-
-        @Override
-        public ChatResponse chat(ChatRequest chatRequest) {
-            CompletableFuture<ChatResponse> future = new CompletableFuture<>();
-            delegate.chat(chatRequest, new StreamingChatResponseHandler() {
-                @Override
-                public void onCompleteResponse(ChatResponse chatResponse) {
-                    future.complete(chatResponse);
-                }
-
-                @Override
-                public void onError(Throwable error) {
-                    future.completeExceptionally(error);
-                }
-            });
-            try {
-                return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-            } catch (TimeoutException exception) {
-                future.cancel(true);
-                throw new IllegalStateException(
-                        "OpenAI Responses API timed out after " + timeout.toSeconds() + "s", exception);
-            } catch (InterruptedException exception) {
-                future.cancel(true);
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("OpenAI Responses API call interrupted", exception);
-            } catch (java.util.concurrent.ExecutionException exception) {
-                Throwable cause = exception.getCause();
-                if (cause instanceof RuntimeException runtimeException) {
-                    throw runtimeException;
-                }
-                throw new IllegalStateException("OpenAI Responses API call failed",
-                        cause != null ? cause : exception);
-            }
-        }
     }
 }
