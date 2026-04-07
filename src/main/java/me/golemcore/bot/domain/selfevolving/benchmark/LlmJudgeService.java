@@ -100,7 +100,7 @@ public class LlmJudgeService {
             Return only JSON matching the RunVerdict schema.
             """;
 
-    private static final String JUDGE_CHANNEL_TYPE = "judge";
+    private static final String JUDGE_CHANNEL_PREFIX = "judge_";
 
     private final LlmPort llmPort;
     private final JudgeTierResolver judgeTierResolver;
@@ -184,10 +184,10 @@ public class LlmJudgeService {
             TraceRecord traceRecord,
             RunVerdict seedVerdict) throws InterruptedException, ExecutionException {
         String runId = runRecord != null ? runRecord.getId() : "unknown";
-        String chatId = "judge_" + judgeType + "_" + runId;
+        String channelType = JUDGE_CHANNEL_PREFIX + judgeType;
         String parentTraceId = runRecord != null ? runRecord.getTraceId() : null;
 
-        AgentSession judgeSession = sessionService.getOrCreate(JUDGE_CHANNEL_TYPE, chatId);
+        AgentSession judgeSession = sessionService.getOrCreate(channelType, runId);
         Instant now = Instant.now();
         Map<String, Object> traceAttributes = new LinkedHashMap<>();
         traceAttributes.put("judge.type", judgeType);
