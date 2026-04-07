@@ -275,20 +275,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         case API_TYPE_GEMINI:
             return createGeminiModel(modelName, config);
         default:
-            if (!Boolean.TRUE.equals(config.getLegacyApi())) {
-                return createResponsesSyncModel(model, reasoningEffort, config);
-            }
             return createOpenAiModel(modelName, model, reasoningEffort, config);
         }
-    }
-
-    private ChatModel createResponsesSyncModel(String fullModel, String reasoningEffort,
-            RuntimeConfig.LlmProviderConfig config) {
-        StreamingChatModel streaming = getResponsesStreamingModel(fullModel, reasoningEffort);
-        Duration timeout = resolveRequestTimeout(config);
-        log.info("[LLM] Creating OpenAI Responses sync wrapper for: {} (timeout: {}s)", fullModel,
-                timeout.toSeconds());
-        return new ResponsesSyncChatModel(streaming, timeout);
     }
 
     private String getApiType(RuntimeConfig.LlmProviderConfig config) {
@@ -387,7 +375,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return CompletableFuture.supplyAsync(() -> {
             ensureInitialized();
 
-            if (chatModel == null && !isResponsesApiRequest(request)) {
+            if (chatModel == null) {
                 throw new RuntimeException("Langchain4j adapter not available");
             }
 
@@ -1415,54 +1403,4 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         Thread.sleep(backoffMs);
     }
 
-    /**
-     * Sync {@link ChatModel} wrapper around {@link StreamingChatModel}. Bridges
-     * streaming callbacks into a blocking call with a configurable timeout, so that
-     * OpenAI Responses API can be used through the same uniform {@code ChatModel}
-     * interface as Anthropic and Gemini.
-     */
-    static class ResponsesSyncChatModel implements ChatModel {
-
-        private final StreamingChatModel delegate;
-        private final Duration timeout;
-
-        ResponsesSyncChatModel(StreamingChatModel delegate, Duration timeout) {
-            this.delegate = delegate;
-            this.timeout = timeout;
-        }
-
-        @Override
-        public ChatResponse chat(ChatRequest chatRequest) {
-            CompletableFuture<ChatResponse> future = new CompletableFuture<>();
-            delegate.chat(chatRequest, new StreamingChatResponseHandler() {
-                @Override
-                public void onCompleteResponse(ChatResponse chatResponse) {
-                    future.complete(chatResponse);
-                }
-
-                @Override
-                public void onError(Throwable error) {
-                    future.completeExceptionally(error);
-                }
-            });
-            try {
-                return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-            } catch (TimeoutException exception) {
-                future.cancel(true);
-                throw new IllegalStateException(
-                        "OpenAI Responses API timed out after " + timeout.toSeconds() + "s", exception);
-            } catch (InterruptedException exception) {
-                future.cancel(true);
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("OpenAI Responses API call interrupted", exception);
-            } catch (java.util.concurrent.ExecutionException exception) {
-                Throwable cause = exception.getCause();
-                if (cause instanceof RuntimeException runtimeException) {
-                    throw runtimeException;
-                }
-                throw new IllegalStateException("OpenAI Responses API call failed",
-                        cause != null ? cause : exception);
-            }
-        }
-    }
 }

@@ -1824,13 +1824,19 @@ class Langchain4jAdapterTest {
         assertTrue(error.getMessage().contains("Missing apiKey for Gemini provider"));
     }
 
-    // ===== Responses API streaming integration =====
+    // ===== Responses API integration =====
 
     @Test
-    void shouldRouteSyncChatThroughResponsesStreamingModel() throws Exception {
+    void shouldRouteSyncChatThroughOpenAiChatModel() throws Exception {
         String model = OPENAI + "/gpt-5.4";
-        StreamingChatModel streamingModel = mockStreamingModel("Hello from Responses API");
-        injectResponsesStreamingModel(model, null, streamingModel);
+        ChatModel mockModel = mock(ChatModel.class);
+        when(mockModel.chat(any(List.class))).thenReturn(
+                ChatResponse.builder()
+                        .aiMessage(AiMessage.from("Hello from OpenAI"))
+                        .tokenUsage(new TokenUsage(10, 5))
+                        .finishReason(FinishReason.STOP)
+                        .build());
+        injectChatModel(mockModel, model);
         setupResponsesApiProvider(model);
 
         LlmRequest request = LlmRequest.builder()
@@ -1841,14 +1847,26 @@ class Langchain4jAdapterTest {
         LlmResponse response = adapter.chat(request).get();
 
         assertNotNull(response);
-        assertEquals("Hello from Responses API", response.getContent());
+        assertEquals("Hello from OpenAI", response.getContent());
     }
 
     @Test
-    void shouldRouteSyncChatWithToolsThroughResponsesStreamingModel() throws Exception {
+    @SuppressWarnings(SUPPRESS_UNCHECKED)
+    void shouldRouteSyncChatWithToolsThroughOpenAiChatModel() throws Exception {
         String model = OPENAI + "/gpt-5.4";
-        StreamingChatModel streamingModel = mockStreamingModelWithToolCall("get_weather", "{\"city\":\"NYC\"}");
-        injectResponsesStreamingModel(model, null, streamingModel);
+        ChatModel mockModel = mock(ChatModel.class);
+        when(mockModel.chat(any(ChatRequest.class))).thenReturn(
+                ChatResponse.builder()
+                        .aiMessage(AiMessage.from(List.of(
+                                ToolExecutionRequest.builder()
+                                        .id("call_1")
+                                        .name("get_weather")
+                                        .arguments("{\"city\":\"NYC\"}")
+                                        .build())))
+                        .tokenUsage(new TokenUsage(10, 5))
+                        .finishReason(FinishReason.TOOL_EXECUTION)
+                        .build());
+        injectChatModel(mockModel, model);
         setupResponsesApiProvider(model);
 
         LlmRequest request = LlmRequest.builder()
@@ -1866,26 +1884,6 @@ class Langchain4jAdapterTest {
         assertNotNull(response);
         assertTrue(response.hasToolCalls());
         assertEquals("get_weather", response.getToolCalls().get(0).getName());
-    }
-
-    @Test
-    void shouldRouteSyncChatWithReasoningEffortThroughResponsesModel() throws Exception {
-        String model = OPENAI + "/gpt-5.4";
-        String reasoning = "high";
-        StreamingChatModel streamingModel = mockStreamingModel("Reasoned response");
-        injectResponsesStreamingModel(model, reasoning, streamingModel);
-        setupResponsesApiProvider(model);
-        when(modelConfig.isReasoningRequired(model)).thenReturn(true);
-
-        LlmRequest request = LlmRequest.builder()
-                .model(model)
-                .reasoningEffort(reasoning)
-                .messages(List.of(Message.builder().role(ROLE_USER).content("Think hard").build()))
-                .build();
-
-        LlmResponse response = adapter.chat(request).get();
-
-        assertEquals("Reasoned response", response.getContent());
     }
 
     @Test
@@ -1951,10 +1949,12 @@ class Langchain4jAdapterTest {
     }
 
     @Test
-    void shouldPropagateStreamingErrorInSyncChat() {
+    @SuppressWarnings(SUPPRESS_UNCHECKED)
+    void shouldPropagateSyncChatError() {
         String model = OPENAI + "/gpt-5.4";
-        StreamingChatModel streamingModel = mockStreamingModelWithError(new RuntimeException("API timeout"));
-        injectResponsesStreamingModel(model, null, streamingModel);
+        ChatModel mockModel = mock(ChatModel.class);
+        when(mockModel.chat(any(List.class))).thenThrow(new RuntimeException("API timeout"));
+        injectChatModel(mockModel, model);
         setupResponsesApiProvider(model);
 
         LlmRequest request = LlmRequest.builder()
@@ -1965,32 +1965,6 @@ class Langchain4jAdapterTest {
         ExecutionException ex = assertThrows(ExecutionException.class,
                 () -> adapter.chat(request).get());
         assertTrue(ex.getCause().getMessage().contains("API timeout"));
-    }
-
-    @Test
-    void shouldTimeoutSyncResponsesApiChatWhenStreamingNeverCompletes() {
-        String model = OPENAI + "/gpt-5.4";
-        StreamingChatModel streamingModel = mockStreamingModelWithoutTerminalEvent();
-        ChatModel syncWrapper = new Langchain4jAdapter.ResponsesSyncChatModel(
-                streamingModel, java.time.Duration.ofSeconds(1));
-        injectChatModel(syncWrapper, model);
-        when(modelConfig.getProvider(model)).thenReturn(OPENAI);
-        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
-                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
-                        .apiKey(Secret.of(KEY))
-                        .apiType(OPENAI)
-                        .requestTimeoutSeconds(1)
-                        .build());
-
-        LlmRequest request = LlmRequest.builder()
-                .model(model)
-                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
-                .build();
-
-        ExecutionException ex = assertTimeoutPreemptively(Duration.ofSeconds(2),
-                () -> assertThrows(ExecutionException.class, () -> adapter.chat(request).get()));
-
-        assertTrue(ex.getCause().getMessage().toLowerCase().contains("timed out"));
     }
 
     @Test
@@ -2047,17 +2021,17 @@ class Langchain4jAdapterTest {
     }
 
     @Test
-    void shouldUseCurrentModelForResponsesApiWhenRequestModelIsNull() throws Exception {
+    @SuppressWarnings(SUPPRESS_UNCHECKED)
+    void shouldUseCurrentModelForSyncChatWhenRequestModelIsNull() throws Exception {
         String model = OPENAI + "/gpt-5.4";
-        StreamingChatModel streamingModel = mockStreamingModel("default model response");
-        injectResponsesStreamingModel(model, null, streamingModel);
-
-        when(modelConfig.getProvider(model)).thenReturn(OPENAI);
-        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
-                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
-                        .apiKey(Secret.of(KEY))
-                        .apiType(OPENAI)
+        ChatModel mockModel = mock(ChatModel.class);
+        when(mockModel.chat(any(List.class))).thenReturn(
+                ChatResponse.builder()
+                        .aiMessage(AiMessage.from("default model response"))
+                        .tokenUsage(new TokenUsage(10, 5))
+                        .finishReason(FinishReason.STOP)
                         .build());
+        injectChatModel(mockModel, model);
 
         LlmRequest request = LlmRequest.builder()
                 .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
@@ -2071,6 +2045,8 @@ class Langchain4jAdapterTest {
     // ===== Responses streaming model helpers =====
 
     private void setupResponsesApiProvider(String model) {
+        ReflectionTestUtils.setField(adapter, "currentModel", model);
+        ReflectionTestUtils.setField(adapter, "initialized", true);
         when(modelConfig.getProvider(model)).thenReturn(OPENAI);
         when(runtimeConfigService.getLlmProviderConfig(OPENAI))
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
@@ -2082,9 +2058,6 @@ class Langchain4jAdapterTest {
     @SuppressWarnings(SUPPRESS_UNCHECKED)
     private void injectResponsesStreamingModel(String model, String reasoningEffort,
             StreamingChatModel streamingModel) {
-        ChatModel syncWrapper = new Langchain4jAdapter.ResponsesSyncChatModel(
-                streamingModel, java.time.Duration.ofSeconds(30));
-        injectChatModel(syncWrapper, model);
         Map<String, StreamingChatModel> cache = (Map<String, StreamingChatModel>) ReflectionTestUtils.getField(adapter,
                 "responsesStreamingModels");
         String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "");
