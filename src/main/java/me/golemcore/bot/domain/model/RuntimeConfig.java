@@ -52,6 +52,12 @@ public class RuntimeConfig {
     @Builder.Default
     private UpdateConfig update = new UpdateConfig();
 
+    /**
+     * Raw tracing config from persisted runtime-config JSON.
+     * <p><b>Warning:</b> do not use this directly for snapshot capture decisions —
+     * self-evolving overrides (forcePayloadCapture) are not applied here.
+     * Use {@code TraceRuntimeConfigSupport.resolve(runtimeConfigService)} instead.</p>
+     */
     @Builder.Default
     private TracingConfig tracing = new TracingConfig();
 

@@ -34,6 +34,7 @@ import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
 import me.golemcore.bot.domain.service.SessionService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.domain.service.TraceService;
@@ -267,8 +268,7 @@ public class LlmJudgeService {
 
     private void captureSnapshot(AgentSession session, TraceContext spanContext, String role, Object payload) {
         try {
-            RuntimeConfig runtimeConfig = runtimeConfigService.getRuntimeConfig();
-            RuntimeConfig.TracingConfig tracingConfig = runtimeConfig != null ? runtimeConfig.getTracing() : null;
+            RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
             if (tracingConfig == null || !Boolean.TRUE.equals(tracingConfig.getEnabled())) {
                 return;
             }
