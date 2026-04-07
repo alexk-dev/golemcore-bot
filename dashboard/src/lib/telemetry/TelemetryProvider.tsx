@@ -19,6 +19,7 @@ interface TelemetryProviderProps {
 
 const NOOP_RECORDER: TelemetryRecorder = {
   recordCounter: () => {},
+  recordKeyedCounter: () => {},
   recordCounterByRoute: () => {},
   recordUiError: () => {},
 };
@@ -74,8 +75,11 @@ export function TelemetryProvider({ enabled, children }: TelemetryProviderProps)
     recordCounter(key: string) {
       aggregatorRef.current?.recordCounter(key);
     },
+    recordKeyedCounter(key: string, value: string) {
+      aggregatorRef.current?.recordKeyedCounter(key, value);
+    },
     recordCounterByRoute(key: string, route: string) {
-      aggregatorRef.current?.recordCounterByRoute(key, route);
+      aggregatorRef.current?.recordKeyedCounter(key, route);
     },
     recordUiError(input: UiErrorInput) {
       aggregatorRef.current?.recordUiError(input);

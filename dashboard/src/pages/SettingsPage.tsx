@@ -1,4 +1,4 @@
-import { useDeferredValue, useState, type ReactElement } from 'react';
+import { useDeferredValue, useEffect, useState, type ReactElement } from 'react';
 import {
   Badge, Card, Button, Row, Col, Spinner, Placeholder, Form, InputGroup,
 } from 'react-bootstrap';
@@ -43,6 +43,7 @@ import {
   type SettingsSectionMeta,
 } from './settings/settingsCatalog';
 import { filterCatalogBlocks } from './settings/settingsCatalogSearch';
+import { useTelemetry } from '../lib/telemetry/TelemetryProvider';
 
 interface CatalogCardItem {
   key: string;
@@ -115,6 +116,7 @@ export default function SettingsPage(): ReactElement {
   const { data: pluginCatalog = [], isLoading: pluginCatalogLoading } = usePluginSettingsCatalog();
   const { data: pluginMarketplace } = usePluginMarketplace();
   const { data: me } = useMe();
+  const telemetry = useTelemetry();
   const qc = useQueryClient();
   const marketplaceBadge = buildMarketplaceBadge(pluginMarketplace);
   const installTacticEmbeddingModel = useInstallSelfEvolvingTacticEmbeddingModel();
@@ -140,6 +142,7 @@ export default function SettingsPage(): ReactElement {
         icon: FiPackage,
       }
       : null;
+  const selectedSectionKey = staticSection ?? pluginSection?.routeKey ?? 'catalog';
 
   const catalogBlocks: CatalogBlockView[] = (() => {
     const byKey = new Map<string, CatalogBlockView>();
@@ -202,6 +205,16 @@ export default function SettingsPage(): ReactElement {
   })();
   const filteredCatalogBlocks = filterCatalogBlocks(catalogBlocks, deferredCatalogSearch);
 
+  useEffect(() => {
+    telemetry.recordCounter('settings_open_count');
+  // Intentionally record one open per SettingsPage mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    telemetry.recordKeyedCounter('settings_section_views_by_key', selectedSectionKey);
+  }, [selectedSectionKey, telemetry]);
+
   if (settingsLoading || rcLoading || pluginCatalogLoading) {
     return (
       <div>
@@ -240,7 +253,10 @@ export default function SettingsPage(): ReactElement {
                   type="search"
                   placeholder="Search by name"
                   value={catalogSearch}
-                  onChange={(event) => setCatalogSearch(event.target.value)}
+                  onChange={(event) => {
+                    telemetry.recordCounter('settings_search_count');
+                    setCatalogSearch(event.target.value);
+                  }}
                 />
                 {catalogSearch.trim().length > 0 && (
                   <Button type="button" variant="outline-secondary" onClick={() => setCatalogSearch('')}>

@@ -47,6 +47,7 @@ export interface TelemetryStoreState {
 
 export interface TelemetryRecorder {
   recordCounter: (key: string) => void;
+  recordKeyedCounter: (key: string, value: string) => void;
   recordCounterByRoute: (key: string, route: string) => void;
   recordUiError: (input: UiErrorInput) => void;
 }

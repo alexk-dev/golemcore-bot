@@ -1,4 +1,4 @@
-import client from './client';
+import client, { type TelemetryRequestConfig } from './client';
 
 export interface ModelSettings {
   provider: string;
@@ -74,7 +74,13 @@ export async function resolveModelRegistryDefaults(
 }
 
 export async function saveModel(id: string, settings: ModelSettings): Promise<void> {
-  await client.post(`/models/${id}`, settings);
+  const telemetryConfig: TelemetryRequestConfig = {
+    _telemetry: {
+      counterKey: 'settings_save_count_by_section',
+      value: 'model-catalog',
+    },
+  };
+  await client.post(`/models/${id}`, settings, telemetryConfig);
 }
 
 export async function deleteModel(id: string): Promise<void> {

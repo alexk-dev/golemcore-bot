@@ -2,6 +2,7 @@ import type { TelemetryRecorder, UiErrorInput } from './telemetryTypes';
 
 const NOOP_RECORDER: TelemetryRecorder = {
   recordCounter: () => {},
+  recordKeyedCounter: () => {},
   recordCounterByRoute: () => {},
   recordUiError: () => {},
 };
@@ -20,8 +21,12 @@ export function recordTelemetryCounter(key: string): void {
   activeRecorder.recordCounter(key);
 }
 
+export function recordTelemetryKeyedCounter(key: string, value: string): void {
+  activeRecorder.recordKeyedCounter(key, value);
+}
+
 export function recordTelemetryCounterByRoute(key: string, route: string): void {
-  activeRecorder.recordCounterByRoute(key, route);
+  activeRecorder.recordKeyedCounter(key, route);
 }
 
 export function recordTelemetryError(input: UiErrorInput): void {

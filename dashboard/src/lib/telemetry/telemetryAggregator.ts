@@ -21,6 +21,7 @@ export interface TelemetryAggregatorOptions {
 
 export interface TelemetryAggregator {
   recordCounter: (key: string) => void;
+  recordKeyedCounter: (key: string, value: string) => void;
   recordCounterByRoute: (key: string, route: string) => void;
   recordUiError: (input: UiErrorInput) => void;
   collectReadyRollups: () => UiUsageRollup[];
@@ -176,6 +177,16 @@ export function createTelemetryAggregator(options: TelemetryAggregatorOptions = 
     persistState();
   }
 
+  function recordKeyedCounter(key: string, value: string): void {
+    rotateBuckets(now());
+    const normalizedValue = value.length > 0 ? value : 'unknown';
+    const bucket = state.currentBucket.usage.byRoute[key] ?? {};
+    const currentValue = bucket[normalizedValue] ?? 0;
+    bucket[normalizedValue] = currentValue + 1;
+    state.currentBucket.usage.byRoute[key] = bucket;
+    persistState();
+  }
+
   return {
     recordCounter(key: string) {
       rotateBuckets(now());
@@ -183,14 +194,9 @@ export function createTelemetryAggregator(options: TelemetryAggregatorOptions = 
       state.currentBucket.usage.counters[key] = currentValue + 1;
       persistState();
     },
+    recordKeyedCounter,
     recordCounterByRoute(key: string, route: string) {
-      rotateBuckets(now());
-      const normalizedRoute = route.length > 0 ? route : 'unknown';
-      const bucket = state.currentBucket.usage.byRoute[key] ?? {};
-      const currentValue = bucket[normalizedRoute] ?? 0;
-      bucket[normalizedRoute] = currentValue + 1;
-      state.currentBucket.usage.byRoute[key] = bucket;
-      persistState();
+      recordKeyedCounter(key, route);
     },
     recordUiError(input: UiErrorInput) {
       rotateBuckets(now());
