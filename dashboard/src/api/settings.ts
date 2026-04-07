@@ -81,6 +81,7 @@ interface RuntimeConfigUiRecord extends UnknownRecord {
   } & UnknownRecord;
   tools?: UnknownRecord;
   voice?: UnknownRecord;
+  telemetry?: unknown;
   hive?: UnknownRecord;
   selfEvolving?: unknown;
   modelRegistry?: unknown;
@@ -251,6 +252,7 @@ export interface RuntimeConfig {
   skills: SkillsConfig;
   turn: TurnConfig;
   usage: UsageConfig;
+  telemetry?: TelemetryConfig;
   mcp: McpConfig;
   plan: PlanConfig;
   hive: HiveConfig;
@@ -406,6 +408,10 @@ export interface VoiceConfig {
 }
 
 export interface UsageConfig {
+  enabled: boolean | null;
+}
+
+export interface TelemetryConfig {
   enabled: boolean | null;
 }
 
@@ -701,6 +707,11 @@ export async function updateTurnConfig(config: TurnConfig): Promise<RuntimeConfi
 
 export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/usage', config);
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateTelemetryConfig(config: TelemetryConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/telemetry', config);
   return toUiRuntimeConfig(data);
 }
 
