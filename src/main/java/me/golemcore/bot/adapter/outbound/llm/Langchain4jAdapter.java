@@ -31,6 +31,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -143,7 +144,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     }
 
     private final RuntimeConfigService runtimeConfigService;
-    private final ModelConfigService modelConfig;
+    private final ModelConfigPort modelConfig;
     private final ToolArtifactService toolArtifactService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 

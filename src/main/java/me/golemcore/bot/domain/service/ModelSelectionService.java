@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -44,7 +45,7 @@ import java.util.Map;
 public class ModelSelectionService {
 
     private final RuntimeConfigService runtimeConfigService;
-    private final ModelConfigService modelConfigService;
+    private final ModelConfigPort modelConfigService;
     private final UserPreferencesService preferencesService;
 
     /**

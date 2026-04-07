@@ -1,6 +1,8 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.domain.model.LlmRequest;
+import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.service.ModelRegistryService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
@@ -15,12 +17,15 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -284,5 +289,62 @@ class ModelsControllerTest {
 
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
         assertEquals("modelId is required", ex.getReason());
+    }
+
+    @Test
+    void shouldTestModelSuccessfully() {
+        // Arrange
+        LlmResponse llmResponse = LlmResponse.builder()
+                .content("I am GPT-5, version 5.0.")
+                .build();
+        when(llmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(llmResponse));
+
+        // Act
+        ResponseEntity<ModelsController.TestModelResponse> result = controller
+                .testModel(new ModelsController.TestModelRequest("gpt-5"))
+                .block();
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        ModelsController.TestModelResponse body = result.getBody();
+        assertNotNull(body);
+        assertTrue(body.success());
+        assertEquals("I am GPT-5, version 5.0.", body.reply());
+        assertNull(body.error());
+    }
+
+    @Test
+    void shouldReturnErrorWhenTestModelFails() {
+        // Arrange
+        CompletableFuture<LlmResponse> failedFuture = new CompletableFuture<>();
+        failedFuture.completeExceptionally(new RuntimeException("Connection refused"));
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(failedFuture);
+
+        // Act
+        ResponseEntity<ModelsController.TestModelResponse> result = controller
+                .testModel(new ModelsController.TestModelRequest("gpt-5"))
+                .block();
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        ModelsController.TestModelResponse body = result.getBody();
+        assertNotNull(body);
+        assertFalse(body.success());
+        assertNull(body.reply());
+        assertEquals("Connection refused", body.error());
+    }
+
+    @Test
+    void shouldRejectTestModelWithBlankModel() {
+        // Arrange & Act & Assert
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.testModel(new ModelsController.TestModelRequest("  ")).block());
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("model is required", ex.getReason());
+        verifyNoInteractions(llmPort);
     }
 }

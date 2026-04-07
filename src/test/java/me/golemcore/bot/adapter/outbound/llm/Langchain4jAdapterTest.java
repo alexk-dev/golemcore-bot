@@ -11,6 +11,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.Content;
@@ -83,14 +84,14 @@ class Langchain4jAdapterTest {
     private static final String TEST = "test";
     private static final String TEST_CAPITALIZED = "Test";
 
-    private ModelConfigService modelConfig;
+    private ModelConfigPort modelConfig;
     private RuntimeConfigService runtimeConfigService;
     private ToolArtifactService toolArtifactService;
     private Langchain4jAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        modelConfig = mock(ModelConfigService.class);
+        modelConfig = mock(ModelConfigPort.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         toolArtifactService = mock(ToolArtifactService.class);
         when(modelConfig.supportsTemperature(anyString())).thenReturn(true);
