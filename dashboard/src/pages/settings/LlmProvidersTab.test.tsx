@@ -49,6 +49,8 @@ describe('LlmProvidersTab', () => {
     );
 
     expect(html).toContain('LLM Providers');
+    expect(html).toContain('autocomplete-combobox__control');
+    expect(html).toContain('autocomplete-combobox__trigger');
     expect(html).toContain('role="combobox"');
     expect(html).toContain('openrouter');
     expect(html).toContain('Add Provider');
