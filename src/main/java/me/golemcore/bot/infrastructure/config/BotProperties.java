@@ -72,6 +72,7 @@ public class BotProperties {
     private PluginsProperties plugins = new PluginsProperties();
     private HiveProperties hive = new HiveProperties();
     private SelfEvolvingProperties selfEvolving = new SelfEvolvingProperties();
+    private TelemetryProperties telemetry = new TelemetryProperties();
 
     @Data
     public static class LlmProperties {
@@ -236,6 +237,13 @@ public class BotProperties {
         private String corsAllowedOrigins = "";
         private int webSocketMaxFramePayloadLength = 80 * 1024 * 1024;
         private LogsProperties logs = new LogsProperties();
+    }
+
+    @Data
+    public static class TelemetryProperties {
+        private String apiHost = "https://us.i.posthog.com";
+        private String apiKey = "";
+        private String projectId = "";
     }
 
     @Data

@@ -722,6 +722,15 @@ public class RuntimeConfigService {
         return val != null ? val : true;
     }
 
+    public boolean isTelemetryEnabled() {
+        RuntimeConfig.TelemetryConfig telemetryConfig = getRuntimeConfig().getTelemetry();
+        if (telemetryConfig == null) {
+            return true;
+        }
+        Boolean val = telemetryConfig.getEnabled();
+        return val != null ? val : true;
+    }
+
     // ==================== MCP ====================
 
     public boolean isMcpEnabled() {

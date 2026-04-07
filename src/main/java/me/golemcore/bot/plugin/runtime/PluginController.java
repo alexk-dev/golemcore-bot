@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
+import me.golemcore.bot.telemetry.TelemetryRollupStore;
 
 import java.util.List;
 import java.util.Map;
@@ -25,6 +26,7 @@ public class PluginController {
     private final PluginMarketplaceService pluginMarketplaceService;
     private final SttProviderRegistry sttProviderRegistry;
     private final TtsProviderRegistry ttsProviderRegistry;
+    private final TelemetryRollupStore telemetryRollupStore;
 
     @GetMapping
     public Mono<ResponseEntity<List<PluginRuntimeInfo>>> listPlugins() {
@@ -38,14 +40,16 @@ public class PluginController {
 
     @PostMapping("/marketplace/install")
     public Mono<ResponseEntity<PluginInstallResult>> installPlugin(@RequestBody PluginInstallRequest request) {
-        return Mono.just(ResponseEntity.ok(
-                pluginMarketplaceService.install(request.getPluginId(), request.getVersion())));
+        PluginInstallResult result = pluginMarketplaceService.install(request.getPluginId(), request.getVersion());
+        telemetryRollupStore.recordPluginInstall(request.getPluginId());
+        return Mono.just(ResponseEntity.ok(result));
     }
 
     @PostMapping("/marketplace/uninstall")
     public Mono<ResponseEntity<PluginUninstallResult>> uninstallPlugin(@RequestBody PluginUninstallRequest request) {
-        return Mono.just(ResponseEntity.ok(
-                pluginMarketplaceService.uninstall(request.getPluginId())));
+        PluginUninstallResult result = pluginMarketplaceService.uninstall(request.getPluginId());
+        telemetryRollupStore.recordPluginUninstall(request.getPluginId());
+        return Mono.just(ResponseEntity.ok(result));
     }
 
     @PostMapping("/reload")

@@ -574,6 +574,7 @@ class LlmCallPhase {
                         .traceSpanId(traceContext != null ? traceContext.getSpanId() : null)
                         .traceParentSpanId(traceContext != null ? traceContext.getParentSpanId() : null)
                         .traceRootKind(traceContext != null ? traceContext.getRootKind() : null)
+                        .modelTier(context != null ? normalizeTierForTrace(context.getModelTier()) : null)
                         .build();
             }
 
