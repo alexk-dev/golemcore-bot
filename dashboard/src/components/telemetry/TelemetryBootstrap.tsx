@@ -15,7 +15,7 @@ export function TelemetryBootstrap({ children }: TelemetryBootstrapProps): React
     return <>{children}</>;
   }
 
-  const enabled = runtimeConfig.telemetry?.enabled === true;
+  const enabled = runtimeConfig.telemetry?.enabled !== false;
 
   return (
     <TelemetryProvider enabled={enabled}>

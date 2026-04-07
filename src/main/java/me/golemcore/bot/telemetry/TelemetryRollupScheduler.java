@@ -3,6 +3,7 @@ package me.golemcore.bot.telemetry;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -14,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class TelemetryRollupScheduler {
 
     private final TelemetryRollupStore telemetryRollupStore;
@@ -67,8 +69,8 @@ public class TelemetryRollupScheduler {
     private void flushReadyRollupsSafely() {
         try {
             flushReadyRollupsNow();
-        } catch (Exception ignored) {
-            // Keep the scheduler resilient to transient telemetry delivery failures.
+        } catch (Exception exception) {
+            log.warn("Telemetry rollup flush failed: {}", exception.getMessage()); // NOSONAR
         }
     }
 

@@ -3,10 +3,9 @@ package me.golemcore.bot.telemetry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -19,9 +18,9 @@ import java.util.Map;
 import java.util.UUID;
 
 @Component
+@Slf4j
 public class TelemetryRollupStore {
 
-    private static final Logger log = LoggerFactory.getLogger(TelemetryRollupStore.class);
     private static final String STORAGE_DIRECTORY = "dashboard";
     private static final String INSTANCE_ID_PATH = "telemetry/backend-instance-id.txt";
 

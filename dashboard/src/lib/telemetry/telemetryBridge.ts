@@ -26,7 +26,7 @@ export function recordTelemetryKeyedCounter(key: string, value: string): void {
 }
 
 export function recordTelemetryCounterByRoute(key: string, route: string): void {
-  activeRecorder.recordKeyedCounter(key, route);
+  activeRecorder.recordCounterByRoute(key, route);
 }
 
 export function recordTelemetryError(input: UiErrorInput): void {

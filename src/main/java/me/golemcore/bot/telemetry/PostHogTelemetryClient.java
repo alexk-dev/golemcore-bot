@@ -2,6 +2,7 @@ package me.golemcore.bot.telemetry;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -16,6 +17,7 @@ import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class PostHogTelemetryClient {
 
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
@@ -25,9 +27,14 @@ public class PostHogTelemetryClient {
     private final BotProperties botProperties;
 
     public void capture(String eventName, String distinctId, Map<String, Object> properties) {
-        String apiHost = normalizeApiHost(botProperties.getTelemetry().getApiHost());
+        BotProperties.TelemetryProperties telemetry = botProperties.getTelemetry();
+        if (telemetry == null) {
+            log.warn("Telemetry configuration is not set, skipping PostHog capture for event: {}", eventName);
+            return;
+        }
+        String apiHost = normalizeApiHost(telemetry.getApiHost());
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("api_key", botProperties.getTelemetry().getApiKey());
+        payload.put("api_key", telemetry.getApiKey());
         payload.put("event", eventName);
         payload.put("distinct_id", distinctId);
         payload.put("properties", properties != null ? properties : Map.of());

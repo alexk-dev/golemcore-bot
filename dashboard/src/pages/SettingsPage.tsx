@@ -363,7 +363,7 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'skills' && rc != null && <SkillsTab config={rc.skills} />}
       {staticSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
       {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
-      {staticSection === 'telemetry' && rc != null && <TelemetryTab config={rc.telemetry ?? { enabled: false }} />}
+      {staticSection === 'telemetry' && rc != null && <TelemetryTab config={rc.telemetry ?? { enabled: true }} />}
       {staticSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
       {staticSection === 'hive' && rc != null && <HiveTab config={rc.hive} />}
       {staticSection === 'self-evolving' && rc != null && (

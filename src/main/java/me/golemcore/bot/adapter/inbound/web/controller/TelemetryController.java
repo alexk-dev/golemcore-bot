@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.TelemetryRollupRequest;
 import me.golemcore.bot.domain.model.telemetry.UiTelemetryRollup;
 import me.golemcore.bot.telemetry.UiTelemetryIngestService;
@@ -19,6 +20,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/telemetry")
 @RequiredArgsConstructor
+@Slf4j
 public class TelemetryController {
 
     private final UiTelemetryIngestService uiTelemetryIngestService;
@@ -26,7 +28,11 @@ public class TelemetryController {
     @PostMapping("/rollups")
     public Mono<ResponseEntity<Map<String, String>>> ingestRollup(@RequestBody TelemetryRollupRequest request) {
         try {
-            uiTelemetryIngestService.ingest(toUiTelemetryRollup(request));
+            UiTelemetryRollup rollup = toUiTelemetryRollup(request);
+            if (rollup == null) {
+                return Mono.just(ResponseEntity.badRequest().body(Map.of("error", "request body must not be null")));
+            }
+            uiTelemetryIngestService.ingest(rollup);
             return Mono.just(ResponseEntity.accepted().body(Map.of("status", "accepted")));
         } catch (IllegalArgumentException exception) {
             return Mono.just(ResponseEntity.badRequest().body(Map.of("error", exception.getMessage())));
