@@ -71,6 +71,8 @@ public class LlmJudgeService {
             3. Recommend a rollout action: "approve_gated", "reject", or "observe".
             4. Anchor every claim to specific spanIds from the trace digest.
 
+            Always respond in English regardless of the user's language.
+
             Return only valid JSON matching the RunVerdict schema:
             {"outcomeStatus":"COMPLETED|FAILED|PARTIAL","outcomeSummary":"...","confidence":0.0-1.0,\
             "promotionRecommendation":"approve_gated|reject|observe",\
@@ -89,6 +91,8 @@ public class LlmJudgeService {
             4. Identify process anti-patterns: tool loops, excessive errors, wasted LLM calls, timeout patterns.
             5. List each finding as a processFindings entry (e.g., "tool_churn:shell", "tier_overuse:deep").
 
+            Always respond in English regardless of the user's language.
+
             Return only valid JSON matching the RunVerdict schema:
             {"processStatus":"EFFICIENT|ISSUES_FOUND|INEFFICIENT","processSummary":"...","confidence":0.0-1.0,\
             "evidenceRefs":[{"traceId":"...","spanId":"...","outputFragment":"..."}],\
@@ -103,6 +107,8 @@ public class LlmJudgeService {
             2. Re-examine the trace evidence where judges conflict.
             3. Produce a final verdict that is internally consistent.
             4. Keep evidenceRefs anchored to specific spanIds from the trace.
+
+            Always respond in English regardless of the user's language.
 
             Return only valid JSON matching the RunVerdict schema.
             """;
