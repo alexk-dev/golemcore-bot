@@ -91,6 +91,22 @@ public class TelemetryRollupStore {
         return rollups;
     }
 
+    public synchronized void restoreReadyRollups(List<BackendRollup> rollups) {
+        if (rollups == null || rollups.isEmpty()) {
+            return;
+        }
+        List<BackendRollup> restored = new ArrayList<>();
+        for (BackendRollup rollup : rollups) {
+            if (rollup != null && rollup.hasData()) {
+                restored.add(rollup.copy());
+            }
+        }
+        if (restored.isEmpty()) {
+            return;
+        }
+        readyBuckets.addAll(0, restored);
+    }
+
     private void recordPluginCounter(String kind, String key) {
         if (!runtimeConfigService.isTelemetryEnabled()) {
             return;

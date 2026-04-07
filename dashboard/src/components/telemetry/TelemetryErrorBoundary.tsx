@@ -1,6 +1,10 @@
 import React, { type ReactElement, type ReactNode } from 'react';
 
 import { useTelemetry } from '../../lib/telemetry/TelemetryProvider';
+import {
+  sanitizeTelemetryErrorName,
+  sanitizeTelemetryRoute,
+} from '../../lib/telemetry/telemetrySanitizers';
 import type { UiErrorInput } from '../../lib/telemetry/telemetryTypes';
 
 interface TelemetryErrorBoundaryProps {
@@ -29,13 +33,11 @@ class TelemetryErrorBoundaryInner extends React.Component<
     return { hasError: true };
   }
 
-  public componentDidCatch(error: Error, info: React.ErrorInfo): void {
+  public componentDidCatch(error: Error): void {
     this.props.onError({
-      route: typeof window !== 'undefined' ? window.location.pathname : null,
-      errorName: error.name,
-      message: error.message,
+      route: typeof window !== 'undefined' ? sanitizeTelemetryRoute(window.location.pathname) : 'unknown',
+      errorName: sanitizeTelemetryErrorName(error.name),
       source: 'react',
-      componentStack: info.componentStack || null,
     });
   }
 

@@ -12,6 +12,12 @@ import {
   readTelemetryStore,
   writeTelemetryStore,
 } from './telemetryStorage';
+import {
+  createTelemetryErrorFingerprint,
+  sanitizeTelemetryErrorName,
+  sanitizeTelemetryRoute,
+  sanitizeTelemetrySource,
+} from './telemetrySanitizers';
 
 export interface TelemetryAggregatorOptions {
   now?: () => Date;
@@ -104,15 +110,6 @@ function hasBucketData(bucket: UiTelemetryBucketState): boolean {
   return counters || routes || bucket.errors.groups.length > 0;
 }
 
-function createFingerprint(input: UiErrorInput): string {
-  return [
-    input.source,
-    input.route ?? 'unknown',
-    input.errorName,
-    input.message,
-  ].join('|');
-}
-
 function toRollup(bucket: UiTelemetryBucketState, anonymousId: string, release: string | null): UiUsageRollup {
   return {
     anonymousId,
@@ -143,6 +140,52 @@ function cloneBucket(bucket: UiTelemetryBucketState): UiTelemetryBucketState {
   };
 }
 
+function sanitizeBucket(bucket: UiTelemetryBucketState): UiTelemetryBucketState {
+  const sanitizedUsageByRoute = Object.fromEntries(
+    Object.entries(bucket.usage.byRoute).map(([key, values]) => {
+      const sanitizedValues = Object.entries(values).reduce<Record<string, number>>((accumulator, [value, count]) => {
+        const sanitizedValue = key === 'route_view_count'
+          ? sanitizeTelemetryRoute(value)
+          : (value.length > 0 ? value : 'unknown');
+        accumulator[sanitizedValue] = (accumulator[sanitizedValue] ?? 0) + count;
+        return accumulator;
+      }, {});
+      return [key, sanitizedValues];
+    }),
+  );
+
+  const sanitizedErrorGroups = Object.values(
+    bucket.errors.groups.reduce<Record<string, UiTelemetryBucketState['errors']['groups'][number]>>((groups, group) => {
+      const fingerprint = createTelemetryErrorFingerprint(group.source, group.route, group.errorName);
+      const existingGroup = groups[fingerprint];
+      if (existingGroup != null) {
+        existingGroup.count += group.count;
+        return groups;
+      }
+
+      groups[fingerprint] = {
+        route: sanitizeTelemetryRoute(group.route),
+        errorName: sanitizeTelemetryErrorName(group.errorName),
+        source: sanitizeTelemetrySource(group.source),
+        fingerprint,
+        count: group.count,
+      };
+      return groups;
+    }, {}),
+  );
+
+  return {
+    ...bucket,
+    usage: {
+      counters: { ...bucket.usage.counters },
+      byRoute: sanitizedUsageByRoute,
+    },
+    errors: {
+      groups: sanitizedErrorGroups,
+    },
+  };
+}
+
 function createInitialState(now: Date): TelemetryStoreState {
   return {
     anonymousId: createAnonymousTelemetryId(),
@@ -151,12 +194,20 @@ function createInitialState(now: Date): TelemetryStoreState {
   };
 }
 
+function sanitizeStoredState(state: TelemetryStoreState): TelemetryStoreState {
+  return {
+    anonymousId: state.anonymousId,
+    currentBucket: sanitizeBucket(state.currentBucket),
+    readyBuckets: state.readyBuckets.map((bucket) => sanitizeBucket(bucket)),
+  };
+}
+
 export function createTelemetryAggregator(options: TelemetryAggregatorOptions = {}): TelemetryAggregator {
   const now = options.now ?? (() => new Date());
   const storage = resolveStorage(options.storage);
   const release = options.release ?? null;
 
-  let state = readTelemetryStore(storage) ?? createInitialState(now());
+  let state = sanitizeStoredState(readTelemetryStore(storage) ?? createInitialState(now()));
   writeTelemetryStore(storage, state);
 
   function persistState(): void {
@@ -196,11 +247,11 @@ export function createTelemetryAggregator(options: TelemetryAggregatorOptions = 
     },
     recordKeyedCounter,
     recordCounterByRoute(key: string, route: string) {
-      recordKeyedCounter(key, route);
+      recordKeyedCounter(key, sanitizeTelemetryRoute(route));
     },
     recordUiError(input: UiErrorInput) {
       rotateBuckets(now());
-      const fingerprint = createFingerprint(input);
+      const fingerprint = createTelemetryErrorFingerprint(input.source, input.route, input.errorName);
       const currentGroup = state.currentBucket.errors.groups.find((group) => group.fingerprint === fingerprint);
       if (currentGroup != null) {
         currentGroup.count += 1;
@@ -208,9 +259,9 @@ export function createTelemetryAggregator(options: TelemetryAggregatorOptions = 
         return;
       }
       state.currentBucket.errors.groups.push({
-        ...input,
-        route: input.route,
-        componentStack: input.componentStack ?? null,
+        route: sanitizeTelemetryRoute(input.route),
+        errorName: sanitizeTelemetryErrorName(input.errorName),
+        source: sanitizeTelemetrySource(input.source),
         fingerprint,
         count: 1,
       });

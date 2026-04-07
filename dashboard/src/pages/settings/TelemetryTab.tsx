@@ -42,7 +42,7 @@ function DisableTelemetryModal({
           product development.
         </p>
         <p className="mb-0 text-body-secondary small">
-          Only anonymous, aggregated product statistics and UI error summaries are sent.
+          Only anonymous, aggregated product statistics and grouped UI error summaries are sent.
         </p>
       </Modal.Body>
       <Modal.Footer>
@@ -90,8 +90,8 @@ export default function TelemetryTab({ config }: TelemetryTabProps): ReactElemen
           <Alert variant="info" className="mb-3">
             <div className="fw-semibold mb-1">All data is anonymous.</div>
             <div className="small">
-              Only aggregated product statistics and UI error summaries are sent to help improve the
-              product, reliability, and overall quality.
+              Only aggregated product statistics and grouped UI error summaries are sent to help
+              improve the product, reliability, and overall quality.
             </div>
           </Alert>
           <p className="text-body-secondary small mb-3">

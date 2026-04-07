@@ -6,12 +6,15 @@ export type UiErrorSource = 'react' | 'window' | 'unhandledrejection';
 export interface UiErrorInput {
   route: string | null;
   errorName: string;
-  message: string;
   source: UiErrorSource;
+  message?: string;
   componentStack?: string | null;
 }
 
-export interface UiErrorGroup extends UiErrorInput {
+export interface UiErrorGroup {
+  route: string;
+  errorName: string;
+  source: string;
   fingerprint: string;
   count: number;
 }

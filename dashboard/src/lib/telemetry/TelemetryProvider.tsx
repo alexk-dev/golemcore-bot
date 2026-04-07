@@ -10,6 +10,10 @@ import {
 import { postTelemetryRollup } from '../../api/telemetry';
 import { createTelemetryAggregator, type TelemetryAggregator } from './telemetryAggregator';
 import { clearTelemetryRecorder, setTelemetryRecorder } from './telemetryBridge';
+import {
+  sanitizeTelemetryErrorName,
+  sanitizeTelemetryRoute,
+} from './telemetrySanitizers';
 import type { TelemetryRecorder, UiErrorInput } from './telemetryTypes';
 
 interface TelemetryProviderProps {
@@ -26,30 +30,26 @@ const NOOP_RECORDER: TelemetryRecorder = {
 
 const TelemetryContext = createContext<TelemetryRecorder>(NOOP_RECORDER);
 
-function normalizeUnknownError(reason: unknown): { errorName: string; message: string } {
+function normalizeUnknownError(reason: unknown): { errorName: string } {
   if (reason instanceof Error) {
     return {
       errorName: reason.name,
-      message: reason.message,
     };
   }
   if (typeof reason === 'string') {
     return {
       errorName: 'UnhandledRejection',
-      message: reason,
     };
   }
   return {
     errorName: 'UnhandledRejection',
-    message: 'Unknown rejection reason',
   };
 }
 
 function buildWindowErrorPayload(event: ErrorEvent): UiErrorInput {
   return {
-    route: window.location.pathname,
-    errorName: event.error instanceof Error ? event.error.name : 'WindowError',
-    message: event.message,
+    route: sanitizeTelemetryRoute(window.location.pathname),
+    errorName: sanitizeTelemetryErrorName(event.error instanceof Error ? event.error.name : 'WindowError'),
     source: 'window',
   };
 }
@@ -57,9 +57,8 @@ function buildWindowErrorPayload(event: ErrorEvent): UiErrorInput {
 function buildRejectionPayload(event: PromiseRejectionEvent): UiErrorInput {
   const normalized = normalizeUnknownError(event.reason);
   return {
-    route: window.location.pathname,
-    errorName: normalized.errorName,
-    message: normalized.message,
+    route: sanitizeTelemetryRoute(window.location.pathname),
+    errorName: sanitizeTelemetryErrorName(normalized.errorName),
     source: 'unhandledrejection',
   };
 }
@@ -79,7 +78,7 @@ export function TelemetryProvider({ enabled, children }: TelemetryProviderProps)
       aggregatorRef.current?.recordKeyedCounter(key, value);
     },
     recordCounterByRoute(key: string, route: string) {
-      aggregatorRef.current?.recordKeyedCounter(key, route);
+      aggregatorRef.current?.recordCounterByRoute(key, route);
     },
     recordUiError(input: UiErrorInput) {
       aggregatorRef.current?.recordUiError(input);
@@ -111,13 +110,14 @@ export function TelemetryProvider({ enabled, children }: TelemetryProviderProps)
         return;
       }
 
+      let nextRollupIndex = 0;
       try {
-        for (const rollup of rollups) {
-          await postTelemetryRollup(rollup);
+        for (; nextRollupIndex < rollups.length; nextRollupIndex += 1) {
+          await postTelemetryRollup(rollups[nextRollupIndex]);
         }
       } catch (error) {
         console.error('Failed to send telemetry rollups', error);
-        aggregatorRef.current?.restoreReadyRollups(rollups);
+        aggregatorRef.current?.restoreReadyRollups(rollups.slice(nextRollupIndex));
       }
     }
 

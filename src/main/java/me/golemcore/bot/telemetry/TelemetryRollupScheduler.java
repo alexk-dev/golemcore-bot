@@ -38,18 +38,28 @@ public class TelemetryRollupScheduler {
     public void flushReadyRollupsNow() {
         String distinctId = "backend:" + telemetryRollupStore.getAnonymousInstanceId();
         List<TelemetryRollupStore.BackendRollup> rollups = telemetryRollupStore.collectReadyRollups();
-        for (TelemetryRollupStore.BackendRollup rollup : rollups) {
-            if (!rollup.getModelUsage().isEmpty()) {
-                telemetryEventPublisher.publishAnonymousEvent("model_usage_rollup", distinctId,
-                        buildProperties(rollup, "models", rollup.getModelUsage()));
-            }
-            if (!rollup.getTierUsage().isEmpty()) {
-                telemetryEventPublisher.publishAnonymousEvent("tier_usage_rollup", distinctId,
-                        buildProperties(rollup, "tiers", rollup.getTierUsage()));
-            }
-            if (!rollup.getPluginUsage().isEmpty()) {
-                telemetryEventPublisher.publishAnonymousEvent("plugin_usage_rollup", distinctId,
-                        buildProperties(rollup, "plugin_counters", rollup.getPluginUsage()));
+        for (int rollupIndex = 0; rollupIndex < rollups.size(); rollupIndex++) {
+            TelemetryRollupStore.BackendRollup rollup = rollups.get(rollupIndex);
+            TelemetryRollupStore.BackendRollup pendingRollup = rollup.copy();
+            try {
+                if (!rollup.getModelUsage().isEmpty()) {
+                    telemetryEventPublisher.publishAnonymousEvent("model_usage_rollup", distinctId,
+                            buildProperties(rollup, "models", rollup.getModelUsage()));
+                    pendingRollup.getModelUsage().clear();
+                }
+                if (!rollup.getTierUsage().isEmpty()) {
+                    telemetryEventPublisher.publishAnonymousEvent("tier_usage_rollup", distinctId,
+                            buildProperties(rollup, "tiers", rollup.getTierUsage()));
+                    pendingRollup.getTierUsage().clear();
+                }
+                if (!rollup.getPluginUsage().isEmpty()) {
+                    telemetryEventPublisher.publishAnonymousEvent("plugin_usage_rollup", distinctId,
+                            buildProperties(rollup, "plugin_counters", rollup.getPluginUsage()));
+                    pendingRollup.getPluginUsage().clear();
+                }
+            } catch (RuntimeException exception) {
+                telemetryRollupStore.restoreReadyRollups(buildUnsentRollups(rollups, pendingRollup, rollupIndex + 1));
+                throw exception;
             }
         }
     }
@@ -60,6 +70,20 @@ public class TelemetryRollupScheduler {
         } catch (Exception ignored) {
             // Keep the scheduler resilient to transient telemetry delivery failures.
         }
+    }
+
+    private List<TelemetryRollupStore.BackendRollup> buildUnsentRollups(
+            List<TelemetryRollupStore.BackendRollup> originalRollups,
+            TelemetryRollupStore.BackendRollup pendingRollup,
+            int remainingStartIndex) {
+        List<TelemetryRollupStore.BackendRollup> unsentRollups = new java.util.ArrayList<>();
+        if (pendingRollup.hasData()) {
+            unsentRollups.add(pendingRollup);
+        }
+        for (int index = remainingStartIndex; index < originalRollups.size(); index++) {
+            unsentRollups.add(originalRollups.get(index).copy());
+        }
+        return unsentRollups;
     }
 
     private Map<String, Object> buildProperties(TelemetryRollupStore.BackendRollup rollup, String key, Object value) {

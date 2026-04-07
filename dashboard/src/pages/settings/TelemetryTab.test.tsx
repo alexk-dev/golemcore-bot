@@ -98,7 +98,7 @@ describe('TelemetryTab', () => {
 
     expect(view.container.textContent).toContain('Enable anonymous telemetry');
     expect(view.container.textContent).toContain('All data is anonymous');
-    expect(view.container.textContent).toContain('Only aggregated product statistics and UI error summaries are sent');
+    expect(view.container.textContent).toContain('Only aggregated product statistics and grouped UI error summaries are sent');
 
     view.unmount();
   });

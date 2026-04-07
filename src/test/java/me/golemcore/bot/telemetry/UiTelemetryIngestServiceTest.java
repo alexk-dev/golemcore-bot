@@ -57,7 +57,9 @@ class UiTelemetryIngestServiceTest {
                     return counters instanceof Map<?, ?> counterMap
                             && keyedCounters instanceof Map<?, ?> keyedCounterMap
                             && counterMap.get("settings_open_count").equals(2L)
-                            && keyedCounterMap.containsKey("settings_section_views_by_key");
+                            && keyedCounterMap.containsKey("settings_section_views_by_key")
+                            && keyedCounterMap.get("route_view_count") instanceof Map<?, ?> routeViewCount
+                            && routeViewCount.get("/sessions/:id").equals(1L);
                 }));
 
         verify(publisher).publishAnonymousEvent(
@@ -72,7 +74,8 @@ class UiTelemetryIngestServiceTest {
                     if (!(first instanceof Map<?, ?> firstGroup)) {
                         return false;
                     }
-                    return firstGroup.get("fingerprint").equals("window|/settings|TypeError|Boom")
+                    return firstGroup.get("fingerprint").equals("window|/sessions/:id|TypeError")
+                            && firstGroup.get("route").equals("/sessions/:id")
                             && firstGroup.get("count").equals(3L)
                             && !firstGroup.containsKey("message")
                             && !firstGroup.containsKey("componentStack");
@@ -100,14 +103,16 @@ class UiTelemetryIngestServiceTest {
         TelemetryRollupRequest.Usage usage = new TelemetryRollupRequest.Usage();
         usage.setCounters(new LinkedHashMap<>(Map.of("settings_open_count", 2L)));
         usage.setByRoute(new LinkedHashMap<>(Map.of(
-                "settings_section_views_by_key", new LinkedHashMap<>(Map.of("telemetry", 1L)))));
+                "settings_section_views_by_key", new LinkedHashMap<>(Map.of("telemetry", 1L)),
+                "route_view_count",
+                new LinkedHashMap<>(Map.of("/sessions/123e4567-e89b-12d3-a456-426614174000", 1L)))));
         request.setUsage(usage);
 
         TelemetryRollupRequest.ErrorGroup errorGroup = new TelemetryRollupRequest.ErrorGroup();
-        errorGroup.setFingerprint("window|/settings|TypeError|Boom");
-        errorGroup.setRoute("/settings");
+        errorGroup.setFingerprint("spoofed");
+        errorGroup.setRoute("/sessions/123e4567-e89b-12d3-a456-426614174000");
         errorGroup.setErrorName("TypeError");
-        errorGroup.setMessage("Boom");
+        errorGroup.setMessage("prompt: tell me my secrets");
         errorGroup.setSource("window");
         errorGroup.setComponentStack("at TelemetryTab");
         errorGroup.setCount(3);

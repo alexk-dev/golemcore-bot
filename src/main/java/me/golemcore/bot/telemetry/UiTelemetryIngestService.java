@@ -80,10 +80,14 @@ public class UiTelemetryIngestService {
                 continue;
             }
             Map<String, Object> errorGroup = new LinkedHashMap<>();
-            putIfNotBlank(errorGroup, "fingerprint", group.getFingerprint());
-            putIfNotBlank(errorGroup, "route", group.getRoute());
-            putIfNotBlank(errorGroup, "error_name", group.getErrorName());
-            putIfNotBlank(errorGroup, "source", group.getSource());
+            String sanitizedRoute = TelemetrySanitizer.sanitizeRoute(group.getRoute());
+            String sanitizedErrorName = TelemetrySanitizer.sanitizeErrorName(group.getErrorName());
+            String sanitizedSource = TelemetrySanitizer.sanitizeErrorSource(group.getSource());
+            errorGroup.put("fingerprint",
+                    TelemetrySanitizer.createUiErrorFingerprint(sanitizedSource, sanitizedRoute, sanitizedErrorName));
+            errorGroup.put("route", sanitizedRoute);
+            errorGroup.put("error_name", sanitizedErrorName);
+            errorGroup.put("source", sanitizedSource);
             errorGroup.put("count", group.getCount().longValue());
             errorGroups.add(errorGroup);
         }
@@ -129,7 +133,8 @@ public class UiTelemetryIngestService {
                 if (valueKey == null || valueKey.isBlank() || count == null || count <= 0) {
                     return;
                 }
-                sanitizedValues.put(valueKey.trim(), count);
+                String sanitizedValueKey = TelemetrySanitizer.sanitizeUsageValue(key.trim(), valueKey);
+                sanitizedValues.merge(sanitizedValueKey, count, Long::sum);
             });
             if (!sanitizedValues.isEmpty()) {
                 sanitized.put(key.trim(), sanitizedValues);
