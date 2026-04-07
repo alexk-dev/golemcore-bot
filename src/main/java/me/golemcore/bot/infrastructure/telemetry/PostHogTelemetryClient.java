@@ -3,7 +3,6 @@ package me.golemcore.bot.infrastructure.telemetry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -21,20 +20,15 @@ import java.util.Map;
 public class PostHogTelemetryClient {
 
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
+    private static final String POSTHOG_API_HOST = "https://us.i.posthog.com";
+    private static final String POSTHOG_PROJECT_TOKEN = "phc_xHNGFVgA7U95Ec6nFg56cWNNbUHxDtMTpy8BXnjQRSP5";
 
     private final OkHttpClient okHttpClient;
     private final ObjectMapper objectMapper;
-    private final BotProperties botProperties;
 
     public void capture(String eventName, String distinctId, Map<String, Object> properties) {
-        BotProperties.TelemetryProperties telemetry = botProperties.getTelemetry();
-        if (telemetry == null) {
-            log.warn("Telemetry configuration is not set, skipping PostHog capture for event: {}", eventName);
-            return;
-        }
-        String apiHost = normalizeApiHost(telemetry.getApiHost());
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("api_key", telemetry.getApiKey());
+        payload.put("api_key", POSTHOG_PROJECT_TOKEN);
         payload.put("event", eventName);
         payload.put("distinct_id", distinctId);
         payload.put("properties", properties != null ? properties : Map.of());
@@ -42,7 +36,7 @@ public class PostHogTelemetryClient {
         try {
             RequestBody body = RequestBody.create(objectMapper.writeValueAsString(payload), JSON_MEDIA_TYPE);
             Request request = new Request.Builder()
-                    .url(apiHost + "/capture/")
+                    .url(POSTHOG_API_HOST + "/capture/")
                     .header("Content-Type", "application/json; charset=utf-8")
                     .post(body)
                     .build();
@@ -56,10 +50,4 @@ public class PostHogTelemetryClient {
         }
     }
 
-    private String normalizeApiHost(String apiHost) {
-        if (apiHost == null || apiHost.isBlank()) {
-            return "https://us.i.posthog.com";
-        }
-        return apiHost.endsWith("/") ? apiHost.substring(0, apiHost.length() - 1) : apiHost;
-    }
 }

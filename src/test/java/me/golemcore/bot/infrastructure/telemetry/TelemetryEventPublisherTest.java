@@ -1,7 +1,6 @@
 package me.golemcore.bot.infrastructure.telemetry;
 
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -21,22 +20,19 @@ import static org.mockito.Mockito.when;
 class TelemetryEventPublisherTest {
 
     private RuntimeConfigService runtimeConfigService;
-    private BotProperties botProperties;
     private PostHogTelemetryClient postHogTelemetryClient;
     private TelemetryEventPublisher publisher;
 
     @BeforeEach
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
-        botProperties = new BotProperties();
         postHogTelemetryClient = mock(PostHogTelemetryClient.class);
-        publisher = new TelemetryEventPublisher(runtimeConfigService, botProperties, postHogTelemetryClient);
+        publisher = new TelemetryEventPublisher(runtimeConfigService, postHogTelemetryClient);
     }
 
     @Test
     void shouldSkipPublishingWhenTelemetryIsDisabled() {
         when(runtimeConfigService.isTelemetryEnabled()).thenReturn(false);
-        botProperties.getTelemetry().setApiKey("phc_test_key");
 
         publisher.publishAnonymousEvent("ui_usage_rollup", "ui:anon-123", Map.of("bucket_minutes", 15));
 
@@ -44,12 +40,11 @@ class TelemetryEventPublisherTest {
     }
 
     @Test
-    void shouldSkipPublishingWhenIdentifiersOrApiKeyAreBlank() {
+    void shouldSkipPublishingWhenIdentifiersAreBlank() {
         when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
 
         publisher.publishAnonymousEvent(" ", "ui:anon-123", Map.of());
         publisher.publishAnonymousEvent("ui_usage_rollup", " ", Map.of());
-        publisher.publishAnonymousEvent("ui_usage_rollup", "ui:anon-123", Map.of());
 
         verify(postHogTelemetryClient, never()).capture(eq("ui_usage_rollup"), eq("ui:anon-123"), anyMap());
     }
@@ -57,7 +52,6 @@ class TelemetryEventPublisherTest {
     @Test
     void shouldForwardPropertiesWithGeoIpDisabledWithoutMutatingInput() {
         when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
-        botProperties.getTelemetry().setApiKey("phc_test_key");
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("bucket_minutes", 15);
 

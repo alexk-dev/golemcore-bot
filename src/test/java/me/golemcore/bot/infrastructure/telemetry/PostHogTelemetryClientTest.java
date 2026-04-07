@@ -1,7 +1,6 @@
 package me.golemcore.bot.infrastructure.telemetry;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import okhttp3.Call;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -26,7 +25,6 @@ class PostHogTelemetryClientTest {
 
     private OkHttpClient okHttpClient;
     private Call call;
-    private BotProperties properties;
     private PostHogTelemetryClient client;
 
     @BeforeEach
@@ -35,12 +33,7 @@ class PostHogTelemetryClientTest {
         call = mock(Call.class);
         when(okHttpClient.newCall(any(Request.class))).thenReturn(call);
 
-        properties = new BotProperties();
-        properties.getTelemetry().setApiHost("https://us.i.posthog.com");
-        properties.getTelemetry().setApiKey("phc_test_key");
-        properties.getTelemetry().setProjectId("371821");
-
-        client = new PostHogTelemetryClient(okHttpClient, new ObjectMapper(), properties);
+        client = new PostHogTelemetryClient(okHttpClient, new ObjectMapper());
     }
 
     @Test
@@ -65,7 +58,7 @@ class PostHogTelemetryClientTest {
         String json = buffer.readUtf8();
         org.junit.jupiter.api.Assertions.assertTrue(json.contains("\"event\":\"ui_usage_rollup\""));
         org.junit.jupiter.api.Assertions.assertTrue(json.contains("\"distinct_id\":\"ui:anon-123\""));
-        org.junit.jupiter.api.Assertions.assertTrue(json.contains("\"api_key\":\"phc_test_key\""));
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("\"api_key\":\"phc_"));
     }
 
     @Test
