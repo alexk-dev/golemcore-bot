@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.selfevolving.benchmark;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
@@ -27,19 +28,27 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
+import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionService;
+import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.StringValueSupport;
 
 /**
  * Runs outcome and process judges on top of the existing LLM port and model
@@ -91,21 +100,29 @@ public class LlmJudgeService {
             Return only JSON matching the RunVerdict schema.
             """;
 
+    private static final String JUDGE_CHANNEL_TYPE = "judge";
+
     private final LlmPort llmPort;
     private final JudgeTierResolver judgeTierResolver;
     private final JudgeTraceDigestService judgeTraceDigestService;
     private final RuntimeConfigService runtimeConfigService;
+    private final SessionService sessionService;
+    private final TraceService traceService;
     private final ObjectMapper objectMapper;
 
     public LlmJudgeService(
             LlmPort llmPort,
             JudgeTierResolver judgeTierResolver,
             JudgeTraceDigestService judgeTraceDigestService,
-            RuntimeConfigService runtimeConfigService) {
+            RuntimeConfigService runtimeConfigService,
+            SessionService sessionService,
+            TraceService traceService) {
         this.llmPort = llmPort;
         this.judgeTierResolver = judgeTierResolver;
         this.judgeTraceDigestService = judgeTraceDigestService;
         this.runtimeConfigService = runtimeConfigService;
+        this.sessionService = sessionService;
+        this.traceService = traceService;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.findAndRegisterModules();
     }
@@ -167,32 +184,81 @@ public class LlmJudgeService {
             TraceRecord traceRecord,
             RunVerdict seedVerdict) throws InterruptedException, ExecutionException {
         String runId = runRecord != null ? runRecord.getId() : "unknown";
-        String judgeSessionId = "judge_" + judgeType + "_" + runId;
+        String chatId = "judge_" + judgeType + "_" + runId;
         String parentTraceId = runRecord != null ? runRecord.getTraceId() : null;
+
+        AgentSession judgeSession = sessionService.getOrCreate(JUDGE_CHANNEL_TYPE, chatId);
+        Instant now = Instant.now();
+        Map<String, Object> traceAttributes = new LinkedHashMap<>();
+        traceAttributes.put("judge.type", judgeType);
+        traceAttributes.put("judge.model", selection.model());
+        traceAttributes.put("judge.run_id", runId);
+        if (parentTraceId != null) {
+            traceAttributes.put("judge.parent_trace_id", parentTraceId);
+        }
+        TraceContext rootTrace = traceService.startRootTrace(judgeSession,
+                "judge:" + judgeType, TraceSpanKind.LLM, now, traceAttributes);
+
         log.debug("[SelfEvolving] Starting {} judge in session {} (parent trace: {})",
-                judgeType, judgeSessionId, parentTraceId);
+                judgeType, judgeSession.getId(), parentTraceId);
+
+        String prompt = buildPrompt(judgeType, runRecord, traceRecord, seedVerdict);
         LlmRequest request = LlmRequest.builder()
                 .model(selection.model())
                 .reasoningEffort(selection.reasoning())
                 .systemPrompt(resolveSystemPrompt(judgeType))
                 .messages(List.of(Message.builder()
                         .role("user")
-                        .content(buildPrompt(judgeType, runRecord, traceRecord, seedVerdict))
+                        .content(prompt)
                         .build()))
                 .temperature(0.1)
-                .sessionId(judgeSessionId)
-                .traceId(parentTraceId)
-                .traceParentSpanId(runRecord != null ? runRecord.getTraceId() : null)
+                .sessionId(judgeSession.getId())
+                .traceId(rootTrace.getTraceId())
+                .traceSpanId(rootTrace.getSpanId())
                 .traceRootKind("judge_" + judgeType)
                 .build();
 
-        LlmResponse response = llmPort.chat(request).get();
-        if (response == null || StringValueSupport.isBlank(response.getContent())) {
-            throw new IllegalArgumentException("Judge returned empty response");
+        captureSnapshot(judgeSession, rootTrace, "request", request);
+        try {
+            LlmResponse response = llmPort.chat(request).get();
+            captureSnapshot(judgeSession, rootTrace, "response", response);
+            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.OK, null, Instant.now());
+            if (response == null || StringValueSupport.isBlank(response.getContent())) {
+                throw new IllegalArgumentException("Judge returned empty response");
+            }
+            RunVerdict parsedVerdict = parseVerdict(response.getContent(), runRecord);
+            validate(parsedVerdict);
+            return parsedVerdict;
+        } catch (InterruptedException | ExecutionException | RuntimeException exception) {
+            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.ERROR,
+                    exception.getMessage(), Instant.now());
+            throw exception;
+        } finally {
+            saveJudgeSession(judgeSession);
         }
-        RunVerdict parsedVerdict = parseVerdict(response.getContent(), runRecord);
-        validate(parsedVerdict);
-        return parsedVerdict;
+    }
+
+    private void captureSnapshot(AgentSession session, TraceContext spanContext, String role, Object payload) {
+        try {
+            RuntimeConfig runtimeConfig = runtimeConfigService.getRuntimeConfig();
+            RuntimeConfig.TracingConfig tracingConfig = runtimeConfig != null ? runtimeConfig.getTracing() : null;
+            if (tracingConfig == null || !Boolean.TRUE.equals(tracingConfig.getEnabled())) {
+                return;
+            }
+            byte[] data = objectMapper.writeValueAsBytes(payload);
+            traceService.captureSnapshot(session, spanContext, tracingConfig,
+                    role, "application/json", data);
+        } catch (Exception exception) { // NOSONAR - tracing must not break judge flow
+            log.debug("[SelfEvolving] Failed to capture {} snapshot: {}", role, exception.getMessage());
+        }
+    }
+
+    private void saveJudgeSession(AgentSession session) {
+        try {
+            sessionService.save(session);
+        } catch (RuntimeException exception) { // NOSONAR - persistence failure must not break judge
+            log.warn("[SelfEvolving] Failed to save judge session {}: {}", session.getId(), exception.getMessage());
+        }
     }
 
     private RunVerdict parseVerdict(String rawContent, RunRecord runRecord) {

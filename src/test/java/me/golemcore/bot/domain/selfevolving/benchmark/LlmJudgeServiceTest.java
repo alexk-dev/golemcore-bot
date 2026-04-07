@@ -1,17 +1,24 @@
 package me.golemcore.bot.domain.selfevolving.benchmark;
 
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
+import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionService;
+import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -19,12 +26,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 
 class LlmJudgeServiceTest {
 
@@ -32,6 +38,8 @@ class LlmJudgeServiceTest {
     private JudgeTierResolver judgeTierResolver;
     private JudgeTraceDigestService judgeTraceDigestService;
     private RuntimeConfigService runtimeConfigService;
+    private SessionService sessionService;
+    private TraceService traceService;
     private LlmJudgeService llmJudgeService;
 
     @BeforeEach
@@ -40,6 +48,8 @@ class LlmJudgeServiceTest {
         judgeTierResolver = mock(JudgeTierResolver.class);
         judgeTraceDigestService = new JudgeTraceDigestService();
         runtimeConfigService = mock(RuntimeConfigService.class);
+        sessionService = mock(SessionService.class);
+        traceService = mock(TraceService.class);
         RuntimeConfig.SelfEvolvingJudgeConfig judgeConfig = RuntimeConfig.SelfEvolvingJudgeConfig.builder()
                 .enabled(true)
                 .requireEvidenceAnchors(true)
@@ -49,8 +59,20 @@ class LlmJudgeServiceTest {
                 .judge(judgeConfig)
                 .build();
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(selfEvolvingConfig);
+        when(sessionService.getOrCreate(anyString(), anyString())).thenReturn(
+                AgentSession.builder()
+                        .id("judge:test-session")
+                        .channelType("judge")
+                        .chatId("test")
+                        .traces(new ArrayList<>())
+                        .build());
+        when(traceService.startRootTrace(any(), anyString(), any(), any(), any())).thenReturn(
+                TraceContext.builder()
+                        .traceId("judge-trace-1")
+                        .spanId("judge-span-1")
+                        .build());
         llmJudgeService = new LlmJudgeService(llmPort, judgeTierResolver, judgeTraceDigestService,
-                runtimeConfigService);
+                runtimeConfigService, sessionService, traceService);
     }
 
     @Test
