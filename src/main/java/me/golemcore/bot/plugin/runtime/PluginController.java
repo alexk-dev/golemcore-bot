@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
-import me.golemcore.bot.telemetry.TelemetryRollupStore;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 
 import java.util.List;
 import java.util.Map;
@@ -26,7 +26,7 @@ public class PluginController {
     private final PluginMarketplaceService pluginMarketplaceService;
     private final SttProviderRegistry sttProviderRegistry;
     private final TtsProviderRegistry ttsProviderRegistry;
-    private final TelemetryRollupStore telemetryRollupStore;
+    private final TelemetryRollupPort telemetryRollupStore;
 
     @GetMapping
     public Mono<ResponseEntity<List<PluginRuntimeInfo>>> listPlugins() {

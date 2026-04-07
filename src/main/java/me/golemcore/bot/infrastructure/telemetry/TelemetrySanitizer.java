@@ -1,4 +1,4 @@
-package me.golemcore.bot.telemetry;
+package me.golemcore.bot.infrastructure.telemetry;
 
 import java.util.Set;
 import java.util.regex.Pattern;

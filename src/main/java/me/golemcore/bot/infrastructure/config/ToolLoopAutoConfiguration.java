@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
-import me.golemcore.bot.telemetry.TelemetryRollupStore;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -61,13 +61,13 @@ public class ToolLoopAutoConfiguration {
             ModelSelectionService modelSelectionService, PlanService planService,
             RuntimeConfigService runtimeConfigService,
             UsageTrackingPort usageTracker,
-            TelemetryRollupStore telemetryRollupStore,
+            TelemetryRollupPort telemetryRollupPort,
             CompactionOrchestrationService compactionOrchestrationService,
             RuntimeEventService runtimeEventService,
             TurnProgressService turnProgressService,
             TraceService traceService,
             ToolFailureRecoveryService toolFailureRecoveryService) {
-        LlmPort tracked = new UsageTrackingLlmPortDecorator(llmPort, usageTracker, telemetryRollupStore);
+        LlmPort tracked = new UsageTrackingLlmPortDecorator(llmPort, usageTracker, telemetryRollupPort);
         return DefaultToolLoopSystem.builder()
                 .llmPort(tracked)
                 .toolExecutor(toolExecutorPort)

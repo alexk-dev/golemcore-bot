@@ -6,7 +6,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
-import me.golemcore.bot.telemetry.TelemetryRollupStore;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -26,10 +26,10 @@ public class UsageTrackingLlmPortDecorator implements LlmPort {
 
     private final LlmPort delegate;
     private final UsageTrackingPort usageTracker;
-    private final TelemetryRollupStore telemetryRollupStore;
+    private final TelemetryRollupPort telemetryRollupStore;
 
     public UsageTrackingLlmPortDecorator(LlmPort delegate, UsageTrackingPort usageTracker,
-            TelemetryRollupStore telemetryRollupStore) {
+            TelemetryRollupPort telemetryRollupStore) {
         this.delegate = delegate;
         this.usageTracker = usageTracker;
         this.telemetryRollupStore = telemetryRollupStore;

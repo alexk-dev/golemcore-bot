@@ -1,4 +1,4 @@
-package me.golemcore.bot.telemetry;
+package me.golemcore.bot.infrastructure.telemetry;
 
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;

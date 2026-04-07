@@ -1,4 +1,4 @@
-package me.golemcore.bot.telemetry;
+package me.golemcore.bot.infrastructure.telemetry;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;

@@ -3,7 +3,7 @@ package me.golemcore.bot.plugin.runtime;
 import me.golemcore.plugin.api.extension.spi.PluginActionResult;
 import me.golemcore.plugin.api.extension.spi.PluginSettingsCatalogItem;
 import me.golemcore.plugin.api.extension.spi.PluginSettingsSection;
-import me.golemcore.bot.telemetry.TelemetryRollupStore;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -21,13 +21,13 @@ import static org.mockito.Mockito.when;
 class PluginSettingsControllerTest {
 
     private PluginSettingsRegistry registry;
-    private TelemetryRollupStore telemetryRollupStore;
+    private TelemetryRollupPort telemetryRollupStore;
     private PluginSettingsController controller;
 
     @BeforeEach
     void setUp() {
         registry = mock(PluginSettingsRegistry.class);
-        telemetryRollupStore = mock(TelemetryRollupStore.class);
+        telemetryRollupStore = mock(TelemetryRollupPort.class);
         controller = new PluginSettingsController(registry, telemetryRollupStore);
     }
 

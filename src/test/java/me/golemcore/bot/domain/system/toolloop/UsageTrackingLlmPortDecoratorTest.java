@@ -6,7 +6,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
-import me.golemcore.bot.telemetry.TelemetryRollupStore;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -30,14 +30,14 @@ class UsageTrackingLlmPortDecoratorTest {
 
     private LlmPort delegate;
     private UsageTrackingPort usageTracker;
-    private TelemetryRollupStore telemetryRollupStore;
+    private TelemetryRollupPort telemetryRollupStore;
     private UsageTrackingLlmPortDecorator decorator;
 
     @BeforeEach
     void setUp() {
         delegate = mock(LlmPort.class);
         usageTracker = mock(UsageTrackingPort.class);
-        telemetryRollupStore = mock(TelemetryRollupStore.class);
+        telemetryRollupStore = mock(TelemetryRollupPort.class);
         when(delegate.getProviderId()).thenReturn("test-provider");
         decorator = new UsageTrackingLlmPortDecorator(delegate, usageTracker, telemetryRollupStore);
     }

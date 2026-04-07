@@ -2,7 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.TelemetryRollupRequest;
 import me.golemcore.bot.domain.model.telemetry.UiTelemetryRollup;
-import me.golemcore.bot.telemetry.UiTelemetryIngestService;
+import me.golemcore.bot.infrastructure.telemetry.UiTelemetryIngestService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

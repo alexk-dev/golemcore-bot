@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
-import me.golemcore.bot.telemetry.TelemetryRollupStore;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 
 import java.util.List;
 import java.util.Map;
@@ -27,7 +27,7 @@ import java.util.Map;
 public class PluginSettingsController {
 
     private final PluginSettingsRegistry pluginSettingsRegistry;
-    private final TelemetryRollupStore telemetryRollupStore;
+    private final TelemetryRollupPort telemetryRollupStore;
 
     @GetMapping("/catalog")
     public Mono<ResponseEntity<List<PluginSettingsCatalogItem>>> listCatalogItems() {

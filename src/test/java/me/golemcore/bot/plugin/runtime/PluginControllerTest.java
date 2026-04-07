@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import reactor.test.StepVerifier;
-import me.golemcore.bot.telemetry.TelemetryRollupStore;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 
 import java.util.List;
 import java.util.Map;
@@ -22,7 +22,7 @@ class PluginControllerTest {
     private PluginMarketplaceService pluginMarketplaceService;
     private SttProviderRegistry sttProviderRegistry;
     private TtsProviderRegistry ttsProviderRegistry;
-    private TelemetryRollupStore telemetryRollupStore;
+    private TelemetryRollupPort telemetryRollupStore;
     private PluginController controller;
 
     @BeforeEach
@@ -31,7 +31,7 @@ class PluginControllerTest {
         pluginMarketplaceService = mock(PluginMarketplaceService.class);
         sttProviderRegistry = mock(SttProviderRegistry.class);
         ttsProviderRegistry = mock(TtsProviderRegistry.class);
-        telemetryRollupStore = mock(TelemetryRollupStore.class);
+        telemetryRollupStore = mock(TelemetryRollupPort.class);
         controller = new PluginController(pluginManager, pluginMarketplaceService, sttProviderRegistry,
                 ttsProviderRegistry, telemetryRollupStore);
     }

@@ -1,4 +1,4 @@
-package me.golemcore.bot.telemetry;
+package me.golemcore.bot.infrastructure.telemetry;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -19,7 +20,7 @@ import java.util.UUID;
 
 @Component
 @Slf4j
-public class TelemetryRollupStore {
+public class TelemetryRollupStore implements TelemetryRollupPort {
 
     private static final String STORAGE_DIRECTORY = "dashboard";
     private static final String INSTANCE_ID_PATH = "telemetry/backend-instance-id.txt";
@@ -49,6 +50,7 @@ public class TelemetryRollupStore {
         return anonymousInstanceId;
     }
 
+    @Override
     public synchronized void recordModelUsage(String modelId, String tier, int inputTokens, int outputTokens,
             int totalTokens) {
         if (!runtimeConfigService.isTelemetryEnabled()) {
@@ -67,18 +69,22 @@ public class TelemetryRollupStore {
         currentBucket.getTierUsage().merge(normalizedTier, 1L, Long::sum);
     }
 
+    @Override
     public synchronized void recordPluginInstall(String pluginId) {
         recordPluginCounter("install", pluginId);
     }
 
+    @Override
     public synchronized void recordPluginUninstall(String pluginId) {
         recordPluginCounter("uninstall", pluginId);
     }
 
+    @Override
     public synchronized void recordPluginAction(String routeKey, String actionId) {
         recordPluginCounter("action", normalizeKey(routeKey, "unknown") + ":" + normalizeKey(actionId, "unknown"));
     }
 
+    @Override
     public synchronized void recordPluginSettingsSave(String routeKey) {
         recordPluginCounter("save", routeKey);
     }

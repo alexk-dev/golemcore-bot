@@ -21,7 +21,7 @@ import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
-import me.golemcore.bot.telemetry.TelemetryRollupStore;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -70,7 +70,7 @@ class ToolLoopAutoConfigurationTest {
         PlanService planService = mock(PlanService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         UsageTrackingPort usageTrackingPort = mock(UsageTrackingPort.class);
-        TelemetryRollupStore telemetryRollupStore = mock(TelemetryRollupStore.class);
+        TelemetryRollupPort telemetryRollupStore = mock(TelemetryRollupPort.class);
         CompactionOrchestrationService compactionOrchestrationService = mock(CompactionOrchestrationService.class);
         RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
         TurnProgressService turnProgressService = mock(TurnProgressService.class);

@@ -1,4 +1,4 @@
-package me.golemcore.bot.telemetry;
+package me.golemcore.bot.infrastructure.telemetry;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.service.RuntimeConfigService;

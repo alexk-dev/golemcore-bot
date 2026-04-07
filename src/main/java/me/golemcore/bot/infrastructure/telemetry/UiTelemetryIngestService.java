@@ -1,4 +1,4 @@
-package me.golemcore.bot.telemetry;
+package me.golemcore.bot.infrastructure.telemetry;
 
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.telemetry.UiTelemetryRollup;
