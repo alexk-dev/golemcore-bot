@@ -1463,6 +1463,21 @@ class DefaultToolLoopSystemTest {
                 "TOOL_LOOP_LIMIT_REACHED should NOT be set for confirmation denied stop");
     }
 
+    // ==================== interrupt pre-check ====================
+
+    @Test
+    void shouldStopImmediatelyWhenInterruptFlagSetBeforeLlmCall() {
+        AgentContext context = buildContext();
+        context.getSession().setMetadata(new HashMap<>());
+        context.getSession().getMetadata().put(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
+        assertNotNull(result);
+        assertTrue(result.finalAnswerReady());
+        verify(llmPort, never()).chat(any());
+    }
+
     // ==================== Conversation view diagnostics ====================
 
     @Test

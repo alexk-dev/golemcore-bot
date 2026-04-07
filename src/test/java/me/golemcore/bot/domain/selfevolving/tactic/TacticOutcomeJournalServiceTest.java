@@ -8,6 +8,10 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -110,5 +114,53 @@ class TacticOutcomeJournalServiceTest {
         service.record(entry);
 
         // Should not throw — fail-open behavior
+    }
+
+    @Test
+    void shouldNotLoseEntriesWhenTwoRecordsOverlap() throws Exception {
+        AtomicReference<String> storageJson = new AtomicReference<>(null);
+        AtomicInteger writeCount = new AtomicInteger();
+        CountDownLatch firstWriteStarted = new CountDownLatch(1);
+        CountDownLatch secondWriteAttempted = new CountDownLatch(1);
+        CountDownLatch allowFirstWriteToFinish = new CountDownLatch(1);
+
+        when(storagePort.getText("self-evolving", "tactic-outcome-journal.json"))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(storageJson.get()));
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenAnswer(invocation -> {
+                    String json = invocation.getArgument(2);
+                    int currentWrite = writeCount.incrementAndGet();
+                    if (currentWrite == 1) {
+                        firstWriteStarted.countDown();
+                        allowFirstWriteToFinish.await(5, TimeUnit.SECONDS);
+                    }
+                    storageJson.set(json);
+                    return CompletableFuture.completedFuture(null);
+                });
+
+        TacticOutcomeEntry first = TacticOutcomeEntry.builder()
+                .tacticId("tactic-1")
+                .finishReason("success")
+                .recordedAt(Instant.parse("2026-04-05T12:00:00Z"))
+                .build();
+        TacticOutcomeEntry second = TacticOutcomeEntry.builder()
+                .tacticId("tactic-2")
+                .finishReason("error")
+                .recordedAt(Instant.parse("2026-04-05T12:01:00Z"))
+                .build();
+
+        CompletableFuture<Void> firstWrite = CompletableFuture.runAsync(() -> service.record(first));
+        assertTrue(firstWriteStarted.await(5, TimeUnit.SECONDS));
+        CompletableFuture<Void> secondWrite = CompletableFuture.runAsync(() -> {
+            secondWriteAttempted.countDown();
+            service.record(second);
+        });
+        assertTrue(secondWriteAttempted.await(5, TimeUnit.SECONDS));
+        allowFirstWriteToFinish.countDown();
+        firstWrite.join();
+        secondWrite.join();
+
+        List<TacticOutcomeEntry> entries = service.getEntries();
+        assertEquals(2, entries.size());
     }
 }

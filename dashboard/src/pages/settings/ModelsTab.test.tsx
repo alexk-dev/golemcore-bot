@@ -107,7 +107,7 @@ describe('ModelsTab', () => {
     );
 
     expect(html).toContain('anthropic (unavailable)');
-    expect(html).toContain('anthropic/claude-sonnet-4 (unavailable)');
+    expect(html).toContain('claude-sonnet-4 (unavailable)');
   });
 
   it('hides the implicit openrouter prefix in routing model selects', () => {

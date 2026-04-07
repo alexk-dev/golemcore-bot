@@ -224,7 +224,8 @@ public class TacticQualityMetricsService {
         if ("success".equals(normalized)) {
             return "completed";
         }
-        if ("error".equals(normalized) || "iteration_limit".equals(normalized) || "deadline".equals(normalized)) {
+        if ("failure".equals(normalized) || "error".equals(normalized)
+                || "iteration_limit".equals(normalized) || "deadline".equals(normalized)) {
             return "failed";
         }
         return null;

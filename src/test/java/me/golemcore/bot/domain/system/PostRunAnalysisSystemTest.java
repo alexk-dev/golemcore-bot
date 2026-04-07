@@ -27,10 +27,14 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -135,17 +139,18 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(proposal);
         when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, proposal)).thenReturn(candidates);
 
         assertTrue(system.shouldProcess(context));
-        AgentContext result = system.process(context);
+        AgentContext result = processAndAwait(context);
 
         verify(selfEvolvingRunService).startRun(context);
         verify(selfEvolvingRunService).completeRun(startedRun, context);
         verify(deterministicJudgeService).evaluate(completedRun, traceRecord);
-        verify(llmJudgeService).judge(completedRun, traceRecord, deterministicVerdict);
+        verify(llmJudgeService).judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any());
         verify(selfEvolvingRunService).saveVerdict("run-1", llmVerdict);
         verify(llmEvolutionService).propose(completedRun, llmVerdict);
         verify(evolutionCandidateService).deriveCandidates(completedRun, llmVerdict, proposal);
@@ -186,11 +191,12 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.findRun("run-1")).thenReturn(java.util.Optional.of(existingRun));
         when(selfEvolvingRunService.completeRun(existingRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
 
         assertTrue(system.shouldProcess(context));
-        AgentContext result = system.process(context);
+        AgentContext result = processAndAwait(context);
 
         verify(selfEvolvingRunService, never()).startRun(context);
         verify(selfEvolvingRunService).findRun("run-1");
@@ -217,7 +223,7 @@ class PostRunAnalysisSystemTest {
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(false);
         AgentContext context = buildContext();
 
-        AgentContext result = system.process(context);
+        AgentContext result = processAndAwait(context);
 
         assertTrue(result == context);
         verify(selfEvolvingRunService, never()).startRun(context);
@@ -246,10 +252,11 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
 
-        AgentContext result = system.process(context);
+        AgentContext result = processAndAwait(context);
 
         verify(selfEvolvingRunService).findRun("missing-run");
         verify(selfEvolvingRunService).startRun(context);
@@ -277,12 +284,13 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
         doThrow(new IllegalStateException("hive offline")).when(projectionPublishPort)
                 .publishSelfEvolvingProjection(completedRun, llmVerdict, List.of());
 
-        AgentContext result = system.process(context);
+        AgentContext result = processAndAwait(context);
 
         verify(evolutionCandidateService, never()).deriveCandidates(completedRun, llmVerdict, null);
         verify(promotionWorkflowService).registerCandidates(List.of());
@@ -324,11 +332,12 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(proposal);
         when(evolutionCandidateService.deriveCandidates(completedRun, llmVerdict, proposal)).thenReturn(candidates);
 
-        system.process(context);
+        processAndAwait(context);
 
         verify(promotionWorkflowService).registerAndPlanCandidates(candidates);
         verify(promotionWorkflowService, never()).registerCandidates(candidates);
@@ -353,10 +362,11 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(proposal);
 
-        system.process(context);
+        processAndAwait(context);
 
         verify(evolutionCandidateService, never()).deriveCandidates(completedRun, llmVerdict, proposal);
         verify(promotionWorkflowService).registerCandidates(List.of());
@@ -381,15 +391,58 @@ class PostRunAnalysisSystemTest {
         when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
         when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
-        when(llmJudgeService.judge(completedRun, traceRecord, deterministicVerdict)).thenReturn(llmVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenReturn(llmVerdict);
         when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
 
-        system.process(context);
+        processAndAwait(context);
 
         verify(tacticOutcomeJournalService).record(org.mockito.ArgumentMatchers.argThat(
                 entry -> "tactic-a".equals(entry.getTacticId()) && "success".equals(entry.getFinishReason())));
         verify(tacticOutcomeJournalService).record(org.mockito.ArgumentMatchers.argThat(
                 entry -> "tactic-b".equals(entry.getTacticId()) && "success".equals(entry.getFinishReason())));
+    }
+
+    @Test
+    void shouldRunBackgroundAnalysisOnDedicatedExecutor() {
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        AgentContext context = buildContext();
+        RunRecord startedRun = RunRecord.builder()
+                .id("run-7")
+                .artifactBundleId("bundle-7")
+                .build();
+        RunRecord completedRun = RunRecord.builder()
+                .id("run-7")
+                .artifactBundleId("bundle-7")
+                .traceId("trace-1")
+                .status("COMPLETED")
+                .build();
+        TraceRecord traceRecord = TraceRecord.builder().traceId("trace-1").build();
+        RunVerdict deterministicVerdict = RunVerdict.builder().runId("run-7").build();
+        RunVerdict llmVerdict = RunVerdict.builder().runId("run-7").build();
+        AtomicReference<String> backgroundThreadName = new AtomicReference<>();
+        when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
+        when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
+        when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenAnswer(invocation -> {
+                    backgroundThreadName.set(Thread.currentThread().getName());
+                    return llmVerdict;
+                });
+        when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
+
+        processAndAwait(context);
+
+        assertTrue(backgroundThreadName.get() != null
+                && backgroundThreadName.get().startsWith("selfevolving-post-run-"));
+    }
+
+    private AgentContext processAndAwait(AgentContext context) {
+        AgentContext result = system.process(context);
+        if (system.getLastBackgroundAnalysis() != null) {
+            system.getLastBackgroundAnalysis().join();
+        }
+        return result;
     }
 
     private AgentContext buildContext() {

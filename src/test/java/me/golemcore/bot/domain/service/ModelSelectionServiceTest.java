@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +21,7 @@ import static org.mockito.Mockito.*;
 class ModelSelectionServiceTest {
 
     private RuntimeConfigService runtimeConfigService;
-    private ModelConfigService modelConfigService;
+    private ModelConfigPort modelConfigService;
     private UserPreferencesService preferencesService;
     private ModelSelectionService service;
 
@@ -30,7 +31,7 @@ class ModelSelectionServiceTest {
     @BeforeEach
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
-        modelConfigService = mock(ModelConfigService.class);
+        modelConfigService = mock(ModelConfigPort.class);
         preferencesService = mock(UserPreferencesService.class);
 
         when(runtimeConfigService.getBalancedModel()).thenReturn("openai/gpt-5.1");

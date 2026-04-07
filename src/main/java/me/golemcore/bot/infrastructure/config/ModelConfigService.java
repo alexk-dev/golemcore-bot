@@ -26,13 +26,11 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -44,15 +42,15 @@ import java.util.stream.Collectors;
  * Service for loading and managing model configurations from workspace storage.
  *
  * <p>
- * On first run, copies bundled {@code classpath:models.json} to workspace
- * ({@code models/models.json} via StoragePort). Subsequent loads read from
- * workspace, allowing UI edits to persist.
+ * Models are populated via discovery (provider APIs) and UI edits. On first run
+ * the catalog is empty until the user adds models through discovery or manual
+ * configuration.
  *
  * @since 1.0
  */
 @Service
 @Slf4j
-public class ModelConfigService {
+public class ModelConfigService implements ModelConfigPort {
 
     private static final String MODELS_DIR = "models";
     private static final String CONFIG_FILE = "models.json";
@@ -73,7 +71,6 @@ public class ModelConfigService {
 
     private void loadConfig() {
         try {
-            // Try workspace first
             Boolean exists = storagePort.exists(MODELS_DIR, CONFIG_FILE).join();
             if (Boolean.TRUE.equals(exists)) {
                 String json = storagePort.getText(MODELS_DIR, CONFIG_FILE).join();
@@ -87,28 +84,7 @@ public class ModelConfigService {
             log.warn("[ModelConfig] Failed to load from workspace: {}", e.getMessage());
         }
 
-        // Fall back to classpath and copy to workspace
-        loadFromClasspathAndCopy();
-    }
-
-    private void loadFromClasspathAndCopy() {
-        try {
-            ClassPathResource resource = new ClassPathResource(CONFIG_FILE);
-            if (resource.exists()) {
-                try (InputStream is = resource.getInputStream()) {
-                    String json = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                    config = objectMapper.readValue(json, ModelsConfig.class);
-                    log.info("[ModelConfig] Loaded from classpath: {} models", config.getModels().size());
-                    // Copy to workspace for future edits
-                    saveConfig();
-                    return;
-                }
-            }
-        } catch (IOException e) {
-            log.warn("[ModelConfig] Failed to load from classpath: {}", e.getMessage());
-        }
-
-        log.warn("[ModelConfig] No models.json found, using empty config");
+        log.info("[ModelConfig] No models.json in workspace, starting with empty catalog");
         config = new ModelsConfig();
     }
 
@@ -179,9 +155,11 @@ public class ModelConfigService {
     }
 
     /**
-     * Get settings for a model. Tries exact match first, then prefix match, then
-     * defaults.
+     * Get settings for a model. Tries exact match first, then stripped-prefix exact
+     * match, then prefix match. Throws if the model is not found in the catalog —
+     * no silent fallback to defaults.
      */
+    @Override
     public ModelSettings getModelSettings(String modelName) {
         if (modelName == null) {
             return config.getDefaults();
@@ -207,12 +185,15 @@ public class ModelConfigService {
                 .filter(entry -> name.startsWith(entry.getKey()))
                 .max(java.util.Comparator.comparingInt(e -> e.getKey().length()))
                 .map(Map.Entry::getValue)
-                .orElse(config.getDefaults());
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Model '" + modelName
+                                + "' is not in the catalog — add it via discovery or manual configuration"));
     }
 
     /**
      * Get all model configurations.
      */
+    @Override
     public Map<String, ModelSettings> getAllModels() {
         return config.getModels();
     }
@@ -220,6 +201,7 @@ public class ModelConfigService {
     /**
      * Get provider for a model.
      */
+    @Override
     public String getProvider(String modelName) {
         return getModelSettings(modelName).getProvider();
     }
@@ -228,6 +210,7 @@ public class ModelConfigService {
      * Check if model requires reasoning parameter (has reasoning levels
      * configured).
      */
+    @Override
     public boolean isReasoningRequired(String modelName) {
         ModelSettings settings = getModelSettings(modelName);
         return settings.getReasoning() != null
@@ -238,6 +221,7 @@ public class ModelConfigService {
     /**
      * Check if model supports temperature.
      */
+    @Override
     public boolean supportsTemperature(String modelName) {
         return getModelSettings(modelName).isSupportsTemperature();
     }
@@ -245,6 +229,7 @@ public class ModelConfigService {
     /**
      * Check if model supports vision/image inputs.
      */
+    @Override
     public boolean supportsVision(String modelName) {
         return getModelSettings(modelName).isSupportsVision();
     }
@@ -253,6 +238,7 @@ public class ModelConfigService {
      * Get maximum input tokens for a model. For reasoning models, returns the
      * maximum across all reasoning levels as a safe fallback.
      */
+    @Override
     public int getMaxInputTokens(String modelName) {
         ModelSettings settings = getModelSettings(modelName);
         if (settings.getReasoning() != null && settings.getReasoning().getLevels() != null
@@ -269,6 +255,7 @@ public class ModelConfigService {
      * Get maximum input tokens for a model at a specific reasoning level. Falls
      * back to model-level maxInputTokens if the level is not found.
      */
+    @Override
     public int getMaxInputTokens(String modelName, String reasoningLevel) {
         if (reasoningLevel == null) {
             return getMaxInputTokens(modelName);
@@ -297,6 +284,7 @@ public class ModelConfigService {
     /**
      * Get the lowest available reasoning level for a model.
      */
+    @Override
     public String getLowestReasoningLevel(String modelName) {
         List<String> available = getAvailableReasoningLevels(modelName);
         if (available.isEmpty()) {
@@ -316,6 +304,7 @@ public class ModelConfigService {
     /**
      * Get available reasoning levels for a model.
      */
+    @Override
     public List<String> getAvailableReasoningLevels(String modelName) {
         ModelSettings settings = getModelSettings(modelName);
         if (settings.getReasoning() != null && settings.getReasoning().getLevels() != null) {
@@ -327,6 +316,7 @@ public class ModelConfigService {
     /**
      * Get models filtered by provider names.
      */
+    @Override
     public Map<String, ModelSettings> getModelsForProviders(List<String> providers) {
         return config.getModels().entrySet().stream()
                 .filter(entry -> providers.contains(entry.getValue().getProvider()))

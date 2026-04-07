@@ -54,7 +54,7 @@ public class TacticOutcomeJournalService {
         this.objectMapper.registerModule(new JavaTimeModule());
     }
 
-    public void record(TacticOutcomeEntry entry) {
+    public synchronized void record(TacticOutcomeEntry entry) {
         if (entry == null || StringValueSupport.isBlank(entry.getTacticId())) {
             return;
         }
@@ -72,7 +72,7 @@ public class TacticOutcomeJournalService {
         }
     }
 
-    public List<TacticOutcomeEntry> getEntries() {
+    public synchronized List<TacticOutcomeEntry> getEntries() {
         List<TacticOutcomeEntry> cached = cache.get();
         if (cached != null) {
             return new ArrayList<>(cached);

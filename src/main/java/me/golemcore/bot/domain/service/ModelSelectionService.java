@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -44,7 +45,7 @@ import java.util.Map;
 public class ModelSelectionService {
 
     private final RuntimeConfigService runtimeConfigService;
-    private final ModelConfigService modelConfigService;
+    private final ModelConfigPort modelConfigService;
     private final UserPreferencesService preferencesService;
 
     /**
@@ -292,6 +293,7 @@ public class ModelSelectionService {
 
     private ModelSelection validateResolvedSelection(String tier, ModelSelection selection) {
         if (selection == null || selection.model() == null || selection.model().isBlank()) {
+            log.error("[ModelSelection] Tier '{}' is not configured — no model binding found", tier);
             throw new IllegalStateException("Tier '" + tier + "' is not configured");
         }
 
@@ -299,9 +301,12 @@ public class ModelSelectionService {
                 runtimeConfigService.getConfiguredLlmProviders());
         ValidationResult modelValidation = validateModel(canonicalModel);
         if (!modelValidation.valid()) {
+            log.error("[ModelSelection] Tier '{}' resolution failed: model='{}', canonical='{}', error='{}'",
+                    tier, selection.model(), canonicalModel, modelValidation.error());
             throw switch (modelValidation.error()) {
             case "model.not.found" ->
-                new IllegalStateException("Tier '" + tier + "' points to unknown model '" + selection.model() + "'");
+                new IllegalStateException("Tier '" + tier + "' points to unknown model '" + selection.model()
+                        + "' — add it to the catalog via discovery or manual configuration");
             case "provider.not.configured" ->
                 new IllegalStateException("Tier '" + tier + "' points to model '" + selection.model()
                         + "' whose provider is not configured");

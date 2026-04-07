@@ -198,8 +198,12 @@ class RuntimeConfigServiceTest {
                 "special5"), List.copyOf(tiers.keySet()));
 
         Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
-        assertPersistedModelId(routing, "openai/gpt-5.2-codex");
+        assertPersistedModelMissing(routing);
         assertEquals("none", routing.get("reasoning"));
+        assertPersistedModelMissing(castMap(tiers.get("balanced")));
+        assertPersistedModelMissing(castMap(tiers.get("smart")));
+        assertPersistedModelMissing(castMap(tiers.get("deep")));
+        assertPersistedModelMissing(castMap(tiers.get("coding")));
     }
 
     @Test
@@ -347,12 +351,13 @@ class RuntimeConfigServiceTest {
     // ==================== Default Values ====================
 
     @Test
-    void shouldReturnDefaultModelWhenNotConfigured() {
-        assertEquals("openai/gpt-5.1", service.getBalancedModel());
-        assertEquals("openai/gpt-5.1", service.getSmartModel());
-        assertEquals("openai/gpt-5.2", service.getCodingModel());
-        assertEquals("openai/gpt-5.2", service.getDeepModel());
-        assertEquals("openai/gpt-5.2-codex", service.getRoutingModel());
+    void shouldReturnEmptyModelDefaultsWhenNotConfigured() {
+        assertNull(service.getBalancedModel());
+        assertNull(service.getSmartModel());
+        assertNull(service.getCodingModel());
+        assertNull(service.getDeepModel());
+        assertNull(service.getRoutingModel());
+        assertTrue(service.getConfiguredLlmProviders().isEmpty());
     }
 
     @Test
@@ -1856,5 +1861,9 @@ class RuntimeConfigServiceTest {
         Map<?, ?> model = castMap(binding.get("model"));
         assertEquals(expectedId, model.get("id"));
         assertFalse(model.containsKey("provider"));
+    }
+
+    private void assertPersistedModelMissing(Map<?, ?> binding) {
+        assertTrue(!binding.containsKey("model") || binding.get("model") == null);
     }
 }
