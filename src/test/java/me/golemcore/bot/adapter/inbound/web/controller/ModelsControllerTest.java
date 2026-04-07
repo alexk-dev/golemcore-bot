@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.service.ModelRegistryService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -31,6 +32,7 @@ class ModelsControllerTest {
     private ModelSelectionService modelSelectionService;
     private ProviderModelDiscoveryService providerModelDiscoveryService;
     private ModelRegistryService modelRegistryService;
+    private LlmPort llmPort;
     private ObjectMapper objectMapper;
     private ModelsController controller;
 
@@ -40,9 +42,10 @@ class ModelsControllerTest {
         modelSelectionService = mock(ModelSelectionService.class);
         providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         modelRegistryService = mock(ModelRegistryService.class);
+        llmPort = mock(LlmPort.class);
         objectMapper = new ObjectMapper();
         controller = new ModelsController(modelConfigService, modelSelectionService, providerModelDiscoveryService,
-                modelRegistryService);
+                modelRegistryService, llmPort);
     }
 
     @Test
