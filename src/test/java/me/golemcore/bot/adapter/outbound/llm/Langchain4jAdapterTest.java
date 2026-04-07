@@ -18,6 +18,7 @@ import dev.langchain4j.data.message.ContentType;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -36,6 +37,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -1884,6 +1886,33 @@ class Langchain4jAdapterTest {
         LlmResponse response = adapter.chat(request).get();
 
         assertEquals("Reasoned response", response.getContent());
+    }
+
+    @Test
+    void shouldCreateResponsesStreamingModelWithCompatibilityBuilder() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of(KEY))
+                .baseUrl("https://example.com/v1")
+                .requestTimeoutSeconds(42)
+                .build();
+
+        StreamingChatModel model = ReflectionTestUtils.invokeMethod(adapter,
+                "createResponsesStreamingModel", "gpt-5.4", "high", config);
+        HttpClientBuilder httpClientBuilder = ReflectionTestUtils.invokeMethod(adapter,
+                "createResponsesCompatibilityHttpClientBuilder", Duration.ofSeconds(42));
+
+        assertNotNull(model);
+        assertTrue(httpClientBuilder instanceof ResponsesCompatibilityHttpClientBuilder);
+        assertEquals(Duration.ofSeconds(42), httpClientBuilder.connectTimeout());
+        assertEquals(Duration.ofSeconds(42), httpClientBuilder.readTimeout());
+    }
+
+    @Test
+    void shouldInstantiateJdkHttpClientBuilderForResponsesCompatibilityFallback() {
+        HttpClientBuilder httpClientBuilder = ReflectionTestUtils.invokeMethod(adapter,
+                "instantiateJdkHttpClientBuilder");
+
+        assertNotNull(httpClientBuilder);
     }
 
     @Test

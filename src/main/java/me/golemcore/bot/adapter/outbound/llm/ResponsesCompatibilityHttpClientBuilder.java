@@ -228,11 +228,17 @@ final class ResponsesCompatibilityHttpClientBuilder implements HttpClientBuilder
                 if (!(item instanceof ObjectNode objectNode)) {
                     return;
                 }
+                if (!MESSAGE_TYPE.equals(objectNode.path(FIELD_TYPE).asText())) {
+                    return;
+                }
                 int outputIndex = node.path(FIELD_OUTPUT_INDEX).asInt(0);
                 completedOutputItems.put(outputIndex, objectNode.deepCopy());
             }
 
             private ServerSentEvent normalizeCompletedEvent(ServerSentEvent originalEvent, JsonNode node) {
+                if (!(node instanceof ObjectNode eventNode)) {
+                    return originalEvent;
+                }
                 JsonNode responseNode = node.path(FIELD_RESPONSE);
                 if (!(responseNode instanceof ObjectNode objectNode)) {
                     return originalEvent;
@@ -254,7 +260,7 @@ final class ResponsesCompatibilityHttpClientBuilder implements HttpClientBuilder
                     }
                 }
 
-                ObjectNode normalizedEvent = objectMapper.createObjectNode();
+                ObjectNode normalizedEvent = eventNode.deepCopy();
                 normalizedEvent.put(FIELD_TYPE, RESPONSE_COMPLETED_EVENT);
                 normalizedEvent.set(FIELD_RESPONSE, normalizedResponse);
                 try {
