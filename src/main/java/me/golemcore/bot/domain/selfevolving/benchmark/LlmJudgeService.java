@@ -45,6 +45,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -68,14 +69,15 @@ public class LlmJudgeService {
             Your task:
             1. Assess whether the assistant's response actually fulfils the user's request.
             2. Score task_completion (0.0-1.0) and correctness based on the conversation and trace evidence.
-            3. Recommend a rollout action: "approve_gated", "reject", or "observe".
+            3. Recommend a rollout action: "approve_gated" or "reject".
+               Use "approve_gated" for successful runs even when the safe next step is gated observation or shadowing.
             4. Anchor every claim to specific spanIds from the trace digest.
 
             Always respond in English regardless of the user's language.
 
             Return only valid JSON matching the RunVerdict schema:
             {"outcomeStatus":"COMPLETED|FAILED|PARTIAL","outcomeSummary":"...","confidence":0.0-1.0,\
-            "promotionRecommendation":"approve_gated|reject|observe",\
+            "promotionRecommendation":"approve_gated|reject",\
             "evidenceRefs":[{"traceId":"...","spanId":"...","outputFragment":"..."}],\
             "processFindings":[]}
             """;
@@ -207,6 +209,9 @@ public class LlmJudgeService {
         if (verdict == null) {
             throw new IllegalArgumentException("Judge verdict must not be null");
         }
+        validateOutcomeStatus(verdict.getOutcomeStatus());
+        validateProcessStatus(verdict.getProcessStatus());
+        validatePromotionRecommendation(verdict.getPromotionRecommendation());
         if (requireEvidenceAnchors() && (verdict.getEvidenceRefs() == null || verdict.getEvidenceRefs().isEmpty())) {
             throw new IllegalArgumentException("Judge verdict must include evidence refs");
         }
@@ -258,14 +263,21 @@ public class LlmJudgeService {
                         .build());
             }
 
-            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.OK, null, Instant.now());
-
             if (response == null || StringValueSupport.isBlank(responseContent)) {
                 throw new IllegalArgumentException("Judge returned empty response");
             }
             RunVerdict parsedVerdict = parseVerdict(responseContent, runRecord);
             validate(parsedVerdict);
+            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.OK, null, Instant.now());
             return parsedVerdict;
+        } catch (InterruptedException exception) {
+            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.ERROR,
+                    "Judge interrupted", Instant.now());
+            throw exception;
+        } catch (ExecutionException | RuntimeException exception) {
+            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.ERROR,
+                    exception.getMessage(), Instant.now());
+            throw exception;
         } finally {
             saveJudgeSession(judgeSession);
         }
@@ -322,8 +334,6 @@ public class LlmJudgeService {
                     Thread.sleep(backoffMs);
                     attempt++;
                 } else {
-                    traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.ERROR,
-                            exception.getMessage(), Instant.now());
                     throw exception;
                 }
             }
@@ -370,6 +380,7 @@ public class LlmJudgeService {
     private RunVerdict parseVerdict(String rawContent, RunRecord runRecord) {
         try {
             RunVerdict verdict = objectMapper.readValue(rawContent, RunVerdict.class);
+            normalizeVerdict(verdict);
             if (StringValueSupport.isBlank(verdict.getId())) {
                 verdict.setId(UUID.randomUUID().toString());
             }
@@ -383,6 +394,92 @@ public class LlmJudgeService {
         } catch (Exception e) {
             throw new IllegalArgumentException("Unable to parse judge verdict", e);
         }
+    }
+
+    private void normalizeVerdict(RunVerdict verdict) {
+        if (verdict == null) {
+            return;
+        }
+        verdict.setOutcomeStatus(normalizeOutcomeStatus(verdict.getOutcomeStatus()));
+        verdict.setProcessStatus(normalizeProcessStatus(verdict.getProcessStatus()));
+        verdict.setPromotionRecommendation(normalizePromotionRecommendation(verdict.getPromotionRecommendation()));
+    }
+
+    private String normalizeOutcomeStatus(String outcomeStatus) {
+        if (StringValueSupport.isBlank(outcomeStatus)) {
+            return outcomeStatus;
+        }
+        return switch (canonicalToken(outcomeStatus)) {
+        case "SUCCESS", "COMPLETED" -> "COMPLETED";
+        case "FAILED", "ERROR" -> "FAILED";
+        case "PARTIAL" -> "PARTIAL";
+        case "RUNNING" -> "RUNNING";
+        default -> canonicalToken(outcomeStatus);
+        };
+    }
+
+    private String normalizeProcessStatus(String processStatus) {
+        if (StringValueSupport.isBlank(processStatus)) {
+            return processStatus;
+        }
+        return switch (canonicalToken(processStatus)) {
+        case "CLEAN", "EFFICIENT" -> "CLEAN";
+        case "ISSUES_FOUND", "INEFFICIENT" -> "ISSUES_FOUND";
+        default -> canonicalToken(processStatus);
+        };
+    }
+
+    private String normalizePromotionRecommendation(String promotionRecommendation) {
+        if (StringValueSupport.isBlank(promotionRecommendation)) {
+            return promotionRecommendation;
+        }
+        return switch (canonicalRecommendationToken(promotionRecommendation)) {
+        case "approve_gated", "approve", "approved", "observe", "shadow" -> "approve_gated";
+        case "reject", "rejected" -> "reject";
+        default -> canonicalRecommendationToken(promotionRecommendation);
+        };
+    }
+
+    private void validateOutcomeStatus(String outcomeStatus) {
+        if (StringValueSupport.isBlank(outcomeStatus)) {
+            return;
+        }
+        if (!List.of("COMPLETED", "FAILED", "PARTIAL", "RUNNING").contains(outcomeStatus)) {
+            throw new IllegalArgumentException("Judge verdict returned unsupported outcomeStatus: " + outcomeStatus);
+        }
+    }
+
+    private void validateProcessStatus(String processStatus) {
+        if (StringValueSupport.isBlank(processStatus)) {
+            return;
+        }
+        if (!List.of("CLEAN", "ISSUES_FOUND").contains(processStatus)) {
+            throw new IllegalArgumentException("Judge verdict returned unsupported processStatus: " + processStatus);
+        }
+    }
+
+    private void validatePromotionRecommendation(String promotionRecommendation) {
+        if (StringValueSupport.isBlank(promotionRecommendation)) {
+            return;
+        }
+        if (!List.of("approve_gated", "reject").contains(promotionRecommendation)) {
+            throw new IllegalArgumentException("Judge verdict returned unsupported promotionRecommendation: "
+                    + promotionRecommendation);
+        }
+    }
+
+    private String canonicalToken(String value) {
+        return value.trim()
+                .replace('-', '_')
+                .replace(' ', '_')
+                .toUpperCase(Locale.ROOT);
+    }
+
+    private String canonicalRecommendationToken(String value) {
+        return value.trim()
+                .replace('-', '_')
+                .replace(' ', '_')
+                .toLowerCase(Locale.ROOT);
     }
 
     private RunVerdict mergeVerdicts(RunVerdict deterministicVerdict, RunVerdict outcomeVerdict,

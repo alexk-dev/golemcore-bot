@@ -18,42 +18,30 @@ package me.golemcore.bot.domain.system;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.TurnOutcome;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticOutcomeEntry;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
-import me.golemcore.bot.domain.selfevolving.tactic.TacticOutcomeJournalService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
-
+import me.golemcore.bot.domain.selfevolving.tactic.TacticOutcomeJournalService;
 import java.time.Clock;
-import java.time.Instant;
 
 /**
- * Records tactic outcome feedback after every turn where a tactic was selected.
- * Runs after TurnOutcomeFinalizationSystem (order 57) so that TurnOutcome is
- * available, and before ResponseRoutingSystem (order 60).
+ * Compatibility hook kept in the pipeline after moving tactic outcome
+ * journaling to {@link PostRunAnalysisSystem}. Leaving journaling in both
+ * systems caused duplicate entries and skewed tactic quality metrics.
  */
 @Component
 @Order(58)
-@Slf4j
 public class TacticOutcomeFeedbackSystem implements AgentSystem {
 
     private final RuntimeConfigService runtimeConfigService;
-    private final TacticOutcomeJournalService tacticOutcomeJournalService;
-    private final Clock clock;
 
     public TacticOutcomeFeedbackSystem(
             RuntimeConfigService runtimeConfigService,
             TacticOutcomeJournalService tacticOutcomeJournalService,
             Clock clock) {
         this.runtimeConfigService = runtimeConfigService;
-        this.tacticOutcomeJournalService = tacticOutcomeJournalService;
-        this.clock = clock;
     }
 
     @Override
@@ -80,34 +68,6 @@ public class TacticOutcomeFeedbackSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
-        try {
-            TacticSearchResult selectedTactic = context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION);
-            TacticSearchQuery query = context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY);
-            TurnOutcome turnOutcome = context.getTurnOutcome();
-
-            String searchMode = selectedTactic.getExplanation() != null
-                    ? selectedTactic.getExplanation().getSearchMode()
-                    : null;
-            Double finalScore = selectedTactic.getExplanation() != null
-                    ? selectedTactic.getExplanation().getFinalScore()
-                    : null;
-
-            TacticOutcomeEntry entry = TacticOutcomeEntry.builder()
-                    .tacticId(selectedTactic.getTacticId())
-                    .rawQuery(query != null ? query.getRawQuery() : null)
-                    .queryViews(query != null ? query.getQueryViews() : null)
-                    .searchMode(searchMode)
-                    .finalScore(finalScore)
-                    .finishReason(turnOutcome.getFinishReason() != null
-                            ? turnOutcome.getFinishReason().name().toLowerCase()
-                            : null)
-                    .recordedAt(Instant.now(clock))
-                    .build();
-
-            tacticOutcomeJournalService.record(entry);
-        } catch (RuntimeException exception) { // NOSONAR - feedback must not break the pipeline
-            log.debug("[TacticOutcomeFeedback] Failed to record tactic outcome: {}", exception.getMessage());
-        }
         return context;
     }
 }

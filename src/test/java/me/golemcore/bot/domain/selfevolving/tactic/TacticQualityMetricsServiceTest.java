@@ -481,6 +481,33 @@ class TacticQualityMetricsServiceTest {
     }
 
     @Test
+    void shouldTreatFailureFinishReasonAsFailedOutcome() {
+        TacticRecord tactic = TacticRecord.builder()
+                .tacticId("tactic-failure")
+                .artifactStreamId("stream-failure")
+                .contentRevisionId("revision-failure")
+                .build();
+        when(artifactBundleService.getBundles()).thenReturn(List.of());
+        when(selfEvolvingRunService.getRuns()).thenReturn(List.of());
+        when(tacticOutcomeJournalService.getEntries()).thenReturn(List.of(
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-failure")
+                        .finishReason("success")
+                        .recordedAt(Instant.parse("2026-04-05T10:00:00Z"))
+                        .build(),
+                TacticOutcomeEntry.builder()
+                        .tacticId("tactic-failure")
+                        .finishReason("failure")
+                        .recordedAt(Instant.parse("2026-04-05T11:00:00Z"))
+                        .build()));
+
+        TacticRecord enriched = tacticQualityMetricsService.enrich(tactic);
+
+        assertEquals(0.5d, enriched.getSuccessRate());
+        assertTrue(enriched.getRegressionFlags().contains("recent-failure"));
+    }
+
+    @Test
     void shouldIgnoreJournalEntriesForUnknownTacticIds() {
         TacticRecord tactic = TacticRecord.builder()
                 .tacticId("tactic-known")

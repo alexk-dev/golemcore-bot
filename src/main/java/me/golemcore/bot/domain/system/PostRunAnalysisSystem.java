@@ -46,7 +46,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Minimal post-turn hook that materializes a SelfEvolving run record.
@@ -54,6 +58,16 @@ import java.util.concurrent.atomic.AtomicReference;
 @Component
 @Slf4j
 public class PostRunAnalysisSystem implements AgentSystem {
+
+    private static final AtomicInteger BACKGROUND_ANALYSIS_THREAD_IDS = new AtomicInteger();
+    private static final ExecutorService DEFAULT_BACKGROUND_ANALYSIS_EXECUTOR = Executors.newFixedThreadPool(
+            Math.max(2, Math.min(4, Runtime.getRuntime().availableProcessors())),
+            runnable -> {
+                Thread thread = new Thread(runnable,
+                        "selfevolving-post-run-" + BACKGROUND_ANALYSIS_THREAD_IDS.incrementAndGet());
+                thread.setDaemon(true);
+                return thread;
+            });
 
     private final RuntimeConfigService runtimeConfigService;
     private final SelfEvolvingRunService selfEvolvingRunService;
@@ -65,6 +79,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
     private final PromotionWorkflowService promotionWorkflowService;
     private final TacticOutcomeJournalService tacticOutcomeJournalService;
     private final SelfEvolvingProjectionPublishPort projectionPublishPort;
+    private final Executor backgroundAnalysisExecutor;
     private final AtomicReference<CompletableFuture<Void>> lastBackgroundAnalysis = new AtomicReference<>();
 
     public PostRunAnalysisSystem(RuntimeConfigService runtimeConfigService,
@@ -87,6 +102,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
         this.promotionWorkflowService = promotionWorkflowService;
         this.tacticOutcomeJournalService = tacticOutcomeJournalService;
         this.projectionPublishPort = projectionPublishPort;
+        this.backgroundAnalysisExecutor = DEFAULT_BACKGROUND_ANALYSIS_EXECUTOR;
     }
 
     @Override
@@ -139,7 +155,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
                 : null;
         lastBackgroundAnalysis.set(CompletableFuture.runAsync(() -> runAnalysisInBackground(
                 completedRun, traceRecord, deterministicVerdict, tacticQuery, tacticSelection,
-                userQuery, assistantResponse)));
+                userQuery, assistantResponse), backgroundAnalysisExecutor));
 
         return context;
     }

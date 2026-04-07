@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -400,6 +401,40 @@ class PostRunAnalysisSystemTest {
                 entry -> "tactic-a".equals(entry.getTacticId()) && "success".equals(entry.getFinishReason())));
         verify(tacticOutcomeJournalService).record(org.mockito.ArgumentMatchers.argThat(
                 entry -> "tactic-b".equals(entry.getTacticId()) && "success".equals(entry.getFinishReason())));
+    }
+
+    @Test
+    void shouldRunBackgroundAnalysisOnDedicatedExecutor() {
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        AgentContext context = buildContext();
+        RunRecord startedRun = RunRecord.builder()
+                .id("run-7")
+                .artifactBundleId("bundle-7")
+                .build();
+        RunRecord completedRun = RunRecord.builder()
+                .id("run-7")
+                .artifactBundleId("bundle-7")
+                .traceId("trace-1")
+                .status("COMPLETED")
+                .build();
+        TraceRecord traceRecord = TraceRecord.builder().traceId("trace-1").build();
+        RunVerdict deterministicVerdict = RunVerdict.builder().runId("run-7").build();
+        RunVerdict llmVerdict = RunVerdict.builder().runId("run-7").build();
+        AtomicReference<String> backgroundThreadName = new AtomicReference<>();
+        when(selfEvolvingRunService.startRun(context)).thenReturn(startedRun);
+        when(selfEvolvingRunService.completeRun(startedRun, context)).thenReturn(completedRun);
+        when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
+        when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
+                .thenAnswer(invocation -> {
+                    backgroundThreadName.set(Thread.currentThread().getName());
+                    return llmVerdict;
+                });
+        when(llmEvolutionService.propose(completedRun, llmVerdict)).thenReturn(null);
+
+        processAndAwait(context);
+
+        assertTrue(backgroundThreadName.get() != null
+                && backgroundThreadName.get().startsWith("selfevolving-post-run-"));
     }
 
     private AgentContext processAndAwait(AgentContext context) {
