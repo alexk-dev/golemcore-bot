@@ -1971,7 +1971,9 @@ class Langchain4jAdapterTest {
     void shouldTimeoutSyncResponsesApiChatWhenStreamingNeverCompletes() {
         String model = OPENAI + "/gpt-5.4";
         StreamingChatModel streamingModel = mockStreamingModelWithoutTerminalEvent();
-        injectResponsesStreamingModel(model, null, streamingModel);
+        ChatModel syncWrapper = new Langchain4jAdapter.ResponsesSyncChatModel(
+                streamingModel, java.time.Duration.ofSeconds(1));
+        injectChatModel(syncWrapper, model);
         when(modelConfig.getProvider(model)).thenReturn(OPENAI);
         when(runtimeConfigService.getLlmProviderConfig(OPENAI))
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
@@ -2049,7 +2051,6 @@ class Langchain4jAdapterTest {
         String model = OPENAI + "/gpt-5.4";
         StreamingChatModel streamingModel = mockStreamingModel("default model response");
         injectResponsesStreamingModel(model, null, streamingModel);
-        injectChatModel(null, model);
 
         when(modelConfig.getProvider(model)).thenReturn(OPENAI);
         when(runtimeConfigService.getLlmProviderConfig(OPENAI))
@@ -2070,7 +2071,6 @@ class Langchain4jAdapterTest {
     // ===== Responses streaming model helpers =====
 
     private void setupResponsesApiProvider(String model) {
-        injectChatModel(null, model);
         when(modelConfig.getProvider(model)).thenReturn(OPENAI);
         when(runtimeConfigService.getLlmProviderConfig(OPENAI))
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
@@ -2082,7 +2082,9 @@ class Langchain4jAdapterTest {
     @SuppressWarnings(SUPPRESS_UNCHECKED)
     private void injectResponsesStreamingModel(String model, String reasoningEffort,
             StreamingChatModel streamingModel) {
-        injectChatModel(null, model);
+        ChatModel syncWrapper = new Langchain4jAdapter.ResponsesSyncChatModel(
+                streamingModel, java.time.Duration.ofSeconds(30));
+        injectChatModel(syncWrapper, model);
         Map<String, StreamingChatModel> cache = (Map<String, StreamingChatModel>) ReflectionTestUtils.getField(adapter,
                 "responsesStreamingModels");
         String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "");
