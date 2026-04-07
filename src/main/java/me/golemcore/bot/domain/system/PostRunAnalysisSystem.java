@@ -130,12 +130,8 @@ public class PostRunAnalysisSystem implements AgentSystem {
 
         // LLM judge + evolution pipeline runs in the background so the main
         // session completes immediately and the chat does not hang.
-        TacticSearchQuery tacticQuery = context != null
-                ? context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY)
-                : null;
-        TacticSearchResult tacticSelection = context != null
-                ? context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION)
-                : null;
+        TacticSearchQuery tacticQuery = context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_QUERY);
+        TacticSearchResult tacticSelection = context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION);
         String userQuery = resolveLastUserMessage(context);
         String assistantResponse = context.getTurnOutcome() != null
                 ? context.getTurnOutcome().getAssistantText()

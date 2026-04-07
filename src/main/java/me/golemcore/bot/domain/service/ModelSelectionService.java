@@ -300,17 +300,18 @@ public class ModelSelectionService {
                 runtimeConfigService.getConfiguredLlmProviders());
         ValidationResult modelValidation = validateModel(canonicalModel);
         if (!modelValidation.valid()) {
-            if ("provider.not.configured".equals(modelValidation.error())) {
-                log.error("[ModelSelection] Tier '{}' points to model '{}' whose provider is not configured",
-                        tier, selection.model());
-                throw new IllegalStateException("Tier '" + tier + "' points to model '" + selection.model()
+            log.error("[ModelSelection] Tier '{}' resolution failed: model='{}', canonical='{}', error='{}'",
+                    tier, selection.model(), canonicalModel, modelValidation.error());
+            throw switch (modelValidation.error()) {
+            case "model.not.found" ->
+                new IllegalStateException("Tier '" + tier + "' points to unknown model '" + selection.model()
+                        + "' — add it to the catalog via discovery or manual configuration");
+            case "provider.not.configured" ->
+                new IllegalStateException("Tier '" + tier + "' points to model '" + selection.model()
                         + "' whose provider is not configured");
-            }
-            // Model not in catalog — warn but proceed. The adapter resolves the
-            // provider from the model spec prefix and uses default settings.
-            log.warn(
-                    "[ModelSelection] Tier '{}': model '{}' (canonical='{}') not in catalog — proceeding with defaults",
-                    tier, selection.model(), canonicalModel);
+            default ->
+                new IllegalStateException("Tier '" + tier + "' is invalid: " + modelValidation.error());
+            };
         }
 
         String reasoning = selection.reasoning();
@@ -319,9 +320,8 @@ public class ModelSelectionService {
         } else if (reasoning != null && modelConfigService.isReasoningRequired(canonicalModel)) {
             ValidationResult reasoningValidation = validateReasoning(canonicalModel, reasoning);
             if (!reasoningValidation.valid()) {
-                log.warn("[ModelSelection] Tier '{}': reasoning '{}' not valid for model '{}' — dropping reasoning",
-                        tier, reasoning, canonicalModel);
-                reasoning = null;
+                throw new IllegalStateException("Tier '" + tier + "' uses unsupported reasoning '" + reasoning
+                        + "' for model '" + canonicalModel + "'");
             }
         }
 

@@ -452,8 +452,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         long backoffMs = resetSeconds > 0
                                 ? Math.max(resetSeconds * 1000 + 1000, exponentialBackoffMs)
                                 : exponentialBackoffMs;
-                        log.warn("[LLM] Rate limit hit (attempt {}/{}), retrying in {}ms{}...",
-                                attempt + 1, MAX_RETRIES, backoffMs,
+                        log.warn("[LLM] Rate limit hit for {} (attempt {}/{}), retrying in {}ms{}...",
+                                request.getModel(), attempt + 1, MAX_RETRIES, backoffMs,
                                 resetSeconds > 0 ? " (server requested " + resetSeconds + "s)" : "");
                         try {
                             sleepBeforeRetry(backoffMs);
