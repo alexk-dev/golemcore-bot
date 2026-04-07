@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from 'react';
 
+import { postTelemetryRollup } from '../../api/telemetry';
 import { useRuntimeConfig } from '../../hooks/useSettings';
 import { TelemetryProvider } from '../../lib/telemetry/TelemetryProvider';
 import { TelemetryErrorBoundary } from './TelemetryErrorBoundary';
@@ -18,7 +19,7 @@ export function TelemetryBootstrap({ children }: TelemetryBootstrapProps): React
   const enabled = runtimeConfig.telemetry?.enabled !== false;
 
   return (
-    <TelemetryProvider enabled={enabled}>
+    <TelemetryProvider enabled={enabled} flushRollup={postTelemetryRollup}>
       <TelemetryErrorBoundary>
         <TelemetryRouteTracker />
         {children}

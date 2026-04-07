@@ -4,20 +4,23 @@ import {
   type ReactNode,
   useContext,
   useEffect,
+  useMemo,
   useRef,
 } from 'react';
 
-import { postTelemetryRollup } from '../../api/telemetry';
 import { createTelemetryAggregator, type TelemetryAggregator } from './telemetryAggregator';
 import { clearTelemetryRecorder, setTelemetryRecorder } from './telemetryBridge';
 import {
   sanitizeTelemetryErrorName,
   sanitizeTelemetryRoute,
 } from './telemetrySanitizers';
-import type { TelemetryRecorder, UiErrorInput } from './telemetryTypes';
+import type { TelemetryRecorder, UiErrorInput, UiUsageRollup } from './telemetryTypes';
+
+export type FlushRollupFn = (rollup: UiUsageRollup) => Promise<void>;
 
 interface TelemetryProviderProps {
   enabled: boolean;
+  flushRollup: FlushRollupFn;
   children: ReactNode;
 }
 
@@ -34,11 +37,6 @@ function normalizeUnknownError(reason: unknown): { errorName: string } {
   if (reason instanceof Error) {
     return {
       errorName: reason.name,
-    };
-  }
-  if (typeof reason === 'string') {
-    return {
-      errorName: 'UnhandledRejection',
     };
   }
   return {
@@ -63,14 +61,14 @@ function buildRejectionPayload(event: PromiseRejectionEvent): UiErrorInput {
   };
 }
 
-export function TelemetryProvider({ enabled, children }: TelemetryProviderProps): ReactElement {
+export function TelemetryProvider({ enabled, flushRollup, children }: TelemetryProviderProps): ReactElement {
   const aggregatorRef = useRef<TelemetryAggregator | null>(null);
 
   if (aggregatorRef.current == null) {
     aggregatorRef.current = createTelemetryAggregator();
   }
 
-  const recorder: TelemetryRecorder = {
+  const recorder: TelemetryRecorder = useMemo(() => ({
     recordCounter(key: string) {
       aggregatorRef.current?.recordCounter(key);
     },
@@ -83,8 +81,9 @@ export function TelemetryProvider({ enabled, children }: TelemetryProviderProps)
     recordUiError(input: UiErrorInput) {
       aggregatorRef.current?.recordUiError(input);
     },
-  };
+  }), []);
 
+  // Sync the bridge recorder when enabled state changes.
   useEffect(() => {
     if (!enabled) {
       aggregatorRef.current?.reset();
@@ -98,12 +97,12 @@ export function TelemetryProvider({ enabled, children }: TelemetryProviderProps)
     };
   }, [enabled, recorder]);
 
+  // Periodically flush completed rollup buckets to the backend.
   useEffect(() => {
     if (!enabled) {
       return;
     }
 
-    // Flush completed 15-minute buckets on a light interval and when the page becomes visible again.
     async function flushReadyRollups(): Promise<void> {
       const rollups = aggregatorRef.current?.collectReadyRollups() ?? [];
       if (rollups.length === 0) {
@@ -113,7 +112,7 @@ export function TelemetryProvider({ enabled, children }: TelemetryProviderProps)
       let nextRollupIndex = 0;
       try {
         for (; nextRollupIndex < rollups.length; nextRollupIndex += 1) {
-          await postTelemetryRollup(rollups[nextRollupIndex]);
+          await flushRollup(rollups[nextRollupIndex]);
         }
       } catch (error) {
         console.error('Failed to send telemetry rollups', error);
@@ -138,14 +137,14 @@ export function TelemetryProvider({ enabled, children }: TelemetryProviderProps)
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [enabled]);
+  }, [enabled, flushRollup]);
 
+  // Capture uncaught window errors and promise rejections.
   useEffect(() => {
     if (!enabled) {
       return;
     }
 
-    // Capture uncaught window errors and promise rejections into the aggregated UI error bucket.
     function handleWindowError(event: ErrorEvent): void {
       recorder.recordUiError(buildWindowErrorPayload(event));
     }

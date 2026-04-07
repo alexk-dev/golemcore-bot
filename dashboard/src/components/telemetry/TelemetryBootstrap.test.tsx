@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const telemetryProviderSpy = vi.hoisted(() => vi.fn(({ children }: { enabled: boolean; children: ReactNode }) => <>{children}</>));
+const telemetryProviderSpy = vi.hoisted(() => vi.fn(({ children }: { enabled: boolean; flushRollup: unknown; children: ReactNode }) => <>{children}</>));
 const runtimeConfigState = vi.hoisted(() => ({
   telemetryEnabled: true,
 }));

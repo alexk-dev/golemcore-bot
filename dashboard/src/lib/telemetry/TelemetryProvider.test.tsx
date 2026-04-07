@@ -49,14 +49,10 @@ const aggregatorStub = vi.hoisted(() => ({
   reset: vi.fn(),
 }));
 
-const postTelemetryRollup = vi.hoisted(() => vi.fn());
+const flushRollupMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./telemetryAggregator', () => ({
   createTelemetryAggregator: () => aggregatorStub,
-}));
-
-vi.mock('../../api/telemetry', () => ({
-  postTelemetryRollup,
 }));
 
 import { TelemetryProvider } from './TelemetryProvider';
@@ -83,7 +79,7 @@ describe('TelemetryProvider', () => {
   });
 
   it('restores only the unsent rollup tail when a later upload fails', async () => {
-    postTelemetryRollup
+    flushRollupMock
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error('network'));
 
@@ -94,15 +90,15 @@ describe('TelemetryProvider', () => {
 
     await act(async () => {
       root.render(
-        <TelemetryProvider enabled>
+        <TelemetryProvider enabled flushRollup={flushRollupMock}>
           <TestChild />
         </TelemetryProvider>,
       );
       await flushPromises();
     });
 
-    expect(postTelemetryRollup).toHaveBeenNthCalledWith(1, rollupA);
-    expect(postTelemetryRollup).toHaveBeenNthCalledWith(2, rollupB);
+    expect(flushRollupMock).toHaveBeenNthCalledWith(1, rollupA);
+    expect(flushRollupMock).toHaveBeenNthCalledWith(2, rollupB);
     expect(aggregatorStub.restoreReadyRollups).toHaveBeenCalledWith([rollupB]);
 
     await act(async () => {
