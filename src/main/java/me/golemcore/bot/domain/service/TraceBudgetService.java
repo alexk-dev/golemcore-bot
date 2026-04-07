@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSnapshot;
 import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.model.trace.TraceStorageStats;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -12,6 +13,7 @@ import java.util.Comparator;
 import java.util.List;
 
 @Service
+@Slf4j
 public class TraceBudgetService {
 
     public void enforceBudget(AgentSession session, long maxCompressedBytes) {
@@ -57,6 +59,9 @@ public class TraceBudgetService {
             TraceSpanRecord span = snapshotRef.span();
             TraceSnapshot snapshot = snapshotRef.snapshot();
             if (span.getSnapshots().remove(snapshot)) {
+                log.debug("[TraceBudget] Evicted snapshot role={} from span={} (trace={}), freed {} bytes",
+                        snapshot.getRole(), span.getSpanId(), snapshotRef.trace().getTraceId(),
+                        safeLong(snapshot.getCompressedSize()));
                 currentCompressedBytes -= safeLong(snapshot.getCompressedSize());
                 snapshotRef.trace().setTruncated(true);
                 stats.setEvictedSnapshots(stats.getEvictedSnapshots() + 1);
