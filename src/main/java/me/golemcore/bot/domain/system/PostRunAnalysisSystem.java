@@ -46,6 +46,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Minimal post-turn hook that materializes a SelfEvolving run record.
@@ -64,7 +65,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
     private final PromotionWorkflowService promotionWorkflowService;
     private final TacticOutcomeJournalService tacticOutcomeJournalService;
     private final SelfEvolvingProjectionPublishPort projectionPublishPort;
-    private volatile CompletableFuture<Void> lastBackgroundAnalysis;
+    private final AtomicReference<CompletableFuture<Void>> lastBackgroundAnalysis = new AtomicReference<>();
 
     public PostRunAnalysisSystem(RuntimeConfigService runtimeConfigService,
             SelfEvolvingRunService selfEvolvingRunService,
@@ -136,9 +137,9 @@ public class PostRunAnalysisSystem implements AgentSystem {
         String assistantResponse = context.getTurnOutcome() != null
                 ? context.getTurnOutcome().getAssistantText()
                 : null;
-        lastBackgroundAnalysis = CompletableFuture.runAsync(() -> runAnalysisInBackground(
+        lastBackgroundAnalysis.set(CompletableFuture.runAsync(() -> runAnalysisInBackground(
                 completedRun, traceRecord, deterministicVerdict, tacticQuery, tacticSelection,
-                userQuery, assistantResponse));
+                userQuery, assistantResponse)));
 
         return context;
     }
@@ -262,7 +263,7 @@ public class PostRunAnalysisSystem implements AgentSystem {
      * Awaits the last background analysis. Visible for testing only.
      */
     CompletableFuture<Void> getLastBackgroundAnalysis() {
-        return lastBackgroundAnalysis;
+        return lastBackgroundAnalysis.get();
     }
 
     private String resolveLastUserMessage(AgentContext context) {

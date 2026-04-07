@@ -329,7 +329,7 @@ class ModelsControllerTest {
 
         // Assert
         assertNotNull(result);
-        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertEquals(HttpStatus.BAD_GATEWAY, result.getStatusCode());
         ModelsController.TestModelResponse body = result.getBody();
         assertNotNull(body);
         assertFalse(body.success());

@@ -177,7 +177,8 @@ public class ModelsController {
         } catch (Exception e) { // NOSONAR - catching all for user-facing diagnostic
             String errorMessage = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
             log.warn("[Models] Test failed for {}: {}", model, errorMessage);
-            return Mono.just(ResponseEntity.ok(new TestModelResponse(false, null, errorMessage)));
+            return Mono.just(ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                    .body(new TestModelResponse(false, null, errorMessage)));
         }
     }
 
