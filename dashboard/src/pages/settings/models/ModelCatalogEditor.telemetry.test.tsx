@@ -116,6 +116,16 @@ declare global {
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
+function getButtonByText(label: string): HTMLButtonElement {
+  const button = Array.from(document.querySelectorAll('button')).find(
+    (element): element is HTMLButtonElement => element.textContent?.trim() === label,
+  );
+  if (button == null) {
+    throw new Error(`Button "${label}" not found`);
+  }
+  return button;
+}
+
 describe('ModelCatalogEditor telemetry', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -141,15 +151,16 @@ describe('ModelCatalogEditor telemetry', () => {
           ]}
         />,
       );
+      await Promise.resolve();
     });
 
-    const buttons = Array.from(document.querySelectorAll('button'));
-    const saveButton = buttons.find((button) => button.textContent?.trim() === 'Save model') as HTMLButtonElement;
-    const reloadButton = buttons.find((button) => button.textContent?.trim() === 'Reload') as HTMLButtonElement;
+    const saveButton = getButtonByText('Save model');
+    const reloadButton = getButtonByText('Reload');
 
     await act(async () => {
       saveButton.click();
       reloadButton.click();
+      await Promise.resolve();
     });
 
     expect(recordCounter).toHaveBeenCalledWith('model_catalog_edit_count');

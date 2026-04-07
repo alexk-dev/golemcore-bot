@@ -146,6 +146,16 @@ declare global {
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
+function getButtonByText(label: string): HTMLButtonElement {
+  const button = Array.from(document.querySelectorAll('button')).find(
+    (element): element is HTMLButtonElement => element.textContent === label,
+  );
+  if (button == null) {
+    throw new Error(`Button "${label}" not found`);
+  }
+  return button;
+}
+
 describe('ChatWindow telemetry', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -159,21 +169,20 @@ describe('ChatWindow telemetry', () => {
     updatePreferences.mockClear();
   });
 
-  it('records chat send and force-tier toggles', async () => {
+  it('records chat send and force-tier toggles', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root: Root = createRoot(container);
 
-    await act(async () => {
+    act(() => {
       root.render(<ChatWindow />);
     });
 
-    const buttons = Array.from(document.querySelectorAll('button'));
-    const sendButton = buttons.find((button) => button.textContent === 'Send message') as HTMLButtonElement;
-    const forceButton = buttons.find((button) => button.textContent === 'Force tier') as HTMLButtonElement;
-    const changeTierButton = buttons.find((button) => button.textContent === 'Change tier') as HTMLButtonElement;
+    const sendButton = getButtonByText('Send message');
+    const forceButton = getButtonByText('Force tier');
+    const changeTierButton = getButtonByText('Change tier');
 
-    await act(async () => {
+    act(() => {
       sendButton.click();
       forceButton.click();
       changeTierButton.click();

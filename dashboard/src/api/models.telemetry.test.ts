@@ -1,5 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+interface SaveModelRequest {
+  id: string;
+  previousId: string | null;
+  settings: {
+    provider: string;
+  };
+}
+
+interface SaveModelConfig {
+  _telemetry: {
+    counterKey: string;
+    value: string;
+  };
+}
+
 const clientPost = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: {} })));
 const clientGet = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: {} })));
 const clientPut = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: {} })));
@@ -31,21 +46,19 @@ describe('model catalog telemetry metadata', () => {
       reasoning: null,
     });
 
-    expect(clientPost).toHaveBeenCalledWith(
-      '/models',
-      expect.objectContaining({
-        id: 'gpt-4.1',
-        previousId: null,
-        settings: expect.objectContaining({
-          provider: 'openai',
-        }),
-      }),
-      expect.objectContaining({
-        _telemetry: {
-          counterKey: 'settings_save_count_by_section',
-          value: 'model-catalog',
-        },
-      }),
-    );
+    const call = clientPost.mock.calls[0] as [string, SaveModelRequest, SaveModelConfig] | undefined;
+    if (call == null) {
+      throw new Error('Expected saveModel to call client.post');
+    }
+
+    const [url, body, config] = call;
+    expect(url).toBe('/models');
+    expect(body.id).toBe('gpt-4.1');
+    expect(body.previousId).toBeNull();
+    expect(body.settings.provider).toBe('openai');
+    expect(config._telemetry).toEqual({
+      counterKey: 'settings_save_count_by_section',
+      value: 'model-catalog',
+    });
   });
 });

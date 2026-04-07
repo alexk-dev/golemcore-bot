@@ -60,6 +60,16 @@ declare global {
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
+function getButtonByText(label: string): HTMLButtonElement {
+  const button = Array.from(document.querySelectorAll('button')).find(
+    (element): element is HTMLButtonElement => element.textContent?.trim() === label,
+  );
+  if (button == null) {
+    throw new Error(`Button "${label}" not found`);
+  }
+  return button;
+}
+
 describe('PluginSettingsPanel telemetry', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -70,20 +80,18 @@ describe('PluginSettingsPanel telemetry', () => {
     executeAction.mockClear();
   });
 
-  it('records plugin action executions by route', async () => {
+  it('records plugin action executions by route', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root: Root = createRoot(container);
 
-    await act(async () => {
+    act(() => {
       root.render(<PluginSettingsPanel routeKey="plugin-browser" />);
     });
 
-    const reloadButton = Array.from(document.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Reload',
-    ) as HTMLButtonElement;
+    const reloadButton = getButtonByText('Reload');
 
-    await act(async () => {
+    act(() => {
       reloadButton.click();
     });
 

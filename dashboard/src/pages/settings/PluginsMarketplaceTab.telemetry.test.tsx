@@ -113,12 +113,12 @@ describe('PluginsMarketplaceTab telemetry', () => {
     uninstallMutateAsync.mockClear();
   });
 
-  it('records plugin install and uninstall intent counts', async () => {
+  it('records plugin install and uninstall intent counts', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root: Root = createRoot(container);
 
-    await act(async () => {
+    act(() => {
       root.render(
         <MemoryRouter>
           <PluginsMarketplaceTab />
@@ -128,10 +128,13 @@ describe('PluginsMarketplaceTab telemetry', () => {
 
     expect(recordCounter).toHaveBeenCalledWith('plugin_marketplace_open_count');
 
-    const installButton = getButtonsByText('Install')[0];
+    const [installButton] = getButtonsByText('Install');
+    if (installButton == null) {
+      throw new Error('Install button not found');
+    }
     const uninstallButton = findButtonByText(/uninstall/i);
 
-    await act(async () => {
+    act(() => {
       installButton.click();
       uninstallButton.click();
     });

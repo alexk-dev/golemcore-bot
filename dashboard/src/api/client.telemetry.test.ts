@@ -1,6 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const responseSuccessHandler = vi.hoisted(() => ({ current: null as null | ((value: any) => any) }));
+interface TelemetryResponse {
+  config?: {
+    _telemetry?: {
+      counterKey?: string;
+      value?: string;
+    };
+  };
+}
+
+const responseSuccessHandler = vi.hoisted(() => ({
+  current: null as ((value: TelemetryResponse) => TelemetryResponse | Promise<TelemetryResponse>) | null,
+}));
 const recordTelemetryCounter = vi.hoisted(() => vi.fn());
 const recordTelemetryKeyedCounter = vi.hoisted(() => vi.fn());
 const fakeClient = vi.hoisted(() => ({
@@ -9,7 +20,7 @@ const fakeClient = vi.hoisted(() => ({
       use: vi.fn(),
     },
     response: {
-      use: vi.fn((onFulfilled: (value: any) => any) => {
+      use: vi.fn((onFulfilled: (value: TelemetryResponse) => TelemetryResponse | Promise<TelemetryResponse>) => {
         responseSuccessHandler.current = onFulfilled;
         return 0;
       }),

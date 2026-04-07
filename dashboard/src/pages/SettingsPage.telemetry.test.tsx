@@ -78,13 +78,13 @@ describe('SettingsPage telemetry', () => {
     recordKeyedCounter.mockClear();
   });
 
-  it('records settings search usage when the user types in the catalog search box', async () => {
+  it('records settings search usage when the user types in the catalog search box', () => {
     const queryClient = new QueryClient();
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root: Root = createRoot(container);
 
-    await act(async () => {
+    act(() => {
       root.render(
         <QueryClientProvider client={queryClient}>
           <MemoryRouter initialEntries={['/settings']}>
@@ -101,13 +101,13 @@ describe('SettingsPage telemetry', () => {
       throw new Error('Search input not found');
     }
 
-    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    if (valueSetter == null) {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.bind(input);
+    if (setValue == null) {
       throw new Error('Input value setter not found');
     }
 
-    await act(async () => {
-      valueSetter.call(input, 'telemetry');
+    act(() => {
+      setValue('telemetry');
       input.dispatchEvent(new Event('change', { bubbles: true }));
     });
 

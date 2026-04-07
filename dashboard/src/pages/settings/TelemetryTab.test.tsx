@@ -13,12 +13,14 @@ declare global {
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-const mutateAsync = vi.fn(() => Promise.resolve());
-const toastSuccess = vi.fn();
+const mutateAsync = vi.hoisted(() =>
+  vi.fn<(config: TelemetryConfig) => Promise<void>>(() => Promise.resolve()),
+);
+const toastSuccess = vi.hoisted(() => vi.fn<(message: string) => void>());
 
 vi.mock('react-hot-toast', () => ({
   default: {
-    success: (...args: unknown[]) => toastSuccess(...args),
+    success: toastSuccess,
   },
 }));
 
@@ -71,8 +73,8 @@ function getButtonByText(label: string): HTMLButtonElement {
   return match;
 }
 
-async function click(element: HTMLElement): Promise<void> {
-  await act(async () => {
+function click(element: HTMLElement): void {
+  act(() => {
     element.click();
   });
 }
@@ -103,13 +105,13 @@ describe('TelemetryTab', () => {
     view.unmount();
   });
 
-  it('shows a discouraging confirmation modal before disabling telemetry', async () => {
+  it('shows a discouraging confirmation modal before disabling telemetry', () => {
     const view = renderTelemetryTab({ enabled: true });
     const toggle = getTelemetryToggle(view.container);
 
     expect(toggle.checked).toBe(true);
 
-    await click(toggle);
+    click(toggle);
 
     const pageText = document.body.textContent ?? '';
 
@@ -118,7 +120,7 @@ describe('TelemetryTab', () => {
     expect(pageText.toLowerCase()).toContain('open source products have limited resources');
     expect(toggle.checked).toBe(true);
 
-    await click(getButtonByText('Keep telemetry enabled'));
+    click(getButtonByText('Keep telemetry enabled'));
 
     expect(document.body.textContent ?? '').not.toContain('Turn off anonymous telemetry?');
     expect(getTelemetryToggle(view.container).checked).toBe(true);
@@ -129,12 +131,12 @@ describe('TelemetryTab', () => {
   it('disables telemetry only after explicit confirmation and saves the new config', async () => {
     const view = renderTelemetryTab({ enabled: true });
 
-    await click(getTelemetryToggle(view.container));
-    await click(getButtonByText('Disable anyway'));
+    click(getTelemetryToggle(view.container));
+    click(getButtonByText('Disable anyway'));
 
     expect(getTelemetryToggle(view.container).checked).toBe(false);
 
-    await click(getButtonByText('Save'));
+    click(getButtonByText('Save'));
     await flushPromises();
 
     expect(mutateAsync).toHaveBeenCalledWith({ enabled: false });

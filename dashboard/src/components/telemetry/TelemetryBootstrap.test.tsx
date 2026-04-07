@@ -1,9 +1,6 @@
 /* @vitest-environment jsdom */
 
-/* @vitest-environment jsdom */
-
-import type { ReactNode } from 'react';
-import { act } from 'react';
+import { act, type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
