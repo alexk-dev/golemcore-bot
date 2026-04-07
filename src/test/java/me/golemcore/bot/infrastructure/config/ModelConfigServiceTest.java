@@ -820,13 +820,15 @@ class ModelConfigServiceTest {
         assertTrue(service.getAllModels().containsKey(MODEL_CUSTOM));
         assertEquals(PROVIDER_CUSTOM, service.getProvider(MODEL_CUSTOM));
 
-        // Reload should replace with freshly loaded config
+        // Reload should replace with freshly loaded config (empty when no workspace
+        // file)
         service.reload();
 
-        // After reload, the custom model should be gone and config should be non-empty
+        // After reload, the custom model should be gone — no classpath fallback, so
+        // empty catalog
         Map<String, ModelConfigService.ModelSettings> models = service.getAllModels();
         assertFalse(models.containsKey(MODEL_CUSTOM));
-        assertFalse(models.isEmpty());
+        assertTrue(models.isEmpty());
     }
 
     // ===== getMaxInputTokens with custom config via @TempDir =====

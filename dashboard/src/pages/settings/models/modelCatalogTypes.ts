@@ -2,8 +2,6 @@ import type { DiscoveredProviderModel, ModelSettings, ModelsConfig } from '../..
 import {
   toEditorModelIdForProvider,
   toPersistedModelIdForProvider,
-  toProviderScopedModelId,
-  usesImplicitProviderPrefix,
 } from '../../../lib/providerModelIds';
 
 const DEFAULT_MAX_INPUT_TOKENS = '128000';
@@ -262,7 +260,7 @@ export function resolvePersistedModelId(
 
   const persistedSettings = existingModels[persistedId];
   if (persistedSettings != null && persistedSettings.provider !== provider && persistedId !== selectedId) {
-    return toProviderScopedModelId(draft.id, provider);
+    return toPersistedModelIdForProvider(draft.id, provider);
   }
 
   return persistedId;
@@ -279,10 +277,7 @@ export function findExistingModelId(
 
   const rawId = draft.id.trim();
   const canonicalId = toPersistedModelId(draft);
-  const providerScopedId = toProviderScopedModelId(rawId, normalizedProvider);
-  const preferredCandidates = usesImplicitProviderPrefix(normalizedProvider)
-    ? [canonicalId, rawId]
-    : [rawId, providerScopedId, canonicalId];
+  const preferredCandidates = [canonicalId, rawId];
 
   for (const candidate of Array.from(new Set(preferredCandidates.filter((value) => value.length > 0)))) {
     const existing = existingModels[candidate];

@@ -256,17 +256,16 @@ class ModelSelectionServiceTest {
     }
 
     @Test
-    void shouldRejectExplicitSpecialTierWhenModelIsUnknown() {
+    void shouldResolveSpecialTierWithUnknownModelUsingDefaults() {
         when(runtimeConfigService.getModelTierBinding("special2"))
                 .thenReturn(RuntimeConfig.TierBinding.builder()
                         .model("custom/ghost-model")
                         .reasoning("none")
                         .build());
 
-        IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> service.resolveForTier("special2"));
+        ModelSelectionService.ModelSelection selection = service.resolveForTier("special2");
 
-        assertTrue(error.getMessage().contains("custom/ghost-model"));
+        assertEquals("custom/ghost-model", selection.model());
     }
 
     @Test

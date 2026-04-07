@@ -81,6 +81,17 @@ export async function deleteModel(id: string): Promise<void> {
   await client.delete('/models', { params: { id } });
 }
 
+export interface TestModelResponse {
+  success: boolean;
+  reply: string | null;
+  error: string | null;
+}
+
+export async function testModel(model: string): Promise<TestModelResponse> {
+  const { data } = await client.post<TestModelResponse>('/models/test', { model });
+  return data;
+}
+
 export async function reloadModels(): Promise<void> {
   await client.post('/models/reload');
 }

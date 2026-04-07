@@ -2,10 +2,14 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.LlmRequest;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ModelRegistryService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.LlmPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,6 +27,7 @@ import reactor.core.publisher.Mono;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * REST controller for model definitions CRUD (models.json management).
@@ -33,10 +38,14 @@ import java.util.Map;
 @Slf4j
 public class ModelsController {
 
+    private static final String TEST_PROMPT = "Reply in one short sentence: What model are you? Include your exact model name/version.";
+    private static final int TEST_TIMEOUT_SECONDS = 30;
+
     private final ModelConfigService modelConfigService;
     private final ModelSelectionService modelSelectionService;
     private final ProviderModelDiscoveryService providerModelDiscoveryService;
     private final ModelRegistryService modelRegistryService;
+    private final LlmPort llmPort;
 
     /**
      * Get full models config (all models + defaults).
@@ -142,6 +151,37 @@ public class ModelsController {
     }
 
     /**
+     * Send a fixed identification prompt to a model and return the raw response.
+     */
+    @PostMapping("/test")
+    public Mono<ResponseEntity<TestModelResponse>> testModel(@RequestBody TestModelRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
+        }
+        String model = requireValue(request.model(), "model");
+        log.info("[Models] Testing model: {}", model);
+        try {
+            LlmRequest llmRequest = LlmRequest.builder()
+                    .model(model)
+                    .messages(List.of(Message.builder()
+                            .role("user")
+                            .content(TEST_PROMPT)
+                            .build()))
+                    .temperature(0.0)
+                    .maxTokens(256)
+                    .build();
+            LlmResponse response = llmPort.chat(llmRequest).get(TEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            String reply = response.getContent() != null ? response.getContent().trim() : "";
+            log.info("[Models] Test response from {}: {}", model, reply);
+            return Mono.just(ResponseEntity.ok(new TestModelResponse(true, reply, null)));
+        } catch (Exception e) { // NOSONAR - catching all for user-facing diagnostic
+            String errorMessage = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+            log.warn("[Models] Test failed for {}: {}", model, errorMessage);
+            return Mono.just(ResponseEntity.ok(new TestModelResponse(false, null, errorMessage)));
+        }
+    }
+
+    /**
      * Force reload models from workspace.
      */
     @PostMapping("/reload")
@@ -172,6 +212,12 @@ public class ModelsController {
 
     public record ResolveRegistryResponse(ModelConfigService.ModelSettings defaultSettings, String configSource,
             String cacheStatus) {
+    }
+
+    public record TestModelRequest(String model) {
+    }
+
+    public record TestModelResponse(boolean success, String reply, String error) {
     }
 
     private record AvailableModelDto(String id, String displayName, boolean hasReasoning,

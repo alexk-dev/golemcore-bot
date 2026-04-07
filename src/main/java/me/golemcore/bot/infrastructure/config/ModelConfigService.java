@@ -27,12 +27,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -44,9 +41,9 @@ import java.util.stream.Collectors;
  * Service for loading and managing model configurations from workspace storage.
  *
  * <p>
- * On first run, copies bundled {@code classpath:models.json} to workspace
- * ({@code models/models.json} via StoragePort). Subsequent loads read from
- * workspace, allowing UI edits to persist.
+ * Models are populated via discovery (provider APIs) and UI edits. On first run
+ * the catalog is empty until the user adds models through discovery or manual
+ * configuration.
  *
  * @since 1.0
  */
@@ -73,7 +70,6 @@ public class ModelConfigService {
 
     private void loadConfig() {
         try {
-            // Try workspace first
             Boolean exists = storagePort.exists(MODELS_DIR, CONFIG_FILE).join();
             if (Boolean.TRUE.equals(exists)) {
                 String json = storagePort.getText(MODELS_DIR, CONFIG_FILE).join();
@@ -87,28 +83,7 @@ public class ModelConfigService {
             log.warn("[ModelConfig] Failed to load from workspace: {}", e.getMessage());
         }
 
-        // Fall back to classpath and copy to workspace
-        loadFromClasspathAndCopy();
-    }
-
-    private void loadFromClasspathAndCopy() {
-        try {
-            ClassPathResource resource = new ClassPathResource(CONFIG_FILE);
-            if (resource.exists()) {
-                try (InputStream is = resource.getInputStream()) {
-                    String json = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                    config = objectMapper.readValue(json, ModelsConfig.class);
-                    log.info("[ModelConfig] Loaded from classpath: {} models", config.getModels().size());
-                    // Copy to workspace for future edits
-                    saveConfig();
-                    return;
-                }
-            }
-        } catch (IOException e) {
-            log.warn("[ModelConfig] Failed to load from classpath: {}", e.getMessage());
-        }
-
-        log.warn("[ModelConfig] No models.json found, using empty config");
+        log.info("[ModelConfig] No models.json in workspace, starting with empty catalog");
         config = new ModelsConfig();
     }
 
