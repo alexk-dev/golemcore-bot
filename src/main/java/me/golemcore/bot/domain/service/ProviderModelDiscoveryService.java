@@ -6,7 +6,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
+import me.golemcore.bot.domain.model.catalog.ModelReasoningLevel;
+import me.golemcore.bot.domain.model.catalog.ModelReasoningProfile;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -91,7 +93,11 @@ public class ProviderModelDiscoveryService {
     }
 
     public record DiscoveredModel(String provider, String id, String displayName, String ownedBy,
-            ModelConfigService.ModelSettings defaultSettings) {
+            ModelCatalogEntry defaultCatalogEntry) {
+
+        public ModelCatalogEntry defaultSettings() {
+            return defaultCatalogEntry;
+        }
     }
 
     private RuntimeConfig.LlmProviderConfig requireConfiguredProvider(String providerName) {
@@ -239,22 +245,22 @@ public class ProviderModelDiscoveryService {
                 text(node, "owned_by"),
                 text(node, "provider"),
                 text(node, "type"));
-        ModelConfigService.ModelSettings defaultSettings = attachDirectDefaults
+        ModelCatalogEntry defaultSettings = attachDirectDefaults
                 ? buildOpenRouterDefaultSettings(providerName, id, node, displayName)
                 : null;
         models.add(new DiscoveredModel(providerName, id, displayName, ownedBy, defaultSettings));
     }
 
-    private ModelConfigService.ModelSettings buildOpenRouterDefaultSettings(String providerName, String modelId,
+    private ModelCatalogEntry buildOpenRouterDefaultSettings(String providerName, String modelId,
             JsonNode node, String displayName) {
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
-        settings.setProvider(providerName);
-        settings.setDisplayName(displayName);
-        settings.setSupportsVision(supportsVision(node));
-        settings.setSupportsTemperature(supportsTemperature(node.path("supported_parameters")));
-        settings.setMaxInputTokens(resolveMaxInputTokens(node));
-        settings.setReasoning(buildReasoningConfig(modelId, settings.getMaxInputTokens()));
-        return settings;
+        int maxInputTokens = resolveMaxInputTokens(node);
+        return new ModelCatalogEntry(
+                providerName,
+                displayName,
+                supportsVision(node),
+                supportsTemperature(node.path("supported_parameters")),
+                maxInputTokens,
+                buildReasoningConfig(modelId, maxInputTokens));
     }
 
     private boolean supportsVision(JsonNode node) {
@@ -289,19 +295,18 @@ public class ProviderModelDiscoveryService {
         return DEFAULT_MAX_INPUT_TOKENS;
     }
 
-    private ModelConfigService.ReasoningConfig buildReasoningConfig(String modelId, int maxInputTokens) {
+    private ModelReasoningProfile buildReasoningConfig(String modelId, int maxInputTokens) {
         List<Integer> levelCaps = GPT_REASONING_TOKEN_LEVELS.get(normalizeReasoningModelId(modelId));
         if (levelCaps == null) {
             return null;
         }
-        ModelConfigService.ReasoningConfig reasoningConfig = new ModelConfigService.ReasoningConfig();
-        reasoningConfig.setDefaultLevel("medium");
-        reasoningConfig.setLevels(Map.of(
-                "low", new ModelConfigService.ReasoningLevelConfig(levelCaps.get(0)),
-                "medium", new ModelConfigService.ReasoningLevelConfig(levelCaps.get(1)),
-                "high", new ModelConfigService.ReasoningLevelConfig(Math.min(levelCaps.get(2), maxInputTokens)),
-                "xhigh", new ModelConfigService.ReasoningLevelConfig(Math.min(levelCaps.get(3), maxInputTokens))));
-        return reasoningConfig;
+        return new ModelReasoningProfile(
+                "medium",
+                Map.of(
+                        "low", new ModelReasoningLevel(levelCaps.get(0)),
+                        "medium", new ModelReasoningLevel(levelCaps.get(1)),
+                        "high", new ModelReasoningLevel(Math.min(levelCaps.get(2), maxInputTokens)),
+                        "xhigh", new ModelReasoningLevel(Math.min(levelCaps.get(3), maxInputTokens))));
     }
 
     private String normalizeReasoningModelId(String modelId) {
