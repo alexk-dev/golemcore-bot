@@ -45,8 +45,7 @@ public class SessionInspectionService {
     private static final int SNAPSHOT_PREVIEW_MAX_CHARS = 4096;
     private static final int START_WITH_INDEX = 0;
     private static final Pattern CONTENT_TYPE_PATTERN = Pattern.compile("^[\\w!#$&^_.+-]+/[\\w!#$&^_.+-]+$");
-    private static final Pattern CONTENT_TYPE_PARAMETER_PATTERN = Pattern
-            .compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+\\s*=\\s*[^;]+$");
+    private static final String CONTENT_TYPE_PARAMETER_NAME_CHARS = "!#$%&'*+.^_`|~-";
 
     private final SessionPort sessionPort;
     private final ActiveSessionPointerService pointerService;
@@ -554,11 +553,37 @@ public class SessionInspectionService {
         String[] parts = contentType.split(";");
         for (int index = 1; index < parts.length; index++) {
             String parameter = parts[index].trim();
-            if (parameter.isEmpty() || !CONTENT_TYPE_PARAMETER_PATTERN.matcher(parameter).matches()) {
+            if (!isValidContentTypeParameter(parameter)) {
                 return false;
             }
         }
         return true;
+    }
+
+    private boolean isValidContentTypeParameter(String parameter) {
+        if (parameter == null || parameter.isEmpty()) {
+            return false;
+        }
+
+        int separatorIndex = parameter.indexOf('=');
+        if (separatorIndex <= 0 || separatorIndex == parameter.length() - 1) {
+            return false;
+        }
+
+        String name = parameter.substring(0, separatorIndex).trim();
+        String value = parameter.substring(separatorIndex + 1).trim();
+        if (name.isEmpty() || value.isEmpty()) {
+            return false;
+        }
+
+        for (int index = 0; index < name.length(); index++) {
+            char character = name.charAt(index);
+            if (!Character.isLetterOrDigit(character)
+                    && CONTENT_TYPE_PARAMETER_NAME_CHARS.indexOf(character) < 0) {
+                return false;
+            }
+        }
+        return value.indexOf(';') < 0;
     }
 
     private boolean isJsonContentType(String contentType) {
