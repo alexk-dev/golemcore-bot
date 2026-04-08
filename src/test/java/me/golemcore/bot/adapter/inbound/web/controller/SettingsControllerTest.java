@@ -831,7 +831,7 @@ class SettingsControllerTest {
                 .apiKey(Secret.of("x"))
                 .apiType("openai")
                 .build();
-        when(providerModelImportService.importMissingModels("test", providerConfig))
+        when(providerModelImportService.importMissingModels("test"))
                 .thenReturn(new ProviderModelImportService.ProviderImportResult(
                         "https://models.example.com/v1/models",
                         List.of("test/gpt-5.2"),
@@ -866,7 +866,7 @@ class SettingsControllerTest {
                 .apiKey(Secret.of("x"))
                 .apiType("openai")
                 .build();
-        when(providerModelImportService.importMissingModels("test", providerConfig))
+        when(providerModelImportService.importMissingModels("test"))
                 .thenReturn(new ProviderModelImportService.ProviderImportResult(
                         null,
                         List.of(),

@@ -1,14 +1,11 @@
 package me.golemcore.bot.domain.service;
 
-import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -22,17 +19,12 @@ class ProviderModelImportServiceTest {
     void shouldImportOnlyMissingModelsAndSkipExistingOnes() {
         ProviderModelDiscoveryService providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         ModelConfigService modelConfigService = mock(ModelConfigService.class);
-        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
-                .apiKey(Secret.of("secret-token"))
-                .baseUrl("https://models.example.com/v1")
-                .apiType("openai")
-                .build();
 
         ModelConfigService.ModelSettings importedSettings = new ModelConfigService.ModelSettings();
         importedSettings.setProvider("xmesh");
         importedSettings.setDisplayName("GPT-5.2");
 
-        when(providerModelDiscoveryService.discoverModelsForConfig("xmesh", providerConfig))
+        when(providerModelDiscoveryService.discoverModelsForProvider("xmesh"))
                 .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
                         "https://models.example.com/v1/models",
                         List.of(
@@ -46,7 +38,7 @@ class ProviderModelImportServiceTest {
         ProviderModelImportService service = new ProviderModelImportService(providerModelDiscoveryService,
                 modelConfigService);
 
-        ProviderModelImportService.ProviderImportResult result = service.importMissingModels("xmesh", providerConfig);
+        ProviderModelImportService.ProviderImportResult result = service.importMissingModels("xmesh");
 
         verify(modelConfigService).saveModel("xmesh/gpt-5.2", importedSettings);
         assertEquals("https://models.example.com/v1/models", result.resolvedEndpoint());
@@ -59,13 +51,8 @@ class ProviderModelImportServiceTest {
     void shouldUseCatalogDefaultsWhenDiscoveredModelHasNoDefaultSettings() {
         ProviderModelDiscoveryService providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         ModelConfigService modelConfigService = mock(ModelConfigService.class);
-        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
-                .apiKey(Secret.of("secret-token"))
-                .baseUrl("https://models.example.com/v1")
-                .apiType("openai")
-                .build();
 
-        when(providerModelDiscoveryService.discoverModelsForConfig("xmesh", providerConfig))
+        when(providerModelDiscoveryService.discoverModelsForProvider("xmesh"))
                 .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
                         "https://models.example.com/v1/models",
                         List.of(new ProviderModelDiscoveryService.DiscoveredModel("xmesh", "gemini-2.5-pro",
@@ -93,7 +80,7 @@ class ProviderModelImportServiceTest {
         ProviderModelImportService service = new ProviderModelImportService(providerModelDiscoveryService,
                 modelConfigService);
 
-        service.importMissingModels("xmesh", providerConfig);
+        service.importMissingModels("xmesh");
 
         ArgumentCaptor<ModelConfigService.ModelSettings> settingsCaptor = ArgumentCaptor.forClass(
                 ModelConfigService.ModelSettings.class);
@@ -111,19 +98,14 @@ class ProviderModelImportServiceTest {
     void shouldReturnDiscoveryErrorsWithoutThrowing() {
         ProviderModelDiscoveryService providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         ModelConfigService modelConfigService = mock(ModelConfigService.class);
-        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
-                .apiKey(Secret.of("secret-token"))
-                .baseUrl("https://models.example.com/v1")
-                .apiType("openai")
-                .build();
 
-        when(providerModelDiscoveryService.discoverModelsForConfig("xmesh", providerConfig))
+        when(providerModelDiscoveryService.discoverModelsForProvider("xmesh"))
                 .thenThrow(new IllegalStateException("bad gateway"));
 
         ProviderModelImportService service = new ProviderModelImportService(providerModelDiscoveryService,
                 modelConfigService);
 
-        ProviderModelImportService.ProviderImportResult result = service.importMissingModels("xmesh", providerConfig);
+        ProviderModelImportService.ProviderImportResult result = service.importMissingModels("xmesh");
 
         assertTrue(result.addedModels().isEmpty());
         assertTrue(result.skippedModels().isEmpty());

@@ -281,7 +281,7 @@ public class SettingsController {
         validateProviderConfig(normalizedName, providerConfig);
         runtimeConfigService.addLlmProvider(normalizedName, providerConfig);
         ProviderModelImportService.ProviderImportResult importResult = providerModelImportService
-                .importMissingModels(normalizedName, providerConfig);
+                .importMissingModels(normalizedName);
         return Mono.just(ResponseEntity.ok(new LlmProviderImportResponse(
                 true,
                 normalizedName,

@@ -2,7 +2,6 @@ package me.golemcore.bot.domain.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.springframework.stereotype.Service;
 
@@ -18,14 +17,13 @@ public class ProviderModelImportService {
     private final ProviderModelDiscoveryService providerModelDiscoveryService;
     private final ModelConfigService modelConfigService;
 
-    public ProviderImportResult importMissingModels(String providerName,
-            RuntimeConfig.LlmProviderConfig providerConfig) {
+    public ProviderImportResult importMissingModels(String providerName) {
         List<String> addedModels = new ArrayList<>();
         List<String> skippedModels = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         try {
             ProviderModelDiscoveryService.DiscoveryResult discoveryResult = providerModelDiscoveryService
-                    .discoverModelsForConfig(providerName, providerConfig);
+                    .discoverModelsForProvider(providerName);
             String normalizedProvider = providerName.trim().toLowerCase(Locale.ROOT);
             for (ProviderModelDiscoveryService.DiscoveredModel model : discoveryResult.models()) {
                 String modelId = normalizedProvider + "/" + model.id();
