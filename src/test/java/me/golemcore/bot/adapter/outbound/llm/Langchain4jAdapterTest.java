@@ -48,6 +48,7 @@ import java.util.concurrent.ExecutionException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
@@ -169,6 +170,39 @@ class Langchain4jAdapterTest {
         assertEquals(Boolean.TRUE, ReflectionTestUtils.getField(adapter, "initialized"));
         assertNull(adapter.getCurrentModel());
         assertNull(ReflectionTestUtils.getField(adapter, "chatModel"));
+    }
+
+    @Test
+    void shouldInitializeWithoutDefaultModelWhenBalancedModelIsBlank() {
+        when(runtimeConfigService.getBalancedModel()).thenReturn("   ");
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("none");
+
+        adapter.initialize();
+
+        assertEquals(Boolean.TRUE, ReflectionTestUtils.getField(adapter, "initialized"));
+        assertEquals("   ", ReflectionTestUtils.getField(adapter, "currentModel"));
+        assertNull(ReflectionTestUtils.getField(adapter, "chatModel"));
+    }
+
+    @Test
+    void shouldNotReinitializeAfterSuccessfulInitialization() {
+        when(runtimeConfigService.getBalancedModel()).thenReturn(OPENAI + "/gpt-5.1");
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("medium");
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of(KEY))
+                        .apiType(OPENAI)
+                        .legacyApi(true)
+                        .build());
+
+        adapter.initialize();
+        ChatModel firstModel = (ChatModel) ReflectionTestUtils.getField(adapter, "chatModel");
+
+        adapter.initialize();
+        ChatModel secondModel = (ChatModel) ReflectionTestUtils.getField(adapter, "chatModel");
+
+        assertNotNull(firstModel);
+        assertSame(firstModel, secondModel);
     }
 
     // ===== getSupportedModels =====
@@ -552,6 +586,12 @@ class Langchain4jAdapterTest {
     void shouldNotStripWhenNoPrefix() {
         String result = ReflectionTestUtils.invokeMethod(adapter, "stripProviderPrefix", "gpt-4o");
         assertEquals("gpt-4o", result);
+    }
+
+    @Test
+    void shouldReturnNullWhenModelIsNullWhileStrippingProviderPrefix() {
+        String result = ReflectionTestUtils.invokeMethod(adapter, "stripProviderPrefix", (String) null);
+        assertNull(result);
     }
 
     // ===== chat() flow tests with mocked ChatModel =====
@@ -1828,6 +1868,68 @@ class Langchain4jAdapterTest {
     }
 
     @Test
+    void shouldCreateOneOffModelForRequestWhenDefaultChatModelIsMissing() {
+        String requestModel = "google/gemini-2.5-flash";
+        when(modelConfig.getProvider(requestModel)).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("gemini-key"))
+                        .apiType("gemini")
+                        .build());
+        when(modelConfig.supportsTemperature(requestModel)).thenReturn(true);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(requestModel)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "getModelForRequest", request);
+
+        assertTrue(result instanceof GoogleAiGeminiChatModel);
+    }
+
+    @Test
+    void shouldCreateReasoningSpecificModelForCurrentModel() {
+        ChatModel defaultModel = mock(ChatModel.class);
+        String currentModel = OPENAI + "/gpt-5.4";
+        injectChatModel(defaultModel, currentModel);
+        when(modelConfig.isReasoningRequired(currentModel)).thenReturn(true);
+        when(modelConfig.getProvider(currentModel)).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of(KEY))
+                        .apiType(OPENAI)
+                        .legacyApi(true)
+                        .build());
+
+        LlmRequest request = LlmRequest.builder()
+                .reasoningEffort("high")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "getModelForRequest", request);
+
+        assertTrue(result instanceof OpenAiChatModel);
+        assertNotSame(defaultModel, result);
+    }
+
+    @Test
+    void shouldReuseCurrentModelWhenRequestMatchesConfiguredModel() {
+        ChatModel defaultModel = mock(ChatModel.class);
+        String currentModel = OPENAI + "/gpt-5.4";
+        injectChatModel(defaultModel, currentModel);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(currentModel)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "getModelForRequest", request);
+
+        assertSame(defaultModel, result);
+    }
+
+    @Test
     void shouldFallbackToOpenAiWhenApiTypeIsUnknown() {
         String requestModel = "custom-provider/gpt-5.1";
         when(modelConfig.getProvider(requestModel)).thenReturn("custom-provider");
@@ -1937,6 +2039,64 @@ class Langchain4jAdapterTest {
         assertTrue(httpClientBuilder instanceof ResponsesCompatibilityHttpClientBuilder);
         assertEquals(Duration.ofSeconds(42), httpClientBuilder.connectTimeout());
         assertEquals(Duration.ofSeconds(42), httpClientBuilder.readTimeout());
+    }
+
+    @Test
+    void shouldCreateResponsesStreamingModelUsingScopedModelIdForCapabilityLookup() {
+        String model = OPENAI + "/gpt-5.4";
+        setupResponsesApiProvider(model);
+        when(modelConfig.supportsTemperature(model)).thenReturn(true);
+        when(modelConfig.supportsTemperature("gpt-5.4"))
+                .thenThrow(new IllegalArgumentException("raw model id lookup should not be used"));
+
+        StreamingChatModel result = ReflectionTestUtils.invokeMethod(adapter,
+                "getResponsesStreamingModel", model, "high");
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void shouldCreateResponsesStreamingModelWhenTemperatureUnsupported() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of(KEY))
+                .requestTimeoutSeconds(42)
+                .build();
+        when(modelConfig.supportsTemperature(OPENAI + "/gpt-5.4")).thenReturn(false);
+
+        StreamingChatModel result = ReflectionTestUtils.invokeMethod(adapter,
+                "createResponsesStreamingModel", OPENAI + "/gpt-5.4", "gpt-5.4", null, config);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void shouldCreateAnthropicModelWhenTemperatureUnsupported() {
+        String model = "anthropic/claude-opus-4-1";
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("ant-key"))
+                .apiType("anthropic")
+                .build();
+        when(modelConfig.supportsTemperature(model)).thenReturn(false);
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter,
+                "createAnthropicModel", model, "claude-opus-4-1", config);
+
+        assertTrue(result instanceof AnthropicChatModel);
+    }
+
+    @Test
+    void shouldCreateGeminiModelWhenTemperatureUnsupported() {
+        String model = "google/gemini-2.5-flash";
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("gemini-key"))
+                .apiType("gemini")
+                .build();
+        when(modelConfig.supportsTemperature(model)).thenReturn(false);
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter,
+                "createGeminiModel", model, "gemini-2.5-flash", config);
+
+        assertTrue(result instanceof GoogleAiGeminiChatModel);
     }
 
     @Test
