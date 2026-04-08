@@ -108,10 +108,15 @@ public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPor
      * Save the full models config to workspace.
      */
     public void saveConfig() {
+        persistConfig(config);
+    }
+
+    private void persistConfig(ModelsConfig candidateConfig) {
         try {
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(config);
+            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(candidateConfig);
             storagePort.putTextAtomic(MODELS_DIR, CONFIG_FILE, json, true).join();
-            log.info("[ModelConfig] Saved to workspace: {} models", config.getModels().size());
+            config = candidateConfig;
+            log.info("[ModelConfig] Saved to workspace: {} models", candidateConfig.getModels().size());
         } catch (Exception e) {
             throw new IllegalStateException("Failed to persist model catalog", e);
         }
@@ -129,20 +134,22 @@ public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPor
      * previous id.
      */
     public void saveModel(String id, String previousId, ModelSettings settings) {
+        ModelsConfig nextConfig = copyConfig(config);
         if (previousId != null && !previousId.isBlank() && !previousId.trim().equals(id)) {
-            config.getModels().remove(previousId.trim());
+            nextConfig.getModels().remove(previousId.trim());
         }
-        config.getModels().put(id, settings);
-        saveConfig();
+        nextConfig.getModels().put(id, settings);
+        persistConfig(nextConfig);
     }
 
     /**
      * Delete a model definition.
      */
     public boolean deleteModel(String id) {
-        ModelSettings removed = config.getModels().remove(id);
+        ModelsConfig nextConfig = copyConfig(config);
+        ModelSettings removed = nextConfig.getModels().remove(id);
         if (removed != null) {
-            saveConfig();
+            persistConfig(nextConfig);
             return true;
         }
         return false;
@@ -152,8 +159,7 @@ public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPor
      * Replace the entire models config.
      */
     public void replaceConfig(ModelsConfig newConfig) {
-        this.config = newConfig;
-        saveConfig();
+        persistConfig(copyConfig(newConfig));
     }
 
     @Override
@@ -188,6 +194,13 @@ public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPor
                     toDefaultSettings(newConfig.getModels().get(catalogSnapshot.getDefaultModel())));
         }
         replaceConfig(newConfig);
+    }
+
+    private ModelsConfig copyConfig(ModelsConfig source) {
+        if (source == null) {
+            return new ModelsConfig();
+        }
+        return objectMapper.convertValue(source, ModelsConfig.class);
     }
 
     /**

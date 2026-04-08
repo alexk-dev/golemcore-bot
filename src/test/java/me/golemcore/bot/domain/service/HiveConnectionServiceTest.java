@@ -2,11 +2,13 @@ package me.golemcore.bot.domain.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -495,6 +497,67 @@ class HiveConnectionServiceTest {
         verify(hiveManagedPolicyService).applyPolicyPackage(policyPackage);
         verify(hiveApiClient).reportPolicyApplyResult(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
                 any(HivePolicyApplyResult.class));
+    }
+
+    @Test
+    void shouldOmitPolicyHeartbeatFieldsWithoutPolicyWriteScope() {
+        HiveSessionState sessionState = HiveSessionState.builder()
+                .golemId("golem-1")
+                .serverUrl("https://hive.example.com")
+                .accessToken("access")
+                .refreshToken("refresh")
+                .accessTokenExpiresAt(Instant.parse("2026-03-18T00:10:00Z"))
+                .heartbeatIntervalSeconds(30)
+                .controlChannelUrl("/ws/golems/control")
+                .scopes(List.of("golems:heartbeat", "golems:policy:read"))
+                .build();
+        storedSession.set(Optional.of(sessionState));
+        controlChannelStatus.set(new HiveControlChannelStatus(
+                "CONNECTED",
+                Instant.parse("2026-03-18T00:00:00Z"),
+                null,
+                null,
+                null,
+                0));
+        when(hiveManagedPolicyService.getBindingState()).thenReturn(Optional.of(HivePolicyBindingState.builder()
+                .policyGroupId("pg-1")
+                .targetVersion(5)
+                .appliedVersion(4)
+                .syncStatus("OUT_OF_SYNC")
+                .lastErrorDigest("provider timeout")
+                .build()));
+        when(hiveManagedPolicyService.isSyncPending()).thenReturn(false);
+
+        service.runHeartbeatMaintenanceCycle();
+
+        verify(hiveApiClient).heartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
+                eq("connected"), eq("Control channel connected"), eq(null), anyLong(), any(),
+                isNull(), isNull(), isNull(), isNull(), isNull());
+    }
+
+    @Test
+    void shouldClearManagedPolicyBindingWhenLeavingHive() {
+        AtomicReference<Optional<HivePolicyBindingState>> bindingState = new AtomicReference<>(Optional.of(
+                HivePolicyBindingState.builder()
+                        .policyGroupId("pg-1")
+                        .targetVersion(5)
+                        .appliedVersion(5)
+                        .syncStatus("IN_SYNC")
+                        .build()));
+        when(hiveManagedPolicyService.getBindingState()).thenAnswer(invocation -> bindingState.get());
+        doAnswer(invocation -> {
+            bindingState.set(Optional.empty());
+            return null;
+        }).when(hiveManagedPolicyService).clearBinding();
+
+        HiveConnectionService.HiveStatusSnapshot status = service.leave();
+
+        verify(hiveManagedPolicyService).clearBinding();
+        assertEquals("DISCONNECTED", status.state());
+        assertNull(status.policyGroupId());
+        assertNull(status.targetPolicyVersion());
+        assertNull(status.appliedPolicyVersion());
+        assertNull(status.policySyncStatus());
     }
 
     private <T> ObjectProvider<T> objectProvider(T value) {

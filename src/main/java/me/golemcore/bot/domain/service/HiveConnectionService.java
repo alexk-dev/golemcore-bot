@@ -250,6 +250,7 @@ public class HiveConnectionService {
             hiveSessionStateStore.clear();
             hiveControlInboxService.clear();
             hiveEventOutboxService.clear();
+            hiveManagedPolicyService.clearBinding();
             stateRef.set(HiveConnectionState.DISCONNECTED);
             lastErrorRef.set(null);
             return getStatus();
@@ -473,7 +474,9 @@ public class HiveConnectionService {
 
     private void sendHeartbeat(HiveSessionState sessionState, String healthSummary) {
         HiveControlChannelStatus controlChannelStatus = hiveControlChannelClient.getStatus();
-        HivePolicyBindingState policyState = hiveManagedPolicyService.getBindingState().orElse(null);
+        HivePolicyBindingState policyState = hasScope(sessionState, POLICY_WRITE_SCOPE)
+                ? hiveManagedPolicyService.getBindingState().orElse(null)
+                : null;
         hiveApiClient.heartbeat(
                 sessionState.getServerUrl(),
                 sessionState.getGolemId(),

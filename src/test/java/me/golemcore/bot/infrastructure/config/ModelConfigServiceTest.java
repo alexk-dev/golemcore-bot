@@ -268,6 +268,30 @@ class ModelConfigServiceTest {
         assertEquals(settings, service.getAllModels().get("openrouter/qwen/model-name:version"));
     }
 
+    @Test
+    void shouldKeepInMemoryCatalogUnchangedWhenReplacingSnapshotFailsToPersist() {
+        Map<String, ModelConfigService.ModelSettings> beforeModels = Map.copyOf(service.getAllModels());
+        ModelConfigService.ModelSettings beforeDefaults = service.getConfig().getDefaults();
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("disk full")));
+
+        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog catalogSnapshot = me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog
+                .builder()
+                .models(Map.of("managed/gpt-5.1",
+                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                                .provider("openai")
+                                .displayName("Managed GPT")
+                                .supportsTemperature(true)
+                                .supportsVision(true)
+                                .maxInputTokens(128000)
+                                .build()))
+                .build();
+
+        assertThrows(IllegalStateException.class, () -> service.replaceCatalogSnapshot(catalogSnapshot));
+        assertEquals(beforeModels, service.getAllModels());
+        assertEquals(beforeDefaults, service.getConfig().getDefaults());
+    }
+
     // ===== ModelSettings constructors =====
 
     @Test
