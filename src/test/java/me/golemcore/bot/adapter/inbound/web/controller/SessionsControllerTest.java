@@ -5,9 +5,9 @@ import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSnapshotDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
 import me.golemcore.bot.adapter.inbound.web.mapper.SessionWebDtoMapper;
+import me.golemcore.bot.adapter.shared.dto.SessionTraceExportPayload;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -29,7 +29,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.test.StepVerifier;
 
-import java.lang.reflect.Method;
 import java.security.Principal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -65,7 +64,7 @@ class SessionsControllerTest {
         compressionService = new TraceSnapshotCompressionService();
         SessionInspectionService inspectionService = new SessionInspectionService(sessionPort, pointerService,
                 compressionService);
-        controller = new SessionsController(sessionPort, pointerService, inspectionService, new SessionWebDtoMapper());
+        controller = new SessionsController(inspectionService, new SessionWebDtoMapper());
     }
 
     @Test
@@ -376,46 +375,15 @@ class SessionsControllerTest {
         StepVerifier.create(controller.exportSessionTrace("s-detail"))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> traces = (List<Map<String, Object>>) response.getBody().get("traces");
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> spans = (List<Map<String, Object>>) traces.get(0).get("spans");
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> firstSnapshots = (List<Map<String, Object>>) spans.get(0)
-                            .get("snapshots");
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> secondSnapshots = (List<Map<String, Object>>) spans.get(1)
-                            .get("snapshots");
-                    assertEquals(longPayload, firstSnapshots.get(0).get("payloadText"));
-                    assertNull(secondSnapshots.get(0).get("payloadText"));
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> events = (List<Map<String, Object>>) spans.get(0).get("events");
-                    assertEquals("request.received", events.get(0).get("name"));
+                    SessionTraceExportPayload body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(longPayload, body.getTraces().get(0).getSpans().get(0).getSnapshots().get(0)
+                            .getPayloadText());
+                    assertNull(body.getTraces().get(0).getSpans().get(1).getSnapshots().get(0).getPayloadText());
+                    assertEquals("request.received", body.getTraces().get(0).getSpans().get(0).getEvents().get(0)
+                            .getName());
                 })
                 .verifyComplete();
-    }
-
-    @Test
-    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
-    void shouldHideSnapshotPreviewWhenPreviewDisabled() throws Exception {
-        TraceSnapshot snapshot = TraceSnapshot.builder()
-                .snapshotId("snap-hidden")
-                .role("request")
-                .contentType("text/plain")
-                .encoding("zstd")
-                .compressedPayload(compressionService.compress("hidden".getBytes(StandardCharsets.UTF_8)))
-                .originalSize(6L)
-                .compressedSize(18L)
-                .build();
-
-        Method method = SessionsController.class.getDeclaredMethod(
-                "toTraceSnapshotDto", TraceSnapshot.class, boolean.class);
-        method.setAccessible(true);
-        SessionTraceSnapshotDto dto = (SessionTraceSnapshotDto) method.invoke(controller, snapshot, false);
-
-        assertFalse(dto.isPayloadAvailable());
-        assertNull(dto.getPayloadPreview());
-        assertFalse(dto.isPayloadPreviewTruncated());
     }
 
     @Test
@@ -459,16 +427,11 @@ class SessionsControllerTest {
         StepVerifier.create(controller.exportSessionTrace("s-export"))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
-                    assertNotNull(response.getBody());
-                    assertEquals("s-export", response.getBody().get("sessionId"));
-                    assertTrue(response.getBody().containsKey("traces"));
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> traces = (List<Map<String, Object>>) response.getBody().get("traces");
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> spans = (List<Map<String, Object>>) traces.get(0).get("spans");
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> snapshots = (List<Map<String, Object>>) spans.get(0).get("snapshots");
-                    assertEquals("{\"answer\":\"ok\"}", snapshots.get(0).get("payloadText"));
+                    SessionTraceExportPayload body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("s-export", body.getSessionId());
+                    assertEquals("{\"answer\":\"ok\"}",
+                            body.getTraces().get(0).getSpans().get(0).getSnapshots().get(0).getPayloadText());
                 })
                 .verifyComplete();
     }

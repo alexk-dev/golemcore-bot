@@ -7,22 +7,21 @@ import dev.samstevens.totp.code.DefaultCodeVerifier;
 import dev.samstevens.totp.secret.DefaultSecretGenerator;
 import dev.samstevens.totp.secret.SecretGenerator;
 import dev.samstevens.totp.time.SystemTimeProvider;
-import lombok.Builder;
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
-import me.golemcore.bot.domain.model.AdminCredentials;
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Instant;
+import lombok.Builder;
+import lombok.Data;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.AdminCredentials;
+import me.golemcore.bot.port.outbound.DashboardAuthSettingsPort;
+import me.golemcore.bot.port.outbound.DashboardTokenPort;
+import me.golemcore.bot.port.outbound.StoragePort;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
 
 /**
  * Domain service for dashboard authentication: password, JWT tokens, and TOTP
@@ -41,8 +40,8 @@ public class DashboardAuthService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final StoragePort storagePort;
-    private final BotProperties botProperties;
-    private final JwtTokenProvider jwtTokenProvider;
+    private final DashboardAuthSettingsPort settingsPort;
+    private final DashboardTokenPort dashboardTokenPort;
     private final ObjectMapper objectMapper;
 
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
@@ -54,7 +53,7 @@ public class DashboardAuthService {
 
     @PostConstruct
     void init() {
-        if (!botProperties.getDashboard().isEnabled()) {
+        if (!settingsPort.isDashboardEnabled()) {
             return;
         }
         try {
@@ -91,10 +90,10 @@ public class DashboardAuthService {
     }
 
     public TokenPair refreshAccessToken(String refreshToken) {
-        if (!jwtTokenProvider.validateToken(refreshToken) || !jwtTokenProvider.isRefreshToken(refreshToken)) {
+        if (!dashboardTokenPort.validateToken(refreshToken) || !dashboardTokenPort.isRefreshToken(refreshToken)) {
             return null;
         }
-        String username = jwtTokenProvider.getUsernameFromToken(refreshToken);
+        String username = dashboardTokenPort.getUsernameFromToken(refreshToken);
         return generateTokens(username);
     }
 
@@ -147,8 +146,8 @@ public class DashboardAuthService {
     }
 
     private TokenPair generateTokens(String username) {
-        String accessToken = jwtTokenProvider.generateAccessToken(username);
-        String refreshToken = jwtTokenProvider.generateRefreshToken(username);
+        String accessToken = dashboardTokenPort.generateAccessToken(username);
+        String refreshToken = dashboardTokenPort.generateRefreshToken(username);
         return TokenPair.builder()
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
@@ -164,7 +163,7 @@ public class DashboardAuthService {
             return;
         }
 
-        String configPassword = botProperties.getDashboard().getAdminPassword();
+        String configPassword = settingsPort.getConfiguredAdminPassword();
         if (configPassword != null && !configPassword.isBlank()) {
             credentials = AdminCredentials.builder()
                     .passwordHash(passwordEncoder.encode(configPassword))

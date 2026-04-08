@@ -30,8 +30,6 @@ import me.golemcore.bot.domain.view.SessionTraceSummaryView;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
-import org.springframework.web.server.ResponseStatusException;
 
 class SessionInspectionServiceTest {
 
@@ -212,8 +210,10 @@ class SessionInspectionServiceTest {
                 .messages(List.of())
                 .build();
         when(sessionPort.listByChannelType("web")).thenReturn(List.of(older, newer));
+        when(pointerService.buildWebPointerKey("admin", "client-1")).thenReturn("web|admin|client-1");
+        when(pointerService.getActiveConversationKey("web|admin|client-1")).thenReturn(Optional.of("conv-2"));
 
-        List<SessionSummaryView> recent = service.listRecentSessions("web", null, "conv-2", 1);
+        List<SessionSummaryView> recent = service.listRecentSessions("web", "client-1", null, "admin", 1);
 
         assertEquals(1, recent.size());
         assertEquals("web:conv-2", recent.get(0).getId());
@@ -331,12 +331,11 @@ class SessionInspectionServiceTest {
                 .build();
         when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
 
-        ResponseStatusException error = assertThrows(
-                ResponseStatusException.class,
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
                 () -> service.getSessionMessages("web:conv-1", 10, "missing"));
 
-        assertEquals(400, error.getStatusCode().value());
-        assertEquals("beforeMessageId not found", error.getReason());
+        assertEquals("beforeMessageId not found", error.getMessage());
     }
 
     @Test
@@ -368,7 +367,7 @@ class SessionInspectionServiceTest {
                 "snap-1");
 
         assertEquals("payload", export.payloadText());
-        assertEquals(MediaType.APPLICATION_OCTET_STREAM, export.contentType());
+        assertEquals("application/octet-stream", export.contentType());
         assertEquals(".txt", export.fileExtension());
     }
 
