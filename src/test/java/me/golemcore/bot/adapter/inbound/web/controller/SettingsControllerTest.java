@@ -944,6 +944,31 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldReturnFailedDraftProviderTestWhenDiscoveryRejectsConfig() {
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("draft-key"))
+                .baseUrl("https://draft.example.com")
+                .apiType("openai")
+                .build();
+        when(providerModelDiscoveryService.discoverModelsForConfig("draftmesh", providerConfig))
+                .thenThrow(new IllegalArgumentException("Provider base URL is invalid"));
+
+        StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                "draft",
+                "draftmesh",
+                providerConfig)))
+                .assertNext(response -> {
+                    SettingsController.LlmProviderTestResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("draft", body.mode());
+                    assertFalse(body.success());
+                    assertEquals(List.of(), body.models());
+                    assertEquals("Provider base URL is invalid", body.error());
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldRejectDraftProviderTestWithoutConfig() {
         ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest("draft", "draftmesh",

@@ -335,7 +335,7 @@ public class SettingsController {
                             .toList(),
                     true,
                     null)));
-        } catch (IllegalStateException e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return Mono.just(ResponseEntity.ok(new LlmProviderTestResponse(
                     mode,
                     providerName,

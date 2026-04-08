@@ -222,6 +222,20 @@ class ModelConfigServiceTest {
     }
 
     @Test
+    void shouldRollbackStrictModelSaveWhenPersistenceFails() {
+        when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("disk full")));
+
+        ModelConfigService.ModelSettings settings = standardModel("xmesh", "GPT-5.2", true, 32000);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.saveModelStrict("xmesh/gpt-5.2", settings));
+
+        assertTrue(error.getMessage().contains("Failed to save models config"));
+        assertFalse(service.getConfig().getModels().containsKey("xmesh/gpt-5.2"));
+    }
+
+    @Test
     void shouldReturnAllKnownModels() {
         Map<String, ModelConfigService.ModelSettings> models = service.getAllModels();
         assertNotNull(models);

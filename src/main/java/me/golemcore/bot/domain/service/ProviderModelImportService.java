@@ -32,7 +32,7 @@ public class ProviderModelImportService {
                     continue;
                 }
                 try {
-                    modelConfigService.saveModel(modelId, resolveSettings(normalizedProvider, model));
+                    modelConfigService.saveModelStrict(modelId, resolveSettings(normalizedProvider, model));
                     addedModels.add(modelId);
                 } catch (RuntimeException e) { // NOSONAR - collecting partial import failures by design
                     log.warn("[ProviderImport] Failed to save model {}: {}", modelId, e.getMessage());

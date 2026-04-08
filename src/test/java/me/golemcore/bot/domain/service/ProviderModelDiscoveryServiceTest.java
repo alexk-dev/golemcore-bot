@@ -295,7 +295,7 @@ class ProviderModelDiscoveryServiceTest {
     }
 
     @Test
-    void shouldRejectLocalDiscoveryEndpointForDraftProviderConfig() {
+    void shouldAllowLocalDiscoveryEndpointForDraftProviderConfig() {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(Secret.of("draft-key"))
@@ -304,12 +304,19 @@ class ProviderModelDiscoveryServiceTest {
                 .apiType("openai")
                 .build();
         StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
-                new ProviderModelDiscoveryService.DiscoveryResponse(200, "{\"data\":[]}"));
+                new ProviderModelDiscoveryService.DiscoveryResponse(200, """
+                        {"data":[
+                          {"id":"draft-gpt","name":"Draft GPT","owned_by":"draft"}
+                        ]}
+                        """));
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> service.discoverModelsForConfig("draftmesh", providerConfig));
+        ProviderModelDiscoveryService.DiscoveryResult result = service.discoverModelsForConfig("draftmesh",
+                providerConfig);
 
-        assertEquals("Provider base URL must resolve to a public host", error.getMessage());
+        assertEquals("http://127.0.0.1:11434/v1/models", result.resolvedEndpoint());
+        assertEquals(1, result.models().size());
+        assertEquals("draft-gpt", result.models().getFirst().id());
+        assertEquals(URI.create("http://127.0.0.1:11434/v1/models"), service.getCapturedRequest().uri());
     }
 
     @Test

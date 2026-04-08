@@ -188,11 +188,11 @@ export function LlmProviderEditorCard({
           <Button type="button" variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
-          <Button type="button" variant="outline-primary" size="sm" onClick={onTestDraft} disabled={isSaving || isTesting}>
+          <Button type="button" variant="secondary" size="sm" onClick={onTestDraft} disabled={isSaving || isTesting}>
             {isTesting ? 'Testing...' : 'Test Draft'}
           </Button>
           {!isNew && (
-            <Button type="button" variant="outline-secondary" size="sm" onClick={onTestSaved} disabled={isSaving || isTesting}>
+            <Button type="button" variant="dark" size="sm" onClick={onTestSaved} disabled={isSaving || isTesting}>
               {isTesting ? 'Testing...' : 'Test Saved'}
             </Button>
           )}

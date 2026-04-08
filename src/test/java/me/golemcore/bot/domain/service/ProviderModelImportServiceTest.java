@@ -9,6 +9,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -40,7 +41,7 @@ class ProviderModelImportServiceTest {
 
         ProviderModelImportService.ProviderImportResult result = service.importMissingModels("xmesh");
 
-        verify(modelConfigService).saveModel("xmesh/gpt-5.2", importedSettings);
+        verify(modelConfigService).saveModelStrict("xmesh/gpt-5.2", importedSettings);
         assertEquals("https://models.example.com/v1/models", result.resolvedEndpoint());
         assertEquals(List.of("xmesh/gpt-5.2"), result.addedModels());
         assertEquals(List.of("xmesh/existing"), result.skippedModels());
@@ -84,7 +85,7 @@ class ProviderModelImportServiceTest {
 
         ArgumentCaptor<ModelConfigService.ModelSettings> settingsCaptor = ArgumentCaptor.forClass(
                 ModelConfigService.ModelSettings.class);
-        verify(modelConfigService).saveModel(org.mockito.ArgumentMatchers.eq("xmesh/gemini-2.5-pro"),
+        verify(modelConfigService).saveModelStrict(org.mockito.ArgumentMatchers.eq("xmesh/gemini-2.5-pro"),
                 settingsCaptor.capture());
         ModelConfigService.ModelSettings savedSettings = settingsCaptor.getValue();
         assertEquals("xmesh", savedSettings.getProvider());
@@ -110,5 +111,33 @@ class ProviderModelImportServiceTest {
         assertTrue(result.addedModels().isEmpty());
         assertTrue(result.skippedModels().isEmpty());
         assertEquals(List.of("bad gateway"), result.errors());
+    }
+
+    @Test
+    void shouldCollectSaveErrorsWithoutReportingModelAsAdded() {
+        ProviderModelDiscoveryService providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
+        ModelConfigService modelConfigService = mock(ModelConfigService.class);
+
+        ModelConfigService.ModelSettings importedSettings = new ModelConfigService.ModelSettings();
+        importedSettings.setProvider("xmesh");
+        importedSettings.setDisplayName("GPT-5.2");
+
+        when(providerModelDiscoveryService.discoverModelsForProvider("xmesh"))
+                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
+                        "https://models.example.com/v1/models",
+                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("xmesh", "gpt-5.2", "GPT-5.2",
+                                "openai", importedSettings))));
+        when(modelConfigService.hasModel("xmesh/gpt-5.2")).thenReturn(false);
+        doThrow(new IllegalStateException("disk full"))
+                .when(modelConfigService).saveModelStrict("xmesh/gpt-5.2", importedSettings);
+
+        ProviderModelImportService service = new ProviderModelImportService(providerModelDiscoveryService,
+                modelConfigService);
+
+        ProviderModelImportService.ProviderImportResult result = service.importMissingModels("xmesh");
+
+        assertTrue(result.addedModels().isEmpty());
+        assertTrue(result.skippedModels().isEmpty());
+        assertEquals(List.of("xmesh/gpt-5.2: disk full"), result.errors());
     }
 }
