@@ -3,12 +3,14 @@ package me.golemcore.bot.adapter.outbound.hive;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -91,7 +93,10 @@ class HiveApiClientTest {
         assertEquals(Instant.parse("2026-03-18T00:10:00Z"), response.accessTokenExpiresAt());
         JsonNode requestJson = new ObjectMapper().readTree(recordedRequest.getBody().utf8());
         assertEquals("policy-sync-v1", requestJson.get("capabilities").get("enabledAutonomyFeatures").get(0).asText());
-        assertEquals("control", requestJson.get("capabilities").get("supportedChannels").get(1).asText());
+        Set<String> supportedChannels = new HashSet<>();
+        requestJson.get("capabilities").get("supportedChannels").forEach(node -> supportedChannels.add(node.asText()));
+        assertTrue(supportedChannels.contains("web"));
+        assertTrue(supportedChannels.contains("control"));
     }
 
     @Test

@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import me.golemcore.bot.adapter.inbound.web.dto.HiveStatusResponse;
 import me.golemcore.bot.domain.service.HiveConnectionService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,25 +21,25 @@ public class HiveController {
     }
 
     @GetMapping("/status")
-    public Mono<ResponseEntity<HiveConnectionService.HiveStatusSnapshot>> getStatus() {
-        return Mono.just(ResponseEntity.ok(hiveConnectionService.getStatus()));
+    public Mono<ResponseEntity<HiveStatusResponse>> getStatus() {
+        return Mono.just(ResponseEntity.ok(HiveStatusResponse.from(hiveConnectionService.getStatus())));
     }
 
     @PostMapping("/join")
-    public Mono<ResponseEntity<HiveConnectionService.HiveStatusSnapshot>> join(
+    public Mono<ResponseEntity<HiveStatusResponse>> join(
             @RequestBody(required = false) JoinHiveRequest request) {
         String joinCode = request != null ? request.joinCode() : null;
-        return Mono.just(ResponseEntity.ok(hiveConnectionService.join(joinCode)));
+        return Mono.just(ResponseEntity.ok(HiveStatusResponse.from(hiveConnectionService.join(joinCode))));
     }
 
     @PostMapping("/reconnect")
-    public Mono<ResponseEntity<HiveConnectionService.HiveStatusSnapshot>> reconnect() {
-        return Mono.just(ResponseEntity.ok(hiveConnectionService.reconnect()));
+    public Mono<ResponseEntity<HiveStatusResponse>> reconnect() {
+        return Mono.just(ResponseEntity.ok(HiveStatusResponse.from(hiveConnectionService.reconnect())));
     }
 
     @PostMapping("/leave")
-    public Mono<ResponseEntity<HiveConnectionService.HiveStatusSnapshot>> leave() {
-        return Mono.just(ResponseEntity.ok(hiveConnectionService.leave()));
+    public Mono<ResponseEntity<HiveStatusResponse>> leave() {
+        return Mono.just(ResponseEntity.ok(HiveStatusResponse.from(hiveConnectionService.leave())));
     }
 
     public record JoinHiveRequest(String joinCode) {

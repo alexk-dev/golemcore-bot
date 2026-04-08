@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.adapter.outbound.hive;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
@@ -6,13 +6,14 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
+import me.golemcore.bot.port.outbound.HivePolicyStatePort;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
-@Service
+@Component
 @RequiredArgsConstructor
 @Slf4j
-public class HivePolicyStateStore {
+public class JsonHivePolicyStateAdapter implements HivePolicyStatePort {
 
     private static final String PREFERENCES_DIR = "preferences";
     private static final String POLICY_STATE_FILE = "hive-policy-state.json";
@@ -24,6 +25,7 @@ public class HivePolicyStateStore {
     private HivePolicyBindingState cachedState;
     private volatile boolean loaded;
 
+    @Override
     public Optional<HivePolicyBindingState> load() {
         ensureLoaded();
         synchronized (lock) {
@@ -31,6 +33,7 @@ public class HivePolicyStateStore {
         }
     }
 
+    @Override
     public void save(HivePolicyBindingState state) {
         if (state == null) {
             throw new IllegalArgumentException("Hive policy binding state is required");
@@ -48,6 +51,7 @@ public class HivePolicyStateStore {
         }
     }
 
+    @Override
     @SuppressWarnings("PMD.NullAssignment")
     public void clear() {
         synchronized (lock) {

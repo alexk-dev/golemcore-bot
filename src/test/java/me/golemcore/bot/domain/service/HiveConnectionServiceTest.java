@@ -23,10 +23,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import me.golemcore.bot.adapter.outbound.hive.HiveApiClient;
-import me.golemcore.bot.adapter.outbound.hive.HiveControlChannelClient;
-import me.golemcore.bot.adapter.outbound.hive.HiveControlChannelStatus;
-import me.golemcore.bot.adapter.outbound.hive.HiveEventOutboxService;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveSessionState;
@@ -37,9 +33,13 @@ import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;
 import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
 import me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog;
 import me.golemcore.bot.domain.model.hive.HivePolicyPackage;
+import me.golemcore.bot.domain.model.hive.HiveStatusSnapshot;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.HiveControlChannelPort;
+import me.golemcore.bot.port.outbound.HiveEventOutboxPort;
+import me.golemcore.bot.port.outbound.HiveMachinePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -53,12 +53,12 @@ class HiveConnectionServiceTest {
     private HiveControlInboxService hiveControlInboxService;
     private HiveControlCommandDispatcher hiveControlCommandDispatcher;
     private HiveManagedPolicyService hiveManagedPolicyService;
-    private HiveApiClient hiveApiClient;
-    private HiveEventOutboxService hiveEventOutboxService;
-    private HiveControlChannelClient hiveControlChannelClient;
+    private HiveMachinePort hiveMachinePort;
+    private HiveEventOutboxPort hiveEventOutboxPort;
+    private HiveControlChannelPort hiveControlChannelPort;
     private ChannelPort webPort;
     private AtomicReference<Optional<HiveSessionState>> storedSession;
-    private AtomicReference<HiveControlChannelStatus> controlChannelStatus;
+    private AtomicReference<HiveControlChannelPort.ControlChannelStatus> controlChannelStatus;
     private AtomicReference<Consumer<HiveControlCommandEnvelope>> controlCommandConsumer;
     private HiveConnectionService service;
 
@@ -71,12 +71,12 @@ class HiveConnectionServiceTest {
         hiveControlInboxService = mock(HiveControlInboxService.class);
         hiveControlCommandDispatcher = mock(HiveControlCommandDispatcher.class);
         hiveManagedPolicyService = mock(HiveManagedPolicyService.class);
-        hiveApiClient = mock(HiveApiClient.class);
-        hiveEventOutboxService = mock(HiveEventOutboxService.class);
-        hiveControlChannelClient = mock(HiveControlChannelClient.class);
+        hiveMachinePort = mock(HiveMachinePort.class);
+        hiveEventOutboxPort = mock(HiveEventOutboxPort.class);
+        hiveControlChannelPort = mock(HiveControlChannelPort.class);
         webPort = mock(ChannelPort.class);
         storedSession = new AtomicReference<>(Optional.empty());
-        controlChannelStatus = new AtomicReference<>(HiveControlChannelStatus.disconnected());
+        controlChannelStatus = new AtomicReference<>(HiveControlChannelPort.ControlChannelStatus.disconnected());
         controlCommandConsumer = new AtomicReference<>();
 
         when(webPort.getChannelType()).thenReturn("web");
@@ -106,11 +106,11 @@ class HiveConnectionServiceTest {
                 .thenReturn(new HiveControlInboxService.RecordResult(
                         false,
                         new HiveControlInboxService.InboxSummary(1, 1, 1, "req-1", "2026-03-18T00:00:00Z")));
-        when(hiveEventOutboxService.getSummary())
-                .thenReturn(new HiveEventOutboxService.OutboxSummary(0, 0, null));
-        when(hiveControlChannelClient.getStatus()).thenAnswer(invocation -> controlChannelStatus.get());
+        when(hiveEventOutboxPort.getSummary())
+                .thenReturn(new HiveEventOutboxPort.OutboxSummary(0, 0, null));
+        when(hiveControlChannelPort.getStatus()).thenAnswer(invocation -> controlChannelStatus.get());
         doAnswer(invocation -> {
-            controlChannelStatus.set(new HiveControlChannelStatus(
+            controlChannelStatus.set(new HiveControlChannelPort.ControlChannelStatus(
                     "CONNECTED",
                     Instant.parse("2026-03-18T00:00:00Z"),
                     null,
@@ -119,11 +119,11 @@ class HiveConnectionServiceTest {
                     0));
             controlCommandConsumer.set(invocation.getArgument(1));
             return null;
-        }).when(hiveControlChannelClient).connect(any(HiveSessionState.class), any());
+        }).when(hiveControlChannelPort).connect(any(HiveSessionState.class), any());
         doAnswer(invocation -> {
-            controlChannelStatus.set(HiveControlChannelStatus.disconnected());
+            controlChannelStatus.set(HiveControlChannelPort.ControlChannelStatus.disconnected());
             return null;
-        }).when(hiveControlChannelClient).disconnect(any());
+        }).when(hiveControlChannelPort).disconnect(any());
         when(hiveBootstrapConfigSynchronizer.getManagedJoinCode()).thenReturn(null);
         when(hiveManagedPolicyService.getBindingState()).thenReturn(Optional.empty());
 
@@ -135,9 +135,9 @@ class HiveConnectionServiceTest {
                 hiveControlInboxService,
                 hiveControlCommandDispatcher,
                 hiveManagedPolicyService,
-                hiveApiClient,
-                hiveEventOutboxService,
-                hiveControlChannelClient,
+                hiveMachinePort,
+                hiveEventOutboxPort,
+                hiveControlChannelPort,
                 new ChannelRegistry(List.of(webPort)),
                 objectProvider(null),
                 objectProvider(null),
@@ -146,7 +146,7 @@ class HiveConnectionServiceTest {
 
     @Test
     void shouldJoinWithManualJoinCodeAndPersistSession() {
-        when(hiveApiClient.register(
+        when(hiveMachinePort.register(
                 eq("https://hive.example.com"),
                 eq("token-id.secret"),
                 eq("Builder"),
@@ -154,7 +154,7 @@ class HiveConnectionServiceTest {
                 eq("dev"),
                 eq("dev"),
                 anySet(),
-                any(HiveCapabilitySnapshot.class))).thenReturn(new HiveApiClient.GolemAuthResponse(
+                any(HiveCapabilitySnapshot.class))).thenReturn(new HiveMachinePort.AuthSession(
                         "golem-1",
                         "access",
                         "refresh",
@@ -166,18 +166,18 @@ class HiveConnectionServiceTest {
                         30,
                         List.of("golems:heartbeat")));
 
-        HiveConnectionService.HiveStatusSnapshot status = service.join("token-id.secret:https://hive.example.com/");
+        HiveStatusSnapshot status = service.join("token-id.secret:https://hive.example.com/");
 
         assertEquals("CONNECTED", status.state());
         assertEquals("golem-1", status.golemId());
         assertEquals("CONNECTED", status.controlChannelState());
-        verify(hiveApiClient).heartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
+        verify(hiveMachinePort).heartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
                 eq("connected"), eq("Hive join completed"), eq(null), anyLong(),
                 any(), any(), any(), any(), any(), any());
-        verify(hiveControlChannelClient).connect(any(HiveSessionState.class), any());
+        verify(hiveControlChannelPort).connect(any(HiveSessionState.class), any());
         verify(hiveSessionStateStore).save(any(HiveSessionState.class));
         verify(runtimeConfigService).updateRuntimeConfig(any(RuntimeConfig.class));
-        verify(hiveApiClient).register(eq("https://hive.example.com"),
+        verify(hiveMachinePort).register(eq("https://hive.example.com"),
                 eq("token-id.secret"),
                 eq("Builder"),
                 eq("lab-a"),
@@ -206,8 +206,8 @@ class HiveConnectionServiceTest {
                 .controlChannelUrl("/ws/golems/control")
                 .build();
         storedSession.set(Optional.of(sessionState));
-        when(hiveApiClient.rotate("https://hive.example.com", "golem-1", "refresh"))
-                .thenReturn(new HiveApiClient.GolemAuthResponse(
+        when(hiveMachinePort.rotate("https://hive.example.com", "golem-1", "refresh"))
+                .thenReturn(new HiveMachinePort.AuthSession(
                         "golem-1",
                         "access-new",
                         "refresh-new",
@@ -219,13 +219,13 @@ class HiveConnectionServiceTest {
                         30,
                         List.of("golems:heartbeat")));
 
-        HiveConnectionService.HiveStatusSnapshot status = service.reconnect();
+        HiveStatusSnapshot status = service.reconnect();
 
         assertEquals("CONNECTED", status.state());
-        verify(hiveApiClient).heartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access-new"),
+        verify(hiveMachinePort).heartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access-new"),
                 eq("connected"), eq("Hive reconnect completed"), eq(null), anyLong(),
                 any(), any(), any(), any(), any(), any());
-        verify(hiveControlChannelClient).connect(any(HiveSessionState.class), any());
+        verify(hiveControlChannelPort).connect(any(HiveSessionState.class), any());
         verify(runtimeConfigService, never()).updateRuntimeConfig(any(RuntimeConfig.class));
     }
 
@@ -234,7 +234,7 @@ class HiveConnectionServiceTest {
         when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(true);
         when(hiveBootstrapConfigSynchronizer.getManagedJoinCode())
                 .thenReturn("managed.secret:https://hive.example.com");
-        when(hiveApiClient.register(
+        when(hiveMachinePort.register(
                 eq("https://hive.example.com"),
                 eq("managed.secret"),
                 eq("Builder"),
@@ -242,7 +242,7 @@ class HiveConnectionServiceTest {
                 eq("dev"),
                 eq("dev"),
                 anySet(),
-                any(HiveCapabilitySnapshot.class))).thenReturn(new HiveApiClient.GolemAuthResponse(
+                any(HiveCapabilitySnapshot.class))).thenReturn(new HiveMachinePort.AuthSession(
                         "golem-1",
                         "access",
                         "refresh",
@@ -254,7 +254,7 @@ class HiveConnectionServiceTest {
                         30,
                         List.of()));
 
-        HiveConnectionService.HiveStatusSnapshot status = service.join(null);
+        HiveStatusSnapshot status = service.join(null);
 
         assertEquals("CONNECTED", status.state());
         verify(runtimeConfigService, never()).updateRuntimeConfig(any(RuntimeConfig.class));
@@ -270,8 +270,8 @@ class HiveConnectionServiceTest {
                 .controlChannelUrl("/ws/golems/control")
                 .build();
         storedSession.set(Optional.of(sessionState));
-        when(hiveApiClient.rotate("https://hive.example.com", "golem-1", "refresh"))
-                .thenReturn(new HiveApiClient.GolemAuthResponse(
+        when(hiveMachinePort.rotate("https://hive.example.com", "golem-1", "refresh"))
+                .thenReturn(new HiveMachinePort.AuthSession(
                         "golem-1",
                         "access-new",
                         "refresh-new",
@@ -283,11 +283,11 @@ class HiveConnectionServiceTest {
                         30,
                         List.of("golems:heartbeat")));
 
-        HiveConnectionService.HiveStatusSnapshot status = service.join("token-id.secret:https://hive.example.com/");
+        HiveStatusSnapshot status = service.join("token-id.secret:https://hive.example.com/");
 
         assertEquals("CONNECTED", status.state());
-        verify(hiveApiClient, never()).register(any(), any(), any(), any(), any(), any(), anySet(), any());
-        verify(hiveApiClient).rotate("https://hive.example.com", "golem-1", "refresh");
+        verify(hiveMachinePort, never()).register(any(), any(), any(), any(), any(), any(), anySet(), any());
+        verify(hiveMachinePort).rotate("https://hive.example.com", "golem-1", "refresh");
     }
 
     @Test
@@ -308,8 +308,8 @@ class HiveConnectionServiceTest {
         assertEquals(
                 "A Hive session already exists. Leave the current session before joining a different Hive server.",
                 error.getMessage());
-        verify(hiveApiClient, never()).register(any(), any(), any(), any(), any(), any(), anySet(), any());
-        verify(hiveApiClient, never()).rotate(any(), any(), any());
+        verify(hiveMachinePort, never()).register(any(), any(), any(), any(), any(), any(), anySet(), any());
+        verify(hiveMachinePort, never()).rotate(any(), any(), any());
     }
 
     @Test
@@ -324,7 +324,7 @@ class HiveConnectionServiceTest {
                 .controlChannelUrl("/ws/golems/control")
                 .build();
         storedSession.set(Optional.of(sessionState));
-        controlChannelStatus.set(new HiveControlChannelStatus(
+        controlChannelStatus.set(new HiveControlChannelPort.ControlChannelStatus(
                 "CONNECTED",
                 Instant.parse("2026-03-18T00:00:00Z"),
                 null,
@@ -334,7 +334,7 @@ class HiveConnectionServiceTest {
 
         service.runHeartbeatMaintenanceCycle();
 
-        verify(hiveApiClient).heartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
+        verify(hiveMachinePort).heartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
                 eq("connected"), eq("Control channel connected"), eq(null), anyLong(),
                 any(), any(), any(), any(), any(), any());
     }
@@ -351,15 +351,15 @@ class HiveConnectionServiceTest {
                 .controlChannelUrl("/ws/golems/control")
                 .build();
         storedSession.set(Optional.of(sessionState));
-        controlChannelStatus.set(new HiveControlChannelStatus(
+        controlChannelStatus.set(new HiveControlChannelPort.ControlChannelStatus(
                 "CONNECTED",
                 Instant.parse("2026-03-18T00:00:00Z"),
                 null,
                 null,
                 null,
                 0));
-        when(hiveApiClient.rotate("https://hive.example.com", "golem-1", "refresh-old"))
-                .thenReturn(new HiveApiClient.GolemAuthResponse(
+        when(hiveMachinePort.rotate("https://hive.example.com", "golem-1", "refresh-old"))
+                .thenReturn(new HiveMachinePort.AuthSession(
                         "golem-1",
                         "access-new",
                         "refresh-new",
@@ -375,9 +375,9 @@ class HiveConnectionServiceTest {
 
         assertEquals("access-new", storedSession.get().orElseThrow().getAccessToken());
         assertNotNull(storedSession.get().orElseThrow().getLastTokenRotatedAt());
-        verify(hiveApiClient).rotate("https://hive.example.com", "golem-1", "refresh-old");
-        verify(hiveControlChannelClient).disconnect("token-refresh");
-        verify(hiveApiClient).heartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access-new"),
+        verify(hiveMachinePort).rotate("https://hive.example.com", "golem-1", "refresh-old");
+        verify(hiveControlChannelPort).disconnect("token-refresh");
+        verify(hiveMachinePort).heartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access-new"),
                 eq("degraded"), eq("Waiting for control channel reconnect"), eq(null), anyLong(),
                 any(), any(), any(), any(), any(), any());
     }
@@ -392,17 +392,17 @@ class HiveConnectionServiceTest {
                 .controlChannelUrl("/ws/golems/control")
                 .build();
         storedSession.set(Optional.of(sessionState));
-        controlChannelStatus.set(HiveControlChannelStatus.disconnected());
+        controlChannelStatus.set(HiveControlChannelPort.ControlChannelStatus.disconnected());
 
         service.runControlChannelMaintenanceCycle();
 
-        verify(hiveControlChannelClient).connect(any(HiveSessionState.class), any());
+        verify(hiveControlChannelPort).connect(any(HiveSessionState.class), any());
         assertEquals("CONNECTED", service.getStatus().state());
     }
 
     @Test
     void shouldRecordReceivedControlCommandFromChannelCallback() {
-        when(hiveApiClient.register(
+        when(hiveMachinePort.register(
                 eq("https://hive.example.com"),
                 eq("token-id.secret"),
                 eq("Builder"),
@@ -410,7 +410,7 @@ class HiveConnectionServiceTest {
                 eq("dev"),
                 eq("dev"),
                 anySet(),
-                any(HiveCapabilitySnapshot.class))).thenReturn(new HiveApiClient.GolemAuthResponse(
+                any(HiveCapabilitySnapshot.class))).thenReturn(new HiveMachinePort.AuthSession(
                         "golem-1",
                         "access",
                         "refresh",
@@ -452,7 +452,7 @@ class HiveConnectionServiceTest {
                 .scopes(List.of("golems:heartbeat", "golems:policy:read", "golems:policy:write"))
                 .build();
         storedSession.set(Optional.of(sessionState));
-        controlChannelStatus.set(new HiveControlChannelStatus(
+        controlChannelStatus.set(new HiveControlChannelPort.ControlChannelStatus(
                 "CONNECTED",
                 Instant.parse("2026-03-18T00:00:00Z"),
                 null,
@@ -474,7 +474,7 @@ class HiveConnectionServiceTest {
                         .defaultModel("openai/gpt-5.1")
                         .build())
                 .build();
-        when(hiveApiClient.getPolicyPackage("https://hive.example.com", "golem-1", "access"))
+        when(hiveMachinePort.getPolicyPackage("https://hive.example.com", "golem-1", "access"))
                 .thenReturn(policyPackage);
         when(hiveManagedPolicyService.applyPolicyPackage(policyPackage)).thenReturn(HivePolicyApplyResult.builder()
                 .policyGroupId("pg-1")
@@ -493,9 +493,9 @@ class HiveConnectionServiceTest {
 
         service.runHeartbeatMaintenanceCycle();
 
-        verify(hiveApiClient).getPolicyPackage("https://hive.example.com", "golem-1", "access");
+        verify(hiveMachinePort).getPolicyPackage("https://hive.example.com", "golem-1", "access");
         verify(hiveManagedPolicyService).applyPolicyPackage(policyPackage);
-        verify(hiveApiClient).reportPolicyApplyResult(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
+        verify(hiveMachinePort).reportPolicyApplyResult(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
                 any(HivePolicyApplyResult.class));
     }
 
@@ -512,7 +512,7 @@ class HiveConnectionServiceTest {
                 .scopes(List.of("golems:heartbeat", "golems:policy:read"))
                 .build();
         storedSession.set(Optional.of(sessionState));
-        controlChannelStatus.set(new HiveControlChannelStatus(
+        controlChannelStatus.set(new HiveControlChannelPort.ControlChannelStatus(
                 "CONNECTED",
                 Instant.parse("2026-03-18T00:00:00Z"),
                 null,
@@ -530,7 +530,7 @@ class HiveConnectionServiceTest {
 
         service.runHeartbeatMaintenanceCycle();
 
-        verify(hiveApiClient).heartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
+        verify(hiveMachinePort).heartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
                 eq("connected"), eq("Control channel connected"), eq(null), anyLong(), any(),
                 isNull(), isNull(), isNull(), isNull(), isNull());
     }
@@ -550,7 +550,7 @@ class HiveConnectionServiceTest {
             return null;
         }).when(hiveManagedPolicyService).clearBinding();
 
-        HiveConnectionService.HiveStatusSnapshot status = service.leave();
+        HiveStatusSnapshot status = service.leave();
 
         verify(hiveManagedPolicyService).clearBinding();
         assertEquals("DISCONNECTED", status.state());

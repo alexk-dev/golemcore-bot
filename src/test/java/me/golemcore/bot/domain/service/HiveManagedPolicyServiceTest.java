@@ -19,6 +19,7 @@ import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;
 import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
 import me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog;
 import me.golemcore.bot.domain.model.hive.HivePolicyPackage;
+import me.golemcore.bot.port.outbound.HivePolicyStatePort;
 import me.golemcore.bot.port.outbound.ModelCatalogAdminPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,18 +28,18 @@ class HiveManagedPolicyServiceTest {
 
     private RuntimeConfigService runtimeConfigService;
     private ModelCatalogAdminPort modelCatalogAdminPort;
-    private HivePolicyStateStore hivePolicyStateStore;
+    private HivePolicyStatePort hivePolicyStatePort;
     private HiveManagedPolicyService service;
 
     @BeforeEach
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
         modelCatalogAdminPort = mock(ModelCatalogAdminPort.class);
-        hivePolicyStateStore = mock(HivePolicyStateStore.class);
+        hivePolicyStatePort = mock(HivePolicyStatePort.class);
         service = new HiveManagedPolicyService(
                 runtimeConfigService,
                 modelCatalogAdminPort,
-                hivePolicyStateStore,
+                hivePolicyStatePort,
                 Clock.fixed(Instant.parse("2026-04-08T12:00:00Z"), ZoneOffset.UTC));
     }
 
@@ -69,7 +70,7 @@ class HiveManagedPolicyServiceTest {
         verify(runtimeConfigService).replaceHiveManagedPolicySections(any(RuntimeConfig.LlmConfig.class),
                 any(RuntimeConfig.ModelRouterConfig.class));
         verify(modelCatalogAdminPort).replaceCatalogSnapshot(policyPackage.getModelCatalog());
-        verify(hivePolicyStateStore).save(HivePolicyBindingState.builder()
+        verify(hivePolicyStatePort).save(HivePolicyBindingState.builder()
                 .policyGroupId("pg-1")
                 .targetVersion(4)
                 .appliedVersion(4)
@@ -110,7 +111,7 @@ class HiveManagedPolicyServiceTest {
                 .build();
         when(runtimeConfigService.snapshotRuntimeConfig()).thenReturn(previousRuntime);
         when(modelCatalogAdminPort.getCatalogSnapshot()).thenReturn(previousCatalog);
-        when(hivePolicyStateStore.load()).thenReturn(Optional.of(existingState));
+        when(hivePolicyStatePort.load()).thenReturn(Optional.of(existingState));
         doThrow(new IllegalStateException("models write failed"))
                 .when(modelCatalogAdminPort).replaceCatalogSnapshot(policyPackage.getModelCatalog());
 
@@ -125,7 +126,7 @@ class HiveManagedPolicyServiceTest {
 
     @Test
     void shouldMarkSyncRequestedWithoutChangingAppliedVersion() {
-        when(hivePolicyStateStore.load()).thenReturn(Optional.of(HivePolicyBindingState.builder()
+        when(hivePolicyStatePort.load()).thenReturn(Optional.of(HivePolicyBindingState.builder()
                 .policyGroupId("pg-1")
                 .targetVersion(3)
                 .appliedVersion(2)
@@ -135,7 +136,7 @@ class HiveManagedPolicyServiceTest {
 
         service.markSyncRequested("pg-1", 4, "sha256:new");
 
-        verify(hivePolicyStateStore).save(HivePolicyBindingState.builder()
+        verify(hivePolicyStatePort).save(HivePolicyBindingState.builder()
                 .policyGroupId("pg-1")
                 .targetVersion(4)
                 .appliedVersion(2)

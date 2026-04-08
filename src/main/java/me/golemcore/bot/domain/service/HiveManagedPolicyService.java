@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;
 import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
 import me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog;
 import me.golemcore.bot.domain.model.hive.HivePolicyPackage;
+import me.golemcore.bot.port.outbound.HivePolicyStatePort;
 import me.golemcore.bot.port.outbound.ModelCatalogAdminPort;
 import org.springframework.stereotype.Service;
 
@@ -26,11 +27,11 @@ public class HiveManagedPolicyService {
 
     private final RuntimeConfigService runtimeConfigService;
     private final ModelCatalogAdminPort modelCatalogAdminPort;
-    private final HivePolicyStateStore hivePolicyStateStore;
+    private final HivePolicyStatePort hivePolicyStatePort;
     private final Clock clock;
 
     public Optional<HivePolicyBindingState> getBindingState() {
-        return hivePolicyStateStore.load();
+        return hivePolicyStatePort.load();
     }
 
     public boolean hasActiveBinding() {
@@ -47,7 +48,7 @@ public class HiveManagedPolicyService {
     public void markSyncRequested(String policyGroupId, Integer targetVersion, String checksum) {
         Instant now = Instant.now(clock);
         HivePolicyBindingState current = getBindingState().orElse(HivePolicyBindingState.builder().build());
-        hivePolicyStateStore.save(HivePolicyBindingState.builder()
+        hivePolicyStatePort.save(HivePolicyBindingState.builder()
                 .policyGroupId(policyGroupId)
                 .targetVersion(targetVersion)
                 .appliedVersion(current.getAppliedVersion())
@@ -61,7 +62,7 @@ public class HiveManagedPolicyService {
     }
 
     public void clearBinding() {
-        hivePolicyStateStore.clear();
+        hivePolicyStatePort.clear();
     }
 
     public HivePolicyApplyResult applyPolicyPackage(HivePolicyPackage policyPackage) {
@@ -77,14 +78,14 @@ public class HiveManagedPolicyService {
                     .lastSyncRequestedAt(resolveLastSyncRequestedAt(existingState))
                     .lastAppliedAt(resolveLastAppliedAt(existingState))
                     .build();
-            hivePolicyStateStore.save(inSyncState);
+            hivePolicyStatePort.save(inSyncState);
             return toApplyResult(inSyncState, null);
         }
 
         RuntimeConfig previousRuntime = runtimeConfigService.snapshotRuntimeConfig();
         HivePolicyModelCatalog previousCatalog = modelCatalogAdminPort.getCatalogSnapshot();
         HivePolicyBindingState applyingState = buildApplyingState(existingState, policyPackage);
-        hivePolicyStateStore.save(applyingState);
+        hivePolicyStatePort.save(applyingState);
 
         boolean runtimeUpdated = false;
         boolean catalogUpdated = false;
@@ -103,7 +104,7 @@ public class HiveManagedPolicyService {
                     .lastSyncRequestedAt(resolveLastSyncRequestedAt(applyingState))
                     .lastAppliedAt(Instant.now(clock))
                     .build();
-            hivePolicyStateStore.save(syncedState);
+            hivePolicyStatePort.save(syncedState);
             return toApplyResult(syncedState, null);
         } catch (RuntimeException exception) {
             rollback(previousRuntime, previousCatalog, runtimeUpdated, catalogUpdated);
@@ -118,7 +119,7 @@ public class HiveManagedPolicyService {
                     .lastErrorDigest(exception.getMessage())
                     .lastErrorAt(Instant.now(clock))
                     .build();
-            hivePolicyStateStore.save(failedState);
+            hivePolicyStatePort.save(failedState);
             return toApplyResult(failedState, exception);
         }
     }
