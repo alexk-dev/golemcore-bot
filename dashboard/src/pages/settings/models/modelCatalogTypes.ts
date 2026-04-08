@@ -167,6 +167,14 @@ export function isModelDraftDirty(
   return JSON.stringify(draft) !== JSON.stringify(toModelDraft(selectedModelId, existing));
 }
 
+export function canTestModelDraft(draft: Pick<ModelDraft, 'id' | 'provider'>, isExisting: boolean, isDirty: boolean): boolean {
+  if (!isExisting || isDirty) {
+    return false;
+  }
+
+  return draft.id.trim().length > 0 && draft.provider.trim().length > 0;
+}
+
 export function getGroupedCatalogModels(
   modelsConfig: ModelsConfig | null | undefined,
   preferredProviderOrder: string[] = [],
