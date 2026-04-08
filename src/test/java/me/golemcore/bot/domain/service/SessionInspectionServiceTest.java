@@ -191,36 +191,6 @@ class SessionInspectionServiceTest {
         assertEquals("conv-1", byChatAlias.getConversationKey());
     }
 
-    @Test
-    void shouldListRecentSessionsWithActiveConversationAndLimit() {
-        AgentSession newer = AgentSession.builder()
-                .id("web:conv-2")
-                .channelType("web")
-                .chatId("legacy-2")
-                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-2"))
-                .updatedAt(Instant.parse("2026-03-20T10:05:00Z"))
-                .messages(List.of())
-                .build();
-        AgentSession older = AgentSession.builder()
-                .id("web:conv-1")
-                .channelType("web")
-                .chatId("legacy-1")
-                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-1"))
-                .updatedAt(Instant.parse("2026-03-20T10:00:00Z"))
-                .messages(List.of())
-                .build();
-        when(sessionPort.listByChannelType("web")).thenReturn(List.of(older, newer));
-        when(pointerService.buildWebPointerKey("admin", "client-1")).thenReturn("web|admin|client-1");
-        when(pointerService.getActiveConversationKey("web|admin|client-1")).thenReturn(Optional.of("conv-2"));
-
-        List<SessionSummaryView> recent = service.listRecentSessions("web", "client-1", null, "admin", 1);
-
-        assertEquals(1, recent.size());
-        assertEquals("web:conv-2", recent.get(0).getId());
-        assertTrue(recent.get(0).isActive());
-    }
-
-    @Test
     void shouldPageMessagesWithAttachmentFallbackAndMetadataProjection() {
         Map<String, Object> attachmentOnlyMetadata = new LinkedHashMap<>();
         attachmentOnlyMetadata.put("attachments", List.of(
@@ -369,6 +339,39 @@ class SessionInspectionServiceTest {
         assertEquals("payload", export.payloadText());
         assertEquals("application/octet-stream", export.contentType());
         assertEquals(".txt", export.fileExtension());
+    }
+
+    @Test
+    void shouldPreserveParameterizedSnapshotContentTypeWhenExportingPayload() {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-1")
+                .role("response")
+                .contentType("application/json; charset=utf-8")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress("{\"ok\":true}".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(11L)
+                .compressedSize(18L)
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-1")
+                        .rootSpanId("span-root")
+                        .spans(List.of(TraceSpanRecord.builder()
+                                .spanId("span-root")
+                                .snapshots(List.of(snapshot))
+                                .build()))
+                        .build()))
+                .build();
+        when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
+
+        SessionInspectionService.SnapshotPayloadExport export = service.exportSessionTraceSnapshotPayload("web:conv-1",
+                "snap-1");
+
+        assertEquals("{\"ok\":true}", export.payloadText());
+        assertEquals("application/json; charset=utf-8", export.contentType());
+        assertEquals(".json", export.fileExtension());
     }
 
     @Test

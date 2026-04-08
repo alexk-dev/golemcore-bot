@@ -18,6 +18,7 @@ import me.golemcore.bot.adapter.inbound.web.mapper.SessionWebDtoMapper;
 import me.golemcore.bot.adapter.shared.dto.SessionTraceExportPayload;
 import me.golemcore.bot.domain.view.ActiveSessionSelectionView;
 import me.golemcore.bot.domain.service.SessionInspectionService;
+import me.golemcore.bot.domain.service.SessionSelectionService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -42,6 +43,7 @@ import reactor.core.publisher.Mono;
 public class SessionsController {
 
     private final SessionInspectionService sessionInspectionService;
+    private final SessionSelectionService sessionSelectionService;
     private final SessionWebDtoMapper sessionWebDtoMapper;
 
     @GetMapping
@@ -67,7 +69,7 @@ public class SessionsController {
             @RequestParam(required = false) String transportChatId,
             Principal principal) {
         return execute(() -> ResponseEntity.ok(sessionWebDtoMapper.toSummaryDtos(
-                sessionInspectionService.listRecentSessions(
+                sessionSelectionService.listRecentSessions(
                         channel,
                         clientInstanceId,
                         transportChatId,
@@ -81,7 +83,7 @@ public class SessionsController {
             @RequestParam(required = false) String clientInstanceId,
             @RequestParam(required = false) String transportChatId,
             Principal principal) {
-        return execute(() -> ResponseEntity.ok(toActiveResponse(sessionInspectionService.getActiveSession(
+        return execute(() -> ResponseEntity.ok(toActiveResponse(sessionSelectionService.getActiveSession(
                 channel,
                 clientInstanceId,
                 transportChatId,
@@ -93,7 +95,7 @@ public class SessionsController {
             @RequestBody ActiveSessionRequest request,
             Principal principal) {
         ActiveSessionRequest normalizedRequest = request != null ? request : ActiveSessionRequest.builder().build();
-        return execute(() -> ResponseEntity.ok(toActiveResponse(sessionInspectionService.setActiveSession(
+        return execute(() -> ResponseEntity.ok(toActiveResponse(sessionSelectionService.setActiveSession(
                 normalizedRequest.getChannelType(),
                 normalizedRequest.getClientInstanceId(),
                 normalizedRequest.getTransportChatId(),
@@ -107,7 +109,7 @@ public class SessionsController {
             Principal principal) {
         CreateSessionRequest normalizedRequest = request != null ? request : CreateSessionRequest.builder().build();
         return execute(() -> ResponseEntity.status(HttpStatus.CREATED)
-                .body(sessionWebDtoMapper.toSummaryDto(sessionInspectionService.createSession(
+                .body(sessionWebDtoMapper.toSummaryDto(sessionSelectionService.createSession(
                         normalizedRequest.getChannelType(),
                         normalizedRequest.getClientInstanceId(),
                         principalName(principal),

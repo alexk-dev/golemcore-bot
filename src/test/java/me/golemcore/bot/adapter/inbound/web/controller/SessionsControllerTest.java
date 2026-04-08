@@ -13,6 +13,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.domain.service.SessionInspectionService;
+import me.golemcore.bot.domain.service.SessionSelectionService;
 import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSnapshot;
@@ -64,7 +65,8 @@ class SessionsControllerTest {
         compressionService = new TraceSnapshotCompressionService();
         SessionInspectionService inspectionService = new SessionInspectionService(sessionPort, pointerService,
                 compressionService);
-        controller = new SessionsController(inspectionService, new SessionWebDtoMapper());
+        SessionSelectionService selectionService = new SessionSelectionService(sessionPort, pointerService);
+        controller = new SessionsController(inspectionService, selectionService, new SessionWebDtoMapper());
     }
 
     @Test
@@ -676,6 +678,56 @@ class SessionsControllerTest {
                     assertEquals("application/json", response.getHeaders().getContentType().toString());
                     assertTrue(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION)
                             .endsWith("snap-json-default.json\""));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldPreserveParameterizedContentTypeWhenExportingSnapshotPayload() {
+        String payloadText = "{\"answer\":\"ok\"}";
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-json-charset")
+                .role("response")
+                .contentType("application/json; charset=utf-8")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress(payloadText.getBytes(StandardCharsets.UTF_8)))
+                .originalSize((long) payloadText.length())
+                .compressedSize(24L)
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-json-charset")
+                .channelType("web")
+                .chatId("chat-8")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-json-charset")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(TraceSpanRecord.builder()
+                                .spanId("span-root")
+                                .name("response.route")
+                                .kind(TraceSpanKind.OUTBOUND)
+                                .statusCode(TraceStatusCode.OK)
+                                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                                .snapshots(List.of(snapshot))
+                                .build()))
+                        .build()))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-json-charset")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.exportSessionTraceSnapshotPayload("s-json-charset", "snap-json-charset"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(payloadText, response.getBody());
+                    assertEquals("application/json;charset=utf-8",
+                            response.getHeaders().getContentType().toString());
+                    assertTrue(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION)
+                            .endsWith("snap-json-charset.json\""));
                 })
                 .verifyComplete();
     }
