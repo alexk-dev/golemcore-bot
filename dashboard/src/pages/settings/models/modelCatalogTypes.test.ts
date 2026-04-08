@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DiscoveredProviderModel, ModelSettings, ModelsConfig } from '../../../api/models';
 import {
+  canTestModelDraft,
   createDraftFromSuggestion,
   createEmptyModelDraft,
   resolvePersistedModelId,
@@ -205,5 +206,34 @@ describe('openrouter implicit prefix handling', () => {
     expect(resolvePersistedModelId(draft, existingModels, 'qwen/model-name:version')).toBe(
       'openrouter/qwen/model-name:version',
     );
+  });
+});
+
+describe('canTestModelDraft', () => {
+  it('returns false for unsaved drafts', () => {
+    const draft = {
+      ...createEmptyModelDraft('google'),
+      id: 'gemini-2.0-flash',
+    };
+
+    expect(canTestModelDraft(draft, false, false)).toBe(false);
+  });
+
+  it('returns false for dirty existing drafts', () => {
+    const draft = {
+      ...createEmptyModelDraft('google'),
+      id: 'gemini-2.5-flash',
+    };
+
+    expect(canTestModelDraft(draft, true, true)).toBe(false);
+  });
+
+  it('returns true for clean persisted models with provider and id', () => {
+    const draft = {
+      ...createEmptyModelDraft('google'),
+      id: 'gemini-2.5-flash',
+    };
+
+    expect(canTestModelDraft(draft, true, false)).toBe(true);
   });
 });

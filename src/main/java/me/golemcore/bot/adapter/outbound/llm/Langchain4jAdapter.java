@@ -163,6 +163,12 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         String reasoning = runtimeConfigService.getBalancedModelReasoning();
         this.currentModel = model;
 
+        if (model == null || model.isBlank()) {
+            initialized = true;
+            log.info("Langchain4j adapter initialized without a default model");
+            return;
+        }
+
         try {
             this.chatModel = createModel(model, reasoning);
             initialized = true;
@@ -217,11 +223,11 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             String modelName = stripProviderPrefix(model);
             log.info("[LLM] Creating OpenAI Responses streaming model for: {} (reasoning: {})",
                     modelName, reasoningEffort);
-            return createResponsesStreamingModel(modelName, reasoningEffort, config);
+            return createResponsesStreamingModel(model, modelName, reasoningEffort, config);
         });
     }
 
-    private StreamingChatModel createResponsesStreamingModel(String modelName, String reasoningEffort,
+    private StreamingChatModel createResponsesStreamingModel(String fullModel, String modelName, String reasoningEffort,
             RuntimeConfig.LlmProviderConfig config) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
@@ -245,7 +251,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             builder.reasoningEffort(reasoningEffort);
         }
 
-        if (supportsTemperature(modelName)) {
+        if (supportsTemperature(fullModel)) {
             builder.temperature((double) runtimeConfigService.getTemperature());
         }
 
@@ -274,6 +280,9 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     }
 
     private String stripProviderPrefix(String model) {
+        if (model == null) {
+            return null;
+        }
         return model.contains("/") ? model.substring(model.indexOf('/') + 1) : model;
     }
 
@@ -288,9 +297,9 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
         switch (apiType) {
         case API_TYPE_ANTHROPIC:
-            return createAnthropicModel(modelName, config);
+            return createAnthropicModel(model, modelName, config);
         case API_TYPE_GEMINI:
-            return createGeminiModel(modelName, config);
+            return createGeminiModel(model, modelName, config);
         default:
             return createOpenAiModel(modelName, model, reasoningEffort, config);
         }
@@ -304,7 +313,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return apiType.trim().toLowerCase(Locale.ROOT);
     }
 
-    private ChatModel createAnthropicModel(String modelName, RuntimeConfig.LlmProviderConfig config) {
+    private ChatModel createAnthropicModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for provider anthropic in runtime config");
@@ -321,14 +330,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             builder.baseUrl(config.getBaseUrl());
         }
 
-        if (supportsTemperature(modelName)) {
+        if (supportsTemperature(fullModel)) {
             builder.temperature(runtimeConfigService.getTemperature());
         }
 
         return builder.build();
     }
 
-    private ChatModel createGeminiModel(String modelName, RuntimeConfig.LlmProviderConfig config) {
+    private ChatModel createGeminiModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for Gemini provider in runtime config");
@@ -344,7 +353,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .timeout(java.time.Duration.ofSeconds(
                         config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
-        if (supportsTemperature(modelName)) {
+        if (supportsTemperature(fullModel)) {
             builder.temperature(runtimeConfigService.getTemperature());
         }
 
@@ -392,7 +401,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return CompletableFuture.supplyAsync(() -> {
             ensureInitialized();
 
-            if (chatModel == null && !isResponsesApiRequest(request)) {
+            boolean useResponsesApi = isResponsesApiRequest(request);
+            if (chatModel == null && request.getModel() == null && !useResponsesApi) {
                 throw new RuntimeException("Langchain4j adapter not available");
             }
 
@@ -409,7 +419,6 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 }
             }
 
-            boolean useResponsesApi = isResponsesApiRequest(request);
             ChatModel modelToUse = useResponsesApi ? null : getModelForRequest(request);
             boolean geminiApiType = !useResponsesApi && isGeminiRequest(request);
             LlmRequest requestToUse = request;
@@ -578,13 +587,13 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         String reasoningEffort = request.getReasoningEffort();
 
         // If request specifies a different model, create one-off
-        if (requestModel != null && !requestModel.equals(currentModel)) {
+        if (requestModel != null && (chatModel == null || !requestModel.equals(currentModel))) {
             log.trace("Creating one-off model for request: {}, reasoning: {}", requestModel, reasoningEffort);
             return createModel(requestModel, reasoningEffort);
         }
 
         // If request specifies different reasoning for current model
-        if (reasoningEffort != null && isReasoningRequired(currentModel)) {
+        if (currentModel != null && reasoningEffort != null && isReasoningRequired(currentModel)) {
             log.debug("Using reasoning effort: {} for model: {}", reasoningEffort, currentModel);
             return createModel(currentModel, reasoningEffort);
         }

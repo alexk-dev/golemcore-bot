@@ -13,7 +13,7 @@ import { useTestModel } from '../../../hooks/useModels';
 import type { ProviderProfileSummary } from './modelCatalogProviderProfiles';
 import { ModelCatalogIdentityFields } from './ModelCatalogIdentityFields';
 import { ReasoningLevelsEditor } from './ReasoningLevelsEditor';
-import { type ModelDraft, toPersistedModelId } from './modelCatalogTypes';
+import { canTestModelDraft, type ModelDraft, toPersistedModelId } from './modelCatalogTypes';
 
 interface ModelCatalogFormProps {
   draft: ModelDraft;
@@ -83,8 +83,14 @@ export function ModelCatalogForm({
   const [testResult, setTestResult] = useState<TestModelResponse | null>(null);
   const testModelMutation = useTestModel();
   const title = buildTitle(draft, isExisting);
+  const canTestModel = canTestModelDraft(draft, isExisting, isDirty);
 
   function handleTestModel(): void {
+    if (!canTestModel) {
+      toast.error(isExisting ? 'Save changes before testing this model.' : 'Create the model before testing it.');
+      return;
+    }
+
     const model = toPersistedModelId(draft);
     if (model.length === 0) {
       toast.error('Enter a model ID and provider before testing.');
@@ -124,7 +130,7 @@ export function ModelCatalogForm({
             <Button
               variant="secondary"
               onClick={handleTestModel}
-              disabled={testModelMutation.isPending || draft.id.trim().length === 0 || draft.provider.trim().length === 0}
+              disabled={testModelMutation.isPending || !canTestModel}
             >
               <FiPlay size={15} />
               {testModelMutation.isPending ? 'Testing...' : 'Test Model'}
