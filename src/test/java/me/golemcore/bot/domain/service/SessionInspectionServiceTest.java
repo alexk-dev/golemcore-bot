@@ -375,6 +375,13 @@ class SessionInspectionServiceTest {
     }
 
     @Test
+    void shouldFallbackWhenSnapshotContentTypeParametersAreMalformed() {
+        assertMalformedSnapshotContentTypeFallsBack("application/json; charset");
+        assertMalformedSnapshotContentTypeFallsBack("application/json; =utf-8");
+        assertMalformedSnapshotContentTypeFallsBack("application/json; char(set)=utf-8");
+    }
+
+    @Test
     void shouldBuildTransportAgnosticTraceExportView() {
         TraceSnapshot snapshot = TraceSnapshot.builder()
                 .snapshotId("snap-1")
@@ -456,5 +463,37 @@ class SessionInspectionServiceTest {
 
         verify(sessionPort).delete("telegram:conv-old");
         verify(pointerService).setActiveConversationKey("telegram|555", "conv-new");
+    }
+
+    private void assertMalformedSnapshotContentTypeFallsBack(String contentType) {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-1")
+                .role("response")
+                .contentType(contentType)
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress("payload".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(7L)
+                .compressedSize(15L)
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-1")
+                        .rootSpanId("span-root")
+                        .spans(List.of(TraceSpanRecord.builder()
+                                .spanId("span-root")
+                                .snapshots(List.of(snapshot))
+                                .build()))
+                        .build()))
+                .build();
+        when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
+
+        SessionInspectionService.SnapshotPayloadExport export = service.exportSessionTraceSnapshotPayload("web:conv-1",
+                "snap-1");
+
+        assertEquals("payload", export.payloadText());
+        assertEquals("application/octet-stream", export.contentType());
+        assertEquals(".txt", export.fileExtension());
     }
 }

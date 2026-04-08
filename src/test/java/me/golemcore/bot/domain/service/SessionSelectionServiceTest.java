@@ -177,6 +177,29 @@ class SessionSelectionServiceTest {
     }
 
     @Test
+    void shouldSetActiveTelegramSessionAndPersistTransportBinding() {
+        AgentSession telegramSession = AgentSession.builder()
+                .id("telegram:conv-1")
+                .channelType("telegram")
+                .chatId("conv-1")
+                .metadata(new HashMap<>())
+                .messages(List.of())
+                .build();
+        when(pointerService.buildTelegramPointerKey("100")).thenReturn("telegram|100");
+        when(sessionPort.get("telegram:conv-1")).thenReturn(Optional.of(telegramSession));
+        when(sessionPort.getOrCreate("telegram", "conv-1")).thenReturn(telegramSession);
+
+        ActiveSessionSelectionView selection = service.setActiveSession("telegram", null, "100", null, "conv-1");
+
+        assertEquals("telegram", selection.getChannelType());
+        assertEquals("100", selection.getTransportChatId());
+        verify(pointerService).setActiveConversationKey("telegram|100", "conv-1");
+        verify(sessionPort).save(telegramSession);
+        assertEquals("100", telegramSession.getMetadata().get(ContextAttributes.TRANSPORT_CHAT_ID));
+        assertEquals("conv-1", telegramSession.getMetadata().get(ContextAttributes.CONVERSATION_KEY));
+    }
+
+    @Test
     void shouldRejectCreateSessionWithoutClientInstanceIdBeforePersisting() {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> service.createSession("web", null, "admin", "new-session", true));
