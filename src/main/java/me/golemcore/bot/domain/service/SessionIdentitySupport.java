@@ -104,6 +104,40 @@ public final class SessionIdentitySupport {
         return transportChatId.equals(resolveTransportChatId(session));
     }
 
+    public static String resolveWebClientInstanceId(AgentSession session) {
+        if (session == null) {
+            return "";
+        }
+
+        String metadataClientInstanceId = readMetadataString(session, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
+        if (!StringValueSupport.isBlank(metadataClientInstanceId)) {
+            return metadataClientInstanceId;
+        }
+        return "";
+    }
+
+    public static boolean belongsToWebClient(AgentSession session, String clientInstanceId) {
+        if (StringValueSupport.isBlank(clientInstanceId)) {
+            return false;
+        }
+        return clientInstanceId.equals(resolveWebClientInstanceId(session));
+    }
+
+    public static boolean bindWebClientInstance(AgentSession session, String clientInstanceId) {
+        if (session == null || StringValueSupport.isBlank(clientInstanceId)) {
+            return false;
+        }
+
+        Map<String, Object> metadata = ensureMetadata(session);
+        String normalizedClientInstanceId = clientInstanceId.trim();
+        if (normalizedClientInstanceId.equals(readMetadataString(session, ContextAttributes.WEB_CLIENT_INSTANCE_ID))) {
+            return false;
+        }
+
+        metadata.put(ContextAttributes.WEB_CLIENT_INSTANCE_ID, normalizedClientInstanceId);
+        return true;
+    }
+
     public static boolean bindTransportAndConversation(
             AgentSession session,
             String transportChatId,
@@ -112,11 +146,7 @@ public final class SessionIdentitySupport {
             return false;
         }
 
-        if (session.getMetadata() == null) {
-            session.setMetadata(new HashMap<>());
-        }
-
-        Map<String, Object> metadata = session.getMetadata();
+        Map<String, Object> metadata = ensureMetadata(session);
         boolean changed = false;
 
         if (!StringValueSupport.isBlank(transportChatId)
@@ -142,5 +172,12 @@ public final class SessionIdentitySupport {
             return stringValue.isEmpty() ? null : stringValue;
         }
         return null;
+    }
+
+    private static Map<String, Object> ensureMetadata(AgentSession session) {
+        if (session.getMetadata() == null) {
+            session.setMetadata(new HashMap<>());
+        }
+        return session.getMetadata();
     }
 }

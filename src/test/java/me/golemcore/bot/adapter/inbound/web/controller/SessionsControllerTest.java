@@ -1051,10 +1051,13 @@ class SessionsControllerTest {
                 .id("web:abc-session")
                 .channelType("web")
                 .chatId("abc-session")
+                .metadata(new java.util.HashMap<>())
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .messages(List.of())
                 .build();
+        session.getMetadata().put(ContextAttributes.CONVERSATION_KEY, "abc-session");
+        session.getMetadata().put(ContextAttributes.WEB_CLIENT_INSTANCE_ID, "client-1");
         when(sessionPort.listByChannelType("web")).thenReturn(List.of(session));
         when(pointerService.buildWebPointerKey("admin", "client-1")).thenReturn("web|admin|client-1");
         when(pointerService.getActiveConversationKey("web|admin|client-1"))
@@ -1181,6 +1184,7 @@ class SessionsControllerTest {
 
         verify(sessionPort).save(session);
         verify(pointerService).setActiveConversationKey("web|admin|client-1", "new-session");
+        assertEquals("client-1", session.getMetadata().get(ContextAttributes.WEB_CLIENT_INSTANCE_ID));
     }
 
     @Test
@@ -1246,6 +1250,21 @@ class SessionsControllerTest {
     }
 
     @Test
+    void shouldRejectCreateSessionWithoutClientInstanceId() {
+        CreateSessionRequest request = CreateSessionRequest.builder()
+                .channelType("web")
+                .conversationKey("new-session")
+                .activate(true)
+                .build();
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.createSession(request, () -> "admin"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        verify(sessionPort, never()).save(any(AgentSession.class));
+    }
+
+    @Test
     void shouldCreateSessionWithoutActivationWhenRequested() {
         AgentSession session = AgentSession.builder()
                 .id("web:new-passive")
@@ -1295,9 +1314,11 @@ class SessionsControllerTest {
                 .id("web:valid-session-123")
                 .channelType("web")
                 .chatId("valid-session-123")
+                .metadata(new java.util.HashMap<>())
                 .updatedAt(Instant.parse("2026-02-22T10:00:00Z"))
                 .messages(List.of())
                 .build();
+        fallback.getMetadata().put(ContextAttributes.WEB_CLIENT_INSTANCE_ID, "client-1");
         when(sessionPort.listByChannelType("web")).thenReturn(List.of(fallback));
 
         StepVerifier.create(controller.getActiveSession("web", "client-1", null, () -> "admin"))

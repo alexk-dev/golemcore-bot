@@ -36,10 +36,11 @@ public class SessionSelectionService {
         String pointerKey = resolvePointerKey(normalizedChannel, clientInstanceId, transportChatId, principalName);
         String activeConversation = pointerService.getActiveConversationKey(pointerKey).orElse(null);
         int normalizedLimit = Math.max(1, Math.min(limit, MAX_RECENT_LIMIT));
-        return SessionConversationSupport.listRecentSessionsByOwner(
-                sessionPort,
+        String effectiveTransportChatId = resolveEffectiveTransportChatId(
                 normalizedChannel,
-                resolveEffectiveTransportChatId(normalizedChannel, clientInstanceId, transportChatId)).stream()
+                clientInstanceId,
+                transportChatId);
+        return listSessionsByOwner(normalizedChannel, clientInstanceId, effectiveTransportChatId).stream()
                 .sorted(ConversationKeyValidator.byRecentActivity())
                 .map(session -> SessionPresentationSupport.toSummary(session,
                         isActiveSession(session, activeConversation)))
@@ -62,11 +63,12 @@ public class SessionSelectionService {
 
         if (activeConversation.isPresent()) {
             String currentConversation = activeConversation.get();
-            if (SessionConversationSupport.isConversationResolvable(
-                    sessionPort,
+            if (isConversationResolvable(
                     normalizedChannel,
+                    clientInstanceId,
                     effectiveTransportChatId,
-                    currentConversation)) {
+                    currentConversation,
+                    true)) {
                 return toActiveSessionSelection(
                         normalizedChannel,
                         clientInstanceId,
@@ -83,13 +85,12 @@ public class SessionSelectionService {
                             clientInstanceId,
                             transportChatId)),
                     currentConversation);
-            String repairedConversation = SessionConversationSupport.resolveOrCreateConversationKey(
-                    sessionPort,
+            String repairedConversation = resolveOrCreateConversationKey(
                     normalizedChannel,
+                    clientInstanceId,
                     effectiveTransportChatId,
                     currentConversation);
             pointerService.setActiveConversationKey(pointerKey, repairedConversation);
-            ensureTelegramSessionBinding(normalizedChannel, effectiveTransportChatId, repairedConversation);
             return toActiveSessionSelection(
                     normalizedChannel,
                     clientInstanceId,
@@ -102,13 +103,12 @@ public class SessionSelectionService {
                 normalizedChannel,
                 TelemetrySupport
                         .shortHash(resolveTelemetryTransport(normalizedChannel, clientInstanceId, transportChatId)));
-        String fallbackConversation = SessionConversationSupport.resolveOrCreateConversationKey(
-                sessionPort,
+        String fallbackConversation = resolveOrCreateConversationKey(
                 normalizedChannel,
+                clientInstanceId,
                 effectiveTransportChatId,
                 null);
         pointerService.setActiveConversationKey(pointerKey, fallbackConversation);
-        ensureTelegramSessionBinding(normalizedChannel, effectiveTransportChatId, fallbackConversation);
         return toActiveSessionSelection(
                 normalizedChannel,
                 clientInstanceId,
@@ -135,6 +135,7 @@ public class SessionSelectionService {
                 normalizedChannel,
                 clientInstanceId,
                 transportChatId);
+        validateActivatableConversationOwnership(normalizedChannel, clientInstanceId, normalizedConversationKey);
         pointerService.setActiveConversationKey(pointerKey, normalizedConversationKey);
         log.info("[SessionMetrics] metric=sessions.switch.count channel={} transportHash={} conversationKey={}",
                 normalizedChannel,
@@ -162,21 +163,27 @@ public class SessionSelectionService {
         if (!CHANNEL_WEB.equals(normalizedChannel)) {
             throw new IllegalArgumentException("Only web channel session creation is supported");
         }
+        String normalizedClientInstanceId = requireWebClientInstanceId(clientInstanceId);
 
         String conversationKey = StringValueSupport.isBlank(requestedConversationKey)
                 ? generateConversationKey()
                 : normalizeConversationKeyForCreation(requestedConversationKey);
 
-        AgentSession session = sessionPort.getOrCreate(normalizedChannel, conversationKey);
+        boolean shouldActivate = activate == null || activate;
+        if (shouldActivate) {
+            resolvePointerKey(normalizedChannel, normalizedClientInstanceId, null, principalName);
+        }
+
+        AgentSession session = getOrCreateWebSession(normalizedClientInstanceId, conversationKey);
         sessionPort.save(session);
         log.info("[SessionMetrics] metric=sessions.create.count channel={} transportHash={} conversationKey={}",
                 normalizedChannel,
-                TelemetrySupport.shortHash(resolveTelemetryTransport(normalizedChannel, clientInstanceId, null)),
+                TelemetrySupport
+                        .shortHash(resolveTelemetryTransport(normalizedChannel, normalizedClientInstanceId, null)),
                 conversationKey);
 
-        boolean shouldActivate = activate == null || activate;
         if (shouldActivate) {
-            String pointerKey = resolvePointerKey(normalizedChannel, clientInstanceId, null, principalName);
+            String pointerKey = resolvePointerKey(normalizedChannel, normalizedClientInstanceId, null, principalName);
             pointerService.setActiveConversationKey(pointerKey, conversationKey);
         }
 
@@ -260,6 +267,150 @@ public class SessionSelectionService {
 
     private String generateConversationKey() {
         return UUID.randomUUID().toString();
+    }
+
+    private List<AgentSession> listSessionsByOwner(
+            String channel,
+            String clientInstanceId,
+            String transportChatId) {
+        if (CHANNEL_WEB.equals(channel)) {
+            return listWebSessionsByClient(clientInstanceId);
+        }
+        return SessionConversationSupport.listRecentSessionsByOwner(sessionPort, channel, transportChatId);
+    }
+
+    private List<AgentSession> listWebSessionsByClient(String clientInstanceId) {
+        String normalizedClientInstanceId = requireWebClientInstanceId(clientInstanceId);
+        return sessionPort.listByChannelType(CHANNEL_WEB).stream()
+                .filter(session -> SessionIdentitySupport.belongsToWebClient(session, normalizedClientInstanceId))
+                .toList();
+    }
+
+    private boolean isConversationResolvable(
+            String channel,
+            String clientInstanceId,
+            String transportChatId,
+            String conversationKey,
+            boolean adoptLegacyWebSession) {
+        if (CHANNEL_WEB.equals(channel)) {
+            return resolveOwnedWebSession(conversationKey, clientInstanceId, adoptLegacyWebSession).isPresent();
+        }
+        return SessionConversationSupport.isConversationResolvable(sessionPort, channel, transportChatId,
+                conversationKey);
+    }
+
+    private String resolveOrCreateConversationKey(
+            String channel,
+            String clientInstanceId,
+            String transportChatId,
+            String preferredConversation) {
+        if (CHANNEL_WEB.equals(channel)) {
+            return resolveOrCreateWebConversationKey(clientInstanceId, preferredConversation);
+        }
+        String conversationKey = SessionConversationSupport.resolveOrCreateConversationKey(
+                sessionPort,
+                channel,
+                transportChatId,
+                preferredConversation);
+        ensureTelegramSessionBinding(channel, transportChatId, conversationKey);
+        return conversationKey;
+    }
+
+    private String resolveOrCreateWebConversationKey(String clientInstanceId, String preferredConversation) {
+        Optional<AgentSession> preferredSession = resolveOwnedWebSession(
+                preferredConversation,
+                clientInstanceId,
+                true);
+        if (preferredSession.isPresent()) {
+            return SessionIdentitySupport.resolveConversationKey(preferredSession.get());
+        }
+
+        return listWebSessionsByClient(clientInstanceId).stream()
+                .sorted(ConversationKeyValidator.byRecentActivity())
+                .map(SessionIdentitySupport::resolveConversationKey)
+                .filter(value -> !StringValueSupport.isBlank(value) && !value.equals(preferredConversation))
+                .findFirst()
+                .orElseGet(() -> createOwnedWebSession(clientInstanceId));
+    }
+
+    private Optional<AgentSession> resolveOwnedWebSession(
+            String conversationKey,
+            String clientInstanceId,
+            boolean adoptLegacyWebSession) {
+        if (StringValueSupport.isBlank(conversationKey)) {
+            return Optional.empty();
+        }
+
+        Optional<AgentSession> session = sessionPort.get(CHANNEL_WEB + ":" + conversationKey);
+        if (session.isEmpty()) {
+            return Optional.empty();
+        }
+        if (tryBindWebSessionOwnership(session.get(), clientInstanceId, adoptLegacyWebSession)) {
+            return session;
+        }
+        return Optional.empty();
+    }
+
+    private void validateActivatableConversationOwnership(
+            String channel,
+            String clientInstanceId,
+            String conversationKey) {
+        if (!CHANNEL_WEB.equals(channel)) {
+            return;
+        }
+
+        Optional<AgentSession> existingSession = sessionPort.get(CHANNEL_WEB + ":" + conversationKey);
+        if (existingSession.isPresent()
+                && !tryBindWebSessionOwnership(existingSession.get(), clientInstanceId, true)) {
+            throw new IllegalArgumentException("conversationKey belongs to another web client");
+        }
+    }
+
+    private AgentSession getOrCreateWebSession(String clientInstanceId, String conversationKey) {
+        Optional<AgentSession> existingSession = sessionPort.get(CHANNEL_WEB + ":" + conversationKey);
+        if (existingSession.isPresent()) {
+            if (!tryBindWebSessionOwnership(existingSession.get(), clientInstanceId, true)) {
+                throw new IllegalArgumentException("conversationKey belongs to another web client");
+            }
+            return existingSession.get();
+        }
+
+        AgentSession session = sessionPort.getOrCreate(CHANNEL_WEB, conversationKey);
+        SessionIdentitySupport.bindWebClientInstance(session, requireWebClientInstanceId(clientInstanceId));
+        return session;
+    }
+
+    private String createOwnedWebSession(String clientInstanceId) {
+        AgentSession session = sessionPort.getOrCreate(CHANNEL_WEB, generateConversationKey());
+        SessionIdentitySupport.bindWebClientInstance(session, requireWebClientInstanceId(clientInstanceId));
+        sessionPort.save(session);
+        return SessionIdentitySupport.resolveConversationKey(session);
+    }
+
+    private boolean tryBindWebSessionOwnership(
+            AgentSession session,
+            String clientInstanceId,
+            boolean adoptLegacyWebSession) {
+        String normalizedClientInstanceId = requireWebClientInstanceId(clientInstanceId);
+        String currentOwner = SessionIdentitySupport.resolveWebClientInstanceId(session);
+        if (!StringValueSupport.isBlank(currentOwner)) {
+            return normalizedClientInstanceId.equals(currentOwner);
+        }
+        if (!adoptLegacyWebSession) {
+            return false;
+        }
+        boolean changed = SessionIdentitySupport.bindWebClientInstance(session, normalizedClientInstanceId);
+        if (changed) {
+            sessionPort.save(session);
+        }
+        return true;
+    }
+
+    private String requireWebClientInstanceId(String clientInstanceId) {
+        if (StringValueSupport.isBlank(clientInstanceId)) {
+            throw new IllegalArgumentException("clientInstanceId is required for web");
+        }
+        return clientInstanceId.trim();
     }
 
     private void ensureTelegramSessionBinding(String channel, String transportChatId, String conversationKey) {

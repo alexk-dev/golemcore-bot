@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.inbound.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
@@ -203,6 +204,31 @@ class WebSocketChatHandlerTest {
                 .verifyComplete();
 
         verify(pointerService).setActiveConversationKey("web|admin|client-1", "chat-1");
+    }
+
+    @Test
+    void shouldPersistWebClientInstanceIdInInboundMetadata() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-owner");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText())
+                .thenReturn("{\"text\":\"hello\",\"sessionId\":\"chat-1\",\"clientInstanceId\":\"client-1\"}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("client-1",
+                captor.getValue().message().getMetadata().get(ContextAttributes.WEB_CLIENT_INSTANCE_ID));
     }
 
     @Test
