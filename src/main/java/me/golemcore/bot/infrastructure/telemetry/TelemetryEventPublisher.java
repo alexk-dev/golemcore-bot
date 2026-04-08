@@ -18,9 +18,12 @@ public class TelemetryEventPublisher {
 
     private final RuntimeConfigService runtimeConfigService;
     private final GaTelemetryClient gaTelemetryClient;
-    private final String appVersion;
-    private final long sessionId;
+    private final ObjectProvider<BuildProperties> buildPropertiesProvider;
+    private final Clock clock;
     private volatile String cachedClientId;
+    private volatile String resolvedAppVersion;
+    private volatile long resolvedSessionId;
+    private volatile boolean initialized;
 
     public TelemetryEventPublisher(RuntimeConfigService runtimeConfigService,
             GaTelemetryClient gaTelemetryClient,
@@ -28,9 +31,8 @@ public class TelemetryEventPublisher {
             Clock clock) {
         this.runtimeConfigService = runtimeConfigService;
         this.gaTelemetryClient = gaTelemetryClient;
-        BuildProperties buildProps = buildPropertiesProvider.getIfAvailable();
-        this.appVersion = buildProps != null ? buildProps.getVersion() : null;
-        this.sessionId = clock.instant().getEpochSecond();
+        this.buildPropertiesProvider = buildPropertiesProvider;
+        this.clock = clock;
     }
 
     /**
@@ -45,17 +47,28 @@ public class TelemetryEventPublisher {
         if (eventName == null || eventName.isBlank()) {
             return;
         }
+        ensureInitialized();
 
         String clientId = resolveClientId();
         Map<String, Object> enrichedParams = new LinkedHashMap<>();
         if (params != null) {
             enrichedParams.putAll(params);
         }
-        if (appVersion != null && !appVersion.isBlank()) {
-            enrichedParams.put("app_version", appVersion);
+        if (resolvedAppVersion != null && !resolvedAppVersion.isBlank()) {
+            enrichedParams.put("app_version", resolvedAppVersion);
         }
 
-        gaTelemetryClient.sendEvent(clientId, sessionId, eventName, enrichedParams);
+        gaTelemetryClient.sendEvent(clientId, resolvedSessionId, eventName, enrichedParams);
+    }
+
+    private void ensureInitialized() {
+        if (initialized) {
+            return;
+        }
+        BuildProperties buildProps = buildPropertiesProvider.getIfAvailable();
+        resolvedAppVersion = buildProps != null ? buildProps.getVersion() : null;
+        resolvedSessionId = clock.instant().getEpochSecond();
+        initialized = true;
     }
 
     private String resolveClientId() {
