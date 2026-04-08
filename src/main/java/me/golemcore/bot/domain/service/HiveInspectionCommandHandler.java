@@ -53,11 +53,7 @@ public class HiveInspectionCommandHandler {
                     .toSessionListPayload(sessionInspectionService.listSessions(inspection != null ? inspection.getChannel() : null));
             case "session.detail" -> hiveInspectionPayloadPort
                     .toSessionDetailPayload(sessionInspectionService.getSessionDetail(requireSessionId(inspection)));
-            case "session.messages" -> hiveInspectionPayloadPort.toSessionMessagesPayload(sessionInspectionService
-                    .getSessionMessages(
-                            requireSessionId(inspection),
-                            inspection != null && inspection.getLimit() != null ? inspection.getLimit() : DEFAULT_MESSAGE_LIMIT,
-                            inspection != null ? inspection.getBeforeMessageId() : null));
+            case "session.messages" -> executeSessionMessagesInspection(inspection);
             case "session.trace.summary" -> hiveInspectionPayloadPort
                     .toSessionTraceSummaryPayload(sessionInspectionService.getSessionTraceSummary(requireSessionId(inspection)));
             case "session.trace.detail" -> hiveInspectionPayloadPort
@@ -68,13 +64,7 @@ public class HiveInspectionCommandHandler {
                     sessionInspectionService.exportSessionTraceSnapshotPayload(
                             requireSessionId(inspection),
                             requireSnapshotId(inspection)));
-            case "session.compact" -> Map.of(
-                    "removed",
-                    sessionInspectionService.compactSession(
-                            requireSessionId(inspection),
-                            inspection != null && inspection.getKeepLast() != null
-                                    ? inspection.getKeepLast()
-                                    : DEFAULT_KEEP_LAST));
+            case "session.compact" -> executeSessionCompactInspection(inspection);
             case "session.clear" -> {
                 sessionInspectionService.clearSession(requireSessionId(inspection));
                 yield Map.of();
@@ -85,6 +75,19 @@ public class HiveInspectionCommandHandler {
             }
             default -> throw new IllegalArgumentException("Unsupported inspection operation: " + operation);
         };
+    }
+
+    private Object executeSessionMessagesInspection(HiveInspectionRequestBody inspection) {
+        String sessionId = requireSessionId(inspection);
+        int limit = inspection.getLimit() != null ? inspection.getLimit() : DEFAULT_MESSAGE_LIMIT;
+        return hiveInspectionPayloadPort.toSessionMessagesPayload(
+                sessionInspectionService.getSessionMessages(sessionId, limit, inspection.getBeforeMessageId()));
+    }
+
+    private Map<String, Integer> executeSessionCompactInspection(HiveInspectionRequestBody inspection) {
+        String sessionId = requireSessionId(inspection);
+        int keepLast = inspection.getKeepLast() != null ? inspection.getKeepLast() : DEFAULT_KEEP_LAST;
+        return Map.of("removed", sessionInspectionService.compactSession(sessionId, keepLast));
     }
 
     private Map<String, Object> toSnapshotPayloadExport(SessionInspectionService.SnapshotPayloadExport export) {

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,13 +14,13 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import me.golemcore.bot.adapter.outbound.hive.HiveInspectionPayloadMapper;
-import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
 import me.golemcore.bot.domain.view.SessionTraceExportView;
 import me.golemcore.bot.domain.view.SessionTraceStorageStatsView;
 import me.golemcore.bot.domain.view.SessionSummaryView;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
@@ -186,6 +187,36 @@ class HiveInspectionCommandHandlerTest {
         List<?> traces = assertInstanceOf(List.class, payload.get("traces"));
         Map<?, ?> trace = assertInstanceOf(Map.class, traces.get(0));
         assertEquals("2026-03-20T10:00:00Z", trace.get("startedAt"));
+    }
+
+    @Test
+    void shouldForwardSessionMessagesCursorAndLimit() {
+        SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
+        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(
+                sessionInspectionService, publisher, new HiveInspectionPayloadMapper());
+        when(sessionInspectionService.getSessionMessages("web:conv-1", 25, "m-25"))
+                .thenReturn(me.golemcore.bot.domain.view.SessionMessagesPageView.builder()
+                        .sessionId("web:conv-1")
+                        .messages(List.of())
+                        .hasMore(false)
+                        .build());
+
+        handler.handle(inspection("req-messages", "session.messages", body -> {
+            body.sessionId("web:conv-1");
+            body.limit(25);
+            body.beforeMessageId("m-25");
+        }));
+
+        verify(sessionInspectionService).getSessionMessages("web:conv-1", 25, "m-25");
+        ArgumentCaptor<HiveInspectionResponse> responseCaptor = ArgumentCaptor.forClass(HiveInspectionResponse.class);
+        verify(publisher, times(1)).publishInspectionResponse(responseCaptor.capture());
+        HiveInspectionResponse response = responseCaptor.getValue();
+        assertEquals("req-messages", response.requestId());
+        assertEquals("session.messages", response.operation());
+        assertTrue(response.success());
+        Map<?, ?> payload = assertInstanceOf(Map.class, response.payload());
+        assertEquals("web:conv-1", payload.get("sessionId"));
     }
 
     @Test
