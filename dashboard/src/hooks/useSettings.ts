@@ -11,6 +11,7 @@ import {
   type SkillsConfig,
   type TurnConfig,
   type UsageConfig,
+  type TelemetryConfig,
   type McpConfig,
   type McpCatalogEntry,
   type HiveConfig,
@@ -37,6 +38,7 @@ import {
   updateSkillsConfig,
   updateTurnConfig,
   updateUsageConfig,
+  updateTelemetryConfig,
   updateMcpConfig,
   addMcpCatalogEntry,
   updateMcpCatalogEntry,
@@ -169,6 +171,14 @@ export function useUpdateUsage(): UseMutationResult<Awaited<ReturnType<typeof up
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: UsageConfig) => updateUsageConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateTelemetry(): UseMutationResult<Awaited<ReturnType<typeof updateTelemetryConfig>>, unknown, TelemetryConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: TelemetryConfig) => updateTelemetryConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

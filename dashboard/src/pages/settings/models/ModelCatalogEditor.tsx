@@ -12,6 +12,7 @@ import {
   useResolveModelRegistry,
   useSaveModel,
 } from '../../../hooks/useModels';
+import { useTelemetry } from '../../../lib/telemetry/TelemetryProvider';
 import { AvailableModelInsertModal } from './AvailableModelInsertModal';
 import { ModelCatalogForm } from './ModelCatalogForm';
 import { ModelCatalogSidebar } from './ModelCatalogSidebar';
@@ -129,6 +130,7 @@ function ModelCatalogEditorBody({
 }
 
 export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps): ReactElement {
+  const telemetry = useTelemetry();
   const {
     data: modelsConfig,
     isLoading: modelsLoading,
@@ -183,6 +185,7 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
         settings: toModelSettings(draft),
       });
       await refetchModelsConfig();
+      telemetry.recordCounter('model_catalog_edit_count');
       startTransition(() => {
         setSelectedModelId(targetId);
       });
@@ -214,6 +217,7 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
     try {
       await reloadModels.mutateAsync();
       await refetchModelsConfig();
+      telemetry.recordCounter('model_reload_count');
       toast.success('Model catalog reloaded');
     } catch (error) {
       toast.error(extractErrorMessage(error));

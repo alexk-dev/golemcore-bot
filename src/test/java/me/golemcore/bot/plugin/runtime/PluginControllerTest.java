@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import reactor.test.StepVerifier;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,7 @@ class PluginControllerTest {
     private PluginMarketplaceService pluginMarketplaceService;
     private SttProviderRegistry sttProviderRegistry;
     private TtsProviderRegistry ttsProviderRegistry;
+    private TelemetryRollupPort telemetryRollupStore;
     private PluginController controller;
 
     @BeforeEach
@@ -29,8 +31,9 @@ class PluginControllerTest {
         pluginMarketplaceService = mock(PluginMarketplaceService.class);
         sttProviderRegistry = mock(SttProviderRegistry.class);
         ttsProviderRegistry = mock(TtsProviderRegistry.class);
+        telemetryRollupStore = mock(TelemetryRollupPort.class);
         controller = new PluginController(pluginManager, pluginMarketplaceService, sttProviderRegistry,
-                ttsProviderRegistry);
+                ttsProviderRegistry, telemetryRollupStore);
     }
 
     @Test
@@ -62,6 +65,8 @@ class PluginControllerTest {
                     assertEquals("installed", response.getBody().getStatus());
                 })
                 .verifyComplete();
+
+        verify(telemetryRollupStore).recordPluginInstall("golemcore/browser");
     }
 
     @Test
@@ -75,6 +80,8 @@ class PluginControllerTest {
                     assertEquals("uninstalled", response.getBody().getStatus());
                 })
                 .verifyComplete();
+
+        verify(telemetryRollupStore).recordPluginUninstall("golemcore/browser");
     }
 
     @Test

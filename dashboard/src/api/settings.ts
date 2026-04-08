@@ -1,5 +1,5 @@
 import { isExplicitModelTier, type ExplicitModelTierId } from '../lib/modelTiers';
-import client from './client';
+import client, { type TelemetryRequestConfig } from './client';
 
 interface SecretPayload {
   value: string | null;
@@ -81,6 +81,7 @@ interface RuntimeConfigUiRecord extends UnknownRecord {
   } & UnknownRecord;
   tools?: UnknownRecord;
   voice?: UnknownRecord;
+  telemetry?: unknown;
   hive?: UnknownRecord;
   selfEvolving?: unknown;
   modelRegistry?: unknown;
@@ -211,6 +212,15 @@ function toBackendSelfEvolvingConfig(selfEvolving: UnknownRecord): UnknownRecord
   };
 }
 
+function withSettingsSectionTelemetry(sectionKey: string): TelemetryRequestConfig {
+  return {
+    _telemetry: {
+      counterKey: 'settings_save_count_by_section',
+      value: sectionKey,
+    },
+  } as TelemetryRequestConfig;
+}
+
 export interface SettingsResponse extends Record<string, unknown> {
   language?: string;
   timezone?: string;
@@ -224,7 +234,11 @@ export async function getSettings(): Promise<SettingsResponse> {
 }
 
 export async function updatePreferences(prefs: Record<string, unknown>): Promise<SettingsResponse> {
-  const { data } = await client.put<SettingsResponse>('/settings/preferences', prefs);
+  const { data } = await client.put<SettingsResponse>(
+    '/settings/preferences',
+    prefs,
+    withSettingsSectionTelemetry('general'),
+  );
   return data;
 }
 
@@ -251,6 +265,7 @@ export interface RuntimeConfig {
   skills: SkillsConfig;
   turn: TurnConfig;
   usage: UsageConfig;
+  telemetry?: TelemetryConfig;
   mcp: McpConfig;
   plan: PlanConfig;
   hive: HiveConfig;
@@ -412,6 +427,11 @@ export interface VoiceConfig {
 
 export interface UsageConfig {
   enabled: boolean | null;
+}
+
+export interface TelemetryConfig {
+  enabled: boolean | null;
+  clientId?: string;
 }
 
 export interface PlanConfig {
@@ -616,7 +636,11 @@ export async function updateRuntimeConfig(config: RuntimeConfig): Promise<Runtim
 }
 
 export async function updateModelRouterConfig(config: ModelRouterConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/models', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/models',
+    config,
+    withSettingsSectionTelemetry('models'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -636,7 +660,11 @@ export async function updateLlmConfig(config: LlmConfig): Promise<RuntimeConfig>
       ]),
     ),
   };
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/llm', payload);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/llm',
+    payload,
+    withSettingsSectionTelemetry('llm-providers'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -648,7 +676,11 @@ export async function addLlmProvider(name: string, config: LlmProviderConfig): P
     apiType: normalizeLlmApiType(config.apiType),
     legacyApi: config.legacyApi === true ? true : null,
   };
-  const { data } = await client.post<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
+  const { data } = await client.post<RuntimeConfigUiRecord>(
+    `/settings/runtime/llm/providers/${name}`,
+    payload,
+    withSettingsSectionTelemetry('llm-providers'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -660,7 +692,11 @@ export async function updateLlmProvider(name: string, config: LlmProviderConfig)
     apiType: normalizeLlmApiType(config.apiType),
     legacyApi: config.legacyApi === true ? true : null,
   };
-  const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    `/settings/runtime/llm/providers/${name}`,
+    payload,
+    withSettingsSectionTelemetry('llm-providers'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -669,7 +705,11 @@ export async function removeLlmProvider(name: string): Promise<void> {
 }
 
 export async function updateToolsConfig(config: ToolsConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/tools', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/tools',
+    config,
+    withSettingsSectionTelemetry('tools'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -680,12 +720,20 @@ export async function updateVoiceConfig(config: VoiceConfig): Promise<RuntimeCon
     apiKey: toSecretPayload(voice.apiKey ?? null),
     whisperSttApiKey: toSecretPayload(voice.whisperSttApiKey ?? null),
   };
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/voice', payload);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/voice',
+    payload,
+    withSettingsSectionTelemetry('tool-voice'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateMemoryConfig(config: MemoryConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/memory', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/memory',
+    config,
+    withSettingsSectionTelemetry('memory'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -695,32 +743,65 @@ export async function getMemoryPresets(): Promise<MemoryPreset[]> {
 }
 
 export async function updateSkillsConfig(config: SkillsConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/skills', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/skills',
+    config,
+    withSettingsSectionTelemetry('skills'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateTurnConfig(config: TurnConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/turn', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/turn',
+    config,
+    withSettingsSectionTelemetry('turn'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/usage', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/usage',
+    config,
+    withSettingsSectionTelemetry('usage'),
+  );
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateTelemetryConfig(config: TelemetryConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/telemetry',
+    config,
+    withSettingsSectionTelemetry('telemetry'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateMcpConfig(config: McpConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/mcp', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/mcp',
+    config,
+    withSettingsSectionTelemetry('mcp'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function addMcpCatalogEntry(entry: McpCatalogEntry): Promise<RuntimeConfig> {
-  const { data } = await client.post<RuntimeConfigUiRecord>('/settings/runtime/mcp/catalog', entry);
+  const { data } = await client.post<RuntimeConfigUiRecord>(
+    '/settings/runtime/mcp/catalog',
+    entry,
+    withSettingsSectionTelemetry('mcp'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateMcpCatalogEntry(name: string, entry: McpCatalogEntry): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/mcp/catalog/${name}`, entry);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    `/settings/runtime/mcp/catalog/${name}`,
+    entry,
+    withSettingsSectionTelemetry('mcp'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -729,22 +810,38 @@ export async function removeMcpCatalogEntry(name: string): Promise<void> {
 }
 
 export async function updateHiveConfig(config: HiveConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/hive', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/hive',
+    config,
+    withSettingsSectionTelemetry('hive'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updatePlanConfig(config: PlanConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/plan', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/plan',
+    config,
+    withSettingsSectionTelemetry('plan'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateAutoConfig(config: AutoModeConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/auto', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/auto',
+    config,
+    withSettingsSectionTelemetry('auto'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateTracingConfig(config: TracingConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/tracing', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/tracing',
+    config,
+    withSettingsSectionTelemetry('tracing'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -753,7 +850,11 @@ export async function updateAdvancedConfig(config: {
   security?: SecurityConfig;
   compaction?: CompactionConfig;
 }): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/advanced', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/advanced',
+    config,
+    withSettingsSectionTelemetry('advanced'),
+  );
   return toUiRuntimeConfig(data);
 }
 

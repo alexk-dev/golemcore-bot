@@ -2002,6 +2002,25 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldUpdateTelemetryConfigWhenValid() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .telemetry(RuntimeConfig.TelemetryConfig.builder().enabled(true).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.TelemetryConfig telemetryConfig = RuntimeConfig.TelemetryConfig.builder()
+                .enabled(false)
+                .build();
+
+        StepVerifier.create(controller.updateTelemetryConfig(telemetryConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
+        assertEquals(Boolean.FALSE, runtimeConfig.getTelemetry().getEnabled());
+    }
+
+    @Test
     void shouldRejectPlanConfigWhenMaxPlansOutOfRange() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .plan(RuntimeConfig.PlanConfig.builder().build())

@@ -318,9 +318,10 @@ public class LlmJudgeService {
             captureSnapshot(judgeSession, llmSpan, "request", request);
             try {
                 LlmResponse response = llmPort.chat(request).get();
-                log.debug("[SelfEvolving] Judge {} LLM call returned, content length: {}",
-                        judgeType,
-                        response != null && response.getContent() != null ? response.getContent().length() : 0);
+                int contentLength = response != null && response.getContent() != null
+                        ? response.getContent().length()
+                        : 0;
+                log.debug("[SelfEvolving] Judge {} LLM call returned, content length: {}", judgeType, contentLength);
                 captureSnapshot(judgeSession, llmSpan, "response", response);
                 traceService.finishSpan(judgeSession, llmSpan, TraceStatusCode.OK, null, Instant.now());
                 return response;
@@ -359,9 +360,16 @@ public class LlmJudgeService {
         try {
             RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
             if (tracingConfig == null || !Boolean.TRUE.equals(tracingConfig.getEnabled())) {
+                log.debug("[SelfEvolving] Skipping {} snapshot: tracing disabled", role);
                 return;
             }
+            // Judge snapshots are always captured when tracing is enabled — they are
+            // essential for debugging self-evolving verdicts and should not depend on
+            // the general payloadSnapshotsEnabled toggle.
+            tracingConfig.setPayloadSnapshotsEnabled(true);
             byte[] data = objectMapper.writeValueAsBytes(payload);
+            log.debug("[SelfEvolving] Capturing {} snapshot ({} bytes) for span {}",
+                    role, data.length, spanContext.getSpanId());
             traceService.captureSnapshot(session, spanContext, tracingConfig,
                     role, "application/json", data);
         } catch (Exception exception) { // NOSONAR - tracing must not break judge flow

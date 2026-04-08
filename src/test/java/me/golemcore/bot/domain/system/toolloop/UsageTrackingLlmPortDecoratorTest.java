@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -29,14 +30,16 @@ class UsageTrackingLlmPortDecoratorTest {
 
     private LlmPort delegate;
     private UsageTrackingPort usageTracker;
+    private TelemetryRollupPort telemetryRollupStore;
     private UsageTrackingLlmPortDecorator decorator;
 
     @BeforeEach
     void setUp() {
         delegate = mock(LlmPort.class);
         usageTracker = mock(UsageTrackingPort.class);
+        telemetryRollupStore = mock(TelemetryRollupPort.class);
         when(delegate.getProviderId()).thenReturn("test-provider");
-        decorator = new UsageTrackingLlmPortDecorator(delegate, usageTracker);
+        decorator = new UsageTrackingLlmPortDecorator(delegate, usageTracker, telemetryRollupStore);
     }
 
     @Test
@@ -56,6 +59,7 @@ class UsageTrackingLlmPortDecoratorTest {
 
         assertEquals("Hello", result.getContent());
         verify(usageTracker).recordUsage(eq("test-provider"), eq("gpt-5"), any(LlmUsage.class));
+        verify(telemetryRollupStore).recordModelUsage("gpt-5", null, 10, 20, 30);
         assertNotNull(usage.getLatency());
         assertNotNull(usage.getTimestamp());
         assertEquals("sess-1", usage.getSessionId());
@@ -106,7 +110,7 @@ class UsageTrackingLlmPortDecoratorTest {
 
     @Test
     void shouldFallbackToRequestModelWhenResponseModelIsNull() throws Exception {
-        LlmRequest request = LlmRequest.builder().model("requested-model").build();
+        LlmRequest request = LlmRequest.builder().model("requested-model").modelTier("smart").build();
         LlmUsage usage = new LlmUsage();
         LlmResponse response = LlmResponse.builder().content("ok").model(null).usage(usage).build();
         when(delegate.chat(request)).thenReturn(CompletableFuture.completedFuture(response));
@@ -114,6 +118,7 @@ class UsageTrackingLlmPortDecoratorTest {
         decorator.chat(request).get();
 
         assertEquals("requested-model", usage.getModel());
+        verify(telemetryRollupStore).recordModelUsage("requested-model", "smart", 0, 0, 0);
     }
 
     @Test

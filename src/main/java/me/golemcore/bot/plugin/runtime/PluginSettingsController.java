@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,7 @@ import java.util.Map;
 public class PluginSettingsController {
 
     private final PluginSettingsRegistry pluginSettingsRegistry;
+    private final TelemetryRollupPort telemetryRollupStore;
 
     @GetMapping("/catalog")
     public Mono<ResponseEntity<List<PluginSettingsCatalogItem>>> listCatalogItems() {
@@ -41,7 +43,9 @@ public class PluginSettingsController {
     public Mono<ResponseEntity<PluginSettingsSection>> saveSection(
             @PathVariable String routeKey,
             @RequestBody Map<String, Object> values) {
-        return Mono.just(ResponseEntity.ok(pluginSettingsRegistry.saveSection(routeKey, values)));
+        PluginSettingsSection section = pluginSettingsRegistry.saveSection(routeKey, values);
+        telemetryRollupStore.recordPluginSettingsSave(routeKey);
+        return Mono.just(ResponseEntity.ok(section));
     }
 
     @PostMapping("/sections/{routeKey}/actions/{actionId}")
@@ -49,9 +53,11 @@ public class PluginSettingsController {
             @PathVariable String routeKey,
             @PathVariable String actionId,
             @RequestBody(required = false) Map<String, Object> payload) {
-        return Mono.just(ResponseEntity.ok(pluginSettingsRegistry.executeAction(
+        PluginActionResult result = pluginSettingsRegistry.executeAction(
                 routeKey,
                 actionId,
-                payload != null ? payload : Map.of())));
+                payload != null ? payload : Map.of());
+        telemetryRollupStore.recordPluginAction(routeKey, actionId);
+        return Mono.just(ResponseEntity.ok(result));
     }
 }

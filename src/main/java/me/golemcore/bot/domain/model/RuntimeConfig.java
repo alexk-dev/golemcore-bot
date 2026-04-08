@@ -88,6 +88,9 @@ public class RuntimeConfig {
     private UsageConfig usage = new UsageConfig();
 
     @Builder.Default
+    private TelemetryConfig telemetry = new TelemetryConfig();
+
+    @Builder.Default
     private McpConfig mcp = new McpConfig();
 
     @Builder.Default
@@ -902,6 +905,15 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    public static class TelemetryConfig {
+        private Boolean enabled;
+        private String clientId;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class McpConfig {
         private Boolean enabled;
         private Integer defaultStartupTimeout;
@@ -1244,15 +1256,19 @@ public class RuntimeConfig {
                                                                         "model-registry",
                                                                         ModelRegistryConfig.class), USAGE(
                                                                                 "usage",
-                                                                                UsageConfig.class), MCP("mcp",
-                                                                                        McpConfig.class), PLAN("plan",
-                                                                                                PlanConfig.class), DELAYED_ACTIONS(
-                                                                                                        "delayed-actions",
-                                                                                                        DelayedActionsConfig.class), HIVE(
-                                                                                                                "hive",
-                                                                                                                HiveConfig.class), SELF_EVOLVING(
-                                                                                                                        "self-evolving",
-                                                                                                                        SelfEvolvingConfig.class);
+                                                                                UsageConfig.class), TELEMETRY(
+                                                                                        "telemetry",
+                                                                                        TelemetryConfig.class), MCP(
+                                                                                                "mcp",
+                                                                                                McpConfig.class), PLAN(
+                                                                                                        "plan",
+                                                                                                        PlanConfig.class), DELAYED_ACTIONS(
+                                                                                                                "delayed-actions",
+                                                                                                                DelayedActionsConfig.class), HIVE(
+                                                                                                                        "hive",
+                                                                                                                        HiveConfig.class), SELF_EVOLVING(
+                                                                                                                                "self-evolving",
+                                                                                                                                SelfEvolvingConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

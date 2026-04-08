@@ -722,6 +722,15 @@ public class RuntimeConfigService {
         return val != null ? val : true;
     }
 
+    public boolean isTelemetryEnabled() {
+        RuntimeConfig.TelemetryConfig telemetryConfig = getRuntimeConfig().getTelemetry();
+        if (telemetryConfig == null) {
+            return true;
+        }
+        Boolean val = telemetryConfig.getEnabled();
+        return val != null ? val : true;
+    }
+
     // ==================== MCP ====================
 
     public boolean isMcpEnabled() {
@@ -1748,6 +1757,8 @@ public class RuntimeConfigService {
                 RuntimeConfig.ModelRegistryConfig::new);
         persistSection(RuntimeConfig.ConfigSection.USAGE, cfg.getUsage(),
                 RuntimeConfig.UsageConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.TELEMETRY, cfg.getTelemetry(),
+                RuntimeConfig.TelemetryConfig::new);
         persistSection(RuntimeConfig.ConfigSection.MCP, cfg.getMcp(),
                 RuntimeConfig.McpConfig::new);
         persistSection(RuntimeConfig.ConfigSection.PLAN, cfg.getPlan(),
@@ -1797,6 +1808,7 @@ public class RuntimeConfigService {
      * Load all configuration sections and assemble into RuntimeConfig.
      */
     private RuntimeConfig loadOrCreate() {
+        boolean hasPersistedRuntimeSection = hasPersistedRuntimeSectionsExcludingTelemetry();
         RuntimeConfig.TelegramConfig telegram = loadSection(RuntimeConfig.ConfigSection.TELEGRAM,
                 RuntimeConfig.TelegramConfig.class, RuntimeConfig.TelegramConfig::new);
         RuntimeConfig.ModelRouterConfig modelRouter = loadSection(RuntimeConfig.ConfigSection.MODEL_ROUTER,
@@ -1829,6 +1841,7 @@ public class RuntimeConfigService {
                 RuntimeConfig.ModelRegistryConfig.class, RuntimeConfig.ModelRegistryConfig::new);
         RuntimeConfig.UsageConfig usage = loadSection(RuntimeConfig.ConfigSection.USAGE,
                 RuntimeConfig.UsageConfig.class, RuntimeConfig.UsageConfig::new);
+        RuntimeConfig.TelemetryConfig telemetry = loadTelemetrySection(hasPersistedRuntimeSection);
         RuntimeConfig.McpConfig mcp = loadSection(RuntimeConfig.ConfigSection.MCP,
                 RuntimeConfig.McpConfig.class, RuntimeConfig.McpConfig::new);
         RuntimeConfig.PlanConfig plan = loadSection(RuntimeConfig.ConfigSection.PLAN,
@@ -1858,6 +1871,7 @@ public class RuntimeConfigService {
                 .skills(skills)
                 .modelRegistry(modelRegistry)
                 .usage(usage)
+                .telemetry(telemetry)
                 .mcp(mcp)
                 .plan(plan)
                 .delayedActions(delayedActions)
@@ -1868,6 +1882,34 @@ public class RuntimeConfigService {
         log.info("[RuntimeConfig] Loaded runtime config from {} section files",
                 RuntimeConfig.ConfigSection.values().length);
         return config;
+    }
+
+    private RuntimeConfig.TelemetryConfig loadTelemetrySection(boolean hasPersistedRuntimeSection) {
+        return loadSection(
+                RuntimeConfig.ConfigSection.TELEMETRY,
+                RuntimeConfig.TelemetryConfig.class,
+                () -> RuntimeConfig.TelemetryConfig.builder()
+                        .enabled(!hasPersistedRuntimeSection)
+                        .build());
+    }
+
+    private boolean hasPersistedRuntimeSectionsExcludingTelemetry() {
+        for (RuntimeConfig.ConfigSection section : RuntimeConfig.ConfigSection.values()) {
+            if (section == RuntimeConfig.ConfigSection.TELEMETRY) {
+                continue;
+            }
+            try {
+                String persisted = storagePort.getText(PREFERENCES_DIR, section.getFileName()).join();
+                if (persisted != null && !persisted.isBlank()) {
+                    return true;
+                }
+            } catch (RuntimeException e) { // NOSONAR - storage failures should not block default loading
+                log.debug("[RuntimeConfig] Failed to inspect persisted {} config: {}",
+                        section.getFileId(),
+                        e.getMessage());
+            }
+        }
+        return false;
     }
 
     private RuntimeConfig buildEffectiveRuntimeConfig(RuntimeConfig baseConfig) {
@@ -2053,6 +2095,9 @@ public class RuntimeConfigService {
             cfg.getModelRegistry().setBranch(DEFAULT_MODEL_REGISTRY_BRANCH);
         } else {
             cfg.getModelRegistry().setBranch(cfg.getModelRegistry().getBranch().trim());
+        }
+        if (cfg.getTelemetry() == null) {
+            cfg.setTelemetry(new RuntimeConfig.TelemetryConfig());
         }
         if (cfg.getPlan() == null) {
             cfg.setPlan(new RuntimeConfig.PlanConfig());
