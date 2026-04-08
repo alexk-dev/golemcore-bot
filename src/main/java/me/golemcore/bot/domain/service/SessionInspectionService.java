@@ -1,14 +1,6 @@
 package me.golemcore.bot.domain.service;
 
 import lombok.RequiredArgsConstructor;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionMessagesPageDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSnapshotDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSpanDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceStorageStatsDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -17,6 +9,14 @@ import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSnapshot;
 import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.model.trace.TraceStorageStats;
+import me.golemcore.bot.domain.view.SessionDetailView;
+import me.golemcore.bot.domain.view.SessionMessagesPageView;
+import me.golemcore.bot.domain.view.SessionSummaryView;
+import me.golemcore.bot.domain.view.SessionTraceSnapshotView;
+import me.golemcore.bot.domain.view.SessionTraceSpanView;
+import me.golemcore.bot.domain.view.SessionTraceStorageStatsView;
+import me.golemcore.bot.domain.view.SessionTraceSummaryView;
+import me.golemcore.bot.domain.view.SessionTraceView;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -47,7 +47,7 @@ public class SessionInspectionService {
     private final ActiveSessionPointerService pointerService;
     private final TraceSnapshotCompressionService traceSnapshotCompressionService;
 
-    public List<SessionSummaryDto> listSessions(String channel) {
+    public List<SessionSummaryView> listSessions(String channel) {
         List<AgentSession> sessions = StringValueSupport.isBlank(channel)
                 ? sessionPort.listAll()
                 : sessionPort.listByChannelType(channel.trim());
@@ -57,22 +57,22 @@ public class SessionInspectionService {
                 .toList();
     }
 
-    public SessionDetailDto getSessionDetail(String sessionId) {
+    public SessionDetailView getSessionDetail(String sessionId) {
         return toDetail(requireSession(sessionId));
     }
 
-    public SessionMessagesPageDto getSessionMessages(String sessionId, int limit, String beforeMessageId) {
+    public SessionMessagesPageView getSessionMessages(String sessionId, int limit, String beforeMessageId) {
         AgentSession session = requireSession(sessionId);
         int normalizedLimit = Math.clamp(limit, 1, MAX_PAGE_LIMIT);
         List<Message> visibleMessages = SessionPresentationSupport.getVisibleMessages(session);
         int endExclusive = resolvePageEndExclusive(visibleMessages, beforeMessageId);
         int startInclusive = Math.max(START_WITH_INDEX, endExclusive - normalizedLimit);
-        List<SessionDetailDto.MessageDto> page = visibleMessages.subList(startInclusive, endExclusive).stream()
+        List<SessionDetailView.MessageView> page = visibleMessages.subList(startInclusive, endExclusive).stream()
                 .map(this::toMessageDto)
                 .toList();
         String oldestMessageId = page.isEmpty() ? null : page.get(START_WITH_INDEX).getId();
 
-        return SessionMessagesPageDto.builder()
+        return SessionMessagesPageView.builder()
                 .sessionId(sessionId)
                 .messages(page)
                 .hasMore(startInclusive > START_WITH_INDEX)
@@ -80,11 +80,11 @@ public class SessionInspectionService {
                 .build();
     }
 
-    public SessionTraceSummaryDto getSessionTraceSummary(String sessionId) {
+    public SessionTraceSummaryView getSessionTraceSummary(String sessionId) {
         return toTraceSummary(requireSession(sessionId));
     }
 
-    public SessionTraceDto getSessionTrace(String sessionId) {
+    public SessionTraceView getSessionTrace(String sessionId) {
         return toTraceDetail(requireSession(sessionId));
     }
 
@@ -120,9 +120,9 @@ public class SessionInspectionService {
         sessionPort.clearMessages(sessionId);
     }
 
-    public SessionTraceSnapshotDto toTraceSnapshotDto(TraceSnapshot snapshot, boolean includePayloadPreview) {
+    public SessionTraceSnapshotView toTraceSnapshotView(TraceSnapshot snapshot, boolean includePayloadPreview) {
         SnapshotPreview preview = includePayloadPreview ? buildSnapshotPreview(snapshot) : SnapshotPreview.empty();
-        return SessionTraceSnapshotDto.builder()
+        return SessionTraceSnapshotView.builder()
                 .snapshotId(snapshot.getSnapshotId())
                 .role(snapshot.getRole())
                 .contentType(snapshot.getContentType())
@@ -141,17 +141,17 @@ public class SessionInspectionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
     }
 
-    private SessionDetailDto toDetail(AgentSession session) {
+    private SessionDetailView toDetail(AgentSession session) {
         String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
         String transportChatId = SessionIdentitySupport.resolveTransportChatId(session);
-        List<SessionDetailDto.MessageDto> messages = List.of();
+        List<SessionDetailView.MessageView> messages = List.of();
         if (session.getMessages() != null) {
             messages = session.getMessages().stream()
                     .filter(SessionPresentationSupport::isHistoryVisibleMessage)
                     .map(this::toMessageDto)
                     .toList();
         }
-        return SessionDetailDto.builder()
+        return SessionDetailView.builder()
                 .id(session.getId())
                 .channelType(session.getChannelType())
                 .chatId(session.getChatId())
@@ -164,9 +164,9 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private SessionDetailDto.MessageDto toMessageDto(Message message) {
+    private SessionDetailView.MessageView toMessageDto(Message message) {
         MessageMetadataView metadata = resolveMetadataView(message);
-        return SessionDetailDto.MessageDto.builder()
+        return SessionDetailView.MessageView.builder()
                 .id(message.getId())
                 .role(message.getRole())
                 .content(SessionPresentationSupport.resolveMessageContent(message))
@@ -224,7 +224,7 @@ public class SessionInspectionService {
         return !StringValueSupport.isBlank(primary) ? primary : fallback;
     }
 
-    private SessionTraceSummaryDto toTraceSummary(AgentSession session) {
+    private SessionTraceSummaryView toTraceSummary(AgentSession session) {
         List<TraceRecord> traces = getSortedTraces(session);
         int spanCount = traces.stream()
                 .mapToInt(trace -> trace.getSpans() != null ? trace.getSpans().size() : 0)
@@ -232,10 +232,10 @@ public class SessionInspectionService {
         int snapshotCount = traces.stream()
                 .mapToInt(this::countSnapshots)
                 .sum();
-        List<SessionTraceSummaryDto.TraceSummaryDto> traceSummaries = traces.stream()
+        List<SessionTraceSummaryView.TraceSummaryView> traceSummaries = traces.stream()
                 .map(this::toTraceSummaryItem)
                 .toList();
-        return SessionTraceSummaryDto.builder()
+        return SessionTraceSummaryView.builder()
                 .sessionId(session.getId())
                 .traceCount(traces.size())
                 .spanCount(spanCount)
@@ -245,11 +245,11 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private SessionTraceDto toTraceDetail(AgentSession session) {
-        List<SessionTraceDto.TraceDto> traces = getSortedTraces(session).stream()
+    private SessionTraceView toTraceDetail(AgentSession session) {
+        List<SessionTraceView.TraceView> traces = getSortedTraces(session).stream()
                 .map(trace -> toTraceDto(trace, true))
                 .toList();
-        return SessionTraceDto.builder()
+        return SessionTraceView.builder()
                 .sessionId(session.getId())
                 .storageStats(toTraceStorageStatsDto(session.getTraceStorageStats()))
                 .traces(traces)
@@ -267,9 +267,9 @@ public class SessionInspectionService {
         return result;
     }
 
-    private SessionTraceSummaryDto.TraceSummaryDto toTraceSummaryItem(TraceRecord trace) {
+    private SessionTraceSummaryView.TraceSummaryView toTraceSummaryItem(TraceRecord trace) {
         TraceSpanRecord rootSpan = findRootSpan(trace);
-        return SessionTraceSummaryDto.TraceSummaryDto.builder()
+        return SessionTraceSummaryView.TraceSummaryView.builder()
                 .traceId(trace.getTraceId())
                 .rootSpanId(trace.getRootSpanId())
                 .traceName(trace.getTraceName())
@@ -286,11 +286,11 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private SessionTraceDto.TraceDto toTraceDto(TraceRecord trace, boolean includeSnapshotPreview) {
-        List<SessionTraceSpanDto> spans = getSortedSpans(trace).stream()
+    private SessionTraceView.TraceView toTraceDto(TraceRecord trace, boolean includeSnapshotPreview) {
+        List<SessionTraceSpanView> spans = getSortedSpans(trace).stream()
                 .map(span -> toTraceSpanDto(span, includeSnapshotPreview))
                 .toList();
-        return SessionTraceDto.TraceDto.builder()
+        return SessionTraceView.TraceView.builder()
                 .traceId(trace.getTraceId())
                 .rootSpanId(trace.getRootSpanId())
                 .traceName(trace.getTraceName())
@@ -303,18 +303,18 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private SessionTraceSpanDto toTraceSpanDto(TraceSpanRecord span, boolean includeSnapshotPreview) {
-        List<SessionTraceSpanDto.EventDto> events = span.getEvents() == null
+    private SessionTraceSpanView toTraceSpanDto(TraceSpanRecord span, boolean includeSnapshotPreview) {
+        List<SessionTraceSpanView.EventView> events = span.getEvents() == null
                 ? List.of()
                 : span.getEvents().stream()
                         .map(this::toTraceEventDto)
                         .toList();
-        List<SessionTraceSnapshotDto> snapshots = span.getSnapshots() == null
+        List<SessionTraceSnapshotView> snapshots = span.getSnapshots() == null
                 ? List.of()
                 : span.getSnapshots().stream()
-                        .map(snapshot -> toTraceSnapshotDto(snapshot, includeSnapshotPreview))
+                        .map(snapshot -> toTraceSnapshotView(snapshot, includeSnapshotPreview))
                         .toList();
-        return SessionTraceSpanDto.builder()
+        return SessionTraceSpanView.builder()
                 .spanId(span.getSpanId())
                 .parentSpanId(span.getParentSpanId())
                 .name(span.getName())
@@ -330,17 +330,17 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private SessionTraceSpanDto.EventDto toTraceEventDto(TraceEventRecord event) {
-        return SessionTraceSpanDto.EventDto.builder()
+    private SessionTraceSpanView.EventView toTraceEventDto(TraceEventRecord event) {
+        return SessionTraceSpanView.EventView.builder()
                 .name(event.getName())
                 .timestamp(toTimestamp(event.getTimestamp()))
                 .attributes(copyAttributes(event.getAttributes()))
                 .build();
     }
 
-    private SessionTraceStorageStatsDto toTraceStorageStatsDto(TraceStorageStats stats) {
+    private SessionTraceStorageStatsView toTraceStorageStatsDto(TraceStorageStats stats) {
         TraceStorageStats effective = stats != null ? stats : TraceStorageStats.builder().build();
-        return SessionTraceStorageStatsDto.builder()
+        return SessionTraceStorageStatsView.builder()
                 .compressedSnapshotBytes(effective.getCompressedSnapshotBytes())
                 .uncompressedSnapshotBytes(effective.getUncompressedSnapshotBytes())
                 .evictedSnapshots(effective.getEvictedSnapshots())
@@ -413,7 +413,7 @@ public class SessionInspectionService {
     }
 
     private Map<String, Object> toTraceStorageStatsMap(TraceStorageStats stats) {
-        SessionTraceStorageStatsDto dto = toTraceStorageStatsDto(stats);
+        SessionTraceStorageStatsView dto = toTraceStorageStatsDto(stats);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("compressedSnapshotBytes", dto.getCompressedSnapshotBytes());
         result.put("uncompressedSnapshotBytes", dto.getUncompressedSnapshotBytes());
@@ -558,7 +558,7 @@ public class SessionInspectionService {
     }
 
     @SuppressWarnings("unchecked")
-    private List<SessionDetailDto.AttachmentDto> resolveAttachments(Message message) {
+    private List<SessionDetailView.AttachmentView> resolveAttachments(Message message) {
         if (message == null || message.getMetadata() == null) {
             return List.of();
         }
@@ -574,7 +574,7 @@ public class SessionInspectionService {
     }
 
     @SuppressWarnings("unchecked")
-    private SessionDetailDto.AttachmentDto toAttachmentDto(Object attachmentObj) {
+    private SessionDetailView.AttachmentView toAttachmentDto(Object attachmentObj) {
         if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
             return null;
         }
@@ -589,7 +589,7 @@ public class SessionInspectionService {
                 && internalFilePath == null && thumbnailBase64 == null) {
             return null;
         }
-        return SessionDetailDto.AttachmentDto.builder()
+        return SessionDetailView.AttachmentView.builder()
                 .type(type)
                 .name(name)
                 .mimeType(mimeType)

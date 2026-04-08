@@ -11,11 +11,11 @@ import static org.mockito.Mockito.when;
 
 import java.util.Map;
 import java.util.List;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
+import me.golemcore.bot.domain.view.SessionSummaryView;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
@@ -28,7 +28,7 @@ class HiveInspectionCommandHandlerTest {
         SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(sessionInspectionService, publisher);
-        when(sessionInspectionService.listSessions("web")).thenReturn(List.of(SessionSummaryDto.builder()
+        when(sessionInspectionService.listSessions("web")).thenReturn(List.of(SessionSummaryView.builder()
                 .id("web:conv-1")
                 .channelType("web")
                 .chatId("legacy-chat")

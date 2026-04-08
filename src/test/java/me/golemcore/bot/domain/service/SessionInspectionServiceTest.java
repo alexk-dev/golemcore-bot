@@ -15,9 +15,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionMessagesPageDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -26,6 +23,9 @@ import me.golemcore.bot.domain.model.trace.TraceSnapshot;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.view.SessionMessagesPageView;
+import me.golemcore.bot.domain.view.SessionSummaryView;
+import me.golemcore.bot.domain.view.SessionTraceSummaryView;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -85,7 +85,7 @@ class SessionInspectionServiceTest {
                 .build();
         when(sessionPort.get("s-trace")).thenReturn(Optional.of(session));
 
-        SessionTraceSummaryDto summary = service.getSessionTraceSummary("s-trace");
+        SessionTraceSummaryView summary = service.getSessionTraceSummary("s-trace");
 
         assertNotNull(summary);
         assertEquals("s-trace", summary.getSessionId());
@@ -159,7 +159,7 @@ class SessionInspectionServiceTest {
                 .build();
         when(sessionPort.listByChannelType("web")).thenReturn(List.of(sessionWithFallbackTitle, sessionWithText));
 
-        List<SessionSummaryDto> summaries = service.listSessions("web");
+        List<SessionSummaryView> summaries = service.listSessions("web");
 
         assertEquals(2, summaries.size());
         assertEquals("web:conv-1", summaries.get(0).getId());
@@ -234,8 +234,8 @@ class SessionInspectionServiceTest {
                 .build();
         when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
 
-        SessionMessagesPageDto latestPage = service.getSessionMessages("web:conv-1", 2, null);
-        SessionMessagesPageDto firstPage = service.getSessionMessages("web:conv-1", 2, "m-3");
+        SessionMessagesPageView latestPage = service.getSessionMessages("web:conv-1", 2, null);
+        SessionMessagesPageView firstPage = service.getSessionMessages("web:conv-1", 2, "m-3");
 
         assertEquals(2, latestPage.getMessages().size());
         assertEquals("m-2", latestPage.getOldestMessageId());

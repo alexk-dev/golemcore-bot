@@ -7,6 +7,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSnapshotDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
+import me.golemcore.bot.adapter.inbound.web.mapper.SessionWebDtoMapper;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -64,7 +65,7 @@ class SessionsControllerTest {
         compressionService = new TraceSnapshotCompressionService();
         SessionInspectionService inspectionService = new SessionInspectionService(sessionPort, pointerService,
                 compressionService);
-        controller = new SessionsController(sessionPort, pointerService, inspectionService);
+        controller = new SessionsController(sessionPort, pointerService, inspectionService, new SessionWebDtoMapper());
     }
 
     @Test

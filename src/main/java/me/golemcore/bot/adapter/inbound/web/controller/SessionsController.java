@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.adapter.inbound.web.mapper.SessionWebDtoMapper;
 import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
@@ -61,6 +62,7 @@ public class SessionsController {
     private final SessionPort sessionPort;
     private final ActiveSessionPointerService pointerService;
     private final SessionInspectionService sessionInspectionService;
+    private final SessionWebDtoMapper sessionWebDtoMapper;
 
     @GetMapping
     public Mono<ResponseEntity<List<SessionSummaryDto>>> listSessions(
@@ -70,7 +72,7 @@ public class SessionsController {
                 : sessionPort.listByChannelType(channel.trim());
         List<SessionSummaryDto> dtos = sessions.stream()
                 .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> SessionPresentationSupport.toSummary(session, false))
+                .map(session -> sessionWebDtoMapper.toSummaryDto(SessionPresentationSupport.toSummary(session, false)))
                 .toList();
         return Mono.just(ResponseEntity.ok(dtos));
     }
@@ -91,7 +93,9 @@ public class SessionsController {
         if (match.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
         }
-        return Mono.just(ResponseEntity.ok(SessionPresentationSupport.toSummary(match.get(), false)));
+        return Mono.just(
+                ResponseEntity.ok(
+                        sessionWebDtoMapper.toSummaryDto(SessionPresentationSupport.toSummary(match.get(), false))));
     }
 
     @GetMapping("/recent")
@@ -109,8 +113,8 @@ public class SessionsController {
                 sessionPort, channel, transportChatId)
                 .stream()
                 .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> SessionPresentationSupport.toSummary(
-                        session, isActiveSession(session, activeConversation.orElse(null))))
+                .map(session -> sessionWebDtoMapper.toSummaryDto(SessionPresentationSupport.toSummary(
+                        session, isActiveSession(session, activeConversation.orElse(null)))))
                 .limit(normalizedLimit)
                 .toList();
 
@@ -238,12 +242,13 @@ public class SessionsController {
         }
 
         return Mono.just(ResponseEntity.status(HttpStatus.CREATED)
-                .body(SessionPresentationSupport.toSummary(session, shouldActivate)));
+                .body(sessionWebDtoMapper.toSummaryDto(SessionPresentationSupport.toSummary(session, shouldActivate))));
     }
 
     @GetMapping("/{id}")
     public Mono<ResponseEntity<SessionDetailDto>> getSession(@PathVariable String id) {
-        return Mono.just(ResponseEntity.ok(sessionInspectionService.getSessionDetail(id)));
+        return Mono.just(
+                ResponseEntity.ok(sessionWebDtoMapper.toDetailDto(sessionInspectionService.getSessionDetail(id))));
     }
 
     @GetMapping("/{id}/messages")
@@ -251,17 +256,22 @@ public class SessionsController {
             @PathVariable String id,
             @RequestParam(defaultValue = "50") int limit,
             @RequestParam(required = false) String beforeMessageId) {
-        return Mono.just(ResponseEntity.ok(sessionInspectionService.getSessionMessages(id, limit, beforeMessageId)));
+        return Mono.just(ResponseEntity.ok(
+                sessionWebDtoMapper
+                        .toMessagesPageDto(sessionInspectionService.getSessionMessages(id, limit, beforeMessageId))));
     }
 
     @GetMapping("/{id}/trace/summary")
     public Mono<ResponseEntity<SessionTraceSummaryDto>> getSessionTraceSummary(@PathVariable String id) {
-        return Mono.just(ResponseEntity.ok(sessionInspectionService.getSessionTraceSummary(id)));
+        return Mono.just(
+                ResponseEntity.ok(
+                        sessionWebDtoMapper.toTraceSummaryDto(sessionInspectionService.getSessionTraceSummary(id))));
     }
 
     @GetMapping("/{id}/trace")
     public Mono<ResponseEntity<SessionTraceDto>> getSessionTrace(@PathVariable String id) {
-        return Mono.just(ResponseEntity.ok(sessionInspectionService.getSessionTrace(id)));
+        return Mono
+                .just(ResponseEntity.ok(sessionWebDtoMapper.toTraceDto(sessionInspectionService.getSessionTrace(id))));
     }
 
     @GetMapping("/{id}/trace/export")
@@ -418,6 +428,7 @@ public class SessionsController {
 
     @SuppressWarnings("unused")
     private SessionTraceSnapshotDto toTraceSnapshotDto(TraceSnapshot snapshot, boolean includePayloadPreview) {
-        return sessionInspectionService.toTraceSnapshotDto(snapshot, includePayloadPreview);
+        return sessionWebDtoMapper
+                .toTraceSnapshotDto(sessionInspectionService.toTraceSnapshotView(snapshot, includePayloadPreview));
     }
 }
