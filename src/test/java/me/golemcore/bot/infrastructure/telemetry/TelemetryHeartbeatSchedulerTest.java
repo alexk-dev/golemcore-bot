@@ -1,29 +1,23 @@
 package me.golemcore.bot.infrastructure.telemetry;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.plugin.runtime.PluginManager;
 import me.golemcore.bot.plugin.runtime.PluginRuntimeInfo;
-import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,16 +37,6 @@ class TelemetryHeartbeatSchedulerTest {
         pluginManager = mock(PluginManager.class);
         publisher = mock(TelemetryEventPublisher.class);
 
-        StoragePort storagePort = mock(StoragePort.class);
-        when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
-        when(storagePort.exists(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(false));
-        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-
-        Clock clock = Clock.fixed(Instant.parse("2026-04-06T10:00:00Z"), ZoneOffset.UTC);
-        TelemetryRollupStore store = new TelemetryRollupStore(runtimeConfigService, storagePort, new ObjectMapper(),
-                clock);
-
         RuntimeConfig runtimeConfig = new RuntimeConfig();
         RuntimeConfig.ModelRouterConfig routerConfig = RuntimeConfig.ModelRouterConfig.builder()
                 .tiers(new LinkedHashMap<>(Map.of(
@@ -64,6 +48,7 @@ class TelemetryHeartbeatSchedulerTest {
         when(runtimeConfigService.isTelegramEnabled()).thenReturn(true);
         when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
+        when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
 
         ModelConfigService.ModelSettings modelSettings = new ModelConfigService.ModelSettings();
         when(modelConfigService.getAllModels()).thenReturn(
@@ -72,31 +57,48 @@ class TelemetryHeartbeatSchedulerTest {
         PluginRuntimeInfo plugin = PluginRuntimeInfo.builder().id("weather").name("Weather").build();
         when(pluginManager.listPlugins()).thenReturn(List.of(plugin));
 
-        heartbeatScheduler = new TelemetryHeartbeatScheduler(store, publisher, runtimeConfigService,
+        heartbeatScheduler = new TelemetryHeartbeatScheduler(publisher, runtimeConfigService,
                 modelConfigService, pluginManager);
     }
 
     @SuppressWarnings("unchecked")
     @Test
-    void shouldPublishHeartbeatWithFlatProperties() {
+    void shouldPublishHeartbeatAndCapabilityEvents() {
         heartbeatScheduler.sendHeartbeatNow();
 
-        ArgumentCaptor<Map<String, Object>> propertiesCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(publisher).publishAnonymousEvent(eq("instance_heartbeat"), anyString(), propertiesCaptor.capture());
+        ArgumentCaptor<Map<String, Object>> heartbeatCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(publisher).publishEvent(eq("heartbeat"), heartbeatCaptor.capture());
+        Map<String, Object> heartbeatParams = heartbeatCaptor.getValue();
+        assertEquals("system", heartbeatParams.get("feature_area"));
+        assertNotNull(heartbeatParams.get("os_name"));
+        assertEquals(2, heartbeatParams.get("model_count"));
+        assertEquals(1, heartbeatParams.get("plugin_count"));
 
-        Map<String, Object> properties = propertiesCaptor.getValue();
-        assertNotNull(properties.get("os_name"));
-        assertNotNull(properties.get("java_version"));
-        assertEquals(List.of("weather"), properties.get("enabled_plugins"));
-        assertEquals(true, properties.get("feature_telegram_enabled"));
-        assertEquals(false, properties.get("feature_voice_enabled"));
-        assertEquals(true, properties.get("feature_selfevolving_enabled"));
-        assertEquals(true, properties.get("feature_telemetry_enabled"));
+        // capability events: 3 enabled features + 1 plugin + 2 models + 2 tiers = 8
+        verify(publisher, atLeastOnce()).publishEvent(eq("capability"), anyMap());
 
-        List<String> modelIds = (List<String>) properties.get("model_ids");
-        assertEquals(2, modelIds.size());
+        ArgumentCaptor<Map<String, Object>> capCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(publisher, atLeastOnce()).publishEvent(eq("capability"), capCaptor.capture());
+        List<Map<String, Object>> allCaps = capCaptor.getAllValues();
 
-        List<String> tiers = (List<String>) properties.get("tiers");
-        assertEquals(2, tiers.size());
+        long featureCount = allCaps.stream()
+                .filter(p -> "feature".equals(p.get("capability_type")))
+                .count();
+        assertEquals(3, featureCount); // telegram, selfevolving, telemetry (voice is false)
+
+        long pluginCount = allCaps.stream()
+                .filter(p -> "plugin".equals(p.get("capability_type")))
+                .count();
+        assertEquals(1, pluginCount);
+
+        long modelCount = allCaps.stream()
+                .filter(p -> "model".equals(p.get("capability_type")))
+                .count();
+        assertEquals(2, modelCount);
+
+        long tierCount = allCaps.stream()
+                .filter(p -> "tier".equals(p.get("capability_type")))
+                .count();
+        assertEquals(2, tierCount);
     }
 }

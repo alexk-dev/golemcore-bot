@@ -1,6 +1,6 @@
 package me.golemcore.bot;
 
-import me.golemcore.bot.infrastructure.telemetry.PostHogTelemetryClient;
+import me.golemcore.bot.infrastructure.telemetry.GaTelemetryClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,7 +24,7 @@ class ApplicationSmokeTest {
     static Path tempDir;
 
     @MockitoBean
-    PostHogTelemetryClient postHogTelemetryClient;
+    GaTelemetryClient gaTelemetryClient;
 
     @DynamicPropertySource
     static void overrideProperties(DynamicPropertyRegistry registry) {

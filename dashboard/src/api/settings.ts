@@ -431,6 +431,7 @@ export interface UsageConfig {
 
 export interface TelemetryConfig {
   enabled: boolean | null;
+  clientId?: string;
 }
 
 export interface PlanConfig {

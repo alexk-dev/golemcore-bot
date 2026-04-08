@@ -1,11 +1,9 @@
 package me.golemcore.bot.infrastructure.telemetry;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import org.springframework.stereotype.Component;
 
@@ -16,38 +14,21 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 @Component
 @Slf4j
 public class TelemetryRollupStore implements TelemetryRollupPort {
 
-    private static final String STORAGE_DIRECTORY = "dashboard";
-    private static final String INSTANCE_ID_PATH = "telemetry/backend-instance-id.txt";
-
     private final RuntimeConfigService runtimeConfigService;
-    private final StoragePort storagePort;
-    @SuppressWarnings("unused")
-    private final ObjectMapper objectMapper;
     private final Clock clock;
-    private final String anonymousInstanceId;
 
     private BackendRollup currentBucket;
     private final List<BackendRollup> readyBuckets = new ArrayList<>();
 
-    public TelemetryRollupStore(RuntimeConfigService runtimeConfigService, StoragePort storagePort,
-            ObjectMapper objectMapper,
-            Clock clock) {
+    public TelemetryRollupStore(RuntimeConfigService runtimeConfigService, Clock clock) {
         this.runtimeConfigService = runtimeConfigService;
-        this.storagePort = storagePort;
-        this.objectMapper = objectMapper;
         this.clock = clock;
-        this.anonymousInstanceId = loadOrCreateAnonymousInstanceId();
         this.currentBucket = createEmptyBucket(clock.instant());
-    }
-
-    public synchronized String getAnonymousInstanceId() {
-        return anonymousInstanceId;
     }
 
     @Override
@@ -136,24 +117,6 @@ public class TelemetryRollupStore implements TelemetryRollupPort {
         Instant start = reference.truncatedTo(ChronoUnit.HOURS);
         Instant end = start.plus(1, ChronoUnit.HOURS);
         return new BackendRollup(start, end, 60, new LinkedHashMap<>(), new LinkedHashMap<>());
-    }
-
-    private String loadOrCreateAnonymousInstanceId() {
-        try {
-            boolean exists = storagePort.exists(STORAGE_DIRECTORY, INSTANCE_ID_PATH).join();
-            if (exists) {
-                String stored = storagePort.getText(STORAGE_DIRECTORY, INSTANCE_ID_PATH).join();
-                if (stored != null && !stored.isBlank()) {
-                    return stored.trim();
-                }
-            }
-            String generated = UUID.randomUUID().toString();
-            storagePort.putTextAtomic(STORAGE_DIRECTORY, INSTANCE_ID_PATH, generated, true).join();
-            return generated;
-        } catch (Exception exception) {
-            log.warn("Failed to load telemetry backend instance id: {}", exception.getMessage());
-            return UUID.randomUUID().toString();
-        }
     }
 
     private String normalizeKey(String value, String fallback) {

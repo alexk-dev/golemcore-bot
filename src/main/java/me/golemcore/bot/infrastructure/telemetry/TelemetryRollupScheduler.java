@@ -41,14 +41,13 @@ public class TelemetryRollupScheduler {
     }
 
     public void flushReadyRollupsNow() {
-        String distinctId = "backend:" + telemetryRollupStore.getAnonymousInstanceId();
         List<TelemetryRollupStore.BackendRollup> rollups = telemetryRollupStore.collectReadyRollups();
         for (int rollupIndex = 0; rollupIndex < rollups.size(); rollupIndex++) {
             TelemetryRollupStore.BackendRollup rollup = rollups.get(rollupIndex);
             TelemetryRollupStore.BackendRollup pendingRollup = rollup.copy();
             try {
-                flushModelUsage(rollup, pendingRollup, distinctId);
-                flushPluginUsage(rollup, pendingRollup, distinctId);
+                flushModelUsage(rollup, pendingRollup);
+                flushPluginUsage(rollup, pendingRollup);
             } catch (RuntimeException exception) {
                 telemetryRollupStore.restoreReadyRollups(buildUnsentRollups(rollups, pendingRollup, rollupIndex + 1));
                 throw exception;
@@ -57,64 +56,64 @@ public class TelemetryRollupScheduler {
     }
 
     private void flushModelUsage(TelemetryRollupStore.BackendRollup rollup,
-            TelemetryRollupStore.BackendRollup pendingRollup, String distinctId) {
+            TelemetryRollupStore.BackendRollup pendingRollup) {
         for (Map.Entry<String, TelemetryRollupStore.ModelUsageSummary> entry : rollup.getModelUsage().entrySet()) {
             String[] parts = entry.getKey().split(COMPOSITE_KEY_SEPARATOR, 2);
             String modelId = parts[0];
             String tier = parts.length > 1 ? parts[1] : "balanced";
             TelemetryRollupStore.ModelUsageSummary summary = entry.getValue();
 
-            Map<String, Object> properties = basePeriodProperties(rollup);
-            properties.put("model_id", modelId);
-            properties.put("tier", tier);
-            properties.put("request_count", summary.getRequestCount());
-            properties.put("input_tokens", summary.getInputTokens());
-            properties.put("output_tokens", summary.getOutputTokens());
-            properties.put("total_tokens", summary.getTotalTokens());
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("model_name", modelId);
+            params.put("tier", tier);
+            params.put("feature_area", "llm");
+            params.put("request_count", summary.getRequestCount());
+            params.put("input_tokens", summary.getInputTokens());
+            params.put("output_tokens", summary.getOutputTokens());
+            params.put("total_tokens", summary.getTotalTokens());
 
-            telemetryEventPublisher.publishAnonymousEvent("model_usage", distinctId, properties);
+            telemetryEventPublisher.publishEvent("model_usage", params);
             pendingRollup.getModelUsage().remove(entry.getKey());
         }
     }
 
     private void flushPluginUsage(TelemetryRollupStore.BackendRollup rollup,
-            TelemetryRollupStore.BackendRollup pendingRollup, String distinctId) {
+            TelemetryRollupStore.BackendRollup pendingRollup) {
         for (Map.Entry<String, Long> entry : rollup.getPluginUsage().entrySet()) {
             String counterKey = entry.getKey();
             Long count = entry.getValue();
 
-            Map<String, Object> properties = basePeriodProperties(rollup);
-            parsePluginCounterKey(counterKey, properties);
-            properties.put("count", count);
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("feature_area", "plugins");
+            parsePluginCounterKey(counterKey, params);
+            params.put("count", count);
 
-            telemetryEventPublisher.publishAnonymousEvent("plugin_usage", distinctId, properties);
+            telemetryEventPublisher.publishEvent("plugin_usage", params);
             pendingRollup.getPluginUsage().remove(counterKey);
         }
     }
 
-    private void parsePluginCounterKey(String counterKey, Map<String, Object> properties) {
+    private void parsePluginCounterKey(String counterKey, Map<String, Object> params) {
         int firstColon = counterKey.indexOf(':');
         if (firstColon < 0) {
-            properties.put("action", counterKey);
-            properties.put("plugin_id", "unknown");
+            params.put("action_name", counterKey);
+            params.put("plugin_id", "unknown");
             return;
         }
         String action = counterKey.substring(0, firstColon);
         String remainder = counterKey.substring(firstColon + 1);
-        properties.put("action", action);
+        params.put("action_name", action);
 
         if ("action".equals(action)) {
             int secondColon = remainder.indexOf(':');
             if (secondColon >= 0) {
-                properties.put("plugin_id", remainder.substring(0, secondColon));
-                properties.put("route", remainder.substring(secondColon + 1));
+                params.put("plugin_id", remainder.substring(0, secondColon));
+                params.put("action_route", remainder.substring(secondColon + 1));
             } else {
-                properties.put("plugin_id", remainder);
+                params.put("plugin_id", remainder);
             }
-        } else if ("save".equals(action)) {
-            properties.put("plugin_id", remainder);
         } else {
-            properties.put("plugin_id", remainder);
+            params.put("plugin_id", remainder);
         }
     }
 
@@ -138,13 +137,5 @@ public class TelemetryRollupScheduler {
             unsentRollups.add(originalRollups.get(index).copy());
         }
         return unsentRollups;
-    }
-
-    private Map<String, Object> basePeriodProperties(TelemetryRollupStore.BackendRollup rollup) {
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("period_start", rollup.getPeriodStart().toString());
-        properties.put("period_end", rollup.getPeriodEnd().toString());
-        properties.put("bucket_minutes", rollup.getBucketMinutes());
-        return properties;
     }
 }

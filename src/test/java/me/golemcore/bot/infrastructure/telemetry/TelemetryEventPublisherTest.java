@@ -1,5 +1,6 @@
 package me.golemcore.bot.infrastructure.telemetry;
 
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -7,12 +8,18 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -22,53 +29,75 @@ import static org.mockito.Mockito.when;
 class TelemetryEventPublisherTest {
 
     private RuntimeConfigService runtimeConfigService;
-    private PostHogTelemetryClient postHogTelemetryClient;
+    private GaTelemetryClient gaTelemetryClient;
     private TelemetryEventPublisher publisher;
 
     @SuppressWarnings("unchecked")
     @BeforeEach
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
-        postHogTelemetryClient = mock(PostHogTelemetryClient.class);
+        gaTelemetryClient = mock(GaTelemetryClient.class);
         ObjectProvider<BuildProperties> buildPropertiesProvider = mock(ObjectProvider.class);
         BuildProperties buildProperties = mock(BuildProperties.class);
         when(buildProperties.getVersion()).thenReturn("1.0.0-test");
         when(buildPropertiesProvider.getIfAvailable()).thenReturn(buildProperties);
-        publisher = new TelemetryEventPublisher(runtimeConfigService, postHogTelemetryClient, buildPropertiesProvider);
+
+        RuntimeConfig config = new RuntimeConfig();
+        RuntimeConfig.TelemetryConfig telemetryConfig = new RuntimeConfig.TelemetryConfig();
+        telemetryConfig.setClientId("test-client-id");
+        config.setTelemetry(telemetryConfig);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(config);
+
+        Clock clock = Clock.fixed(Instant.parse("2026-04-08T10:00:00Z"), ZoneOffset.UTC);
+        publisher = new TelemetryEventPublisher(runtimeConfigService, gaTelemetryClient, buildPropertiesProvider,
+                clock);
     }
 
     @Test
     void shouldSkipPublishingWhenTelemetryIsDisabled() {
         when(runtimeConfigService.isTelemetryEnabled()).thenReturn(false);
 
-        publisher.publishAnonymousEvent("ui_usage_rollup", "ui:anon-123", Map.of("bucket_minutes", 15));
+        publisher.publishEvent("model_usage", Map.of("tier", "smart"));
 
-        verify(postHogTelemetryClient, never()).capture(eq("ui_usage_rollup"), eq("ui:anon-123"), anyMap());
+        verify(gaTelemetryClient, never()).sendEvent(anyString(), anyLong(), anyString(), anyMap());
     }
 
     @Test
-    void shouldSkipPublishingWhenIdentifiersAreBlank() {
+    void shouldSkipPublishingWhenEventNameIsBlank() {
         when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
 
-        publisher.publishAnonymousEvent(" ", "ui:anon-123", Map.of());
-        publisher.publishAnonymousEvent("ui_usage_rollup", " ", Map.of());
+        publisher.publishEvent(" ", Map.of());
 
-        verify(postHogTelemetryClient, never()).capture(eq("ui_usage_rollup"), eq("ui:anon-123"), anyMap());
+        verify(gaTelemetryClient, never()).sendEvent(anyString(), anyLong(), anyString(), anyMap());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void shouldSendEventWithAppVersionAndClientId() {
+        when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("model_name", "gpt-4o");
+
+        publisher.publishEvent("model_usage", params);
+
+        ArgumentCaptor<Map<String, Object>> paramsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(gaTelemetryClient).sendEvent(eq("test-client-id"), anyLong(), eq("model_usage"),
+                paramsCaptor.capture());
+        assertEquals("gpt-4o", paramsCaptor.getValue().get("model_name"));
+        assertEquals("1.0.0-test", paramsCaptor.getValue().get("app_version"));
+        assertFalse(params.containsKey("app_version"));
     }
 
     @Test
-    void shouldForwardPropertiesWithGeoIpDisabledWithoutMutatingInput() {
+    void shouldGenerateAndPersistClientIdWhenMissing() {
         when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("bucket_minutes", 15);
+        RuntimeConfig config = new RuntimeConfig();
+        config.setTelemetry(new RuntimeConfig.TelemetryConfig());
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(config);
 
-        publisher.publishAnonymousEvent("ui_usage_rollup", "ui:anon-123", properties);
+        publisher.publishEvent("heartbeat", Map.of());
 
-        ArgumentCaptor<Map<String, Object>> propertiesCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(postHogTelemetryClient).capture(eq("ui_usage_rollup"), eq("ui:anon-123"), propertiesCaptor.capture());
-        assertEquals(15, propertiesCaptor.getValue().get("bucket_minutes"));
-        assertEquals("1.0.0-test", propertiesCaptor.getValue().get("app_version"));
-        assertEquals(true, propertiesCaptor.getValue().get("$geoip_disable"));
-        assertFalse(properties.containsKey("$geoip_disable"));
+        verify(runtimeConfigService).updateRuntimeConfig(any(RuntimeConfig.class));
+        verify(gaTelemetryClient).sendEvent(anyString(), anyLong(), eq("heartbeat"), anyMap());
     }
 }

@@ -907,6 +907,7 @@ public class RuntimeConfig {
     @Builder
     public static class TelemetryConfig {
         private Boolean enabled;
+        private String clientId;
     }
 
     @Data

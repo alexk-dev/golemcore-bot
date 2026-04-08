@@ -22,7 +22,6 @@ public class TelemetryHeartbeatScheduler {
 
     private static final long HEARTBEAT_INTERVAL_MINUTES = 60;
 
-    private final TelemetryRollupStore telemetryRollupStore;
     private final TelemetryEventPublisher telemetryEventPublisher;
     private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigService modelConfigService;
@@ -34,12 +33,10 @@ public class TelemetryHeartbeatScheduler {
         return thread;
     });
 
-    public TelemetryHeartbeatScheduler(TelemetryRollupStore telemetryRollupStore,
-            TelemetryEventPublisher telemetryEventPublisher,
+    public TelemetryHeartbeatScheduler(TelemetryEventPublisher telemetryEventPublisher,
             RuntimeConfigService runtimeConfigService,
             ModelConfigService modelConfigService,
             PluginManager pluginManager) {
-        this.telemetryRollupStore = telemetryRollupStore;
         this.telemetryEventPublisher = telemetryEventPublisher;
         this.runtimeConfigService = runtimeConfigService;
         this.modelConfigService = modelConfigService;
@@ -57,34 +54,59 @@ public class TelemetryHeartbeatScheduler {
     }
 
     public void sendHeartbeatNow() {
-        String distinctId = "backend:" + telemetryRollupStore.getAnonymousInstanceId();
-        Map<String, Object> properties = new LinkedHashMap<>();
+        sendSystemHeartbeat();
+        sendCapabilities();
+    }
 
-        properties.put("os_name", System.getProperty("os.name"));
-        properties.put("os_arch", System.getProperty("os.arch"));
-        properties.put("java_version", System.getProperty("java.version"));
-
+    private void sendSystemHeartbeat() {
         List<String> pluginIds = pluginManager.listPlugins().stream()
                 .map(PluginRuntimeInfo::getId)
                 .toList();
-        properties.put("enabled_plugins", pluginIds);
 
-        List<String> modelIds = List.copyOf(modelConfigService.getAllModels().keySet());
-        properties.put("model_ids", modelIds);
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("feature_area", "system");
+        params.put("os_name", System.getProperty("os.name"));
+        params.put("os_arch", System.getProperty("os.arch"));
+        params.put("java_major", Runtime.version().feature());
+        params.put("plugin_count", pluginIds.size());
+        params.put("model_count", modelConfigService.getAllModels().size());
+
+        telemetryEventPublisher.publishEvent("heartbeat", params);
+    }
+
+    private void sendCapabilities() {
+        sendCapability("feature", "telegram", runtimeConfigService.isTelegramEnabled());
+        sendCapability("feature", "voice", runtimeConfigService.isVoiceEnabled());
+        sendCapability("feature", "selfevolving", runtimeConfigService.isSelfEvolvingEnabled());
+        sendCapability("feature", "telemetry", runtimeConfigService.isTelemetryEnabled());
+
+        for (PluginRuntimeInfo plugin : pluginManager.listPlugins()) {
+            sendCapability("plugin", plugin.getId(), true);
+        }
+
+        for (String modelId : modelConfigService.getAllModels().keySet()) {
+            sendCapability("model", modelId, true);
+        }
 
         List<String> tiers = List.of();
         if (runtimeConfigService.getRuntimeConfig().getModelRouter() != null
                 && runtimeConfigService.getRuntimeConfig().getModelRouter().getTiers() != null) {
             tiers = List.copyOf(runtimeConfigService.getRuntimeConfig().getModelRouter().getTiers().keySet());
         }
-        properties.put("tiers", tiers);
+        for (String tier : tiers) {
+            sendCapability("tier", tier, true);
+        }
+    }
 
-        properties.put("feature_telegram_enabled", runtimeConfigService.isTelegramEnabled());
-        properties.put("feature_voice_enabled", runtimeConfigService.isVoiceEnabled());
-        properties.put("feature_selfevolving_enabled", runtimeConfigService.isSelfEvolvingEnabled());
-        properties.put("feature_telemetry_enabled", runtimeConfigService.isTelemetryEnabled());
-
-        telemetryEventPublisher.publishAnonymousEvent("instance_heartbeat", distinctId, properties);
+    private void sendCapability(String type, String name, boolean enabled) {
+        if (!enabled) {
+            return;
+        }
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("feature_area", "config");
+        params.put("capability_type", type);
+        params.put("capability_name", name);
+        telemetryEventPublisher.publishEvent("capability", params);
     }
 
     private void sendHeartbeatSafely() {
