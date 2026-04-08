@@ -159,6 +159,18 @@ class Langchain4jAdapterTest {
         assertNull(adapter.getCurrentModel());
     }
 
+    @Test
+    void shouldInitializeWithoutDefaultModelConfigured() {
+        when(runtimeConfigService.getBalancedModel()).thenReturn(null);
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("none");
+
+        adapter.initialize();
+
+        assertEquals(Boolean.TRUE, ReflectionTestUtils.getField(adapter, "initialized"));
+        assertNull(adapter.getCurrentModel());
+        assertNull(ReflectionTestUtils.getField(adapter, "chatModel"));
+    }
+
     // ===== getSupportedModels =====
 
     @Test
@@ -1798,6 +1810,24 @@ class Langchain4jAdapterTest {
     }
 
     @Test
+    void shouldUseScopedModelIdForGeminiCapabilityLookup() {
+        String requestModel = "google/gemini-2.5-flash";
+        when(modelConfig.getProvider(requestModel)).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("gemini-key"))
+                        .apiType("gemini")
+                        .build());
+        when(modelConfig.supportsTemperature(requestModel)).thenReturn(true);
+        when(modelConfig.supportsTemperature("gemini-2.5-flash"))
+                .thenThrow(new IllegalArgumentException("raw model id lookup should not be used"));
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null);
+
+        assertTrue(result instanceof GoogleAiGeminiChatModel);
+    }
+
+    @Test
     void shouldFallbackToOpenAiWhenApiTypeIsUnknown() {
         String requestModel = "custom-provider/gpt-5.1";
         when(modelConfig.getProvider(requestModel)).thenReturn("custom-provider");
@@ -1899,7 +1929,7 @@ class Langchain4jAdapterTest {
                 .build();
 
         StreamingChatModel model = ReflectionTestUtils.invokeMethod(adapter,
-                "createResponsesStreamingModel", "gpt-5.4", "high", config);
+                "createResponsesStreamingModel", "openai/gpt-5.4", "gpt-5.4", "high", config);
         HttpClientBuilder httpClientBuilder = ReflectionTestUtils.invokeMethod(adapter,
                 "createResponsesCompatibilityHttpClientBuilder", Duration.ofSeconds(42));
 
