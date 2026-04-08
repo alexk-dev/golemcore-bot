@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.adapter.inbound.web.mapper.SessionWebDtoMapper;
 import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
@@ -18,7 +19,6 @@ import me.golemcore.bot.domain.service.ConversationKeyValidator;
 import me.golemcore.bot.domain.service.SessionConversationSupport;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SessionInspectionService;
-import me.golemcore.bot.domain.service.SessionPresentationSupport;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.domain.service.TelemetrySupport;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -61,18 +61,13 @@ public class SessionsController {
     private final SessionPort sessionPort;
     private final ActiveSessionPointerService pointerService;
     private final SessionInspectionService sessionInspectionService;
+    private final SessionWebDtoMapper sessionWebDtoMapper;
 
     @GetMapping
     public Mono<ResponseEntity<List<SessionSummaryDto>>> listSessions(
             @RequestParam(required = false) String channel) {
-        List<AgentSession> sessions = StringValueSupport.isBlank(channel)
-                ? sessionPort.listAll()
-                : sessionPort.listByChannelType(channel.trim());
-        List<SessionSummaryDto> dtos = sessions.stream()
-                .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> SessionPresentationSupport.toSummary(session, false))
-                .toList();
-        return Mono.just(ResponseEntity.ok(dtos));
+        return Mono.just(
+                ResponseEntity.ok(sessionWebDtoMapper.toSummaryDtos(sessionInspectionService.listSessions(channel))));
     }
 
     @GetMapping("/resolve")
@@ -85,13 +80,11 @@ public class SessionsController {
         }
 
         String normalizedConversationKey = conversationKey.trim();
-        Optional<AgentSession> match = sessionPort.listByChannelType(normalizedChannel).stream()
-                .filter(session -> matchesConversationKey(session, normalizedConversationKey))
-                .findFirst();
-        if (match.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
-        }
-        return Mono.just(ResponseEntity.ok(SessionPresentationSupport.toSummary(match.get(), false)));
+        return Mono.just(
+                ResponseEntity.ok(
+                        sessionWebDtoMapper.toSummaryDto(
+                                sessionInspectionService.resolveSession(normalizedChannel,
+                                        normalizedConversationKey))));
     }
 
     @GetMapping("/recent")
@@ -105,16 +98,12 @@ public class SessionsController {
         Optional<String> activeConversation = pointerService.getActiveConversationKey(pointerKey);
         int normalizedLimit = Math.max(1, Math.min(limit, MAX_RECENT_LIMIT));
 
-        List<SessionSummaryDto> dtos = SessionConversationSupport.listRecentSessionsByOwner(
-                sessionPort, channel, transportChatId)
-                .stream()
-                .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> SessionPresentationSupport.toSummary(
-                        session, isActiveSession(session, activeConversation.orElse(null))))
-                .limit(normalizedLimit)
-                .toList();
-
-        return Mono.just(ResponseEntity.ok(dtos));
+        return Mono.just(ResponseEntity.ok(sessionWebDtoMapper.toSummaryDtos(
+                sessionInspectionService.listRecentSessions(
+                        channel,
+                        transportChatId,
+                        activeConversation.orElse(null),
+                        normalizedLimit))));
     }
 
     @GetMapping("/active")
@@ -238,12 +227,14 @@ public class SessionsController {
         }
 
         return Mono.just(ResponseEntity.status(HttpStatus.CREATED)
-                .body(SessionPresentationSupport.toSummary(session, shouldActivate)));
+                .body(sessionWebDtoMapper
+                        .toSummaryDto(sessionInspectionService.summarizeSession(session, shouldActivate))));
     }
 
     @GetMapping("/{id}")
     public Mono<ResponseEntity<SessionDetailDto>> getSession(@PathVariable String id) {
-        return Mono.just(ResponseEntity.ok(sessionInspectionService.getSessionDetail(id)));
+        return Mono.just(
+                ResponseEntity.ok(sessionWebDtoMapper.toDetailDto(sessionInspectionService.getSessionDetail(id))));
     }
 
     @GetMapping("/{id}/messages")
@@ -251,17 +242,22 @@ public class SessionsController {
             @PathVariable String id,
             @RequestParam(defaultValue = "50") int limit,
             @RequestParam(required = false) String beforeMessageId) {
-        return Mono.just(ResponseEntity.ok(sessionInspectionService.getSessionMessages(id, limit, beforeMessageId)));
+        return Mono.just(ResponseEntity.ok(
+                sessionWebDtoMapper
+                        .toMessagesPageDto(sessionInspectionService.getSessionMessages(id, limit, beforeMessageId))));
     }
 
     @GetMapping("/{id}/trace/summary")
     public Mono<ResponseEntity<SessionTraceSummaryDto>> getSessionTraceSummary(@PathVariable String id) {
-        return Mono.just(ResponseEntity.ok(sessionInspectionService.getSessionTraceSummary(id)));
+        return Mono.just(
+                ResponseEntity.ok(
+                        sessionWebDtoMapper.toTraceSummaryDto(sessionInspectionService.getSessionTraceSummary(id))));
     }
 
     @GetMapping("/{id}/trace")
     public Mono<ResponseEntity<SessionTraceDto>> getSessionTrace(@PathVariable String id) {
-        return Mono.just(ResponseEntity.ok(sessionInspectionService.getSessionTrace(id)));
+        return Mono
+                .just(ResponseEntity.ok(sessionWebDtoMapper.toTraceDto(sessionInspectionService.getSessionTrace(id))));
     }
 
     @GetMapping("/{id}/trace/export")
@@ -269,7 +265,7 @@ public class SessionsController {
         String fileName = "session-trace-" + sanitizeExportName(id) + ".json";
         return Mono.just(ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
-                .body(sessionInspectionService.exportSessionTrace(id)));
+                .body(sessionWebDtoMapper.toTraceExportPayload(sessionInspectionService.getSessionTraceExport(id))));
     }
 
     @GetMapping("/{id}/trace/snapshots/{snapshotId}/payload")
@@ -324,14 +320,6 @@ public class SessionsController {
                 .build();
     }
 
-    private boolean matchesConversationKey(AgentSession session, String conversationKey) {
-        if (session == null || StringValueSupport.isBlank(conversationKey)) {
-            return false;
-        }
-        String resolvedConversationKey = SessionIdentitySupport.resolveConversationKey(session);
-        return conversationKey.equals(resolvedConversationKey) || conversationKey.equals(session.getChatId());
-    }
-
     private String resolvePointerKey(
             String channel,
             String clientInstanceId,
@@ -358,13 +346,6 @@ public class SessionsController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
         }
         return principal.getName();
-    }
-
-    private boolean isActiveSession(AgentSession session, String activeConversation) {
-        if (StringValueSupport.isBlank(activeConversation)) {
-            return false;
-        }
-        return activeConversation.equals(SessionIdentitySupport.resolveConversationKey(session));
     }
 
     private String generateConversationKey() {
@@ -418,6 +399,7 @@ public class SessionsController {
 
     @SuppressWarnings("unused")
     private SessionTraceSnapshotDto toTraceSnapshotDto(TraceSnapshot snapshot, boolean includePayloadPreview) {
-        return sessionInspectionService.toTraceSnapshotDto(snapshot, includePayloadPreview);
+        return sessionWebDtoMapper
+                .toTraceSnapshotDto(sessionInspectionService.toTraceSnapshotView(snapshot, includePayloadPreview));
     }
 }

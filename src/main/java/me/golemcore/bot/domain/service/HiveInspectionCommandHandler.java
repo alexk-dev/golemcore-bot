@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
+import me.golemcore.bot.port.outbound.HiveInspectionPayloadPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -23,6 +24,7 @@ public class HiveInspectionCommandHandler {
 
     private final SessionInspectionService sessionInspectionService;
     private final HiveEventPublishPort hiveEventPublishPort;
+    private final HiveInspectionPayloadPort hiveInspectionPayloadPort;
 
     public void handle(HiveControlCommandEnvelope envelope) {
         String operation = resolveOperation(envelope);
@@ -47,26 +49,22 @@ public class HiveInspectionCommandHandler {
 
     private Object execute(String operation, HiveInspectionRequestBody inspection) {
         return switch (operation) {
-            case "sessions.list" -> sessionInspectionService.listSessions(inspection != null ? inspection.getChannel() : null);
-            case "session.detail" -> sessionInspectionService.getSessionDetail(requireSessionId(inspection));
-            case "session.messages" -> sessionInspectionService.getSessionMessages(
-                    requireSessionId(inspection),
-                    inspection != null && inspection.getLimit() != null ? inspection.getLimit() : DEFAULT_MESSAGE_LIMIT,
-                    inspection != null ? inspection.getBeforeMessageId() : null);
-            case "session.trace.summary" -> sessionInspectionService.getSessionTraceSummary(requireSessionId(inspection));
-            case "session.trace.detail" -> sessionInspectionService.getSessionTrace(requireSessionId(inspection));
-            case "session.trace.export" -> sessionInspectionService.exportSessionTrace(requireSessionId(inspection));
+            case "sessions.list" -> hiveInspectionPayloadPort
+                    .toSessionListPayload(sessionInspectionService.listSessions(inspection != null ? inspection.getChannel() : null));
+            case "session.detail" -> hiveInspectionPayloadPort
+                    .toSessionDetailPayload(sessionInspectionService.getSessionDetail(requireSessionId(inspection)));
+            case "session.messages" -> executeSessionMessagesInspection(inspection);
+            case "session.trace.summary" -> hiveInspectionPayloadPort
+                    .toSessionTraceSummaryPayload(sessionInspectionService.getSessionTraceSummary(requireSessionId(inspection)));
+            case "session.trace.detail" -> hiveInspectionPayloadPort
+                    .toSessionTracePayload(sessionInspectionService.getSessionTrace(requireSessionId(inspection)));
+            case "session.trace.export" -> hiveInspectionPayloadPort
+                    .toSessionTraceExportPayload(sessionInspectionService.getSessionTraceExport(requireSessionId(inspection)));
             case "session.trace.snapshot.payload" -> toSnapshotPayloadExport(
                     sessionInspectionService.exportSessionTraceSnapshotPayload(
                             requireSessionId(inspection),
                             requireSnapshotId(inspection)));
-            case "session.compact" -> Map.of(
-                    "removed",
-                    sessionInspectionService.compactSession(
-                            requireSessionId(inspection),
-                            inspection != null && inspection.getKeepLast() != null
-                                    ? inspection.getKeepLast()
-                                    : DEFAULT_KEEP_LAST));
+            case "session.compact" -> executeSessionCompactInspection(inspection);
             case "session.clear" -> {
                 sessionInspectionService.clearSession(requireSessionId(inspection));
                 yield Map.of();
@@ -77,6 +75,19 @@ public class HiveInspectionCommandHandler {
             }
             default -> throw new IllegalArgumentException("Unsupported inspection operation: " + operation);
         };
+    }
+
+    private Object executeSessionMessagesInspection(HiveInspectionRequestBody inspection) {
+        String sessionId = requireSessionId(inspection);
+        int limit = inspection.getLimit() != null ? inspection.getLimit() : DEFAULT_MESSAGE_LIMIT;
+        return hiveInspectionPayloadPort.toSessionMessagesPayload(
+                sessionInspectionService.getSessionMessages(sessionId, limit, inspection.getBeforeMessageId()));
+    }
+
+    private Map<String, Integer> executeSessionCompactInspection(HiveInspectionRequestBody inspection) {
+        String sessionId = requireSessionId(inspection);
+        int keepLast = inspection.getKeepLast() != null ? inspection.getKeepLast() : DEFAULT_KEEP_LAST;
+        return Map.of("removed", sessionInspectionService.compactSession(sessionId, keepLast));
     }
 
     private Map<String, Object> toSnapshotPayloadExport(SessionInspectionService.SnapshotPayloadExport export) {

@@ -15,9 +15,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionMessagesPageDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -26,6 +23,10 @@ import me.golemcore.bot.domain.model.trace.TraceSnapshot;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.view.SessionMessagesPageView;
+import me.golemcore.bot.domain.view.SessionSummaryView;
+import me.golemcore.bot.domain.view.SessionTraceExportView;
+import me.golemcore.bot.domain.view.SessionTraceSummaryView;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -85,7 +86,7 @@ class SessionInspectionServiceTest {
                 .build();
         when(sessionPort.get("s-trace")).thenReturn(Optional.of(session));
 
-        SessionTraceSummaryDto summary = service.getSessionTraceSummary("s-trace");
+        SessionTraceSummaryView summary = service.getSessionTraceSummary("s-trace");
 
         assertNotNull(summary);
         assertEquals("s-trace", summary.getSessionId());
@@ -159,7 +160,7 @@ class SessionInspectionServiceTest {
                 .build();
         when(sessionPort.listByChannelType("web")).thenReturn(List.of(sessionWithFallbackTitle, sessionWithText));
 
-        List<SessionSummaryDto> summaries = service.listSessions("web");
+        List<SessionSummaryView> summaries = service.listSessions("web");
 
         assertEquals(2, summaries.size());
         assertEquals("web:conv-1", summaries.get(0).getId());
@@ -169,6 +170,54 @@ class SessionInspectionServiceTest {
         assertEquals("Session conv-2", summaries.get(1).getTitle());
         assertNull(summaries.get(1).getPreview());
         assertEquals(1, summaries.get(1).getMessageCount());
+    }
+
+    @Test
+    void shouldResolveSessionByConversationKeyOrChatIdAlias() {
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .chatId("legacy-chat-id")
+                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-1"))
+                .updatedAt(Instant.parse("2026-03-20T10:05:00Z"))
+                .messages(List.of())
+                .build();
+        when(sessionPort.listByChannelType("web")).thenReturn(List.of(session));
+
+        SessionSummaryView byConversation = service.resolveSession("web", "conv-1");
+        SessionSummaryView byChatAlias = service.resolveSession("web", "legacy-chat-id");
+
+        assertEquals("web:conv-1", byConversation.getId());
+        assertEquals("conv-1", byConversation.getConversationKey());
+        assertEquals("web:conv-1", byChatAlias.getId());
+        assertEquals("conv-1", byChatAlias.getConversationKey());
+    }
+
+    @Test
+    void shouldListRecentSessionsWithActiveConversationAndLimit() {
+        AgentSession newer = AgentSession.builder()
+                .id("web:conv-2")
+                .channelType("web")
+                .chatId("legacy-2")
+                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-2"))
+                .updatedAt(Instant.parse("2026-03-20T10:05:00Z"))
+                .messages(List.of())
+                .build();
+        AgentSession older = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .chatId("legacy-1")
+                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-1"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .messages(List.of())
+                .build();
+        when(sessionPort.listByChannelType("web")).thenReturn(List.of(older, newer));
+
+        List<SessionSummaryView> recent = service.listRecentSessions("web", null, "conv-2", 1);
+
+        assertEquals(1, recent.size());
+        assertEquals("web:conv-2", recent.get(0).getId());
+        assertTrue(recent.get(0).isActive());
     }
 
     @Test
@@ -234,8 +283,8 @@ class SessionInspectionServiceTest {
                 .build();
         when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
 
-        SessionMessagesPageDto latestPage = service.getSessionMessages("web:conv-1", 2, null);
-        SessionMessagesPageDto firstPage = service.getSessionMessages("web:conv-1", 2, "m-3");
+        SessionMessagesPageView latestPage = service.getSessionMessages("web:conv-1", 2, null);
+        SessionMessagesPageView firstPage = service.getSessionMessages("web:conv-1", 2, "m-3");
 
         assertEquals(2, latestPage.getMessages().size());
         assertEquals("m-2", latestPage.getOldestMessageId());
@@ -248,8 +297,10 @@ class SessionInspectionServiceTest {
         assertEquals("[3 attachments]", firstPage.getMessages().get(0).getContent());
         assertEquals(1, firstPage.getMessages().get(0).getAttachments().size());
         assertEquals("image", firstPage.getMessages().get(0).getAttachments().get(0).getType());
-        assertEquals("/api/files/download?path=folder%2Fdiagram%201.png",
-                firstPage.getMessages().get(0).getAttachments().get(0).getUrl());
+        assertNull(firstPage.getMessages().get(0).getAttachments().get(0).getDirectUrl());
+        assertEquals("folder/diagram 1.png",
+                firstPage.getMessages().get(0).getAttachments().get(0).getInternalFilePath());
+        assertEquals(Instant.parse("2026-03-20T10:01:00Z"), firstPage.getMessages().get(0).getTimestamp());
         assertEquals("Rendered trace", firstPage.getMessages().get(1).getContent());
         assertEquals("gpt-5.4", firstPage.getMessages().get(1).getModel());
         assertEquals("operator", firstPage.getMessages().get(1).getModelTier());
@@ -263,6 +314,7 @@ class SessionInspectionServiceTest {
         assertTrue(firstPage.getMessages().get(1).isAutoMode());
         assertTrue(firstPage.getMessages().get(1).isHasToolCalls());
         assertTrue(firstPage.getMessages().get(1).isHasVoice());
+        assertTrue(firstPage.getMessages().get(1).getAttachments().isEmpty());
     }
 
     @Test
@@ -318,6 +370,58 @@ class SessionInspectionServiceTest {
         assertEquals("payload", export.payloadText());
         assertEquals(MediaType.APPLICATION_OCTET_STREAM, export.contentType());
         assertEquals(".txt", export.fileExtension());
+    }
+
+    @Test
+    void shouldBuildTransportAgnosticTraceExportView() {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-1")
+                .role("response")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress("{\"ok\":true}".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(11L)
+                .compressedSize(18L)
+                .build();
+        TraceSpanRecord span = TraceSpanRecord.builder()
+                .spanId("span-root")
+                .name("response.route")
+                .kind(TraceSpanKind.OUTBOUND)
+                .statusCode(TraceStatusCode.OK)
+                .statusMessage("done")
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .events(List.of(me.golemcore.bot.domain.model.trace.TraceEventRecord.builder()
+                        .name("snapshot.saved")
+                        .timestamp(Instant.parse("2026-03-20T10:00:00.500Z"))
+                        .attributes(Map.of("bytes", 11))
+                        .build()))
+                .snapshots(List.of(snapshot))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-1")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(span))
+                        .build()))
+                .build();
+        when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
+
+        SessionTraceExportView export = service.getSessionTraceExport("web:conv-1");
+
+        assertEquals("web:conv-1", export.getSessionId());
+        assertEquals(Instant.parse("2026-03-20T10:00:00Z"), export.getTraces().get(0).getStartedAt());
+        assertEquals("OK", export.getTraces().get(0).getSpans().get(0).getStatus().getCode());
+        assertEquals("done", export.getTraces().get(0).getSpans().get(0).getStatus().getMessage());
+        assertEquals(Instant.parse("2026-03-20T10:00:00.500Z"),
+                export.getTraces().get(0).getSpans().get(0).getEvents().get(0).getTimestamp());
+        assertEquals("{\"ok\":true}",
+                export.getTraces().get(0).getSpans().get(0).getSnapshots().get(0).getPayloadText());
     }
 
     @Test
