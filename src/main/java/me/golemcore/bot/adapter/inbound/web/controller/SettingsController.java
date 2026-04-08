@@ -8,6 +8,8 @@ import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
+import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -89,6 +91,7 @@ public class SettingsController {
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
+    private final HiveManagedPolicyService hiveManagedPolicyService;
     private final MemoryPresetService memoryPresetService;
     private final SttProviderRegistry sttProviderRegistry;
     private final TtsProviderRegistry ttsProviderRegistry;
@@ -96,12 +99,14 @@ public class SettingsController {
     public SettingsController(UserPreferencesService preferencesService,
             ModelSelectionService modelSelectionService,
             RuntimeConfigService runtimeConfigService,
+            HiveManagedPolicyService hiveManagedPolicyService,
             MemoryPresetService memoryPresetService,
             SttProviderRegistry sttProviderRegistry,
             TtsProviderRegistry ttsProviderRegistry) {
         this.preferencesService = preferencesService;
         this.modelSelectionService = modelSelectionService;
         this.runtimeConfigService = runtimeConfigService;
+        this.hiveManagedPolicyService = hiveManagedPolicyService;
         this.memoryPresetService = memoryPresetService;
         this.sttProviderRegistry = sttProviderRegistry;
         this.ttsProviderRegistry = ttsProviderRegistry;
@@ -189,6 +194,7 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
         RuntimeConfig current = runtimeConfigService.getRuntimeConfig();
         rejectManagedHiveMutation(current, config != null ? config.getHive() : null);
+        rejectManagedHivePolicyMutation(current, config);
         RuntimeConfig merged = mergeRuntimeConfigSections(current, config);
         if (merged.getTelegram() == null) {
             merged.setTelegram(new RuntimeConfig.TelegramConfig());
@@ -219,6 +225,7 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfig>> updateModelRouterConfig(
             @RequestBody RuntimeConfig.ModelRouterConfig modelRouterConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        rejectManagedHivePolicyModelRouterMutation(config.getModelRouter(), modelRouterConfig);
         validateModelRouterConfig(modelRouterConfig, config.getLlm());
         config.setModelRouter(modelRouterConfig);
         runtimeConfigService.updateRuntimeConfig(config);
@@ -232,6 +239,7 @@ public class SettingsController {
                 llmConfig.getProviders() != null ? llmConfig.getProviders().size() : 0,
                 llmConfig.getProviders() != null ? llmConfig.getProviders().keySet() : "null");
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        rejectManagedHivePolicyLlmMutation(config.getLlm(), llmConfig);
         mergeLlmSecrets(config.getLlm(), llmConfig);
         validateLlmConfig(llmConfig, config.getModelRouter());
         validateModelRouterConfig(config.getModelRouter(), llmConfig);
@@ -253,6 +261,7 @@ public class SettingsController {
         if (config.getLlm().getProviders().containsKey(normalizedName)) {
             throw new IllegalArgumentException("Provider '" + normalizedName + "' already exists");
         }
+        rejectManagedHivePolicyLlmMutation(config.getLlm(), config.getLlm());
         validateProviderConfig(normalizedName, providerConfig);
         runtimeConfigService.addLlmProvider(normalizedName, providerConfig);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -267,6 +276,7 @@ public class SettingsController {
         if (!config.getLlm().getProviders().containsKey(normalizedName)) {
             throw new IllegalArgumentException("Provider '" + normalizedName + "' does not exist");
         }
+        rejectManagedHivePolicyLlmMutation(config.getLlm(), config.getLlm());
         validateProviderConfig(normalizedName, providerConfig);
         runtimeConfigService.updateLlmProvider(normalizedName, providerConfig);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
@@ -276,6 +286,7 @@ public class SettingsController {
     public Mono<ResponseEntity<Void>> removeLlmProvider(@PathVariable String name) {
         String normalizedName = name.toLowerCase(Locale.ROOT);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        rejectManagedHivePolicyLlmMutation(config.getLlm(), config.getLlm());
         Set<String> usedProviders = getProvidersUsedByModelRouter(config.getModelRouter());
         if (usedProviders.contains(normalizedName)) {
             throw new IllegalArgumentException(
@@ -1333,6 +1344,42 @@ public class SettingsController {
         if (!incomingHiveConfig.equals(normalizedCurrentHiveConfig)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Hive settings are managed by bot.hive.* and are read-only");
+        }
+    }
+
+    private void rejectManagedHivePolicyMutation(RuntimeConfig current, RuntimeConfig incoming) {
+        if (incoming == null) {
+            return;
+        }
+        rejectManagedHivePolicyLlmMutation(current != null ? current.getLlm() : null, incoming.getLlm());
+        rejectManagedHivePolicyModelRouterMutation(
+                current != null ? current.getModelRouter() : null,
+                incoming.getModelRouter());
+    }
+
+    private void rejectManagedHivePolicyLlmMutation(RuntimeConfig.LlmConfig currentLlmConfig,
+            RuntimeConfig.LlmConfig incomingLlmConfig) {
+        HivePolicyBindingState bindingState = hiveManagedPolicyService.getBindingState().orElse(null);
+        if (bindingState == null || !bindingState.hasActiveBinding() || incomingLlmConfig == null) {
+            return;
+        }
+        if (currentLlmConfig == null || !incomingLlmConfig.equals(currentLlmConfig)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "LLM settings are managed by Hive policy group \"" + bindingState.getPolicyGroupId()
+                            + "\" and are read-only");
+        }
+    }
+
+    private void rejectManagedHivePolicyModelRouterMutation(RuntimeConfig.ModelRouterConfig currentModelRouterConfig,
+            RuntimeConfig.ModelRouterConfig incomingModelRouterConfig) {
+        HivePolicyBindingState bindingState = hiveManagedPolicyService.getBindingState().orElse(null);
+        if (bindingState == null || !bindingState.hasActiveBinding() || incomingModelRouterConfig == null) {
+            return;
+        }
+        if (currentModelRouterConfig == null || !incomingModelRouterConfig.equals(currentModelRouterConfig)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Model router settings are managed by Hive policy group \"" + bindingState.getPolicyGroupId()
+                            + "\" and are read-only");
         }
     }
 

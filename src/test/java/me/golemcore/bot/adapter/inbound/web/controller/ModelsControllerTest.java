@@ -3,6 +3,8 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
+import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.ModelRegistryService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
@@ -38,6 +40,7 @@ class ModelsControllerTest {
     private ProviderModelDiscoveryService providerModelDiscoveryService;
     private ModelRegistryService modelRegistryService;
     private LlmPort llmPort;
+    private HiveManagedPolicyService hiveManagedPolicyService;
     private ObjectMapper objectMapper;
     private ModelsController controller;
 
@@ -48,9 +51,11 @@ class ModelsControllerTest {
         providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         modelRegistryService = mock(ModelRegistryService.class);
         llmPort = mock(LlmPort.class);
+        hiveManagedPolicyService = mock(HiveManagedPolicyService.class);
         objectMapper = new ObjectMapper();
         controller = new ModelsController(modelConfigService, modelSelectionService, providerModelDiscoveryService,
-                modelRegistryService, llmPort);
+                modelRegistryService, llmPort, hiveManagedPolicyService);
+        when(hiveManagedPolicyService.getBindingState()).thenReturn(java.util.Optional.empty());
     }
 
     @Test
@@ -77,6 +82,20 @@ class ModelsControllerTest {
         assertNotNull(result);
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals(savedConfig, result.getBody());
+    }
+
+    @Test
+    void shouldRejectReplacingModelsConfigWhenManagedByHivePolicy() {
+        when(hiveManagedPolicyService.getBindingState())
+                .thenReturn(java.util.Optional.of(HivePolicyBindingState.builder()
+                        .policyGroupId("pg-1")
+                        .build()));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.replaceModelsConfig(mock(ModelConfigService.ModelsConfig.class)).block());
+
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        assertEquals("Model catalog is managed by Hive policy group \"pg-1\" and is read-only", error.getReason());
     }
 
     @Test

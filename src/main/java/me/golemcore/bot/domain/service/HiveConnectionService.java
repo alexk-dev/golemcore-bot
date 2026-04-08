@@ -5,10 +5,14 @@ import jakarta.annotation.PreDestroy;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executors;
@@ -24,6 +28,10 @@ import me.golemcore.bot.adapter.outbound.hive.HiveEventOutboxService;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
+import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;
+import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
+import me.golemcore.bot.domain.model.hive.HivePolicyPackage;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
@@ -39,6 +47,10 @@ public class HiveConnectionService {
     private static final Duration ACCESS_TOKEN_REFRESH_WINDOW = Duration.ofMinutes(1);
     private static final int DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30;
     private static final int CONTROL_CHANNEL_RECONNECT_INTERVAL_SECONDS = 5;
+    private static final String POLICY_READ_SCOPE = "golems:policy:read";
+    private static final String POLICY_WRITE_SCOPE = "golems:policy:write";
+    private static final String CONTROL_CHANNEL_NAME = "control";
+    private static final String POLICY_SYNC_FEATURE = "policy-sync-v1";
 
     private final BotProperties botProperties;
     private final RuntimeConfigService runtimeConfigService;
@@ -46,6 +58,7 @@ public class HiveConnectionService {
     private final HiveSessionStateStore hiveSessionStateStore;
     private final HiveControlInboxService hiveControlInboxService;
     private final HiveControlCommandDispatcher hiveControlCommandDispatcher;
+    private final HiveManagedPolicyService hiveManagedPolicyService;
     private final HiveApiClient hiveApiClient;
     private final HiveEventOutboxService hiveEventOutboxService;
     private final HiveControlChannelClient hiveControlChannelClient;
@@ -74,6 +87,7 @@ public class HiveConnectionService {
             HiveSessionStateStore hiveSessionStateStore,
             HiveControlInboxService hiveControlInboxService,
             HiveControlCommandDispatcher hiveControlCommandDispatcher,
+            HiveManagedPolicyService hiveManagedPolicyService,
             HiveApiClient hiveApiClient,
             HiveEventOutboxService hiveEventOutboxService,
             HiveControlChannelClient hiveControlChannelClient,
@@ -87,6 +101,7 @@ public class HiveConnectionService {
         this.hiveSessionStateStore = hiveSessionStateStore;
         this.hiveControlInboxService = hiveControlInboxService;
         this.hiveControlCommandDispatcher = hiveControlCommandDispatcher;
+        this.hiveManagedPolicyService = hiveManagedPolicyService;
         this.hiveApiClient = hiveApiClient;
         this.hiveEventOutboxService = hiveEventOutboxService;
         this.hiveControlChannelClient = hiveControlChannelClient;
@@ -127,6 +142,7 @@ public class HiveConnectionService {
         HiveControlChannelStatus controlChannelStatus = hiveControlChannelClient.getStatus();
         HiveControlInboxService.InboxSummary inboxSummary = hiveControlInboxService.getSummary();
         HiveEventOutboxService.OutboxSummary outboxSummary = hiveEventOutboxService.getSummary();
+        HivePolicyBindingState policyState = hiveManagedPolicyService.getBindingState().orElse(null);
         String lastError = lastErrorRef.get();
         if (lastError == null && sessionState != null) {
             lastError = sessionState.getLastError();
@@ -159,7 +175,12 @@ public class HiveConnectionService {
                 outboxSummary.pendingBatchCount(),
                 outboxSummary.pendingEventCount(),
                 outboxSummary.lastError(),
-                lastError);
+                lastError,
+                policyState != null ? policyState.getPolicyGroupId() : null,
+                policyState != null ? policyState.getTargetVersion() : null,
+                policyState != null ? policyState.getAppliedVersion() : null,
+                policyState != null ? policyState.getSyncStatus() : null,
+                policyState != null ? policyState.getLastErrorDigest() : null);
     }
 
     public HiveStatusSnapshot join(String requestedJoinCode) {
@@ -186,7 +207,8 @@ public class HiveConnectionService {
                         resolveHostLabel(hiveConfig),
                         resolveRuntimeVersion(),
                         resolveBuildVersion(),
-                        resolveSupportedChannels());
+                        resolveSupportedChannels(),
+                        buildCapabilitySnapshot());
                 HiveSessionState sessionState = buildSessionState(parsedJoinCode.serverUrl(), response);
                 activateConnectedSession(sessionState, "Hive join completed");
                 persistManualJoinServerUrl(parsedJoinCode.serverUrl());
@@ -243,6 +265,7 @@ public class HiveConnectionService {
             HiveSessionState sessionState = sessionStateOptional.get();
             try {
                 refreshSessionTokensIfNeeded(sessionState);
+                synchronizeManagedPolicy(sessionState, false);
                 sendHeartbeat(sessionState, buildHealthSummary());
                 flushPendingEventBatches(sessionState);
                 drainPendingControlCommands();
@@ -264,6 +287,7 @@ public class HiveConnectionService {
             HiveSessionState sessionState = sessionStateOptional.get();
             try {
                 ensureControlChannelConnected(sessionState);
+                synchronizeManagedPolicy(sessionState, true);
                 flushPendingEventBatches(sessionState);
                 drainPendingControlCommands();
                 updateStateFromRuntimeHealth();
@@ -275,6 +299,7 @@ public class HiveConnectionService {
 
     private void activateConnectedSession(HiveSessionState sessionState, String heartbeatSummary) {
         ensureControlChannelConnected(sessionState);
+        synchronizeManagedPolicy(sessionState, false);
         sendHeartbeat(sessionState, heartbeatSummary);
         flushPendingEventBatches(sessionState);
         drainPendingControlCommands();
@@ -379,6 +404,24 @@ public class HiveConnectionService {
         return supportedChannels;
     }
 
+    private Set<String> resolveCapabilitySupportedChannels() {
+        Set<String> supportedChannels = resolveSupportedChannels();
+        supportedChannels.add(CONTROL_CHANNEL_NAME);
+        return supportedChannels;
+    }
+
+    private HiveCapabilitySnapshot buildCapabilitySnapshot() {
+        Set<String> providers = new LinkedHashSet<>(runtimeConfigService.getConfiguredLlmProviders());
+        HiveCapabilitySnapshot snapshot = HiveCapabilitySnapshot.builder()
+                .providers(providers)
+                .enabledAutonomyFeatures(Set.of(POLICY_SYNC_FEATURE))
+                .supportedChannels(resolveCapabilitySupportedChannels())
+                .defaultModel(resolveDefaultCapabilityModel())
+                .build();
+        snapshot.setSnapshotHash(computeCapabilitySnapshotHash(snapshot));
+        return snapshot;
+    }
+
     private HiveSessionState buildSessionState(String serverUrl, HiveApiClient.GolemAuthResponse response) {
         return HiveSessionState.builder()
                 .golemId(response.golemId())
@@ -430,6 +473,7 @@ public class HiveConnectionService {
 
     private void sendHeartbeat(HiveSessionState sessionState, String healthSummary) {
         HiveControlChannelStatus controlChannelStatus = hiveControlChannelClient.getStatus();
+        HivePolicyBindingState policyState = hiveManagedPolicyService.getBindingState().orElse(null);
         hiveApiClient.heartbeat(
                 sessionState.getServerUrl(),
                 sessionState.getGolemId(),
@@ -437,7 +481,13 @@ public class HiveConnectionService {
                 "CONNECTED".equals(controlChannelStatus.state()) ? "connected" : "degraded",
                 healthSummary,
                 controlChannelStatus.lastError(),
-                ManagementFactory.getRuntimeMXBean().getUptime() / 1000L);
+                ManagementFactory.getRuntimeMXBean().getUptime() / 1000L,
+                buildCapabilitySnapshot().getSnapshotHash(),
+                policyState != null ? policyState.getPolicyGroupId() : null,
+                policyState != null ? policyState.getTargetVersion() : null,
+                policyState != null ? policyState.getAppliedVersion() : null,
+                policyState != null ? policyState.getSyncStatus() : null,
+                policyState != null ? policyState.getLastErrorDigest() : null);
         sessionState.setLastHeartbeatAt(Instant.now(clock));
     }
 
@@ -478,6 +528,35 @@ public class HiveConnectionService {
                 envelope.getThreadId(),
                 result.summary().bufferedCommandCount(),
                 result.duplicate());
+    }
+
+    private void synchronizeManagedPolicy(HiveSessionState sessionState, boolean onlyIfPending) {
+        if (sessionState == null || !hasScope(sessionState, POLICY_READ_SCOPE)) {
+            return;
+        }
+        if (onlyIfPending && !hiveManagedPolicyService.isSyncPending()) {
+            return;
+        }
+        try {
+            HivePolicyPackage policyPackage = hiveApiClient.getPolicyPackage(
+                    sessionState.getServerUrl(),
+                    sessionState.getGolemId(),
+                    sessionState.getAccessToken());
+            HivePolicyApplyResult applyResult = hiveManagedPolicyService.applyPolicyPackage(policyPackage);
+            if (hasScope(sessionState, POLICY_WRITE_SCOPE)) {
+                hiveApiClient.reportPolicyApplyResult(
+                        sessionState.getServerUrl(),
+                        sessionState.getGolemId(),
+                        sessionState.getAccessToken(),
+                        applyResult);
+            }
+        } catch (HiveApiClient.HiveApiException exception) {
+            if (exception.getStatusCode() == 404) {
+                hiveManagedPolicyService.clearBinding();
+                return;
+            }
+            throw exception;
+        }
     }
 
     private void drainPendingControlCommands() {
@@ -602,6 +681,40 @@ public class HiveConnectionService {
         stateRef.set(HiveConnectionState.ERROR);
     }
 
+    private boolean hasScope(HiveSessionState sessionState, String scope) {
+        if (sessionState == null || sessionState.getScopes() == null || scope == null || scope.isBlank()) {
+            return false;
+        }
+        return sessionState.getScopes().stream().anyMatch(candidate -> scope.equalsIgnoreCase(candidate));
+    }
+
+    private String resolveDefaultCapabilityModel() {
+        RuntimeConfig runtimeConfig = runtimeConfigService.getRuntimeConfig();
+        if (runtimeConfig.getModelRouter() == null || runtimeConfig.getModelRouter().getRouting() == null) {
+            return null;
+        }
+        return runtimeConfig.getModelRouter().getRouting().getModel();
+    }
+
+    private String computeCapabilitySnapshotHash(HiveCapabilitySnapshot snapshot) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            String payload = String.join("|",
+                    snapshot.getProviders().stream().sorted().toList().toString(),
+                    snapshot.getEnabledAutonomyFeatures().stream().sorted().toList().toString(),
+                    snapshot.getSupportedChannels().stream().sorted().toList().toString(),
+                    snapshot.getDefaultModel() != null ? snapshot.getDefaultModel() : "");
+            byte[] hash = digest.digest(payload.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder();
+            for (byte value : hash) {
+                builder.append(String.format("%02x", value));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("Failed to compute Hive capability snapshot hash", exception);
+        }
+    }
+
     public record HiveStatusSnapshot(
             String state,
             boolean enabled,
@@ -630,7 +743,12 @@ public class HiveConnectionService {
             int pendingEventBatchCount,
             int pendingEventCount,
             String outboxLastError,
-            String lastError) {
+            String lastError,
+            String policyGroupId,
+            Integer targetPolicyVersion,
+            Integer appliedPolicyVersion,
+            String policySyncStatus,
+            String lastPolicyErrorDigest) {
     }
 
     private enum HiveConnectionState {

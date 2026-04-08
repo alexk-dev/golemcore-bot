@@ -300,6 +300,10 @@ public class RuntimeConfigService {
         }
     }
 
+    public RuntimeConfig snapshotRuntimeConfig() {
+        return copyRuntimeConfig(getRuntimeConfig());
+    }
+
     /**
      * Update and persist RuntimeConfig.
      */
@@ -332,6 +336,22 @@ public class RuntimeConfigService {
         RuntimeConfig reloaded = buildEffectiveRuntimeConfig(loadOrCreate());
         configRef.set(reloaded);
         return reloaded;
+    }
+
+    public void replaceHiveManagedPolicySections(RuntimeConfig.LlmConfig llmConfig,
+            RuntimeConfig.ModelRouterConfig modelRouterConfig) {
+        RuntimeConfig snapshot = snapshotRuntimeConfig();
+        snapshot.setLlm(
+                copySection(llmConfig, RuntimeConfig.LlmConfig.class, RuntimeConfig.LlmConfig.builder().build()));
+        snapshot.setModelRouter(copySection(
+                modelRouterConfig,
+                RuntimeConfig.ModelRouterConfig.class,
+                RuntimeConfig.ModelRouterConfig.builder().build()));
+        updateRuntimeConfig(snapshot);
+    }
+
+    public void restoreRuntimeConfigSnapshot(RuntimeConfig snapshot) {
+        updateRuntimeConfig(copyRuntimeConfig(snapshot));
     }
 
     public RuntimeConfig.HiveConfig getHiveConfig() {
@@ -1931,6 +1951,18 @@ public class RuntimeConfigService {
             return objectMapper.readValue(json, RuntimeConfig.class);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to copy runtime config", e);
+        }
+    }
+
+    private <T> T copySection(T source, Class<T> sectionType, T defaultValue) {
+        if (source == null) {
+            return defaultValue;
+        }
+        try {
+            String json = objectMapper.writeValueAsString(source);
+            return objectMapper.readValue(json, sectionType);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to copy runtime config section", e);
         }
     }
 

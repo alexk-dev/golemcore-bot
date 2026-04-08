@@ -28,6 +28,7 @@ class HiveControlCommandDispatcherTest {
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        HivePolicySyncCommandHandler policySyncCommandHandler = mock(HivePolicySyncCommandHandler.class);
         when(coordinator.submit(any(Message.class), any(Runnable.class))).thenAnswer(invocation -> {
             Runnable onStart = invocation.getArgument(1);
             if (onStart != null) {
@@ -40,6 +41,7 @@ class HiveControlCommandDispatcherTest {
                 inboxService,
                 publisher,
                 inspectionCommandHandler,
+                policySyncCommandHandler,
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
 
         HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
@@ -77,11 +79,13 @@ class HiveControlCommandDispatcherTest {
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        HivePolicySyncCommandHandler policySyncCommandHandler = mock(HivePolicySyncCommandHandler.class);
         HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
                 coordinator,
                 inboxService,
                 publisher,
                 inspectionCommandHandler,
+                policySyncCommandHandler,
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
 
         HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
@@ -105,11 +109,13 @@ class HiveControlCommandDispatcherTest {
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        HivePolicySyncCommandHandler policySyncCommandHandler = mock(HivePolicySyncCommandHandler.class);
         HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
                 coordinator,
                 inboxService,
                 publisher,
                 inspectionCommandHandler,
+                policySyncCommandHandler,
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
 
         HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
@@ -131,16 +137,50 @@ class HiveControlCommandDispatcherTest {
     }
 
     @Test
-    void shouldRejectUnsupportedEventType() {
+    void shouldRoutePolicySyncRequestToDedicatedHandler() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        HivePolicySyncCommandHandler policySyncCommandHandler = mock(HivePolicySyncCommandHandler.class);
         HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
                 coordinator,
                 inboxService,
                 publisher,
                 inspectionCommandHandler,
+                policySyncCommandHandler,
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+
+        HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
+                .eventType("policy.sync_requested")
+                .commandId("cmd-sync-1")
+                .threadId("thread-1")
+                .policyGroupId("pg-1")
+                .targetVersion(7)
+                .checksum("sha256:abcd")
+                .build();
+
+        dispatcher.dispatch(envelope);
+
+        verify(policySyncCommandHandler).handle(envelope);
+        verify(inboxService).markProcessed("cmd-sync-1");
+        verify(coordinator, never()).submit(any(Message.class), any(Runnable.class));
+        verify(publisher, never()).publishCommandAcknowledged(envelope);
+    }
+
+    @Test
+    void shouldRejectUnsupportedEventType() {
+        SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
+        HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        HivePolicySyncCommandHandler policySyncCommandHandler = mock(HivePolicySyncCommandHandler.class);
+        HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
+                coordinator,
+                inboxService,
+                publisher,
+                inspectionCommandHandler,
+                policySyncCommandHandler,
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
 
         IllegalArgumentException error = assertThrows(
@@ -161,6 +201,7 @@ class HiveControlCommandDispatcherTest {
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        HivePolicySyncCommandHandler policySyncCommandHandler = mock(HivePolicySyncCommandHandler.class);
         RuntimeException failure = new IllegalStateException("inspection failed");
         org.mockito.Mockito.doThrow(failure).when(inspectionCommandHandler)
                 .handle(any(HiveControlCommandEnvelope.class));
@@ -169,6 +210,7 @@ class HiveControlCommandDispatcherTest {
                 inboxService,
                 publisher,
                 inspectionCommandHandler,
+                policySyncCommandHandler,
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
         HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
                 .eventType("inspection.request")
@@ -190,6 +232,7 @@ class HiveControlCommandDispatcherTest {
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        HivePolicySyncCommandHandler policySyncCommandHandler = mock(HivePolicySyncCommandHandler.class);
         when(coordinator.submit(any(Message.class), any(Runnable.class))).thenReturn(
                 CompletableFuture.failedFuture(new IllegalStateException("Cancelled by Hive control command")));
         HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
@@ -197,6 +240,7 @@ class HiveControlCommandDispatcherTest {
                 inboxService,
                 publisher,
                 inspectionCommandHandler,
+                policySyncCommandHandler,
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
         HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
                 .commandId("cmd-3")

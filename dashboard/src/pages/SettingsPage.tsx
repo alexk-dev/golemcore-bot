@@ -7,6 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   useSettings, useRuntimeConfig, useUpdateRuntimeConfig,
 } from '../hooks/useSettings';
+import { useHiveStatus } from '../hooks/useHive';
 import { usePluginMarketplace, usePluginSettingsCatalog } from '../hooks/usePlugins';
 import { useMe } from '../hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
@@ -112,6 +113,7 @@ export default function SettingsPage(): ReactElement {
   const deferredCatalogSearch = useDeferredValue(catalogSearch);
   const { data: settings, isLoading: settingsLoading } = useSettings();
   const { data: rc, isLoading: rcLoading } = useRuntimeConfig();
+  const hiveStatus = useHiveStatus();
   const updateRuntimeConfig = useUpdateRuntimeConfig();
   const { data: pluginCatalog = [], isLoading: pluginCatalogLoading } = usePluginSettingsCatalog();
   const { data: pluginMarketplace } = usePluginMarketplace();
@@ -336,13 +338,18 @@ export default function SettingsPage(): ReactElement {
       {pluginSection != null && <PluginSettingsPanel routeKey={pluginSection.routeKey} />}
 
       {staticSection === 'general' && <GeneralTab settings={settings} me={me} qc={qc} />}
-      {staticSection === 'models' && rc != null && <ModelsTab config={rc.modelRouter} llmConfig={rc.llm} />}
-      {staticSection === 'llm-providers' && rc != null && <LlmProvidersTab config={rc.llm} modelRouter={rc.modelRouter} />}
+      {staticSection === 'models' && rc != null && (
+        <ModelsTab config={rc.modelRouter} llmConfig={rc.llm} hiveStatus={hiveStatus.data} />
+      )}
+      {staticSection === 'llm-providers' && rc != null && (
+        <LlmProvidersTab config={rc.llm} modelRouter={rc.modelRouter} hiveStatus={hiveStatus.data} />
+      )}
       {staticSection === 'model-catalog' && rc != null && (
         <ModelCatalogTab
           llmConfig={rc.llm}
           modelRegistryConfig={rc.modelRegistry}
           isSavingModelRegistry={updateRuntimeConfig.isPending}
+          hiveStatus={hiveStatus.data}
           onSaveModelRegistry={async (modelRegistryConfig) => {
             await updateRuntimeConfig.mutateAsync({
               ...rc,
@@ -365,7 +372,7 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
       {staticSection === 'telemetry' && rc != null && <TelemetryTab config={rc.telemetry ?? { enabled: true }} />}
       {staticSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
-      {staticSection === 'hive' && rc != null && <HiveTab config={rc.hive} />}
+      {staticSection === 'hive' && rc != null && <HiveTab config={rc.hive} hiveStatus={hiveStatus.data} />}
       {staticSection === 'self-evolving' && rc != null && (
         <SelfEvolvingTab
           config={rc.selfEvolving}

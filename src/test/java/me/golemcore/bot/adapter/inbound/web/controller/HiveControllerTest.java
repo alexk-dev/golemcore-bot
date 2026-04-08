@@ -54,6 +54,11 @@ class HiveControllerTest {
                 0,
                 0,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null));
 
         StepVerifier.create(controller.getStatus())
@@ -94,6 +99,11 @@ class HiveControllerTest {
                 0,
                 0,
                 0,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null);
         when(hiveConnectionService.join("token:https://hive.example.com")).thenReturn(snapshot);
@@ -139,6 +149,11 @@ class HiveControllerTest {
                 0,
                 0,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null);
         when(hiveConnectionService.join(null)).thenReturn(snapshot);
 
@@ -178,6 +193,11 @@ class HiveControllerTest {
                 0,
                 0,
                 0,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null);
         when(hiveConnectionService.reconnect()).thenReturn(snapshot);
@@ -222,6 +242,11 @@ class HiveControllerTest {
                 0,
                 0,
                 0,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null);
         when(hiveConnectionService.leave()).thenReturn(snapshot);

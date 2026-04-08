@@ -26,7 +26,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
+import me.golemcore.bot.port.outbound.ModelCatalogAdminPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
@@ -50,7 +52,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @Slf4j
-public class ModelConfigService implements ModelConfigPort {
+public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPort {
 
     private static final String MODELS_DIR = "models";
     private static final String CONFIG_FILE = "models.json";
@@ -108,10 +110,10 @@ public class ModelConfigService implements ModelConfigPort {
     public void saveConfig() {
         try {
             String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(config);
-            storagePort.putText(MODELS_DIR, CONFIG_FILE, json).join();
+            storagePort.putTextAtomic(MODELS_DIR, CONFIG_FILE, json, true).join();
             log.info("[ModelConfig] Saved to workspace: {} models", config.getModels().size());
         } catch (Exception e) {
-            log.error("[ModelConfig] Failed to save: {}", e.getMessage());
+            throw new IllegalStateException("Failed to persist model catalog", e);
         }
     }
 
@@ -152,6 +154,40 @@ public class ModelConfigService implements ModelConfigPort {
     public void replaceConfig(ModelsConfig newConfig) {
         this.config = newConfig;
         saveConfig();
+    }
+
+    @Override
+    public HivePolicyModelCatalog getCatalogSnapshot() {
+        Map<String, HivePolicyModelCatalog.HivePolicyModelConfig> models = new LinkedHashMap<>();
+        for (Map.Entry<String, ModelSettings> entry : config.getModels().entrySet()) {
+            models.put(entry.getKey(), toPolicyModelConfig(entry.getValue()));
+        }
+        HivePolicyModelCatalog.HivePolicyModelConfig defaults = config.getDefaults() != null
+                ? toPolicyModelConfig(config.getDefaults())
+                : null;
+        return HivePolicyModelCatalog.builder()
+                .models(models)
+                .defaults(defaults)
+                .build();
+    }
+
+    @Override
+    public void replaceCatalogSnapshot(HivePolicyModelCatalog catalogSnapshot) {
+        ModelsConfig newConfig = new ModelsConfig();
+        if (catalogSnapshot != null && catalogSnapshot.getModels() != null) {
+            for (Map.Entry<String, HivePolicyModelCatalog.HivePolicyModelConfig> entry : catalogSnapshot.getModels()
+                    .entrySet()) {
+                newConfig.getModels().put(entry.getKey(), toModelSettings(entry.getValue()));
+            }
+        }
+        if (catalogSnapshot != null && catalogSnapshot.getDefaults() != null) {
+            newConfig.setDefaults(toModelSettings(catalogSnapshot.getDefaults()));
+        } else if (catalogSnapshot != null && catalogSnapshot.getDefaultModel() != null
+                && newConfig.getModels().containsKey(catalogSnapshot.getDefaultModel())) {
+            newConfig.setDefaults(
+                    toDefaultSettings(newConfig.getModels().get(catalogSnapshot.getDefaultModel())));
+        }
+        replaceConfig(newConfig);
     }
 
     /**
@@ -360,5 +396,74 @@ public class ModelConfigService implements ModelConfigPort {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ReasoningLevelConfig {
         private int maxInputTokens = 128000;
+    }
+
+    private HivePolicyModelCatalog.HivePolicyModelConfig toPolicyModelConfig(ModelSettings settings) {
+        if (settings == null) {
+            return null;
+        }
+        HivePolicyModelCatalog.HivePolicyReasoningConfig reasoning = null;
+        if (settings.getReasoning() != null) {
+            Map<String, HivePolicyModelCatalog.HivePolicyReasoningLevelConfig> levels = new LinkedHashMap<>();
+            if (settings.getReasoning().getLevels() != null) {
+                for (Map.Entry<String, ReasoningLevelConfig> entry : settings.getReasoning().getLevels().entrySet()) {
+                    levels.put(entry.getKey(), HivePolicyModelCatalog.HivePolicyReasoningLevelConfig.builder()
+                            .maxInputTokens(entry.getValue() != null ? entry.getValue().getMaxInputTokens() : null)
+                            .build());
+                }
+            }
+            reasoning = HivePolicyModelCatalog.HivePolicyReasoningConfig.builder()
+                    .defaultLevel(settings.getReasoning().getDefaultLevel())
+                    .levels(levels)
+                    .build();
+        }
+        return HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                .provider(settings.getProvider())
+                .displayName(settings.getDisplayName())
+                .supportsVision(settings.isSupportsVision())
+                .supportsTemperature(settings.isSupportsTemperature())
+                .maxInputTokens(settings.getMaxInputTokens())
+                .reasoning(reasoning)
+                .build();
+    }
+
+    private ModelSettings toModelSettings(HivePolicyModelCatalog.HivePolicyModelConfig source) {
+        ModelSettings settings = new ModelSettings();
+        if (source == null) {
+            return settings;
+        }
+        settings.setProvider(source.getProvider() != null ? source.getProvider() : PROVIDER_OPENAI);
+        settings.setDisplayName(source.getDisplayName());
+        settings.setSupportsVision(source.getSupportsVision() == null || source.getSupportsVision());
+        settings.setSupportsTemperature(source.getSupportsTemperature() == null || source.getSupportsTemperature());
+        settings.setMaxInputTokens(source.getMaxInputTokens() != null ? source.getMaxInputTokens() : 128000);
+        if (source.getReasoning() != null) {
+            ReasoningConfig reasoning = new ReasoningConfig();
+            reasoning.setDefaultLevel(source.getReasoning().getDefaultLevel());
+            if (source.getReasoning().getLevels() != null) {
+                for (Map.Entry<String, HivePolicyModelCatalog.HivePolicyReasoningLevelConfig> entry : source
+                        .getReasoning().getLevels().entrySet()) {
+                    Integer maxInputTokens = entry.getValue() != null ? entry.getValue().getMaxInputTokens() : null;
+                    reasoning.getLevels().put(entry.getKey(),
+                            new ReasoningLevelConfig(maxInputTokens != null ? maxInputTokens : 128000));
+                }
+            }
+            settings.setReasoning(reasoning);
+        }
+        return settings;
+    }
+
+    private ModelSettings toDefaultSettings(ModelSettings source) {
+        ModelSettings defaults = new ModelSettings();
+        if (source == null) {
+            return defaults;
+        }
+        defaults.setProvider(source.getProvider());
+        defaults.setDisplayName(source.getDisplayName());
+        defaults.setSupportsVision(source.isSupportsVision());
+        defaults.setSupportsTemperature(source.isSupportsTemperature());
+        defaults.setMaxInputTokens(source.getMaxInputTokens());
+        defaults.setReasoning(source.getReasoning());
+        return defaults;
     }
 }

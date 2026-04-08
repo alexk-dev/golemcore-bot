@@ -42,6 +42,8 @@ Runtime config is persisted to the workspace:
 - Files: `preferences/*.json` (one JSON file per section, for example `llm.json`, `turn.json`, `hive.json`)
 - Dashboard API: `GET /api/settings/runtime`, `PUT /api/settings/runtime`
 
+Some runtime-adjacent operational state also lives under `preferences/`, but outside the editable runtime-config surface. Examples: `hive-session.json`, `hive-control-inbox.json`, `hive-policy-state.json`.
+
 Secrets (API keys) can be provided as plain strings in JSON; they are wrapped as `Secret` internally.
 
 Notable runtime sections:
@@ -463,6 +465,8 @@ Rules:
 - When managed bootstrap is active, the dashboard Hive tab becomes read-only and the backend rejects edits to the Hive section.
 - Rotating machine auth state does not belong in `hive.json`; it lives in `preferences/hive-session.json`.
 - Buffered control channel commands live in `preferences/hive-control-inbox.json`.
+- Hive-managed policy sync state lives in `preferences/hive-policy-state.json`.
+- When a Hive policy group is active, the dashboard exposes `LLM Providers`, `Models`, and `Model Catalog` as read-only and the backend rejects local writes for those managed sections.
 
 See: [Hive Integration](HIVE_INTEGRATION.md)
 

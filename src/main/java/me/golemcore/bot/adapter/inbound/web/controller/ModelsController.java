@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
+import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.ModelRegistryService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
@@ -46,6 +48,7 @@ public class ModelsController {
     private final ProviderModelDiscoveryService providerModelDiscoveryService;
     private final ModelRegistryService modelRegistryService;
     private final LlmPort llmPort;
+    private final HiveManagedPolicyService hiveManagedPolicyService;
 
     /**
      * Get full models config (all models + defaults).
@@ -61,6 +64,7 @@ public class ModelsController {
     @PutMapping
     public Mono<ResponseEntity<ModelConfigService.ModelsConfig>> replaceModelsConfig(
             @RequestBody ModelConfigService.ModelsConfig newConfig) {
+        rejectManagedHivePolicyCatalogMutation();
         modelConfigService.replaceConfig(newConfig);
         return Mono.just(ResponseEntity.ok(modelConfigService.getConfig()));
     }
@@ -80,6 +84,7 @@ public class ModelsController {
         if (settings == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "settings is required");
         }
+        rejectManagedHivePolicyCatalogMutation();
         modelConfigService.saveModel(id, previousId, settings);
         return Mono.just(ResponseEntity.ok().build());
     }
@@ -90,6 +95,7 @@ public class ModelsController {
     @DeleteMapping
     public Mono<ResponseEntity<Void>> deleteModel(@RequestParam String id) {
         String normalizedId = requireValue(id, "id");
+        rejectManagedHivePolicyCatalogMutation();
         boolean deleted = modelConfigService.deleteModel(normalizedId);
         if (!deleted) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Model '" + normalizedId + "' not found");
@@ -203,6 +209,16 @@ public class ModelsController {
             return null;
         }
         return value.trim();
+    }
+
+    private void rejectManagedHivePolicyCatalogMutation() {
+        HivePolicyBindingState bindingState = hiveManagedPolicyService.getBindingState().orElse(null);
+        if (bindingState == null || !bindingState.hasActiveBinding()) {
+            return;
+        }
+        throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Model catalog is managed by Hive policy group \"" + bindingState.getPolicyGroupId()
+                        + "\" and is read-only");
     }
 
     public record ResolveRegistryRequest(String provider, String modelId) {

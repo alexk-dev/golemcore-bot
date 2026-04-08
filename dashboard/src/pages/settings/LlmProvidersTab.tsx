@@ -4,11 +4,14 @@ import toast from 'react-hot-toast';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import { ProviderNameCombobox } from '../../components/common/ProviderNameCombobox';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
+import type { HiveStatusResponse } from '../../api/hive';
 import type { LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
 import { useAddLlmProvider, useRemoveLlmProvider, useUpdateLlmProvider } from '../../hooks/useSettings';
 import { listConfiguredModelSpecs } from '../../lib/modelRouter';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
+import { HiveManagedPolicyNotice } from './HiveManagedPolicyNotice';
 import { LlmProviderEditorCard } from './LlmProviderEditorCard';
+import { getHiveManagedPolicyDetails } from './hiveManagedPolicySupport';
 import {
   API_TYPE_DETAILS,
   buildDefaultProviderConfig,
@@ -20,9 +23,10 @@ import {
 export interface LlmProvidersTabProps {
   config: LlmConfig;
   modelRouter: ModelRouterConfig;
+  hiveStatus?: HiveStatusResponse | null;
 }
 
-export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTabProps): ReactElement {
+export default function LlmProvidersTab({ config, modelRouter, hiveStatus }: LlmProvidersTabProps): ReactElement {
   const addProvider = useAddLlmProvider();
   const updateProvider = useUpdateLlmProvider();
   const removeProvider = useRemoveLlmProvider();
@@ -52,6 +56,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
   }, [modelRouter]);
 
   const isSaving = addProvider.isPending || updateProvider.isPending;
+  const managedPolicy = getHiveManagedPolicyDetails(hiveStatus);
   const normalizedNewProviderName = newProviderName.trim().toLowerCase();
   const isProviderNameInvalid = normalizedNewProviderName.length > 0 && !PROVIDER_NAME_PATTERN.test(normalizedNewProviderName);
   const providerAlreadyExists = normalizedNewProviderName.length > 0
@@ -143,115 +148,123 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
           Manage provider credentials and API protocol. API type controls which wire protocol is used for each provider.
         </div>
 
-        <InputGroup className="mb-3" size="sm">
-          <div className="flex-grow-1">
-            <ProviderNameCombobox
-              value={newProviderName}
-              suggestions={knownSuggestions}
-              placeholder="Provider name (e.g. openai)"
-              disabled={editingName != null || isSaving}
-              hasError={isProviderNameInvalid || providerAlreadyExists}
-              onValueChange={(value) => setNewProviderName(value.toLowerCase())}
-              onSubmit={handleStartAdd}
-            />
+        {managedPolicy ? (
+          <HiveManagedPolicyNotice policy={managedPolicy} sectionLabel="LLM Providers" className="mb-3" />
+        ) : null}
+
+        <fieldset disabled={managedPolicy != null} className="border-0 m-0 p-0">
+          <InputGroup className="mb-3" size="sm">
+            <div className="flex-grow-1">
+              <ProviderNameCombobox
+                value={newProviderName}
+                suggestions={knownSuggestions}
+                placeholder="Provider name (e.g. openai)"
+                disabled={managedPolicy != null || editingName != null || isSaving}
+                hasError={isProviderNameInvalid || providerAlreadyExists}
+                onValueChange={(value) => setNewProviderName(value.toLowerCase())}
+                onSubmit={handleStartAdd}
+              />
+            </div>
+            <Button type="button" variant="primary" onClick={handleStartAdd} disabled={managedPolicy != null || !canStartAdd}>
+              Add Provider
+            </Button>
+          </InputGroup>
+          <div className={`small mb-3 ${isProviderNameInvalid || providerAlreadyExists ? 'text-danger' : 'text-body-secondary'}`}>
+            {isProviderNameInvalid
+              ? 'Name format: [a-z0-9][a-z0-9_-]*'
+              : providerAlreadyExists
+                ? 'Provider already exists.'
+                : 'Use lowercase provider IDs, for example: openai, anthropic, deepseek. You can also enter a custom provider ID not present in the suggestion list.'}
           </div>
-          <Button type="button" variant="primary" onClick={handleStartAdd} disabled={!canStartAdd}>Add Provider</Button>
-        </InputGroup>
-        <div className={`small mb-3 ${isProviderNameInvalid || providerAlreadyExists ? 'text-danger' : 'text-body-secondary'}`}>
-          {isProviderNameInvalid
-            ? 'Name format: [a-z0-9][a-z0-9_-]*'
-            : providerAlreadyExists
-              ? 'Provider already exists.'
-              : 'Use lowercase provider IDs, for example: openai, anthropic, deepseek. You can also enter a custom provider ID not present in the suggestion list.'}
-        </div>
 
-        {providerNames.length > 0 ? (
-          <Table size="sm" hover responsive className="mb-3 dashboard-table responsive-table providers-table">
-            <thead>
-              <tr>
-                <th scope="col">Provider</th>
-                <th scope="col">API Type</th>
-                <th scope="col">Base URL</th>
-                <th scope="col">Status</th>
-                <th scope="col" className="text-end">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {providerNames.map((name) => {
-                const provider = config.providers[name];
-                const isReady = provider?.apiKeyPresent === true;
-                const apiType = normalizeApiType(provider?.apiType);
-                return (
-                  <tr key={name}>
-                    <td data-label="Provider" className="text-capitalize fw-medium">{name}</td>
-                    <td data-label="API Type" className="small text-body-secondary">
-                      <Badge bg={API_TYPE_DETAILS[apiType].badgeBg} text={API_TYPE_DETAILS[apiType].badgeText}>
-                        {API_TYPE_DETAILS[apiType].label}
-                      </Badge>
-                    </td>
-                    <td data-label="Base URL" className="small text-body-secondary provider-url-cell">
-                      {provider?.baseUrl ?? <em>default</em>}
-                    </td>
-                    <td data-label="Status">
-                      {isReady ? (
-                        <Badge bg="success">Ready</Badge>
-                      ) : (
-                        <Badge bg="secondary">Setup needed</Badge>
-                      )}
-                    </td>
-                    <td data-label="Actions" className="text-end text-nowrap">
-                      <div className="d-flex flex-wrap gap-1 providers-actions">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          className="provider-action-btn"
-                          disabled={isSaving}
-                          onClick={() => {
-                            if (editingName === name && !isNewProvider) {
-                              handleCancelEdit();
-                            } else {
-                              handleStartEdit(name);
-                            }
-                          }}
-                        >
-                          {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="danger"
-                          className="provider-action-btn"
-                          disabled={usedProviders.has(name) || removeProvider.isPending}
-                          title={usedProviders.has(name) ? 'In use by model router' : removeProvider.isPending ? 'Deletion in progress' : 'Remove provider'}
-                          onClick={() => setDeleteProvider(name)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
-        ) : (
-          <p className="text-body-secondary small mb-3">No providers configured. Add one above to get started.</p>
-        )}
+          {providerNames.length > 0 ? (
+            <Table size="sm" hover responsive className="mb-3 dashboard-table responsive-table providers-table">
+              <thead>
+                <tr>
+                  <th scope="col">Provider</th>
+                  <th scope="col">API Type</th>
+                  <th scope="col">Base URL</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" className="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {providerNames.map((name) => {
+                  const provider = config.providers[name];
+                  const isReady = provider?.apiKeyPresent === true;
+                  const apiType = normalizeApiType(provider?.apiType);
+                  return (
+                    <tr key={name}>
+                      <td data-label="Provider" className="text-capitalize fw-medium">{name}</td>
+                      <td data-label="API Type" className="small text-body-secondary">
+                        <Badge bg={API_TYPE_DETAILS[apiType].badgeBg} text={API_TYPE_DETAILS[apiType].badgeText}>
+                          {API_TYPE_DETAILS[apiType].label}
+                        </Badge>
+                      </td>
+                      <td data-label="Base URL" className="small text-body-secondary provider-url-cell">
+                        {provider?.baseUrl ?? <em>default</em>}
+                      </td>
+                      <td data-label="Status">
+                        {isReady ? (
+                          <Badge bg="success">Ready</Badge>
+                        ) : (
+                          <Badge bg="secondary">Setup needed</Badge>
+                        )}
+                      </td>
+                      <td data-label="Actions" className="text-end text-nowrap">
+                        <div className="d-flex flex-wrap gap-1 providers-actions">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className="provider-action-btn"
+                            disabled={managedPolicy != null || isSaving}
+                            onClick={() => {
+                              if (editingName === name && !isNewProvider) {
+                                handleCancelEdit();
+                              } else {
+                                handleStartEdit(name);
+                              }
+                            }}
+                          >
+                            {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="danger"
+                            className="provider-action-btn"
+                            disabled={managedPolicy != null || usedProviders.has(name) || removeProvider.isPending}
+                            title={usedProviders.has(name) ? 'In use by model router' : removeProvider.isPending ? 'Deletion in progress' : 'Remove provider'}
+                            onClick={() => setDeleteProvider(name)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          ) : (
+            <p className="text-body-secondary small mb-3">No providers configured. Add one above to get started.</p>
+          )}
 
-        {editingName != null && editForm != null && (
-          <LlmProviderEditorCard
-            name={editingName}
-            form={editForm}
-            isNew={isNewProvider}
-            showKey={showKey}
-            isSaving={isSaving}
-            onFormChange={setEditForm}
-            onToggleShowKey={() => setShowKey(!showKey)}
-            onSave={() => { void handleSave(); }}
-            onCancel={handleCancelEdit}
-          />
-        )}
+          {editingName != null && editForm != null && (
+            <LlmProviderEditorCard
+              name={editingName}
+              form={editForm}
+              isNew={isNewProvider}
+              showKey={showKey}
+              isSaving={isSaving}
+              onFormChange={setEditForm}
+              onToggleShowKey={() => setShowKey(!showKey)}
+              onSave={() => { void handleSave(); }}
+              onCancel={handleCancelEdit}
+            />
+          )}
+        </fieldset>
       </Card.Body>
 
       <ConfirmModal
