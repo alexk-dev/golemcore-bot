@@ -3,6 +3,8 @@ import {
   type ModelRouterConfig,
   type LlmConfig,
   type LlmProviderConfig,
+  type LlmProviderImportResult,
+  type LlmProviderTestResult,
   type ToolsConfig,
   type VoiceConfig,
   type RuntimeConfig,
@@ -28,8 +30,11 @@ import {
   updateModelRouterConfig,
   updateLlmConfig,
   addLlmProvider,
+  addLlmProviderAndImport,
   updateLlmProvider,
   removeLlmProvider,
+  testDraftLlmProvider,
+  testSavedLlmProvider,
   updateToolsConfig,
   updateVoiceConfig,
   updateMemoryConfig,
@@ -102,6 +107,18 @@ export function useAddLlmProvider(): UseMutationResult<Awaited<ReturnType<typeof
   });
 }
 
+export function useAddLlmProviderAndImport(): UseMutationResult<LlmProviderImportResult, unknown, { name: string; config: LlmProviderConfig }> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, config }: { name: string; config: LlmProviderConfig }) => addLlmProviderAndImport(name, config),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+      qc.invalidateQueries({ queryKey: ['models-config'] }),
+      qc.invalidateQueries({ queryKey: ['models-available'] }),
+    ]),
+  });
+}
+
 export function useUpdateLlmProvider(): UseMutationResult<Awaited<ReturnType<typeof updateLlmProvider>>, unknown, { name: string; config: LlmProviderConfig }> {
   const qc = useQueryClient();
   return useMutation({
@@ -115,6 +132,21 @@ export function useRemoveLlmProvider(): UseMutationResult<Awaited<ReturnType<typ
   return useMutation({
     mutationFn: (name: string) => removeLlmProvider(name),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useTestLlmProvider(): UseMutationResult<
+  LlmProviderTestResult,
+  unknown,
+  | { mode: 'saved'; providerName: string }
+  | { mode: 'draft'; providerName: string; config: LlmProviderConfig }
+> {
+  return useMutation({
+    mutationFn: (request) => (
+      request.mode === 'saved'
+        ? testSavedLlmProvider(request.providerName)
+        : testDraftLlmProvider(request.providerName, request.config)
+    ),
   });
 }
 

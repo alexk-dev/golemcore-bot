@@ -8,6 +8,8 @@ import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
+import me.golemcore.bot.domain.service.ProviderModelImportService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
@@ -20,6 +22,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
@@ -39,6 +42,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import reactor.test.StepVerifier;
@@ -49,6 +53,8 @@ class SettingsControllerTest {
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
     private MemoryPresetService memoryPresetService;
+    private ProviderModelImportService providerModelImportService;
+    private ProviderModelDiscoveryService providerModelDiscoveryService;
     private SttProviderRegistry sttProviderRegistry;
     private TtsProviderRegistry ttsProviderRegistry;
     private SettingsController controller;
@@ -59,6 +65,8 @@ class SettingsControllerTest {
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         memoryPresetService = mock(MemoryPresetService.class);
+        providerModelImportService = mock(ProviderModelImportService.class);
+        providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         sttProviderRegistry = new SttProviderRegistry();
         ttsProviderRegistry = new TtsProviderRegistry();
         registerSttProvider("golemcore/elevenlabs", "elevenlabs");
@@ -66,7 +74,8 @@ class SettingsControllerTest {
         registerTtsProvider("golemcore/elevenlabs", "elevenlabs");
         registerTtsProvider("golemcore/whisper", "whisper");
         controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
-                memoryPresetService, sttProviderRegistry, ttsProviderRegistry);
+                memoryPresetService, providerModelImportService, providerModelDiscoveryService, sttProviderRegistry,
+                ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
         when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(false);
         when(modelSelectionService.validateModel(anyString(), anyList()))
@@ -809,6 +818,139 @@ class SettingsControllerTest {
                 .build();
 
         assertDoesNotThrow(() -> controller.addLlmProvider("test", providerConfig));
+    }
+
+    @Test
+    void shouldSaveProviderAndReturnImportResult() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("x"))
+                .apiType("openai")
+                .build();
+        when(providerModelImportService.importMissingModels("test", providerConfig))
+                .thenReturn(new ProviderModelImportService.ProviderImportResult(
+                        "https://models.example.com/v1/models",
+                        List.of("test/gpt-5.2"),
+                        List.of("test/existing"),
+                        List.of("test/failing: timeout")));
+
+        StepVerifier.create(controller.addLlmProviderAndImportModels("test", providerConfig))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SettingsController.LlmProviderImportResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.providerSaved());
+                    assertEquals("test", body.providerName());
+                    assertEquals("https://models.example.com/v1/models", body.resolvedEndpoint());
+                    assertEquals(List.of("test/gpt-5.2"), body.addedModels());
+                    assertEquals(List.of("test/existing"), body.skippedModels());
+                    assertEquals(List.of("test/failing: timeout"), body.errors());
+                })
+                .verifyComplete();
+
+        verify(runtimeConfigService).addLlmProvider("test", providerConfig);
+    }
+
+    @Test
+    void shouldKeepProviderSavedWhenImportReturnsErrors() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("x"))
+                .apiType("openai")
+                .build();
+        when(providerModelImportService.importMissingModels("test", providerConfig))
+                .thenReturn(new ProviderModelImportService.ProviderImportResult(
+                        null,
+                        List.of(),
+                        List.of(),
+                        List.of("bad gateway")));
+
+        StepVerifier.create(controller.addLlmProviderAndImportModels("test", providerConfig))
+                .assertNext(response -> {
+                    SettingsController.LlmProviderImportResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.providerSaved());
+                    assertEquals(List.of("bad gateway"), body.errors());
+                })
+                .verifyComplete();
+
+        verify(runtimeConfigService).addLlmProvider("test", providerConfig);
+    }
+
+    @Test
+    void shouldTestSavedProvider() {
+        ProviderModelDiscoveryService.DiscoveryResult discoveryResult = new ProviderModelDiscoveryService.DiscoveryResult(
+                "https://openrouter.ai/api/v1/models",
+                List.of(
+                        new ProviderModelDiscoveryService.DiscoveredModel("openrouter", "openai/gpt-5", "GPT-5",
+                                "openai", null),
+                        new ProviderModelDiscoveryService.DiscoveredModel("openrouter", "openai/gpt-4.1",
+                                "GPT-4.1", "openai", null)));
+        when(providerModelDiscoveryService.discoverModelsForProvider("openrouter")).thenReturn(discoveryResult);
+
+        StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                "saved",
+                "openrouter",
+                null)))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    SettingsController.LlmProviderTestResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("saved", body.mode());
+                    assertTrue(body.success());
+                    assertEquals("https://openrouter.ai/api/v1/models", body.resolvedEndpoint());
+                    assertEquals(List.of("openrouter/openai/gpt-5", "openrouter/openai/gpt-4.1"), body.models());
+                    assertNull(body.error());
+                })
+                .verifyComplete();
+
+        verifyNoInteractions(runtimeConfigService);
+    }
+
+    @Test
+    void shouldTestDraftProvider() {
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("draft-key"))
+                .baseUrl("https://draft.example.com")
+                .apiType("openai")
+                .build();
+        ProviderModelDiscoveryService.DiscoveryResult discoveryResult = new ProviderModelDiscoveryService.DiscoveryResult(
+                "https://draft.example.com/v1/models",
+                List.of(new ProviderModelDiscoveryService.DiscoveredModel("draftmesh", "draft-gpt", "Draft GPT",
+                        "draft", null)));
+        when(providerModelDiscoveryService.discoverModelsForConfig("draftmesh", providerConfig))
+                .thenReturn(discoveryResult);
+
+        StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                "draft",
+                "draftmesh",
+                providerConfig)))
+                .assertNext(response -> {
+                    SettingsController.LlmProviderTestResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("draft", body.mode());
+                    assertTrue(body.success());
+                    assertEquals(List.of("draftmesh/draft-gpt"), body.models());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldRejectDraftProviderTestWithoutConfig() {
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest("draft", "draftmesh",
+                        null)).block());
+
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        assertEquals("config is required", error.getReason());
     }
 
     @Test
@@ -1650,6 +1792,8 @@ class SettingsControllerTest {
                 modelSelectionService,
                 runtimeConfigService,
                 memoryPresetService,
+                providerModelImportService,
+                providerModelDiscoveryService,
                 new SttProviderRegistry(),
                 new TtsProviderRegistry());
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
@@ -1794,6 +1938,8 @@ class SettingsControllerTest {
                 modelSelectionService,
                 runtimeConfigService,
                 memoryPresetService,
+                providerModelImportService,
+                providerModelDiscoveryService,
                 new SttProviderRegistry(),
                 new TtsProviderRegistry());
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()

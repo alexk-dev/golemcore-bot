@@ -17,10 +17,13 @@ export interface LlmProviderEditorCardProps {
   isNew: boolean;
   showKey: boolean;
   isSaving: boolean;
+  isTesting: boolean;
   onFormChange: (form: LlmProviderConfig) => void;
   onToggleShowKey: () => void;
   onSave: () => void;
   onCancel: () => void;
+  onTestDraft: () => void;
+  onTestSaved: () => void;
 }
 
 export function LlmProviderEditorCard({
@@ -29,10 +32,13 @@ export function LlmProviderEditorCard({
   isNew,
   showKey,
   isSaving,
+  isTesting,
   onFormChange,
   onToggleShowKey,
   onSave,
   onCancel,
+  onTestDraft,
+  onTestSaved,
 }: LlmProviderEditorCardProps): ReactElement {
   const apiType = normalizeApiType(form.apiType);
   const recommendedApiType = getDefaultApiTypeForProvider(name);
@@ -182,6 +188,14 @@ export function LlmProviderEditorCard({
           <Button type="button" variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
+          <Button type="button" variant="outline-primary" size="sm" onClick={onTestDraft} disabled={isSaving || isTesting}>
+            {isTesting ? 'Testing...' : 'Test Draft'}
+          </Button>
+          {!isNew && (
+            <Button type="button" variant="outline-secondary" size="sm" onClick={onTestSaved} disabled={isSaving || isTesting}>
+              {isTesting ? 'Testing...' : 'Test Saved'}
+            </Button>
+          )}
           <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={isSaving}>
             Cancel
           </Button>

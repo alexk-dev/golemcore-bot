@@ -147,6 +147,24 @@ public class ModelConfigService {
         saveConfig();
     }
 
+    public boolean hasModel(String id) {
+        return config.getModels().containsKey(id);
+    }
+
+    public ModelSettings copyModelSettings(ModelSettings source) {
+        ModelSettings copy = new ModelSettings();
+        if (source == null) {
+            return copy;
+        }
+        copy.setProvider(source.getProvider());
+        copy.setDisplayName(source.getDisplayName());
+        copy.setSupportsVision(source.isSupportsVision());
+        copy.setSupportsTemperature(source.isSupportsTemperature());
+        copy.setMaxInputTokens(source.getMaxInputTokens());
+        copy.setReasoning(copyReasoningConfig(source.getReasoning()));
+        return copy;
+    }
+
     /**
      * Delete a model definition.
      */
@@ -359,5 +377,24 @@ public class ModelConfigService {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ReasoningLevelConfig {
         private int maxInputTokens = 128000;
+    }
+
+    private ReasoningConfig copyReasoningConfig(ReasoningConfig source) {
+        if (source == null) {
+            return null;
+        }
+        ReasoningConfig copy = new ReasoningConfig();
+        copy.setDefaultLevel(source.getDefaultLevel());
+        Map<String, ReasoningLevelConfig> copiedLevels = new LinkedHashMap<>();
+        if (source.getLevels() != null) {
+            for (Map.Entry<String, ReasoningLevelConfig> entry : source.getLevels().entrySet()) {
+                ReasoningLevelConfig levelConfig = entry.getValue();
+                copiedLevels.put(entry.getKey(), levelConfig == null
+                        ? new ReasoningLevelConfig()
+                        : new ReasoningLevelConfig(levelConfig.getMaxInputTokens()));
+            }
+        }
+        copy.setLevels(copiedLevels);
+        return copy;
     }
 }

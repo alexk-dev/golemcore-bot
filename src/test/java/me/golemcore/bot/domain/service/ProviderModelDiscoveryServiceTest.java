@@ -268,6 +268,33 @@ class ProviderModelDiscoveryServiceTest {
     }
 
     @Test
+    void shouldDiscoverModelsForDraftProviderConfig() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("draft-key"))
+                .baseUrl("https://draft.example.com")
+                .requestTimeoutSeconds(25)
+                .apiType("openai")
+                .build();
+        StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
+                new ProviderModelDiscoveryService.DiscoveryResponse(200, """
+                        {"data":[
+                          {"id":"draft-gpt","name":"Draft GPT","owned_by":"draft"}
+                        ]}
+                        """));
+
+        ProviderModelDiscoveryService.DiscoveryResult result = service.discoverModelsForConfig("draftmesh",
+                providerConfig);
+
+        assertEquals("https://draft.example.com/v1/models", result.resolvedEndpoint());
+        assertEquals(1, result.models().size());
+        assertEquals("draft-gpt", result.models().getFirst().id());
+        assertEquals(URI.create("https://draft.example.com/v1/models"), service.getCapturedRequest().uri());
+        assertEquals("Bearer draft-key",
+                service.getCapturedRequest().headers().firstValue("Authorization").orElse(""));
+    }
+
+    @Test
     void shouldRejectUnknownProvider() {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openai"));

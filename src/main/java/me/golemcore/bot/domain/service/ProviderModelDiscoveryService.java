@@ -47,8 +47,21 @@ public class ProviderModelDiscoveryService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public List<DiscoveredModel> discoverModels(String providerName) {
+        return discoverModelsForProvider(providerName).models();
+    }
+
+    public DiscoveryResult discoverModelsForProvider(String providerName) {
         String normalizedProvider = normalizeProviderName(providerName);
         RuntimeConfig.LlmProviderConfig providerConfig = requireConfiguredProvider(normalizedProvider);
+        return discoverModelsForConfig(normalizedProvider, providerConfig);
+    }
+
+    public DiscoveryResult discoverModelsForConfig(String providerName,
+            RuntimeConfig.LlmProviderConfig providerConfig) {
+        String normalizedProvider = normalizeProviderName(providerName);
+        if (providerConfig == null) {
+            throw new IllegalArgumentException("Provider config is required");
+        }
         String apiKey = Secret.valueOrEmpty(providerConfig.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalArgumentException(
@@ -56,7 +69,8 @@ public class ProviderModelDiscoveryService {
         }
 
         String apiType = getApiType(providerConfig);
-        HttpRequest request = buildDiscoveryRequest(providerConfig, apiType, apiKey);
+        URI discoveryUri = buildDiscoveryUri(providerConfig, apiType);
+        HttpRequest request = buildDiscoveryRequest(discoveryUri, providerConfig, apiType, apiKey);
         DiscoveryResponse response = sendDiscoveryRequest(request);
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IllegalStateException("Model discovery failed for provider '" + normalizedProvider
@@ -65,7 +79,7 @@ public class ProviderModelDiscoveryService {
 
         List<DiscoveredModel> models = parseModels(normalizedProvider, providerConfig, response.body());
         log.info("[ModelDiscovery] Discovered {} models for provider {}", models.size(), normalizedProvider);
-        return models;
+        return new DiscoveryResult(discoveryUri.toString(), models);
     }
 
     protected DiscoveryResponse sendDiscoveryRequest(HttpRequest request) {
@@ -90,6 +104,9 @@ public class ProviderModelDiscoveryService {
     protected record DiscoveryResponse(int statusCode, String body) {
     }
 
+    public record DiscoveryResult(String resolvedEndpoint, List<DiscoveredModel> models) {
+    }
+
     public record DiscoveredModel(String provider, String id, String displayName, String ownedBy,
             ModelConfigService.ModelSettings defaultSettings) {
     }
@@ -102,10 +119,10 @@ public class ProviderModelDiscoveryService {
         return runtimeConfigService.getLlmProviderConfig(providerName);
     }
 
-    private HttpRequest buildDiscoveryRequest(RuntimeConfig.LlmProviderConfig providerConfig, String apiType,
-            String apiKey) {
+    private HttpRequest buildDiscoveryRequest(URI discoveryUri, RuntimeConfig.LlmProviderConfig providerConfig,
+            String apiType, String apiKey) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(buildDiscoveryUri(providerConfig, apiType))
+                .uri(discoveryUri)
                 .timeout(resolveTimeout(providerConfig))
                 .header("Accept", "application/json")
                 .header("User-Agent", USER_AGENT)

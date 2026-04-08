@@ -282,6 +282,26 @@ export interface LlmProviderConfig {
   legacyApi: boolean | null;
 }
 
+export interface LlmProviderImportResult {
+  providerSaved: boolean;
+  providerName: string;
+  resolvedEndpoint: string | null;
+  addedModels: string[];
+  skippedModels: string[];
+  errors: string[];
+}
+
+export type LlmProviderTestMode = 'saved' | 'draft';
+
+export interface LlmProviderTestResult {
+  mode: LlmProviderTestMode;
+  providerName: string;
+  resolvedEndpoint: string | null;
+  models: string[];
+  success: boolean;
+  error: string | null;
+}
+
 export interface MemoryConfig {
   enabled: boolean | null;
   softPromptBudgetTokens: number | null;
@@ -628,32 +648,54 @@ export async function updateLlmConfig(config: LlmConfig): Promise<RuntimeConfig>
   return toUiRuntimeConfig(data);
 }
 
-export async function addLlmProvider(name: string, config: LlmProviderConfig): Promise<RuntimeConfig> {
-  const payload = {
+function buildLlmProviderPayload(config: LlmProviderConfig): Record<string, unknown> {
+  return {
     baseUrl: config.baseUrl,
     requestTimeoutSeconds: config.requestTimeoutSeconds,
     apiKey: toSecretPayload(config.apiKey ?? null),
     apiType: normalizeLlmApiType(config.apiType),
     legacyApi: config.legacyApi === true ? true : null,
   };
-  const { data } = await client.post<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
+}
+
+export async function addLlmProvider(name: string, config: LlmProviderConfig): Promise<RuntimeConfig> {
+  const { data } = await client.post<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, buildLlmProviderPayload(config));
   return toUiRuntimeConfig(data);
 }
 
 export async function updateLlmProvider(name: string, config: LlmProviderConfig): Promise<RuntimeConfig> {
-  const payload = {
-    baseUrl: config.baseUrl,
-    requestTimeoutSeconds: config.requestTimeoutSeconds,
-    apiKey: toSecretPayload(config.apiKey ?? null),
-    apiType: normalizeLlmApiType(config.apiType),
-    legacyApi: config.legacyApi === true ? true : null,
-  };
-  const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, payload);
+  const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, buildLlmProviderPayload(config));
   return toUiRuntimeConfig(data);
 }
 
 export async function removeLlmProvider(name: string): Promise<void> {
   await client.delete(`/settings/runtime/llm/providers/${name}`);
+}
+
+export async function addLlmProviderAndImport(name: string, config: LlmProviderConfig): Promise<LlmProviderImportResult> {
+  const { data } = await client.post<LlmProviderImportResult>(
+    `/settings/runtime/llm/providers/${name}/import-models`,
+    buildLlmProviderPayload(config),
+  );
+  return data;
+}
+
+export async function testSavedLlmProvider(name: string): Promise<LlmProviderTestResult> {
+  const { data } = await client.post<LlmProviderTestResult>('/settings/runtime/llm/providers/test', {
+    mode: 'saved',
+    providerName: name,
+    config: null,
+  });
+  return data;
+}
+
+export async function testDraftLlmProvider(name: string, config: LlmProviderConfig): Promise<LlmProviderTestResult> {
+  const { data } = await client.post<LlmProviderTestResult>('/settings/runtime/llm/providers/test', {
+    mode: 'draft',
+    providerName: name,
+    config: buildLlmProviderPayload(config),
+  });
+  return data;
 }
 
 export async function updateToolsConfig(config: ToolsConfig): Promise<RuntimeConfig> {

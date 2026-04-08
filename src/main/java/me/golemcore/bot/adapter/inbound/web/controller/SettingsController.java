@@ -10,6 +10,8 @@ import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
+import me.golemcore.bot.domain.service.ProviderModelImportService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
@@ -90,6 +92,8 @@ public class SettingsController {
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
     private final MemoryPresetService memoryPresetService;
+    private final ProviderModelImportService providerModelImportService;
+    private final ProviderModelDiscoveryService providerModelDiscoveryService;
     private final SttProviderRegistry sttProviderRegistry;
     private final TtsProviderRegistry ttsProviderRegistry;
 
@@ -97,12 +101,16 @@ public class SettingsController {
             ModelSelectionService modelSelectionService,
             RuntimeConfigService runtimeConfigService,
             MemoryPresetService memoryPresetService,
+            ProviderModelImportService providerModelImportService,
+            ProviderModelDiscoveryService providerModelDiscoveryService,
             SttProviderRegistry sttProviderRegistry,
             TtsProviderRegistry ttsProviderRegistry) {
         this.preferencesService = preferencesService;
         this.modelSelectionService = modelSelectionService;
         this.runtimeConfigService = runtimeConfigService;
         this.memoryPresetService = memoryPresetService;
+        this.providerModelImportService = providerModelImportService;
+        this.providerModelDiscoveryService = providerModelDiscoveryService;
         this.sttProviderRegistry = sttProviderRegistry;
         this.ttsProviderRegistry = ttsProviderRegistry;
     }
@@ -258,6 +266,31 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
+    @PostMapping("/runtime/llm/providers/{name}/import-models")
+    public Mono<ResponseEntity<LlmProviderImportResponse>> addLlmProviderAndImportModels(
+            @PathVariable String name,
+            @RequestBody RuntimeConfig.LlmProviderConfig providerConfig) {
+        String normalizedName = name.toLowerCase(Locale.ROOT);
+        if (!normalizedName.matches("[a-z0-9][a-z0-9_-]*")) {
+            throw new IllegalArgumentException("Provider name must match [a-z0-9][a-z0-9_-]*");
+        }
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        if (config.getLlm().getProviders().containsKey(normalizedName)) {
+            throw new IllegalArgumentException("Provider '" + normalizedName + "' already exists");
+        }
+        validateProviderConfig(normalizedName, providerConfig);
+        runtimeConfigService.addLlmProvider(normalizedName, providerConfig);
+        ProviderModelImportService.ProviderImportResult importResult = providerModelImportService
+                .importMissingModels(normalizedName, providerConfig);
+        return Mono.just(ResponseEntity.ok(new LlmProviderImportResponse(
+                true,
+                normalizedName,
+                importResult.resolvedEndpoint(),
+                importResult.addedModels(),
+                importResult.skippedModels(),
+                importResult.errors())));
+    }
+
     @PutMapping("/runtime/llm/providers/{name}")
     public Mono<ResponseEntity<RuntimeConfig>> updateLlmProvider(
             @PathVariable String name,
@@ -270,6 +303,47 @@ public class SettingsController {
         validateProviderConfig(normalizedName, providerConfig);
         runtimeConfigService.updateLlmProvider(normalizedName, providerConfig);
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
+    @PostMapping("/runtime/llm/providers/test")
+    public Mono<ResponseEntity<LlmProviderTestResponse>> testLlmProvider(@RequestBody LlmProviderTestRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
+        }
+        String mode = requireValue(request.mode(), "mode").toLowerCase(Locale.ROOT);
+        String providerName = requireValue(request.providerName(), "providerName").toLowerCase(Locale.ROOT);
+
+        try {
+            ProviderModelDiscoveryService.DiscoveryResult discoveryResult;
+            if ("saved".equals(mode)) {
+                discoveryResult = providerModelDiscoveryService.discoverModelsForProvider(providerName);
+            } else if ("draft".equals(mode)) {
+                if (request.config() == null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "config is required");
+                }
+                validateProviderConfig(providerName, request.config());
+                discoveryResult = providerModelDiscoveryService.discoverModelsForConfig(providerName, request.config());
+            } else {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "mode must be one of [saved, draft]");
+            }
+            return Mono.just(ResponseEntity.ok(new LlmProviderTestResponse(
+                    mode,
+                    providerName,
+                    discoveryResult.resolvedEndpoint(),
+                    discoveryResult.models().stream()
+                            .map(model -> providerName + "/" + model.id())
+                            .toList(),
+                    true,
+                    null)));
+        } catch (IllegalStateException e) {
+            return Mono.just(ResponseEntity.ok(new LlmProviderTestResponse(
+                    mode,
+                    providerName,
+                    null,
+                    List.of(),
+                    false,
+                    e.getMessage())));
+        }
     }
 
     @DeleteMapping("/runtime/llm/providers/{name}")
@@ -1429,6 +1503,24 @@ public class SettingsController {
         } catch (java.net.URISyntaxException ignored) {
             return false;
         }
+    }
+
+    private String requireValue(String value, String fieldName) {
+        if (value == null || value.trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required");
+        }
+        return value.trim();
+    }
+
+    public record LlmProviderImportResponse(boolean providerSaved, String providerName, String resolvedEndpoint,
+            List<String> addedModels, List<String> skippedModels, List<String> errors) {
+    }
+
+    public record LlmProviderTestRequest(String mode, String providerName, RuntimeConfig.LlmProviderConfig config) {
+    }
+
+    public record LlmProviderTestResponse(String mode, String providerName, String resolvedEndpoint,
+            List<String> models, boolean success, String error) {
     }
 
 }
