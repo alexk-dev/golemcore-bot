@@ -265,7 +265,7 @@ public class SessionsController {
         String fileName = "session-trace-" + sanitizeExportName(id) + ".json";
         return Mono.just(ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
-                .body(sessionInspectionService.exportSessionTrace(id)));
+                .body(sessionWebDtoMapper.toTraceExportPayload(sessionInspectionService.getSessionTraceExport(id))));
     }
 
     @GetMapping("/{id}/trace/snapshots/{snapshotId}/payload")

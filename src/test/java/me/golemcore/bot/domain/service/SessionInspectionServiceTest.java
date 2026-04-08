@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
 import me.golemcore.bot.domain.view.SessionMessagesPageView;
 import me.golemcore.bot.domain.view.SessionSummaryView;
+import me.golemcore.bot.domain.view.SessionTraceExportView;
 import me.golemcore.bot.domain.view.SessionTraceSummaryView;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
@@ -369,6 +370,58 @@ class SessionInspectionServiceTest {
         assertEquals("payload", export.payloadText());
         assertEquals(MediaType.APPLICATION_OCTET_STREAM, export.contentType());
         assertEquals(".txt", export.fileExtension());
+    }
+
+    @Test
+    void shouldBuildTransportAgnosticTraceExportView() {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-1")
+                .role("response")
+                .contentType("application/json")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress("{\"ok\":true}".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(11L)
+                .compressedSize(18L)
+                .build();
+        TraceSpanRecord span = TraceSpanRecord.builder()
+                .spanId("span-root")
+                .name("response.route")
+                .kind(TraceSpanKind.OUTBOUND)
+                .statusCode(TraceStatusCode.OK)
+                .statusMessage("done")
+                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .events(List.of(me.golemcore.bot.domain.model.trace.TraceEventRecord.builder()
+                        .name("snapshot.saved")
+                        .timestamp(Instant.parse("2026-03-20T10:00:00.500Z"))
+                        .attributes(Map.of("bytes", 11))
+                        .build()))
+                .snapshots(List.of(snapshot))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-1")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(span))
+                        .build()))
+                .build();
+        when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
+
+        SessionTraceExportView export = service.getSessionTraceExport("web:conv-1");
+
+        assertEquals("web:conv-1", export.getSessionId());
+        assertEquals(Instant.parse("2026-03-20T10:00:00Z"), export.getTraces().get(0).getStartedAt());
+        assertEquals("OK", export.getTraces().get(0).getSpans().get(0).getStatus().getCode());
+        assertEquals("done", export.getTraces().get(0).getSpans().get(0).getStatus().getMessage());
+        assertEquals(Instant.parse("2026-03-20T10:00:00.500Z"),
+                export.getTraces().get(0).getSpans().get(0).getEvents().get(0).getTimestamp());
+        assertEquals("{\"ok\":true}",
+                export.getTraces().get(0).getSpans().get(0).getSnapshots().get(0).getPayloadText());
     }
 
     @Test

@@ -12,6 +12,7 @@ import me.golemcore.bot.domain.model.trace.TraceStorageStats;
 import me.golemcore.bot.domain.view.SessionDetailView;
 import me.golemcore.bot.domain.view.SessionMessagesPageView;
 import me.golemcore.bot.domain.view.SessionSummaryView;
+import me.golemcore.bot.domain.view.SessionTraceExportView;
 import me.golemcore.bot.domain.view.SessionTraceSnapshotView;
 import me.golemcore.bot.domain.view.SessionTraceSpanView;
 import me.golemcore.bot.domain.view.SessionTraceStorageStatsView;
@@ -117,8 +118,8 @@ public class SessionInspectionService {
         return toTraceDetail(requireSession(sessionId));
     }
 
-    public Map<String, Object> exportSessionTrace(String sessionId) {
-        return toTraceExport(requireSession(sessionId));
+    public SessionTraceExportView getSessionTraceExport(String sessionId) {
+        return toTraceExportView(requireSession(sessionId));
     }
 
     public SnapshotPayloadExport exportSessionTraceSnapshotPayload(String sessionId, String snapshotId) {
@@ -285,15 +286,12 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private Map<String, Object> toTraceExport(AgentSession session) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("sessionId", session.getId());
-        result.put("storageStats", toTraceStorageStatsMap(session.getTraceStorageStats()));
-        List<Map<String, Object>> traces = getSortedTraces(session).stream()
-                .map(this::toTraceExportMap)
-                .toList();
-        result.put("traces", traces);
-        return result;
+    private SessionTraceExportView toTraceExportView(AgentSession session) {
+        return SessionTraceExportView.builder()
+                .sessionId(session.getId())
+                .storageStats(toTraceStorageStatsDto(session.getTraceStorageStats()))
+                .traces(getSortedTraces(session).stream().map(this::toTraceExportItem).toList())
+                .build();
     }
 
     private SessionTraceSummaryView.TraceSummaryView toTraceSummaryItem(TraceRecord trace) {
@@ -378,78 +376,64 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private Map<String, Object> toTraceExportMap(TraceRecord trace) {
-        Map<String, Object> traceMap = new LinkedHashMap<>();
-        traceMap.put("traceId", trace.getTraceId());
-        traceMap.put("rootSpanId", trace.getRootSpanId());
-        traceMap.put("traceName", trace.getTraceName());
-        traceMap.put("startedAt", toTimestamp(trace.getStartedAt()));
-        traceMap.put("endedAt", toTimestamp(trace.getEndedAt()));
-        traceMap.put("truncated", trace.isTruncated());
-        traceMap.put("compressedSnapshotBytes", trace.getCompressedSnapshotBytes());
-        traceMap.put("uncompressedSnapshotBytes", trace.getUncompressedSnapshotBytes());
-        List<Map<String, Object>> spans = getSortedSpans(trace).stream()
-                .map(this::toTraceSpanExportMap)
-                .toList();
-        traceMap.put("spans", spans);
-        return traceMap;
+    private SessionTraceExportView.TraceExportView toTraceExportItem(TraceRecord trace) {
+        return SessionTraceExportView.TraceExportView.builder()
+                .traceId(trace.getTraceId())
+                .rootSpanId(trace.getRootSpanId())
+                .traceName(trace.getTraceName())
+                .startedAt(trace.getStartedAt())
+                .endedAt(trace.getEndedAt())
+                .truncated(trace.isTruncated())
+                .compressedSnapshotBytes(trace.getCompressedSnapshotBytes())
+                .uncompressedSnapshotBytes(trace.getUncompressedSnapshotBytes())
+                .spans(getSortedSpans(trace).stream().map(this::toTraceExportSpan).toList())
+                .build();
     }
 
-    private Map<String, Object> toTraceSpanExportMap(TraceSpanRecord span) {
-        Map<String, Object> spanMap = new LinkedHashMap<>();
-        Map<String, Object> statusMap = new LinkedHashMap<>();
-        statusMap.put("code", span.getStatusCode() != null ? span.getStatusCode().name() : null);
-        statusMap.put("message", span.getStatusMessage());
-        spanMap.put("spanId", span.getSpanId());
-        spanMap.put("parentSpanId", span.getParentSpanId());
-        spanMap.put("name", span.getName());
-        spanMap.put("kind", span.getKind() != null ? span.getKind().name() : null);
-        spanMap.put("status", statusMap);
-        spanMap.put("startedAt", toTimestamp(span.getStartedAt()));
-        spanMap.put("endedAt", toTimestamp(span.getEndedAt()));
-        spanMap.put("durationMs", toDurationMs(span.getStartedAt(), span.getEndedAt()));
-        spanMap.put("attributes", copyAttributes(span.getAttributes()));
-        List<Map<String, Object>> events = span.getEvents() == null
+    private SessionTraceExportView.SpanExportView toTraceExportSpan(TraceSpanRecord span) {
+        List<SessionTraceExportView.EventExportView> events = span.getEvents() == null
                 ? List.of()
-                : span.getEvents().stream().map(this::toTraceEventExportMap).toList();
-        spanMap.put("events", events);
-        List<Map<String, Object>> snapshots = span.getSnapshots() == null
+                : span.getEvents().stream().map(this::toTraceExportEvent).toList();
+        List<SessionTraceExportView.SnapshotExportView> snapshots = span.getSnapshots() == null
                 ? List.of()
-                : span.getSnapshots().stream().map(this::toTraceSnapshotExportMap).toList();
-        spanMap.put("snapshots", snapshots);
-        return spanMap;
+                : span.getSnapshots().stream().map(this::toTraceExportSnapshot).toList();
+        return SessionTraceExportView.SpanExportView.builder()
+                .spanId(span.getSpanId())
+                .parentSpanId(span.getParentSpanId())
+                .name(span.getName())
+                .kind(span.getKind() != null ? span.getKind().name() : null)
+                .status(SessionTraceExportView.StatusView.builder()
+                        .code(span.getStatusCode() != null ? span.getStatusCode().name() : null)
+                        .message(span.getStatusMessage())
+                        .build())
+                .startedAt(span.getStartedAt())
+                .endedAt(span.getEndedAt())
+                .durationMs(toDurationMs(span.getStartedAt(), span.getEndedAt()))
+                .attributes(copyAttributes(span.getAttributes()))
+                .events(events)
+                .snapshots(snapshots)
+                .build();
     }
 
-    private Map<String, Object> toTraceEventExportMap(TraceEventRecord event) {
-        Map<String, Object> eventMap = new LinkedHashMap<>();
-        eventMap.put("name", event.getName());
-        eventMap.put("timestamp", toTimestamp(event.getTimestamp()));
-        eventMap.put("attributes", copyAttributes(event.getAttributes()));
-        return eventMap;
+    private SessionTraceExportView.EventExportView toTraceExportEvent(TraceEventRecord event) {
+        return SessionTraceExportView.EventExportView.builder()
+                .name(event.getName())
+                .timestamp(event.getTimestamp())
+                .attributes(copyAttributes(event.getAttributes()))
+                .build();
     }
 
-    private Map<String, Object> toTraceSnapshotExportMap(TraceSnapshot snapshot) {
-        Map<String, Object> snapshotMap = new LinkedHashMap<>();
-        snapshotMap.put("snapshotId", snapshot.getSnapshotId());
-        snapshotMap.put("role", snapshot.getRole());
-        snapshotMap.put("contentType", snapshot.getContentType());
-        snapshotMap.put("encoding", snapshot.getEncoding());
-        snapshotMap.put("originalSize", snapshot.getOriginalSize());
-        snapshotMap.put("compressedSize", snapshot.getCompressedSize());
-        snapshotMap.put("truncated", snapshot.isTruncated());
-        snapshotMap.put("payloadText", decompressSnapshotPayload(snapshot));
-        return snapshotMap;
-    }
-
-    private Map<String, Object> toTraceStorageStatsMap(TraceStorageStats stats) {
-        SessionTraceStorageStatsView dto = toTraceStorageStatsDto(stats);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("compressedSnapshotBytes", dto.getCompressedSnapshotBytes());
-        result.put("uncompressedSnapshotBytes", dto.getUncompressedSnapshotBytes());
-        result.put("evictedSnapshots", dto.getEvictedSnapshots());
-        result.put("evictedTraces", dto.getEvictedTraces());
-        result.put("truncatedTraces", dto.getTruncatedTraces());
-        return result;
+    private SessionTraceExportView.SnapshotExportView toTraceExportSnapshot(TraceSnapshot snapshot) {
+        return SessionTraceExportView.SnapshotExportView.builder()
+                .snapshotId(snapshot.getSnapshotId())
+                .role(snapshot.getRole())
+                .contentType(snapshot.getContentType())
+                .encoding(snapshot.getEncoding())
+                .originalSize(snapshot.getOriginalSize())
+                .compressedSize(snapshot.getCompressedSize())
+                .truncated(snapshot.isTruncated())
+                .payloadText(decompressSnapshotPayload(snapshot))
+                .build();
     }
 
     private List<TraceRecord> getSortedTraces(AgentSession session) {
@@ -505,10 +489,6 @@ public class SessionInspectionService {
 
     private Map<String, Object> copyAttributes(Map<String, Object> attributes) {
         return attributes != null ? new LinkedHashMap<>(attributes) : Map.of();
-    }
-
-    private String toTimestamp(Instant timestamp) {
-        return timestamp != null ? timestamp.toString() : null;
     }
 
     private Long toDurationMs(Instant startedAt, Instant endedAt) {

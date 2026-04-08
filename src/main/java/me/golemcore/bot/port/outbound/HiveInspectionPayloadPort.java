@@ -4,6 +4,7 @@ import java.util.List;
 import me.golemcore.bot.domain.view.SessionDetailView;
 import me.golemcore.bot.domain.view.SessionMessagesPageView;
 import me.golemcore.bot.domain.view.SessionSummaryView;
+import me.golemcore.bot.domain.view.SessionTraceExportView;
 import me.golemcore.bot.domain.view.SessionTraceSummaryView;
 import me.golemcore.bot.domain.view.SessionTraceView;
 
@@ -18,4 +19,6 @@ public interface HiveInspectionPayloadPort {
     Object toSessionTraceSummaryPayload(SessionTraceSummaryView traceSummary);
 
     Object toSessionTracePayload(SessionTraceView trace);
+
+    Object toSessionTraceExportPayload(SessionTraceExportView traceExport);
 }

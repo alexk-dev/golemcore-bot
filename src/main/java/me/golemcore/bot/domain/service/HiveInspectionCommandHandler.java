@@ -62,7 +62,8 @@ public class HiveInspectionCommandHandler {
                     .toSessionTraceSummaryPayload(sessionInspectionService.getSessionTraceSummary(requireSessionId(inspection)));
             case "session.trace.detail" -> hiveInspectionPayloadPort
                     .toSessionTracePayload(sessionInspectionService.getSessionTrace(requireSessionId(inspection)));
-            case "session.trace.export" -> sessionInspectionService.exportSessionTrace(requireSessionId(inspection));
+            case "session.trace.export" -> hiveInspectionPayloadPort
+                    .toSessionTraceExportPayload(sessionInspectionService.getSessionTraceExport(requireSessionId(inspection)));
             case "session.trace.snapshot.payload" -> toSnapshotPayloadExport(
                     sessionInspectionService.exportSessionTraceSnapshotPayload(
                             requireSessionId(inspection),

@@ -17,6 +17,8 @@ import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
+import me.golemcore.bot.domain.view.SessionTraceExportView;
+import me.golemcore.bot.domain.view.SessionTraceStorageStatsView;
 import me.golemcore.bot.domain.view.SessionSummaryView;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -144,6 +146,46 @@ class HiveInspectionCommandHandlerTest {
         assertEquals(Map.of(), responses.get(2).payload());
         assertEquals("req-delete", responses.get(3).requestId());
         assertEquals(Map.of(), responses.get(3).payload());
+    }
+
+    @Test
+    void shouldPublishTraceExportThroughHivePayloadMapper() {
+        SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
+        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(
+                sessionInspectionService, publisher, new HiveInspectionPayloadMapper());
+        when(sessionInspectionService.getSessionTraceExport("web:conv-1")).thenReturn(SessionTraceExportView.builder()
+                .sessionId("web:conv-1")
+                .storageStats(SessionTraceStorageStatsView.builder().compressedSnapshotBytes(10L).build())
+                .traces(List.of(SessionTraceExportView.TraceExportView.builder()
+                        .traceId("trace-1")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(SessionTraceExportView.SpanExportView.builder()
+                                .spanId("span-1")
+                                .status(SessionTraceExportView.StatusView.builder()
+                                        .code("OK")
+                                        .message("done")
+                                        .build())
+                                .events(List.of())
+                                .snapshots(List.of(SessionTraceExportView.SnapshotExportView.builder()
+                                        .snapshotId("snap-1")
+                                        .payloadText("{\"ok\":true}")
+                                        .build()))
+                                .build()))
+                        .build()))
+                .build());
+
+        handler.handle(inspection("req-export", "session.trace.export", body -> body.sessionId("web:conv-1")));
+
+        ArgumentCaptor<HiveInspectionResponse> responseCaptor = ArgumentCaptor.forClass(HiveInspectionResponse.class);
+        verify(publisher).publishInspectionResponse(responseCaptor.capture());
+        HiveInspectionResponse response = responseCaptor.getValue();
+        Map<?, ?> payload = assertInstanceOf(Map.class, response.payload());
+        assertEquals("web:conv-1", payload.get("sessionId"));
+        List<?> traces = assertInstanceOf(List.class, payload.get("traces"));
+        Map<?, ?> trace = assertInstanceOf(Map.class, traces.get(0));
+        assertEquals("2026-03-20T10:00:00Z", trace.get("startedAt"));
     }
 
     @Test
