@@ -7,7 +7,9 @@ import java.time.Instant;
 import java.util.List;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
+import me.golemcore.bot.adapter.shared.dto.SessionTraceExportPayload;
 import me.golemcore.bot.domain.view.SessionDetailView;
+import me.golemcore.bot.domain.view.SessionTraceExportView;
 import me.golemcore.bot.domain.view.SessionTraceStorageStatsView;
 import me.golemcore.bot.domain.view.SessionTraceSummaryView;
 import org.junit.jupiter.api.Test;
@@ -89,5 +91,42 @@ class SessionWebDtoMapperTest {
         assertNotNull(dto.getStorageStats());
         assertEquals("2026-03-20T10:00:00Z", dto.getTraces().get(0).getStartedAt());
         assertEquals("2026-03-20T10:00:01Z", dto.getTraces().get(0).getEndedAt());
+    }
+
+    @Test
+    void shouldBuildTypedTraceExportPayloadWithIsoInstants() {
+        SessionTraceExportView view = SessionTraceExportView.builder()
+                .sessionId("web:conv-1")
+                .storageStats(SessionTraceStorageStatsView.builder().compressedSnapshotBytes(10L).build())
+                .traces(List.of(SessionTraceExportView.TraceExportView.builder()
+                        .traceId("trace-1")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(SessionTraceExportView.SpanExportView.builder()
+                                .spanId("span-1")
+                                .status(SessionTraceExportView.StatusView.builder()
+                                        .code("OK")
+                                        .message("done")
+                                        .build())
+                                .events(List.of(SessionTraceExportView.EventExportView.builder()
+                                        .name("event-1")
+                                        .timestamp(Instant.parse("2026-03-20T10:00:00.500Z"))
+                                        .build()))
+                                .snapshots(List.of(SessionTraceExportView.SnapshotExportView.builder()
+                                        .snapshotId("snap-1")
+                                        .payloadText("{\"ok\":true}")
+                                        .build()))
+                                .build()))
+                        .build()))
+                .build();
+
+        SessionTraceExportPayload payload = mapper.toTraceExportPayload(view);
+
+        assertEquals("web:conv-1", payload.getSessionId());
+        assertEquals("2026-03-20T10:00:00Z", payload.getTraces().get(0).getStartedAt());
+        assertEquals("2026-03-20T10:00:00.500Z",
+                payload.getTraces().get(0).getSpans().get(0).getEvents().get(0).getTimestamp());
+        assertEquals("{\"ok\":true}",
+                payload.getTraces().get(0).getSpans().get(0).getSnapshots().get(0).getPayloadText());
     }
 }

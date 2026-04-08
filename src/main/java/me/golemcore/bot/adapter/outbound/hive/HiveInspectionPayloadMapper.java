@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import me.golemcore.bot.adapter.shared.mapper.SessionTraceExportPayloadMapperSupport;
 import me.golemcore.bot.domain.view.SessionDetailView;
 import me.golemcore.bot.domain.view.SessionMessagesPageView;
 import me.golemcore.bot.domain.view.SessionSummaryView;
@@ -72,11 +73,7 @@ public class HiveInspectionPayloadMapper implements HiveInspectionPayloadPort {
 
     @Override
     public Object toSessionTraceExportPayload(SessionTraceExportView traceExport) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("sessionId", traceExport.getSessionId());
-        payload.put("storageStats", toTraceStorageStatsPayload(traceExport.getStorageStats()));
-        payload.put("traces", traceExport.getTraces().stream().map(this::toTraceExportPayload).toList());
-        return payload;
+        return SessionTraceExportPayloadMapperSupport.toPayload(traceExport);
     }
 
     private Map<String, Object> toSummaryPayload(SessionSummaryView session) {
@@ -159,20 +156,6 @@ public class HiveInspectionPayloadMapper implements HiveInspectionPayloadPort {
         return payload;
     }
 
-    private Map<String, Object> toTraceExportPayload(SessionTraceExportView.TraceExportView trace) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("traceId", trace.getTraceId());
-        payload.put("rootSpanId", trace.getRootSpanId());
-        payload.put("traceName", trace.getTraceName());
-        payload.put("startedAt", toTimestamp(trace.getStartedAt()));
-        payload.put("endedAt", toTimestamp(trace.getEndedAt()));
-        payload.put("truncated", trace.isTruncated());
-        payload.put("compressedSnapshotBytes", trace.getCompressedSnapshotBytes());
-        payload.put("uncompressedSnapshotBytes", trace.getUncompressedSnapshotBytes());
-        payload.put("spans", trace.getSpans().stream().map(this::toTraceExportSpanPayload).toList());
-        return payload;
-    }
-
     private Map<String, Object> toTraceSpanPayload(SessionTraceSpanView span) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("spanId", span.getSpanId());
@@ -195,55 +178,6 @@ public class HiveInspectionPayloadMapper implements HiveInspectionPayloadPort {
         payload.put("name", event.getName());
         payload.put("timestamp", toTimestamp(event.getTimestamp()));
         payload.put("attributes", event.getAttributes());
-        return payload;
-    }
-
-    private Map<String, Object> toTraceExportSpanPayload(SessionTraceExportView.SpanExportView span) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("spanId", span.getSpanId());
-        payload.put("parentSpanId", span.getParentSpanId());
-        payload.put("name", span.getName());
-        payload.put("kind", span.getKind());
-        payload.put("status", toTraceExportStatusPayload(span.getStatus()));
-        payload.put("startedAt", toTimestamp(span.getStartedAt()));
-        payload.put("endedAt", toTimestamp(span.getEndedAt()));
-        payload.put("durationMs", span.getDurationMs());
-        payload.put("attributes", span.getAttributes());
-        payload.put("events", span.getEvents().stream().map(this::toTraceExportEventPayload).toList());
-        payload.put("snapshots", span.getSnapshots().stream().map(this::toTraceExportSnapshotPayload).toList());
-        return payload;
-    }
-
-    private Map<String, Object> toTraceExportStatusPayload(SessionTraceExportView.StatusView status) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        if (status == null) {
-            payload.put("code", null);
-            payload.put("message", null);
-            return payload;
-        }
-        payload.put("code", status.getCode());
-        payload.put("message", status.getMessage());
-        return payload;
-    }
-
-    private Map<String, Object> toTraceExportEventPayload(SessionTraceExportView.EventExportView event) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("name", event.getName());
-        payload.put("timestamp", toTimestamp(event.getTimestamp()));
-        payload.put("attributes", event.getAttributes());
-        return payload;
-    }
-
-    private Map<String, Object> toTraceExportSnapshotPayload(SessionTraceExportView.SnapshotExportView snapshot) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("snapshotId", snapshot.getSnapshotId());
-        payload.put("role", snapshot.getRole());
-        payload.put("contentType", snapshot.getContentType());
-        payload.put("encoding", snapshot.getEncoding());
-        payload.put("originalSize", snapshot.getOriginalSize());
-        payload.put("compressedSize", snapshot.getCompressedSize());
-        payload.put("truncated", snapshot.isTruncated());
-        payload.put("payloadText", snapshot.getPayloadText());
         return payload;
     }
 

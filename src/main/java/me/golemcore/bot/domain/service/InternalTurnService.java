@@ -58,6 +58,7 @@ public class InternalTurnService {
         metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
         copyStringAttribute(context, metadata, ContextAttributes.TRANSPORT_CHAT_ID);
         copyStringAttribute(context, metadata, ContextAttributes.CONVERSATION_KEY);
+        copyStringAttribute(context, metadata, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
         metadata = TraceContextSupport.ensureRootMetadata(
                 metadata,
                 TraceSpanKind.INTERNAL,

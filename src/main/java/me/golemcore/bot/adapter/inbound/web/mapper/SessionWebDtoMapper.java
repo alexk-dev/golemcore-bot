@@ -3,9 +3,7 @@ package me.golemcore.bot.adapter.inbound.web.mapper;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionMessagesPageDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
@@ -14,6 +12,8 @@ import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSnapshotDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSpanDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceStorageStatsDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
+import me.golemcore.bot.adapter.shared.dto.SessionTraceExportPayload;
+import me.golemcore.bot.adapter.shared.mapper.SessionTraceExportPayloadMapperSupport;
 import me.golemcore.bot.domain.view.SessionDetailView;
 import me.golemcore.bot.domain.view.SessionMessagesPageView;
 import me.golemcore.bot.domain.view.SessionSummaryView;
@@ -91,12 +91,8 @@ public class SessionWebDtoMapper {
                 .build();
     }
 
-    public Map<String, Object> toTraceExportPayload(SessionTraceExportView view) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("sessionId", view.getSessionId());
-        payload.put("storageStats", toTraceStorageStatsPayload(view.getStorageStats()));
-        payload.put("traces", view.getTraces().stream().map(this::toTraceExportPayload).toList());
-        return payload;
+    public SessionTraceExportPayload toTraceExportPayload(SessionTraceExportView view) {
+        return SessionTraceExportPayloadMapperSupport.toPayload(view);
     }
 
     public SessionTraceSnapshotDto toTraceSnapshotDto(SessionTraceSnapshotView view) {
@@ -210,79 +206,6 @@ public class SessionWebDtoMapper {
                 .evictedTraces(view.getEvictedTraces())
                 .truncatedTraces(view.getTruncatedTraces())
                 .build();
-    }
-
-    private Map<String, Object> toTraceExportPayload(SessionTraceExportView.TraceExportView view) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("traceId", view.getTraceId());
-        payload.put("rootSpanId", view.getRootSpanId());
-        payload.put("traceName", view.getTraceName());
-        payload.put("startedAt", toTimestamp(view.getStartedAt()));
-        payload.put("endedAt", toTimestamp(view.getEndedAt()));
-        payload.put("truncated", view.isTruncated());
-        payload.put("compressedSnapshotBytes", view.getCompressedSnapshotBytes());
-        payload.put("uncompressedSnapshotBytes", view.getUncompressedSnapshotBytes());
-        payload.put("spans", view.getSpans().stream().map(this::toTraceExportSpanPayload).toList());
-        return payload;
-    }
-
-    private Map<String, Object> toTraceExportSpanPayload(SessionTraceExportView.SpanExportView view) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("spanId", view.getSpanId());
-        payload.put("parentSpanId", view.getParentSpanId());
-        payload.put("name", view.getName());
-        payload.put("kind", view.getKind());
-        payload.put("status", toTraceExportStatusPayload(view.getStatus()));
-        payload.put("startedAt", toTimestamp(view.getStartedAt()));
-        payload.put("endedAt", toTimestamp(view.getEndedAt()));
-        payload.put("durationMs", view.getDurationMs());
-        payload.put("attributes", view.getAttributes());
-        payload.put("events", view.getEvents().stream().map(this::toTraceExportEventPayload).toList());
-        payload.put("snapshots", view.getSnapshots().stream().map(this::toTraceExportSnapshotPayload).toList());
-        return payload;
-    }
-
-    private Map<String, Object> toTraceExportStatusPayload(SessionTraceExportView.StatusView view) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        if (view == null) {
-            payload.put("code", null);
-            payload.put("message", null);
-            return payload;
-        }
-        payload.put("code", view.getCode());
-        payload.put("message", view.getMessage());
-        return payload;
-    }
-
-    private Map<String, Object> toTraceExportEventPayload(SessionTraceExportView.EventExportView view) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("name", view.getName());
-        payload.put("timestamp", toTimestamp(view.getTimestamp()));
-        payload.put("attributes", view.getAttributes());
-        return payload;
-    }
-
-    private Map<String, Object> toTraceExportSnapshotPayload(SessionTraceExportView.SnapshotExportView view) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("snapshotId", view.getSnapshotId());
-        payload.put("role", view.getRole());
-        payload.put("contentType", view.getContentType());
-        payload.put("encoding", view.getEncoding());
-        payload.put("originalSize", view.getOriginalSize());
-        payload.put("compressedSize", view.getCompressedSize());
-        payload.put("truncated", view.isTruncated());
-        payload.put("payloadText", view.getPayloadText());
-        return payload;
-    }
-
-    private Map<String, Object> toTraceStorageStatsPayload(SessionTraceStorageStatsView view) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("compressedSnapshotBytes", view.getCompressedSnapshotBytes());
-        payload.put("uncompressedSnapshotBytes", view.getUncompressedSnapshotBytes());
-        payload.put("evictedSnapshots", view.getEvictedSnapshots());
-        payload.put("evictedTraces", view.getEvictedTraces());
-        payload.put("truncatedTraces", view.getTruncatedTraces());
-        return payload;
     }
 
     private String resolveAttachmentUrl(SessionDetailView.AttachmentView view) {

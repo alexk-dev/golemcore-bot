@@ -260,6 +260,13 @@ public class AgentLoop {
         }
 
         SessionIdentitySupport.bindTransportAndConversation(session, transportChatId, conversationKey);
+        String webClientInstanceId = readMetadataString(message, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
+        if (message.getChannelType() != null
+                && "web".equalsIgnoreCase(message.getChannelType())
+                && webClientInstanceId != null
+                && !webClientInstanceId.isBlank()) {
+            SessionIdentitySupport.bindWebClientInstance(session, webClientInstanceId);
+        }
     }
 
     private String resolveTransportChatId(Message message) {
@@ -322,6 +329,13 @@ public class AgentLoop {
         }
         if (sessionIdentity != null && sessionIdentity.conversationKey() != null) {
             context.setAttribute(ContextAttributes.CONVERSATION_KEY, sessionIdentity.conversationKey());
+        }
+        String webClientInstanceId = readMetadataString(message, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
+        if ((webClientInstanceId == null || webClientInstanceId.isBlank()) && session != null) {
+            webClientInstanceId = SessionIdentitySupport.resolveWebClientInstanceId(session);
+        }
+        if (webClientInstanceId != null && !webClientInstanceId.isBlank()) {
+            context.setAttribute(ContextAttributes.WEB_CLIENT_INSTANCE_ID, webClientInstanceId);
         }
 
         if (AutoRunContextSupport.isAutoMessage(message)) {

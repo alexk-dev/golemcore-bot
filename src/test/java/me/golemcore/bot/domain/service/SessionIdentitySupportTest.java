@@ -147,4 +147,21 @@ class SessionIdentitySupportTest {
         assertFalse(SessionIdentitySupport.belongsToTransport(session, "transport-200"));
         assertFalse(SessionIdentitySupport.belongsToTransport(session, " "));
     }
+
+    @Test
+    void shouldBindAndResolveWebClientInstanceId() {
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .chatId("conv-1")
+                .metadata(new HashMap<>())
+                .build();
+
+        boolean changed = SessionIdentitySupport.bindWebClientInstance(session, "client-1");
+
+        assertTrue(changed);
+        assertEquals("client-1", SessionIdentitySupport.resolveWebClientInstanceId(session));
+        assertTrue(SessionIdentitySupport.belongsToWebClient(session, "client-1"));
+        assertFalse(SessionIdentitySupport.belongsToWebClient(session, "client-2"));
+    }
 }

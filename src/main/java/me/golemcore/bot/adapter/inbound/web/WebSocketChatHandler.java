@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
@@ -118,6 +119,12 @@ public class WebSocketChatHandler implements WebSocketHandler {
                     metadata = new LinkedHashMap<>();
                 }
                 metadata.put("clientMessageId", clientMessageId);
+            }
+            if (clientInstanceId != null) {
+                if (metadata == null) {
+                    metadata = new LinkedHashMap<>();
+                }
+                metadata.put(ContextAttributes.WEB_CLIENT_INSTANCE_ID, clientInstanceId);
             }
             metadata = TraceContextSupport.ensureRootMetadata(
                     metadata,
