@@ -27,11 +27,11 @@ const config: LlmConfig = {
 const modelRouter: ModelRouterConfig = {
   temperature: 0.7,
   routing: {
-    model: 'openrouter/openai/gpt-5',
+    model: { provider: 'openrouter', id: 'openai/gpt-5' },
     reasoning: null,
   },
   tiers: {
-    balanced: { model: 'openrouter/openai/gpt-5', reasoning: null },
+    balanced: { model: { provider: 'openrouter', id: 'openai/gpt-5' }, reasoning: null },
     smart: { model: null, reasoning: null },
     deep: { model: null, reasoning: null },
     coding: { model: null, reasoning: null },
@@ -51,6 +51,8 @@ describe('LlmProvidersTab', () => {
     );
 
     expect(html).toContain('LLM Providers');
+    expect(html).toContain('autocomplete-combobox__control');
+    expect(html).toContain('autocomplete-combobox__trigger');
     expect(html).toContain('role="combobox"');
     expect(html).toContain('openrouter');
     expect(html).toContain('Add Provider');

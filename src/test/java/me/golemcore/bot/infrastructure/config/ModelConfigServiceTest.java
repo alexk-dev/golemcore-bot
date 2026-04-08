@@ -182,13 +182,12 @@ class ModelConfigServiceTest {
         assertTrue(service.isReasoningRequired("gpt-5.2-codex-2026"));
     }
 
-    // ===== Default fallback =====
+    // ===== Unknown model rejection =====
 
     @Test
-    void unknownModelReturnDefaults() {
-        ModelConfigService.ModelSettings settings = service.getModelSettings("totally-unknown-model");
-        assertNotNull(settings);
-        assertEquals(PROVIDER_OPENAI, settings.getProvider()); // default provider
+    void unknownModelThrowsInsteadOfFallingBackToDefaults() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getModelSettings("totally-unknown-model"));
     }
 
     @Test
@@ -207,8 +206,9 @@ class ModelConfigServiceTest {
     }
 
     @Test
-    void unknownModelGetsDefaultMaxInputTokens() {
-        assertEquals(128000, service.getMaxInputTokens("unknown-model"));
+    void unknownModelThrowsOnMaxInputTokens() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getMaxInputTokens("unknown-model"));
     }
 
     // ===== getAllModels =====
@@ -252,6 +252,17 @@ class ModelConfigServiceTest {
     void shouldSurviveReload() {
         assertDoesNotThrow(() -> service.reload());
         assertNotNull(service.getAllModels());
+    }
+
+    @Test
+    void shouldRenameModelWhenPreviousIdDiffers() {
+        ModelConfigService.ModelSettings settings = standardModel("openrouter", "Qwen Model", true, 128000);
+        service.getAllModels().put("qwen/model-name:version", settings);
+
+        service.saveModel("openrouter/qwen/model-name:version", "qwen/model-name:version", settings);
+
+        assertFalse(service.getAllModels().containsKey("qwen/model-name:version"));
+        assertEquals(settings, service.getAllModels().get("openrouter/qwen/model-name:version"));
     }
 
     // ===== ModelSettings constructors =====
@@ -441,11 +452,9 @@ class ModelConfigServiceTest {
     // ===== getModelSettings edge cases =====
 
     @Test
-    void shouldReturnDefaultsForUnknownProviderPrefix() {
-        ModelConfigService.ModelSettings settings = service.getModelSettings("unknown-provider/unknown-model");
-        assertNotNull(settings);
-        // Falls back to defaults
-        assertEquals(PROVIDER_OPENAI, settings.getProvider());
+    void shouldThrowForUnknownProviderPrefix() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getModelSettings("unknown-provider/unknown-model"));
     }
 
     @Test
@@ -459,10 +468,11 @@ class ModelConfigServiceTest {
     }
 
     @Test
-    void shouldHandleModelNameWithMultipleSlashes() {
-        // "provider/sub/model-name" → strips to "sub/model-name"
-        ModelConfigService.ModelSettings settings = service.getModelSettings("provider/sub/model-name");
-        assertNotNull(settings);
+    void shouldThrowForModelNameWithMultipleSlashesWhenNotInCatalog() {
+        // "provider/sub/model-name" → strips to "sub/model-name" → not in catalog →
+        // throws
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getModelSettings("provider/sub/model-name"));
     }
 
     // ===== Convenience methods =====
@@ -647,9 +657,9 @@ class ModelConfigServiceTest {
     }
 
     @Test
-    void shouldReturnNullDefaultReasoningLevelForUnknownModel() {
-        String level = service.getDefaultReasoningLevel("totally-unknown");
-        assertNull(level);
+    void shouldThrowForDefaultReasoningLevelOfUnknownModel() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getDefaultReasoningLevel("totally-unknown"));
     }
 
     // ===== getAvailableReasoningLevels =====
@@ -691,10 +701,9 @@ class ModelConfigServiceTest {
     }
 
     @Test
-    void shouldReturnEmptyLevelsForUnknownModel() {
-        List<String> levels = service.getAvailableReasoningLevels("unknown-model");
-        assertNotNull(levels);
-        assertTrue(levels.isEmpty());
+    void shouldThrowForReasoningLevelsOfUnknownModel() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getAvailableReasoningLevels("unknown-model"));
     }
 
     // ===== getModelsForProviders =====
@@ -809,13 +818,15 @@ class ModelConfigServiceTest {
         assertTrue(service.getAllModels().containsKey(MODEL_CUSTOM));
         assertEquals(PROVIDER_CUSTOM, service.getProvider(MODEL_CUSTOM));
 
-        // Reload should replace with freshly loaded config
+        // Reload should replace with freshly loaded config (empty when no workspace
+        // file)
         service.reload();
 
-        // After reload, the custom model should be gone and config should be non-empty
+        // After reload, the custom model should be gone — no classpath fallback, so
+        // empty catalog
         Map<String, ModelConfigService.ModelSettings> models = service.getAllModels();
         assertFalse(models.containsKey(MODEL_CUSTOM));
-        assertFalse(models.isEmpty());
+        assertTrue(models.isEmpty());
     }
 
     // ===== getMaxInputTokens with custom config via @TempDir =====
@@ -875,9 +886,9 @@ class ModelConfigServiceTest {
         assertTrue(levels.contains("low"));
         assertTrue(levels.contains("high"));
 
-        // Unknown model falls back to defaults.maxInputTokens = 100000
-        assertEquals(100000, service.getMaxInputTokens("unknown-model"));
-        assertEquals(100000, service.getMaxInputTokens("unknown-model", "medium"));
+        // Unknown model throws instead of falling back to defaults
+        assertThrows(IllegalArgumentException.class, () -> service.getMaxInputTokens("unknown-model"));
+        assertThrows(IllegalArgumentException.class, () -> service.getMaxInputTokens("unknown-model", "medium"));
     }
 
     // ===== getMaxInputTokens edge case: reasoning config with null levels =====

@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +21,7 @@ import static org.mockito.Mockito.*;
 class ModelSelectionServiceTest {
 
     private RuntimeConfigService runtimeConfigService;
-    private ModelConfigService modelConfigService;
+    private ModelConfigPort modelConfigService;
     private UserPreferencesService preferencesService;
     private ModelSelectionService service;
 
@@ -30,7 +31,7 @@ class ModelSelectionServiceTest {
     @BeforeEach
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
-        modelConfigService = mock(ModelConfigService.class);
+        modelConfigService = mock(ModelConfigPort.class);
         preferencesService = mock(UserPreferencesService.class);
 
         when(runtimeConfigService.getBalancedModel()).thenReturn("openai/gpt-5.1");
@@ -223,6 +224,22 @@ class ModelSelectionServiceTest {
 
         assertEquals("anthropic/claude-sonnet-4", result.model());
         assertEquals("high", result.reasoning());
+    }
+
+    @Test
+    void shouldResolveLegacyBareSpecialTierModelToUniqueCanonicalOpenrouterModel() {
+        modelRegistry.put("openrouter/qwen/qwen3.6-plus:free", modelSettings("openrouter"));
+        when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openrouter"));
+        when(runtimeConfigService.getModelTierBinding("special1"))
+                .thenReturn(RuntimeConfig.TierBinding.builder()
+                        .model("qwen3.6-plus")
+                        .reasoning("none")
+                        .build());
+
+        ModelSelectionService.ModelSelection result = service.resolveForTier("special1");
+
+        assertEquals("openrouter/qwen/qwen3.6-plus:free", result.model());
+        assertEquals("none", result.reasoning());
     }
 
     @Test
@@ -668,6 +685,22 @@ class ModelSelectionServiceTest {
         ModelSelectionService.ValidationResult result = service.validateModel("gpt-5.1-preview");
 
         // Assert
+        assertTrue(result.valid());
+        assertNull(result.error());
+    }
+
+    @Test
+    void shouldReturnValidWhenLegacyBareModelUniquelyMatchesCanonicalOpenrouterEntry() {
+        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        settings.setProvider("openrouter");
+        when(modelConfigService.getModelSettings("openrouter/qwen/qwen3.6-plus:free")).thenReturn(settings);
+
+        Map<String, ModelConfigService.ModelSettings> allModels = new HashMap<>();
+        allModels.put("openrouter/qwen/qwen3.6-plus:free", settings);
+        when(modelConfigService.getAllModels()).thenReturn(allModels);
+
+        ModelSelectionService.ValidationResult result = service.validateModel("qwen3.6-plus", List.of("openrouter"));
+
         assertTrue(result.valid());
         assertNull(result.error());
     }

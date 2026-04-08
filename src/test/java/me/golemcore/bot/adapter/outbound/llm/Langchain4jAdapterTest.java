@@ -11,6 +11,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.Content;
@@ -18,6 +19,7 @@ import dev.langchain4j.data.message.ContentType;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -36,6 +38,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -45,8 +48,10 @@ import java.util.concurrent.ExecutionException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
@@ -80,14 +85,14 @@ class Langchain4jAdapterTest {
     private static final String TEST = "test";
     private static final String TEST_CAPITALIZED = "Test";
 
-    private ModelConfigService modelConfig;
+    private ModelConfigPort modelConfig;
     private RuntimeConfigService runtimeConfigService;
     private ToolArtifactService toolArtifactService;
     private Langchain4jAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        modelConfig = mock(ModelConfigService.class);
+        modelConfig = mock(ModelConfigPort.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         toolArtifactService = mock(ToolArtifactService.class);
         when(modelConfig.supportsTemperature(anyString())).thenReturn(true);
@@ -153,6 +158,51 @@ class Langchain4jAdapterTest {
     @Test
     void shouldReturnNullModelBeforeInit() {
         assertNull(adapter.getCurrentModel());
+    }
+
+    @Test
+    void shouldInitializeWithoutDefaultModelConfigured() {
+        when(runtimeConfigService.getBalancedModel()).thenReturn(null);
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("none");
+
+        adapter.initialize();
+
+        assertEquals(Boolean.TRUE, ReflectionTestUtils.getField(adapter, "initialized"));
+        assertNull(adapter.getCurrentModel());
+        assertNull(ReflectionTestUtils.getField(adapter, "chatModel"));
+    }
+
+    @Test
+    void shouldInitializeWithoutDefaultModelWhenBalancedModelIsBlank() {
+        when(runtimeConfigService.getBalancedModel()).thenReturn("   ");
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("none");
+
+        adapter.initialize();
+
+        assertEquals(Boolean.TRUE, ReflectionTestUtils.getField(adapter, "initialized"));
+        assertEquals("   ", ReflectionTestUtils.getField(adapter, "currentModel"));
+        assertNull(ReflectionTestUtils.getField(adapter, "chatModel"));
+    }
+
+    @Test
+    void shouldNotReinitializeAfterSuccessfulInitialization() {
+        when(runtimeConfigService.getBalancedModel()).thenReturn(OPENAI + "/gpt-5.1");
+        when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("medium");
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of(KEY))
+                        .apiType(OPENAI)
+                        .legacyApi(true)
+                        .build());
+
+        adapter.initialize();
+        ChatModel firstModel = (ChatModel) ReflectionTestUtils.getField(adapter, "chatModel");
+
+        adapter.initialize();
+        ChatModel secondModel = (ChatModel) ReflectionTestUtils.getField(adapter, "chatModel");
+
+        assertNotNull(firstModel);
+        assertSame(firstModel, secondModel);
     }
 
     // ===== getSupportedModels =====
@@ -536,6 +586,12 @@ class Langchain4jAdapterTest {
     void shouldNotStripWhenNoPrefix() {
         String result = ReflectionTestUtils.invokeMethod(adapter, "stripProviderPrefix", "gpt-4o");
         assertEquals("gpt-4o", result);
+    }
+
+    @Test
+    void shouldReturnNullWhenModelIsNullWhileStrippingProviderPrefix() {
+        String result = ReflectionTestUtils.invokeMethod(adapter, "stripProviderPrefix", (String) null);
+        assertNull(result);
     }
 
     // ===== chat() flow tests with mocked ChatModel =====
@@ -1794,6 +1850,86 @@ class Langchain4jAdapterTest {
     }
 
     @Test
+    void shouldUseScopedModelIdForGeminiCapabilityLookup() {
+        String requestModel = "google/gemini-2.5-flash";
+        when(modelConfig.getProvider(requestModel)).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("gemini-key"))
+                        .apiType("gemini")
+                        .build());
+        when(modelConfig.supportsTemperature(requestModel)).thenReturn(true);
+        when(modelConfig.supportsTemperature("gemini-2.5-flash"))
+                .thenThrow(new IllegalArgumentException("raw model id lookup should not be used"));
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null);
+
+        assertTrue(result instanceof GoogleAiGeminiChatModel);
+    }
+
+    @Test
+    void shouldCreateOneOffModelForRequestWhenDefaultChatModelIsMissing() {
+        String requestModel = "google/gemini-2.5-flash";
+        when(modelConfig.getProvider(requestModel)).thenReturn("google");
+        when(runtimeConfigService.getLlmProviderConfig("google"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("gemini-key"))
+                        .apiType("gemini")
+                        .build());
+        when(modelConfig.supportsTemperature(requestModel)).thenReturn(true);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(requestModel)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "getModelForRequest", request);
+
+        assertTrue(result instanceof GoogleAiGeminiChatModel);
+    }
+
+    @Test
+    void shouldCreateReasoningSpecificModelForCurrentModel() {
+        ChatModel defaultModel = mock(ChatModel.class);
+        String currentModel = OPENAI + "/gpt-5.4";
+        injectChatModel(defaultModel, currentModel);
+        when(modelConfig.isReasoningRequired(currentModel)).thenReturn(true);
+        when(modelConfig.getProvider(currentModel)).thenReturn(OPENAI);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of(KEY))
+                        .apiType(OPENAI)
+                        .legacyApi(true)
+                        .build());
+
+        LlmRequest request = LlmRequest.builder()
+                .reasoningEffort("high")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "getModelForRequest", request);
+
+        assertTrue(result instanceof OpenAiChatModel);
+        assertNotSame(defaultModel, result);
+    }
+
+    @Test
+    void shouldReuseCurrentModelWhenRequestMatchesConfiguredModel() {
+        ChatModel defaultModel = mock(ChatModel.class);
+        String currentModel = OPENAI + "/gpt-5.4";
+        injectChatModel(defaultModel, currentModel);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(currentModel)
+                .messages(List.of(Message.builder().role(ROLE_USER).content("Hi").build()))
+                .build();
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "getModelForRequest", request);
+
+        assertSame(defaultModel, result);
+    }
+
+    @Test
     void shouldFallbackToOpenAiWhenApiTypeIsUnknown() {
         String requestModel = "custom-provider/gpt-5.1";
         when(modelConfig.getProvider(requestModel)).thenReturn("custom-provider");
@@ -1884,6 +2020,91 @@ class Langchain4jAdapterTest {
         LlmResponse response = adapter.chat(request).get();
 
         assertEquals("Reasoned response", response.getContent());
+    }
+
+    @Test
+    void shouldCreateResponsesStreamingModelWithCompatibilityBuilder() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of(KEY))
+                .baseUrl("https://example.com/v1")
+                .requestTimeoutSeconds(42)
+                .build();
+
+        StreamingChatModel model = ReflectionTestUtils.invokeMethod(adapter,
+                "createResponsesStreamingModel", "openai/gpt-5.4", "gpt-5.4", "high", config);
+        HttpClientBuilder httpClientBuilder = ReflectionTestUtils.invokeMethod(adapter,
+                "createResponsesCompatibilityHttpClientBuilder", Duration.ofSeconds(42));
+
+        assertNotNull(model);
+        assertTrue(httpClientBuilder instanceof ResponsesCompatibilityHttpClientBuilder);
+        assertEquals(Duration.ofSeconds(42), httpClientBuilder.connectTimeout());
+        assertEquals(Duration.ofSeconds(42), httpClientBuilder.readTimeout());
+    }
+
+    @Test
+    void shouldCreateResponsesStreamingModelUsingScopedModelIdForCapabilityLookup() {
+        String model = OPENAI + "/gpt-5.4";
+        setupResponsesApiProvider(model);
+        when(modelConfig.supportsTemperature(model)).thenReturn(true);
+        when(modelConfig.supportsTemperature("gpt-5.4"))
+                .thenThrow(new IllegalArgumentException("raw model id lookup should not be used"));
+
+        StreamingChatModel result = ReflectionTestUtils.invokeMethod(adapter,
+                "getResponsesStreamingModel", model, "high");
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void shouldCreateResponsesStreamingModelWhenTemperatureUnsupported() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of(KEY))
+                .requestTimeoutSeconds(42)
+                .build();
+        when(modelConfig.supportsTemperature(OPENAI + "/gpt-5.4")).thenReturn(false);
+
+        StreamingChatModel result = ReflectionTestUtils.invokeMethod(adapter,
+                "createResponsesStreamingModel", OPENAI + "/gpt-5.4", "gpt-5.4", null, config);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void shouldCreateAnthropicModelWhenTemperatureUnsupported() {
+        String model = "anthropic/claude-opus-4-1";
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("ant-key"))
+                .apiType("anthropic")
+                .build();
+        when(modelConfig.supportsTemperature(model)).thenReturn(false);
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter,
+                "createAnthropicModel", model, "claude-opus-4-1", config);
+
+        assertTrue(result instanceof AnthropicChatModel);
+    }
+
+    @Test
+    void shouldCreateGeminiModelWhenTemperatureUnsupported() {
+        String model = "google/gemini-2.5-flash";
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("gemini-key"))
+                .apiType("gemini")
+                .build();
+        when(modelConfig.supportsTemperature(model)).thenReturn(false);
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter,
+                "createGeminiModel", model, "gemini-2.5-flash", config);
+
+        assertTrue(result instanceof GoogleAiGeminiChatModel);
+    }
+
+    @Test
+    void shouldInstantiateJdkHttpClientBuilderForResponsesCompatibilityFallback() {
+        HttpClientBuilder httpClientBuilder = ReflectionTestUtils.invokeMethod(adapter,
+                "instantiateJdkHttpClientBuilder");
+
+        assertNotNull(httpClientBuilder);
     }
 
     @Test
@@ -2023,7 +2244,6 @@ class Langchain4jAdapterTest {
         String model = OPENAI + "/gpt-5.4";
         StreamingChatModel streamingModel = mockStreamingModel("default model response");
         injectResponsesStreamingModel(model, null, streamingModel);
-        injectChatModel(null, model);
 
         when(modelConfig.getProvider(model)).thenReturn(OPENAI);
         when(runtimeConfigService.getLlmProviderConfig(OPENAI))
@@ -2044,7 +2264,6 @@ class Langchain4jAdapterTest {
     // ===== Responses streaming model helpers =====
 
     private void setupResponsesApiProvider(String model) {
-        injectChatModel(null, model);
         when(modelConfig.getProvider(model)).thenReturn(OPENAI);
         when(runtimeConfigService.getLlmProviderConfig(OPENAI))
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
@@ -2056,7 +2275,8 @@ class Langchain4jAdapterTest {
     @SuppressWarnings(SUPPRESS_UNCHECKED)
     private void injectResponsesStreamingModel(String model, String reasoningEffort,
             StreamingChatModel streamingModel) {
-        injectChatModel(null, model);
+        ReflectionTestUtils.setField(adapter, "currentModel", model);
+        ReflectionTestUtils.setField(adapter, "initialized", true);
         Map<String, StreamingChatModel> cache = (Map<String, StreamingChatModel>) ReflectionTestUtils.getField(adapter,
                 "responsesStreamingModels");
         String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "");
@@ -2127,6 +2347,13 @@ class Langchain4jAdapterTest {
             handler.onError(error);
             return null;
         }).when(model).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
+        return model;
+    }
+
+    private StreamingChatModel mockStreamingModelWithoutTerminalEvent() {
+        StreamingChatModel model = mock(StreamingChatModel.class);
+        doAnswer(invocation -> null)
+                .when(model).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
         return model;
     }
 

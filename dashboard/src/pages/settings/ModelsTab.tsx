@@ -3,9 +3,10 @@ import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import type { AvailableModel } from '../../api/models';
+import { modelReferenceFromSpec, modelReferenceToSpec, type LlmConfig, type ModelRouterConfig } from '../../api/settings';
 import { useUpdateModelRouter } from '../../hooks/useSettings';
-import type { LlmConfig, ModelRouterConfig } from '../../api/settings';
 import { useAvailableModels } from '../../hooks/useModels';
+import { toEditorModelIdForProvider } from '../../lib/providerModelIds';
 import { cloneModelRouterConfig, getTierBinding, updateTierBinding } from '../../lib/modelRouter';
 import {
   allowsEmptyModelSelection,
@@ -33,10 +34,11 @@ interface TierModelCardProps {
   color: string;
   providers: Record<string, AvailableModel[]>;
   providerNames: string[];
+  modelProvider: string;
   modelValue: string;
   reasoningValue: string;
   allowEmptyModel: boolean;
-  onModelChange: (value: string) => void;
+  onModelChange: (value: string, providerName: string) => void;
   onReasoningChange: (value: string) => void;
 }
 
@@ -55,6 +57,7 @@ function TierModelCard({
   color,
   providers,
   providerNames,
+  modelProvider,
   modelValue,
   reasoningValue,
   allowEmptyModel,
@@ -66,13 +69,16 @@ function TierModelCard({
       return '';
     }
     for (const [providerName, models] of Object.entries(providers)) {
-      if (models.some((model) => model.id === modelValue)) {
+      if (models.some((model) => toEditorModelIdForProvider(model.id, providerName) === modelValue)) {
         return providerName;
       }
     }
+    if (modelProvider.length > 0) {
+      return modelProvider;
+    }
     const delimiterIndex = modelValue.indexOf('/');
     return delimiterIndex > 0 ? modelValue.slice(0, delimiterIndex) : '';
-  }, [modelValue, providers]);
+  }, [modelProvider, modelValue, providers]);
 
   const providerOptionValues = useMemo(() => {
     if (configuredProvider.length === 0 || providerNames.includes(configuredProvider)) {
@@ -95,14 +101,22 @@ function TierModelCard({
   }, [selectedProvider]);
 
   const modelsForProvider = useMemo(() => {
-    const providerModels = providers[provider] ?? [];
-    if (modelValue.length === 0 || providerModels.some((model) => model.id === modelValue)) {
+    const providerModels = (providers[provider] ?? []).map((model) => {
+      const editorId = toEditorModelIdForProvider(model.id, provider);
+      return {
+        ...model,
+        editorId,
+        displayLabel: model.displayName ?? editorId,
+      };
+    });
+    if (modelValue.length === 0 || providerModels.some((model) => model.editorId === modelValue)) {
       return providerModels;
     }
     return [
       {
         id: modelValue,
-        displayName: `${modelValue} (unavailable)`,
+        editorId: modelValue,
+        displayLabel: `${modelValue} (unavailable)`,
         hasReasoning: false,
         reasoningLevels: [],
         supportsVision: false,
@@ -110,7 +124,7 @@ function TierModelCard({
       ...providerModels,
     ];
   }, [modelValue, provider, providers]);
-  const selectedModel = modelsForProvider.find((model) => model.id === modelValue);
+  const selectedModel = modelsForProvider.find((model) => model.editorId === modelValue);
   const reasoningLevels = selectedModel?.reasoningLevels ?? [];
   const hasProviders = providerOptionValues.length > 0;
   const providerUnavailable = configuredProvider.length > 0 && !providerNames.includes(configuredProvider);
@@ -118,9 +132,9 @@ function TierModelCard({
   // Keep optional special tiers unconfigured until the user explicitly selects a model.
   useEffect(() => {
     if (!allowEmptyModel && modelValue.length === 0 && modelsForProvider.length > 0) {
-      onModelChange(modelsForProvider[modelsForProvider.length - 1].id);
+      onModelChange(modelsForProvider[modelsForProvider.length - 1].id, provider);
     }
-  }, [allowEmptyModel, modelValue, modelsForProvider, onModelChange]);
+  }, [allowEmptyModel, modelValue, modelsForProvider, onModelChange, provider]);
 
   return (
     <Card className="tier-card h-100">
@@ -134,8 +148,9 @@ function TierModelCard({
             value={provider}
             disabled={!hasProviders}
             onChange={(e) => {
-              setProvider(e.target.value);
-              onModelChange('');
+              const nextProvider = e.target.value;
+              setProvider(nextProvider);
+              onModelChange('', nextProvider);
             }}
           >
             {allowEmptyModel && <option value="">Select provider</option>}
@@ -155,11 +170,11 @@ function TierModelCard({
             size="sm"
             value={modelValue}
             disabled={!hasProviders && modelsForProvider.length === 0}
-            onChange={(e) => onModelChange(e.target.value)}
+            onChange={(e) => onModelChange(e.target.value, provider)}
           >
             {allowEmptyModel && <option value="">Not configured</option>}
             {modelsForProvider.map((model) => (
-              <option key={model.id} value={model.id}>{model.displayName ?? model.id}</option>
+              <option key={`${provider}-${model.id}`} value={model.editorId}>{model.displayLabel}</option>
             ))}
           </Form.Select>
         </Form.Group>
@@ -273,13 +288,17 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
             color="dark"
             providers={providers}
             providerNames={providerNames}
-            modelValue={form.routing.model ?? ''}
+            modelProvider={form.routing.model?.provider ?? ''}
+            modelValue={toEditorModelIdForProvider(
+              modelReferenceToSpec(form.routing.model),
+              form.routing.model?.provider,
+            )}
             reasoningValue={form.routing.reasoning ?? ''}
             allowEmptyModel={false}
-            onModelChange={(value) => setForm({
+            onModelChange={(value, providerName) => setForm({
               ...form,
               routing: {
-                model: toNullableString(value),
+                model: modelReferenceFromSpec(value, providerName),
                 reasoning: null,
               },
             })}
@@ -299,11 +318,15 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
               color={color}
               providers={providers}
               providerNames={providerNames}
-              modelValue={getTierBinding(form, key).model ?? ''}
+              modelProvider={getTierBinding(form, key).model?.provider ?? ''}
+              modelValue={toEditorModelIdForProvider(
+                modelReferenceToSpec(getTierBinding(form, key).model),
+                getTierBinding(form, key).model?.provider,
+              )}
               reasoningValue={getTierBinding(form, key).reasoning ?? ''}
               allowEmptyModel={allowEmptyModel}
-              onModelChange={(value) => setForm(updateTierBinding(form, key, {
-                model: toNullableString(value),
+              onModelChange={(value, providerName) => setForm(updateTierBinding(form, key, {
+                model: modelReferenceFromSpec(value, providerName),
                 reasoning: null,
               }))}
               onReasoningChange={(value) => setForm(updateTierBinding(form, key, {

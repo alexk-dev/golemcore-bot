@@ -1,13 +1,17 @@
 package me.golemcore.bot.domain.model;
 
+import com.fasterxml.jackson.annotation.JsonGetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -48,6 +52,14 @@ public class RuntimeConfig {
     @Builder.Default
     private UpdateConfig update = new UpdateConfig();
 
+    /**
+     * Raw tracing config from persisted runtime-config JSON.
+     * <p>
+     * <b>Warning:</b> do not use this directly for snapshot capture decisions —
+     * self-evolving overrides (forcePayloadCapture) are not applied here. Use
+     * {@code TraceRuntimeConfigSupport.resolve(runtimeConfigService)} instead.
+     * </p>
+     */
     @Builder.Default
     private TracingConfig tracing = new TracingConfig();
 
@@ -74,6 +86,9 @@ public class RuntimeConfig {
 
     @Builder.Default
     private UsageConfig usage = new UsageConfig();
+
+    @Builder.Default
+    private TelemetryConfig telemetry = new TelemetryConfig();
 
     @Builder.Default
     private McpConfig mcp = new McpConfig();
@@ -369,8 +384,126 @@ public class RuntimeConfig {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonPropertyOrder({ "model", "reasoning" })
     public static class TierBinding {
-        private String model;
+        @JsonIgnore
+        private ModelReference modelReference;
         private String reasoning;
+
+        @JsonGetter("model")
+        public ModelReference getPersistedModel() {
+            return modelReference;
+        }
+
+        @JsonSetter("model")
+        public void setPersistedModel(Object modelNode) {
+            this.modelReference = ModelReference.fromRawValue(modelNode);
+        }
+
+        @JsonIgnore
+        public String getModel() {
+            return modelReference != null ? modelReference.toModelSpec() : null;
+        }
+
+        @JsonIgnore
+        public void setModel(String model) {
+            this.modelReference = ModelReference.fromLegacyString(model);
+        }
+
+        @JsonIgnore
+        public ModelReference getModelReference() {
+            return modelReference;
+        }
+
+        @JsonIgnore
+        public void setModelReference(ModelReference modelReference) {
+            this.modelReference = ModelReference.normalize(modelReference);
+        }
+
+        public static class TierBindingBuilder {
+            public TierBindingBuilder model(String model) {
+                this.modelReference = ModelReference.fromLegacyString(model);
+                return this;
+            }
+        }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @EqualsAndHashCode
+    @ToString
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class ModelReference {
+        private String provider;
+        private String id;
+
+        @JsonIgnore
+        public String toModelSpec() {
+            String normalizedId = trimToNull(id);
+            if (normalizedId == null) {
+                return null;
+            }
+            String normalizedProvider = trimToNull(provider);
+            if (normalizedProvider == null || normalizedId.startsWith(normalizedProvider + "/")) {
+                return normalizedId;
+            }
+            return normalizedProvider + "/" + normalizedId;
+        }
+
+        public static ModelReference fromLegacyString(String modelSpec) {
+            String normalized = trimToNull(modelSpec);
+            if (normalized == null) {
+                return null;
+            }
+            return ModelReference.builder()
+                    .id(normalized)
+                    .build();
+        }
+
+        @SuppressWarnings("unchecked")
+        public static ModelReference fromRawValue(Object modelNode) {
+            if (modelNode == null) {
+                return null;
+            }
+            if (modelNode instanceof String text) {
+                return fromLegacyString(text);
+            }
+            if (modelNode instanceof ModelReference ref) {
+                return normalize(ref);
+            }
+            if (modelNode instanceof java.util.Map<?, ?> map) {
+                return normalize(ModelReference.builder()
+                        .provider(trimToNull(map.get("provider") instanceof String s ? s : null))
+                        .id(trimToNull(map.get("id") instanceof String s ? s : null))
+                        .build());
+            }
+            throw new IllegalArgumentException(
+                    "model must be a string or object, got: " + modelNode.getClass().getName());
+        }
+
+        public static ModelReference normalize(ModelReference reference) {
+            if (reference == null) {
+                return null;
+            }
+            String normalizedProvider = trimToNull(reference.getProvider());
+            String normalizedId = trimToNull(reference.getId());
+            if (normalizedProvider == null && normalizedId == null) {
+                return null;
+            }
+            return ModelReference.builder()
+                    .provider(normalizedProvider)
+                    .id(normalizedId)
+                    .build();
+        }
+
+        private static String trimToNull(String value) {
+            if (value == null) {
+                return null;
+            }
+            String trimmed = value.trim();
+            return trimmed.isEmpty() ? null : trimmed;
+        }
     }
 
     @Data
@@ -772,6 +905,15 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    public static class TelemetryConfig {
+        private Boolean enabled;
+        private String clientId;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class McpConfig {
         private Boolean enabled;
         private Integer defaultStartupTimeout;
@@ -874,6 +1016,10 @@ public class RuntimeConfig {
         private SelfEvolvingToggleConfig personalization = new SelfEvolvingToggleConfig();
         @Builder.Default
         private SelfEvolvingToggleConfig negativeMemory = new SelfEvolvingToggleConfig();
+        @Builder.Default
+        private SelfEvolvingTacticQueryExpansionConfig queryExpansion = new SelfEvolvingTacticQueryExpansionConfig();
+        @Builder.Default
+        private Integer advisoryCount = 1;
     }
 
     @Data
@@ -937,6 +1083,18 @@ public class RuntimeConfig {
     public static class SelfEvolvingToggleConfig {
         @Builder.Default
         private Boolean enabled = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SelfEvolvingTacticQueryExpansionConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private String tier = "balanced";
     }
 
     @Data
@@ -1098,15 +1256,19 @@ public class RuntimeConfig {
                                                                         "model-registry",
                                                                         ModelRegistryConfig.class), USAGE(
                                                                                 "usage",
-                                                                                UsageConfig.class), MCP("mcp",
-                                                                                        McpConfig.class), PLAN("plan",
-                                                                                                PlanConfig.class), DELAYED_ACTIONS(
-                                                                                                        "delayed-actions",
-                                                                                                        DelayedActionsConfig.class), HIVE(
-                                                                                                                "hive",
-                                                                                                                HiveConfig.class), SELF_EVOLVING(
-                                                                                                                        "self-evolving",
-                                                                                                                        SelfEvolvingConfig.class);
+                                                                                UsageConfig.class), TELEMETRY(
+                                                                                        "telemetry",
+                                                                                        TelemetryConfig.class), MCP(
+                                                                                                "mcp",
+                                                                                                McpConfig.class), PLAN(
+                                                                                                        "plan",
+                                                                                                        PlanConfig.class), DELAYED_ACTIONS(
+                                                                                                                "delayed-actions",
+                                                                                                                DelayedActionsConfig.class), HIVE(
+                                                                                                                        "hive",
+                                                                                                                        HiveConfig.class), SELF_EVOLVING(
+                                                                                                                                "self-evolving",
+                                                                                                                                SelfEvolvingConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

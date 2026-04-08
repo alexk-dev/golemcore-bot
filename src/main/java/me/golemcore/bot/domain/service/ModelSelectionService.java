@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -44,7 +45,7 @@ import java.util.Map;
 public class ModelSelectionService {
 
     private final RuntimeConfigService runtimeConfigService;
-    private final ModelConfigService modelConfigService;
+    private final ModelConfigPort modelConfigService;
     private final UserPreferencesService preferencesService;
 
     /**
@@ -177,11 +178,12 @@ public class ModelSelectionService {
     }
 
     public ValidationResult validateModel(String modelSpec, List<String> configuredProviders) {
-        if (modelSpec == null || modelSpec.isBlank()) {
+        String canonicalModelSpec = canonicalizeModelSpec(modelSpec, configuredProviders);
+        if (canonicalModelSpec == null || canonicalModelSpec.isBlank()) {
             return new ValidationResult(false, "model.empty");
         }
 
-        String provider = resolveProviderForModel(modelSpec);
+        String provider = resolveProviderForModel(canonicalModelSpec);
         if (provider == null) {
             return new ValidationResult(false, "model.not.found");
         }
@@ -195,11 +197,12 @@ public class ModelSelectionService {
     }
 
     public String resolveProviderForModel(String modelSpec) {
-        if (modelSpec == null || modelSpec.isBlank()) {
+        String canonicalModelSpec = canonicalizeModelSpec(modelSpec, runtimeConfigService.getConfiguredLlmProviders());
+        if (canonicalModelSpec == null || canonicalModelSpec.isBlank()) {
             return null;
         }
 
-        String normalizedSpec = modelSpec.trim();
+        String normalizedSpec = canonicalModelSpec.trim();
         if (!hasKnownModelMatch(normalizedSpec)) {
             return null;
         }
@@ -290,14 +293,20 @@ public class ModelSelectionService {
 
     private ModelSelection validateResolvedSelection(String tier, ModelSelection selection) {
         if (selection == null || selection.model() == null || selection.model().isBlank()) {
+            log.error("[ModelSelection] Tier '{}' is not configured — no model binding found", tier);
             throw new IllegalStateException("Tier '" + tier + "' is not configured");
         }
 
-        ValidationResult modelValidation = validateModel(selection.model());
+        String canonicalModel = canonicalizeModelSpec(selection.model(),
+                runtimeConfigService.getConfiguredLlmProviders());
+        ValidationResult modelValidation = validateModel(canonicalModel);
         if (!modelValidation.valid()) {
+            log.error("[ModelSelection] Tier '{}' resolution failed: model='{}', canonical='{}', error='{}'",
+                    tier, selection.model(), canonicalModel, modelValidation.error());
             throw switch (modelValidation.error()) {
             case "model.not.found" ->
-                new IllegalStateException("Tier '" + tier + "' points to unknown model '" + selection.model() + "'");
+                new IllegalStateException("Tier '" + tier + "' points to unknown model '" + selection.model()
+                        + "' — add it to the catalog via discovery or manual configuration");
             case "provider.not.configured" ->
                 new IllegalStateException("Tier '" + tier + "' points to model '" + selection.model()
                         + "' whose provider is not configured");
@@ -307,19 +316,68 @@ public class ModelSelectionService {
         }
 
         String reasoning = selection.reasoning();
-        if (reasoning == null && modelConfigService.isReasoningRequired(selection.model())) {
-            reasoning = modelConfigService.getLowestReasoningLevel(selection.model());
-        } else if (reasoning != null && modelConfigService.isReasoningRequired(selection.model())) {
-            ValidationResult reasoningValidation = validateReasoning(selection.model(), reasoning);
+        if (reasoning == null && modelConfigService.isReasoningRequired(canonicalModel)) {
+            reasoning = modelConfigService.getLowestReasoningLevel(canonicalModel);
+        } else if (reasoning != null && modelConfigService.isReasoningRequired(canonicalModel)) {
+            ValidationResult reasoningValidation = validateReasoning(canonicalModel, reasoning);
             if (!reasoningValidation.valid()) {
                 throw new IllegalStateException("Tier '" + tier + "' uses unsupported reasoning '" + reasoning
-                        + "' for model '" + selection.model() + "'");
+                        + "' for model '" + canonicalModel + "'");
             }
         }
 
         log.debug("[ModelSelection] Resolved tier {}: model={}, reasoning={}",
-                tier, selection.model(), reasoning);
-        return new ModelSelection(selection.model(), reasoning);
+                tier, canonicalModel, reasoning);
+        return new ModelSelection(canonicalModel, reasoning);
+    }
+
+    private String canonicalizeModelSpec(String modelSpec, List<String> configuredProviders) {
+        if (modelSpec == null || modelSpec.isBlank()) {
+            return modelSpec;
+        }
+
+        String normalizedSpec = modelSpec.trim();
+        Map<String, ModelConfigService.ModelSettings> allModels = modelConfigService.getAllModels();
+        if (allModels.containsKey(normalizedSpec)) {
+            return normalizedSpec;
+        }
+
+        String exactAliasCandidate = findUniqueCanonicalCandidate(normalizedSpec, allModels, configuredProviders, true);
+        if (exactAliasCandidate != null) {
+            return exactAliasCandidate;
+        }
+
+        String prefixAliasCandidate = findUniqueCanonicalCandidate(normalizedSpec, allModels, configuredProviders,
+                false);
+        if (prefixAliasCandidate != null) {
+            return prefixAliasCandidate;
+        }
+
+        return normalizedSpec;
+    }
+
+    private String findUniqueCanonicalCandidate(
+            String modelSpec,
+            Map<String, ModelConfigService.ModelSettings> allModels,
+            List<String> configuredProviders,
+            boolean exactOnly) {
+        List<String> matchingCandidates = allModels.entrySet().stream()
+                .filter(entry -> configuredProviders == null
+                        || configuredProviders.isEmpty()
+                        || configuredProviders.contains(entry.getValue().getProvider()))
+                .map(Map.Entry::getKey)
+                .filter(candidate -> matchesCanonicalAlias(modelSpec, candidate, exactOnly))
+                .toList();
+        return matchingCandidates.size() == 1 ? matchingCandidates.getFirst() : null;
+    }
+
+    private boolean matchesCanonicalAlias(String modelSpec, String candidate, boolean exactOnly) {
+        String normalizedCandidate = normalizeModelName(candidate);
+        String lastSegment = candidate.contains("/") ? candidate.substring(candidate.lastIndexOf('/') + 1) : candidate;
+        if (exactOnly) {
+            return normalizedCandidate.equals(modelSpec) || lastSegment.equals(modelSpec);
+        }
+        return normalizedCandidate.startsWith(modelSpec) || lastSegment.startsWith(modelSpec);
     }
 
     private boolean hasKnownModelMatch(String modelSpec) {

@@ -1,4 +1,4 @@
-import client from './client';
+import client, { type TelemetryRequestConfig } from './client';
 
 export interface PluginSettingsCatalogItem {
   pluginId: string;
@@ -166,7 +166,17 @@ export async function savePluginSettingsSection(
   routeKey: string,
   values: Record<string, unknown>,
 ): Promise<PluginSettingsSection> {
-  const { data } = await client.put<PluginSettingsSection>(`/plugins/settings/sections/${routeKey}`, values);
+  const telemetryConfig: TelemetryRequestConfig = {
+    _telemetry: {
+      counterKey: 'settings_save_count_by_section',
+      value: routeKey,
+    },
+  };
+  const { data } = await client.put<PluginSettingsSection>(
+    `/plugins/settings/sections/${routeKey}`,
+    values,
+    telemetryConfig,
+  );
   return data;
 }
 

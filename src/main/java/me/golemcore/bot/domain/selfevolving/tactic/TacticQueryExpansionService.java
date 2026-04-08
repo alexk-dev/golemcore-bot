@@ -18,11 +18,20 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  * Contact: alex@kuleshov.tech
  */
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.LlmRequest;
+import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
+import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.port.outbound.LlmPort;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -32,12 +41,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Expands incoming task text into multiple tactic-search query views.
+ * Optionally rewrites the query via LLM for richer semantic coverage.
  */
 @Service
+@Slf4j
 public class TacticQueryExpansionService {
 
     private static final Set<String> STOP_WORDS = Set.of(
@@ -47,6 +58,39 @@ public class TacticQueryExpansionService {
             "shell", "bash", "zsh", "git", "python", "maven", "npm", "docker", "kubectl", "curl");
     private static final Set<String> FAILURE_TERMS = Set.of(
             "fail", "failed", "failure", "recover", "recovery", "retry", "fix", "error", "broken", "rollback");
+
+    private static final Set<String> PLANNING_TERMS = Set.of(
+            "plan", "design", "architect", "propose", "strategy", "outline", "approach", "consider");
+    private static final Set<String> RECOVERY_TERMS = Set.of(
+            "fail", "failed", "error", "broken", "recover", "recovery", "rollback", "revert", "fix", "debug");
+    private static final Set<String> OPTIMIZATION_TERMS = Set.of(
+            "optimize", "improve", "performance", "faster", "efficient", "refactor", "cleanup", "reduce");
+
+    private static final int LLM_QUERY_CACHE_MAX_SIZE = 256;
+    private static final int LLM_RAW_QUERY_PREFIX_LENGTH = 120;
+
+    private static final String LLM_QUERY_EXPANSION_SYSTEM_PROMPT = """
+            You are a search query rewriter for an operational tactics knowledge base.
+            Given the user message, generate 2-3 concise search queries that would find relevant tactics.
+            Each query should focus on a different aspect: problem domain, tooling, or failure recovery.
+            Return a JSON array of strings. No explanation, no markdown — only the JSON array.""";
+
+    private final RuntimeConfigService runtimeConfigService;
+    private final ModelSelectionService modelSelectionService;
+    private final LlmPort llmPort;
+    private final ObjectMapper objectMapper;
+    private final ConcurrentHashMap<String, List<String>> llmQueryCache = new ConcurrentHashMap<>();
+
+    public TacticQueryExpansionService(
+            RuntimeConfigService runtimeConfigService,
+            ModelSelectionService modelSelectionService,
+            LlmPort llmPort,
+            ObjectMapper objectMapper) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.modelSelectionService = modelSelectionService;
+        this.llmPort = llmPort;
+        this.objectMapper = objectMapper;
+    }
 
     public TacticSearchQuery expand(String rawQuery) {
         String normalized = normalize(rawQuery);
@@ -76,9 +120,25 @@ public class TacticQueryExpansionService {
             viewQueries.put("failure-recovery", String.join(" ", failureTerms));
         }
 
+        String executionPhase = detectPhase(tokens);
+        if (executionPhase != null) {
+            viewQueries.put("phase", executionPhase + " " + normalized);
+        }
+
+        List<String> llmExpansions = expandViaLlm(normalized);
+        for (int i = 0; i < llmExpansions.size(); i++) {
+            viewQueries.put("llm-expansion-" + i, llmExpansions.get(i));
+        }
+
         LinkedHashSet<String> queryViews = new LinkedHashSet<>(domainTerms);
         queryViews.addAll(toolTerms);
         queryViews.addAll(failureTerms);
+        if (executionPhase != null) {
+            queryViews.add(executionPhase);
+        }
+        for (String expansion : llmExpansions) {
+            queryViews.addAll(tokens(expansion));
+        }
         if (queryViews.isEmpty() && !normalized.isBlank()) {
             queryViews.add(normalized);
         }
@@ -87,6 +147,7 @@ public class TacticQueryExpansionService {
                 .rawQuery(normalized)
                 .queryViews(new ArrayList<>(queryViews))
                 .viewQueries(viewQueries)
+                .executionPhase(executionPhase)
                 .build();
     }
 
@@ -105,6 +166,95 @@ public class TacticQueryExpansionService {
         }
         query.setGolemId(context.getAttribute(ContextAttributes.HIVE_GOLEM_ID));
         return query;
+    }
+
+    private String detectPhase(List<String> tokens) {
+        if (tokens.isEmpty()) {
+            return null;
+        }
+        long recoveryCount = tokens.stream().filter(RECOVERY_TERMS::contains).count();
+        long planningCount = tokens.stream().filter(PLANNING_TERMS::contains).count();
+        long optimizationCount = tokens.stream().filter(OPTIMIZATION_TERMS::contains).count();
+        if (recoveryCount > planningCount && recoveryCount > optimizationCount) {
+            return "recovery";
+        }
+        if (planningCount > recoveryCount && planningCount > optimizationCount) {
+            return "planning";
+        }
+        if (optimizationCount > recoveryCount && optimizationCount > planningCount) {
+            return "optimization";
+        }
+        return "execution";
+    }
+
+    private List<String> expandViaLlm(String normalized) {
+        if (StringValueSupport.isBlank(normalized) || !isLlmQueryExpansionEnabled()) {
+            return List.of();
+        }
+        String cacheKey = normalized.length() > LLM_RAW_QUERY_PREFIX_LENGTH
+                ? normalized.substring(0, LLM_RAW_QUERY_PREFIX_LENGTH)
+                : normalized;
+        List<String> cached = llmQueryCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            String tier = runtimeConfigService.getTacticQueryExpansionTier();
+            ModelSelectionService.ModelSelection selection = modelSelectionService.resolveExplicitTier(tier);
+            LlmRequest request = LlmRequest.builder()
+                    .model(selection.model())
+                    .reasoningEffort(selection.reasoning())
+                    .systemPrompt(LLM_QUERY_EXPANSION_SYSTEM_PROMPT)
+                    .messages(List.of(Message.builder()
+                            .role("user")
+                            .content(normalized)
+                            .build()))
+                    .temperature(0.3d)
+                    .build();
+            LlmResponse response = llmPort.chat(request).get();
+            if (response == null || StringValueSupport.isBlank(response.getContent())) {
+                return List.of();
+            }
+            List<String> expansions = parseExpansions(response.getContent());
+            if (llmQueryCache.size() >= LLM_QUERY_CACHE_MAX_SIZE) {
+                llmQueryCache.clear();
+            }
+            llmQueryCache.put(cacheKey, expansions);
+            return expansions;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            log.debug("[TacticQueryExpansion] LLM expansion interrupted, falling back to keyword expansion");
+            return List.of();
+        } catch (Exception exception) {
+            log.debug("[TacticQueryExpansion] LLM expansion failed, falling back to keyword expansion: {}",
+                    exception.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<String> parseExpansions(String content) {
+        try {
+            String trimmed = content.trim();
+            int start = trimmed.indexOf('[');
+            int end = trimmed.lastIndexOf(']');
+            if (start >= 0 && end > start) {
+                trimmed = trimmed.substring(start, end + 1);
+            }
+            List<String> result = objectMapper.readValue(trimmed, new TypeReference<List<String>>() {
+            });
+            return result.stream()
+                    .filter(s -> !StringValueSupport.isBlank(s))
+                    .map(s -> s.toLowerCase(Locale.ROOT).trim())
+                    .limit(3)
+                    .toList();
+        } catch (Exception exception) {
+            log.debug("[TacticQueryExpansion] Failed to parse LLM expansion response: {}", exception.getMessage());
+            return List.of();
+        }
+    }
+
+    private boolean isLlmQueryExpansionEnabled() {
+        return runtimeConfigService.isTacticQueryExpansionEnabled();
     }
 
     private String lastUserMessage(AgentContext context) {

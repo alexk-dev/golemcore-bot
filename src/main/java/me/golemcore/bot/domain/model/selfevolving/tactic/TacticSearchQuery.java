@@ -49,6 +49,8 @@ public class TacticSearchQuery {
 
     private String golemId;
 
+    private String executionPhase;
+
     @Builder.Default
     private Boolean shadowMode = false;
 

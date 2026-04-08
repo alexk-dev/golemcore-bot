@@ -31,6 +31,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,8 +46,11 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.http.client.HttpClientBuilder;
+import dev.langchain4j.http.client.HttpClientBuilderLoader;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.json.JsonArraySchema;
 import dev.langchain4j.model.chat.request.json.JsonBooleanSchema;
@@ -57,17 +61,17 @@ import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
-import dev.langchain4j.model.output.TokenUsage;
-import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
+import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiResponsesStreamingChatModel;
+import dev.langchain4j.model.output.TokenUsage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -76,10 +80,11 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.time.Duration;
 
 /**
  * LLM adapter using the langchain4j library.
@@ -139,7 +144,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     }
 
     private final RuntimeConfigService runtimeConfigService;
-    private final ModelConfigService modelConfig;
+    private final ModelConfigPort modelConfig;
     private final ToolArtifactService toolArtifactService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -157,6 +162,12 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         String model = runtimeConfigService.getBalancedModel();
         String reasoning = runtimeConfigService.getBalancedModelReasoning();
         this.currentModel = model;
+
+        if (model == null || model.isBlank()) {
+            initialized = true;
+            log.info("Langchain4j adapter initialized without a default model");
+            return;
+        }
 
         try {
             this.chatModel = createModel(model, reasoning);
@@ -212,21 +223,25 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             String modelName = stripProviderPrefix(model);
             log.info("[LLM] Creating OpenAI Responses streaming model for: {} (reasoning: {})",
                     modelName, reasoningEffort);
-            return createResponsesStreamingModel(modelName, reasoningEffort, config);
+            return createResponsesStreamingModel(model, modelName, reasoningEffort, config);
         });
     }
 
-    private StreamingChatModel createResponsesStreamingModel(String modelName, String reasoningEffort,
+    private StreamingChatModel createResponsesStreamingModel(String fullModel, String modelName, String reasoningEffort,
             RuntimeConfig.LlmProviderConfig config) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for OpenAI Responses provider in runtime config");
         }
+        Duration timeout = Duration.ofSeconds(
+                config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300);
         OpenAiResponsesStreamingChatModel.Builder builder = OpenAiResponsesStreamingChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .logRequests(true)
                 .logResponses(true);
+
+        builder.httpClientBuilder(createResponsesCompatibilityHttpClientBuilder(timeout));
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -236,14 +251,38 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             builder.reasoningEffort(reasoningEffort);
         }
 
-        if (supportsTemperature(modelName)) {
+        if (supportsTemperature(fullModel)) {
             builder.temperature((double) runtimeConfigService.getTemperature());
         }
 
         return builder.build();
     }
 
+    private HttpClientBuilder createResponsesCompatibilityHttpClientBuilder(Duration timeout) {
+        HttpClientBuilder baseBuilder = HttpClientBuilderLoader.loadHttpClientBuilder();
+        if (baseBuilder == null) {
+            baseBuilder = instantiateJdkHttpClientBuilder();
+        }
+        baseBuilder.connectTimeout(timeout);
+        baseBuilder.readTimeout(timeout);
+        return new ResponsesCompatibilityHttpClientBuilder(baseBuilder, objectMapper);
+    }
+
+    private HttpClientBuilder instantiateJdkHttpClientBuilder() {
+        try {
+            Class<?> builderClass = Class.forName("dev.langchain4j.http.client.jdk.JdkHttpClientBuilder");
+            return (HttpClientBuilder) builderClass.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            throw new IllegalStateException(
+                    "No HttpClientBuilder implementation available for OpenAI Responses compatibility layer",
+                    exception);
+        }
+    }
+
     private String stripProviderPrefix(String model) {
+        if (model == null) {
+            return null;
+        }
         return model.contains("/") ? model.substring(model.indexOf('/') + 1) : model;
     }
 
@@ -258,9 +297,9 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
         switch (apiType) {
         case API_TYPE_ANTHROPIC:
-            return createAnthropicModel(modelName, config);
+            return createAnthropicModel(model, modelName, config);
         case API_TYPE_GEMINI:
-            return createGeminiModel(modelName, config);
+            return createGeminiModel(model, modelName, config);
         default:
             return createOpenAiModel(modelName, model, reasoningEffort, config);
         }
@@ -274,7 +313,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return apiType.trim().toLowerCase(Locale.ROOT);
     }
 
-    private ChatModel createAnthropicModel(String modelName, RuntimeConfig.LlmProviderConfig config) {
+    private ChatModel createAnthropicModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for provider anthropic in runtime config");
@@ -291,14 +330,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             builder.baseUrl(config.getBaseUrl());
         }
 
-        if (supportsTemperature(modelName)) {
+        if (supportsTemperature(fullModel)) {
             builder.temperature(runtimeConfigService.getTemperature());
         }
 
         return builder.build();
     }
 
-    private ChatModel createGeminiModel(String modelName, RuntimeConfig.LlmProviderConfig config) {
+    private ChatModel createGeminiModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for Gemini provider in runtime config");
@@ -314,7 +353,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .timeout(java.time.Duration.ofSeconds(
                         config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
-        if (supportsTemperature(modelName)) {
+        if (supportsTemperature(fullModel)) {
             builder.temperature(runtimeConfigService.getTemperature());
         }
 
@@ -362,11 +401,24 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return CompletableFuture.supplyAsync(() -> {
             ensureInitialized();
 
-            if (chatModel == null && !isResponsesApiRequest(request)) {
+            boolean useResponsesApi = isResponsesApiRequest(request);
+            if (chatModel == null && request.getModel() == null && !useResponsesApi) {
                 throw new RuntimeException("Langchain4j adapter not available");
             }
 
-            boolean useResponsesApi = isResponsesApiRequest(request);
+            String effectiveModelId = request.getModel() != null ? request.getModel() : currentModel;
+            if (log.isDebugEnabled() && effectiveModelId != null) {
+                try {
+                    String provider = getProvider(effectiveModelId);
+                    RuntimeConfig.LlmProviderConfig providerConfig = getProviderConfig(provider);
+                    log.debug("[LLM] API call: provider={}, model={}, baseUrl={}",
+                            provider, effectiveModelId, providerConfig.getBaseUrl());
+                } catch (Exception e) {
+                    log.debug("[LLM] API call: model={} (provider resolution failed: {})",
+                            effectiveModelId, e.getMessage());
+                }
+            }
+
             ChatModel modelToUse = useResponsesApi ? null : getModelForRequest(request);
             boolean geminiApiType = !useResponsesApi && isGeminiRequest(request);
             LlmRequest requestToUse = request;
@@ -423,8 +475,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         long backoffMs = resetSeconds > 0
                                 ? Math.max(resetSeconds * 1000 + 1000, exponentialBackoffMs)
                                 : exponentialBackoffMs;
-                        log.warn("[LLM] Rate limit hit (attempt {}/{}), retrying in {}ms{}...",
-                                attempt + 1, MAX_RETRIES, backoffMs,
+                        log.warn("[LLM] Rate limit hit for {} (attempt {}/{}), retrying in {}ms{}...",
+                                request.getModel(), attempt + 1, MAX_RETRIES, backoffMs,
                                 resetSeconds > 0 ? " (server requested " + resetSeconds + "s)" : "");
                         try {
                             sleepBeforeRetry(backoffMs);
@@ -535,13 +587,13 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         String reasoningEffort = request.getReasoningEffort();
 
         // If request specifies a different model, create one-off
-        if (requestModel != null && !requestModel.equals(currentModel)) {
+        if (requestModel != null && (chatModel == null || !requestModel.equals(currentModel))) {
             log.trace("Creating one-off model for request: {}, reasoning: {}", requestModel, reasoningEffort);
             return createModel(requestModel, reasoningEffort);
         }
 
         // If request specifies different reasoning for current model
-        if (reasoningEffort != null && isReasoningRequired(currentModel)) {
+        if (currentModel != null && reasoningEffort != null && isReasoningRequired(currentModel)) {
             log.debug("Using reasoning effort: {} for model: {}", reasoningEffort, currentModel);
             return createModel(currentModel, reasoningEffort);
         }
@@ -581,11 +633,6 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         });
     }
 
-    /**
-     * Execute a chat request via a streaming model, blocking until the full
-     * response is available. This bridges {@link StreamingChatModel} into the sync
-     * retry loop.
-     */
     private ChatResponse chatViaStreaming(StreamingChatModel model,
             List<ChatMessage> messages, List<ToolSpecification> tools) {
         CompletableFuture<ChatResponse> future = new CompletableFuture<>();

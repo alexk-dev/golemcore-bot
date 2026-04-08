@@ -86,6 +86,27 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldDefaultTelemetryToTrueForFreshInstall() {
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getTelemetry());
+        assertTrue(Boolean.TRUE.equals(config.getTelemetry().getEnabled()));
+    }
+
+    @Test
+    void shouldDefaultTelemetryToFalseForUpgradeWithoutTelemetrySection() throws Exception {
+        RuntimeConfig.UsageConfig usage = RuntimeConfig.UsageConfig.builder()
+                .enabled(true)
+                .build();
+        persistedSections.put("usage.json", objectMapper.writeValueAsString(usage));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getTelemetry());
+        assertFalse(Boolean.TRUE.equals(config.getTelemetry().getEnabled()));
+    }
+
+    @Test
     void shouldPreserveIndependentTacticsToggleWithinSelfEvolvingConfig() {
         RuntimeConfig config = service.getRuntimeConfig();
         config.getSelfEvolving().setEnabled(true);
@@ -177,8 +198,12 @@ class RuntimeConfigServiceTest {
                 "special5"), List.copyOf(tiers.keySet()));
 
         Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
-        assertEquals("openai/gpt-5.2-codex", routing.get("model"));
+        assertPersistedModelMissing(routing);
         assertEquals("none", routing.get("reasoning"));
+        assertPersistedModelMissing(castMap(tiers.get("balanced")));
+        assertPersistedModelMissing(castMap(tiers.get("smart")));
+        assertPersistedModelMissing(castMap(tiers.get("deep")));
+        assertPersistedModelMissing(castMap(tiers.get("coding")));
     }
 
     @Test
@@ -204,14 +229,14 @@ class RuntimeConfigServiceTest {
         Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
         Map<?, ?> tiers = castMap(persistedModelRouter.get("tiers"));
 
-        assertEquals("openai/gpt-5.2-codex", routing.get("model"));
-        assertEquals("legacy/balanced", castMap(tiers.get("balanced")).get("model"));
+        assertPersistedModelId(routing, "openai/gpt-5.2-codex");
+        assertPersistedModelId(castMap(tiers.get("balanced")), "legacy/balanced");
         assertEquals("low", castMap(tiers.get("balanced")).get("reasoning"));
-        assertEquals("legacy/smart", castMap(tiers.get("smart")).get("model"));
+        assertPersistedModelId(castMap(tiers.get("smart")), "legacy/smart");
         assertEquals("medium", castMap(tiers.get("smart")).get("reasoning"));
-        assertEquals("legacy/deep", castMap(tiers.get("deep")).get("model"));
+        assertPersistedModelId(castMap(tiers.get("deep")), "legacy/deep");
         assertEquals("high", castMap(tiers.get("deep")).get("reasoning"));
-        assertEquals("legacy/coding", castMap(tiers.get("coding")).get("model"));
+        assertPersistedModelId(castMap(tiers.get("coding")), "legacy/coding");
         assertEquals("xhigh", castMap(tiers.get("coding")).get("reasoning"));
     }
 
@@ -240,9 +265,53 @@ class RuntimeConfigServiceTest {
         Map<?, ?> persistedModelRouter = readPersistedJsonMap("model-router.json");
         Map<?, ?> persistedTiers = castMap(persistedModelRouter.get("tiers"));
         assertEquals(List.copyOf(tiers.keySet()), List.copyOf(persistedTiers.keySet()));
-        assertEquals("router/model", castMap(persistedModelRouter.get("routing")).get("model"));
-        assertEquals("model/special5", castMap(persistedTiers.get("special5")).get("model"));
+        assertPersistedModelId(castMap(persistedModelRouter.get("routing")), "router/model");
+        assertPersistedModelId(castMap(persistedTiers.get("special5")), "model/special5");
         assertEquals("none", castMap(persistedTiers.get("special5")).get("reasoning"));
+    }
+
+    @Test
+    void shouldLoadStructuredModelRouterReferenceAndExposeCanonicalModelSpec() throws Exception {
+        Map<String, Object> structuredRouter = new LinkedHashMap<>();
+        structuredRouter.put("routing", Map.of(
+                "model", Map.of(
+                        "provider", "openrouter",
+                        "id", "qwen/model-name:version"),
+                "reasoning", "none"));
+        persistedSections.put("model-router.json", objectMapper.writeValueAsString(structuredRouter));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertEquals("openrouter/qwen/model-name:version", config.getModelRouter().getRouting().getModel());
+
+        service.updateRuntimeConfig(config);
+
+        Map<?, ?> persistedModelRouter = readPersistedJsonMap("model-router.json");
+        Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
+        Map<?, ?> model = castMap(routing.get("model"));
+        assertEquals("openrouter", model.get("provider"));
+        assertEquals("qwen/model-name:version", model.get("id"));
+    }
+
+    @Test
+    void shouldMigrateLegacyStringModelRouterReferenceToStructuredStorage() throws Exception {
+        Map<String, Object> legacyRouter = new LinkedHashMap<>();
+        legacyRouter.put("routing", Map.of(
+                "model", "openrouter/qwen/model-name:version",
+                "reasoning", "none"));
+        persistedSections.put("model-router.json", objectMapper.writeValueAsString(legacyRouter));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertEquals("openrouter/qwen/model-name:version", config.getModelRouter().getRouting().getModel());
+
+        service.updateRuntimeConfig(config);
+
+        Map<?, ?> persistedModelRouter = readPersistedJsonMap("model-router.json");
+        Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
+        Map<?, ?> model = castMap(routing.get("model"));
+        assertEquals("openrouter/qwen/model-name:version", model.get("id"));
+        assertFalse(model.containsKey("provider"));
     }
 
     @Test
@@ -282,12 +351,13 @@ class RuntimeConfigServiceTest {
     // ==================== Default Values ====================
 
     @Test
-    void shouldReturnDefaultModelWhenNotConfigured() {
-        assertEquals("openai/gpt-5.1", service.getBalancedModel());
-        assertEquals("openai/gpt-5.1", service.getSmartModel());
-        assertEquals("openai/gpt-5.2", service.getCodingModel());
-        assertEquals("openai/gpt-5.2", service.getDeepModel());
-        assertEquals("openai/gpt-5.2-codex", service.getRoutingModel());
+    void shouldReturnEmptyModelDefaultsWhenNotConfigured() {
+        assertNull(service.getBalancedModel());
+        assertNull(service.getSmartModel());
+        assertNull(service.getCodingModel());
+        assertNull(service.getDeepModel());
+        assertNull(service.getRoutingModel());
+        assertTrue(service.getConfiguredLlmProviders().isEmpty());
     }
 
     @Test
@@ -1785,5 +1855,15 @@ class RuntimeConfigServiceTest {
         assertNotNull(value);
         assertTrue(value instanceof Map<?, ?>);
         return (Map<?, ?>) value;
+    }
+
+    private void assertPersistedModelId(Map<?, ?> binding, String expectedId) {
+        Map<?, ?> model = castMap(binding.get("model"));
+        assertEquals(expectedId, model.get("id"));
+        assertFalse(model.containsKey("provider"));
+    }
+
+    private void assertPersistedModelMissing(Map<?, ?> binding) {
+        assertTrue(!binding.containsKey("model") || binding.get("model") == null);
     }
 }

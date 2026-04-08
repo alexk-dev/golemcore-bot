@@ -54,6 +54,7 @@ class TacticTurnContextServiceTracingTest {
     void shouldCreateTacticEnrichSpanWhenTracingIsEnabled() {
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTacticAdvisoryCount()).thenReturn(1);
         AgentContext context = contextWithTrace();
         TacticSearchQuery query = TacticSearchQuery.builder()
                 .rawQuery("recover failed shell")
@@ -88,6 +89,7 @@ class TacticTurnContextServiceTracingTest {
     void shouldRecordTacticSearchCompletedEventWithSelectionAttributes() {
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTacticAdvisoryCount()).thenReturn(1);
         AgentContext context = contextWithTrace();
         TacticSearchQuery query = TacticSearchQuery.builder()
                 .rawQuery("recover")
@@ -123,6 +125,7 @@ class TacticTurnContextServiceTracingTest {
     void shouldRecordZeroResultCountWhenSearchReturnsEmpty() {
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTacticAdvisoryCount()).thenReturn(1);
         AgentContext context = contextWithTrace();
         TacticSearchQuery query = TacticSearchQuery.builder()
                 .rawQuery("nothing")
@@ -146,6 +149,7 @@ class TacticTurnContextServiceTracingTest {
     void shouldFinishSpanWithErrorStatusWhenSearchThrows() {
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTacticAdvisoryCount()).thenReturn(1);
         AgentContext context = contextWithTrace();
         when(tacticSearchService.buildQuery(context))
                 .thenThrow(new RuntimeException("search index unavailable"));
@@ -165,6 +169,7 @@ class TacticTurnContextServiceTracingTest {
     void shouldSkipTracingWhenTracingIsDisabledButStillAttachTactics() {
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.isTracingEnabled()).thenReturn(false);
+        when(runtimeConfigService.getTacticAdvisoryCount()).thenReturn(1);
         AgentContext context = contextWithTrace();
         TacticSearchQuery query = TacticSearchQuery.builder()
                 .rawQuery("recover")

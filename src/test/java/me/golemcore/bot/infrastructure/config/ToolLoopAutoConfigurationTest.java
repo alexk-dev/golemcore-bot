@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.system.toolloop;
+package me.golemcore.bot.infrastructure.config;
 
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -8,22 +8,29 @@ import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
+import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
+import me.golemcore.bot.domain.system.toolloop.HistoryWriter;
+import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
+import me.golemcore.bot.domain.system.toolloop.ToolFailureRecoveryService;
+import me.golemcore.bot.domain.system.toolloop.ToolLoopSystem;
+import me.golemcore.bot.domain.system.toolloop.ToolCallExecutionServiceToolExecutorAdapter;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 
-class ToolLoopConfigurationTest {
+class ToolLoopAutoConfigurationTest {
 
-    private final ToolLoopConfiguration configuration = new ToolLoopConfiguration();
+    private final ToolLoopAutoConfiguration configuration = new ToolLoopAutoConfiguration();
 
     @Test
     void shouldCreateToolExecutorPortAdapter() {
@@ -63,6 +70,7 @@ class ToolLoopConfigurationTest {
         PlanService planService = mock(PlanService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         UsageTrackingPort usageTrackingPort = mock(UsageTrackingPort.class);
+        TelemetryRollupPort telemetryRollupStore = mock(TelemetryRollupPort.class);
         CompactionOrchestrationService compactionOrchestrationService = mock(CompactionOrchestrationService.class);
         RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
         TurnProgressService turnProgressService = mock(TurnProgressService.class);
@@ -79,6 +87,7 @@ class ToolLoopConfigurationTest {
                 planService,
                 runtimeConfigService,
                 usageTrackingPort,
+                telemetryRollupStore,
                 compactionOrchestrationService,
                 runtimeEventService,
                 turnProgressService,

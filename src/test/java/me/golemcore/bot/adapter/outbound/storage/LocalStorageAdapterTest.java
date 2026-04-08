@@ -5,6 +5,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -29,6 +31,21 @@ class LocalStorageAdapterTest {
 
         storageAdapter = new LocalStorageAdapter(properties);
         storageAdapter.init();
+    }
+
+    @Test
+    void initShouldFailWhenBasePathCannotBeCreated() throws IOException {
+        Path blockedBasePath = tempDir.resolve("storage-file");
+        Files.writeString(blockedBasePath, "not a directory");
+
+        BotProperties properties = new BotProperties();
+        properties.getStorage().getLocal().setBasePath(blockedBasePath.toString());
+
+        LocalStorageAdapter brokenAdapter = new LocalStorageAdapter(properties);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, brokenAdapter::init);
+
+        assertTrue(error.getMessage().contains(blockedBasePath.toString()));
     }
 
     @Test

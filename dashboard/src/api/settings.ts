@@ -1,5 +1,5 @@
 import { isExplicitModelTier, type ExplicitModelTierId } from '../lib/modelTiers';
-import client from './client';
+import client, { type TelemetryRequestConfig } from './client';
 
 interface SecretPayload {
   value: string | null;
@@ -81,6 +81,7 @@ interface RuntimeConfigUiRecord extends UnknownRecord {
   } & UnknownRecord;
   tools?: UnknownRecord;
   voice?: UnknownRecord;
+  telemetry?: unknown;
   hive?: UnknownRecord;
   selfEvolving?: unknown;
   modelRegistry?: unknown;
@@ -211,6 +212,15 @@ function toBackendSelfEvolvingConfig(selfEvolving: UnknownRecord): UnknownRecord
   };
 }
 
+function withSettingsSectionTelemetry(sectionKey: string): TelemetryRequestConfig {
+  return {
+    _telemetry: {
+      counterKey: 'settings_save_count_by_section',
+      value: sectionKey,
+    },
+  } as TelemetryRequestConfig;
+}
+
 export interface SettingsResponse extends Record<string, unknown> {
   language?: string;
   timezone?: string;
@@ -224,7 +234,11 @@ export async function getSettings(): Promise<SettingsResponse> {
 }
 
 export async function updatePreferences(prefs: Record<string, unknown>): Promise<SettingsResponse> {
-  const { data } = await client.put<SettingsResponse>('/settings/preferences', prefs);
+  const { data } = await client.put<SettingsResponse>(
+    '/settings/preferences',
+    prefs,
+    withSettingsSectionTelemetry('general'),
+  );
   return data;
 }
 
@@ -251,6 +265,7 @@ export interface RuntimeConfig {
   skills: SkillsConfig;
   turn: TurnConfig;
   usage: UsageConfig;
+  telemetry?: TelemetryConfig;
   mcp: McpConfig;
   plan: PlanConfig;
   hive: HiveConfig;
@@ -388,8 +403,13 @@ export interface ModelRouterConfig {
   dynamicTierEnabled: boolean | null;
 }
 
+export interface ModelReference {
+  provider: string | null;
+  id: string | null;
+}
+
 export interface TierBinding {
-  model: string | null;
+  model: ModelReference | null;
   reasoning: string | null;
 }
 
@@ -427,6 +447,11 @@ export interface VoiceConfig {
 
 export interface UsageConfig {
   enabled: boolean | null;
+}
+
+export interface TelemetryConfig {
+  enabled: boolean | null;
+  clientId?: string;
 }
 
 export interface PlanConfig {
@@ -494,6 +519,13 @@ export interface SelfEvolvingTacticSearchConfig {
   embeddings: SelfEvolvingTacticEmbeddingsConfig;
   personalization: SelfEvolvingToggleConfig;
   negativeMemory: SelfEvolvingToggleConfig;
+  queryExpansion: SelfEvolvingTacticQueryExpansionConfig;
+  advisoryCount: number | null;
+}
+
+export interface SelfEvolvingTacticQueryExpansionConfig {
+  enabled: boolean | null;
+  tier: string | null;
 }
 
 export interface SelfEvolvingTacticBm25Config {
@@ -624,7 +656,11 @@ export async function updateRuntimeConfig(config: RuntimeConfig): Promise<Runtim
 }
 
 export async function updateModelRouterConfig(config: ModelRouterConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/models', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/models',
+    config,
+    withSettingsSectionTelemetry('models'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -644,7 +680,11 @@ export async function updateLlmConfig(config: LlmConfig): Promise<RuntimeConfig>
       ]),
     ),
   };
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/llm', payload);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/llm',
+    payload,
+    withSettingsSectionTelemetry('llm-providers'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -659,12 +699,22 @@ function buildLlmProviderPayload(config: LlmProviderConfig): Record<string, unkn
 }
 
 export async function addLlmProvider(name: string, config: LlmProviderConfig): Promise<RuntimeConfig> {
-  const { data } = await client.post<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, buildLlmProviderPayload(config));
+  const payload = buildLlmProviderPayload(config);
+  const { data } = await client.post<RuntimeConfigUiRecord>(
+    `/settings/runtime/llm/providers/${name}`,
+    payload,
+    withSettingsSectionTelemetry('llm-providers'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateLlmProvider(name: string, config: LlmProviderConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/llm/providers/${name}`, buildLlmProviderPayload(config));
+  const payload = buildLlmProviderPayload(config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    `/settings/runtime/llm/providers/${name}`,
+    payload,
+    withSettingsSectionTelemetry('llm-providers'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -699,7 +749,11 @@ export async function testDraftLlmProvider(name: string, config: LlmProviderConf
 }
 
 export async function updateToolsConfig(config: ToolsConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/tools', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/tools',
+    config,
+    withSettingsSectionTelemetry('tools'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -710,12 +764,20 @@ export async function updateVoiceConfig(config: VoiceConfig): Promise<RuntimeCon
     apiKey: toSecretPayload(voice.apiKey ?? null),
     whisperSttApiKey: toSecretPayload(voice.whisperSttApiKey ?? null),
   };
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/voice', payload);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/voice',
+    payload,
+    withSettingsSectionTelemetry('tool-voice'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateMemoryConfig(config: MemoryConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/memory', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/memory',
+    config,
+    withSettingsSectionTelemetry('memory'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -725,32 +787,65 @@ export async function getMemoryPresets(): Promise<MemoryPreset[]> {
 }
 
 export async function updateSkillsConfig(config: SkillsConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/skills', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/skills',
+    config,
+    withSettingsSectionTelemetry('skills'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateTurnConfig(config: TurnConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/turn', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/turn',
+    config,
+    withSettingsSectionTelemetry('turn'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/usage', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/usage',
+    config,
+    withSettingsSectionTelemetry('usage'),
+  );
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateTelemetryConfig(config: TelemetryConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/telemetry',
+    config,
+    withSettingsSectionTelemetry('telemetry'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateMcpConfig(config: McpConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/mcp', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/mcp',
+    config,
+    withSettingsSectionTelemetry('mcp'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function addMcpCatalogEntry(entry: McpCatalogEntry): Promise<RuntimeConfig> {
-  const { data } = await client.post<RuntimeConfigUiRecord>('/settings/runtime/mcp/catalog', entry);
+  const { data } = await client.post<RuntimeConfigUiRecord>(
+    '/settings/runtime/mcp/catalog',
+    entry,
+    withSettingsSectionTelemetry('mcp'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateMcpCatalogEntry(name: string, entry: McpCatalogEntry): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>(`/settings/runtime/mcp/catalog/${name}`, entry);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    `/settings/runtime/mcp/catalog/${name}`,
+    entry,
+    withSettingsSectionTelemetry('mcp'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -759,22 +854,38 @@ export async function removeMcpCatalogEntry(name: string): Promise<void> {
 }
 
 export async function updateHiveConfig(config: HiveConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/hive', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/hive',
+    config,
+    withSettingsSectionTelemetry('hive'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updatePlanConfig(config: PlanConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/plan', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/plan',
+    config,
+    withSettingsSectionTelemetry('plan'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateAutoConfig(config: AutoModeConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/auto', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/auto',
+    config,
+    withSettingsSectionTelemetry('auto'),
+  );
   return toUiRuntimeConfig(data);
 }
 
 export async function updateTracingConfig(config: TracingConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/tracing', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/tracing',
+    config,
+    withSettingsSectionTelemetry('tracing'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -783,7 +894,11 @@ export async function updateAdvancedConfig(config: {
   security?: SecurityConfig;
   compaction?: CompactionConfig;
 }): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>('/settings/runtime/advanced', config);
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/advanced',
+    config,
+    withSettingsSectionTelemetry('advanced'),
+  );
   return toUiRuntimeConfig(data);
 }
 
@@ -793,6 +908,42 @@ function toNullableString(value: unknown): string | null {
   }
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+export function modelReferenceToSpec(model: ModelReference | null | undefined): string | null {
+  if (model == null) {
+    return null;
+  }
+  const id = toNullableString(model.id);
+  if (id == null) {
+    return null;
+  }
+  const provider = toNullableString(model.provider);
+  if (provider == null || id.startsWith(`${provider}/`)) {
+    return id;
+  }
+  return `${provider}/${id}`;
+}
+
+export function modelReferenceFromSpec(
+  modelSpec: string | null | undefined,
+  providerHint: string | null = null,
+): ModelReference | null {
+  const normalizedModelSpec = toNullableString(modelSpec);
+  if (normalizedModelSpec == null) {
+    return null;
+  }
+  const normalizedProvider = toNullableString(providerHint);
+  if (normalizedProvider != null && normalizedModelSpec.startsWith(`${normalizedProvider}/`)) {
+    return {
+      provider: normalizedProvider,
+      id: normalizedModelSpec.slice(normalizedProvider.length + 1),
+    };
+  }
+  return {
+    provider: normalizedProvider,
+    id: normalizedModelSpec,
+  };
 }
 
 function toModelRegistryConfig(value: unknown): ModelRegistryConfig {
@@ -861,6 +1012,9 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
     : {};
   const tacticsNegativeMemory = tacticsSearch.negativeMemory != null && typeof tacticsSearch.negativeMemory === 'object'
     ? tacticsSearch.negativeMemory as UnknownRecord
+    : {};
+  const tacticsQueryExpansion = tacticsSearch.queryExpansion != null && typeof tacticsSearch.queryExpansion === 'object'
+    ? tacticsSearch.queryExpansion as UnknownRecord
     : {};
   const promotion = record.promotion != null && typeof record.promotion === 'object'
     ? record.promotion as UnknownRecord
@@ -954,6 +1108,17 @@ function toSelfEvolvingConfig(value: unknown): SelfEvolvingConfig {
         negativeMemory: {
           enabled: typeof tacticsNegativeMemory.enabled === 'boolean' ? tacticsNegativeMemory.enabled : true,
         },
+        queryExpansion: {
+          enabled: typeof tacticsQueryExpansion.enabled === 'boolean'
+            ? tacticsQueryExpansion.enabled
+            : true,
+          tier: typeof tacticsQueryExpansion.tier === 'string'
+            ? tacticsQueryExpansion.tier
+            : 'balanced',
+        },
+        advisoryCount: typeof tacticsSearch.advisoryCount === 'number'
+          ? tacticsSearch.advisoryCount
+          : 1,
       },
     },
     promotion: {
@@ -999,6 +1164,25 @@ function normalizeSelfEvolvingEmbeddingModel(
     : null;
 }
 
+function toModelReference(value: unknown): ModelReference | null {
+  if (typeof value === 'string') {
+    return modelReferenceFromSpec(value);
+  }
+  if (value == null || typeof value !== 'object') {
+    return null;
+  }
+  const record = value as UnknownRecord;
+  const provider = toNullableString(record.provider);
+  const id = toNullableString(record.id);
+  if (provider == null && id == null) {
+    return null;
+  }
+  return {
+    provider,
+    id,
+  };
+}
+
 function toTierBinding(value: unknown): TierBinding {
   if (value == null || typeof value !== 'object') {
     return {
@@ -1008,7 +1192,7 @@ function toTierBinding(value: unknown): TierBinding {
   }
   const record = value as UnknownRecord;
   return {
-    model: toNullableString(record.model),
+    model: toModelReference(record.model),
     reasoning: toNullableString(record.reasoning),
   };
 }

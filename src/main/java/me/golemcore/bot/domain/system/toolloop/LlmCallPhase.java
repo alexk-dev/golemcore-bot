@@ -134,6 +134,19 @@ class LlmCallPhase {
      */
     LlmCallOutcome execute(TurnState turnState, HistoryWriter historyWriter) {
         AgentContext context = turnState.getContext();
+
+        if (isInterruptRequested(context)) {
+            clearInterruptFlag(context);
+            applyAttachments(context, turnState.getAccumulatedAttachments());
+            emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                    eventPayload("reason", "user_interrupt", "llmCalls", turnState.getLlmCalls(),
+                            "toolExecutions", turnState.getToolExecutions()));
+            return new LlmCallOutcome.Interrupted(stopTurn(context,
+                    context.getAttribute(ContextAttributes.LLM_RESPONSE), null,
+                    "interrupted by user", turnState.getLlmCalls(), turnState.getToolExecutions(),
+                    historyWriter));
+        }
+
         int attempt = turnState.incrementLlmCalls();
         emitRuntimeEvent(context, RuntimeEventType.LLM_STARTED, eventPayload("attempt", attempt));
 
@@ -574,6 +587,7 @@ class LlmCallPhase {
                         .traceSpanId(traceContext != null ? traceContext.getSpanId() : null)
                         .traceParentSpanId(traceContext != null ? traceContext.getParentSpanId() : null)
                         .traceRootKind(traceContext != null ? traceContext.getRootKind() : null)
+                        .modelTier(normalizeTierForTrace(context.getModelTier()))
                         .build();
             }
 

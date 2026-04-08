@@ -65,6 +65,7 @@ public class LlmRequest {
     private String traceSpanId;
     private String traceParentSpanId;
     private String traceRootKind;
+    private String modelTier;
 
     /**
      * Reasoning effort for OpenAI o-series models (o1, o3, gpt-5.1, etc.) Values:

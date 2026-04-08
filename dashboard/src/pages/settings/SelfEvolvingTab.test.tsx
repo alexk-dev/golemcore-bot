@@ -66,6 +66,11 @@ const config: SelfEvolvingConfig = {
       negativeMemory: {
         enabled: true,
       },
+      queryExpansion: {
+        enabled: true,
+        tier: 'balanced',
+      },
+      advisoryCount: 1,
     },
   },
   promotion: {

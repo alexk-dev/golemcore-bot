@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.selfevolving.benchmark;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
@@ -27,19 +28,28 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
+import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
+import me.golemcore.bot.domain.service.SessionService;
+import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.StringValueSupport;
 
 /**
  * Runs outcome and process judges on top of the existing LLM port and model
@@ -49,78 +59,149 @@ import me.golemcore.bot.domain.service.StringValueSupport;
 @Slf4j
 public class LlmJudgeService {
 
+    private static final int MAX_CONVERSATION_SNIPPET_LENGTH = 2000;
+
     private static final String OUTCOME_SYSTEM_PROMPT = """
             You are the outcome judge for a golem SelfEvolving run.
-            Return only JSON matching the RunVerdict schema fields you can justify.
-            Always include evidenceRefs when evidence anchors are required.
-            Score completion, correctness, and rollout recommendation from the supplied trace evidence.
+            You receive the user's original request, the assistant's response, and structured trace data \
+            including tool call sequences, error details, LLM call summaries, and span breakdowns.
+
+            Your task:
+            1. Assess whether the assistant's response actually fulfils the user's request.
+            2. Score task_completion (0.0-1.0) and correctness based on the conversation and trace evidence.
+            3. Recommend a rollout action: "approve_gated" or "reject".
+               Use "approve_gated" for successful runs even when the safe next step is gated observation or shadowing.
+            4. Anchor every claim to specific spanIds from the trace digest.
+
+            Always respond in English regardless of the user's language.
+
+            Return only valid JSON matching the RunVerdict schema:
+            {"outcomeStatus":"COMPLETED|FAILED|PARTIAL","outcomeSummary":"...","confidence":0.0-1.0,\
+            "promotionRecommendation":"approve_gated|reject",\
+            "evidenceRefs":[{"traceId":"...","spanId":"...","outputFragment":"..."}],\
+            "processFindings":[]}
             """;
     private static final String PROCESS_SYSTEM_PROMPT = """
             You are the process judge for a golem SelfEvolving run.
-            Return only JSON matching the RunVerdict schema fields you can justify.
-            Focus on skill choice, tier switching, tool churn, and process findings.
-            Always include evidenceRefs when evidence anchors are required.
+            You receive the user's original request, the assistant's response, and structured trace data \
+            including tool call sequences, error details, LLM call summaries, and span breakdowns.
+
+            Your task:
+            1. Evaluate the agent's process: Was the tool sequence efficient? Were there unnecessary retries or churn?
+            2. Check skill choice: Did the agent pick appropriate skills for the task?
+            3. Check tier routing: Were LLM calls routed to appropriate model tiers for the task complexity?
+            4. Identify process anti-patterns: tool loops, excessive errors, wasted LLM calls, timeout patterns.
+            5. List each finding as a processFindings entry (e.g., "tool_churn:shell", "tier_overuse:deep").
+
+            Always respond in English regardless of the user's language.
+
+            Return only valid JSON matching the RunVerdict schema:
+            {"processStatus":"EFFICIENT|ISSUES_FOUND|INEFFICIENT","processSummary":"...","confidence":0.0-1.0,\
+            "evidenceRefs":[{"traceId":"...","spanId":"...","outputFragment":"..."}],\
+            "processFindings":["finding:detail"]}
             """;
     private static final String TIEBREAKER_SYSTEM_PROMPT = """
             You are the arbitration judge for a golem SelfEvolving run.
-            Return only JSON matching the RunVerdict schema fields you can justify.
-            Resolve disagreements from prior judges and keep evidenceRefs anchored to the trace.
+            You receive the same data as the prior judges, plus their merged verdict.
+
+            Your task:
+            1. Resolve disagreements between outcome and process judges.
+            2. Re-examine the trace evidence where judges conflict.
+            3. Produce a final verdict that is internally consistent.
+            4. Keep evidenceRefs anchored to specific spanIds from the trace.
+
+            Always respond in English regardless of the user's language.
+
+            Return only valid JSON matching the RunVerdict schema.
             """;
+
+    private static final String JUDGE_CHANNEL_PREFIX = "judge_";
+    private static final int MAX_JUDGE_RETRIES = 3;
+    private static final long INITIAL_BACKOFF_MS = 5_000;
+    private static final double BACKOFF_MULTIPLIER = 2.0;
 
     private final LlmPort llmPort;
     private final JudgeTierResolver judgeTierResolver;
+    private final JudgeTraceDigestService judgeTraceDigestService;
     private final RuntimeConfigService runtimeConfigService;
+    private final SessionService sessionService;
+    private final TraceService traceService;
     private final ObjectMapper objectMapper;
 
     public LlmJudgeService(
             LlmPort llmPort,
             JudgeTierResolver judgeTierResolver,
-            RuntimeConfigService runtimeConfigService) {
+            JudgeTraceDigestService judgeTraceDigestService,
+            RuntimeConfigService runtimeConfigService,
+            SessionService sessionService,
+            TraceService traceService) {
         this.llmPort = llmPort;
         this.judgeTierResolver = judgeTierResolver;
+        this.judgeTraceDigestService = judgeTraceDigestService;
         this.runtimeConfigService = runtimeConfigService;
+        this.sessionService = sessionService;
+        this.traceService = traceService;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.findAndRegisterModules();
     }
 
-    public RunVerdict judge(RunRecord runRecord, TraceRecord traceRecord, RunVerdict deterministicVerdict) {
+    public RunVerdict judge(RunRecord runRecord, TraceRecord traceRecord, RunVerdict deterministicVerdict,
+            String userQuery, String assistantResponse) {
         if (!isJudgeEnabled() || llmPort == null || !llmPort.isAvailable()) {
             return deterministicVerdict;
         }
 
+        ModelSelectionService.ModelSelection primarySelection;
         try {
-            ModelSelectionService.ModelSelection primarySelection = judgeTierResolver.resolveSelection("primary");
-            RunVerdict outcomeVerdict = requestJudgeVerdict(
-                    "outcome",
-                    primarySelection,
-                    runRecord,
-                    traceRecord,
-                    deterministicVerdict);
-            RunVerdict processVerdict = requestJudgeVerdict(
-                    "process",
-                    primarySelection,
-                    runRecord,
-                    traceRecord,
-                    deterministicVerdict);
-            RunVerdict mergedVerdict = mergeVerdicts(deterministicVerdict, outcomeVerdict, processVerdict);
-            if (shouldEscalate(mergedVerdict)) {
+            primarySelection = judgeTierResolver.resolveSelection("primary");
+        } catch (RuntimeException exception) {
+            log.warn("[SelfEvolving] Failed to resolve judge tier: {}", exception.getMessage());
+            return deterministicVerdict;
+        }
+
+        RunVerdict outcomeVerdict = requestJudgeVerdictSafe(
+                "outcome", primarySelection, runRecord, traceRecord, deterministicVerdict,
+                userQuery, assistantResponse);
+        RunVerdict processVerdict = requestJudgeVerdictSafe(
+                "process", primarySelection, runRecord, traceRecord, deterministicVerdict,
+                userQuery, assistantResponse);
+
+        RunVerdict mergedVerdict = mergeVerdicts(deterministicVerdict, outcomeVerdict, processVerdict);
+        if (shouldEscalate(mergedVerdict)) {
+            try {
                 ModelSelectionService.ModelSelection tiebreakerSelection = judgeTierResolver.resolveSelection(
                         "tiebreaker");
                 RunVerdict tiebreakerVerdict = requestJudgeVerdict(
-                        "tiebreaker",
-                        tiebreakerSelection,
-                        runRecord,
-                        traceRecord,
-                        mergedVerdict);
+                        "tiebreaker", tiebreakerSelection, runRecord, traceRecord, mergedVerdict,
+                        userQuery, assistantResponse);
                 mergedVerdict = applyOverride(mergedVerdict, tiebreakerVerdict);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            } catch (ExecutionException | RuntimeException exception) {
+                log.debug("[SelfEvolving] Tiebreaker judge failed, using merged verdict: {}", exception.getMessage());
             }
-            return mergedVerdict;
-        } catch (InterruptedException e) {
+        }
+        return mergedVerdict;
+    }
+
+    private RunVerdict requestJudgeVerdictSafe(
+            String judgeType,
+            ModelSelectionService.ModelSelection selection,
+            RunRecord runRecord,
+            TraceRecord traceRecord,
+            RunVerdict seedVerdict,
+            String userQuery,
+            String assistantResponse) {
+        try {
+            return requestJudgeVerdict(judgeType, selection, runRecord, traceRecord, seedVerdict,
+                    userQuery, assistantResponse);
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            return deterministicVerdict;
-        } catch (ExecutionException | RuntimeException e) {
-            log.debug("[SelfEvolving] Falling back to deterministic verdict: {}", e.getMessage());
-            return deterministicVerdict;
+            log.debug("[SelfEvolving] {} judge interrupted", judgeType);
+            return null;
+        } catch (ExecutionException | RuntimeException exception) {
+            log.warn("[SelfEvolving] {} judge failed: {}", judgeType, exception.getMessage());
+            return null;
         }
     }
 
@@ -128,6 +209,9 @@ public class LlmJudgeService {
         if (verdict == null) {
             throw new IllegalArgumentException("Judge verdict must not be null");
         }
+        validateOutcomeStatus(verdict.getOutcomeStatus());
+        validateProcessStatus(verdict.getProcessStatus());
+        validatePromotionRecommendation(verdict.getPromotionRecommendation());
         if (requireEvidenceAnchors() && (verdict.getEvidenceRefs() == null || verdict.getEvidenceRefs().isEmpty())) {
             throw new IllegalArgumentException("Judge verdict must include evidence refs");
         }
@@ -138,32 +222,173 @@ public class LlmJudgeService {
             ModelSelectionService.ModelSelection selection,
             RunRecord runRecord,
             TraceRecord traceRecord,
-            RunVerdict seedVerdict) throws InterruptedException, ExecutionException {
-        LlmRequest request = LlmRequest.builder()
-                .model(selection.model())
-                .reasoningEffort(selection.reasoning())
-                .systemPrompt(resolveSystemPrompt(judgeType))
-                .messages(List.of(Message.builder()
-                        .role("user")
-                        .content(buildPrompt(judgeType, runRecord, traceRecord, seedVerdict))
-                        .build()))
-                .temperature(0.1)
-                .sessionId(runRecord != null ? runRecord.getSessionId() : null)
-                .traceId(runRecord != null ? runRecord.getTraceId() : null)
-                .build();
+            RunVerdict seedVerdict,
+            String userQuery,
+            String assistantResponse) throws InterruptedException, ExecutionException {
+        String runId = runRecord != null ? runRecord.getId() : "unknown";
+        String channelType = JUDGE_CHANNEL_PREFIX + judgeType;
+        String parentTraceId = runRecord != null ? runRecord.getTraceId() : null;
 
-        LlmResponse response = llmPort.chat(request).get();
-        if (response == null || StringValueSupport.isBlank(response.getContent())) {
-            throw new IllegalArgumentException("Judge returned empty response");
+        AgentSession judgeSession = sessionService.getOrCreate(channelType, runId);
+        Instant now = Instant.now();
+        Map<String, Object> traceAttributes = new LinkedHashMap<>();
+        traceAttributes.put("judge.type", judgeType);
+        traceAttributes.put("judge.model", selection.model());
+        traceAttributes.put("judge.run_id", runId);
+        if (parentTraceId != null) {
+            traceAttributes.put("judge.parent_trace_id", parentTraceId);
         }
-        RunVerdict parsedVerdict = parseVerdict(response.getContent(), runRecord);
-        validate(parsedVerdict);
-        return parsedVerdict;
+        TraceContext rootTrace = traceService.startRootTrace(judgeSession,
+                "judge:" + judgeType, TraceSpanKind.INTERNAL, now, traceAttributes);
+
+        log.debug("[SelfEvolving] Starting {} judge in session {} (parent trace: {})",
+                judgeType, judgeSession.getId(), parentTraceId);
+
+        String prompt = buildPrompt(judgeType, runRecord, traceRecord, seedVerdict, userQuery, assistantResponse);
+
+        Message userMessage = Message.builder()
+                .role("user")
+                .content(prompt)
+                .build();
+        judgeSession.addMessage(userMessage);
+
+        try {
+            LlmResponse response = executeJudgeLlmCall(judgeSession, rootTrace, judgeType, selection, prompt);
+
+            String responseContent = response != null ? response.getContent() : null;
+            if (responseContent != null && !responseContent.isBlank()) {
+                judgeSession.addMessage(Message.builder()
+                        .role("assistant")
+                        .content(responseContent)
+                        .build());
+            }
+
+            if (response == null || StringValueSupport.isBlank(responseContent)) {
+                throw new IllegalArgumentException("Judge returned empty response");
+            }
+            RunVerdict parsedVerdict = parseVerdict(responseContent, runRecord);
+            validate(parsedVerdict);
+            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.OK, null, Instant.now());
+            return parsedVerdict;
+        } catch (InterruptedException exception) {
+            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.ERROR,
+                    "Judge interrupted", Instant.now());
+            throw exception;
+        } catch (ExecutionException | RuntimeException exception) {
+            traceService.finishSpan(judgeSession, rootTrace, TraceStatusCode.ERROR,
+                    exception.getMessage(), Instant.now());
+            throw exception;
+        } finally {
+            saveJudgeSession(judgeSession);
+        }
+    }
+
+    private LlmResponse executeJudgeLlmCall(
+            AgentSession judgeSession,
+            TraceContext rootTrace,
+            String judgeType,
+            ModelSelectionService.ModelSelection selection,
+            String prompt) throws InterruptedException, ExecutionException {
+        int attempt = 0;
+        while (true) {
+            Map<String, Object> llmAttributes = new LinkedHashMap<>();
+            llmAttributes.put("llm.model", selection.model());
+            llmAttributes.put("llm.reasoning", selection.reasoning());
+            if (attempt > 0) {
+                llmAttributes.put("llm.retry_attempt", attempt);
+            }
+            TraceContext llmSpan = traceService.startSpan(judgeSession, rootTrace,
+                    "llm.chat", TraceSpanKind.LLM, Instant.now(), llmAttributes);
+
+            LlmRequest request = LlmRequest.builder()
+                    .model(selection.model())
+                    .reasoningEffort(selection.reasoning())
+                    .systemPrompt(resolveSystemPrompt(judgeType))
+                    .messages(List.of(Message.builder()
+                            .role("user")
+                            .content(prompt)
+                            .build()))
+                    .temperature(0.1)
+                    .sessionId(judgeSession.getId())
+                    .traceId(llmSpan.getTraceId())
+                    .traceSpanId(llmSpan.getSpanId())
+                    .traceRootKind("judge_" + judgeType)
+                    .build();
+
+            captureSnapshot(judgeSession, llmSpan, "request", request);
+            try {
+                LlmResponse response = llmPort.chat(request).get();
+                int contentLength = response != null && response.getContent() != null
+                        ? response.getContent().length()
+                        : 0;
+                log.debug("[SelfEvolving] Judge {} LLM call returned, content length: {}", judgeType, contentLength);
+                captureSnapshot(judgeSession, llmSpan, "response", response);
+                traceService.finishSpan(judgeSession, llmSpan, TraceStatusCode.OK, null, Instant.now());
+                return response;
+            } catch (ExecutionException | RuntimeException exception) {
+                traceService.finishSpan(judgeSession, llmSpan, TraceStatusCode.ERROR,
+                        exception.getMessage(), Instant.now());
+                if (attempt < MAX_JUDGE_RETRIES && isRetryableError(exception)) {
+                    long backoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
+                    log.warn("[SelfEvolving] Judge {} rate limited (attempt {}/{}), retrying in {}ms",
+                            judgeType, attempt + 1, MAX_JUDGE_RETRIES, backoffMs);
+                    Thread.sleep(backoffMs);
+                    attempt++;
+                } else {
+                    throw exception;
+                }
+            }
+        }
+    }
+
+    private boolean isRetryableError(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String msg = current.getMessage();
+            if (msg != null && (msg.contains("rate_limit") || msg.contains("429")
+                    || msg.contains("Too Many Requests") || msg.contains("token_quota_exceeded")
+                    || msg.contains("model_cooldown") || msg.contains("cooling down")
+                    || msg.contains("overloaded") || msg.contains("503"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private void captureSnapshot(AgentSession session, TraceContext spanContext, String role, Object payload) {
+        try {
+            RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
+            if (tracingConfig == null || !Boolean.TRUE.equals(tracingConfig.getEnabled())) {
+                log.debug("[SelfEvolving] Skipping {} snapshot: tracing disabled", role);
+                return;
+            }
+            // Judge snapshots are always captured when tracing is enabled — they are
+            // essential for debugging self-evolving verdicts and should not depend on
+            // the general payloadSnapshotsEnabled toggle.
+            tracingConfig.setPayloadSnapshotsEnabled(true);
+            byte[] data = objectMapper.writeValueAsBytes(payload);
+            log.debug("[SelfEvolving] Capturing {} snapshot ({} bytes) for span {}",
+                    role, data.length, spanContext.getSpanId());
+            traceService.captureSnapshot(session, spanContext, tracingConfig,
+                    role, "application/json", data);
+        } catch (Exception exception) { // NOSONAR - tracing must not break judge flow
+            log.warn("[SelfEvolving] Failed to capture {} snapshot: {}", role, exception.getMessage(), exception);
+        }
+    }
+
+    private void saveJudgeSession(AgentSession session) {
+        try {
+            sessionService.save(session);
+        } catch (RuntimeException exception) { // NOSONAR - persistence failure must not break judge
+            log.warn("[SelfEvolving] Failed to save judge session {}: {}", session.getId(), exception.getMessage());
+        }
     }
 
     private RunVerdict parseVerdict(String rawContent, RunRecord runRecord) {
         try {
             RunVerdict verdict = objectMapper.readValue(rawContent, RunVerdict.class);
+            normalizeVerdict(verdict);
             if (StringValueSupport.isBlank(verdict.getId())) {
                 verdict.setId(UUID.randomUUID().toString());
             }
@@ -177,6 +402,92 @@ public class LlmJudgeService {
         } catch (Exception e) {
             throw new IllegalArgumentException("Unable to parse judge verdict", e);
         }
+    }
+
+    private void normalizeVerdict(RunVerdict verdict) {
+        if (verdict == null) {
+            return;
+        }
+        verdict.setOutcomeStatus(normalizeOutcomeStatus(verdict.getOutcomeStatus()));
+        verdict.setProcessStatus(normalizeProcessStatus(verdict.getProcessStatus()));
+        verdict.setPromotionRecommendation(normalizePromotionRecommendation(verdict.getPromotionRecommendation()));
+    }
+
+    private String normalizeOutcomeStatus(String outcomeStatus) {
+        if (StringValueSupport.isBlank(outcomeStatus)) {
+            return outcomeStatus;
+        }
+        return switch (canonicalToken(outcomeStatus)) {
+        case "SUCCESS", "COMPLETED" -> "COMPLETED";
+        case "FAILED", "ERROR" -> "FAILED";
+        case "PARTIAL" -> "PARTIAL";
+        case "RUNNING" -> "RUNNING";
+        default -> canonicalToken(outcomeStatus);
+        };
+    }
+
+    private String normalizeProcessStatus(String processStatus) {
+        if (StringValueSupport.isBlank(processStatus)) {
+            return processStatus;
+        }
+        return switch (canonicalToken(processStatus)) {
+        case "CLEAN", "EFFICIENT" -> "CLEAN";
+        case "ISSUES_FOUND", "INEFFICIENT" -> "ISSUES_FOUND";
+        default -> canonicalToken(processStatus);
+        };
+    }
+
+    private String normalizePromotionRecommendation(String promotionRecommendation) {
+        if (StringValueSupport.isBlank(promotionRecommendation)) {
+            return promotionRecommendation;
+        }
+        return switch (canonicalRecommendationToken(promotionRecommendation)) {
+        case "approve_gated", "approve", "approved", "observe", "shadow" -> "approve_gated";
+        case "reject", "rejected" -> "reject";
+        default -> canonicalRecommendationToken(promotionRecommendation);
+        };
+    }
+
+    private void validateOutcomeStatus(String outcomeStatus) {
+        if (StringValueSupport.isBlank(outcomeStatus)) {
+            return;
+        }
+        if (!List.of("COMPLETED", "FAILED", "PARTIAL", "RUNNING").contains(outcomeStatus)) {
+            throw new IllegalArgumentException("Judge verdict returned unsupported outcomeStatus: " + outcomeStatus);
+        }
+    }
+
+    private void validateProcessStatus(String processStatus) {
+        if (StringValueSupport.isBlank(processStatus)) {
+            return;
+        }
+        if (!List.of("CLEAN", "ISSUES_FOUND").contains(processStatus)) {
+            throw new IllegalArgumentException("Judge verdict returned unsupported processStatus: " + processStatus);
+        }
+    }
+
+    private void validatePromotionRecommendation(String promotionRecommendation) {
+        if (StringValueSupport.isBlank(promotionRecommendation)) {
+            return;
+        }
+        if (!List.of("approve_gated", "reject").contains(promotionRecommendation)) {
+            throw new IllegalArgumentException("Judge verdict returned unsupported promotionRecommendation: "
+                    + promotionRecommendation);
+        }
+    }
+
+    private String canonicalToken(String value) {
+        return value.trim()
+                .replace('-', '_')
+                .replace(' ', '_')
+                .toUpperCase(Locale.ROOT);
+    }
+
+    private String canonicalRecommendationToken(String value) {
+        return value.trim()
+                .replace('-', '_')
+                .replace(' ', '_')
+                .toLowerCase(Locale.ROOT);
     }
 
     private RunVerdict mergeVerdicts(RunVerdict deterministicVerdict, RunVerdict outcomeVerdict,
@@ -351,7 +662,8 @@ public class LlmJudgeService {
         };
     }
 
-    private String buildPrompt(String judgeType, RunRecord runRecord, TraceRecord traceRecord, RunVerdict seedVerdict) {
+    private String buildPrompt(String judgeType, RunRecord runRecord, TraceRecord traceRecord,
+            RunVerdict seedVerdict, String userQuery, String assistantResponse) {
         StringBuilder promptBuilder = new StringBuilder();
         promptBuilder.append("judgeType=").append(judgeType).append('\n');
         if (runRecord != null) {
@@ -361,17 +673,46 @@ public class LlmJudgeService {
         }
         if (traceRecord != null) {
             promptBuilder.append("traceId=").append(traceRecord.getTraceId()).append('\n');
-            promptBuilder.append("traceTruncated=").append(traceRecord.isTruncated()).append('\n');
-            promptBuilder.append("spanCount=")
-                    .append(traceRecord.getSpans() != null ? traceRecord.getSpans().size() : 0)
-                    .append('\n');
         }
         if (seedVerdict != null) {
             promptBuilder.append("seedOutcomeStatus=").append(seedVerdict.getOutcomeStatus()).append('\n');
             promptBuilder.append("seedProcessStatus=").append(seedVerdict.getProcessStatus()).append('\n');
             promptBuilder.append("seedProcessFindings=").append(seedVerdict.getProcessFindings()).append('\n');
         }
+
+        if (!StringValueSupport.isBlank(userQuery)) {
+            promptBuilder.append('\n');
+            promptBuilder.append("=== USER REQUEST ===\n");
+            promptBuilder.append(truncateSnippet(userQuery)).append('\n');
+            promptBuilder.append("=== END USER REQUEST ===\n");
+        }
+        if (!StringValueSupport.isBlank(assistantResponse)) {
+            promptBuilder.append('\n');
+            promptBuilder.append("=== ASSISTANT RESPONSE ===\n");
+            promptBuilder.append(truncateSnippet(assistantResponse)).append('\n');
+            promptBuilder.append("=== END ASSISTANT RESPONSE ===\n");
+        }
+
+        String traceDigest = judgeTraceDigestService.buildDigest(runRecord, traceRecord);
+        if (!StringValueSupport.isBlank(traceDigest)) {
+            promptBuilder.append('\n');
+            promptBuilder.append("=== TRACE DIGEST ===\n");
+            promptBuilder.append(traceDigest);
+            promptBuilder.append("=== END TRACE DIGEST ===\n");
+        }
+
+        promptBuilder.append('\n');
         promptBuilder.append("Return strict JSON only.");
         return promptBuilder.toString();
+    }
+
+    private String truncateSnippet(String text) {
+        if (text == null) {
+            return "";
+        }
+        if (text.length() <= MAX_CONVERSATION_SNIPPET_LENGTH) {
+            return text;
+        }
+        return text.substring(0, MAX_CONVERSATION_SNIPPET_LENGTH) + "\n... [truncated]";
     }
 }

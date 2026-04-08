@@ -12,6 +12,7 @@ import {
   useResolveModelRegistry,
   useSaveModel,
 } from '../../../hooks/useModels';
+import { useTelemetry } from '../../../lib/telemetry/TelemetryProvider';
 import { AvailableModelInsertModal } from './AvailableModelInsertModal';
 import { ModelCatalogForm } from './ModelCatalogForm';
 import { ModelCatalogSidebar } from './ModelCatalogSidebar';
@@ -19,8 +20,10 @@ import type { ProviderProfileSummary } from './modelCatalogProviderProfiles';
 import {
   createDraftFromSuggestion,
   createEmptyModelDraft,
+  findExistingModelId,
   getGroupedCatalogModels,
   isModelDraftDirty,
+  resolvePersistedModelId,
   toModelDraft,
   toModelSettings,
   validateModelDraft,
@@ -127,6 +130,7 @@ function ModelCatalogEditorBody({
 }
 
 export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps): ReactElement {
+  const telemetry = useTelemetry();
   const {
     data: modelsConfig,
     isLoading: modelsLoading,
@@ -173,10 +177,15 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
       return;
     }
 
-    const targetId = draft.id.trim();
+    const targetId = resolvePersistedModelId(draft, modelsConfig?.models ?? {}, isExisting ? selectedModelId : null);
     try {
-      await saveModel.mutateAsync({ id: targetId, settings: toModelSettings(draft) });
+      await saveModel.mutateAsync({
+        id: targetId,
+        previousId: isExisting ? selectedModelId : null,
+        settings: toModelSettings(draft),
+      });
       await refetchModelsConfig();
+      telemetry.recordCounter('model_catalog_edit_count');
       startTransition(() => {
         setSelectedModelId(targetId);
       });
@@ -208,6 +217,7 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
     try {
       await reloadModels.mutateAsync();
       await refetchModelsConfig();
+      telemetry.recordCounter('model_reload_count');
       toast.success('Model catalog reloaded');
     } catch (error) {
       toast.error(extractErrorMessage(error));
@@ -246,10 +256,10 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
         modelsConfig,
         resolvedRegistry.defaultSettings,
       );
-      const existingModel = modelsConfig?.models[nextDraft.id];
+      const existingModelId = findExistingModelId(modelsConfig?.models ?? {}, nextDraft);
       startTransition(() => {
         setSelectedProviderName(suggestion.provider);
-        setSelectedModelId(existingModel != null ? nextDraft.id : NEW_MODEL_SELECTION);
+        setSelectedModelId(existingModelId ?? NEW_MODEL_SELECTION);
         setDraft(nextDraft);
         setIsInsertModalOpen(false);
       });

@@ -7,9 +7,11 @@ import { hasOverriddenPath, hasOverriddenPathPrefix } from './selfEvolvingOverri
 import {
   type EmbeddingsConfig,
   type OllamaEmbeddingPreset,
+  AdvisoryCountSettings,
   EmbeddingDimensionSettings,
   EmbeddingProviderSelector,
   LocalEmbeddingModelSection,
+  QueryExpansionSettings,
   RemoteEmbeddingFields,
   SearchModeSettings,
 } from './SelfEvolvingTacticSearchEmbeddingsSections';
@@ -426,6 +428,22 @@ export function SelfEvolvingTacticSearchEmbeddingsSettings({
         disabled={embeddingFieldsManaged}
         updateEmbeddings={updateEmbeddings}
         toNullableInt={toNullableInt}
+      />
+
+      <hr className="my-4" />
+
+      <QueryExpansionSettings
+        queryExpansion={form.tactics.search.queryExpansion}
+        disabled={hasOverriddenPathPrefix(overriddenPaths, 'tactics.search.queryExpansion')}
+        setForm={setForm}
+      />
+
+      <hr className="my-4" />
+
+      <AdvisoryCountSettings
+        advisoryCount={form.tactics.search.advisoryCount}
+        disabled={hasOverriddenPath(overriddenPaths, 'tactics.search.advisoryCount')}
+        setForm={setForm}
       />
     </>
   );

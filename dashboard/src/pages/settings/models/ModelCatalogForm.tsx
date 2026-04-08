@@ -1,15 +1,19 @@
 import { type ReactElement, useState } from 'react';
-import { FiSave, FiTrash2 } from 'react-icons/fi';
+import { FiPlay, FiSave, FiTrash2 } from 'react-icons/fi';
+import toast from 'react-hot-toast';
+import type { TestModelResponse } from '../../../api/models';
 import ConfirmModal from '../../../components/common/ConfirmModal';
 import { SaveStateHint } from '../../../components/common/SettingsSaveBar';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
+import { Modal } from '../../../components/ui/bootstrap-overlay';
 import { Form } from '../../../lib/react-bootstrap';
+import { useTestModel } from '../../../hooks/useModels';
 import type { ProviderProfileSummary } from './modelCatalogProviderProfiles';
 import { ModelCatalogIdentityFields } from './ModelCatalogIdentityFields';
 import { ReasoningLevelsEditor } from './ReasoningLevelsEditor';
-import type { ModelDraft } from './modelCatalogTypes';
+import { canTestModelDraft, type ModelDraft, toPersistedModelId } from './modelCatalogTypes';
 
 interface ModelCatalogFormProps {
   draft: ModelDraft;
@@ -76,7 +80,28 @@ export function ModelCatalogForm({
   onDelete,
 }: ModelCatalogFormProps): ReactElement {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [testResult, setTestResult] = useState<TestModelResponse | null>(null);
+  const testModelMutation = useTestModel();
   const title = buildTitle(draft, isExisting);
+  const canTestModel = canTestModelDraft(draft, isExisting, isDirty);
+
+  function handleTestModel(): void {
+    if (!canTestModel) {
+      toast.error(isExisting ? 'Save changes before testing this model.' : 'Create the model before testing it.');
+      return;
+    }
+
+    const model = toPersistedModelId(draft);
+    if (model.length === 0) {
+      toast.error('Enter a model ID and provider before testing.');
+      return;
+    }
+    setTestResult(null);
+    testModelMutation.mutate(model, {
+      onSuccess: (result) => setTestResult(result),
+      onError: () => toast.error('Failed to send test request.'),
+    });
+  }
 
   return (
     <>
@@ -101,6 +126,14 @@ export function ModelCatalogForm({
             <Button onClick={onSave} disabled={isSaving}>
               <FiSave size={15} />
               {isSaving ? 'Saving...' : isExisting ? 'Save Changes' : 'Create Model'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleTestModel}
+              disabled={testModelMutation.isPending || !canTestModel}
+            >
+              <FiPlay size={15} />
+              {testModelMutation.isPending ? 'Testing...' : 'Test Model'}
             </Button>
             {isExisting && (
               <Button
@@ -206,8 +239,31 @@ export function ModelCatalogForm({
           <div className="rounded-2xl border border-border/80 bg-muted/20 px-4 py-3">
             <SaveStateHint isDirty={isDirty} />
           </div>
+
         </CardContent>
       </Card>
+
+      <Modal show={testResult != null} onHide={() => setTestResult(null)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>{testResult?.success ? 'Model Response' : 'Test Failed'}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className={`rounded-2xl border px-4 py-3 text-sm ${
+            testResult?.success
+              ? 'border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300'
+              : 'border-destructive/30 bg-destructive/10 text-destructive dark:text-red-300'
+          }`}>
+            <div className="whitespace-pre-wrap break-words">
+              {testResult?.success ? testResult.reply : testResult?.error}
+            </div>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" size="sm" onClick={() => setTestResult(null)}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
 
       <ConfirmModal
         show={isDeleteConfirmOpen}

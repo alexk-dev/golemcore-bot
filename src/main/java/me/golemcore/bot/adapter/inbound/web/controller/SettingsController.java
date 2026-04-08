@@ -532,6 +532,15 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
+    @PutMapping("/runtime/telemetry")
+    public Mono<ResponseEntity<RuntimeConfig>> updateTelemetryConfig(
+            @RequestBody RuntimeConfig.TelemetryConfig telemetryConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setTelemetry(telemetryConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    }
+
     @PutMapping("/runtime/mcp")
     public Mono<ResponseEntity<RuntimeConfig>> updateMcpConfig(
             @RequestBody RuntimeConfig.McpConfig mcpConfig) {
@@ -1172,6 +1181,8 @@ public class SettingsController {
                 .modelRegistry(mergeSection(patch.getModelRegistry(), baseline.getModelRegistry(),
                         RuntimeConfig.ModelRegistryConfig::new))
                 .usage(mergeSection(patch.getUsage(), baseline.getUsage(), RuntimeConfig.UsageConfig::new))
+                .telemetry(mergeSection(patch.getTelemetry(), baseline.getTelemetry(),
+                        RuntimeConfig.TelemetryConfig::new))
                 .mcp(mergeSection(patch.getMcp(), baseline.getMcp(), RuntimeConfig.McpConfig::new))
                 .plan(mergeSection(patch.getPlan(), baseline.getPlan(), RuntimeConfig.PlanConfig::new))
                 .delayedActions(mergeSection(patch.getDelayedActions(), baseline.getDelayedActions(),
