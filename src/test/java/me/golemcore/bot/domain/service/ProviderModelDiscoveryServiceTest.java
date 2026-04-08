@@ -272,7 +272,7 @@ class ProviderModelDiscoveryServiceTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(Secret.of("draft-key"))
-                .baseUrl("https://draft.example.com")
+                .baseUrl("https://example.com")
                 .requestTimeoutSeconds(25)
                 .apiType("openai")
                 .build();
@@ -286,12 +286,30 @@ class ProviderModelDiscoveryServiceTest {
         ProviderModelDiscoveryService.DiscoveryResult result = service.discoverModelsForConfig("draftmesh",
                 providerConfig);
 
-        assertEquals("https://draft.example.com/v1/models", result.resolvedEndpoint());
+        assertEquals("https://example.com/v1/models", result.resolvedEndpoint());
         assertEquals(1, result.models().size());
         assertEquals("draft-gpt", result.models().getFirst().id());
-        assertEquals(URI.create("https://draft.example.com/v1/models"), service.getCapturedRequest().uri());
+        assertEquals(URI.create("https://example.com/v1/models"), service.getCapturedRequest().uri());
         assertEquals("Bearer draft-key",
                 service.getCapturedRequest().headers().firstValue("Authorization").orElse(""));
+    }
+
+    @Test
+    void shouldRejectLocalDiscoveryEndpointForDraftProviderConfig() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("draft-key"))
+                .baseUrl("http://127.0.0.1:11434")
+                .requestTimeoutSeconds(25)
+                .apiType("openai")
+                .build();
+        StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
+                new ProviderModelDiscoveryService.DiscoveryResponse(200, "{\"data\":[]}"));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.discoverModelsForConfig("draftmesh", providerConfig));
+
+        assertEquals("Provider base URL must resolve to a public host", error.getMessage());
     }
 
     @Test

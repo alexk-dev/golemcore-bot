@@ -10,7 +10,10 @@ import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -148,7 +151,7 @@ public class ProviderModelDiscoveryService {
     private URI buildDiscoveryUri(RuntimeConfig.LlmProviderConfig providerConfig, String apiType) {
         String baseUrl = providerConfig.getBaseUrl();
         String resolvedBaseUrl = resolveBaseUrl(baseUrl, apiType);
-        return appendPath(URI.create(resolvedBaseUrl), "/models");
+        return requireSafeDiscoveryUri(appendPath(URI.create(resolvedBaseUrl), "/models"));
     }
 
     private String resolveBaseUrl(String baseUrl, String apiType) {
@@ -185,6 +188,64 @@ public class ProviderModelDiscoveryService {
         }
         String normalizedSuffix = suffix.startsWith("/") ? suffix : "/" + suffix;
         return URI.create(base + normalizedSuffix);
+    }
+
+    private URI requireSafeDiscoveryUri(URI uri) {
+        if (uri == null) {
+            throw new IllegalArgumentException("Provider base URL is required");
+        }
+        String scheme = uri.getScheme();
+        if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+            throw new IllegalArgumentException("Provider base URL must use http or https");
+        }
+        if (uri.getRawUserInfo() != null) {
+            throw new IllegalArgumentException("Provider base URL must not include user info");
+        }
+        if (uri.getFragment() != null) {
+            throw new IllegalArgumentException("Provider base URL must not include a fragment");
+        }
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("Provider base URL host is required");
+        }
+        if (isLocalOrPrivateHost(host)) {
+            throw new IllegalArgumentException("Provider base URL must resolve to a public host");
+        }
+        return uri;
+    }
+
+    private boolean isLocalOrPrivateHost(String host) {
+        String normalizedHost = host.trim().toLowerCase(Locale.ROOT);
+        if ("localhost".equals(normalizedHost)) {
+            return true;
+        }
+        try {
+            InetAddress[] addresses = InetAddress.getAllByName(host);
+            if (addresses.length == 0) {
+                return true;
+            }
+            for (InetAddress address : addresses) {
+                if (address.isAnyLocalAddress()
+                        || address.isLoopbackAddress()
+                        || address.isLinkLocalAddress()
+                        || address.isSiteLocalAddress()
+                        || address.isMulticastAddress()
+                        || isUniqueLocalIpv6(address)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (UnknownHostException ignored) {
+            return true;
+        }
+    }
+
+    private boolean isUniqueLocalIpv6(InetAddress address) {
+        if (!(address instanceof Inet6Address inet6Address)) {
+            return false;
+        }
+        byte[] bytes = inet6Address.getAddress();
+        return bytes.length > 0 && (bytes[0] & (byte) 0xfe) == (byte) 0xfc;
     }
 
     private String getApiType(RuntimeConfig.LlmProviderConfig config) {
