@@ -9,8 +9,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.util.Map;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import me.golemcore.bot.adapter.outbound.hive.HiveInspectionPayloadMapper;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
@@ -27,7 +29,8 @@ class HiveInspectionCommandHandlerTest {
     void shouldPublishSessionListInspectionResponse() {
         SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
-        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(sessionInspectionService, publisher);
+        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(
+                sessionInspectionService, publisher, new HiveInspectionPayloadMapper());
         when(sessionInspectionService.listSessions("web")).thenReturn(List.of(SessionSummaryView.builder()
                 .id("web:conv-1")
                 .channelType("web")
@@ -36,6 +39,8 @@ class HiveInspectionCommandHandlerTest {
                 .transportChatId("client-1")
                 .messageCount(1)
                 .state("ACTIVE")
+                .createdAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:05:00Z"))
                 .title("Session conv-1")
                 .preview("hello")
                 .active(false)
@@ -60,15 +65,21 @@ class HiveInspectionCommandHandlerTest {
         assertEquals("req-1", response.requestId());
         assertEquals("sessions.list", response.operation());
         assertTrue(response.success());
-        assertInstanceOf(List.class, response.payload());
-        assertEquals(1, ((List<?>) response.payload()).size());
+        List<?> payload = assertInstanceOf(List.class, response.payload());
+        assertEquals(1, payload.size());
+        Map<?, ?> session = assertInstanceOf(Map.class, payload.get(0));
+        assertEquals("web:conv-1", session.get("id"));
+        assertEquals("conv-1", session.get("conversationKey"));
+        assertEquals("2026-03-20T10:00:00Z", session.get("createdAt"));
+        assertEquals("2026-03-20T10:05:00Z", session.get("updatedAt"));
     }
 
     @Test
     void shouldPublishTypedErrorResponseWhenInspectionOperationFails() {
         SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
-        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(sessionInspectionService, publisher);
+        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(
+                sessionInspectionService, publisher, new HiveInspectionPayloadMapper());
         when(sessionInspectionService.getSessionTraceSummary("missing"))
                 .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
 
@@ -96,7 +107,8 @@ class HiveInspectionCommandHandlerTest {
     void shouldPublishSnapshotExportAndSessionMutationResponses() {
         SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
-        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(sessionInspectionService, publisher);
+        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(
+                sessionInspectionService, publisher, new HiveInspectionPayloadMapper());
         when(sessionInspectionService.exportSessionTraceSnapshotPayload("web:conv-1", "snap-1"))
                 .thenReturn(new SessionInspectionService.SnapshotPayloadExport(
                         "{\"ok\":true}",
@@ -138,7 +150,8 @@ class HiveInspectionCommandHandlerTest {
     void shouldPublishInvalidRequestErrorForUnsupportedOperation() {
         SessionInspectionService sessionInspectionService = mock(SessionInspectionService.class);
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
-        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(sessionInspectionService, publisher);
+        HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(
+                sessionInspectionService, publisher, new HiveInspectionPayloadMapper());
 
         handler.handle(inspection("req-bad", "unknown.operation", body -> {
         }));

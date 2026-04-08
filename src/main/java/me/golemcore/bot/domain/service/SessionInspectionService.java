@@ -23,7 +23,6 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Comparator;
@@ -53,8 +52,38 @@ public class SessionInspectionService {
                 : sessionPort.listByChannelType(channel.trim());
         return sessions.stream()
                 .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> SessionPresentationSupport.toSummary(session, false))
+                .map(session -> summarizeSession(session, false))
                 .toList();
+    }
+
+    public SessionSummaryView resolveSession(String channel, String conversationKey) {
+        if (StringValueSupport.isBlank(channel) || StringValueSupport.isBlank(conversationKey)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "conversationKey is required");
+        }
+        String normalizedChannel = channel.trim();
+        String normalizedConversationKey = conversationKey.trim();
+        AgentSession session = sessionPort.listByChannelType(normalizedChannel).stream()
+                .filter(candidate -> matchesConversationKey(candidate, normalizedConversationKey))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+        return summarizeSession(session, false);
+    }
+
+    public List<SessionSummaryView> listRecentSessions(
+            String channel,
+            String transportChatId,
+            String activeConversation,
+            int limit) {
+        int normalizedLimit = Math.max(1, limit);
+        return SessionConversationSupport.listRecentSessionsByOwner(sessionPort, channel, transportChatId).stream()
+                .sorted(ConversationKeyValidator.byRecentActivity())
+                .map(session -> summarizeSession(session, isActiveSession(session, activeConversation)))
+                .limit(normalizedLimit)
+                .toList();
+    }
+
+    public SessionSummaryView summarizeSession(AgentSession session, boolean active) {
+        return SessionPresentationSupport.toSummary(session, active);
     }
 
     public SessionDetailView getSessionDetail(String sessionId) {
@@ -158,8 +187,8 @@ public class SessionInspectionService {
                 .conversationKey(conversationKey)
                 .transportChatId(transportChatId)
                 .state(session.getState() != null ? session.getState().name() : "ACTIVE")
-                .createdAt(session.getCreatedAt() != null ? session.getCreatedAt().toString() : null)
-                .updatedAt(session.getUpdatedAt() != null ? session.getUpdatedAt().toString() : null)
+                .createdAt(session.getCreatedAt())
+                .updatedAt(session.getUpdatedAt())
                 .messages(messages)
                 .build();
     }
@@ -170,7 +199,7 @@ public class SessionInspectionService {
                 .id(message.getId())
                 .role(message.getRole())
                 .content(SessionPresentationSupport.resolveMessageContent(message))
-                .timestamp(message.getTimestamp() != null ? message.getTimestamp().toString() : null)
+                .timestamp(message.getTimestamp())
                 .hasToolCalls(message.hasToolCalls())
                 .hasVoice(message.hasVoice())
                 .model(metadata.model())
@@ -277,8 +306,8 @@ public class SessionInspectionService {
                 .rootStatusCode(rootSpan != null && rootSpan.getStatusCode() != null
                         ? rootSpan.getStatusCode().name()
                         : null)
-                .startedAt(toTimestamp(trace.getStartedAt()))
-                .endedAt(toTimestamp(trace.getEndedAt()))
+                .startedAt(trace.getStartedAt())
+                .endedAt(trace.getEndedAt())
                 .durationMs(toDurationMs(trace.getStartedAt(), trace.getEndedAt()))
                 .spanCount(trace.getSpans() != null ? trace.getSpans().size() : 0)
                 .snapshotCount(countSnapshots(trace))
@@ -294,8 +323,8 @@ public class SessionInspectionService {
                 .traceId(trace.getTraceId())
                 .rootSpanId(trace.getRootSpanId())
                 .traceName(trace.getTraceName())
-                .startedAt(toTimestamp(trace.getStartedAt()))
-                .endedAt(toTimestamp(trace.getEndedAt()))
+                .startedAt(trace.getStartedAt())
+                .endedAt(trace.getEndedAt())
                 .truncated(trace.isTruncated())
                 .compressedSnapshotBytes(trace.getCompressedSnapshotBytes())
                 .uncompressedSnapshotBytes(trace.getUncompressedSnapshotBytes())
@@ -321,8 +350,8 @@ public class SessionInspectionService {
                 .kind(span.getKind() != null ? span.getKind().name() : null)
                 .statusCode(span.getStatusCode() != null ? span.getStatusCode().name() : null)
                 .statusMessage(span.getStatusMessage())
-                .startedAt(toTimestamp(span.getStartedAt()))
-                .endedAt(toTimestamp(span.getEndedAt()))
+                .startedAt(span.getStartedAt())
+                .endedAt(span.getEndedAt())
                 .durationMs(toDurationMs(span.getStartedAt(), span.getEndedAt()))
                 .attributes(copyAttributes(span.getAttributes()))
                 .events(events)
@@ -333,7 +362,7 @@ public class SessionInspectionService {
     private SessionTraceSpanView.EventView toTraceEventDto(TraceEventRecord event) {
         return SessionTraceSpanView.EventView.builder()
                 .name(event.getName())
-                .timestamp(toTimestamp(event.getTimestamp()))
+                .timestamp(event.getTimestamp())
                 .attributes(copyAttributes(event.getAttributes()))
                 .build();
     }
@@ -582,10 +611,10 @@ public class SessionInspectionService {
         String type = readAttachmentString(normalized, "type");
         String name = readAttachmentString(normalized, "name");
         String mimeType = readAttachmentString(normalized, "mimeType");
-        String url = readAttachmentUrl(normalized);
+        String directUrl = readAttachmentString(normalized, "url");
         String internalFilePath = readAttachmentString(normalized, "internalFilePath");
         String thumbnailBase64 = readAttachmentString(normalized, "thumbnailBase64");
-        if (type == null && name == null && mimeType == null && url == null
+        if (type == null && name == null && mimeType == null && directUrl == null
                 && internalFilePath == null && thumbnailBase64 == null) {
             return null;
         }
@@ -593,23 +622,10 @@ public class SessionInspectionService {
                 .type(type)
                 .name(name)
                 .mimeType(mimeType)
-                .url(url)
+                .directUrl(directUrl)
                 .internalFilePath(internalFilePath)
                 .thumbnailBase64(thumbnailBase64)
                 .build();
-    }
-
-    private String readAttachmentUrl(Map<String, Object> attachment) {
-        String directUrl = readAttachmentString(attachment, "url");
-        if (directUrl != null) {
-            return directUrl;
-        }
-        String internalFilePath = readAttachmentString(attachment, "internalFilePath");
-        if (internalFilePath == null) {
-            return null;
-        }
-        String encoded = URLEncoder.encode(internalFilePath, StandardCharsets.UTF_8).replace("+", "%20");
-        return "/api/files/download?path=" + encoded;
     }
 
     private String readAttachmentString(Map<String, Object> attachment, String key) {
@@ -619,6 +635,21 @@ public class SessionInspectionService {
         }
         String normalized = stringValue.trim();
         return normalized.isEmpty() ? null : normalized;
+    }
+
+    private boolean matchesConversationKey(AgentSession session, String conversationKey) {
+        if (session == null || StringValueSupport.isBlank(conversationKey)) {
+            return false;
+        }
+        String resolvedConversationKey = SessionIdentitySupport.resolveConversationKey(session);
+        return conversationKey.equals(resolvedConversationKey) || conversationKey.equals(session.getChatId());
+    }
+
+    private boolean isActiveSession(AgentSession session, String activeConversation) {
+        if (StringValueSupport.isBlank(activeConversation)) {
+            return false;
+        }
+        return activeConversation.equals(SessionIdentitySupport.resolveConversationKey(session));
     }
 
     private void repairPointersAfterDelete(String deletedSessionId, AgentSession deletedSession) {

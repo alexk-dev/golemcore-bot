@@ -19,7 +19,6 @@ import me.golemcore.bot.domain.service.ConversationKeyValidator;
 import me.golemcore.bot.domain.service.SessionConversationSupport;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SessionInspectionService;
-import me.golemcore.bot.domain.service.SessionPresentationSupport;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.domain.service.TelemetrySupport;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -67,14 +66,8 @@ public class SessionsController {
     @GetMapping
     public Mono<ResponseEntity<List<SessionSummaryDto>>> listSessions(
             @RequestParam(required = false) String channel) {
-        List<AgentSession> sessions = StringValueSupport.isBlank(channel)
-                ? sessionPort.listAll()
-                : sessionPort.listByChannelType(channel.trim());
-        List<SessionSummaryDto> dtos = sessions.stream()
-                .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> sessionWebDtoMapper.toSummaryDto(SessionPresentationSupport.toSummary(session, false)))
-                .toList();
-        return Mono.just(ResponseEntity.ok(dtos));
+        return Mono.just(
+                ResponseEntity.ok(sessionWebDtoMapper.toSummaryDtos(sessionInspectionService.listSessions(channel))));
     }
 
     @GetMapping("/resolve")
@@ -87,15 +80,11 @@ public class SessionsController {
         }
 
         String normalizedConversationKey = conversationKey.trim();
-        Optional<AgentSession> match = sessionPort.listByChannelType(normalizedChannel).stream()
-                .filter(session -> matchesConversationKey(session, normalizedConversationKey))
-                .findFirst();
-        if (match.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
-        }
         return Mono.just(
                 ResponseEntity.ok(
-                        sessionWebDtoMapper.toSummaryDto(SessionPresentationSupport.toSummary(match.get(), false))));
+                        sessionWebDtoMapper.toSummaryDto(
+                                sessionInspectionService.resolveSession(normalizedChannel,
+                                        normalizedConversationKey))));
     }
 
     @GetMapping("/recent")
@@ -109,16 +98,12 @@ public class SessionsController {
         Optional<String> activeConversation = pointerService.getActiveConversationKey(pointerKey);
         int normalizedLimit = Math.max(1, Math.min(limit, MAX_RECENT_LIMIT));
 
-        List<SessionSummaryDto> dtos = SessionConversationSupport.listRecentSessionsByOwner(
-                sessionPort, channel, transportChatId)
-                .stream()
-                .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> sessionWebDtoMapper.toSummaryDto(SessionPresentationSupport.toSummary(
-                        session, isActiveSession(session, activeConversation.orElse(null)))))
-                .limit(normalizedLimit)
-                .toList();
-
-        return Mono.just(ResponseEntity.ok(dtos));
+        return Mono.just(ResponseEntity.ok(sessionWebDtoMapper.toSummaryDtos(
+                sessionInspectionService.listRecentSessions(
+                        channel,
+                        transportChatId,
+                        activeConversation.orElse(null),
+                        normalizedLimit))));
     }
 
     @GetMapping("/active")
@@ -242,7 +227,8 @@ public class SessionsController {
         }
 
         return Mono.just(ResponseEntity.status(HttpStatus.CREATED)
-                .body(sessionWebDtoMapper.toSummaryDto(SessionPresentationSupport.toSummary(session, shouldActivate))));
+                .body(sessionWebDtoMapper
+                        .toSummaryDto(sessionInspectionService.summarizeSession(session, shouldActivate))));
     }
 
     @GetMapping("/{id}")
@@ -334,14 +320,6 @@ public class SessionsController {
                 .build();
     }
 
-    private boolean matchesConversationKey(AgentSession session, String conversationKey) {
-        if (session == null || StringValueSupport.isBlank(conversationKey)) {
-            return false;
-        }
-        String resolvedConversationKey = SessionIdentitySupport.resolveConversationKey(session);
-        return conversationKey.equals(resolvedConversationKey) || conversationKey.equals(session.getChatId());
-    }
-
     private String resolvePointerKey(
             String channel,
             String clientInstanceId,
@@ -368,13 +346,6 @@ public class SessionsController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
         }
         return principal.getName();
-    }
-
-    private boolean isActiveSession(AgentSession session, String activeConversation) {
-        if (StringValueSupport.isBlank(activeConversation)) {
-            return false;
-        }
-        return activeConversation.equals(SessionIdentitySupport.resolveConversationKey(session));
     }
 
     private String generateConversationKey() {

@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.view;
 
 import java.util.List;
 import java.util.Map;
+import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,8 +19,8 @@ public class SessionTraceSpanView {
     private String kind;
     private String statusCode;
     private String statusMessage;
-    private String startedAt;
-    private String endedAt;
+    private Instant startedAt;
+    private Instant endedAt;
     private Long durationMs;
     private Map<String, Object> attributes;
     private List<EventView> events;
@@ -31,7 +32,7 @@ public class SessionTraceSpanView {
     @AllArgsConstructor
     public static class EventView {
         private String name;
-        private String timestamp;
+        private Instant timestamp;
         private Map<String, Object> attributes;
     }
 }

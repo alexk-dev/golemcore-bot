@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.view;
 
 import java.util.List;
+import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,8 +18,8 @@ public class SessionDetailView {
     private String conversationKey;
     private String transportChatId;
     private String state;
-    private String createdAt;
-    private String updatedAt;
+    private Instant createdAt;
+    private Instant updatedAt;
     private List<MessageView> messages;
 
     @Data
@@ -29,7 +30,7 @@ public class SessionDetailView {
         private String id;
         private String role;
         private String content;
-        private String timestamp;
+        private Instant timestamp;
         private boolean hasToolCalls;
         private boolean hasVoice;
         private String model;
@@ -53,7 +54,7 @@ public class SessionDetailView {
         private String type;
         private String name;
         private String mimeType;
-        private String url;
+        private String directUrl;
         private String internalFilePath;
         private String thumbnailBase64;
     }

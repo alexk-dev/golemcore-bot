@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import me.golemcore.bot.domain.view.SessionSummaryView;
 import mockwebserver3.MockResponse;
 import mockwebserver3.MockWebServer;
 import mockwebserver3.RecordedRequest;
@@ -103,6 +104,49 @@ class HiveApiClientTest {
         assertEquals(1, payload.get("schemaVersion").asInt());
         assertEquals("golem-1", payload.get("golemId").asText());
         assertEquals("runtime_event", payload.get("events").get(0).get("eventType").asText());
+    }
+
+    @Test
+    void shouldSerializeInspectionPayloadWithStableJsonShape() throws Exception {
+        server.enqueue(new MockResponse.Builder().code(200).body("{\"acceptedEvents\":1}").build());
+        HiveInspectionPayloadMapper payloadMapper = new HiveInspectionPayloadMapper();
+        Object inspectionPayload = payloadMapper.toSessionListPayload(List.of(SessionSummaryView.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .chatId("legacy-chat")
+                .conversationKey("conv-1")
+                .transportChatId("client-1")
+                .messageCount(2)
+                .state("ACTIVE")
+                .createdAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:05:00Z"))
+                .title("Session conv-1")
+                .preview("hello")
+                .active(false)
+                .build()));
+
+        hiveApiClient.publishEventsBatch(
+                server.url("/").toString(),
+                "golem-1",
+                "access",
+                List.of(HiveEventPayload.builder()
+                        .schemaVersion(1)
+                        .eventType("inspection_response")
+                        .requestId("req-1")
+                        .operation("sessions.list")
+                        .success(true)
+                        .payload(inspectionPayload)
+                        .createdAt(Instant.parse("2026-03-20T10:06:00Z"))
+                        .build()));
+
+        RecordedRequest recordedRequest = server.takeRequest();
+        JsonNode payload = new ObjectMapper().readTree(recordedRequest.getBody().utf8());
+        JsonNode inspection = payload.get("events").get(0);
+        assertEquals("inspection_response", inspection.get("eventType").asText());
+        assertEquals("sessions.list", inspection.get("operation").asText());
+        assertEquals("web:conv-1", inspection.get("payload").get(0).get("id").asText());
+        assertEquals("2026-03-20T10:00:00Z", inspection.get("payload").get(0).get("createdAt").asText());
+        assertEquals("2026-03-20T10:05:00Z", inspection.get("payload").get(0).get("updatedAt").asText());
     }
 
     @Test

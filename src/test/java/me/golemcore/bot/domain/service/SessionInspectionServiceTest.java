@@ -172,6 +172,54 @@ class SessionInspectionServiceTest {
     }
 
     @Test
+    void shouldResolveSessionByConversationKeyOrChatIdAlias() {
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .chatId("legacy-chat-id")
+                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-1"))
+                .updatedAt(Instant.parse("2026-03-20T10:05:00Z"))
+                .messages(List.of())
+                .build();
+        when(sessionPort.listByChannelType("web")).thenReturn(List.of(session));
+
+        SessionSummaryView byConversation = service.resolveSession("web", "conv-1");
+        SessionSummaryView byChatAlias = service.resolveSession("web", "legacy-chat-id");
+
+        assertEquals("web:conv-1", byConversation.getId());
+        assertEquals("conv-1", byConversation.getConversationKey());
+        assertEquals("web:conv-1", byChatAlias.getId());
+        assertEquals("conv-1", byChatAlias.getConversationKey());
+    }
+
+    @Test
+    void shouldListRecentSessionsWithActiveConversationAndLimit() {
+        AgentSession newer = AgentSession.builder()
+                .id("web:conv-2")
+                .channelType("web")
+                .chatId("legacy-2")
+                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-2"))
+                .updatedAt(Instant.parse("2026-03-20T10:05:00Z"))
+                .messages(List.of())
+                .build();
+        AgentSession older = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .chatId("legacy-1")
+                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-1"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                .messages(List.of())
+                .build();
+        when(sessionPort.listByChannelType("web")).thenReturn(List.of(older, newer));
+
+        List<SessionSummaryView> recent = service.listRecentSessions("web", null, "conv-2", 1);
+
+        assertEquals(1, recent.size());
+        assertEquals("web:conv-2", recent.get(0).getId());
+        assertTrue(recent.get(0).isActive());
+    }
+
+    @Test
     void shouldPageMessagesWithAttachmentFallbackAndMetadataProjection() {
         Map<String, Object> attachmentOnlyMetadata = new LinkedHashMap<>();
         attachmentOnlyMetadata.put("attachments", List.of(
@@ -248,8 +296,10 @@ class SessionInspectionServiceTest {
         assertEquals("[3 attachments]", firstPage.getMessages().get(0).getContent());
         assertEquals(1, firstPage.getMessages().get(0).getAttachments().size());
         assertEquals("image", firstPage.getMessages().get(0).getAttachments().get(0).getType());
-        assertEquals("/api/files/download?path=folder%2Fdiagram%201.png",
-                firstPage.getMessages().get(0).getAttachments().get(0).getUrl());
+        assertNull(firstPage.getMessages().get(0).getAttachments().get(0).getDirectUrl());
+        assertEquals("folder/diagram 1.png",
+                firstPage.getMessages().get(0).getAttachments().get(0).getInternalFilePath());
+        assertEquals(Instant.parse("2026-03-20T10:01:00Z"), firstPage.getMessages().get(0).getTimestamp());
         assertEquals("Rendered trace", firstPage.getMessages().get(1).getContent());
         assertEquals("gpt-5.4", firstPage.getMessages().get(1).getModel());
         assertEquals("operator", firstPage.getMessages().get(1).getModelTier());
@@ -263,6 +313,7 @@ class SessionInspectionServiceTest {
         assertTrue(firstPage.getMessages().get(1).isAutoMode());
         assertTrue(firstPage.getMessages().get(1).isHasToolCalls());
         assertTrue(firstPage.getMessages().get(1).isHasVoice());
+        assertTrue(firstPage.getMessages().get(1).getAttachments().isEmpty());
     }
 
     @Test

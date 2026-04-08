@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.view;
 
 import java.util.List;
+import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -23,8 +24,8 @@ public class SessionTraceView {
         private String traceId;
         private String rootSpanId;
         private String traceName;
-        private String startedAt;
-        private String endedAt;
+        private Instant startedAt;
+        private Instant endedAt;
         private boolean truncated;
         private Long compressedSnapshotBytes;
         private Long uncompressedSnapshotBytes;

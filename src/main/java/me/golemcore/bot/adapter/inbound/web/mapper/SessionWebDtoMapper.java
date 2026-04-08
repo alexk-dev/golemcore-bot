@@ -1,5 +1,8 @@
 package me.golemcore.bot.adapter.inbound.web.mapper;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionMessagesPageDto;
@@ -35,8 +38,8 @@ public class SessionWebDtoMapper {
                 .transportChatId(view.getTransportChatId())
                 .messageCount(view.getMessageCount())
                 .state(view.getState())
-                .createdAt(view.getCreatedAt())
-                .updatedAt(view.getUpdatedAt())
+                .createdAt(toTimestamp(view.getCreatedAt()))
+                .updatedAt(toTimestamp(view.getUpdatedAt()))
                 .title(view.getTitle())
                 .preview(view.getPreview())
                 .active(view.isActive())
@@ -51,8 +54,8 @@ public class SessionWebDtoMapper {
                 .conversationKey(view.getConversationKey())
                 .transportChatId(view.getTransportChatId())
                 .state(view.getState())
-                .createdAt(view.getCreatedAt())
-                .updatedAt(view.getUpdatedAt())
+                .createdAt(toTimestamp(view.getCreatedAt()))
+                .updatedAt(toTimestamp(view.getUpdatedAt()))
                 .messages(view.getMessages().stream().map(this::toMessageDto).toList())
                 .build();
     }
@@ -105,7 +108,7 @@ public class SessionWebDtoMapper {
                 .id(view.getId())
                 .role(view.getRole())
                 .content(view.getContent())
-                .timestamp(view.getTimestamp())
+                .timestamp(toTimestamp(view.getTimestamp()))
                 .hasToolCalls(view.isHasToolCalls())
                 .hasVoice(view.isHasVoice())
                 .model(view.getModel())
@@ -127,7 +130,7 @@ public class SessionWebDtoMapper {
                 .type(view.getType())
                 .name(view.getName())
                 .mimeType(view.getMimeType())
-                .url(view.getUrl())
+                .url(resolveAttachmentUrl(view))
                 .internalFilePath(view.getInternalFilePath())
                 .thumbnailBase64(view.getThumbnailBase64())
                 .build();
@@ -140,8 +143,8 @@ public class SessionWebDtoMapper {
                 .traceName(view.getTraceName())
                 .rootKind(view.getRootKind())
                 .rootStatusCode(view.getRootStatusCode())
-                .startedAt(view.getStartedAt())
-                .endedAt(view.getEndedAt())
+                .startedAt(toTimestamp(view.getStartedAt()))
+                .endedAt(toTimestamp(view.getEndedAt()))
                 .durationMs(view.getDurationMs())
                 .spanCount(view.getSpanCount())
                 .snapshotCount(view.getSnapshotCount())
@@ -154,8 +157,8 @@ public class SessionWebDtoMapper {
                 .traceId(view.getTraceId())
                 .rootSpanId(view.getRootSpanId())
                 .traceName(view.getTraceName())
-                .startedAt(view.getStartedAt())
-                .endedAt(view.getEndedAt())
+                .startedAt(toTimestamp(view.getStartedAt()))
+                .endedAt(toTimestamp(view.getEndedAt()))
                 .truncated(view.isTruncated())
                 .compressedSnapshotBytes(view.getCompressedSnapshotBytes())
                 .uncompressedSnapshotBytes(view.getUncompressedSnapshotBytes())
@@ -171,8 +174,8 @@ public class SessionWebDtoMapper {
                 .kind(view.getKind())
                 .statusCode(view.getStatusCode())
                 .statusMessage(view.getStatusMessage())
-                .startedAt(view.getStartedAt())
-                .endedAt(view.getEndedAt())
+                .startedAt(toTimestamp(view.getStartedAt()))
+                .endedAt(toTimestamp(view.getEndedAt()))
                 .durationMs(view.getDurationMs())
                 .attributes(view.getAttributes())
                 .events(view.getEvents().stream().map(this::toTraceEventDto).toList())
@@ -183,7 +186,7 @@ public class SessionWebDtoMapper {
     private SessionTraceSpanDto.EventDto toTraceEventDto(SessionTraceSpanView.EventView view) {
         return SessionTraceSpanDto.EventDto.builder()
                 .name(view.getName())
-                .timestamp(view.getTimestamp())
+                .timestamp(toTimestamp(view.getTimestamp()))
                 .attributes(view.getAttributes())
                 .build();
     }
@@ -196,5 +199,20 @@ public class SessionWebDtoMapper {
                 .evictedTraces(view.getEvictedTraces())
                 .truncatedTraces(view.getTruncatedTraces())
                 .build();
+    }
+
+    private String resolveAttachmentUrl(SessionDetailView.AttachmentView view) {
+        if (view.getDirectUrl() != null) {
+            return view.getDirectUrl();
+        }
+        if (view.getInternalFilePath() == null) {
+            return null;
+        }
+        String encoded = URLEncoder.encode(view.getInternalFilePath(), StandardCharsets.UTF_8).replace("+", "%20");
+        return "/api/files/download?path=" + encoded;
+    }
+
+    private String toTimestamp(Instant timestamp) {
+        return timestamp != null ? timestamp.toString() : null;
     }
 }

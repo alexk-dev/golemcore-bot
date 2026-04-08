@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.view;
 
+import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,8 +18,8 @@ public class SessionSummaryView {
     private String transportChatId;
     private int messageCount;
     private String state;
-    private String createdAt;
-    private String updatedAt;
+    private Instant createdAt;
+    private Instant updatedAt;
     private String title;
     private String preview;
     private boolean active;
