@@ -7,6 +7,10 @@ import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -17,12 +21,18 @@ class HexagonalArchitectureContractTest {
 
     private static final String ROOT_PACKAGE = "me.golemcore.bot";
     private static final String DOMAIN_PACKAGE = "me.golemcore.bot.domain";
+    private static final String APPLICATION_PACKAGE = "me.golemcore.bot.application";
     private static final String PORT_PACKAGE = "me.golemcore.bot.port";
     private static final List<String> FORBIDDEN_PACKAGE_PREFIXES = List.of(
             "me.golemcore.bot.adapter.",
             "me.golemcore.bot.infrastructure.",
             "me.golemcore.bot.plugin.",
             "me.golemcore.bot.proto.");
+    private static final Set<String> APPLICATION_FORBIDDEN_PACKAGE_ALLOWLIST = Set.of(
+            "me.golemcore.bot.application.settings.RuntimeSettingsValidator");
+    private static final Set<String> FORBIDDEN_STEREOTYPE_TYPES = Set.of(
+            "org.springframework.stereotype.Component",
+            "org.springframework.stereotype.Service");
     private static final Set<String> FORBIDDEN_RUNTIME_TYPES = Set.of(
             "org.springframework.boot.SpringApplication",
             "org.springframework.boot.context.event.ApplicationReadyEvent",
@@ -31,11 +41,23 @@ class HexagonalArchitectureContractTest {
             "org.springframework.context.ApplicationEventPublisher",
             "org.springframework.context.event.EventListener",
             "org.springframework.scheduling.support.CronExpression",
-            "org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder");
+            "org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder",
+            "org.springframework.stereotype.Component",
+            "org.springframework.stereotype.Service");
+    private static final Set<String> DOMAIN_FRAMEWORK_ALLOWLIST = loadAllowlist(
+            "architecture/domain-spring-stereotype-allowlist.txt");
 
     @Test
     void domain_should_not_depend_on_adapter_plugin_infrastructure_or_proto_packages() {
         assertNoForbiddenDependencies(DOMAIN_PACKAGE, this::dependsOnForbiddenPackagePrefix);
+    }
+
+    @Test
+    void application_should_not_depend_on_adapter_plugin_infrastructure_or_proto_packages() {
+        assertNoForbiddenDependencies(
+                APPLICATION_PACKAGE,
+                this::dependsOnForbiddenPackagePrefix,
+                APPLICATION_FORBIDDEN_PACKAGE_ALLOWLIST);
     }
 
     @Test
@@ -45,7 +67,12 @@ class HexagonalArchitectureContractTest {
 
     @Test
     void domain_should_not_depend_on_forbidden_framework_runtime_types() {
-        assertNoForbiddenDependencies(DOMAIN_PACKAGE, this::dependsOnForbiddenRuntimeType);
+        assertNoForbiddenDependencies(DOMAIN_PACKAGE, this::dependsOnForbiddenRuntimeType, DOMAIN_FRAMEWORK_ALLOWLIST);
+    }
+
+    @Test
+    void application_should_not_depend_on_forbidden_framework_runtime_types() {
+        assertNoForbiddenDependencies(APPLICATION_PACKAGE, this::dependsOnForbiddenRuntimeType);
     }
 
     @Test
@@ -55,6 +82,13 @@ class HexagonalArchitectureContractTest {
 
     private void assertNoForbiddenDependencies(String packagePrefix,
             java.util.function.Predicate<Dependency> predicate) {
+        assertNoForbiddenDependencies(packagePrefix, predicate, Set.of());
+    }
+
+    private void assertNoForbiddenDependencies(
+            String packagePrefix,
+            java.util.function.Predicate<Dependency> predicate,
+            Set<String> allowlistedOrigins) {
         JavaClasses importedClasses = new ClassFileImporter()
                 .withImportOption(new ImportOption.DoNotIncludeTests())
                 .importPackages(ROOT_PACKAGE);
@@ -64,6 +98,7 @@ class HexagonalArchitectureContractTest {
                 .flatMap(javaClass -> javaClass.getDirectDependenciesFromSelf().stream())
                 .filter(dependency -> dependency.getOriginClass().getPackageName().startsWith(packagePrefix))
                 .filter(predicate)
+                .filter(dependency -> !allowlistedOrigins.contains(dependency.getOriginClass().getFullName()))
                 .map(this::formatDependency)
                 .collect(Collectors.toCollection(TreeSet::new));
 
@@ -78,6 +113,23 @@ class HexagonalArchitectureContractTest {
     private boolean dependsOnForbiddenRuntimeType(Dependency dependency) {
         JavaClass targetClass = dependency.getTargetClass();
         return FORBIDDEN_RUNTIME_TYPES.contains(targetClass.getFullName());
+    }
+
+    private static Set<String> loadAllowlist(String resourcePath) {
+        InputStream resourceStream = HexagonalArchitectureContractTest.class.getClassLoader()
+                .getResourceAsStream(resourcePath);
+        if (resourceStream == null) {
+            throw new IllegalStateException("Missing architecture allowlist resource: " + resourcePath);
+        }
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceStream))) {
+            return reader.lines()
+                    .map(String::trim)
+                    .filter(line -> !line.isEmpty())
+                    .filter(line -> !line.startsWith("#"))
+                    .collect(Collectors.toUnmodifiableSet());
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to load architecture allowlist: " + resourcePath, exception);
+        }
     }
 
     private String formatDependency(Dependency dependency) {

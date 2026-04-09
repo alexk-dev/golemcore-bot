@@ -13,9 +13,7 @@ import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
-import org.springframework.stereotype.Service;
 
-@Service
 @RequiredArgsConstructor
 public class AutomationCommandService {
 

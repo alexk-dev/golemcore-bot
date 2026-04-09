@@ -12,7 +12,6 @@ import me.golemcore.bot.port.outbound.UpdateRestartPort;
 import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;
 import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import me.golemcore.bot.port.outbound.UpdateVersionPort;
-import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,7 +32,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@Service
 @Slf4j
 public class UpdateService {
 

@@ -30,7 +30,6 @@ import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
-import org.springframework.stereotype.Component;
 
 import java.util.Map;
 import java.util.Optional;
@@ -48,7 +47,6 @@ import java.util.Optional;
  * <li>Publishes PlanReadyEvent for the Telegram approval UI</li>
  * </ol>
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class PlanFinalizationSystem implements AgentSystem {

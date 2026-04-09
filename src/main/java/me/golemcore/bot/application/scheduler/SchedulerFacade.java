@@ -23,9 +23,7 @@ import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
-import org.springframework.stereotype.Service;
 
-@Service
 public class SchedulerFacade {
 
     private static final String FEATURE_DISABLED = "Auto mode feature is disabled";

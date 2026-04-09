@@ -7,9 +7,7 @@ import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import org.springframework.stereotype.Service;
 
-@Service
 @RequiredArgsConstructor
 public class PlanCommandService {
 

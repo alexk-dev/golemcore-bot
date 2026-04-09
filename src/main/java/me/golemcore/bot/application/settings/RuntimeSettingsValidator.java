@@ -7,7 +7,6 @@ import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
 import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
-import org.springframework.stereotype.Component;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -23,7 +22,6 @@ import java.util.Set;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
-@Component
 public class RuntimeSettingsValidator {
 
     private static final String TELEGRAM_AUTH_MODE_INVITE_ONLY = "invite_only";

@@ -31,7 +31,6 @@ import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.domain.model.ScheduleReportConfigUpdate;
 import me.golemcore.bot.port.outbound.ScheduleCronPort;
 import me.golemcore.bot.port.outbound.SchedulePersistencePort;
-import org.springframework.stereotype.Service;
 
 /**
  * Domain service for managing cron-based schedules for autonomous goal/task
@@ -42,7 +41,6 @@ import org.springframework.stereotype.Service;
  * Only GOAL and TASK schedule types exist. Goals/tasks without explicit
  * schedules are never auto-processed.
  */
-@Service
 @Slf4j
 public class ScheduleService {
 

@@ -6,13 +6,11 @@ import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.NoSuchElementException;
 
-@Service
 public class RuntimeSettingsFacade {
 
     private final RuntimeConfigService runtimeConfigService;

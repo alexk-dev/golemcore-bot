@@ -16,9 +16,9 @@ import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.stereotype.Service;
 
-@Service
+import java.util.concurrent.CompletableFuture;
+
 public class SkillManagementFacade {
 
     private static final String SKILLS_DIR = "skills";
@@ -59,7 +59,7 @@ public class SkillManagementFacade {
                 .orElseThrow(() -> new NoSuchElementException("Skill '" + name + "' not found"));
     }
 
-    public Skill createSkill(String name, String content) {
+    public CompletableFuture<Skill> createSkill(String name, String content) {
         if (name == null || name.isBlank() || !isValidMetadataName(name.trim()) || name.contains("/")) {
             throw new IllegalArgumentException("Skill name is required and must match [a-z0-9][a-z0-9-]*");
         }
@@ -83,7 +83,7 @@ public class SkillManagementFacade {
         return persistSkillAndReload(path, document, () -> skillService.findByName(normalizedName));
     }
 
-    public Skill updateSkill(String name, Map<String, Object> body) {
+    public CompletableFuture<Skill> updateSkill(String name, Map<String, Object> body) {
         String content = extractContent(body);
         if (content == null) {
             throw new IllegalArgumentException("Skill content is required");
@@ -123,14 +123,16 @@ public class SkillManagementFacade {
         return new McpStatusView(true, !tools.isEmpty(), tools);
     }
 
-    private Skill persistSkillAndReload(
+    private CompletableFuture<Skill> persistSkillAndReload(
             String path,
             String document,
             java.util.function.Supplier<Optional<Skill>> skillLookup) {
-        storagePort.putText(SKILLS_DIR, path, document).join();
-        skillService.reload();
-        return skillLookup.get()
-                .orElseThrow(() -> new IllegalStateException("Skill persisted but could not be reloaded: " + path));
+        return storagePort.putText(SKILLS_DIR, path, document)
+                .thenApply(ignored -> {
+                    skillService.reload();
+                    return skillLookup.get().orElseThrow(
+                            () -> new IllegalStateException("Skill persisted but could not be reloaded: " + path));
+                });
     }
 
     private Map<String, Object> resolveUpdatedMetadata(

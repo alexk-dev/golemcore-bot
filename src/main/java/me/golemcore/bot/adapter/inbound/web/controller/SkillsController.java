@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletionException;
 import java.util.NoSuchElementException;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
@@ -62,14 +63,17 @@ public class SkillsController {
 
     @PostMapping
     public Mono<ResponseEntity<SkillDto>> createSkill(@RequestBody Map<String, String> body) {
+        java.util.concurrent.CompletableFuture<Skill> createFuture;
         try {
-            Skill created = skillManagementFacade.createSkill(body.get("name"), body.get("content"));
-            return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toDetailDto(created)));
+            createFuture = skillManagementFacade.createSkill(body.get("name"), body.get("content"));
         } catch (IllegalStateException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
         }
+        return Mono.fromFuture(createFuture)
+                .map(created -> ResponseEntity.status(HttpStatus.CREATED).body(toDetailDto(created)))
+                .onErrorMap(this::translateSkillMutationError);
     }
 
     @PutMapping("/detail")
@@ -123,14 +127,17 @@ public class SkillsController {
     }
 
     private Mono<ResponseEntity<SkillDto>> updateSkillInternal(String name, Map<String, Object> body) {
+        java.util.concurrent.CompletableFuture<Skill> updateFuture;
         try {
-            Skill updated = skillManagementFacade.updateSkill(name, body);
-            return Mono.just(ResponseEntity.ok(toDetailDto(updated)));
+            updateFuture = skillManagementFacade.updateSkill(name, body);
         } catch (NoSuchElementException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
         }
+        return Mono.fromFuture(updateFuture)
+                .map(updated -> ResponseEntity.ok(toDetailDto(updated)))
+                .onErrorMap(this::translateSkillMutationError);
     }
 
     private Mono<ResponseEntity<Map<String, String>>> reloadSkillInternal(String name) {
@@ -203,5 +210,21 @@ public class SkillsController {
             requirements.put("skills", skill.getRequirements().getSkills());
         }
         return requirements;
+    }
+
+    private Throwable translateSkillMutationError(Throwable throwable) {
+        Throwable cause = throwable instanceof CompletionException && throwable.getCause() != null
+                ? throwable.getCause()
+                : throwable;
+        if (cause instanceof NoSuchElementException exception) {
+            return new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
+        }
+        if (cause instanceof IllegalArgumentException exception) {
+            return new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        }
+        if (cause instanceof IllegalStateException exception) {
+            return new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        }
+        return throwable;
     }
 }
