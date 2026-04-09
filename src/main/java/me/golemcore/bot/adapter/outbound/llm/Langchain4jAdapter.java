@@ -25,12 +25,12 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -708,11 +708,11 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     public List<String> getSupportedModels() {
         // Build from models.json — provider/modelName for each configured provider
         List<String> models = new ArrayList<>();
-        Map<String, ModelConfigService.ModelSettings> modelsConfig = modelConfig
+        Map<String, ModelCatalogEntry> modelsConfig = modelConfig
                 .getAllModels();
 
         if (modelsConfig != null) {
-            for (Map.Entry<String, ModelConfigService.ModelSettings> entry : modelsConfig
+            for (Map.Entry<String, ModelCatalogEntry> entry : modelsConfig
                     .entrySet()) {
                 String modelName = entry.getKey();
                 String provider = entry.getValue().getProvider();

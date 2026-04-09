@@ -53,15 +53,8 @@ class HexagonalArchitectureContractTest {
             "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.infrastructure.config.BotProperties",
             "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.infrastructure.config.BotProperties$HiveProperties",
             "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.plugin.runtime.ChannelRegistry",
-            "me.golemcore.bot.domain.service.ModelRegistryService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings",
-            "me.golemcore.bot.domain.service.ModelRegistryService$ResolveResult -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings",
-            "me.golemcore.bot.domain.service.ModelSelectionService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings",
             "me.golemcore.bot.domain.service.PromptSectionService -> me.golemcore.bot.infrastructure.config.BotProperties",
             "me.golemcore.bot.domain.service.PromptSectionService -> me.golemcore.bot.infrastructure.config.BotProperties$PromptsProperties",
-            "me.golemcore.bot.domain.service.ProviderModelDiscoveryService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings",
-            "me.golemcore.bot.domain.service.ProviderModelDiscoveryService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ReasoningConfig",
-            "me.golemcore.bot.domain.service.ProviderModelDiscoveryService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ReasoningLevelConfig",
-            "me.golemcore.bot.domain.service.ProviderModelDiscoveryService$DiscoveredModel -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings",
             "me.golemcore.bot.domain.service.SkillMarketplaceService -> me.golemcore.bot.infrastructure.config.BotProperties",
             "me.golemcore.bot.domain.service.SkillMarketplaceService -> me.golemcore.bot.infrastructure.config.BotProperties$SkillsProperties",
             "me.golemcore.bot.domain.service.SkillService -> me.golemcore.bot.infrastructure.config.BotProperties",
@@ -88,8 +81,7 @@ class HexagonalArchitectureContractTest {
             "me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem$Builder -> me.golemcore.bot.infrastructure.config.BotProperties$TurnProperties");
 
     private static final Set<String> KNOWN_PORT_FORBIDDEN_DEPENDENCIES = dependencySet(
-            "me.golemcore.bot.port.outbound.HiveEventPublishPort -> me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto",
-            "me.golemcore.bot.port.outbound.ModelConfigPort -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings");
+            "me.golemcore.bot.port.outbound.HiveEventPublishPort -> me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto");
 
     @Test
     void domain_should_not_depend_on_adapter_plugin_or_infrastructure_packages() {

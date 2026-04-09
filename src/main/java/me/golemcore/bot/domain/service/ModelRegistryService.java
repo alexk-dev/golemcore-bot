@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
@@ -110,7 +110,7 @@ public class ModelRegistryService {
             if (cacheEntry == null || !cacheEntry.isFound() || !isFresh(cacheEntry)) {
                 continue;
             }
-            ModelConfigService.ModelSettings settings = tryParseSettings(cacheEntry.getContent(), provider,
+            ModelCatalogEntry settings = tryParseSettings(cacheEntry.getContent(), provider,
                     candidate.relativePath());
             if (settings != null) {
                 return new ResolveResult(settings, candidate.configSource(), "fresh-hit");
@@ -121,7 +121,7 @@ public class ModelRegistryService {
 
     private ResolveResult resolveCandidate(RegistrySource source, RegistryCandidate candidate, String provider) {
         CacheEntry cacheEntry = readCacheEntry(source, candidate);
-        ModelConfigService.ModelSettings cachedSettings = null;
+        ModelCatalogEntry cachedSettings = null;
 
         if (cacheEntry != null && cacheEntry.isFound()) {
             cachedSettings = tryParseSettings(cacheEntry.getContent(), provider, candidate.relativePath());
@@ -148,7 +148,7 @@ public class ModelRegistryService {
                 return null;
             }
 
-            ModelConfigService.ModelSettings settings = tryParseSettings(remoteText, provider,
+            ModelCatalogEntry settings = tryParseSettings(remoteText, provider,
                     candidate.relativePath());
             if (settings == null) {
                 if (cachedSettings != null) {
@@ -199,15 +199,13 @@ public class ModelRegistryService {
         }
     }
 
-    private ModelConfigService.ModelSettings tryParseSettings(String json, String provider, String sourcePath) {
+    private ModelCatalogEntry tryParseSettings(String json, String provider, String sourcePath) {
         if (json == null || json.isBlank()) {
             return null;
         }
         try {
-            ModelConfigService.ModelSettings settings = OBJECT_MAPPER.readValue(
-                    json, ModelConfigService.ModelSettings.class);
-            settings.setProvider(provider);
-            return settings;
+            ModelCatalogEntry settings = OBJECT_MAPPER.readValue(json, ModelCatalogEntry.class);
+            return settings.withProvider(provider);
         } catch (IOException ex) {
             log.warn("[ModelRegistry] Invalid config for {}: {}", sourcePath, ex.getMessage());
             return null;
@@ -427,8 +425,12 @@ public class ModelRegistryService {
         }
     }
 
-    public record ResolveResult(ModelConfigService.ModelSettings defaultSettings, String configSource,
+    public record ResolveResult(ModelCatalogEntry defaultCatalogEntry, String configSource,
             String cacheStatus) {
+
+        public ModelCatalogEntry defaultSettings() {
+            return defaultCatalogEntry;
+        }
     }
 
     @Data

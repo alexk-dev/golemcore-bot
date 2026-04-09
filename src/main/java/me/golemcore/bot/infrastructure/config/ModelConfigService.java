@@ -26,6 +26,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
+import me.golemcore.bot.domain.model.catalog.ModelReasoningLevel;
+import me.golemcore.bot.domain.model.catalog.ModelReasoningProfile;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
@@ -160,7 +163,11 @@ public class ModelConfigService implements ModelConfigPort {
      * no silent fallback to defaults.
      */
     @Override
-    public ModelSettings getModelSettings(String modelName) {
+    public ModelCatalogEntry getModelSettings(String modelName) {
+        return toCatalogEntry(resolveModelSettings(modelName));
+    }
+
+    private ModelSettings resolveModelSettings(String modelName) {
         if (modelName == null) {
             return config.getDefaults();
         }
@@ -194,8 +201,8 @@ public class ModelConfigService implements ModelConfigPort {
      * Get all model configurations.
      */
     @Override
-    public Map<String, ModelSettings> getAllModels() {
-        return config.getModels();
+    public Map<String, ModelCatalogEntry> getAllModels() {
+        return toCatalogEntries(config.getModels());
     }
 
     /**
@@ -203,7 +210,7 @@ public class ModelConfigService implements ModelConfigPort {
      */
     @Override
     public String getProvider(String modelName) {
-        return getModelSettings(modelName).getProvider();
+        return resolveModelSettings(modelName).getProvider();
     }
 
     /**
@@ -212,7 +219,7 @@ public class ModelConfigService implements ModelConfigPort {
      */
     @Override
     public boolean isReasoningRequired(String modelName) {
-        ModelSettings settings = getModelSettings(modelName);
+        ModelSettings settings = resolveModelSettings(modelName);
         return settings.getReasoning() != null
                 && settings.getReasoning().getLevels() != null
                 && !settings.getReasoning().getLevels().isEmpty();
@@ -223,7 +230,7 @@ public class ModelConfigService implements ModelConfigPort {
      */
     @Override
     public boolean supportsTemperature(String modelName) {
-        return getModelSettings(modelName).isSupportsTemperature();
+        return resolveModelSettings(modelName).isSupportsTemperature();
     }
 
     /**
@@ -231,7 +238,7 @@ public class ModelConfigService implements ModelConfigPort {
      */
     @Override
     public boolean supportsVision(String modelName) {
-        return getModelSettings(modelName).isSupportsVision();
+        return resolveModelSettings(modelName).isSupportsVision();
     }
 
     /**
@@ -240,7 +247,7 @@ public class ModelConfigService implements ModelConfigPort {
      */
     @Override
     public int getMaxInputTokens(String modelName) {
-        ModelSettings settings = getModelSettings(modelName);
+        ModelSettings settings = resolveModelSettings(modelName);
         if (settings.getReasoning() != null && settings.getReasoning().getLevels() != null
                 && !settings.getReasoning().getLevels().isEmpty()) {
             return settings.getReasoning().getLevels().values().stream()
@@ -260,7 +267,7 @@ public class ModelConfigService implements ModelConfigPort {
         if (reasoningLevel == null) {
             return getMaxInputTokens(modelName);
         }
-        ModelSettings settings = getModelSettings(modelName);
+        ModelSettings settings = resolveModelSettings(modelName);
         if (settings.getReasoning() != null && settings.getReasoning().getLevels() != null) {
             ReasoningLevelConfig levelConfig = settings.getReasoning().getLevels().get(reasoningLevel);
             if (levelConfig != null) {
@@ -274,7 +281,7 @@ public class ModelConfigService implements ModelConfigPort {
      * Get the default reasoning level for a model.
      */
     public String getDefaultReasoningLevel(String modelName) {
-        ModelSettings settings = getModelSettings(modelName);
+        ModelSettings settings = resolveModelSettings(modelName);
         if (settings.getReasoning() != null) {
             return settings.getReasoning().getDefaultLevel();
         }
@@ -306,7 +313,7 @@ public class ModelConfigService implements ModelConfigPort {
      */
     @Override
     public List<String> getAvailableReasoningLevels(String modelName) {
-        ModelSettings settings = getModelSettings(modelName);
+        ModelSettings settings = resolveModelSettings(modelName);
         if (settings.getReasoning() != null && settings.getReasoning().getLevels() != null) {
             return List.copyOf(settings.getReasoning().getLevels().keySet());
         }
@@ -317,10 +324,43 @@ public class ModelConfigService implements ModelConfigPort {
      * Get models filtered by provider names.
      */
     @Override
-    public Map<String, ModelSettings> getModelsForProviders(List<String> providers) {
+    public Map<String, ModelCatalogEntry> getModelsForProviders(List<String> providers) {
         return config.getModels().entrySet().stream()
                 .filter(entry -> providers.contains(entry.getValue().getProvider()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, LinkedHashMap::new));
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> toCatalogEntry(entry.getValue()), (a, b) -> a,
+                        LinkedHashMap::new));
+    }
+
+    private Map<String, ModelCatalogEntry> toCatalogEntries(Map<String, ModelSettings> models) {
+        return models.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> toCatalogEntry(entry.getValue()), (a, b) -> a,
+                        LinkedHashMap::new));
+    }
+
+    private ModelCatalogEntry toCatalogEntry(ModelSettings settings) {
+        if (settings == null) {
+            return null;
+        }
+        return new ModelCatalogEntry(
+                settings.getProvider(),
+                settings.getDisplayName(),
+                settings.isSupportsVision(),
+                settings.isSupportsTemperature(),
+                settings.getMaxInputTokens(),
+                toReasoningProfile(settings.getReasoning()));
+    }
+
+    private ModelReasoningProfile toReasoningProfile(ReasoningConfig reasoning) {
+        if (reasoning == null) {
+            return null;
+        }
+        Map<String, ModelReasoningLevel> levels = reasoning.getLevels() == null
+                ? Map.of()
+                : reasoning.getLevels().entrySet().stream()
+                        .collect(Collectors.toMap(Map.Entry::getKey,
+                                entry -> new ModelReasoningLevel(entry.getValue().getMaxInputTokens()),
+                                (a, b) -> a, LinkedHashMap::new));
+        return new ModelReasoningProfile(reasoning.getDefaultLevel(), levels);
     }
 
     @Data

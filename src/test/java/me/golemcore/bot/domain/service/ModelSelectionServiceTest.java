@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,7 +26,7 @@ class ModelSelectionServiceTest {
     private ModelSelectionService service;
 
     private UserPreferences userPreferences;
-    private Map<String, ModelConfigService.ModelSettings> modelRegistry;
+    private Map<String, ModelCatalogEntry> modelRegistry;
 
     @BeforeEach
     void setUp() {
@@ -66,7 +66,7 @@ class ModelSelectionServiceTest {
         when(modelConfigService.getAllModels()).thenReturn(modelRegistry);
         when(modelConfigService.getModelSettings(anyString())).thenAnswer(invocation -> {
             String model = invocation.getArgument(0);
-            ModelConfigService.ModelSettings settings = modelRegistry.get(model);
+            ModelCatalogEntry settings = modelRegistry.get(model);
             return settings != null ? settings : modelSettings("openai");
         });
         when(modelConfigService.isReasoningRequired(anyString())).thenReturn(false);
@@ -488,14 +488,14 @@ class ModelSelectionServiceTest {
     @Test
     void shouldReturnModelsFilteredByAllowedProviders() {
         // Arrange
-        Map<String, ModelConfigService.ModelSettings> filteredModels = new LinkedHashMap<>();
+        Map<String, ModelCatalogEntry> filteredModels = new LinkedHashMap<>();
 
-        ModelConfigService.ModelSettings gpt4oSettings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry gpt4oSettings = new ModelCatalogEntry();
         gpt4oSettings.setProvider("openai");
         gpt4oSettings.setDisplayName("GPT-4o");
         filteredModels.put("gpt-4o", gpt4oSettings);
 
-        ModelConfigService.ModelSettings claudeSettings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry claudeSettings = new ModelCatalogEntry();
         claudeSettings.setProvider("anthropic");
         claudeSettings.setDisplayName("Claude Sonnet 4");
         filteredModels.put("claude-sonnet-4", claudeSettings);
@@ -520,9 +520,9 @@ class ModelSelectionServiceTest {
     @Test
     void shouldIncludeReasoningLevelsForReasoningModels() {
         // Arrange
-        Map<String, ModelConfigService.ModelSettings> filteredModels = new LinkedHashMap<>();
+        Map<String, ModelCatalogEntry> filteredModels = new LinkedHashMap<>();
 
-        ModelConfigService.ModelSettings gpt51Settings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry gpt51Settings = new ModelCatalogEntry();
         gpt51Settings.setProvider("openai");
         gpt51Settings.setDisplayName("GPT-5.1");
         filteredModels.put("gpt-5.1", gpt51Settings);
@@ -544,9 +544,9 @@ class ModelSelectionServiceTest {
     @Test
     void shouldUseModelIdAsDisplayNameWhenDisplayNameIsNull() {
         // Arrange
-        Map<String, ModelConfigService.ModelSettings> filteredModels = new LinkedHashMap<>();
+        Map<String, ModelCatalogEntry> filteredModels = new LinkedHashMap<>();
 
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry settings = new ModelCatalogEntry();
         settings.setProvider("openai");
         settings.setDisplayName(null);
         filteredModels.put("custom-model", settings);
@@ -582,19 +582,19 @@ class ModelSelectionServiceTest {
     @Test
     void shouldGroupModelsByProvider() {
         // Arrange
-        Map<String, ModelConfigService.ModelSettings> filteredModels = new LinkedHashMap<>();
+        Map<String, ModelCatalogEntry> filteredModels = new LinkedHashMap<>();
 
-        ModelConfigService.ModelSettings gpt4oSettings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry gpt4oSettings = new ModelCatalogEntry();
         gpt4oSettings.setProvider("openai");
         gpt4oSettings.setDisplayName("GPT-4o");
         filteredModels.put("gpt-4o", gpt4oSettings);
 
-        ModelConfigService.ModelSettings gpt51Settings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry gpt51Settings = new ModelCatalogEntry();
         gpt51Settings.setProvider("openai");
         gpt51Settings.setDisplayName("GPT-5.1");
         filteredModels.put("gpt-5.1", gpt51Settings);
 
-        ModelConfigService.ModelSettings claudeSettings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry claudeSettings = new ModelCatalogEntry();
         claudeSettings.setProvider("anthropic");
         claudeSettings.setDisplayName("Claude Sonnet 4");
         filteredModels.put("claude-sonnet-4", claudeSettings);
@@ -635,12 +635,12 @@ class ModelSelectionServiceTest {
     @Test
     void shouldReturnValidWhenModelExistsAndProviderIsAllowed() {
         // Arrange
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry settings = new ModelCatalogEntry();
         settings.setProvider("openai");
         when(modelConfigService.getModelSettings("openai/gpt-5.1")).thenReturn(settings);
 
-        Map<String, ModelConfigService.ModelSettings> allModels = new HashMap<>();
-        allModels.put("gpt-5.1", new ModelConfigService.ModelSettings());
+        Map<String, ModelCatalogEntry> allModels = new HashMap<>();
+        allModels.put("gpt-5.1", new ModelCatalogEntry());
         when(modelConfigService.getAllModels()).thenReturn(allModels);
 
         // Act
@@ -654,12 +654,12 @@ class ModelSelectionServiceTest {
     @Test
     void shouldReturnValidWhenExactKeyMatchesInAllModels() {
         // Arrange
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry settings = new ModelCatalogEntry();
         settings.setProvider("anthropic");
         when(modelConfigService.getModelSettings("claude-sonnet-4")).thenReturn(settings);
 
-        Map<String, ModelConfigService.ModelSettings> allModels = new HashMap<>();
-        allModels.put("claude-sonnet-4", new ModelConfigService.ModelSettings());
+        Map<String, ModelCatalogEntry> allModels = new HashMap<>();
+        allModels.put("claude-sonnet-4", new ModelCatalogEntry());
         when(modelConfigService.getAllModels()).thenReturn(allModels);
 
         // Act
@@ -673,12 +673,12 @@ class ModelSelectionServiceTest {
     @Test
     void shouldReturnValidWhenPrefixMatchesInAllModels() {
         // Arrange
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry settings = new ModelCatalogEntry();
         settings.setProvider("openai");
         when(modelConfigService.getModelSettings("gpt-5.1-preview")).thenReturn(settings);
 
-        Map<String, ModelConfigService.ModelSettings> allModels = new HashMap<>();
-        allModels.put("gpt-5.1", new ModelConfigService.ModelSettings());
+        Map<String, ModelCatalogEntry> allModels = new HashMap<>();
+        allModels.put("gpt-5.1", new ModelCatalogEntry());
         when(modelConfigService.getAllModels()).thenReturn(allModels);
 
         // Act
@@ -691,11 +691,11 @@ class ModelSelectionServiceTest {
 
     @Test
     void shouldReturnValidWhenLegacyBareModelUniquelyMatchesCanonicalOpenrouterEntry() {
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry settings = new ModelCatalogEntry();
         settings.setProvider("openrouter");
         when(modelConfigService.getModelSettings("openrouter/qwen/qwen3.6-plus:free")).thenReturn(settings);
 
-        Map<String, ModelConfigService.ModelSettings> allModels = new HashMap<>();
+        Map<String, ModelCatalogEntry> allModels = new HashMap<>();
         allModels.put("openrouter/qwen/qwen3.6-plus:free", settings);
         when(modelConfigService.getAllModels()).thenReturn(allModels);
 
@@ -708,7 +708,7 @@ class ModelSelectionServiceTest {
     @Test
     void shouldReturnModelNotFoundWhenModelDoesNotExist() {
         // Arrange
-        ModelConfigService.ModelSettings defaults = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry defaults = new ModelCatalogEntry();
         defaults.setProvider("openai");
         when(modelConfigService.getModelSettings("nonexistent-model")).thenReturn(defaults);
         when(modelConfigService.getAllModels()).thenReturn(new HashMap<>());
@@ -726,12 +726,12 @@ class ModelSelectionServiceTest {
         // Arrange
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openai"));
 
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry settings = new ModelCatalogEntry();
         settings.setProvider("anthropic");
         when(modelConfigService.getModelSettings("claude-sonnet-4")).thenReturn(settings);
 
-        Map<String, ModelConfigService.ModelSettings> allModels = new HashMap<>();
-        allModels.put("claude-sonnet-4", new ModelConfigService.ModelSettings());
+        Map<String, ModelCatalogEntry> allModels = new HashMap<>();
+        allModels.put("claude-sonnet-4", new ModelCatalogEntry());
         when(modelConfigService.getAllModels()).thenReturn(allModels);
 
         // Act
@@ -775,12 +775,12 @@ class ModelSelectionServiceTest {
     @Test
     void shouldStripProviderPrefixWhenCheckingExactMatch() {
         // Arrange — model stored without provider prefix, queried with prefix
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry settings = new ModelCatalogEntry();
         settings.setProvider("openai");
         when(modelConfigService.getModelSettings("openai/gpt-4o")).thenReturn(settings);
 
-        Map<String, ModelConfigService.ModelSettings> allModels = new HashMap<>();
-        allModels.put("gpt-4o", new ModelConfigService.ModelSettings());
+        Map<String, ModelCatalogEntry> allModels = new HashMap<>();
+        allModels.put("gpt-4o", new ModelCatalogEntry());
         when(modelConfigService.getAllModels()).thenReturn(allModels);
 
         // Act
@@ -886,8 +886,8 @@ class ModelSelectionServiceTest {
         assertEquals("high", result.reasoning());
     }
 
-    private ModelConfigService.ModelSettings modelSettings(String provider) {
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
+    private ModelCatalogEntry modelSettings(String provider) {
+        ModelCatalogEntry settings = new ModelCatalogEntry();
         settings.setProvider(provider);
         settings.setDisplayName(provider + " model");
         settings.setSupportsTemperature(true);
