@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -246,6 +247,22 @@ class HiveConnectionServiceTest {
 
         assertEquals("CONNECTED", status.state());
         verify(runtimeConfigService, never()).updateRuntimeConfig(any(RuntimeConfig.class));
+    }
+
+    @Test
+    void shouldMarkStateRevokedWhenJoinFailsWithAuthorizationFailure() {
+        RuntimeException failure = new IllegalStateException("forbidden");
+        when(hiveGatewayPort.registerGolem(any(), any(), any(), any(), any(), any(), anySet()))
+                .thenThrow(failure);
+        when(hiveGatewayPort.isAuthorizationFailure(failure)).thenReturn(true);
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> service.join("token-id.secret:https://hive.example.com/"));
+
+        assertEquals("forbidden", error.getMessage());
+        assertEquals("REVOKED", service.getStatus().state());
+        verify(hiveControlChannelPort, atLeastOnce()).disconnect("stop");
     }
 
     @Test

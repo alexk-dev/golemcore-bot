@@ -691,7 +691,15 @@ public class HiveEventBatchPublisher implements HiveEventPublishPort {
             String query,
             TacticSearchResult tactic) {
         Map<String, Object> payload = objectMapper.convertValue(tactic, Map.class);
-        payload.put("searchQuery", query);
+        if (query == null || query.isBlank()) {
+            payload.remove("score");
+            payload.remove("recencyScore");
+            payload.remove("golemLocalUsageSuccess");
+            payload.remove("explanation");
+            payload.remove("searchQuery");
+        } else {
+            payload.put("searchQuery", query);
+        }
         return buildArtifactEvent(
                 EVENT_TYPE_SELF_EVOLVING_TACTIC_UPSERTED,
                 golemId,
