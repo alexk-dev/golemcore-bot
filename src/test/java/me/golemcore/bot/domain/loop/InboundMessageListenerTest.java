@@ -1,5 +1,6 @@
-package me.golemcore.bot.domain.loop;
+package me.golemcore.bot.adapter.inbound.runtime;
 
+import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,12 +14,12 @@ import static org.mockito.Mockito.verify;
 class InboundMessageListenerTest {
 
     private SessionRunCoordinator coordinator;
-    private InboundMessageListener listener;
+    private InboundMessageEventListener listener;
 
     @BeforeEach
     void setUp() {
         coordinator = mock(SessionRunCoordinator.class);
-        listener = new InboundMessageListener(coordinator);
+        listener = new InboundMessageEventListener(coordinator);
     }
 
     @Test

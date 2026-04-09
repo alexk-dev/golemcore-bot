@@ -14,7 +14,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
-import org.springframework.context.ApplicationEventPublisher;
+import me.golemcore.bot.port.outbound.InboundMessageDispatchPort;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -36,7 +36,7 @@ public class InternalTurnService {
             + "Use the latest visible user request already in the conversation context. "
             + "Do not ask the user to repeat it unless truly necessary.";
 
-    private final ApplicationEventPublisher eventPublisher;
+    private final InboundMessageDispatchPort inboundMessageDispatchPort;
     private final Clock clock;
 
     /**
@@ -75,7 +75,7 @@ public class InternalTurnService {
                 .timestamp(clock.instant())
                 .build();
 
-        eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
+        inboundMessageDispatchPort.dispatch(message);
         log.info("[InternalTurn] scheduled auto-continue retry (sessionId={}, reasonCode={})",
                 session.getId(), reasonCode);
         return true;

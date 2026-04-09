@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.service;
 
+import me.golemcore.bot.adapter.outbound.config.StoragePluginConfigurationStoreAdapter;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,7 +51,7 @@ class PluginConfigurationServiceTest {
                     return CompletableFuture.completedFuture(null);
                 });
 
-        service = new PluginConfigurationService(storagePort);
+        service = new PluginConfigurationService(new StoragePluginConfigurationStoreAdapter(storagePort));
     }
 
     @Test

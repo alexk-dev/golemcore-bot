@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import me.golemcore.bot.adapter.outbound.config.StorageRuntimeConfigPersistenceAdapter;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -48,8 +49,10 @@ class RuntimeConfigServiceSelfEvolvingTest {
                     return CompletableFuture.completedFuture(persistedSections.get(fileName));
                 });
 
-        service = new RuntimeConfigService(storagePort, new SelfEvolvingBootstrapOverrideService(
-                me.golemcore.bot.support.TestPorts.settings(new BotProperties())));
+        service = new RuntimeConfigService(
+                new StorageRuntimeConfigPersistenceAdapter(storagePort),
+                new SelfEvolvingBootstrapOverrideService(
+                        me.golemcore.bot.support.TestPorts.settings(new BotProperties())));
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
     }

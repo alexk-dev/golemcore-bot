@@ -59,7 +59,6 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -86,7 +85,6 @@ import java.util.concurrent.TimeUnit;
  * -> LlmExecution -> ToolExecution -> MemoryPersist -> ResponseRouting).
  * Manages typing indicators and handles async message processing.
  */
-@Component
 @Slf4j
 public class AgentLoop {
 

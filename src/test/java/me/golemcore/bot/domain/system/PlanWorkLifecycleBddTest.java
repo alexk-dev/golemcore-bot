@@ -45,13 +45,13 @@ import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuild
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
+import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.tools.PlanGetTool;
 import me.golemcore.bot.tools.PlanSetContentTool;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -180,8 +180,9 @@ class PlanWorkLifecycleBddTest {
         verify(toolExecutor, never()).execute(any(), any());
 
         // WHEN: PlanFinalizationSystem runs
-        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
-        PlanFinalizationSystem planFinalizationSystem = new PlanFinalizationSystem(planService, publisher);
+        PlanReadyNotificationPort planReadyNotificationPort = mock(PlanReadyNotificationPort.class);
+        PlanFinalizationSystem planFinalizationSystem = new PlanFinalizationSystem(planService,
+                planReadyNotificationPort);
         assertTrue(planFinalizationSystem.shouldProcess(context));
         planFinalizationSystem.process(context);
 

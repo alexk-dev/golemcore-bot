@@ -20,13 +20,13 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.port.outbound.SessionRecordCodecPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,8 +47,8 @@ import java.util.function.Predicate;
 public class SessionService implements SessionPort {
 
     private final StoragePort storagePort;
+    private final SessionRecordCodecPort sessionRecordCodecPort;
     private final Clock clock;
-    private final SessionProtoMapper sessionProtoMapper = new SessionProtoMapper();
 
     private static final String SESSIONS_DIR = "sessions";
     private static final String PROTO_EXTENSION = ".pb";
@@ -94,7 +94,7 @@ public class SessionService implements SessionPort {
         sessionCache.put(session.getId(), session);
 
         try {
-            byte[] proto = sessionProtoMapper.toProto(session).toByteArray();
+            byte[] proto = sessionRecordCodecPort.encode(session);
             storagePort.putObject(SESSIONS_DIR, session.getId() + PROTO_EXTENSION, proto).join();
             log.debug("Saved session: {}", session.getId());
         } catch (Exception e) {
@@ -276,12 +276,11 @@ public class SessionService implements SessionPort {
         try {
             byte[] bytes = storagePort.getObject(SESSIONS_DIR, sessionId + PROTO_EXTENSION).join();
             if (bytes != null && bytes.length > 0) {
-                AgentSession loaded = sessionProtoMapper.fromProto(
-                        me.golemcore.bot.proto.session.v1.AgentSessionRecord.parseFrom(bytes));
+                AgentSession loaded = sessionRecordCodecPort.decode(bytes);
                 enrichSessionFields(loaded, sessionId + PROTO_EXTENSION);
                 return Optional.of(loaded);
             }
-        } catch (IOException e) {
+        } catch (IllegalStateException e) {
             log.error("Failed to parse protobuf session {}: {}", sessionId, e.getMessage());
             throw new IllegalStateException("Failed to parse protobuf session: " + sessionId, e);
         } catch (RuntimeException e) { // NOSONAR - intentionally catch all for storage fallback
@@ -300,11 +299,10 @@ public class SessionService implements SessionPort {
             if (bytes == null || bytes.length == 0) {
                 return Optional.empty();
             }
-            AgentSession session = sessionProtoMapper.fromProto(
-                    me.golemcore.bot.proto.session.v1.AgentSessionRecord.parseFrom(bytes));
+            AgentSession session = sessionRecordCodecPort.decode(bytes);
             enrichSessionFields(session, filePath);
             return Optional.of(session);
-        } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
+        } catch (RuntimeException e) { // NOSONAR - intentionally catch all for fallback
             log.debug("Failed to parse protobuf session file {}: {}", filePath, e.getMessage());
             return Optional.empty();
         }

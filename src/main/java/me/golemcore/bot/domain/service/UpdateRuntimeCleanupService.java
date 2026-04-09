@@ -9,8 +9,6 @@ import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
 import me.golemcore.bot.port.outbound.UpdateSettingsPort;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -24,13 +22,8 @@ public class UpdateRuntimeCleanupService {
 
     private final UpdateSettingsPort settingsPort;
 
-    @EventListener(ApplicationReadyEvent.class)
-    public void onApplicationReady() {
-        cleanupAfterSuccessfulStartup();
-    }
-
     @SuppressWarnings("PMD.NullAssignment")
-    void cleanupAfterSuccessfulStartup() {
+    public void cleanupAfterSuccessfulStartup() {
         if (!settingsPort.update().enabled()) {
             return;
         }

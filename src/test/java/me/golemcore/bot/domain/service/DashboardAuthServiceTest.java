@@ -1,9 +1,12 @@
 package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.adapter.outbound.dashboard.BCryptPasswordHashAdapter;
+import me.golemcore.bot.adapter.outbound.dashboard.StorageDashboardCredentialsAdapter;
 import me.golemcore.bot.domain.model.AdminCredentials;
 import me.golemcore.bot.port.outbound.DashboardAuthSettingsPort;
 import me.golemcore.bot.port.outbound.DashboardTokenPort;
+import me.golemcore.bot.port.outbound.PasswordHashPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +36,7 @@ class DashboardAuthServiceTest {
     private StoragePort storagePort;
     private DashboardAuthSettingsPort settingsPort;
     private DashboardTokenPort tokenPort;
+    private PasswordHashPort passwordHashPort;
 
     @BeforeEach
     void setUp() {
@@ -60,8 +64,13 @@ class DashboardAuthServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0, String.class).startsWith("refresh-"));
         when(tokenPort.getUsernameFromToken(anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(0, String.class).replaceFirst("^refresh-", ""));
+        passwordHashPort = new BCryptPasswordHashAdapter();
 
-        authService = new DashboardAuthService(storagePort, settingsPort, tokenPort, objectMapper);
+        authService = new DashboardAuthService(
+                new StorageDashboardCredentialsAdapter(storagePort, objectMapper),
+                settingsPort,
+                tokenPort,
+                passwordHashPort);
     }
 
     @Test
