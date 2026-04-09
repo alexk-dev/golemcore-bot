@@ -124,6 +124,11 @@ public class WebhookChannelAdapter implements ChannelPort {
     }
 
     @Override
+    public boolean supportsProactiveMessage(String chatId) {
+        return false;
+    }
+
+    @Override
     public boolean isAuthorized(String senderId) {
         // Auth is handled at the controller level by WebhookAuthenticator
         return true;

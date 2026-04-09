@@ -8,8 +8,8 @@ import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.ProgressUpdateType;
 import me.golemcore.bot.domain.model.ToolExecutionTrace;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -28,18 +28,18 @@ import java.util.Set;
 public class TurnProgressService {
 
     private final RuntimeConfigService runtimeConfigService;
-    private final ChannelRegistry channelRegistry;
+    private final ChannelRuntimePort channelRuntimePort;
     private final ToolExecutionTraceExtractor traceExtractor;
     private final TurnProgressSummaryService summaryService;
     private final Clock clock;
 
     public TurnProgressService(RuntimeConfigService runtimeConfigService,
-            ChannelRegistry channelRegistry,
+            ChannelRuntimePort channelRuntimePort,
             ToolExecutionTraceExtractor traceExtractor,
             TurnProgressSummaryService summaryService,
             Clock clock) {
         this.runtimeConfigService = runtimeConfigService;
-        this.channelRegistry = channelRegistry;
+        this.channelRuntimePort = channelRuntimePort;
         this.traceExtractor = traceExtractor;
         this.summaryService = summaryService;
         this.clock = clock;
@@ -226,7 +226,7 @@ public class TurnProgressService {
         if (chatId == null || chatId.isBlank() || channelType == null || channelType.isBlank()) {
             return;
         }
-        ChannelPort channel = channelRegistry.get(channelType).orElse(null);
+        ChannelPort channel = channelRuntimePort.findChannel(channelType).orElse(null);
         if (channel == null) {
             return;
         }

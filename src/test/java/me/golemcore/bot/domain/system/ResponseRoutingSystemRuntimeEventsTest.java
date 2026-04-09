@@ -7,7 +7,6 @@ import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
+import static me.golemcore.bot.support.ChannelRuntimeTestSupport.responseRoutingSystem;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -44,8 +44,7 @@ class ResponseRoutingSystemRuntimeEventsTest {
 
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
-        system = new ResponseRoutingSystem(new ChannelRegistry(List.of(telegramChannel)), preferencesService,
-                voiceHandler);
+        system = responseRoutingSystem(List.of(telegramChannel), preferencesService, voiceHandler);
     }
 
     @Test

@@ -7,7 +7,6 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.junit.jupiter.api.Test;
@@ -19,6 +18,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static me.golemcore.bot.support.ChannelRuntimeTestSupport.responseRoutingSystem;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -43,8 +43,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(List.of(channel)),
-                preferences, voiceHandler);
+        ResponseRoutingSystem system = responseRoutingSystem(List.of(channel), preferences, voiceHandler);
         system.registerChannel(channel);
 
         AgentSession session = AgentSession.builder()
@@ -79,8 +78,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(List.of(channel)),
-                preferences, voiceHandler);
+        ResponseRoutingSystem system = responseRoutingSystem(List.of(channel), preferences, voiceHandler);
         system.registerChannel(channel);
 
         AgentSession session = AgentSession.builder()
@@ -117,8 +115,7 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(new ChannelRegistry(List.of(channel)),
-                preferences, voiceHandler);
+        ResponseRoutingSystem system = responseRoutingSystem(List.of(channel), preferences, voiceHandler);
 
         AgentSession session = AgentSession.builder()
                 .channelType(CHANNEL_TYPE)
@@ -157,8 +154,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(webhookChannel, telegramChannel)),
+        ResponseRoutingSystem system = responseRoutingSystem(
+                List.of(webhookChannel, telegramChannel),
                 preferences,
                 voiceHandler);
 
@@ -205,8 +202,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(webhookChannel)),
+        ResponseRoutingSystem system = responseRoutingSystem(
+                List.of(webhookChannel),
                 preferences,
                 voiceHandler);
 
@@ -262,8 +259,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         UserPreferencesService preferences = mock(UserPreferencesService.class);
         when(preferences.getMessage(any())).thenReturn("error");
 
-        ResponseRoutingSystem system = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(webhookChannel, telegramChannel)),
+        ResponseRoutingSystem system = responseRoutingSystem(
+                List.of(webhookChannel, telegramChannel),
                 preferences,
                 voiceHandler);
 

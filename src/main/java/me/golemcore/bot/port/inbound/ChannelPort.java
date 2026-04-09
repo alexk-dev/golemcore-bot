@@ -131,6 +131,29 @@ public interface ChannelPort {
     }
 
     /**
+     * Returns whether the channel can deliver proactive messages to the given
+     * transport chat at the moment.
+     */
+    default boolean supportsProactiveMessage(String chatId) {
+        return isRunning();
+    }
+
+    /**
+     * Returns whether the channel can proactively deliver files/documents at the
+     * moment.
+     */
+    default boolean supportsProactiveDocument(String chatId) {
+        return supportsProactiveMessage(chatId) && supportsDocumentDelivery();
+    }
+
+    /**
+     * Returns whether the channel overrides document delivery behavior.
+     */
+    default boolean supportsDocumentDelivery() {
+        return false;
+    }
+
+    /**
      * Displays a typing indicator to the user while processing. Default
      * implementation does nothing; channels can override to show activity.
      */

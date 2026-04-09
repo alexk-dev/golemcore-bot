@@ -47,11 +47,11 @@ import me.golemcore.bot.domain.service.TraceNamingSupport;
 import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.domain.model.LlmRequest;
@@ -98,7 +98,7 @@ public class AgentLoop {
     private final LlmPort llmPort;
     private final Clock clock;
     private final TraceService traceService;
-    private final ChannelRegistry channelRegistry;
+    private final ChannelRuntimePort channelRuntimePort;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final ScheduledExecutorService typingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "typing-indicator");
@@ -123,13 +123,13 @@ public class AgentLoop {
 
     public AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter,
             List<AgentSystem> systems,
-            ChannelRegistry channelRegistry, RuntimeConfigService runtimeConfigService,
+            ChannelRuntimePort channelRuntimePort, RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService,
             LlmPort llmPort, Clock clock, TraceService traceService) {
         this.sessionService = sessionService;
         this.rateLimiter = rateLimiter;
         this.systems = systems;
-        this.channelRegistry = channelRegistry;
+        this.channelRuntimePort = channelRuntimePort;
         this.runtimeConfigService = runtimeConfigService;
         this.preferencesService = preferencesService;
         this.llmPort = llmPort;
@@ -191,7 +191,7 @@ public class AgentLoop {
             log.info("[AgentLoop] routingSystem resolved: {}",
                     routingSystem != null ? routingSystem.getClass().getName() : "<null>");
 
-            ChannelPort channel = channelRegistry.get(message.getChannelType()).orElse(null);
+            ChannelPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
             ScheduledFuture<?> typingTask = null;
             String typingChatId = resolveTransportChatId(message);
             if (channel != null && typingChatId != null && !typingChatId.isBlank()) {
@@ -295,7 +295,7 @@ public class AgentLoop {
             return;
         }
 
-        ChannelPort channel = channelRegistry.get(message.getChannelType()).orElse(null);
+        ChannelPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
         if (channel == null) {
             return;
         }

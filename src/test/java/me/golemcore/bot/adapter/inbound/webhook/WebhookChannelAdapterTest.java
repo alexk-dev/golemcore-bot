@@ -55,6 +55,11 @@ class WebhookChannelAdapterTest {
     }
 
     @Test
+    void shouldNeverSupportProactiveMessages() {
+        assertFalse(adapter.supportsProactiveMessage(CHAT_ID));
+    }
+
+    @Test
     void shouldHandleVoiceAsNoOp() throws Exception {
         CompletableFuture<Void> result = adapter.sendVoice(CHAT_ID, new byte[] { 1, 2, 3 });
         assertNull(result.get(1, TimeUnit.SECONDS));

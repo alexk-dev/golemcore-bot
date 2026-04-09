@@ -19,7 +19,6 @@ import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +32,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static me.golemcore.bot.support.ChannelRuntimeTestSupport.responseRoutingSystem;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -81,8 +81,8 @@ class ResponseRoutingSystemTest {
 
         runtimeConfigService = mock(RuntimeConfigService.class);
         traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
-        system = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(channelPort)),
+        system = responseRoutingSystem(
+                List.of(channelPort),
                 preferencesService,
                 voiceHandler,
                 runtimeConfigService,
@@ -177,8 +177,8 @@ class ResponseRoutingSystemTest {
         when(hiveChannel.sendMessage(anyString(), anyString(), any()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        ResponseRoutingSystem hiveSystem = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(hiveChannel)),
+        ResponseRoutingSystem hiveSystem = responseRoutingSystem(
+                List.of(hiveChannel),
                 preferencesService,
                 voiceHandler);
 
@@ -261,8 +261,8 @@ class ResponseRoutingSystemTest {
         when(webChannel.getChannelType()).thenReturn("web");
         when(webChannel.sendMessage(any(Message.class))).thenReturn(CompletableFuture.completedFuture(null));
 
-        ResponseRoutingSystem webSystem = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(webChannel)),
+        ResponseRoutingSystem webSystem = responseRoutingSystem(
+                List.of(webChannel),
                 preferencesService,
                 voiceHandler);
 
@@ -576,8 +576,8 @@ class ResponseRoutingSystemTest {
         when(hiveChannel.sendMessage(anyString(), anyString(), any()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        ResponseRoutingSystem hiveSystem = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(hiveChannel)),
+        ResponseRoutingSystem hiveSystem = responseRoutingSystem(
+                List.of(hiveChannel),
                 preferencesService,
                 voiceHandler,
                 runtimeConfigService,
