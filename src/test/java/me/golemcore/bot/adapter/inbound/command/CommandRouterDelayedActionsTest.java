@@ -12,7 +12,6 @@ import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
-import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -105,10 +104,7 @@ class CommandRouterDelayedActionsTest {
                 preferencesService,
                 mock(CompactionOrchestrationService.class),
                 mock(AutoModeService.class),
-                new ModelSelectionCommandService(
-                        preferencesService,
-                        mock(ModelSelectionService.class),
-                        mock(RuntimeConfigService.class)),
+                mock(ModelSelectionCommandService.class),
                 mock(PlanService.class),
                 mock(PlanExecutionService.class),
                 mock(ScheduleService.class),
@@ -189,10 +185,7 @@ class CommandRouterDelayedActionsTest {
                 preferencesService,
                 mock(CompactionOrchestrationService.class),
                 mock(AutoModeService.class),
-                new ModelSelectionCommandService(
-                        preferencesService,
-                        mock(ModelSelectionService.class),
-                        runtimeConfigService),
+                mock(ModelSelectionCommandService.class),
                 mock(PlanService.class),
                 mock(PlanExecutionService.class),
                 mock(ScheduleService.class),

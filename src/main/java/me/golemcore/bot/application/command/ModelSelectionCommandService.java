@@ -6,7 +6,6 @@ import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.port.inbound.CommandPort;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -28,18 +27,18 @@ public class ModelSelectionCommandService {
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
 
-    public CommandPort.CommandResult handleTier(List<String> args) {
+    public CommandOutcome handleTier(List<String> args) {
         UserPreferences preferences = preferencesService.getPreferences();
 
         if (args.isEmpty()) {
             String tier = preferences.getModelTier() != null ? preferences.getModelTier() : "balanced";
             String force = preferences.isTierForce() ? "on" : "off";
-            return CommandPort.CommandResult.success(msg("command.tier.current", tier, force));
+            return CommandOutcome.success(msg("command.tier.current", tier, force));
         }
 
         String tierArg = ModelTierCatalog.normalizeTierId(args.get(0));
         if (!ModelTierCatalog.isExplicitSelectableTier(tierArg)) {
-            return CommandPort.CommandResult.success(msg("command.tier.invalid"));
+            return CommandOutcome.success(msg("command.tier.invalid"));
         }
 
         boolean force = args.size() > 1 && "force".equalsIgnoreCase(args.get(1));
@@ -48,12 +47,12 @@ public class ModelSelectionCommandService {
         preferencesService.savePreferences(preferences);
 
         if (force) {
-            return CommandPort.CommandResult.success(msg("command.tier.set.force", tierArg));
+            return CommandOutcome.success(msg("command.tier.set.force", tierArg));
         }
-        return CommandPort.CommandResult.success(msg("command.tier.set", tierArg));
+        return CommandOutcome.success(msg("command.tier.set", tierArg));
     }
 
-    public CommandPort.CommandResult handleModel(List<String> args) {
+    public CommandOutcome handleModel(List<String> args) {
         if (args.isEmpty()) {
             return handleModelShow();
         }
@@ -63,13 +62,13 @@ public class ModelSelectionCommandService {
             return handleModelList();
         }
         if (!ModelTierCatalog.isExplicitSelectableTier(subcommand)) {
-            return CommandPort.CommandResult.success(msg("command.model.invalid.tier"));
+            return CommandOutcome.success(msg("command.model.invalid.tier"));
         }
 
         String tier = subcommand;
         List<String> subArgs = args.subList(1, args.size());
         if (subArgs.isEmpty()) {
-            return CommandPort.CommandResult.success(msg("command.model.usage"));
+            return CommandOutcome.success(msg("command.model.usage"));
         }
 
         String action = subArgs.get(0).toLowerCase(Locale.ROOT);
@@ -78,7 +77,7 @@ public class ModelSelectionCommandService {
         }
         if (SUBCMD_REASONING.equals(action)) {
             if (subArgs.size() < MIN_REASONING_ARGS) {
-                return CommandPort.CommandResult.success(msg("command.model.usage"));
+                return CommandOutcome.success(msg("command.model.usage"));
             }
             return handleModelSetReasoning(tier, subArgs.get(1).toLowerCase(Locale.ROOT));
         }
@@ -86,7 +85,7 @@ public class ModelSelectionCommandService {
         return handleModelSet(tier, subArgs.get(0));
     }
 
-    private CommandPort.CommandResult handleModelShow() {
+    private CommandOutcome handleModelShow() {
         UserPreferences preferences = preferencesService.getPreferences();
         StringBuilder builder = new StringBuilder();
         builder.append("**").append(msg("command.model.show.title")).append("**\n\n");
@@ -101,14 +100,14 @@ public class ModelSelectionCommandService {
             builder.append(msg(messageKey, tier, model, reasoning)).append("\n");
         }
 
-        return CommandPort.CommandResult.success(builder.toString());
+        return CommandOutcome.success(builder.toString());
     }
 
-    private CommandPort.CommandResult handleModelList() {
+    private CommandOutcome handleModelList() {
         Map<String, List<ModelSelectionService.AvailableModel>> grouped = modelSelectionService
                 .getAvailableModelsGrouped();
         if (grouped.isEmpty()) {
-            return CommandPort.CommandResult.success(msg("command.model.list.title") + "\n\nNo models available.");
+            return CommandOutcome.success(msg("command.model.list.title") + "\n\nNo models available.");
         }
 
         StringBuilder builder = new StringBuilder();
@@ -126,18 +125,18 @@ public class ModelSelectionCommandService {
             builder.append("\n");
         }
 
-        return CommandPort.CommandResult.success(builder.toString());
+        return CommandOutcome.success(builder.toString());
     }
 
-    private CommandPort.CommandResult handleModelSet(String tier, String modelSpec) {
+    private CommandOutcome handleModelSet(String tier, String modelSpec) {
         ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(modelSpec);
         if (!validation.valid()) {
             if (ERR_PROVIDER_NOT_CONFIGURED.equals(validation.error())) {
                 String configuredProviders = String.join(", ", runtimeConfigService.getConfiguredLlmProviders());
-                return CommandPort.CommandResult.success(
+                return CommandOutcome.success(
                         msg("command.model.invalid.provider", modelSpec, configuredProviders));
             }
-            return CommandPort.CommandResult.success(msg("command.model.invalid.model", modelSpec));
+            return CommandOutcome.success(msg("command.model.invalid.model", modelSpec));
         }
 
         UserPreferences preferences = preferencesService.getPreferences();
@@ -147,45 +146,45 @@ public class ModelSelectionCommandService {
         preferencesService.savePreferences(preferences);
 
         String displayReasoning = defaultReasoning != null ? " (reasoning: " + defaultReasoning + ")" : "";
-        return CommandPort.CommandResult.success(msg("command.model.set", tier, modelSpec) + displayReasoning);
+        return CommandOutcome.success(msg("command.model.set", tier, modelSpec) + displayReasoning);
     }
 
-    private CommandPort.CommandResult handleModelSetReasoning(String tier, String level) {
+    private CommandOutcome handleModelSetReasoning(String tier, String level) {
         UserPreferences preferences = preferencesService.getPreferences();
         UserPreferences.TierOverride existing = preferences.getTierOverrides() != null
                 ? preferences.getTierOverrides().get(tier)
                 : null;
         if (existing == null || existing.getModel() == null) {
-            return CommandPort.CommandResult.success(msg("command.model.no.override", tier));
+            return CommandOutcome.success(msg("command.model.no.override", tier));
         }
 
         ModelSelectionService.ValidationResult validation = modelSelectionService.validateReasoning(
                 existing.getModel(), level);
         if (!validation.valid()) {
             if (ERR_NO_REASONING.equals(validation.error())) {
-                return CommandPort.CommandResult.success(msg("command.model.no.reasoning", existing.getModel()));
+                return CommandOutcome.success(msg("command.model.no.reasoning", existing.getModel()));
             }
             List<String> available = modelSelectionService.getAvailableModels().stream()
                     .filter(model -> model.id().equals(existing.getModel())
                             || existing.getModel().endsWith("/" + model.id()))
                     .flatMap(model -> model.reasoningLevels().stream())
                     .toList();
-            return CommandPort.CommandResult.success(
+            return CommandOutcome.success(
                     msg("command.model.invalid.reasoning", level, String.join(", ", available)));
         }
 
         existing.setReasoning(level);
         preferencesService.savePreferences(preferences);
-        return CommandPort.CommandResult.success(msg("command.model.set.reasoning", tier, level));
+        return CommandOutcome.success(msg("command.model.set.reasoning", tier, level));
     }
 
-    private CommandPort.CommandResult handleModelReset(String tier) {
+    private CommandOutcome handleModelReset(String tier) {
         UserPreferences preferences = preferencesService.getPreferences();
         if (preferences.getTierOverrides() != null) {
             preferences.getTierOverrides().remove(tier);
             preferencesService.savePreferences(preferences);
         }
-        return CommandPort.CommandResult.success(msg("command.model.reset", tier));
+        return CommandOutcome.success(msg("command.model.reset", tier));
     }
 
     private String findDefaultReasoning(String modelSpec) {
@@ -203,5 +202,18 @@ public class ModelSelectionCommandService {
 
     private String msg(String key, Object... args) {
         return preferencesService.getMessage(key, args);
+    }
+
+    public record CommandOutcome(
+            boolean success,
+            String output
+    ) {
+        public static CommandOutcome success(String output) {
+            return new CommandOutcome(true, output);
+        }
+
+        public static CommandOutcome failure(String output) {
+            return new CommandOutcome(false, output);
+        }
     }
 }

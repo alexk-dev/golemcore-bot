@@ -207,8 +207,8 @@ public class CommandRouter implements CommandPort {
             case "reset" -> handleReset(sessionId, sessionIdentity);
             case "compact" -> handleCompact(sessionId, args);
             case CMD_HELP -> handleHelp();
-            case "tier" -> modelSelectionCommandService.handleTier(args);
-            case "model" -> modelSelectionCommandService.handleModel(args);
+            case "tier" -> toCommandResult(modelSelectionCommandService.handleTier(args));
+            case "model" -> toCommandResult(modelSelectionCommandService.handleModel(args));
             case "sessions" -> handleSessions(channelType);
             case "auto" -> handleAuto(args, channelType, autoSessionChatId, transportChatId);
             case "goals" -> handleGoals();
@@ -236,6 +236,13 @@ public class CommandRouter implements CommandPort {
     private boolean hasExplicitContextString(Map<String, Object> context, String key) {
         Object value = context.get(key);
         return value instanceof String && !((String) value).isBlank();
+    }
+
+    private CommandResult toCommandResult(ModelSelectionCommandService.CommandOutcome outcome) {
+        if (outcome.success()) {
+            return CommandResult.success(outcome.output());
+        }
+        return CommandResult.failure(outcome.output());
     }
 
     @Override
