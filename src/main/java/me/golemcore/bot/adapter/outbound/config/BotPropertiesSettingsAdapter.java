@@ -108,35 +108,48 @@ public class BotPropertiesSettingsAdapter implements BotSettingsPort {
         if (bootstrap == null) {
             return new SelfEvolvingBootstrapSettings(null, null);
         }
-        return new SelfEvolvingBootstrapSettings(
-                bootstrap.getEnabled(),
-                new TacticsSettings(
-                        tacticsEnabled(bootstrap),
-                        new SearchSettings(
-                                searchMode(bootstrap),
-                                new EmbeddingsSettings(
-                                        embeddingsProvider(bootstrap),
-                                        embeddingsBaseUrl(bootstrap),
-                                        embeddingsApiKey(bootstrap),
-                                        embeddingsModel(bootstrap),
-                                        embeddingsDimensions(bootstrap),
-                                        embeddingsBatchSize(bootstrap),
-                                        embeddingsTimeoutMs(bootstrap),
-                                        new LocalEmbeddingsSettings(
-                                                localAutoInstall(bootstrap),
-                                                localPullOnStart(bootstrap),
-                                                localRequireHealthyRuntime(bootstrap),
-                                                localFailOpen(bootstrap),
-                                                localStartupTimeoutMs(bootstrap),
-                                                localInitialRestartBackoffMs(bootstrap),
-                                                localMinimumRuntimeVersion(bootstrap))),
-                                new ToggleSettings(personalizationEnabled(bootstrap)),
-                                new ToggleSettings(negativeMemoryEnabled(bootstrap)))));
+        return new SelfEvolvingBootstrapSettings(bootstrap.getEnabled(), tacticsSettings(bootstrap));
     }
 
-    private Boolean tacticsEnabled(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
-        BotProperties.SelfEvolvingBootstrapTacticsProperties tactics = bootstrap.getTactics();
-        return tactics != null ? tactics.getEnabled() : null;
+    private TacticsSettings tacticsSettings(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
+        BotProperties.SelfEvolvingBootstrapTacticsProperties tactics = tactics(bootstrap);
+        return new TacticsSettings(tactics != null ? tactics.getEnabled() : null, searchSettings(bootstrap));
+    }
+
+    private SearchSettings searchSettings(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
+        return new SearchSettings(
+                searchMode(bootstrap),
+                embeddingsSettings(bootstrap),
+                toggleSettings(personalization(bootstrap)),
+                toggleSettings(negativeMemory(bootstrap)));
+    }
+
+    private EmbeddingsSettings embeddingsSettings(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
+        return new EmbeddingsSettings(
+                embeddingsProvider(bootstrap),
+                embeddingsBaseUrl(bootstrap),
+                embeddingsApiKey(bootstrap),
+                embeddingsModel(bootstrap),
+                embeddingsDimensions(bootstrap),
+                embeddingsBatchSize(bootstrap),
+                embeddingsTimeoutMs(bootstrap),
+                localEmbeddingsSettings(bootstrap));
+    }
+
+    private LocalEmbeddingsSettings localEmbeddingsSettings(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
+        BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties local = tacticEmbeddingsLocal(bootstrap);
+        return new LocalEmbeddingsSettings(
+                local != null ? local.getAutoInstall() : null,
+                local != null ? local.getPullOnStart() : null,
+                local != null ? local.getRequireHealthyRuntime() : null,
+                local != null ? local.getFailOpen() : null,
+                local != null ? local.getStartupTimeoutMs() : null,
+                local != null ? local.getInitialRestartBackoffMs() : null,
+                local != null ? local.getMinimumRuntimeVersion() : null);
+    }
+
+    private ToggleSettings toggleSettings(BotProperties.SelfEvolvingBootstrapToggleProperties toggle) {
+        return new ToggleSettings(toggle != null ? toggle.getEnabled() : null);
     }
 
     private String searchMode(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
@@ -177,51 +190,6 @@ public class BotPropertiesSettingsAdapter implements BotSettingsPort {
     private Integer embeddingsTimeoutMs(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
         BotProperties.SelfEvolvingBootstrapTacticEmbeddingsProperties embeddings = tacticEmbeddings(bootstrap);
         return embeddings != null ? embeddings.getTimeoutMs() : null;
-    }
-
-    private Boolean localAutoInstall(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
-        BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties local = tacticEmbeddingsLocal(bootstrap);
-        return local != null ? local.getAutoInstall() : null;
-    }
-
-    private Boolean localPullOnStart(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
-        BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties local = tacticEmbeddingsLocal(bootstrap);
-        return local != null ? local.getPullOnStart() : null;
-    }
-
-    private Boolean localRequireHealthyRuntime(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
-        BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties local = tacticEmbeddingsLocal(bootstrap);
-        return local != null ? local.getRequireHealthyRuntime() : null;
-    }
-
-    private Boolean localFailOpen(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
-        BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties local = tacticEmbeddingsLocal(bootstrap);
-        return local != null ? local.getFailOpen() : null;
-    }
-
-    private Integer localStartupTimeoutMs(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
-        BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties local = tacticEmbeddingsLocal(bootstrap);
-        return local != null ? local.getStartupTimeoutMs() : null;
-    }
-
-    private Integer localInitialRestartBackoffMs(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
-        BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties local = tacticEmbeddingsLocal(bootstrap);
-        return local != null ? local.getInitialRestartBackoffMs() : null;
-    }
-
-    private String localMinimumRuntimeVersion(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
-        BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties local = tacticEmbeddingsLocal(bootstrap);
-        return local != null ? local.getMinimumRuntimeVersion() : null;
-    }
-
-    private Boolean personalizationEnabled(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
-        BotProperties.SelfEvolvingBootstrapToggleProperties toggle = personalization(bootstrap);
-        return toggle != null ? toggle.getEnabled() : null;
-    }
-
-    private Boolean negativeMemoryEnabled(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {
-        BotProperties.SelfEvolvingBootstrapToggleProperties toggle = negativeMemory(bootstrap);
-        return toggle != null ? toggle.getEnabled() : null;
     }
 
     private BotProperties.SelfEvolvingBootstrapTacticsProperties tactics(
