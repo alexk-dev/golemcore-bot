@@ -19,15 +19,6 @@ package me.golemcore.bot.domain.memory.retrieval;
  */
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.memory.model.MemoryRetrievalPlan;
-import me.golemcore.bot.domain.model.MemoryItem;
-import me.golemcore.bot.domain.service.MemoryScopeSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.stereotype.Service;
-
 import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -38,6 +29,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.memory.model.MemoryRetrievalPlan;
+import me.golemcore.bot.domain.model.MemoryItem;
+import me.golemcore.bot.domain.service.MemoryScopeSupport;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.BotSettingsPort;
+import org.springframework.stereotype.Service;
 
 /**
  * Loads raw memory candidates from the configured stores and applies
@@ -52,17 +51,17 @@ public class MemoryCandidateCollector {
     private static final String PROCEDURAL_FILE = "items/procedural.jsonl";
 
     private final StoragePort storagePort;
-    private final BotProperties properties;
+    private final BotSettingsPort settingsPort;
     private final RuntimeConfigService runtimeConfigService;
     private final ObjectMapper objectMapper;
 
     public MemoryCandidateCollector(
             StoragePort storagePort,
-            BotProperties properties,
+            BotSettingsPort settingsPort,
             RuntimeConfigService runtimeConfigService,
             ObjectMapper objectMapper) {
         this.storagePort = storagePort;
-        this.properties = properties;
+        this.settingsPort = settingsPort;
         this.runtimeConfigService = runtimeConfigService;
         this.objectMapper = objectMapper;
     }
@@ -190,7 +189,7 @@ public class MemoryCandidateCollector {
     }
 
     private String getMemoryDirectory() {
-        String configured = properties.getMemory().getDirectory();
+        String configured = settingsPort.memory().directory();
         if (configured == null || configured.isBlank()) {
             return "memory";
         }

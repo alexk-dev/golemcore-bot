@@ -82,7 +82,7 @@ class ToolLoopAutoConfigurationTest {
                 toolExecutorPort,
                 historyWriter,
                 viewBuilder,
-                botProperties,
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
                 modelSelectionService,
                 planService,
                 runtimeConfigService,

@@ -126,8 +126,8 @@ class ToolLoopSystemBddTest {
                 .historyWriter(historyWriter)
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(turn)
-                .settings(settings)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
@@ -249,8 +249,8 @@ class ToolLoopSystemBddTest {
                 .historyWriter(historyWriter)
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(turn)
-                .settings(settings)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
@@ -379,8 +379,8 @@ class ToolLoopSystemBddTest {
                 .historyWriter(historyWriter)
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(turn)
-                .settings(settings)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
@@ -463,8 +463,8 @@ class ToolLoopSystemBddTest {
                 .historyWriter(historyWriter)
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(turn)
-                .settings(settings)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
@@ -554,8 +554,8 @@ class ToolLoopSystemBddTest {
                 .historyWriter(historyWriter)
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(turn)
-                .settings(settings)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .clock(fastClock)
                 .build();
@@ -622,8 +622,8 @@ class ToolLoopSystemBddTest {
                 .historyWriter(historyWriter)
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(turn)
-                .settings(settings)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
@@ -706,8 +706,8 @@ class ToolLoopSystemBddTest {
                 .historyWriter(historyWriter)
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(turn)
-                .settings(settings)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
@@ -776,8 +776,8 @@ class ToolLoopSystemBddTest {
                 .historyWriter(historyWriter)
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(turn)
-                .settings(settings)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
@@ -846,8 +846,8 @@ class ToolLoopSystemBddTest {
                 .historyWriter(historyWriter)
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(turn)
-                .settings(settings)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
@@ -942,8 +942,8 @@ class ToolLoopSystemBddTest {
                 .historyWriter(historyWriter)
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(turn)
-                .settings(settings)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();

@@ -18,11 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
@@ -37,6 +32,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.port.outbound.BotSettingsPort;
+import org.springframework.stereotype.Service;
 
 /**
  * Collects workspace instructions from AGENTS.md and CLAUDE.md files.
@@ -61,7 +60,7 @@ public class WorkspaceInstructionService {
     private static final int MAX_TOTAL_CONTEXT_CHARS = 160_000;
     private static final long CACHE_TTL_MS = 5_000L;
 
-    private final BotProperties properties;
+    private final BotSettingsPort settingsPort;
 
     private volatile long cacheTimestampMs;
     private volatile String cachedContext = "";
@@ -117,12 +116,12 @@ public class WorkspaceInstructionService {
     private List<Path> resolveWorkspaceRoots() {
         Set<Path> roots = new LinkedHashSet<>();
 
-        Path shellRoot = resolveConfiguredPath(properties.getTools().getShell().getWorkspace());
+        Path shellRoot = resolveConfiguredPath(settingsPort.workspace().shellWorkspace());
         if (shellRoot != null && Files.isDirectory(shellRoot)) {
             roots.add(shellRoot);
         }
 
-        Path filesystemRoot = resolveConfiguredPath(properties.getTools().getFilesystem().getWorkspace());
+        Path filesystemRoot = resolveConfiguredPath(settingsPort.workspace().filesystemWorkspace());
         if (filesystemRoot != null && Files.isDirectory(filesystemRoot)) {
             roots.add(filesystemRoot);
         }

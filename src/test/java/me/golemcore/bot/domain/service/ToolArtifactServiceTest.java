@@ -41,7 +41,8 @@ class ToolArtifactServiceTest {
         BotProperties botProperties = new BotProperties();
         botProperties.getTools().getFilesystem().setWorkspace(workspaceRoot.toString());
 
-        WorkspacePathService workspacePathService = new WorkspacePathService(botProperties);
+        WorkspacePathService workspacePathService = new WorkspacePathService(
+                me.golemcore.bot.support.TestPorts.settings(botProperties));
         workspacePathService.init();
         toolArtifactService = new ToolArtifactService(workspacePathService);
     }

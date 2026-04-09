@@ -103,8 +103,8 @@ class ToolLoopNoDuplicateHistoryBddTest {
                 .historyWriter(new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)))
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(new BotProperties.TurnProperties())
-                .settings(new BotProperties.ToolLoopProperties())
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(new BotProperties.TurnProperties()))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(new BotProperties.ToolLoopProperties()))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(NOW, ZoneOffset.UTC))
                 .build();

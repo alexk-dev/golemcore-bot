@@ -18,19 +18,18 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.infrastructure.i18n.MessageService;
-import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.io.IOException;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.port.outbound.LocalizationPort;
+import me.golemcore.bot.port.outbound.StoragePort;
+import org.springframework.stereotype.Service;
 
 /**
  * Service for managing global user preferences including language and timezone
  * settings. Uses a single-user design where preferences are stored in
- * preferences/settings.json. Integrates with {@link MessageService} to apply
+ * preferences/settings.json. Integrates with a localization port to apply
  * language preferences for i18n.
  */
 @Service
@@ -41,14 +40,14 @@ public class UserPreferencesService {
     private static final String SETTINGS_FILE = "settings.json";
 
     private final StoragePort storagePort;
-    private final MessageService messageService;
+    private final LocalizationPort localizationPort;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private volatile UserPreferences preferences;
 
-    public UserPreferencesService(StoragePort storagePort, MessageService messageService) {
+    public UserPreferencesService(StoragePort storagePort, LocalizationPort localizationPort) {
         this.storagePort = storagePort;
-        this.messageService = messageService;
+        this.localizationPort = localizationPort;
     }
 
     /**
@@ -76,7 +75,7 @@ public class UserPreferencesService {
         String previousLanguage = previousPrefs != null ? previousPrefs.getLanguage() : null;
 
         this.preferences = prefs;
-        messageService.setLanguage(prefs.getLanguage());
+        localizationPort.setLanguage(prefs.getLanguage());
 
         try {
             String json = objectMapper.writeValueAsString(prefs);
@@ -86,7 +85,7 @@ public class UserPreferencesService {
             // Rollback in-memory state on persist failure
             this.preferences = previousPrefs;
             if (previousLanguage != null) {
-                messageService.setLanguage(previousLanguage);
+                localizationPort.setLanguage(previousLanguage);
             }
             log.error("Failed to save preferences, rolled back to previous state", e);
             throw new IllegalStateException("Failed to persist preferences", e);
@@ -113,7 +112,7 @@ public class UserPreferencesService {
      * Get localized message.
      */
     public String getMessage(String key, Object... args) {
-        return messageService.getMessage(key, getLanguage(), args);
+        return localizationPort.getMessage(key, getLanguage(), args);
     }
 
     private UserPreferences loadOrCreate() {
@@ -121,7 +120,7 @@ public class UserPreferencesService {
             String json = storagePort.getText(PREFERENCES_DIR, SETTINGS_FILE).join();
             if (json != null && !json.isBlank()) {
                 UserPreferences prefs = objectMapper.readValue(json, UserPreferences.class);
-                messageService.setLanguage(prefs.getLanguage());
+                localizationPort.setLanguage(prefs.getLanguage());
                 log.debug("Loaded global preferences");
                 return prefs;
             }
@@ -130,9 +129,9 @@ public class UserPreferencesService {
         }
 
         UserPreferences prefs = UserPreferences.builder()
-                .language(MessageService.DEFAULT_LANG)
+                .language(localizationPort.defaultLanguage())
                 .build();
-        messageService.setLanguage(prefs.getLanguage());
+        localizationPort.setLanguage(prefs.getLanguage());
         try {
             String json = objectMapper.writeValueAsString(prefs);
             storagePort.putText(PREFERENCES_DIR, SETTINGS_FILE, json).join();

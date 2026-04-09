@@ -20,21 +20,20 @@ package me.golemcore.bot.domain.memory.persistence;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.model.MemoryItem;
-import me.golemcore.bot.domain.service.MemoryScopeSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.stereotype.Service;
-
 import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.MemoryItem;
+import me.golemcore.bot.domain.service.MemoryScopeSupport;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.BotSettingsPort;
+import org.springframework.stereotype.Service;
 
 /**
  * Persists memory items into the JSONL-backed stores used by Memory V2.
@@ -49,7 +48,7 @@ public class MemoryPersistenceOrchestrator {
     private static final String PROCEDURAL_FILE = "items/procedural.jsonl";
 
     private final StoragePort storagePort;
-    private final BotProperties properties;
+    private final BotSettingsPort settingsPort;
     private final RuntimeConfigService runtimeConfigService;
     private final MemoryNormalizationService memoryNormalizationService;
     private final ObjectMapper objectMapper;
@@ -206,7 +205,7 @@ public class MemoryPersistenceOrchestrator {
     }
 
     private String getMemoryDirectory() {
-        String configured = properties.getMemory().getDirectory();
+        String configured = settingsPort.memory().directory();
         if (configured == null || configured.isBlank()) {
             return "memory";
         }

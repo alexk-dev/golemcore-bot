@@ -10,7 +10,7 @@ import me.golemcore.bot.domain.model.UpdateActionResult;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.domain.model.UpdateVersionInfo;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.BotSettingsPort;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.SpringApplication;
@@ -55,7 +55,7 @@ public class UpdateService {
     private static final Pattern SEMVER_PATTERN = Pattern
             .compile("^(\\d++)\\.(\\d++)\\.(\\d++)(?:-([0-9A-Za-z.-]++))?$");
 
-    private final BotProperties botProperties;
+    private final BotSettingsPort settingsPort;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectMapper objectMapper;
     private final ApplicationContext applicationContext;
@@ -77,7 +77,7 @@ public class UpdateService {
     private Optional<UpdateVersionInfo> activeTarget = Optional.empty();
 
     public UpdateService(
-            BotProperties botProperties,
+            BotSettingsPort settingsPort,
             ObjectProvider<BuildProperties> buildPropertiesProvider,
             ObjectMapper objectMapper,
             ApplicationContext applicationContext,
@@ -87,7 +87,7 @@ public class UpdateService {
             UpdateActivityGate updateActivityGate,
             UpdateMaintenanceWindow updateMaintenanceWindow,
             List<ReleaseSourcePort> releaseSources) {
-        this.botProperties = botProperties;
+        this.settingsPort = settingsPort;
         this.buildPropertiesProvider = buildPropertiesProvider;
         this.objectMapper = objectMapper;
         this.applicationContext = applicationContext;
@@ -321,7 +321,7 @@ public class UpdateService {
     }
 
     public boolean isEnabled() {
-        return botProperties.getUpdate().isEnabled();
+        return settingsPort.update().enabled();
     }
 
     // ==================== Release Source Delegation ====================
@@ -545,7 +545,7 @@ public class UpdateService {
     // ==================== File System ====================
 
     private Path getUpdatesDir() {
-        String configuredPath = botProperties.getUpdate().getUpdatesPath();
+        String configuredPath = settingsPort.update().updatesPath();
         return Path.of(configuredPath).toAbsolutePath().normalize();
     }
 

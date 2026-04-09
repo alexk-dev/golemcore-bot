@@ -15,7 +15,7 @@ import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
 import me.golemcore.bot.domain.model.SkillMarketplaceItem;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.BotSettingsPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
@@ -73,7 +73,7 @@ public class SkillMarketplaceService {
     private static final String DEFAULT_API_BASE_URL = "https://api.github.com";
     private static final String DEFAULT_RAW_BASE_URL = "https://raw.githubusercontent.com";
     private static final String DEFAULT_BRANCH = "main";
-    private final BotProperties botProperties;
+    private final BotSettingsPort settingsPort;
     private final StoragePort storagePort;
     private final SkillService skillService;
     private final RuntimeConfigService runtimeConfigService;
@@ -87,7 +87,7 @@ public class SkillMarketplaceService {
     private final AtomicReference<RemoteCatalogCache> remoteCatalogCache = new AtomicReference<>();
 
     public SkillMarketplaceCatalog getCatalog() {
-        if (!botProperties.getSkills().isMarketplaceEnabled()) {
+        if (!marketplaceSettings().enabled()) {
             return unavailable("Skill marketplace is disabled by backend configuration.");
         }
 
@@ -122,7 +122,7 @@ public class SkillMarketplaceService {
         if (artifactRef == null) {
             throw new IllegalArgumentException("skillId is required");
         }
-        if (!botProperties.getSkills().isMarketplaceEnabled()) {
+        if (!marketplaceSettings().enabled()) {
             throw new IllegalStateException("Skill marketplace is disabled");
         }
 
@@ -426,7 +426,7 @@ public class SkillMarketplaceService {
     }
 
     private Map<String, RegistryArtifact> loadRemoteArtifacts(MarketplaceSource source) {
-        Duration cacheTtl = botProperties.getSkills().getMarketplaceRemoteCacheTtl();
+        Duration cacheTtl = marketplaceSettings().remoteCacheTtl();
         String sourceKey = source.repositoryUrl() + "#" + source.branch();
         if (cacheTtl == null || cacheTtl.isZero() || cacheTtl.isNegative()) {
             return fetchRemoteArtifacts(source, sourceKey);
@@ -823,17 +823,17 @@ public class SkillMarketplaceService {
         String configuredSourceType = trimToNull(skillsConfig.getMarketplaceSourceType());
         String configuredDirectory = firstNonBlank(
                 trimToNull(skillsConfig.getMarketplaceRepositoryDirectory()),
-                trimToNull(botProperties.getSkills().getMarketplaceRepositoryDirectory()));
+                trimToNull(marketplaceSettings().repositoryDirectory()));
         String configuredSandboxPath = firstNonBlank(
                 trimToNull(skillsConfig.getMarketplaceSandboxPath()),
-                trimToNull(botProperties.getSkills().getMarketplaceSandboxPath()));
+                trimToNull(marketplaceSettings().sandboxPath()));
         String configuredRepositoryUrl = firstNonBlank(
                 trimToNull(skillsConfig.getMarketplaceRepositoryUrl()),
-                trimToNull(botProperties.getSkills().getMarketplaceRepositoryUrl()),
+                trimToNull(marketplaceSettings().repositoryUrl()),
                 DEFAULT_REPOSITORY_URL);
         String configuredBranch = firstNonBlank(
                 trimToNull(skillsConfig.getMarketplaceBranch()),
-                trimToNull(botProperties.getSkills().getMarketplaceBranch()),
+                trimToNull(marketplaceSettings().branch()),
                 DEFAULT_BRANCH);
 
         String sourceType = normalizeSourceType(configuredSourceType, configuredDirectory, configuredSandboxPath);
@@ -1117,15 +1117,19 @@ public class SkillMarketplaceService {
     }
 
     private URI repositoryApiBaseUrl() {
-        String configured = trimToNull(botProperties.getSkills().getMarketplaceApiBaseUrl());
+        String configured = trimToNull(marketplaceSettings().apiBaseUrl());
         String value = configured != null ? configured : DEFAULT_API_BASE_URL;
         return URI.create(value.endsWith("/") ? value : value + "/");
     }
 
     private URI repositoryRawBaseUrl() {
-        String configured = trimToNull(botProperties.getSkills().getMarketplaceRawBaseUrl());
+        String configured = trimToNull(marketplaceSettings().rawBaseUrl());
         String value = configured != null ? configured : DEFAULT_RAW_BASE_URL;
         return URI.create(value.endsWith("/") ? value : value + "/");
+    }
+
+    private BotSettingsPort.MarketplaceSettings marketplaceSettings() {
+        return settingsPort.skills().marketplace();
     }
 
     private GitHubRepository parseRemoteRepository(String repositoryUrl) {

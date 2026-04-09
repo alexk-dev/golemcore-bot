@@ -31,7 +31,7 @@ import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.BotSettingsPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import java.time.Clock;
 import java.time.Duration;
@@ -69,8 +69,8 @@ import java.util.Map;
 public class DefaultToolLoopSystem implements ToolLoopSystem {
 
     private final HistoryWriter historyWriter;
-    private final BotProperties.TurnProperties turnSettings;
-    private final BotProperties.ToolLoopProperties settings;
+    private final BotSettingsPort.TurnSettings turnSettings;
+    private final BotSettingsPort.ToolLoopSettings settings;
     private final RuntimeConfigService runtimeConfigService;
     private final RuntimeEventService runtimeEventService;
     @SuppressWarnings("PMD.UnusedPrivateField")
@@ -201,9 +201,9 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         int maxToolExecutions = resolveMaxToolExecutions();
         Duration turnDeadline = resolveTurnDeadline();
         Instant deadline = clock.instant().plus(turnDeadline);
-        boolean stopOnToolFailure = settings != null && settings.isStopOnToolFailure();
-        boolean stopOnConfirmationDenied = settings == null || settings.isStopOnConfirmationDenied();
-        boolean stopOnToolPolicyDenied = settings != null && settings.isStopOnToolPolicyDenied();
+        boolean stopOnToolFailure = settings != null && settings.stopOnToolFailure();
+        boolean stopOnConfirmationDenied = settings == null || settings.stopOnConfirmationDenied();
+        boolean stopOnToolPolicyDenied = settings != null && settings.stopOnToolPolicyDenied();
         int maxRetries = resolveAutoRetryMaxAttempts();
         long retryBaseDelayMs = resolveAutoRetryBaseDelayMs();
         boolean retryEnabled = isAutoRetryEnabled();
@@ -219,21 +219,21 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         if (runtimeConfigService != null) {
             return runtimeConfigService.getTurnMaxLlmCalls();
         }
-        return turnSettings != null ? turnSettings.getMaxLlmCalls() : 200;
+        return turnSettings != null ? turnSettings.maxLlmCalls() : 200;
     }
 
     private int resolveMaxToolExecutions() {
         if (runtimeConfigService != null) {
             return runtimeConfigService.getTurnMaxToolExecutions();
         }
-        return turnSettings != null ? turnSettings.getMaxToolExecutions() : 500;
+        return turnSettings != null ? turnSettings.maxToolExecutions() : 500;
     }
 
     private Duration resolveTurnDeadline() {
         if (runtimeConfigService != null) {
             return runtimeConfigService.getTurnDeadline();
         }
-        return turnSettings != null ? turnSettings.getDeadline() : Duration.ofHours(1);
+        return turnSettings != null ? turnSettings.deadline() : Duration.ofHours(1);
     }
 
     private int resolveAutoRetryMaxAttempts() {
@@ -312,8 +312,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private ToolExecutorPort toolExecutor;
         private HistoryWriter historyWriter;
         private ConversationViewBuilder viewBuilder;
-        private BotProperties.TurnProperties turnSettings;
-        private BotProperties.ToolLoopProperties settings;
+        private BotSettingsPort.TurnSettings turnSettings;
+        private BotSettingsPort.ToolLoopSettings settings;
         private ModelSelectionService modelSelectionService;
         private PlanService planService;
         private RuntimeConfigService runtimeConfigService;
@@ -349,13 +349,13 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         }
 
         /** Sets the turn-level configuration properties (optional). */
-        public Builder turnSettings(BotProperties.TurnProperties turnSettings) {
+        public Builder turnSettings(BotSettingsPort.TurnSettings turnSettings) {
             this.turnSettings = turnSettings;
             return this;
         }
 
         /** Sets the tool loop configuration properties (optional). */
-        public Builder settings(BotProperties.ToolLoopProperties settings) {
+        public Builder settings(BotSettingsPort.ToolLoopSettings settings) {
             this.settings = settings;
             return this;
         }
