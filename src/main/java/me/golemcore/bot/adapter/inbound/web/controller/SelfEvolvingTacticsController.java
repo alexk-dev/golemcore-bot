@@ -13,6 +13,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticCatalogProjection;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
@@ -194,7 +195,9 @@ public class SelfEvolvingTacticsController {
             return;
         }
         try {
-            hiveEventPublishPort.publishSelfEvolvingTacticCatalogProjection(tactics);
+            hiveEventPublishPort.publishSelfEvolvingTacticCatalogProjection(tactics.stream()
+                    .map(this::toDomainTacticCatalogProjection)
+                    .toList());
         } catch (RuntimeException exception) {
             log.debug("[Hive] Skipping SelfEvolving tactic catalog publish: {}", exception.getMessage());
         }
@@ -281,6 +284,37 @@ public class SelfEvolvingTacticsController {
                 .embeddingStatus(result.getEmbeddingStatus())
                 .updatedAt(parseInstant(result.getUpdatedAt()))
                 .explanation(toDomainTacticSearchExplanation(result.getExplanation()))
+                .build();
+    }
+
+    private TacticCatalogProjection toDomainTacticCatalogProjection(SelfEvolvingTacticDto tactic) {
+        return TacticCatalogProjection.builder()
+                .tacticId(tactic.getTacticId())
+                .artifactStreamId(tactic.getArtifactStreamId())
+                .originArtifactStreamId(tactic.getOriginArtifactStreamId())
+                .artifactKey(tactic.getArtifactKey())
+                .artifactType(tactic.getArtifactType())
+                .title(tactic.getTitle())
+                .aliases(tactic.getAliases())
+                .contentRevisionId(tactic.getContentRevisionId())
+                .intentSummary(tactic.getIntentSummary())
+                .behaviorSummary(tactic.getBehaviorSummary())
+                .toolSummary(tactic.getToolSummary())
+                .outcomeSummary(tactic.getOutcomeSummary())
+                .benchmarkSummary(tactic.getBenchmarkSummary())
+                .approvalNotes(tactic.getApprovalNotes())
+                .evidenceSnippets(tactic.getEvidenceSnippets())
+                .taskFamilies(tactic.getTaskFamilies())
+                .tags(tactic.getTags())
+                .promotionState(tactic.getPromotionState())
+                .rolloutStage(tactic.getRolloutStage())
+                .successRate(tactic.getSuccessRate())
+                .benchmarkWinRate(tactic.getBenchmarkWinRate())
+                .regressionFlags(tactic.getRegressionFlags())
+                .recencyScore(tactic.getRecencyScore())
+                .golemLocalUsageSuccess(tactic.getGolemLocalUsageSuccess())
+                .embeddingStatus(tactic.getEmbeddingStatus())
+                .updatedAt(parseInstant(tactic.getUpdatedAt()))
                 .build();
     }
 

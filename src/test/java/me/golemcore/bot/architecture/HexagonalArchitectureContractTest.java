@@ -36,18 +36,6 @@ class HexagonalArchitectureContractTest {
             "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapTacticsProperties",
             "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapToggleProperties",
             "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingProperties",
-            "me.golemcore.bot.domain.service.HiveBootstrapConfigSynchronizer -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.HiveBootstrapConfigSynchronizer -> me.golemcore.bot.infrastructure.config.BotProperties$HiveProperties",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveApiClient",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveApiClient$GolemAuthResponse",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveApiClient$HiveApiException",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveControlChannelClient",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveControlChannelStatus",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveEventOutboxService",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveEventOutboxService$OutboxSummary",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.infrastructure.config.BotProperties$HiveProperties",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.plugin.runtime.ChannelRegistry",
             "me.golemcore.bot.domain.service.PromptSectionService -> me.golemcore.bot.infrastructure.config.BotProperties",
             "me.golemcore.bot.domain.service.PromptSectionService -> me.golemcore.bot.infrastructure.config.BotProperties$PromptsProperties",
             "me.golemcore.bot.domain.service.SkillMarketplaceService -> me.golemcore.bot.infrastructure.config.BotProperties",
@@ -73,8 +61,7 @@ class HexagonalArchitectureContractTest {
             "me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem$Builder -> me.golemcore.bot.infrastructure.config.BotProperties$ToolLoopProperties",
             "me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem$Builder -> me.golemcore.bot.infrastructure.config.BotProperties$TurnProperties");
 
-    private static final Set<String> KNOWN_PORT_FORBIDDEN_DEPENDENCIES = dependencySet(
-            "me.golemcore.bot.port.outbound.HiveEventPublishPort -> me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto");
+    private static final Set<String> KNOWN_PORT_FORBIDDEN_DEPENDENCIES = dependencySet();
 
     @Test
     void domain_should_not_depend_on_adapter_plugin_or_infrastructure_packages() {
