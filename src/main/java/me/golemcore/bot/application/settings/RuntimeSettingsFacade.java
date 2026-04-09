@@ -241,7 +241,7 @@ public class RuntimeSettingsFacade {
         }
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         RuntimeConfig.McpConfig existing = config.getMcp();
-        if (existing != null && mcpConfig.getCatalog() == null) {
+        if (existing != null && (mcpConfig.getCatalog() == null || mcpConfig.getCatalog().isEmpty())) {
             mcpConfig.setCatalog(existing.getCatalog());
         }
         config.setMcp(mcpConfig);
