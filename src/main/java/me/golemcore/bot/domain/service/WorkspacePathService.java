@@ -9,7 +9,7 @@ import java.nio.file.Paths;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.WorkspaceSettingsPort;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class WorkspacePathService {
 
-    private final BotSettingsPort settingsPort;
+    private final WorkspaceSettingsPort settingsPort;
 
     private Path workspaceRoot;
 

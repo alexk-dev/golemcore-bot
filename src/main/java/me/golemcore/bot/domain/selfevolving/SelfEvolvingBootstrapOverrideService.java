@@ -21,7 +21,7 @@ package me.golemcore.bot.domain.selfevolving;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.SelfEvolvingBootstrapSettingsPort;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -54,7 +54,7 @@ public class SelfEvolvingBootstrapOverrideService {
     private static final String PATH_TACTICS_SEARCH_PERSONALIZATION_ENABLED = "tactics.search.personalization.enabled";
     private static final String PATH_TACTICS_SEARCH_NEGATIVE_MEMORY_ENABLED = "tactics.search.negativeMemory.enabled";
 
-    private final BotSettingsPort settingsPort;
+    private final SelfEvolvingBootstrapSettingsPort settingsPort;
 
     public void apply(RuntimeConfig runtimeConfig) {
         if (runtimeConfig == null) {
@@ -62,7 +62,8 @@ public class SelfEvolvingBootstrapOverrideService {
         }
 
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = ensureSelfEvolvingConfig(runtimeConfig);
-        BotSettingsPort.SelfEvolvingBootstrapSettings bootstrap = settingsPort.selfEvolvingBootstrap();
+        SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings bootstrap = settingsPort
+                .selfEvolvingBootstrap();
         overrideEnabled(selfEvolvingConfig, bootstrap);
         overrideTactics(selfEvolvingConfig, bootstrap.tactics());
     }
@@ -73,7 +74,8 @@ public class SelfEvolvingBootstrapOverrideService {
         }
 
         RuntimeConfig.SelfEvolvingConfig candidate = ensureSelfEvolvingConfig(candidateConfig);
-        BotSettingsPort.SelfEvolvingBootstrapSettings bootstrap = settingsPort.selfEvolvingBootstrap();
+        SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings bootstrap = settingsPort
+                .selfEvolvingBootstrap();
         RuntimeConfig.SelfEvolvingConfig persisted = persistedConfig != null
                 && persistedConfig.getSelfEvolving() != null
                         ? persistedConfig.getSelfEvolving()
@@ -88,16 +90,17 @@ public class SelfEvolvingBootstrapOverrideService {
 
     public List<String> getOverriddenPaths() {
         List<String> overriddenPaths = new ArrayList<>();
-        BotSettingsPort.SelfEvolvingBootstrapSettings bootstrap = settingsPort.selfEvolvingBootstrap();
+        SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings bootstrap = settingsPort
+                .selfEvolvingBootstrap();
 
         addOverride(overriddenPaths, bootstrap.enabled() != null, PATH_ENABLED);
-        BotSettingsPort.TacticsSettings tactics = bootstrap.tactics();
+        SelfEvolvingBootstrapSettingsPort.TacticsSettings tactics = bootstrap.tactics();
         if (tactics == null) {
             return overriddenPaths;
         }
         addOverride(overriddenPaths, tactics.enabled() != null, PATH_TACTICS_ENABLED);
 
-        BotSettingsPort.SearchSettings search = tactics.search();
+        SelfEvolvingBootstrapSettingsPort.SearchSettings search = tactics.search();
         if (search == null) {
             return overriddenPaths;
         }
@@ -112,7 +115,7 @@ public class SelfEvolvingBootstrapOverrideService {
     }
 
     private void overrideEnabled(RuntimeConfig.SelfEvolvingConfig target,
-            BotSettingsPort.SelfEvolvingBootstrapSettings source) {
+            SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings source) {
         if (source.enabled() != null) {
             target.setEnabled(source.enabled());
         }
@@ -121,7 +124,7 @@ public class SelfEvolvingBootstrapOverrideService {
 
     private void restoreEnabled(RuntimeConfig.SelfEvolvingConfig target,
             RuntimeConfig.SelfEvolvingConfig persisted,
-            BotSettingsPort.SelfEvolvingBootstrapSettings source) {
+            SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings source) {
         if (source.enabled() != null) {
             target.setEnabled(persisted.getEnabled());
         }
@@ -129,7 +132,7 @@ public class SelfEvolvingBootstrapOverrideService {
     }
 
     private void overrideTactics(RuntimeConfig.SelfEvolvingConfig target,
-            BotSettingsPort.TacticsSettings source) {
+            SelfEvolvingBootstrapSettingsPort.TacticsSettings source) {
         if (source == null) {
             return;
         }
@@ -142,7 +145,7 @@ public class SelfEvolvingBootstrapOverrideService {
 
     private void restoreTactics(RuntimeConfig.SelfEvolvingConfig target,
             RuntimeConfig.SelfEvolvingConfig persisted,
-            BotSettingsPort.TacticsSettings source) {
+            SelfEvolvingBootstrapSettingsPort.TacticsSettings source) {
         if (source == null) {
             return;
         }
@@ -157,7 +160,7 @@ public class SelfEvolvingBootstrapOverrideService {
     }
 
     private void describeEmbeddingsOverrides(List<String> overriddenPaths,
-            BotSettingsPort.EmbeddingsSettings embeddings) {
+            SelfEvolvingBootstrapSettingsPort.EmbeddingsSettings embeddings) {
         if (embeddings == null) {
             return;
         }
@@ -168,7 +171,7 @@ public class SelfEvolvingBootstrapOverrideService {
         addOverride(overriddenPaths, embeddings.dimensions() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_DIMENSIONS);
         addOverride(overriddenPaths, embeddings.batchSize() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_BATCH_SIZE);
         addOverride(overriddenPaths, embeddings.timeoutMs() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_TIMEOUT_MS);
-        BotSettingsPort.LocalEmbeddingsSettings local = embeddings.local();
+        SelfEvolvingBootstrapSettingsPort.LocalEmbeddingsSettings local = embeddings.local();
         if (local == null) {
             return;
         }
@@ -187,7 +190,7 @@ public class SelfEvolvingBootstrapOverrideService {
     }
 
     private void describeToggleOverride(List<String> overriddenPaths,
-            BotSettingsPort.ToggleSettings toggle,
+            SelfEvolvingBootstrapSettingsPort.ToggleSettings toggle,
             String path) {
         addOverride(overriddenPaths, toggle != null && toggle.enabled() != null, path);
     }
@@ -199,7 +202,7 @@ public class SelfEvolvingBootstrapOverrideService {
     }
 
     private void overrideSearch(RuntimeConfig.SelfEvolvingTacticsConfig target,
-            BotSettingsPort.SearchSettings source) {
+            SelfEvolvingBootstrapSettingsPort.SearchSettings source) {
         if (source == null) {
             return;
         }
@@ -215,7 +218,7 @@ public class SelfEvolvingBootstrapOverrideService {
 
     private void restoreSearch(RuntimeConfig.SelfEvolvingTacticsConfig target,
             RuntimeConfig.SelfEvolvingTacticsConfig persisted,
-            BotSettingsPort.SearchSettings source) {
+            SelfEvolvingBootstrapSettingsPort.SearchSettings source) {
         if (source == null) {
             return;
         }
@@ -235,7 +238,7 @@ public class SelfEvolvingBootstrapOverrideService {
     }
 
     private void overrideEmbeddings(RuntimeConfig.SelfEvolvingTacticSearchConfig target,
-            BotSettingsPort.EmbeddingsSettings source) {
+            SelfEvolvingBootstrapSettingsPort.EmbeddingsSettings source) {
         if (source == null) {
             return;
         }
@@ -267,7 +270,7 @@ public class SelfEvolvingBootstrapOverrideService {
 
     private void restoreEmbeddings(RuntimeConfig.SelfEvolvingTacticSearchConfig target,
             RuntimeConfig.SelfEvolvingTacticSearchConfig persisted,
-            BotSettingsPort.EmbeddingsSettings source) {
+            SelfEvolvingBootstrapSettingsPort.EmbeddingsSettings source) {
         if (source == null) {
             return;
         }
@@ -301,7 +304,7 @@ public class SelfEvolvingBootstrapOverrideService {
     }
 
     private void overrideEmbeddingsLocal(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig target,
-            BotSettingsPort.LocalEmbeddingsSettings source) {
+            SelfEvolvingBootstrapSettingsPort.LocalEmbeddingsSettings source) {
         if (source == null) {
             return;
         }
@@ -331,7 +334,7 @@ public class SelfEvolvingBootstrapOverrideService {
 
     private void restoreEmbeddingsLocal(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig target,
             RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig persisted,
-            BotSettingsPort.LocalEmbeddingsSettings source) {
+            SelfEvolvingBootstrapSettingsPort.LocalEmbeddingsSettings source) {
         if (source == null) {
             return;
         }
@@ -363,7 +366,7 @@ public class SelfEvolvingBootstrapOverrideService {
     }
 
     private void overrideToggle(RuntimeConfig.SelfEvolvingToggleConfig target,
-            BotSettingsPort.ToggleSettings source) {
+            SelfEvolvingBootstrapSettingsPort.ToggleSettings source) {
         if (target == null || source == null) {
             return;
         }
@@ -374,7 +377,7 @@ public class SelfEvolvingBootstrapOverrideService {
 
     private void restoreToggle(RuntimeConfig.SelfEvolvingToggleConfig target,
             RuntimeConfig.SelfEvolvingToggleConfig persisted,
-            BotSettingsPort.ToggleSettings source) {
+            SelfEvolvingBootstrapSettingsPort.ToggleSettings source) {
         if (target == null || source == null) {
             return;
         }

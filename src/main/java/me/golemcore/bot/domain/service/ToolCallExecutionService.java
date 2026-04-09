@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 import org.springframework.stereotype.Component;
 
 /**
@@ -42,13 +42,13 @@ public class ToolCallExecutionService {
     private final Map<String, ToolComponent> toolRegistry;
     private final ToolConfirmationPolicy confirmationPolicy;
     private final ConfirmationPort confirmationPort;
-    private final BotSettingsPort settingsPort;
+    private final ToolRuntimeSettingsPort settingsPort;
     private final ToolArtifactService toolArtifactService;
 
     public ToolCallExecutionService(List<ToolComponent> toolComponents,
             ToolConfirmationPolicy confirmationPolicy,
             ConfirmationPort confirmationPort,
-            BotSettingsPort settingsPort,
+            ToolRuntimeSettingsPort settingsPort,
             ToolArtifactService toolArtifactService) {
         this.toolRegistry = new ConcurrentHashMap<>();
         for (ToolComponent tool : toolComponents) {

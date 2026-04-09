@@ -36,7 +36,7 @@ import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.domain.model.SkillVariable;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.SkillSettingsPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
@@ -59,7 +59,7 @@ public class SkillService implements SkillComponent {
     private static final int MIN_PATH_PARTS_FOR_SKILL_NAME = 2;
 
     private final StoragePort storagePort;
-    private final BotSettingsPort settingsPort;
+    private final SkillSettingsPort settingsPort;
     private final SkillVariableResolver variableResolver;
     private final RuntimeConfigService runtimeConfigService;
     private final SkillDocumentService skillDocumentService;

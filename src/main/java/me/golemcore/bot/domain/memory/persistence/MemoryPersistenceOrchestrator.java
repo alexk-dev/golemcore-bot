@@ -32,7 +32,7 @@ import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.service.MemoryScopeSupport;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.MemorySettingsPort;
 import org.springframework.stereotype.Service;
 
 /**
@@ -48,7 +48,7 @@ public class MemoryPersistenceOrchestrator {
     private static final String PROCEDURAL_FILE = "items/procedural.jsonl";
 
     private final StoragePort storagePort;
-    private final BotSettingsPort settingsPort;
+    private final MemorySettingsPort settingsPort;
     private final RuntimeConfigService runtimeConfigService;
     private final MemoryNormalizationService memoryNormalizationService;
     private final ObjectMapper objectMapper;

@@ -7,8 +7,8 @@ import me.golemcore.bot.domain.model.UpdateBlockedReason;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
+import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -801,7 +801,7 @@ class UpdateServiceTest {
         private boolean restartRequested;
 
         private TestableUpdateService(
-                BotSettingsPort settingsPort,
+                UpdateSettingsPort settingsPort,
                 ObjectProvider<BuildProperties> buildPropertiesProvider,
                 ObjectMapper objectMapper,
                 ApplicationContext applicationContext,
@@ -843,7 +843,7 @@ class UpdateServiceTest {
     private static final class DeferredUpdateService extends UpdateService {
 
         private DeferredUpdateService(
-                BotSettingsPort settingsPort,
+                UpdateSettingsPort settingsPort,
                 ObjectProvider<BuildProperties> buildPropertiesProvider,
                 ObjectMapper objectMapper,
                 ApplicationContext applicationContext,

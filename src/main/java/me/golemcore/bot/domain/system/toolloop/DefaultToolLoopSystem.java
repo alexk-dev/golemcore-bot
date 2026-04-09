@@ -31,8 +31,8 @@ import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
 import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -69,8 +69,8 @@ import java.util.Map;
 public class DefaultToolLoopSystem implements ToolLoopSystem {
 
     private final HistoryWriter historyWriter;
-    private final BotSettingsPort.TurnSettings turnSettings;
-    private final BotSettingsPort.ToolLoopSettings settings;
+    private final ToolRuntimeSettingsPort.TurnSettings turnSettings;
+    private final ToolRuntimeSettingsPort.ToolLoopSettings settings;
     private final RuntimeConfigService runtimeConfigService;
     private final RuntimeEventService runtimeEventService;
     @SuppressWarnings("PMD.UnusedPrivateField")
@@ -312,8 +312,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private ToolExecutorPort toolExecutor;
         private HistoryWriter historyWriter;
         private ConversationViewBuilder viewBuilder;
-        private BotSettingsPort.TurnSettings turnSettings;
-        private BotSettingsPort.ToolLoopSettings settings;
+        private ToolRuntimeSettingsPort.TurnSettings turnSettings;
+        private ToolRuntimeSettingsPort.ToolLoopSettings settings;
         private ModelSelectionService modelSelectionService;
         private PlanService planService;
         private RuntimeConfigService runtimeConfigService;
@@ -349,13 +349,13 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         }
 
         /** Sets the turn-level configuration properties (optional). */
-        public Builder turnSettings(BotSettingsPort.TurnSettings turnSettings) {
+        public Builder turnSettings(ToolRuntimeSettingsPort.TurnSettings turnSettings) {
             this.turnSettings = turnSettings;
             return this;
         }
 
         /** Sets the tool loop configuration properties (optional). */
-        public Builder settings(BotSettingsPort.ToolLoopSettings settings) {
+        public Builder settings(ToolRuntimeSettingsPort.ToolLoopSettings settings) {
             this.settings = settings;
             return this;
         }

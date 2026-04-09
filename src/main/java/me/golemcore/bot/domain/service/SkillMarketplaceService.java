@@ -15,7 +15,7 @@ import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
 import me.golemcore.bot.domain.model.SkillMarketplaceItem;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.SkillSettingsPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
@@ -73,7 +73,7 @@ public class SkillMarketplaceService {
     private static final String DEFAULT_API_BASE_URL = "https://api.github.com";
     private static final String DEFAULT_RAW_BASE_URL = "https://raw.githubusercontent.com";
     private static final String DEFAULT_BRANCH = "main";
-    private final BotSettingsPort settingsPort;
+    private final SkillSettingsPort settingsPort;
     private final StoragePort storagePort;
     private final SkillService skillService;
     private final RuntimeConfigService runtimeConfigService;
@@ -1128,7 +1128,7 @@ public class SkillMarketplaceService {
         return URI.create(value.endsWith("/") ? value : value + "/");
     }
 
-    private BotSettingsPort.MarketplaceSettings marketplaceSettings() {
+    private SkillSettingsPort.MarketplaceSettings marketplaceSettings() {
         return settingsPort.skills().marketplace();
     }
 

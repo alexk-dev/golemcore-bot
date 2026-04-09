@@ -3,7 +3,13 @@ package me.golemcore.bot.adapter.outbound.config;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.MemorySettingsPort;
+import me.golemcore.bot.port.outbound.PromptSettingsPort;
+import me.golemcore.bot.port.outbound.SelfEvolvingBootstrapSettingsPort;
+import me.golemcore.bot.port.outbound.SkillSettingsPort;
+import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
+import me.golemcore.bot.port.outbound.UpdateSettingsPort;
+import me.golemcore.bot.port.outbound.WorkspaceSettingsPort;
 import org.springframework.stereotype.Component;
 
 /**
@@ -11,7 +17,9 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-public class BotPropertiesSettingsAdapter implements BotSettingsPort {
+public class BotPropertiesSettingsAdapter
+        implements MemorySettingsPort, SkillSettingsPort, PromptSettingsPort, ToolRuntimeSettingsPort,
+        UpdateSettingsPort, WorkspaceSettingsPort, SelfEvolvingBootstrapSettingsPort {
 
     private final BotProperties botProperties;
 
@@ -59,7 +67,7 @@ public class BotPropertiesSettingsAdapter implements BotSettingsPort {
     public UpdateSettings update() {
         BotProperties.UpdateProperties properties = botProperties.getUpdate();
         if (properties == null) {
-            return new UpdateSettings(true, null, 3, null);
+            properties = new BotProperties.UpdateProperties();
         }
         return new UpdateSettings(
                 properties.isEnabled(),
@@ -71,6 +79,9 @@ public class BotPropertiesSettingsAdapter implements BotSettingsPort {
     @Override
     public WorkspaceSettings workspace() {
         BotProperties.ToolsProperties tools = botProperties.getTools();
+        if (tools == null) {
+            tools = new BotProperties.ToolsProperties();
+        }
         BotProperties.FileSystemToolProperties filesystem = tools != null ? tools.getFilesystem() : null;
         BotProperties.ShellToolProperties shell = tools != null ? tools.getShell() : null;
         return new WorkspaceSettings(
@@ -82,7 +93,7 @@ public class BotPropertiesSettingsAdapter implements BotSettingsPort {
     public TurnSettings turn() {
         BotProperties.TurnProperties properties = botProperties.getTurn();
         if (properties == null) {
-            return BotSettingsPort.defaultTurnSettings();
+            return ToolRuntimeSettingsPort.defaultTurnSettings();
         }
         return new TurnSettings(properties.getMaxLlmCalls(), properties.getMaxToolExecutions(),
                 properties.getDeadline());
@@ -92,7 +103,7 @@ public class BotPropertiesSettingsAdapter implements BotSettingsPort {
     public ToolLoopSettings toolLoop() {
         BotProperties.ToolLoopProperties properties = botProperties.getToolLoop();
         if (properties == null) {
-            return BotSettingsPort.defaultToolLoopSettings();
+            return ToolRuntimeSettingsPort.defaultToolLoopSettings();
         }
         return new ToolLoopSettings(
                 properties.isStopOnToolFailure(),

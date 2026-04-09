@@ -8,7 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -22,7 +22,7 @@ public class UpdateRuntimeCleanupService {
     private static final String STAGED_MARKER_NAME = "staged.txt";
     private static final String JARS_DIR_NAME = "jars";
 
-    private final BotSettingsPort settingsPort;
+    private final UpdateSettingsPort settingsPort;
 
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {

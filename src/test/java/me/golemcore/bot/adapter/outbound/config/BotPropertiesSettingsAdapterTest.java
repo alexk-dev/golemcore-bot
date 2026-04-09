@@ -7,7 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.time.Duration;
 import java.util.Map;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.SelfEvolvingBootstrapSettingsPort;
+import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 import org.junit.jupiter.api.Test;
 
 class BotPropertiesSettingsAdapterTest {
@@ -67,7 +68,7 @@ class BotPropertiesSettingsAdapterTest {
                 .getNegativeMemory()
                 .setEnabled(false);
 
-        BotSettingsPort settings = new BotPropertiesSettingsAdapter(properties);
+        BotPropertiesSettingsAdapter settings = new BotPropertiesSettingsAdapter(properties);
 
         assertEquals("mem-store", settings.memory().directory());
         assertEquals("skills-dir", settings.skills().directory());
@@ -125,26 +126,32 @@ class BotPropertiesSettingsAdapterTest {
     @Test
     void shouldFallBackToPortDefaultsWhenPropertiesSectionsAreMissing() {
         BotProperties properties = new BotProperties();
+        BotProperties defaultProperties = new BotProperties();
         properties.setPrompts(null);
         properties.setTurn(null);
         properties.setToolLoop(null);
         properties.setSkills(null);
         properties.setUpdate(null);
+        properties.setTools(null);
         properties.setSelfEvolving(null);
 
-        BotSettingsPort settings = new BotPropertiesSettingsAdapter(properties);
+        BotPropertiesSettingsAdapter settings = new BotPropertiesSettingsAdapter(properties);
 
         assertTrue(settings.prompts().enabled());
         assertEquals("AI Assistant", settings.prompts().botName());
         assertTrue(settings.prompts().customVars().isEmpty());
-        assertEquals(BotSettingsPort.defaultTurnSettings(), settings.turn());
-        assertEquals(BotSettingsPort.defaultToolLoopSettings(), settings.toolLoop());
+        assertEquals(ToolRuntimeSettingsPort.defaultTurnSettings(), settings.turn());
+        assertEquals(ToolRuntimeSettingsPort.defaultToolLoopSettings(), settings.toolLoop());
         assertFalse(settings.skills().marketplace().enabled());
         assertTrue(settings.skills().marketplace().remoteCacheTtl().compareTo(Duration.ZERO) > 0);
         assertTrue(settings.update().enabled());
+        assertEquals(defaultProperties.getUpdate().getUpdatesPath(), settings.update().updatesPath());
         assertEquals(3, settings.update().maxKeptVersions());
+        assertEquals(defaultProperties.getTools().getFilesystem().getWorkspace(),
+                settings.workspace().filesystemWorkspace());
+        assertEquals(defaultProperties.getTools().getShell().getWorkspace(), settings.workspace().shellWorkspace());
         assertEquals(
-                new BotSettingsPort.SelfEvolvingBootstrapSettings(null, null),
+                new SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings(null, null),
                 settings.selfEvolvingBootstrap());
     }
 }

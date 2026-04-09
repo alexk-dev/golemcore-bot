@@ -20,9 +20,9 @@ import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.TelemetryRollupPort;
+import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -58,7 +58,7 @@ public class ToolLoopAutoConfiguration {
 
     @Bean
     public ToolLoopSystem toolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutorPort,
-            HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, BotSettingsPort settingsPort,
+            HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, ToolRuntimeSettingsPort settingsPort,
             ModelSelectionService modelSelectionService, PlanService planService,
             RuntimeConfigService runtimeConfigService,
             UsageTrackingPort usageTracker,

@@ -41,7 +41,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.PromptSettingsPort;
 import org.springframework.stereotype.Service;
 
 /**
@@ -141,7 +141,7 @@ public class PromptSectionService {
             """;
 
     private final StoragePort storagePort;
-    private final BotSettingsPort settingsPort;
+    private final PromptSettingsPort settingsPort;
     private final RuntimeConfigService runtimeConfigService;
     private final SkillTemplateEngine templateEngine;
 

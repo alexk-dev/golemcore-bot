@@ -10,7 +10,7 @@ import me.golemcore.bot.domain.model.UpdateActionResult;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.domain.model.UpdateVersionInfo;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.SpringApplication;
@@ -55,7 +55,7 @@ public class UpdateService {
     private static final Pattern SEMVER_PATTERN = Pattern
             .compile("^(\\d++)\\.(\\d++)\\.(\\d++)(?:-([0-9A-Za-z.-]++))?$");
 
-    private final BotSettingsPort settingsPort;
+    private final UpdateSettingsPort settingsPort;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectMapper objectMapper;
     private final ApplicationContext applicationContext;
@@ -77,7 +77,7 @@ public class UpdateService {
     private Optional<UpdateVersionInfo> activeTarget = Optional.empty();
 
     public UpdateService(
-            BotSettingsPort settingsPort,
+            UpdateSettingsPort settingsPort,
             ObjectProvider<BuildProperties> buildPropertiesProvider,
             ObjectMapper objectMapper,
             ApplicationContext applicationContext,

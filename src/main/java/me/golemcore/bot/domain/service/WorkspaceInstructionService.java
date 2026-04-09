@@ -34,7 +34,7 @@ import java.util.Locale;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.port.outbound.BotSettingsPort;
+import me.golemcore.bot.port.outbound.WorkspaceSettingsPort;
 import org.springframework.stereotype.Service;
 
 /**
@@ -60,7 +60,7 @@ public class WorkspaceInstructionService {
     private static final int MAX_TOTAL_CONTEXT_CHARS = 160_000;
     private static final long CACHE_TTL_MS = 5_000L;
 
-    private final BotSettingsPort settingsPort;
+    private final WorkspaceSettingsPort settingsPort;
 
     private volatile long cacheTimestampMs;
     private volatile String cachedContext = "";
