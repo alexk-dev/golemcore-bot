@@ -49,7 +49,6 @@ import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionDiffP
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionDiffProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionEvidenceProjection;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticCatalogProjection;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
@@ -617,12 +616,12 @@ public class HiveEventBatchPublisher implements HiveEventPublishPort {
     }
 
     @Override
-    public void publishSelfEvolvingTacticCatalogProjection(List<TacticCatalogProjection> tactics) {
+    public void publishSelfEvolvingTacticCatalogProjection(List<TacticSearchResult> tactics) {
         if (tactics == null || tactics.isEmpty()) {
             return;
         }
         List<HiveEventPayload> events = new ArrayList<>();
-        for (TacticCatalogProjection tactic : tactics) {
+        for (TacticSearchResult tactic : tactics) {
             events.add(buildSelfEvolvingTacticProjection(null, null, tactic));
         }
         publishBatch(events);
@@ -635,43 +634,10 @@ public class HiveEventBatchPublisher implements HiveEventPublishPort {
         events.add(buildSelfEvolvingTacticSearchStatusProjection(null, query, status));
         if (results != null) {
             for (TacticSearchResult result : results) {
-                events.add(buildSelfEvolvingTacticProjection(null, query, toTacticCatalogProjection(result)));
+                events.add(buildSelfEvolvingTacticProjection(null, query, result));
             }
         }
         publishBatch(events);
-    }
-
-    private TacticCatalogProjection toTacticCatalogProjection(TacticSearchResult result) {
-        return TacticCatalogProjection.builder()
-                .tacticId(result.getTacticId())
-                .artifactStreamId(result.getArtifactStreamId())
-                .originArtifactStreamId(result.getOriginArtifactStreamId())
-                .artifactKey(result.getArtifactKey())
-                .artifactType(result.getArtifactType())
-                .title(result.getTitle())
-                .aliases(result.getAliases())
-                .contentRevisionId(result.getContentRevisionId())
-                .intentSummary(result.getIntentSummary())
-                .behaviorSummary(result.getBehaviorSummary())
-                .toolSummary(result.getToolSummary())
-                .outcomeSummary(result.getOutcomeSummary())
-                .benchmarkSummary(result.getBenchmarkSummary())
-                .approvalNotes(result.getApprovalNotes())
-                .evidenceSnippets(result.getEvidenceSnippets())
-                .taskFamilies(result.getTaskFamilies())
-                .tags(result.getTags())
-                .promotionState(result.getPromotionState())
-                .rolloutStage(result.getRolloutStage())
-                .score(result.getScore())
-                .successRate(result.getSuccessRate())
-                .benchmarkWinRate(result.getBenchmarkWinRate())
-                .regressionFlags(result.getRegressionFlags())
-                .recencyScore(result.getRecencyScore())
-                .golemLocalUsageSuccess(result.getGolemLocalUsageSuccess())
-                .embeddingStatus(result.getEmbeddingStatus())
-                .updatedAt(result.getUpdatedAt())
-                .explanation(result.getExplanation())
-                .build();
     }
 
     private HiveEventPayload buildSelfEvolvingArtifactEvidencePayload(
@@ -723,7 +689,7 @@ public class HiveEventBatchPublisher implements HiveEventPublishPort {
     private HiveEventPayload buildSelfEvolvingTacticProjection(
             String golemId,
             String query,
-            TacticCatalogProjection tactic) {
+            TacticSearchResult tactic) {
         Map<String, Object> payload = objectMapper.convertValue(tactic, Map.class);
         payload.put("searchQuery", query);
         return buildArtifactEvent(

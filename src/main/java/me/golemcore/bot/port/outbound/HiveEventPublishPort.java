@@ -35,7 +35,6 @@ import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionDiffP
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionDiffProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionEvidenceProjection;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticCatalogProjection;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 
@@ -61,7 +60,7 @@ public interface HiveEventPublishPort extends SelfEvolvingProjectionPublishPort 
 
     void publishSelfEvolvingCampaignProjection(String golemId, BenchmarkCampaign campaign);
 
-    void publishSelfEvolvingTacticCatalogProjection(List<TacticCatalogProjection> tactics);
+    void publishSelfEvolvingTacticCatalogProjection(List<TacticSearchResult> tactics);
 
     void publishSelfEvolvingTacticSearchProjection(
             String query,

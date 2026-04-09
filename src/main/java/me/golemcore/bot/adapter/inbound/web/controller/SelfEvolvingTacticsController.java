@@ -13,7 +13,6 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticCatalogProjection;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
@@ -196,7 +195,7 @@ public class SelfEvolvingTacticsController {
         }
         try {
             hiveEventPublishPort.publishSelfEvolvingTacticCatalogProjection(tactics.stream()
-                    .map(this::toDomainTacticCatalogProjection)
+                    .map(this::toDomainTacticSearchResult)
                     .toList());
         } catch (RuntimeException exception) {
             log.debug("[Hive] Skipping SelfEvolving tactic catalog publish: {}", exception.getMessage());
@@ -287,8 +286,8 @@ public class SelfEvolvingTacticsController {
                 .build();
     }
 
-    private TacticCatalogProjection toDomainTacticCatalogProjection(SelfEvolvingTacticDto tactic) {
-        return TacticCatalogProjection.builder()
+    private TacticSearchResult toDomainTacticSearchResult(SelfEvolvingTacticDto tactic) {
+        return TacticSearchResult.builder()
                 .tacticId(tactic.getTacticId())
                 .artifactStreamId(tactic.getArtifactStreamId())
                 .originArtifactStreamId(tactic.getOriginArtifactStreamId())

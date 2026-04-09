@@ -15,8 +15,8 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticCatalogProjection;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.junit.jupiter.api.BeforeEach;
@@ -178,7 +178,7 @@ class SelfEvolvingTacticsControllerHivePublishTest {
         controller.searchTactics("planner").block();
     }
 
-    private boolean matchesProjection(TacticCatalogProjection projection) {
+    private boolean matchesProjection(TacticSearchResult projection) {
         return "planner".equals(projection.getTacticId())
                 && "stream-planner".equals(projection.getArtifactStreamId())
                 && "skill:planner".equals(projection.getArtifactKey())
