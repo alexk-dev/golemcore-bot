@@ -1,6 +1,8 @@
 package me.golemcore.bot.domain.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.adapter.outbound.update.BuildPropertiesUpdateVersionAdapter;
+import me.golemcore.bot.adapter.outbound.update.RuntimeConfigUpdateRuntimeAdapter;
+import me.golemcore.bot.adapter.outbound.update.UpdateAutoUpdateLifecycle;
 import me.golemcore.bot.domain.model.AvailableRelease;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UpdateBlockedReason;
@@ -8,13 +10,15 @@ import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
+import me.golemcore.bot.port.outbound.UpdateRestartPort;
+import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;
 import me.golemcore.bot.port.outbound.UpdateSettingsPort;
+import me.golemcore.bot.port.outbound.UpdateVersionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
-import org.springframework.context.ApplicationContext;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -60,7 +64,6 @@ class UpdateServiceTest {
 
     private BotProperties botProperties;
     private ObjectProvider<BuildProperties> buildPropertiesProvider;
-    private ApplicationContext applicationContext;
     private JvmExitService jvmExitService;
     private MutableClock clock;
     private RuntimeConfigService runtimeConfigService;
@@ -71,7 +74,6 @@ class UpdateServiceTest {
     void setUp() {
         botProperties = new BotProperties();
         buildPropertiesProvider = mock(ObjectProvider.class);
-        applicationContext = mock(ApplicationContext.class);
         jvmExitService = mock(JvmExitService.class);
         clock = new MutableClock(BASE_TIME, ZoneOffset.UTC);
         runtimeConfigService = mock(RuntimeConfigService.class);
@@ -429,28 +431,30 @@ class UpdateServiceTest {
     void shouldNotInitializeAutoUpdateSchedulerWhenFeatureIsDisabled() {
         botProperties.getUpdate().setEnabled(false);
         UpdateService service = createService(new StubReleaseSource());
+        UpdateAutoUpdateLifecycle lifecycle = new UpdateAutoUpdateLifecycle(service);
 
-        service.initAutoUpdateScheduler();
+        invokeNoArgMethod(lifecycle, "start");
 
-        assertNull(readPrivateField(service, "autoUpdateScheduler", ScheduledExecutorService.class));
-        assertNull(readPrivateField(service, "autoUpdateTask", ScheduledFuture.class));
+        assertNull(readPrivateField(lifecycle, "autoUpdateScheduler", ScheduledExecutorService.class));
+        assertNull(readPrivateField(lifecycle, "autoUpdateTask", ScheduledFuture.class));
     }
 
     @Test
     void shouldInitializeAndShutdownAutoUpdateScheduler(@TempDir Path tempDir) {
         enableUpdates(tempDir);
         UpdateService service = createService(new StubReleaseSource());
+        UpdateAutoUpdateLifecycle lifecycle = new UpdateAutoUpdateLifecycle(service);
 
-        service.initAutoUpdateScheduler();
-        ScheduledExecutorService scheduler = readPrivateField(service, "autoUpdateScheduler",
+        invokeNoArgMethod(lifecycle, "start");
+        ScheduledExecutorService scheduler = readPrivateField(lifecycle, "autoUpdateScheduler",
                 ScheduledExecutorService.class);
-        ScheduledFuture<?> task = readPrivateField(service, "autoUpdateTask", ScheduledFuture.class);
+        ScheduledFuture<?> task = readPrivateField(lifecycle, "autoUpdateTask", ScheduledFuture.class);
 
         assertNotNull(scheduler);
         assertNotNull(task);
         assertFalse(scheduler.isShutdown());
 
-        service.shutdownAutoUpdateScheduler();
+        invokeNoArgMethod(lifecycle, "stop");
 
         assertTrue(task.isCancelled());
         assertTrue(scheduler.isShutdown());
@@ -477,6 +481,8 @@ class UpdateServiceTest {
         AtomicReference<RuntimeConfig> storedConfig = new AtomicReference<>(RuntimeConfig.builder().build());
         when(runtimeConfigService.getRuntimeConfig()).thenAnswer(invocation -> storedConfig.get());
         when(runtimeConfigService.getRuntimeConfigForApi()).thenAnswer(invocation -> storedConfig.get());
+        when(runtimeConfigService.copyRuntimeConfig(any(RuntimeConfig.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         doAnswer(invocation -> {
             storedConfig.set(invocation.getArgument(0));
             return null;
@@ -505,6 +511,8 @@ class UpdateServiceTest {
         AtomicReference<RuntimeConfig> storedConfig = new AtomicReference<>(RuntimeConfig.builder().build());
         when(runtimeConfigService.getRuntimeConfig()).thenAnswer(invocation -> storedConfig.get());
         when(runtimeConfigService.getRuntimeConfigForApi()).thenAnswer(invocation -> storedConfig.get());
+        when(runtimeConfigService.copyRuntimeConfig(any(RuntimeConfig.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         doAnswer(invocation -> {
             storedConfig.set(invocation.getArgument(0));
             return null;
@@ -669,12 +677,10 @@ class UpdateServiceTest {
     private UpdateService createService(StubReleaseSource source) {
         return new UpdateService(
                 me.golemcore.bot.support.TestPorts.settings(botProperties),
-                buildPropertiesProvider,
-                new ObjectMapper(),
-                applicationContext,
+                createVersionPort(),
+                createRuntimeConfigPort(),
+                createRestartPort(),
                 clock,
-                jvmExitService,
-                runtimeConfigService,
                 updateActivityGate,
                 updateMaintenanceWindow,
                 List.of(source));
@@ -683,12 +689,10 @@ class UpdateServiceTest {
     private TestableUpdateService createTestableService(StubReleaseSource source) {
         return new TestableUpdateService(
                 me.golemcore.bot.support.TestPorts.settings(botProperties),
-                buildPropertiesProvider,
-                new ObjectMapper(),
-                applicationContext,
+                createVersionPort(),
+                createRuntimeConfigPort(),
+                createRestartPort(),
                 clock,
-                jvmExitService,
-                runtimeConfigService,
                 updateActivityGate,
                 updateMaintenanceWindow,
                 List.of(source));
@@ -697,12 +701,10 @@ class UpdateServiceTest {
     private TestableUpdateService createTestableServiceMultiSource(List<ReleaseSourcePort> sources) {
         return new TestableUpdateService(
                 me.golemcore.bot.support.TestPorts.settings(botProperties),
-                buildPropertiesProvider,
-                new ObjectMapper(),
-                applicationContext,
+                createVersionPort(),
+                createRuntimeConfigPort(),
+                createRestartPort(),
                 clock,
-                jvmExitService,
-                runtimeConfigService,
                 updateActivityGate,
                 updateMaintenanceWindow,
                 sources);
@@ -711,15 +713,25 @@ class UpdateServiceTest {
     private DeferredUpdateService createDeferredUpdateService(StubReleaseSource source) {
         return new DeferredUpdateService(
                 me.golemcore.bot.support.TestPorts.settings(botProperties),
-                buildPropertiesProvider,
-                new ObjectMapper(),
-                applicationContext,
+                createVersionPort(),
+                createRuntimeConfigPort(),
+                createRestartPort(),
                 clock,
-                jvmExitService,
-                runtimeConfigService,
                 updateActivityGate,
                 updateMaintenanceWindow,
                 List.of(source));
+    }
+
+    private UpdateVersionPort createVersionPort() {
+        return new BuildPropertiesUpdateVersionAdapter(buildPropertiesProvider);
+    }
+
+    private UpdateRuntimeConfigPort createRuntimeConfigPort() {
+        return new RuntimeConfigUpdateRuntimeAdapter(runtimeConfigService);
+    }
+
+    private UpdateRestartPort createRestartPort() {
+        return jvmExitService::exit;
     }
 
     private void enableUpdates(Path updatesPath) {
@@ -783,13 +795,24 @@ class UpdateServiceTest {
     }
 
     @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })
-    private static <T> T readPrivateField(UpdateService service, String fieldName, Class<T> fieldType) {
+    private static <T> T readPrivateField(Object target, String fieldName, Class<T> fieldType) {
         try {
-            Field field = UpdateService.class.getDeclaredField(fieldName);
+            Field field = target.getClass().getDeclaredField(fieldName);
             field.setAccessible(true);
-            return (T) field.get(service);
+            return (T) field.get(target);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new IllegalStateException("Failed to read field: " + fieldName, e);
+        }
+    }
+
+    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+    private static void invokeNoArgMethod(Object target, String methodName) {
+        try {
+            Method method = target.getClass().getDeclaredMethod(methodName);
+            method.setAccessible(true);
+            method.invoke(target);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to invoke method: " + methodName, e);
         }
     }
 
@@ -802,23 +825,19 @@ class UpdateServiceTest {
 
         private TestableUpdateService(
                 UpdateSettingsPort settingsPort,
-                ObjectProvider<BuildProperties> buildPropertiesProvider,
-                ObjectMapper objectMapper,
-                ApplicationContext applicationContext,
+                UpdateVersionPort updateVersionPort,
+                UpdateRuntimeConfigPort updateRuntimeConfigPort,
+                UpdateRestartPort updateRestartPort,
                 Clock clock,
-                JvmExitService jvmExitService,
-                RuntimeConfigService runtimeConfigService,
                 UpdateActivityGate updateActivityGate,
                 UpdateMaintenanceWindow updateMaintenanceWindow,
                 List<ReleaseSourcePort> releaseSources) {
             super(
                     settingsPort,
-                    buildPropertiesProvider,
-                    objectMapper,
-                    applicationContext,
+                    updateVersionPort,
+                    updateRuntimeConfigPort,
+                    updateRestartPort,
                     clock,
-                    jvmExitService,
-                    runtimeConfigService,
                     updateActivityGate,
                     updateMaintenanceWindow,
                     releaseSources);
@@ -844,23 +863,19 @@ class UpdateServiceTest {
 
         private DeferredUpdateService(
                 UpdateSettingsPort settingsPort,
-                ObjectProvider<BuildProperties> buildPropertiesProvider,
-                ObjectMapper objectMapper,
-                ApplicationContext applicationContext,
+                UpdateVersionPort updateVersionPort,
+                UpdateRuntimeConfigPort updateRuntimeConfigPort,
+                UpdateRestartPort updateRestartPort,
                 Clock clock,
-                JvmExitService jvmExitService,
-                RuntimeConfigService runtimeConfigService,
                 UpdateActivityGate updateActivityGate,
                 UpdateMaintenanceWindow updateMaintenanceWindow,
                 List<ReleaseSourcePort> releaseSources) {
             super(
                     settingsPort,
-                    buildPropertiesProvider,
-                    objectMapper,
-                    applicationContext,
+                    updateVersionPort,
+                    updateRuntimeConfigPort,
+                    updateRestartPort,
                     clock,
-                    jvmExitService,
-                    runtimeConfigService,
                     updateActivityGate,
                     updateMaintenanceWindow,
                     releaseSources);

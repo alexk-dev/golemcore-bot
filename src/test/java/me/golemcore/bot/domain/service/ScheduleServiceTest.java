@@ -1,11 +1,13 @@
 package me.golemcore.bot.domain.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import me.golemcore.bot.adapter.outbound.storage.StorageSchedulePersistenceAdapter;
+import me.golemcore.bot.adapter.outbound.update.SpringCronScheduleAdapter;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.domain.model.ScheduleReportConfigUpdate;
 import me.golemcore.bot.port.outbound.StoragePort;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -50,10 +53,13 @@ class ScheduleServiceTest {
 
         when(storagePort.getText(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
-        when(storagePort.putText(anyString(), anyString(), anyString()))
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        service = new ScheduleService(storagePort, objectMapper, clock);
+        service = new ScheduleService(
+                new StorageSchedulePersistenceAdapter(storagePort, objectMapper),
+                new SpringCronScheduleAdapter(),
+                clock);
     }
 
     @Test
@@ -71,7 +77,7 @@ class ScheduleServiceTest {
         assertEquals(-1, entry.getMaxExecutions());
         assertEquals(0, entry.getExecutionCount());
         assertNotNull(entry.getNextExecutionAt());
-        verify(storagePort).putText(any(), any(), any());
+        verify(storagePort).putTextAtomic(any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -108,32 +114,32 @@ class ScheduleServiceTest {
 
     @Test
     void shouldNormalizeFiveFieldCronToSixField() {
-        String result = ScheduleService.normalizeCronExpression("*/15 * * * *");
+        String result = service.normalizeCronExpression("*/15 * * * *");
         assertEquals("0 */15 * * * *", result);
     }
 
     @Test
     void shouldPassThroughSixFieldCron() {
-        String result = ScheduleService.normalizeCronExpression(CRON_WEEKDAYS_9AM);
+        String result = service.normalizeCronExpression(CRON_WEEKDAYS_9AM);
         assertEquals(CRON_WEEKDAYS_9AM, result);
     }
 
     @Test
     void shouldRejectInvalidCronExpression() {
         assertThrows(IllegalArgumentException.class,
-                () -> ScheduleService.normalizeCronExpression("not a cron"));
+                () -> service.normalizeCronExpression("not a cron"));
     }
 
     @Test
     void shouldRejectEmptyCronExpression() {
         assertThrows(IllegalArgumentException.class,
-                () -> ScheduleService.normalizeCronExpression(""));
+                () -> service.normalizeCronExpression(""));
     }
 
     @Test
     void shouldRejectNullCronExpression() {
         assertThrows(IllegalArgumentException.class,
-                () -> ScheduleService.normalizeCronExpression(null));
+                () -> service.normalizeCronExpression(null));
     }
 
     @Test
@@ -392,7 +398,7 @@ class ScheduleServiceTest {
 
         // Capture what was persisted
         org.mockito.ArgumentCaptor<String> jsonCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(storagePort).putText(any(), any(), jsonCaptor.capture());
+        verify(storagePort).putTextAtomic(any(), any(), jsonCaptor.capture(), anyBoolean());
 
         String savedJson = jsonCaptor.getValue();
 
@@ -400,7 +406,10 @@ class ScheduleServiceTest {
         when(storagePort.getText("auto", "schedules.json"))
                 .thenReturn(CompletableFuture.completedFuture(savedJson));
 
-        ScheduleService newService = new ScheduleService(storagePort, objectMapper, clock);
+        ScheduleService newService = new ScheduleService(
+                new StorageSchedulePersistenceAdapter(storagePort, objectMapper),
+                new SpringCronScheduleAdapter(),
+                clock);
         List<ScheduleEntry> loaded = newService.getSchedules();
 
         assertEquals(1, loaded.size());
@@ -427,7 +436,7 @@ class ScheduleServiceTest {
         assertEquals("telegram", entry.getReport().getChannelType());
         assertEquals("99999", entry.getReport().getChatId());
         assertTrue(entry.isEnabled());
-        verify(storagePort).putText(any(), any(), any());
+        verify(storagePort).putTextAtomic(any(), any(), any(), anyBoolean());
     }
 
     @Test

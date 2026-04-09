@@ -1,6 +1,8 @@
 package me.golemcore.bot.adapter.inbound.command;
 
+import me.golemcore.bot.application.command.AutomationCommandService;
 import me.golemcore.bot.application.command.ModelSelectionCommandService;
+import me.golemcore.bot.application.command.PlanCommandService;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
@@ -92,9 +94,11 @@ class CommandRouterTest {
     private UserPreferencesService preferencesService;
     private CompactionOrchestrationService compactionService;
     private AutoModeService autoModeService;
+    private AutomationCommandService automationCommandService;
     private ModelSelectionCommandService modelSelectionCommandService;
     private PlanService planService;
     private PlanExecutionService planExecutionService;
+    private PlanCommandService planCommandService;
     private RuntimeConfigService runtimeConfigService;
     private ScheduleService scheduleService;
     private DelayedActionPolicyService delayedActionPolicyService;
@@ -145,6 +149,13 @@ class CommandRouterTest {
         runtimeConfigService = mock(RuntimeConfigService.class);
         scheduleService = mock(ScheduleService.class);
         delayedActionPolicyService = mock(DelayedActionPolicyService.class);
+        automationCommandService = new AutomationCommandService(
+                autoModeService,
+                runtimeConfigService,
+                scheduleService,
+                delayedActionPolicyService,
+                null);
+        planCommandService = new PlanCommandService(planService, planExecutionService, runtimeConfigService);
         runCoordinator = mock(SessionRunCoordinator.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
 
@@ -163,13 +174,10 @@ class CommandRouterTest {
                 usageTracker,
                 preferencesService,
                 compactionService,
-                autoModeService,
+                automationCommandService,
                 modelSelectionCommandService,
-                planService,
-                planExecutionService,
-                scheduleService,
+                planCommandService,
                 delayedActionPolicyService,
-                null,
                 runCoordinator,
                 eventPublisher,
                 runtimeConfigService,

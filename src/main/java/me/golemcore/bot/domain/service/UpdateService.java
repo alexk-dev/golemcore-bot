@@ -1,8 +1,5 @@
 package me.golemcore.bot.domain.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AvailableRelease;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -10,12 +7,11 @@ import me.golemcore.bot.domain.model.UpdateActionResult;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.domain.model.UpdateVersionInfo;
-import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.info.BuildProperties;
-import org.springframework.context.ApplicationContext;
+import me.golemcore.bot.port.outbound.UpdateRestartPort;
+import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;
+import me.golemcore.bot.port.outbound.UpdateSettingsPort;
+import me.golemcore.bot.port.outbound.UpdateVersionPort;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -33,9 +29,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -51,24 +44,19 @@ public class UpdateService {
     private static final int RESTART_EXIT_CODE = 42;
     private static final int DOWNLOAD_BUFFER_SIZE = 8192;
     private static final long RESTART_DELAY_MILLIS = 500L;
-    private static final int AUTO_UPDATE_TICK_INTERVAL_SECONDS = 60;
     private static final Pattern SEMVER_PATTERN = Pattern
             .compile("^(\\d++)\\.(\\d++)\\.(\\d++)(?:-([0-9A-Za-z.-]++))?$");
 
     private final UpdateSettingsPort settingsPort;
-    private final ObjectProvider<BuildProperties> buildPropertiesProvider;
-    private final ObjectMapper objectMapper;
-    private final ApplicationContext applicationContext;
+    private final UpdateVersionPort updateVersionPort;
+    private final UpdateRuntimeConfigPort updateRuntimeConfigPort;
+    private final UpdateRestartPort updateRestartPort;
     private final Clock clock;
-    private final JvmExitService jvmExitService;
-    private final RuntimeConfigService runtimeConfigService;
     private final UpdateActivityGate updateActivityGate;
     private final UpdateMaintenanceWindow updateMaintenanceWindow;
     private final List<ReleaseSourcePort> releaseSources;
 
     private final Object lock = new Object();
-    private ScheduledExecutorService autoUpdateScheduler;
-    private ScheduledFuture<?> autoUpdateTask;
 
     private UpdateState transientState = UpdateState.IDLE;
     private Instant lastCheckAt;
@@ -78,53 +66,21 @@ public class UpdateService {
 
     public UpdateService(
             UpdateSettingsPort settingsPort,
-            ObjectProvider<BuildProperties> buildPropertiesProvider,
-            ObjectMapper objectMapper,
-            ApplicationContext applicationContext,
+            UpdateVersionPort updateVersionPort,
+            UpdateRuntimeConfigPort updateRuntimeConfigPort,
+            UpdateRestartPort updateRestartPort,
             Clock clock,
-            JvmExitService jvmExitService,
-            RuntimeConfigService runtimeConfigService,
             UpdateActivityGate updateActivityGate,
             UpdateMaintenanceWindow updateMaintenanceWindow,
             List<ReleaseSourcePort> releaseSources) {
         this.settingsPort = settingsPort;
-        this.buildPropertiesProvider = buildPropertiesProvider;
-        this.objectMapper = objectMapper;
-        this.applicationContext = applicationContext;
+        this.updateVersionPort = updateVersionPort;
+        this.updateRuntimeConfigPort = updateRuntimeConfigPort;
+        this.updateRestartPort = updateRestartPort;
         this.clock = clock;
-        this.jvmExitService = jvmExitService;
-        this.runtimeConfigService = runtimeConfigService;
         this.updateActivityGate = updateActivityGate;
         this.updateMaintenanceWindow = updateMaintenanceWindow;
         this.releaseSources = releaseSources;
-    }
-
-    @PostConstruct
-    void initAutoUpdateScheduler() {
-        if (!isEnabled()) {
-            return;
-        }
-
-        autoUpdateScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread thread = new Thread(r, "update-auto-scheduler");
-            thread.setDaemon(true);
-            return thread;
-        });
-        autoUpdateTask = autoUpdateScheduler.scheduleWithFixedDelay(
-                this::runAutoUpdateCycleSafely,
-                AUTO_UPDATE_TICK_INTERVAL_SECONDS,
-                AUTO_UPDATE_TICK_INTERVAL_SECONDS,
-                TimeUnit.SECONDS);
-    }
-
-    @PreDestroy
-    void shutdownAutoUpdateScheduler() {
-        if (autoUpdateTask != null) {
-            autoUpdateTask.cancel(false);
-        }
-        if (autoUpdateScheduler != null) {
-            autoUpdateScheduler.shutdownNow();
-        }
     }
 
     public UpdateStatus getStatus() {
@@ -142,10 +98,10 @@ public class UpdateService {
             return UpdateStatus.builder()
                     .state(effectiveState)
                     .enabled(enabled)
-                    .autoEnabled(runtimeConfigService.isAutoUpdateEnabled())
-                    .maintenanceWindowEnabled(runtimeConfigService.isUpdateMaintenanceWindowEnabled())
-                    .maintenanceWindowStartUtc(runtimeConfigService.getUpdateMaintenanceWindowStartUtc())
-                    .maintenanceWindowEndUtc(runtimeConfigService.getUpdateMaintenanceWindowEndUtc())
+                    .autoEnabled(updateRuntimeConfigPort.isAutoUpdateEnabled())
+                    .maintenanceWindowEnabled(updateRuntimeConfigPort.isUpdateMaintenanceWindowEnabled())
+                    .maintenanceWindowStartUtc(updateRuntimeConfigPort.getUpdateMaintenanceWindowStartUtc())
+                    .maintenanceWindowEndUtc(updateRuntimeConfigPort.getUpdateMaintenanceWindowEndUtc())
                     .serverTimezone("UTC")
                     .windowOpen(windowStatus.open())
                     .busy(activityStatus.busy())
@@ -188,16 +144,11 @@ public class UpdateService {
     }
 
     public RuntimeConfig.UpdateConfig getConfig() {
-        RuntimeConfig.UpdateConfig config = runtimeConfigService.getRuntimeConfigForApi().getUpdate();
-        return config != null ? config : new RuntimeConfig.UpdateConfig();
+        return updateRuntimeConfigPort.getUpdateConfig();
     }
 
     public RuntimeConfig.UpdateConfig updateConfig(RuntimeConfig.UpdateConfig updateConfig) {
-        RuntimeConfig current = runtimeConfigService.getRuntimeConfig();
-        RuntimeConfig copy = copyRuntimeConfig(current);
-        copy.setUpdate(updateConfig != null ? updateConfig : new RuntimeConfig.UpdateConfig());
-        runtimeConfigService.updateRuntimeConfig(copy);
-        return getConfig();
+        return updateRuntimeConfigPort.updateUpdateConfig(updateConfig);
     }
 
     private UpdateActionResult prepare() {
@@ -535,11 +486,7 @@ public class UpdateService {
     // ==================== Version Helpers ====================
 
     private String getCurrentVersion() {
-        BuildProperties buildProperties = buildPropertiesProvider.getIfAvailable();
-        if (buildProperties == null || buildProperties.getVersion() == null || buildProperties.getVersion().isBlank()) {
-            return "dev";
-        }
-        return normalizeVersion(buildProperties.getVersion());
+        return normalizeVersion(updateVersionPort.currentVersion());
     }
 
     // ==================== File System ====================
@@ -901,8 +848,7 @@ public class UpdateService {
                 transientState = UpdateState.VERIFYING;
             }
 
-            int exitCode = SpringApplication.exit(applicationContext, () -> RESTART_EXIT_CODE);
-            jvmExitService.exit(exitCode);
+            updateRestartPort.restart(RESTART_EXIT_CODE);
         }, "update-restart-thread");
 
         restartThread.setDaemon(false);
@@ -975,7 +921,7 @@ public class UpdateService {
     }
 
     void runAutoUpdateCycle() {
-        if (!isEnabled() || !runtimeConfigService.isAutoUpdateEnabled()) {
+        if (!isEnabled() || !updateRuntimeConfigPort.isAutoUpdateEnabled()) {
             return;
         }
         synchronized (lock) {
@@ -1026,7 +972,7 @@ public class UpdateService {
         }
     }
 
-    private void runAutoUpdateCycleSafely() {
+    public void runAutoUpdateCycleSafely() {
         try {
             runAutoUpdateCycle();
         } catch (RuntimeException e) {
@@ -1035,7 +981,7 @@ public class UpdateService {
     }
 
     private boolean shouldPerformAutoCheck() {
-        Integer intervalMinutes = runtimeConfigService.getUpdateCheckIntervalMinutes();
+        Integer intervalMinutes = updateRuntimeConfigPort.getUpdateCheckIntervalMinutes();
         if (intervalMinutes == null || intervalMinutes < 1) {
             intervalMinutes = 60;
         }
@@ -1048,9 +994,9 @@ public class UpdateService {
 
     private UpdateMaintenanceWindow.Status evaluateMaintenanceWindow() {
         return updateMaintenanceWindow.evaluate(
-                runtimeConfigService.isUpdateMaintenanceWindowEnabled(),
-                runtimeConfigService.getUpdateMaintenanceWindowStartUtc(),
-                runtimeConfigService.getUpdateMaintenanceWindowEndUtc(),
+                updateRuntimeConfigPort.isUpdateMaintenanceWindowEnabled(),
+                updateRuntimeConfigPort.getUpdateMaintenanceWindowStartUtc(),
+                updateRuntimeConfigPort.getUpdateMaintenanceWindowEndUtc(),
                 Instant.now(clock));
     }
 
@@ -1241,15 +1187,6 @@ public class UpdateService {
     }
 
     // ==================== Helpers ====================
-
-    private RuntimeConfig copyRuntimeConfig(RuntimeConfig source) {
-        try {
-            String json = objectMapper.writeValueAsString(source);
-            return objectMapper.readValue(json, RuntimeConfig.class);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to copy runtime config", e);
-        }
-    }
 
     private UpdateVersionInfo toVersionInfo(AvailableRelease release) {
         return UpdateVersionInfo.builder()

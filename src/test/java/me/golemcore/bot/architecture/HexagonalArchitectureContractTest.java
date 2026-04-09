@@ -1,6 +1,6 @@
 package me.golemcore.bot.architecture;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -18,84 +18,75 @@ class HexagonalArchitectureContractTest {
     private static final String ROOT_PACKAGE = "me.golemcore.bot";
     private static final String DOMAIN_PACKAGE = "me.golemcore.bot.domain";
     private static final String PORT_PACKAGE = "me.golemcore.bot.port";
-    private static final List<String> FORBIDDEN_PREFIXES = List.of(
+    private static final List<String> FORBIDDEN_PACKAGE_PREFIXES = List.of(
             "me.golemcore.bot.adapter.",
             "me.golemcore.bot.infrastructure.",
-            "me.golemcore.bot.plugin.");
-
-    private static final Set<String> KNOWN_DOMAIN_FORBIDDEN_DEPENDENCIES = dependencySet();
-
-    private static final Set<String> KNOWN_PORT_FORBIDDEN_DEPENDENCIES = dependencySet();
+            "me.golemcore.bot.plugin.",
+            "me.golemcore.bot.proto.");
+    private static final Set<String> FORBIDDEN_RUNTIME_TYPES = Set.of(
+            "org.springframework.boot.SpringApplication",
+            "org.springframework.boot.context.event.ApplicationReadyEvent",
+            "org.springframework.boot.info.BuildProperties",
+            "org.springframework.context.ApplicationContext",
+            "org.springframework.context.ApplicationEventPublisher",
+            "org.springframework.context.event.EventListener",
+            "org.springframework.scheduling.support.CronExpression",
+            "org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder");
 
     @Test
-    void domain_should_not_depend_on_adapter_plugin_or_infrastructure_packages() {
-        assertForbiddenDependenciesMatchDebtLedger(DOMAIN_PACKAGE, KNOWN_DOMAIN_FORBIDDEN_DEPENDENCIES);
+    void domain_should_not_depend_on_adapter_plugin_infrastructure_or_proto_packages() {
+        assertNoForbiddenDependencies(DOMAIN_PACKAGE, this::dependsOnForbiddenPackagePrefix);
     }
 
     @Test
-    void port_should_not_depend_on_adapter_plugin_or_infrastructure_packages() {
-        assertForbiddenDependenciesMatchDebtLedger(PORT_PACKAGE, KNOWN_PORT_FORBIDDEN_DEPENDENCIES);
+    void port_should_not_depend_on_adapter_plugin_infrastructure_or_proto_packages() {
+        assertNoForbiddenDependencies(PORT_PACKAGE, this::dependsOnForbiddenPackagePrefix);
     }
 
-    private void assertForbiddenDependenciesMatchDebtLedger(String packagePrefix, Set<String> expectedDependencies) {
+    @Test
+    void domain_should_not_depend_on_forbidden_framework_runtime_types() {
+        assertNoForbiddenDependencies(DOMAIN_PACKAGE, this::dependsOnForbiddenRuntimeType);
+    }
+
+    @Test
+    void port_should_not_depend_on_forbidden_framework_runtime_types() {
+        assertNoForbiddenDependencies(PORT_PACKAGE, this::dependsOnForbiddenRuntimeType);
+    }
+
+    private void assertNoForbiddenDependencies(String packagePrefix,
+            java.util.function.Predicate<Dependency> predicate) {
         JavaClasses importedClasses = new ClassFileImporter()
                 .withImportOption(new ImportOption.DoNotIncludeTests())
                 .importPackages(ROOT_PACKAGE);
 
-        Set<String> actualDependencies = importedClasses.stream()
+        Set<String> violations = importedClasses.stream()
                 .filter(javaClass -> javaClass.getPackageName().startsWith(packagePrefix))
                 .flatMap(javaClass -> javaClass.getDirectDependenciesFromSelf().stream())
                 .filter(dependency -> dependency.getOriginClass().getPackageName().startsWith(packagePrefix))
-                .filter(dependency -> hasForbiddenPrefix(dependency.getTargetClass()))
+                .filter(predicate)
                 .map(this::formatDependency)
                 .collect(Collectors.toCollection(TreeSet::new));
 
-        assertEquals(
-                new TreeSet<>(expectedDependencies),
-                actualDependencies,
-                () -> buildMismatchMessage(packagePrefix, actualDependencies));
+        assertTrue(violations.isEmpty(), () -> buildViolationMessage(packagePrefix, violations));
     }
 
-    private boolean hasForbiddenPrefix(JavaClass targetClass) {
-        String packageName = targetClass.getPackageName();
-        return FORBIDDEN_PREFIXES.stream().anyMatch(packageName::startsWith);
+    private boolean dependsOnForbiddenPackagePrefix(Dependency dependency) {
+        String packageName = dependency.getTargetClass().getPackageName();
+        return FORBIDDEN_PACKAGE_PREFIXES.stream().anyMatch(packageName::startsWith);
+    }
+
+    private boolean dependsOnForbiddenRuntimeType(Dependency dependency) {
+        JavaClass targetClass = dependency.getTargetClass();
+        return FORBIDDEN_RUNTIME_TYPES.contains(targetClass.getFullName());
     }
 
     private String formatDependency(Dependency dependency) {
         return dependency.getOriginClass().getFullName() + " -> " + dependency.getTargetClass().getFullName();
     }
 
-    private String buildMismatchMessage(String packagePrefix, Set<String> actualDependencies) {
-        Set<String> unexpectedDependencies = new TreeSet<>(actualDependencies);
-        unexpectedDependencies.removeAll(expectedDependenciesFor(packagePrefix));
-
-        Set<String> obsoleteDependencies = new TreeSet<>(expectedDependenciesFor(packagePrefix));
-        obsoleteDependencies.removeAll(actualDependencies);
-
-        return "Forbidden dependency ledger mismatch for " + packagePrefix + ".\n"
-                + formatSection("Unexpected new dependencies", unexpectedDependencies)
-                + formatSection("Obsolete ledger entries", obsoleteDependencies)
-                + "Update the code to remove new violations or refresh the debt ledger after refactoring.";
-    }
-
-    private Set<String> expectedDependenciesFor(String packagePrefix) {
-        if (DOMAIN_PACKAGE.equals(packagePrefix)) {
-            return KNOWN_DOMAIN_FORBIDDEN_DEPENDENCIES;
-        }
-        if (PORT_PACKAGE.equals(packagePrefix)) {
-            return KNOWN_PORT_FORBIDDEN_DEPENDENCIES;
-        }
-        throw new IllegalArgumentException("Unsupported package prefix: " + packagePrefix);
-    }
-
-    private String formatSection(String title, Set<String> dependencies) {
-        if (dependencies.isEmpty()) {
-            return title + ": none\n";
-        }
-        return title + ":\n" + String.join("\n", dependencies) + "\n";
-    }
-
-    private static Set<String> dependencySet(String... dependencies) {
-        return Set.copyOf(List.of(dependencies));
+    private String buildViolationMessage(String packagePrefix, Set<String> violations) {
+        return "Hexagonal architecture violations for " + packagePrefix + ":\n"
+                + String.join("\n", violations)
+                + "\nRemove the forbidden dependency or move the logic to an adapter/port boundary.";
     }
 }

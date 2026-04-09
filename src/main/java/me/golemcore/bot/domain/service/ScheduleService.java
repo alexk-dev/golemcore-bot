@@ -18,26 +18,20 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.ScheduleEntry;
-import me.golemcore.bot.domain.model.ScheduleReportConfig;
-import me.golemcore.bot.domain.model.ScheduleReportConfigUpdate;
-import me.golemcore.bot.port.outbound.StoragePort;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.support.CronExpression;
-import org.springframework.stereotype.Service;
-
-import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduleReportConfig;
+import me.golemcore.bot.domain.model.ScheduleReportConfigUpdate;
+import me.golemcore.bot.port.outbound.ScheduleCronPort;
+import me.golemcore.bot.port.outbound.SchedulePersistencePort;
+import org.springframework.stereotype.Service;
 
 /**
  * Domain service for managing cron-based schedules for autonomous goal/task
@@ -52,22 +46,18 @@ import java.util.UUID;
 @Slf4j
 public class ScheduleService {
 
-    private static final String AUTO_DIR = "auto";
-    private static final String SCHEDULES_FILE = "schedules.json";
-    private static final int CRON_FIVE_FIELDS = 5;
-    private static final int CRON_SIX_FIELDS = 6;
-    private static final TypeReference<List<ScheduleEntry>> SCHEDULE_LIST_TYPE_REF = new TypeReference<>() {
-    };
-
-    private final StoragePort storagePort;
-    private final ObjectMapper objectMapper;
+    private final SchedulePersistencePort schedulePersistencePort;
+    private final ScheduleCronPort scheduleCronPort;
     private final Clock clock;
 
     private volatile List<ScheduleEntry> schedulesCache;
 
-    public ScheduleService(StoragePort storagePort, ObjectMapper objectMapper, Clock clock) {
-        this.storagePort = storagePort;
-        this.objectMapper = objectMapper;
+    public ScheduleService(
+            SchedulePersistencePort schedulePersistencePort,
+            ScheduleCronPort scheduleCronPort,
+            Clock clock) {
+        this.schedulePersistencePort = schedulePersistencePort;
+        this.scheduleCronPort = scheduleCronPort;
         this.clock = clock;
     }
 
@@ -212,7 +202,8 @@ public class ScheduleService {
      */
     public synchronized List<ScheduleEntry> getSchedules() {
         if (schedulesCache == null) {
-            schedulesCache = loadSchedules();
+            schedulesCache = schedulePersistencePort.loadSchedules();
+            schedulesCache.forEach(this::normalizeLoadedSchedule);
         }
         return schedulesCache;
     }
@@ -296,30 +287,8 @@ public class ScheduleService {
      * @throws IllegalArgumentException
      *             if the cron expression is invalid
      */
-    static String normalizeCronExpression(String input) {
-        if (input == null || input.isBlank()) {
-            throw new IllegalArgumentException("Cron expression cannot be empty");
-        }
-
-        String trimmed = input.trim();
-        String[] parts = trimmed.split("\\s+");
-
-        String sixFieldCron;
-        if (parts.length == CRON_FIVE_FIELDS) {
-            sixFieldCron = "0 " + trimmed;
-        } else if (parts.length == CRON_SIX_FIELDS) {
-            sixFieldCron = trimmed;
-        } else {
-            throw new IllegalArgumentException("Invalid cron expression: expected 5 or 6 fields, got " + parts.length);
-        }
-
-        try {
-            CronExpression.parse(sixFieldCron);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid cron expression '" + trimmed + "': " + e.getMessage());
-        }
-
-        return sixFieldCron;
+    String normalizeCronExpression(String input) {
+        return scheduleCronPort.normalize(input);
     }
 
     /**
@@ -328,38 +297,12 @@ public class ScheduleService {
      * @return next execution instant, or null if no future execution exists
      */
     Instant computeNextExecution(String cronExpression, Instant after) {
-        CronExpression cron = CronExpression.parse(cronExpression);
-        LocalDateTime afterLocal = LocalDateTime.ofInstant(after, ZoneOffset.UTC);
-        LocalDateTime next = cron.next(afterLocal);
-        if (next == null) {
-            return null;
-        }
-        return next.toInstant(ZoneOffset.UTC);
+        return scheduleCronPort.nextExecution(cronExpression, after);
     }
 
     private void saveSchedules(List<ScheduleEntry> schedules) {
-        try {
-            String json = objectMapper.writeValueAsString(schedules);
-            storagePort.putText(AUTO_DIR, SCHEDULES_FILE, json).join();
-            schedulesCache = schedules;
-        } catch (Exception e) { // NOSONAR - intentionally catch all for persistence fallback
-            log.error("[Schedule] Failed to save schedules", e);
-        }
-    }
-
-    private List<ScheduleEntry> loadSchedules() {
-        try {
-            String json = storagePort.getText(AUTO_DIR, SCHEDULES_FILE).join();
-            if (json != null && !json.isBlank()) {
-                List<ScheduleEntry> loadedSchedules = new ArrayList<>(
-                        objectMapper.readValue(json, SCHEDULE_LIST_TYPE_REF));
-                loadedSchedules.forEach(this::normalizeLoadedSchedule);
-                return loadedSchedules;
-            }
-        } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
-            log.debug("[Schedule] No schedules found or failed to parse: {}", e.getMessage());
-        }
-        return new ArrayList<>();
+        schedulePersistencePort.saveSchedules(schedules);
+        schedulesCache = schedules;
     }
 
     private void normalizeLoadedSchedule(ScheduleEntry entry) {

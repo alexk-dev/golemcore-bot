@@ -1,13 +1,11 @@
 package me.golemcore.bot.domain.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.samstevens.totp.code.CodeVerifier;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
 import dev.samstevens.totp.code.DefaultCodeVerifier;
 import dev.samstevens.totp.secret.DefaultSecretGenerator;
 import dev.samstevens.totp.secret.SecretGenerator;
 import dev.samstevens.totp.time.SystemTimeProvider;
-import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -16,11 +14,10 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AdminCredentials;
+import me.golemcore.bot.port.outbound.DashboardCredentialsPort;
 import me.golemcore.bot.port.outbound.DashboardAuthSettingsPort;
 import me.golemcore.bot.port.outbound.DashboardTokenPort;
-import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import me.golemcore.bot.port.outbound.PasswordHashPort;
 import org.springframework.stereotype.Service;
 
 /**
@@ -32,27 +29,23 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class DashboardAuthService {
 
-    private static final String ADMIN_DIR = "preferences";
-    private static final String ADMIN_FILE = "admin.json";
     private static final String ADMIN_USERNAME = "admin";
     private static final int TEMP_CREDENTIAL_LENGTH = 30;
     private static final String CREDENTIAL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private final StoragePort storagePort;
+    private final DashboardCredentialsPort dashboardCredentialsPort;
     private final DashboardAuthSettingsPort settingsPort;
     private final DashboardTokenPort dashboardTokenPort;
-    private final ObjectMapper objectMapper;
+    private final PasswordHashPort passwordHashPort;
 
-    private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private final SecretGenerator secretGenerator = new DefaultSecretGenerator();
     private final CodeVerifier codeVerifier = new DefaultCodeVerifier(
             new DefaultCodeGenerator(), new SystemTimeProvider());
 
     private AdminCredentials credentials;
 
-    @PostConstruct
-    void init() {
+    public void init() {
         if (!settingsPort.isDashboardEnabled()) {
             return;
         }
@@ -71,7 +64,7 @@ public class DashboardAuthService {
         if (credentials == null) {
             return null;
         }
-        if (!passwordEncoder.matches(password, credentials.getPasswordHash())) {
+        if (!passwordHashPort.matches(password, credentials.getPasswordHash())) {
             return null;
         }
         if (credentials.isMfaEnabled()) {
@@ -120,7 +113,7 @@ public class DashboardAuthService {
     }
 
     public boolean disableMfa(String password) {
-        if (!passwordEncoder.matches(password, credentials.getPasswordHash())) {
+        if (!passwordHashPort.matches(password, credentials.getPasswordHash())) {
             return false;
         }
         credentials.setMfaEnabled(false);
@@ -132,10 +125,10 @@ public class DashboardAuthService {
     }
 
     public boolean changePassword(String oldPassword, String newPassword) {
-        if (!passwordEncoder.matches(oldPassword, credentials.getPasswordHash())) {
+        if (!passwordHashPort.matches(oldPassword, credentials.getPasswordHash())) {
             return false;
         }
-        credentials.setPasswordHash(passwordEncoder.encode(newPassword));
+        credentials.setPasswordHash(passwordHashPort.encode(newPassword));
         persistCredentials();
         log.info("[Dashboard] Admin password changed");
         return true;
@@ -155,10 +148,8 @@ public class DashboardAuthService {
     }
 
     private void loadOrCreateCredentials() throws IOException {
-        Boolean exists = storagePort.exists(ADMIN_DIR, ADMIN_FILE).join();
-        if (Boolean.TRUE.equals(exists)) {
-            String json = storagePort.getText(ADMIN_DIR, ADMIN_FILE).join();
-            credentials = objectMapper.readValue(json, AdminCredentials.class);
+        if (dashboardCredentialsPort.load().isPresent()) {
+            credentials = dashboardCredentialsPort.load().orElseThrow();
             log.info("[Dashboard] Loaded admin credentials from storage");
             return;
         }
@@ -166,7 +157,7 @@ public class DashboardAuthService {
         String configPassword = settingsPort.getConfiguredAdminPassword();
         if (configPassword != null && !configPassword.isBlank()) {
             credentials = AdminCredentials.builder()
-                    .passwordHash(passwordEncoder.encode(configPassword))
+                    .passwordHash(passwordHashPort.encode(configPassword))
                     .build();
             persistCredentials();
             log.info("[Dashboard] Created admin credentials from config password");
@@ -175,7 +166,7 @@ public class DashboardAuthService {
 
         String tempPassword = generateTempPassword();
         credentials = AdminCredentials.builder()
-                .passwordHash(passwordEncoder.encode(tempPassword))
+                .passwordHash(passwordHashPort.encode(tempPassword))
                 .build();
         persistCredentials();
 
@@ -189,9 +180,7 @@ public class DashboardAuthService {
 
     private void persistCredentials() {
         try {
-            String json = objectMapper.writerWithDefaultPrettyPrinter()
-                    .writeValueAsString(credentials);
-            storagePort.putText(ADMIN_DIR, ADMIN_FILE, json).join();
+            dashboardCredentialsPort.save(credentials);
         } catch (Exception e) { // NOSONAR
             log.error("[Dashboard] Failed to persist admin credentials", e);
         }

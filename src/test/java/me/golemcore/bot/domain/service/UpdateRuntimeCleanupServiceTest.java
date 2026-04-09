@@ -70,7 +70,7 @@ class UpdateRuntimeCleanupServiceTest {
 
         UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(
                 me.golemcore.bot.support.TestPorts.settings(botProperties));
-        service.onApplicationReady();
+        service.cleanupAfterSuccessfulStartup();
 
         assertTrue(Files.exists(jarsDir.resolve("bot-0.4.2.jar")));
     }
@@ -84,7 +84,7 @@ class UpdateRuntimeCleanupServiceTest {
         UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(
                 me.golemcore.bot.support.TestPorts.settings(botProperties));
 
-        service.onApplicationReady();
+        service.cleanupAfterSuccessfulStartup();
 
         assertFalse(Files.exists(tempDir.resolve("jars")));
     }

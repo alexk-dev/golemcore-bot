@@ -1,7 +1,14 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.adapter.outbound.storage;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.domain.model.Message;
@@ -21,22 +28,14 @@ import me.golemcore.bot.proto.session.v1.NullValue;
 import me.golemcore.bot.proto.session.v1.SessionState;
 import me.golemcore.bot.proto.session.v1.ToolCallRecord;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
 /**
  * Converts {@link AgentSession} objects to/from protobuf records.
  */
-public class SessionProtoMapper {
+final class SessionProtoMapperSupport {
 
     private static final int LONG_BIT_LENGTH = 63;
 
-    public AgentSessionRecord toProto(AgentSession session) {
+    AgentSessionRecord toProto(AgentSession session) {
         AgentSessionRecord.Builder builder = AgentSessionRecord.newBuilder();
         putIfNotBlank(session.getId(), builder::setId);
         putIfNotBlank(session.getChannelType(), builder::setChannelType);
@@ -75,7 +74,7 @@ public class SessionProtoMapper {
         return builder.build();
     }
 
-    public AgentSession fromProto(AgentSessionRecord record) {
+    AgentSession fromProto(AgentSessionRecord record) {
         AgentSession.AgentSessionBuilder builder = AgentSession.builder()
                 .id(blankToNull(record.getId()))
                 .channelType(blankToNull(record.getChannelType()))
