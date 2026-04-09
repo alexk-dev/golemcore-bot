@@ -3,6 +3,7 @@ package me.golemcore.bot.application.settings;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -18,6 +19,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -107,6 +109,63 @@ class RuntimeSettingsFacadeTest {
     }
 
     @Test
+    void shouldUpdateModelRouterConfigAndReturnApiView() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new java.util.LinkedHashMap<>(Map.of("openai",
+                                RuntimeConfig.LlmProviderConfig.builder().build())))
+                        .build())
+                .build();
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        RuntimeConfig.ModelRouterConfig update = RuntimeConfig.ModelRouterConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+
+        RuntimeConfig response = facade.updateModelRouterConfig(update);
+
+        assertEquals(apiView, response);
+        assertEquals(update, current.getModelRouter());
+        verify(runtimeConfigService).updateRuntimeConfig(current);
+    }
+
+    @Test
+    void shouldRejectAddingDuplicateProvider() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new java.util.LinkedHashMap<>(Map.of("openai",
+                                RuntimeConfig.LlmProviderConfig.builder().build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> facade.addLlmProvider("openai", RuntimeConfig.LlmProviderConfig.builder().build()));
+
+        assertTrue(error.getMessage().contains("already exists"));
+    }
+
+    @Test
+    void shouldUpdateExistingProviderAndReturnApiView() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new java.util.LinkedHashMap<>(Map.of("openai",
+                                RuntimeConfig.LlmProviderConfig.builder().build())))
+                        .build())
+                .build();
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        RuntimeConfig.LlmProviderConfig update = RuntimeConfig.LlmProviderConfig.builder()
+                .requestTimeoutSeconds(30)
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+
+        RuntimeConfig response = facade.updateLlmProvider("openai", update);
+
+        assertEquals(apiView, response);
+        verify(runtimeConfigService).updateLlmProvider("openai", update);
+    }
+
+    @Test
     void shouldThrowWhenRemovingUnknownProvider() {
         RuntimeConfig current = RuntimeConfig.builder()
                 .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
@@ -122,6 +181,21 @@ class RuntimeSettingsFacadeTest {
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
 
         assertEquals(List.of(), facade.getShellEnvironmentVariables());
+    }
+
+    @Test
+    void shouldUpdateToolsConfigAndReturnApiView() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        RuntimeConfig.ToolsConfig update = RuntimeConfig.ToolsConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+
+        RuntimeConfig response = facade.updateToolsConfig(update);
+
+        assertEquals(apiView, response);
+        assertEquals(update, current.getTools());
+        verify(runtimeConfigService).updateRuntimeConfig(current);
     }
 
     @Test
@@ -209,5 +283,26 @@ class RuntimeSettingsFacadeTest {
         assertEquals(security, current.getSecurity());
         assertEquals(compaction, current.getCompaction());
         verify(runtimeConfigService).updateRuntimeConfig(current);
+    }
+
+    @Test
+    void shouldReturnMemoryPresetsAndUpdatePassiveRuntimeSections() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        RuntimeConfig.SkillsConfig skills = RuntimeConfig.SkillsConfig.builder().build();
+        RuntimeConfig.UsageConfig usage = RuntimeConfig.UsageConfig.builder().build();
+        RuntimeConfig.TelemetryConfig telemetry = RuntimeConfig.TelemetryConfig.builder().build();
+        List<MemoryPreset> presets = List.of(MemoryPreset.builder().id("default").label("Default").build());
+        when(memoryPresetService.getPresets()).thenReturn(presets);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+
+        assertEquals(presets, facade.getMemoryPresets());
+        assertEquals(apiView, facade.updateSkillsConfig(skills));
+        assertEquals(apiView, facade.updateUsageConfig(usage));
+        assertEquals(apiView, facade.updateTelemetryConfig(telemetry));
+        assertEquals(skills, current.getSkills());
+        assertEquals(usage, current.getUsage());
+        assertEquals(telemetry, current.getTelemetry());
     }
 }

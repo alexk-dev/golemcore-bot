@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -54,6 +56,18 @@ class RuntimeSettingsValidatorTest {
     }
 
     @Test
+    void shouldCreateMissingTelegramConfigDuringFullValidation() {
+        RuntimeConfig config = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new java.util.LinkedHashMap<>()).build())
+                .hive(RuntimeConfig.HiveConfig.builder().enabled(false).build())
+                .build();
+
+        validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config, false);
+
+        assertEquals(List.of(), config.getTelegram().getAllowedUsers());
+    }
+
+    @Test
     void shouldRejectInvalidProviderConfigFields() {
         RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
                 .requestTimeoutSeconds(0)
@@ -71,12 +85,62 @@ class RuntimeSettingsValidatorTest {
     }
 
     @Test
+    void shouldRejectNullAndMalformedLlmConfigInputs() {
+        assertThrows(IllegalArgumentException.class, () -> validator.validateLlmConfig(null,
+                RuntimeConfig.ModelRouterConfig.builder().build()));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateProviderConfig("openai", null));
+        assertThrows(IllegalArgumentException.class, () -> validator.normalizeProviderName("Bad Name"));
+
+        RuntimeConfig.LlmConfig blankProviderKey = RuntimeConfig.LlmConfig.builder()
+                .providers(new java.util.LinkedHashMap<>(Map.of("", RuntimeConfig.LlmProviderConfig.builder().build())))
+                .build();
+        assertThrows(IllegalArgumentException.class,
+                () -> validator.validateLlmConfig(blankProviderKey, RuntimeConfig.ModelRouterConfig.builder().build()));
+
+        RuntimeConfig.LlmConfig spacedProviderKey = RuntimeConfig.LlmConfig.builder()
+                .providers(new java.util.LinkedHashMap<>(Map.of(" openai ", RuntimeConfig.LlmProviderConfig.builder()
+                        .build())))
+                .build();
+        assertThrows(IllegalArgumentException.class,
+                () -> validator.validateLlmConfig(spacedProviderKey,
+                        RuntimeConfig.ModelRouterConfig.builder().build()));
+
+        RuntimeConfig.LlmConfig invalidPatternProviderKey = RuntimeConfig.LlmConfig.builder()
+                .providers(new java.util.LinkedHashMap<>(Map.of("open.ai",
+                        RuntimeConfig.LlmProviderConfig.builder().build())))
+                .build();
+        assertThrows(IllegalArgumentException.class, () -> validator.validateLlmConfig(
+                invalidPatternProviderKey, RuntimeConfig.ModelRouterConfig.builder().build()));
+    }
+
+    @Test
+    void shouldInitializeNullProviderMapAndAllowNullModelRouter() {
+        RuntimeConfig.LlmConfig llmConfig = RuntimeConfig.LlmConfig.builder().providers(null).build();
+
+        assertDoesNotThrow(() -> validator.validateModelRouterConfig(null, llmConfig));
+        validator.validateLlmConfig(llmConfig, RuntimeConfig.ModelRouterConfig.builder().build());
+
+        assertEquals(Map.of(), llmConfig.getProviders());
+    }
+
+    @Test
     void shouldRejectInvalidTurnDeadline() {
         RuntimeConfig.TurnConfig turnConfig = RuntimeConfig.TurnConfig.builder()
                 .deadline("tomorrow")
                 .build();
 
         assertThrows(IllegalArgumentException.class, () -> validator.validateTurnConfig(turnConfig));
+    }
+
+    @Test
+    void shouldRejectInvalidTurnNumericConstraints() {
+        assertThrows(IllegalArgumentException.class, () -> validator.validateTurnConfig(null));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateTurnConfig(
+                RuntimeConfig.TurnConfig.builder().maxLlmCalls(0).build()));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateTurnConfig(
+                RuntimeConfig.TurnConfig.builder().maxToolExecutions(0).build()));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateTurnConfig(
+                RuntimeConfig.TurnConfig.builder().deadline("PT0S").build()));
     }
 
     @Test
@@ -87,6 +151,18 @@ class RuntimeSettingsValidatorTest {
                 .build();
 
         assertThrows(IllegalArgumentException.class, () -> validator.validateMemoryConfig(memoryConfig));
+    }
+
+    @Test
+    void shouldCreateDefaultMemoryNestedSections() {
+        RuntimeConfig.MemoryConfig memoryConfig = RuntimeConfig.MemoryConfig.builder().build();
+
+        validator.validateMemoryConfig(memoryConfig);
+
+        assertNotNull(memoryConfig.getDisclosure());
+        assertNotNull(memoryConfig.getReranking());
+        assertNotNull(memoryConfig.getDiagnostics());
+        assertThrows(IllegalArgumentException.class, () -> validator.validateMemoryConfig(null));
     }
 
     @Test
@@ -177,6 +253,16 @@ class RuntimeSettingsValidatorTest {
                 .build();
 
         assertThrows(IllegalStateException.class, () -> validator.rejectManagedHiveMutation(current, incoming, true));
+    }
+
+    @Test
+    void shouldRejectProviderRemovalWhenModelRouterStillUsesIt() {
+        RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
+                .routing(RuntimeConfig.TierBinding.builder().model("openai/gpt-5").build())
+                .build();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> validator.validateProviderRemoval(modelRouterConfig, "openai"));
     }
 
     @Test
