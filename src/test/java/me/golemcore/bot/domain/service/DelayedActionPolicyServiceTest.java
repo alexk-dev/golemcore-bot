@@ -220,6 +220,11 @@ class DelayedActionPolicyServiceTest {
         }
 
         @Override
+        public boolean supportsDocumentDelivery() {
+            return true;
+        }
+
+        @Override
         public CompletableFuture<Void> sendMessage(String chatId, String content, Map<String, Object> hints) {
             return CompletableFuture.completedFuture(null);
         }

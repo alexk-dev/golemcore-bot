@@ -22,7 +22,6 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 
-import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -151,13 +150,7 @@ public interface ChannelPort {
      * Returns whether the channel overrides document delivery behavior.
      */
     default boolean supportsDocumentDelivery() {
-        try {
-            Method method = getClass().getMethod("sendDocument",
-                    String.class, byte[].class, String.class, String.class);
-            return !ChannelPort.class.equals(method.getDeclaringClass());
-        } catch (NoSuchMethodException exception) {
-            return false;
-        }
+        return false;
     }
 
     /**
