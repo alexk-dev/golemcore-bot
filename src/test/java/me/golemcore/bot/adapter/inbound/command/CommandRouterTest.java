@@ -55,6 +55,7 @@ import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @SuppressWarnings({ "PMD.AvoidDuplicateLiterals", "unchecked" })
@@ -1074,15 +1075,29 @@ class CommandRouterTest {
     // ===== Tier commands =====
 
     @Test
-    void tierCommandDelegatesToApplicationService() throws Exception {
-        when(modelSelectionCommandService.handleTier(List.of())).thenReturn(
-                ModelSelectionCommandService.CommandOutcome.success("tier current"));
+    void tierCommandRendersCurrentTierFromApplicationOutcome() throws Exception {
+        when(modelSelectionCommandService.handleTier(new ModelSelectionCommandService.ShowTierStatus())).thenReturn(
+                new ModelSelectionCommandService.CurrentTier("smart", true));
 
         CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(), CTX).get();
 
         assertTrue(result.success());
-        assertEquals("tier current", result.output());
-        verify(modelSelectionCommandService).handleTier(List.of());
+        assertEquals("command.tier.current smart on", result.output());
+        verify(modelSelectionCommandService).handleTier(new ModelSelectionCommandService.ShowTierStatus());
+    }
+
+    @Test
+    void tierCommandParsesForceFlagInAdapter() throws Exception {
+        when(modelSelectionCommandService
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, true)))
+                .thenReturn(new ModelSelectionCommandService.TierUpdated(TIER_SMART, true));
+
+        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_SMART, "force"), CTX).get();
+
+        assertTrue(result.success());
+        assertEquals("command.tier.set.force smart", result.output());
+        verify(modelSelectionCommandService)
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, true));
     }
 
     // ===== formatTokens =====
@@ -1335,26 +1350,56 @@ class CommandRouterTest {
     private static final String CMD_MODEL = "model";
 
     @Test
-    void modelCommandDelegatesToApplicationService() throws Exception {
-        when(modelSelectionCommandService.handleModel(List.of("list"))).thenReturn(
-                ModelSelectionCommandService.CommandOutcome.success("model list"));
+    void modelListCommandDelegatesAndRendersCatalog() throws Exception {
+        when(modelSelectionCommandService.handleModel(new ModelSelectionCommandService.ListAvailableModels()))
+                .thenReturn(
+                        new ModelSelectionCommandService.AvailableModels(Map.of(
+                                "openai", List.of(new ModelSelectionCommandService.AvailableModelOption(
+                                        "gpt-5",
+                                        "GPT-5",
+                                        true,
+                                        List.of("low", "medium"))))));
 
         CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("list"), CTX).get();
 
         assertTrue(result.success());
-        assertEquals("model list", result.output());
-        verify(modelSelectionCommandService).handleModel(List.of("list"));
+        assertTrue(result.output().contains("command.model.list.title"));
+        assertTrue(result.output().contains("gpt-5"));
+        assertTrue(result.output().contains("reasoning: low, medium"));
+        verify(modelSelectionCommandService).handleModel(new ModelSelectionCommandService.ListAvailableModels());
     }
 
     @Test
-    void modelCommandTranslatesApplicationFailure() throws Exception {
-        when(modelSelectionCommandService.handleModel(List.of("coding", "broken"))).thenReturn(
-                ModelSelectionCommandService.CommandOutcome.failure("model failure"));
+    void modelCommandRejectsInvalidTierInAdapter() throws Exception {
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("unknown", "broken"), CTX).get();
 
-        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "broken"), CTX).get();
+        assertTrue(result.success());
+        assertEquals("command.model.invalid.tier", result.output());
+        verifyNoInteractions(modelSelectionCommandService);
+    }
 
-        assertFalse(result.success());
-        assertEquals("model failure", result.output());
-        verify(modelSelectionCommandService).handleModel(List.of("coding", "broken"));
+    @Test
+    void modelReasoningCommandRequiresLevelInAdapter() throws Exception {
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "reasoning"), CTX).get();
+
+        assertTrue(result.success());
+        assertEquals("command.model.usage", result.output());
+        verifyNoInteractions(modelSelectionCommandService);
+    }
+
+    @Test
+    void modelCommandRendersProviderMismatchFromApplicationOutcome() throws Exception {
+        when(modelSelectionCommandService.handleModel(
+                new ModelSelectionCommandService.SetModelOverride("coding", "anthropic/claude"))).thenReturn(
+                        new ModelSelectionCommandService.ProviderNotConfigured(
+                                "anthropic/claude",
+                                List.of("openai", "google")));
+
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "anthropic/claude"), CTX).get();
+
+        assertTrue(result.success());
+        assertEquals("command.model.invalid.provider anthropic/claude openai, google", result.output());
+        verify(modelSelectionCommandService).handleModel(
+                new ModelSelectionCommandService.SetModelOverride("coding", "anthropic/claude"));
     }
 }

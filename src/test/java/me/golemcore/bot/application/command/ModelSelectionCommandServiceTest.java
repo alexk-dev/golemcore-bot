@@ -14,9 +14,10 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.RETURNS_DEFAULTS;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -32,21 +33,7 @@ class ModelSelectionCommandServiceTest {
 
     @BeforeEach
     void setUp() {
-        preferencesService = mock(UserPreferencesService.class, invocation -> {
-            if ("getMessage".equals(invocation.getMethod().getName())) {
-                String key = (String) invocation.getArguments()[0];
-                StringBuilder builder = new StringBuilder(key);
-                Object[] args = java.util.Arrays.copyOfRange(
-                        invocation.getArguments(),
-                        1,
-                        invocation.getArguments().length);
-                for (Object arg : args) {
-                    builder.append(" ").append(arg);
-                }
-                return builder.toString();
-            }
-            return RETURNS_DEFAULTS.answer(invocation);
-        });
+        preferencesService = mock(UserPreferencesService.class);
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         preferences = UserPreferences.builder()
@@ -61,19 +48,22 @@ class ModelSelectionCommandServiceTest {
         preferences.setModelTier("coding");
         preferences.setTierForce(true);
 
-        ModelSelectionCommandService.CommandOutcome result = service.handleTier(List.of());
+        ModelSelectionCommandService.CurrentTier result = assertInstanceOf(
+                ModelSelectionCommandService.CurrentTier.class,
+                service.handleTier(new ModelSelectionCommandService.ShowTierStatus()));
 
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.tier.current"));
-        assertTrue(result.output().contains("coding"));
-        assertTrue(result.output().contains("on"));
+        assertEquals("coding", result.tier());
+        assertTrue(result.force());
     }
 
     @Test
     void shouldSetTierAndForceWhenRequested() {
-        ModelSelectionCommandService.CommandOutcome result = service.handleTier(List.of("smart", "force"));
+        ModelSelectionCommandService.TierUpdated result = assertInstanceOf(
+                ModelSelectionCommandService.TierUpdated.class,
+                service.handleTier(new ModelSelectionCommandService.SetTierSelection("smart", true)));
 
-        assertTrue(result.success());
+        assertEquals("smart", result.tier());
+        assertTrue(result.force());
         assertEquals("smart", preferences.getModelTier());
         assertTrue(preferences.isTierForce());
         verify(preferencesService).savePreferences(preferences);
@@ -84,9 +74,12 @@ class ModelSelectionCommandServiceTest {
         preferences.setModelTier("smart");
         preferences.setTierForce(true);
 
-        ModelSelectionCommandService.CommandOutcome result = service.handleTier(List.of("balanced"));
+        ModelSelectionCommandService.TierUpdated result = assertInstanceOf(
+                ModelSelectionCommandService.TierUpdated.class,
+                service.handleTier(new ModelSelectionCommandService.SetTierSelection("balanced", false)));
 
-        assertTrue(result.success());
+        assertEquals("balanced", result.tier());
+        assertFalse(result.force());
         assertEquals("balanced", preferences.getModelTier());
         assertFalse(preferences.isTierForce());
         verify(preferencesService).savePreferences(preferences);
@@ -94,10 +87,11 @@ class ModelSelectionCommandServiceTest {
 
     @Test
     void shouldRejectInvalidTier() {
-        ModelSelectionCommandService.CommandOutcome result = service.handleTier(List.of("turbo"));
+        ModelSelectionCommandService.InvalidTier result = assertInstanceOf(
+                ModelSelectionCommandService.InvalidTier.class,
+                service.handleTier(new ModelSelectionCommandService.SetTierSelection("turbo", false)));
 
-        assertTrue(result.success());
-        assertEquals("command.tier.invalid", result.output());
+        assertInstanceOf(ModelSelectionCommandService.InvalidTier.class, result);
         verify(preferencesService, never()).savePreferences(any());
     }
 
@@ -106,9 +100,12 @@ class ModelSelectionCommandServiceTest {
         for (String tier : ModelTierCatalog.orderedExplicitTiers()) {
             preferences.setTierForce(true);
 
-            ModelSelectionCommandService.CommandOutcome result = service.handleTier(List.of(tier));
+            ModelSelectionCommandService.TierUpdated result = assertInstanceOf(
+                    ModelSelectionCommandService.TierUpdated.class,
+                    service.handleTier(new ModelSelectionCommandService.SetTierSelection(tier, false)));
 
-            assertTrue(result.success());
+            assertEquals(tier, result.tier());
+            assertFalse(result.force());
             assertEquals(tier, preferences.getModelTier());
             assertFalse(preferences.isTierForce());
         }
@@ -119,14 +116,15 @@ class ModelSelectionCommandServiceTest {
         preferences.getTierOverrides().put("balanced", new UserPreferences.TierOverride("openai/gpt-5", "medium"));
         stubSelections("model-for-");
 
-        ModelSelectionCommandService.CommandOutcome result = service.handleModel(List.of());
+        ModelSelectionCommandService.ModelSelectionOverview result = assertInstanceOf(
+                ModelSelectionCommandService.ModelSelectionOverview.class,
+                service.handleModel(new ModelSelectionCommandService.ShowModelSelection()));
 
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.show.title"));
-        assertTrue(result.output().contains("command.model.show.tier.override"));
-        assertTrue(result.output().contains("command.model.show.tier.default"));
-        assertTrue(result.output().contains("special1"));
-        assertTrue(result.output().contains("special5"));
+        assertEquals(ModelTierCatalog.orderedExplicitTiers().size(), result.tiers().size());
+        assertTrue(result.tiers().stream()
+                .anyMatch(selection -> "balanced".equals(selection.tier()) && selection.hasOverride()));
+        assertTrue(result.tiers().stream().anyMatch(selection -> "special1".equals(selection.tier())));
+        assertTrue(result.tiers().stream().anyMatch(selection -> "special5".equals(selection.tier())));
     }
 
     @Test
@@ -141,47 +139,33 @@ class ModelSelectionCommandServiceTest {
                                 List.of("low", "medium"),
                                 false))));
 
-        ModelSelectionCommandService.CommandOutcome result = service.handleModel(List.of("list"));
+        ModelSelectionCommandService.AvailableModels result = assertInstanceOf(
+                ModelSelectionCommandService.AvailableModels.class,
+                service.handleModel(new ModelSelectionCommandService.ListAvailableModels()));
 
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.list.provider"));
-        assertTrue(result.output().contains("gpt-5"));
-        assertTrue(result.output().contains("[reasoning: low, medium]"));
+        assertTrue(result.modelsByProvider().containsKey("openai"));
+        assertEquals("gpt-5", result.modelsByProvider().get("openai").get(0).id());
+        assertEquals(List.of("low", "medium"), result.modelsByProvider().get("openai").get(0).reasoningLevels());
     }
 
     @Test
-    void shouldReturnFriendlyMessageWhenNoModelsAvailable() {
+    void shouldReturnEmptyCatalogWhenNoModelsAvailable() {
         when(modelSelectionService.getAvailableModelsGrouped()).thenReturn(Map.of());
 
-        ModelSelectionCommandService.CommandOutcome result = service.handleModel(List.of("list"));
+        ModelSelectionCommandService.AvailableModels result = assertInstanceOf(
+                ModelSelectionCommandService.AvailableModels.class,
+                service.handleModel(new ModelSelectionCommandService.ListAvailableModels()));
 
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.list.title"));
-        assertTrue(result.output().contains("No models available."));
+        assertTrue(result.modelsByProvider().isEmpty());
     }
 
     @Test
     void shouldRejectInvalidModelTier() {
-        ModelSelectionCommandService.CommandOutcome result = service.handleModel(List.of("unknown", "openai/gpt-5"));
+        ModelSelectionCommandService.InvalidModelTier result = assertInstanceOf(
+                ModelSelectionCommandService.InvalidModelTier.class,
+                service.handleModel(new ModelSelectionCommandService.SetModelOverride("unknown", "openai/gpt-5")));
 
-        assertTrue(result.success());
-        assertEquals("command.model.invalid.tier", result.output());
-    }
-
-    @Test
-    void shouldReturnUsageWhenModelTierMissingAction() {
-        ModelSelectionCommandService.CommandOutcome result = service.handleModel(List.of("coding"));
-
-        assertTrue(result.success());
-        assertEquals("command.model.usage", result.output());
-    }
-
-    @Test
-    void shouldAcceptSpecialTierForModelUsage() {
-        ModelSelectionCommandService.CommandOutcome result = service.handleModel(List.of("special3"));
-
-        assertTrue(result.success());
-        assertEquals("command.model.usage", result.output());
+        assertInstanceOf(ModelSelectionCommandService.InvalidModelTier.class, result);
     }
 
     @Test
@@ -197,9 +181,13 @@ class ModelSelectionCommandServiceTest {
                         List.of("low", "medium"),
                         false)));
 
-        ModelSelectionCommandService.CommandOutcome result = service.handleModel(List.of("balanced", "openai/gpt-5"));
+        ModelSelectionCommandService.ModelOverrideSet result = assertInstanceOf(
+                ModelSelectionCommandService.ModelOverrideSet.class,
+                service.handleModel(new ModelSelectionCommandService.SetModelOverride("balanced", "openai/gpt-5")));
 
-        assertTrue(result.success());
+        assertEquals("balanced", result.tier());
+        assertEquals("openai/gpt-5", result.modelSpec());
+        assertEquals("medium", result.defaultReasoning());
         assertEquals("openai/gpt-5", preferences.getTierOverrides().get("balanced").getModel());
         assertEquals("medium", preferences.getTierOverrides().get("balanced").getReasoning());
         verify(preferencesService).savePreferences(preferences);
@@ -210,10 +198,11 @@ class ModelSelectionCommandServiceTest {
         when(modelSelectionService.validateModel("unknown/bad"))
                 .thenReturn(new ModelSelectionService.ValidationResult(false, "model.not.found"));
 
-        ModelSelectionCommandService.CommandOutcome result = service.handleModel(List.of("coding", "unknown/bad"));
+        ModelSelectionCommandService.InvalidModel result = assertInstanceOf(
+                ModelSelectionCommandService.InvalidModel.class,
+                service.handleModel(new ModelSelectionCommandService.SetModelOverride("coding", "unknown/bad")));
 
-        assertTrue(result.success());
-        assertEquals("command.model.invalid.model unknown/bad", result.output());
+        assertEquals("unknown/bad", result.modelSpec());
         verify(preferencesService, never()).savePreferences(any());
     }
 
@@ -223,12 +212,12 @@ class ModelSelectionCommandServiceTest {
                 .thenReturn(new ModelSelectionService.ValidationResult(false, "provider.not.configured"));
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openai", "google"));
 
-        ModelSelectionCommandService.CommandOutcome result = service
-                .handleModel(List.of("balanced", "anthropic/claude"));
+        ModelSelectionCommandService.ProviderNotConfigured result = assertInstanceOf(
+                ModelSelectionCommandService.ProviderNotConfigured.class,
+                service.handleModel(new ModelSelectionCommandService.SetModelOverride("balanced", "anthropic/claude")));
 
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.invalid.provider"));
-        assertTrue(result.output().contains("openai, google"));
+        assertEquals("anthropic/claude", result.modelSpec());
+        assertEquals(List.of("openai", "google"), result.configuredProviders());
     }
 
     @Test
@@ -237,21 +226,23 @@ class ModelSelectionCommandServiceTest {
         when(modelSelectionService.validateReasoning("openai/gpt-5", "medium"))
                 .thenReturn(new ModelSelectionService.ValidationResult(true, null));
 
-        ModelSelectionCommandService.CommandOutcome result = service
-                .handleModel(List.of("balanced", "reasoning", "medium"));
+        ModelSelectionCommandService.ModelReasoningSet result = assertInstanceOf(
+                ModelSelectionCommandService.ModelReasoningSet.class,
+                service.handleModel(new ModelSelectionCommandService.SetReasoningLevel("balanced", "medium")));
 
-        assertTrue(result.success());
+        assertEquals("balanced", result.tier());
+        assertEquals("medium", result.level());
         assertEquals("medium", preferences.getTierOverrides().get("balanced").getReasoning());
         verify(preferencesService).savePreferences(preferences);
     }
 
     @Test
     void shouldRejectReasoningWhenOverrideMissing() {
-        ModelSelectionCommandService.CommandOutcome result = service
-                .handleModel(List.of("coding", "reasoning", "high"));
+        ModelSelectionCommandService.MissingModelOverride result = assertInstanceOf(
+                ModelSelectionCommandService.MissingModelOverride.class,
+                service.handleModel(new ModelSelectionCommandService.SetReasoningLevel("coding", "high")));
 
-        assertTrue(result.success());
-        assertEquals("command.model.no.override coding", result.output());
+        assertEquals("coding", result.tier());
     }
 
     @Test
@@ -260,11 +251,11 @@ class ModelSelectionCommandServiceTest {
         when(modelSelectionService.validateReasoning("openai/gpt-5", "high"))
                 .thenReturn(new ModelSelectionService.ValidationResult(false, "no.reasoning"));
 
-        ModelSelectionCommandService.CommandOutcome result = service
-                .handleModel(List.of("coding", "reasoning", "high"));
+        ModelSelectionCommandService.MissingReasoningSupport result = assertInstanceOf(
+                ModelSelectionCommandService.MissingReasoningSupport.class,
+                service.handleModel(new ModelSelectionCommandService.SetReasoningLevel("coding", "high")));
 
-        assertTrue(result.success());
-        assertEquals("command.model.no.reasoning openai/gpt-5", result.output());
+        assertEquals("openai/gpt-5", result.modelSpec());
     }
 
     @Test
@@ -281,29 +272,24 @@ class ModelSelectionCommandServiceTest {
                         List.of("low", "medium", "high"),
                         false)));
 
-        ModelSelectionCommandService.CommandOutcome result = service
-                .handleModel(List.of("coding", "reasoning", "xhigh"));
+        ModelSelectionCommandService.InvalidReasoningLevel result = assertInstanceOf(
+                ModelSelectionCommandService.InvalidReasoningLevel.class,
+                service.handleModel(new ModelSelectionCommandService.SetReasoningLevel("coding", "xhigh")));
 
-        assertTrue(result.success());
-        assertEquals("command.model.invalid.reasoning xhigh low, medium, high", result.output());
-    }
-
-    @Test
-    void shouldReturnUsageWhenReasoningLevelMissing() {
-        ModelSelectionCommandService.CommandOutcome result = service.handleModel(List.of("coding", "reasoning"));
-
-        assertTrue(result.success());
-        assertEquals("command.model.usage", result.output());
+        assertEquals("xhigh", result.requestedLevel());
+        assertEquals(List.of("low", "medium", "high"), result.availableLevels());
     }
 
     @Test
     void shouldResetTierOverride() {
         preferences.getTierOverrides().put("balanced", new UserPreferences.TierOverride("openai/gpt-5", "low"));
 
-        ModelSelectionCommandService.CommandOutcome result = service.handleModel(List.of("balanced", "reset"));
+        ModelSelectionCommandService.ModelOverrideReset result = assertInstanceOf(
+                ModelSelectionCommandService.ModelOverrideReset.class,
+                service.handleModel(new ModelSelectionCommandService.ResetModelOverride("balanced")));
 
-        assertTrue(result.success());
-        assertTrue(preferences.getTierOverrides().isEmpty());
+        assertEquals("balanced", result.tier());
+        assertNull(preferences.getTierOverrides().get("balanced"));
         verify(preferencesService).savePreferences(preferences);
     }
 

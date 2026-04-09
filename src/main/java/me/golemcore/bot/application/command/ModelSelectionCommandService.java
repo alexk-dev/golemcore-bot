@@ -8,18 +8,15 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class ModelSelectionCommandService {
 
-    private static final String SUBCMD_LIST = "list";
-    private static final String SUBCMD_RESET = "reset";
-    private static final String SUBCMD_REASONING = "reasoning";
-    private static final int MIN_REASONING_ARGS = 2;
     private static final String ERR_PROVIDER_NOT_CONFIGURED = "provider.not.configured";
     private static final String ERR_NO_REASONING = "no.reasoning";
 
@@ -27,164 +24,139 @@ public class ModelSelectionCommandService {
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
 
-    public CommandOutcome handleTier(List<String> args) {
-        UserPreferences preferences = preferencesService.getPreferences();
-
-        if (args.isEmpty()) {
+    public TierOutcome handleTier(TierRequest request) {
+        if (request instanceof ShowTierStatus) {
+            UserPreferences preferences = preferencesService.getPreferences();
             String tier = preferences.getModelTier() != null ? preferences.getModelTier() : "balanced";
-            String force = preferences.isTierForce() ? "on" : "off";
-            return CommandOutcome.success(msg("command.tier.current", tier, force));
+            return new CurrentTier(tier, preferences.isTierForce());
         }
 
-        String tierArg = ModelTierCatalog.normalizeTierId(args.get(0));
+        SetTierSelection setTier = (SetTierSelection) request;
+        String tierArg = ModelTierCatalog.normalizeTierId(setTier.tier());
         if (!ModelTierCatalog.isExplicitSelectableTier(tierArg)) {
-            return CommandOutcome.success(msg("command.tier.invalid"));
+            return new InvalidTier();
         }
 
-        boolean force = args.size() > 1 && "force".equalsIgnoreCase(args.get(1));
+        UserPreferences preferences = preferencesService.getPreferences();
+        boolean force = setTier.force();
         preferences.setModelTier(tierArg);
         preferences.setTierForce(force);
         preferencesService.savePreferences(preferences);
-
-        if (force) {
-            return CommandOutcome.success(msg("command.tier.set.force", tierArg));
-        }
-        return CommandOutcome.success(msg("command.tier.set", tierArg));
+        return new TierUpdated(tierArg, force);
     }
 
-    public CommandOutcome handleModel(List<String> args) {
-        if (args.isEmpty()) {
+    public ModelOutcome handleModel(ModelRequest request) {
+        if (request instanceof ShowModelSelection) {
             return handleModelShow();
         }
-
-        String subcommand = ModelTierCatalog.normalizeTierId(args.get(0));
-        if (SUBCMD_LIST.equals(subcommand)) {
+        if (request instanceof ListAvailableModels) {
             return handleModelList();
         }
-        if (!ModelTierCatalog.isExplicitSelectableTier(subcommand)) {
-            return CommandOutcome.success(msg("command.model.invalid.tier"));
-        }
 
-        String tier = subcommand;
-        List<String> subArgs = args.subList(1, args.size());
-        if (subArgs.isEmpty()) {
-            return CommandOutcome.success(msg("command.model.usage"));
+        if (request instanceof SetModelOverride setModelOverride) {
+            return handleModelSet(setModelOverride.tier(), setModelOverride.modelSpec());
         }
-
-        String action = subArgs.get(0).toLowerCase(Locale.ROOT);
-        if (SUBCMD_RESET.equals(action)) {
-            return handleModelReset(tier);
+        if (request instanceof SetReasoningLevel setReasoningLevel) {
+            return handleModelSetReasoning(setReasoningLevel.tier(), setReasoningLevel.level());
         }
-        if (SUBCMD_REASONING.equals(action)) {
-            if (subArgs.size() < MIN_REASONING_ARGS) {
-                return CommandOutcome.success(msg("command.model.usage"));
-            }
-            return handleModelSetReasoning(tier, subArgs.get(1).toLowerCase(Locale.ROOT));
-        }
-
-        return handleModelSet(tier, subArgs.get(0));
+        ResetModelOverride resetModelOverride = (ResetModelOverride) request;
+        return handleModelReset(resetModelOverride.tier());
     }
 
-    private CommandOutcome handleModelShow() {
+    private ModelOutcome handleModelShow() {
         UserPreferences preferences = preferencesService.getPreferences();
-        StringBuilder builder = new StringBuilder();
-        builder.append("**").append(msg("command.model.show.title")).append("**\n\n");
-
+        List<TierSelection> selections = new ArrayList<>();
         for (String tier : ModelTierCatalog.orderedExplicitTiers()) {
             ModelSelectionService.ModelSelection selection = modelSelectionService.resolveForTier(tier);
-            String model = selection.model() != null ? selection.model() : "—";
-            String reasoning = selection.reasoning() != null ? selection.reasoning() : "—";
             boolean hasOverride = preferences.getTierOverrides() != null
                     && preferences.getTierOverrides().containsKey(tier);
-            String messageKey = hasOverride ? "command.model.show.tier.override" : "command.model.show.tier.default";
-            builder.append(msg(messageKey, tier, model, reasoning)).append("\n");
+            selections.add(new TierSelection(tier, selection.model(), selection.reasoning(), hasOverride));
         }
-
-        return CommandOutcome.success(builder.toString());
+        return new ModelSelectionOverview(List.copyOf(selections));
     }
 
-    private CommandOutcome handleModelList() {
+    private ModelOutcome handleModelList() {
         Map<String, List<ModelSelectionService.AvailableModel>> grouped = modelSelectionService
                 .getAvailableModelsGrouped();
-        if (grouped.isEmpty()) {
-            return CommandOutcome.success(msg("command.model.list.title") + "\n\nNo models available.");
-        }
-
-        StringBuilder builder = new StringBuilder();
-        builder.append("**").append(msg("command.model.list.title")).append("**\n\n");
-
+        Map<String, List<AvailableModelOption>> modelsByProvider = new LinkedHashMap<>();
         for (Map.Entry<String, List<ModelSelectionService.AvailableModel>> entry : grouped.entrySet()) {
-            builder.append(msg("command.model.list.provider", entry.getKey())).append("\n");
-            for (ModelSelectionService.AvailableModel model : entry.getValue()) {
-                String reasoningInfo = model.hasReasoning()
-                        ? " [reasoning: " + String.join(", ", model.reasoningLevels()) + "]"
-                        : "";
-                builder.append(msg("command.model.list.model", model.id(), model.displayName(), reasoningInfo))
-                        .append("\n");
-            }
-            builder.append("\n");
+            List<AvailableModelOption> options = entry.getValue().stream()
+                    .map(model -> new AvailableModelOption(
+                            model.id(),
+                            model.displayName(),
+                            model.hasReasoning(),
+                            List.copyOf(model.reasoningLevels())))
+                    .toList();
+            modelsByProvider.put(entry.getKey(), options);
         }
-
-        return CommandOutcome.success(builder.toString());
+        return new AvailableModels(modelsByProvider);
     }
 
-    private CommandOutcome handleModelSet(String tier, String modelSpec) {
+    private ModelOutcome handleModelSet(String tier, String modelSpec) {
+        if (!ModelTierCatalog.isExplicitSelectableTier(tier)) {
+            return new InvalidModelTier();
+        }
+
         ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(modelSpec);
         if (!validation.valid()) {
             if (ERR_PROVIDER_NOT_CONFIGURED.equals(validation.error())) {
-                String configuredProviders = String.join(", ", runtimeConfigService.getConfiguredLlmProviders());
-                return CommandOutcome.success(
-                        msg("command.model.invalid.provider", modelSpec, configuredProviders));
+                return new ProviderNotConfigured(modelSpec,
+                        List.copyOf(runtimeConfigService.getConfiguredLlmProviders()));
             }
-            return CommandOutcome.success(msg("command.model.invalid.model", modelSpec));
+            return new InvalidModel(modelSpec);
         }
 
         UserPreferences preferences = preferencesService.getPreferences();
         String defaultReasoning = findDefaultReasoning(modelSpec);
-        UserPreferences.TierOverride override = new UserPreferences.TierOverride(modelSpec, defaultReasoning);
-        preferences.getTierOverrides().put(tier, override);
+        Map<String, UserPreferences.TierOverride> tierOverrides = ensureTierOverrides(preferences);
+        tierOverrides.put(tier, new UserPreferences.TierOverride(modelSpec, defaultReasoning));
         preferencesService.savePreferences(preferences);
-
-        String displayReasoning = defaultReasoning != null ? " (reasoning: " + defaultReasoning + ")" : "";
-        return CommandOutcome.success(msg("command.model.set", tier, modelSpec) + displayReasoning);
+        return new ModelOverrideSet(tier, modelSpec, defaultReasoning);
     }
 
-    private CommandOutcome handleModelSetReasoning(String tier, String level) {
+    private ModelOutcome handleModelSetReasoning(String tier, String level) {
+        if (!ModelTierCatalog.isExplicitSelectableTier(tier)) {
+            return new InvalidModelTier();
+        }
+
         UserPreferences preferences = preferencesService.getPreferences();
         UserPreferences.TierOverride existing = preferences.getTierOverrides() != null
                 ? preferences.getTierOverrides().get(tier)
                 : null;
         if (existing == null || existing.getModel() == null) {
-            return CommandOutcome.success(msg("command.model.no.override", tier));
+            return new MissingModelOverride(tier);
         }
 
         ModelSelectionService.ValidationResult validation = modelSelectionService.validateReasoning(
                 existing.getModel(), level);
         if (!validation.valid()) {
             if (ERR_NO_REASONING.equals(validation.error())) {
-                return CommandOutcome.success(msg("command.model.no.reasoning", existing.getModel()));
+                return new MissingReasoningSupport(existing.getModel());
             }
             List<String> available = modelSelectionService.getAvailableModels().stream()
                     .filter(model -> model.id().equals(existing.getModel())
                             || existing.getModel().endsWith("/" + model.id()))
                     .flatMap(model -> model.reasoningLevels().stream())
                     .toList();
-            return CommandOutcome.success(
-                    msg("command.model.invalid.reasoning", level, String.join(", ", available)));
+            return new InvalidReasoningLevel(level, available);
         }
 
         existing.setReasoning(level);
         preferencesService.savePreferences(preferences);
-        return CommandOutcome.success(msg("command.model.set.reasoning", tier, level));
+        return new ModelReasoningSet(tier, level);
     }
 
-    private CommandOutcome handleModelReset(String tier) {
+    private ModelOutcome handleModelReset(String tier) {
+        if (!ModelTierCatalog.isExplicitSelectableTier(tier)) {
+            return new InvalidModelTier();
+        }
+
         UserPreferences preferences = preferencesService.getPreferences();
         if (preferences.getTierOverrides() != null) {
             preferences.getTierOverrides().remove(tier);
             preferencesService.savePreferences(preferences);
         }
-        return CommandOutcome.success(msg("command.model.reset", tier));
+        return new ModelOverrideReset(tier);
     }
 
     private String findDefaultReasoning(String modelSpec) {
@@ -200,20 +172,91 @@ public class ModelSelectionCommandService {
         return null;
     }
 
-    private String msg(String key, Object... args) {
-        return preferencesService.getMessage(key, args);
+    private Map<String, UserPreferences.TierOverride> ensureTierOverrides(UserPreferences preferences) {
+        if (preferences.getTierOverrides() == null) {
+            preferences.setTierOverrides(new LinkedHashMap<>());
+        }
+        return preferences.getTierOverrides();
     }
 
-    public record CommandOutcome(
-            boolean success,
-            String output
-    ) {
-        public static CommandOutcome success(String output) {
-            return new CommandOutcome(true, output);
+    public sealed
+
+    interface TierRequest
+    permits ShowTierStatus, SetTierSelection
+    {
         }
 
-        public static CommandOutcome failure(String output) {
-            return new CommandOutcome(false, output);
-        }
-    }
+    public record ShowTierStatus() implements TierRequest {}
+
+    public record SetTierSelection(String tier, boolean force) implements TierRequest {}
+
+    public sealed
+
+        interface TierOutcome
+        permits CurrentTier, TierUpdated, InvalidTier
+        {
+            }
+
+    public record CurrentTier(String tier, boolean force) implements TierOutcome {}
+
+    public record TierUpdated(String tier, boolean force) implements TierOutcome {}
+
+    public record InvalidTier() implements TierOutcome {}
+
+    public sealed
+
+            interface ModelRequest
+            permits ShowModelSelection, ListAvailableModels, SetModelOverride, SetReasoningLevel, ResetModelOverride
+            {
+                }
+
+    public record ShowModelSelection() implements ModelRequest {}
+
+    public record ListAvailableModels() implements ModelRequest {}
+
+    public record SetModelOverride(String tier, String modelSpec) implements ModelRequest {}
+
+    public record SetReasoningLevel(String tier, String level) implements ModelRequest {}
+
+    public record ResetModelOverride(String tier) implements ModelRequest {}
+
+    public sealed
+
+                interface ModelOutcome
+            permits ModelSelectionOverview, AvailableModels, InvalidModelTier, ModelOverrideSet,
+            ProviderNotConfigured, InvalidModel, MissingModelOverride, MissingReasoningSupport,
+            InvalidReasoningLevel, ModelReasoningSet, ModelOverrideReset
+                {
+                    }
+
+    public record ModelSelectionOverview(List<TierSelection> tiers) implements ModelOutcome {}
+
+    public record TierSelection(String tier, String model, String reasoning, boolean hasOverride) {}
+
+    public record AvailableModels(Map<String, List<AvailableModelOption>> modelsByProvider) implements ModelOutcome {}
+
+    public record AvailableModelOption(
+            String id,
+            String displayName,
+            boolean hasReasoning,
+            List<String> reasoningLevels
+    ) {}
+
+    public record InvalidModelTier() implements ModelOutcome {}
+
+    public record ModelOverrideSet(String tier, String modelSpec, String defaultReasoning) implements ModelOutcome {}
+
+    public record ProviderNotConfigured(String modelSpec, List<String> configuredProviders) implements ModelOutcome {}
+
+    public record InvalidModel(String modelSpec) implements ModelOutcome {}
+
+    public record MissingModelOverride(String tier) implements ModelOutcome {}
+
+    public record MissingReasoningSupport(String modelSpec) implements ModelOutcome {}
+
+    public record InvalidReasoningLevel(String requestedLevel, List<String> availableLevels) implements ModelOutcome {}
+
+    public record ModelReasoningSet(String tier, String level) implements ModelOutcome {}
+
+    public record ModelOverrideReset(String tier) implements ModelOutcome {}
 }
