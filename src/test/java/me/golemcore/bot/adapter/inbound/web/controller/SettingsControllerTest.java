@@ -2,6 +2,9 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
+import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
+import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
+import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
 import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
@@ -65,8 +68,7 @@ class SettingsControllerTest {
         registerSttProvider("golemcore/whisper", "whisper");
         registerTtsProvider("golemcore/elevenlabs", "elevenlabs");
         registerTtsProvider("golemcore/whisper", "whisper");
-        controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
-                memoryPresetService, sttProviderRegistry, ttsProviderRegistry);
+        controller = createController(sttProviderRegistry, ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
         when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(false);
         when(modelSelectionService.validateModel(anyString(), anyList()))
@@ -79,6 +81,16 @@ class SettingsControllerTest {
             int delimiterIndex = model.indexOf('/');
             return delimiterIndex > 0 ? model.substring(0, delimiterIndex) : null;
         });
+    }
+
+    private SettingsController createController(SttProviderRegistry sttRegistry, TtsProviderRegistry ttsRegistry) {
+        RuntimeSettingsFacade runtimeSettingsFacade = new RuntimeSettingsFacade(
+                runtimeConfigService,
+                preferencesService,
+                memoryPresetService,
+                new RuntimeSettingsValidator(modelSelectionService, sttRegistry, ttsRegistry),
+                new RuntimeSettingsMergeService());
+        return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade);
     }
 
     @Test
@@ -1645,13 +1657,7 @@ class SettingsControllerTest {
 
     @Test
     void shouldRejectUnloadedVoiceProvidersEvenWhenCanonicalIdsAreUsed() {
-        SettingsController unloadedController = new SettingsController(
-                preferencesService,
-                modelSelectionService,
-                runtimeConfigService,
-                memoryPresetService,
-                new SttProviderRegistry(),
-                new TtsProviderRegistry());
+        SettingsController unloadedController = createController(new SttProviderRegistry(), new TtsProviderRegistry());
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder().build())
                 .build();
@@ -1789,13 +1795,7 @@ class SettingsControllerTest {
 
     @Test
     void shouldAllowDisabledVoiceConfigWhenNoVoiceProvidersAreLoaded() {
-        SettingsController unloadedController = new SettingsController(
-                preferencesService,
-                modelSelectionService,
-                runtimeConfigService,
-                memoryPresetService,
-                new SttProviderRegistry(),
-                new TtsProviderRegistry());
+        SettingsController unloadedController = createController(new SttProviderRegistry(), new TtsProviderRegistry());
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder()
                         .enabled(false)
