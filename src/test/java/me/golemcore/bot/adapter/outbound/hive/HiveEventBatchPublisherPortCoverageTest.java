@@ -222,6 +222,37 @@ class HiveEventBatchPublisherPortCoverageTest {
     }
 
     @Test
+    void shouldNotLeakSearchOnlyFieldsIntoTacticCatalogProjection() {
+        publisher.publishSelfEvolvingTacticCatalogProjection(List.of(TacticSearchResult.builder()
+                .tacticId("planner")
+                .artifactKey("skill:planner")
+                .artifactType("skill")
+                .title("Planner tactic")
+                .score(1.2d)
+                .recencyScore(0.8d)
+                .golemLocalUsageSuccess(0.7d)
+                .updatedAt(Instant.parse("2026-04-01T00:08:00Z"))
+                .explanation(TacticSearchExplanation.builder()
+                        .searchMode("hybrid")
+                        .finalScore(1.2d)
+                        .build())
+                .build()));
+
+        ArgumentCaptor<List<HiveEventPayload>> eventsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(hiveApiClient).publishEventsBatch(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
+                eventsCaptor.capture());
+        List<HiveEventPayload> batch = eventsCaptor.getValue();
+        assertEquals(1, batch.size());
+        assertEquals("selfevolving.tactic.upserted", batch.getFirst().eventType());
+        Map<String, Object> tacticPayload = assertInstanceOf(Map.class, batch.getFirst().payload());
+        assertNull(tacticPayload.get("score"));
+        assertNull(tacticPayload.get("recencyScore"));
+        assertNull(tacticPayload.get("golemLocalUsageSuccess"));
+        assertNull(tacticPayload.get("explanation"));
+        assertNull(tacticPayload.get("searchQuery"));
+    }
+
+    @Test
     void shouldConvertCompatibilityHiveTypesToAndFromDomain() {
         me.golemcore.bot.adapter.outbound.hive.HiveEvidenceRef legacyEvidence = new me.golemcore.bot.adapter.outbound.hive.HiveEvidenceRef(
                 "artifact", "artifact-1");

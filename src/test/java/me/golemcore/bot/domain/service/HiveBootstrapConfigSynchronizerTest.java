@@ -8,30 +8,35 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class HiveBootstrapConfigSynchronizerTest {
 
-    private BotProperties botProperties;
+    private HiveBootstrapSettingsPort hiveBootstrapSettingsPort;
     private RuntimeConfigService runtimeConfigService;
     private HiveBootstrapConfigSynchronizer synchronizer;
 
     @BeforeEach
     void setUp() {
-        botProperties = new BotProperties();
+        hiveBootstrapSettingsPort = mock(HiveBootstrapSettingsPort.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
-        synchronizer = new HiveBootstrapConfigSynchronizer(botProperties, runtimeConfigService);
+        when(hiveBootstrapSettingsPort.enabled()).thenReturn(null);
+        when(hiveBootstrapSettingsPort.autoConnectOnStartup()).thenReturn(null);
+        when(hiveBootstrapSettingsPort.joinCode()).thenReturn(null);
+        when(hiveBootstrapSettingsPort.displayName()).thenReturn(null);
+        when(hiveBootstrapSettingsPort.hostLabel()).thenReturn(null);
+        synchronizer = new HiveBootstrapConfigSynchronizer(hiveBootstrapSettingsPort, runtimeConfigService);
     }
 
     @Test
     void shouldMaterializeManagedHiveConfigFromBootstrapProperties() {
-        botProperties.getHive().setJoinCode("et_demo.secret:https://hive.example.com/");
-        botProperties.getHive().setDisplayName("Build Runner");
-        botProperties.getHive().setHostLabel("lab-a");
-        botProperties.getHive().setAutoConnectOnStartup(true);
+        when(hiveBootstrapSettingsPort.joinCode()).thenReturn("et_demo.secret:https://hive.example.com/");
+        when(hiveBootstrapSettingsPort.displayName()).thenReturn("Build Runner");
+        when(hiveBootstrapSettingsPort.hostLabel()).thenReturn("lab-a");
+        when(hiveBootstrapSettingsPort.autoConnectOnStartup()).thenReturn(true);
 
         RuntimeConfig runtimeConfig = RuntimeConfig.builder().build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);

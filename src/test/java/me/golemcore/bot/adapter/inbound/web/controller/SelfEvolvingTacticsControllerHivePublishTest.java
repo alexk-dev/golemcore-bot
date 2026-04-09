@@ -15,6 +15,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolving
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchResultDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticSearchStatusDto;
 import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
@@ -146,14 +147,21 @@ class SelfEvolvingTacticsControllerHivePublishTest {
     void shouldPublishTacticCatalogWhenPortAvailable() {
         List<SelfEvolvingTacticDto> tactics = List.of(SelfEvolvingTacticDto.builder()
                 .tacticId("planner")
+                .artifactStreamId("stream-planner")
                 .artifactKey("skill:planner")
+                .artifactType("skill")
                 .title("Planner")
+                .aliases(List.of("plan"))
+                .updatedAt("2026-04-06T04:00:00Z")
                 .build());
         when(projectionService.listTactics()).thenReturn(tactics);
 
         controller.listTactics().block();
 
-        verify(hiveEventPublishPort).publishSelfEvolvingTacticCatalogProjection(tactics);
+        verify(hiveEventPublishPort).publishSelfEvolvingTacticCatalogProjection(
+                argThat(projections -> projections != null
+                        && projections.size() == 1
+                        && matchesProjection(projections.getFirst())));
     }
 
     @Test
@@ -168,5 +176,15 @@ class SelfEvolvingTacticsControllerHivePublishTest {
                 .publishSelfEvolvingTacticSearchProjection(any(String.class), any(), anyList());
 
         controller.searchTactics("planner").block();
+    }
+
+    private boolean matchesProjection(TacticSearchResult projection) {
+        return "planner".equals(projection.getTacticId())
+                && "stream-planner".equals(projection.getArtifactStreamId())
+                && "skill:planner".equals(projection.getArtifactKey())
+                && "skill".equals(projection.getArtifactType())
+                && "Planner".equals(projection.getTitle())
+                && List.of("plan").equals(projection.getAliases())
+                && projection.getUpdatedAt() != null;
     }
 }

@@ -18,7 +18,6 @@ package me.golemcore.bot.port.outbound;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
 import me.golemcore.bot.domain.model.ProgressUpdate;
@@ -61,7 +60,7 @@ public interface HiveEventPublishPort extends SelfEvolvingProjectionPublishPort 
 
     void publishSelfEvolvingCampaignProjection(String golemId, BenchmarkCampaign campaign);
 
-    void publishSelfEvolvingTacticCatalogProjection(List<SelfEvolvingTacticDto> tactics);
+    void publishSelfEvolvingTacticCatalogProjection(List<TacticSearchResult> tactics);
 
     void publishSelfEvolvingTacticSearchProjection(
             String query,
