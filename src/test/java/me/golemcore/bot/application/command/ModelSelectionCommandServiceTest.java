@@ -194,6 +194,49 @@ class ModelSelectionCommandServiceTest {
     }
 
     @Test
+    void shouldInitializeTierOverridesWhenMissingAndAllowNullDefaultReasoning() {
+        preferences.setTierOverrides(null);
+        when(modelSelectionService.validateModel("openai/gpt-5-mini"))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        when(modelSelectionService.getAvailableModels()).thenReturn(List.of());
+
+        ModelSelectionCommandService.ModelOverrideSet result = assertInstanceOf(
+                ModelSelectionCommandService.ModelOverrideSet.class,
+                service.handleModel(
+                        new ModelSelectionCommandService.SetModelOverride("balanced", "openai/gpt-5-mini")));
+
+        assertEquals("balanced", result.tier());
+        assertEquals("openai/gpt-5-mini", result.modelSpec());
+        assertNull(result.defaultReasoning());
+        assertEquals("openai/gpt-5-mini", preferences.getTierOverrides().get("balanced").getModel());
+        assertNull(preferences.getTierOverrides().get("balanced").getReasoning());
+        verify(preferencesService).savePreferences(preferences);
+    }
+
+    @Test
+    void shouldKeepDefaultReasoningNullWhenCatalogContainsOnlyOtherModels() {
+        when(modelSelectionService.validateModel("openai/gpt-5-mini"))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        when(modelSelectionService.getAvailableModels()).thenReturn(List.of(
+                new ModelSelectionService.AvailableModel(
+                        "gpt-5",
+                        "openai",
+                        "GPT-5",
+                        true,
+                        List.of("low", "medium"),
+                        false)));
+
+        ModelSelectionCommandService.ModelOverrideSet result = assertInstanceOf(
+                ModelSelectionCommandService.ModelOverrideSet.class,
+                service.handleModel(
+                        new ModelSelectionCommandService.SetModelOverride("balanced", "openai/gpt-5-mini")));
+
+        assertNull(result.defaultReasoning());
+        assertNull(preferences.getTierOverrides().get("balanced").getReasoning());
+        verify(preferencesService).savePreferences(preferences);
+    }
+
+    @Test
     void shouldRejectUnknownModel() {
         when(modelSelectionService.validateModel("unknown/bad"))
                 .thenReturn(new ModelSelectionService.ValidationResult(false, "model.not.found"));
@@ -246,6 +289,16 @@ class ModelSelectionCommandServiceTest {
     }
 
     @Test
+    void shouldRejectReasoningWhenTierIsInvalid() {
+        ModelSelectionCommandService.InvalidModelTier result = assertInstanceOf(
+                ModelSelectionCommandService.InvalidModelTier.class,
+                service.handleModel(new ModelSelectionCommandService.SetReasoningLevel("unknown", "high")));
+
+        assertInstanceOf(ModelSelectionCommandService.InvalidModelTier.class, result);
+        verify(preferencesService, never()).savePreferences(any());
+    }
+
+    @Test
     void shouldRejectReasoningForNonReasoningModel() {
         preferences.getTierOverrides().put("coding", new UserPreferences.TierOverride("openai/gpt-5", null));
         when(modelSelectionService.validateReasoning("openai/gpt-5", "high"))
@@ -291,6 +344,16 @@ class ModelSelectionCommandServiceTest {
         assertEquals("balanced", result.tier());
         assertNull(preferences.getTierOverrides().get("balanced"));
         verify(preferencesService).savePreferences(preferences);
+    }
+
+    @Test
+    void shouldRejectResetWhenTierIsInvalid() {
+        ModelSelectionCommandService.InvalidModelTier result = assertInstanceOf(
+                ModelSelectionCommandService.InvalidModelTier.class,
+                service.handleModel(new ModelSelectionCommandService.ResetModelOverride("unknown")));
+
+        assertInstanceOf(ModelSelectionCommandService.InvalidModelTier.class, result);
+        verify(preferencesService, never()).savePreferences(any());
     }
 
     private void stubSelections(String prefix) {
