@@ -82,8 +82,8 @@ public class BotPropertiesSettingsAdapter
         if (tools == null) {
             tools = new BotProperties.ToolsProperties();
         }
-        BotProperties.FileSystemToolProperties filesystem = tools != null ? tools.getFilesystem() : null;
-        BotProperties.ShellToolProperties shell = tools != null ? tools.getShell() : null;
+        BotProperties.FileSystemToolProperties filesystem = tools.getFilesystem();
+        BotProperties.ShellToolProperties shell = tools.getShell();
         return new WorkspaceSettings(
                 filesystem != null ? filesystem.getWorkspace() : null,
                 shell != null ? shell.getWorkspace() : null);
