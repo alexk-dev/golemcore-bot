@@ -23,43 +23,7 @@ class HexagonalArchitectureContractTest {
             "me.golemcore.bot.infrastructure.",
             "me.golemcore.bot.plugin.");
 
-    private static final Set<String> KNOWN_DOMAIN_FORBIDDEN_DEPENDENCIES = dependencySet(
-            "me.golemcore.bot.domain.memory.persistence.MemoryPersistenceOrchestrator -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.memory.persistence.MemoryPersistenceOrchestrator -> me.golemcore.bot.infrastructure.config.BotProperties$MemoryProperties",
-            "me.golemcore.bot.domain.memory.retrieval.MemoryCandidateCollector -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.memory.retrieval.MemoryCandidateCollector -> me.golemcore.bot.infrastructure.config.BotProperties$MemoryProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapTacticEmbeddingsLocalProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapTacticEmbeddingsProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapTacticSearchProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapTacticsProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapToggleProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingProperties",
-            "me.golemcore.bot.domain.service.PromptSectionService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.PromptSectionService -> me.golemcore.bot.infrastructure.config.BotProperties$PromptsProperties",
-            "me.golemcore.bot.domain.service.SkillMarketplaceService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.SkillMarketplaceService -> me.golemcore.bot.infrastructure.config.BotProperties$SkillsProperties",
-            "me.golemcore.bot.domain.service.SkillService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.SkillService -> me.golemcore.bot.infrastructure.config.BotProperties$SkillsProperties",
-            "me.golemcore.bot.domain.service.ToolCallExecutionService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.ToolCallExecutionService -> me.golemcore.bot.infrastructure.config.BotProperties$AutoCompactProperties",
-            "me.golemcore.bot.domain.service.UpdateRuntimeCleanupService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.UpdateRuntimeCleanupService -> me.golemcore.bot.infrastructure.config.BotProperties$UpdateProperties",
-            "me.golemcore.bot.domain.service.UpdateService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.UpdateService -> me.golemcore.bot.infrastructure.config.BotProperties$UpdateProperties",
-            "me.golemcore.bot.domain.service.UserPreferencesService -> me.golemcore.bot.infrastructure.i18n.MessageService",
-            "me.golemcore.bot.domain.service.WorkspaceInstructionService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.WorkspaceInstructionService -> me.golemcore.bot.infrastructure.config.BotProperties$FileSystemToolProperties",
-            "me.golemcore.bot.domain.service.WorkspaceInstructionService -> me.golemcore.bot.infrastructure.config.BotProperties$ShellToolProperties",
-            "me.golemcore.bot.domain.service.WorkspaceInstructionService -> me.golemcore.bot.infrastructure.config.BotProperties$ToolsProperties",
-            "me.golemcore.bot.domain.service.WorkspacePathService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.WorkspacePathService -> me.golemcore.bot.infrastructure.config.BotProperties$FileSystemToolProperties",
-            "me.golemcore.bot.domain.service.WorkspacePathService -> me.golemcore.bot.infrastructure.config.BotProperties$ToolsProperties",
-            "me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem -> me.golemcore.bot.infrastructure.config.BotProperties$ToolLoopProperties",
-            "me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem -> me.golemcore.bot.infrastructure.config.BotProperties$TurnProperties",
-            "me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem$Builder -> me.golemcore.bot.infrastructure.config.BotProperties$ToolLoopProperties",
-            "me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem$Builder -> me.golemcore.bot.infrastructure.config.BotProperties$TurnProperties");
+    private static final Set<String> KNOWN_DOMAIN_FORBIDDEN_DEPENDENCIES = dependencySet();
 
     private static final Set<String> KNOWN_PORT_FORBIDDEN_DEPENDENCIES = dependencySet();
 

@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
+import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -667,7 +668,7 @@ class UpdateServiceTest {
 
     private UpdateService createService(StubReleaseSource source) {
         return new UpdateService(
-                botProperties,
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
                 buildPropertiesProvider,
                 new ObjectMapper(),
                 applicationContext,
@@ -681,7 +682,7 @@ class UpdateServiceTest {
 
     private TestableUpdateService createTestableService(StubReleaseSource source) {
         return new TestableUpdateService(
-                botProperties,
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
                 buildPropertiesProvider,
                 new ObjectMapper(),
                 applicationContext,
@@ -695,7 +696,7 @@ class UpdateServiceTest {
 
     private TestableUpdateService createTestableServiceMultiSource(List<ReleaseSourcePort> sources) {
         return new TestableUpdateService(
-                botProperties,
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
                 buildPropertiesProvider,
                 new ObjectMapper(),
                 applicationContext,
@@ -709,7 +710,7 @@ class UpdateServiceTest {
 
     private DeferredUpdateService createDeferredUpdateService(StubReleaseSource source) {
         return new DeferredUpdateService(
-                botProperties,
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
                 buildPropertiesProvider,
                 new ObjectMapper(),
                 applicationContext,
@@ -800,7 +801,7 @@ class UpdateServiceTest {
         private boolean restartRequested;
 
         private TestableUpdateService(
-                BotProperties botProperties,
+                UpdateSettingsPort settingsPort,
                 ObjectProvider<BuildProperties> buildPropertiesProvider,
                 ObjectMapper objectMapper,
                 ApplicationContext applicationContext,
@@ -811,7 +812,7 @@ class UpdateServiceTest {
                 UpdateMaintenanceWindow updateMaintenanceWindow,
                 List<ReleaseSourcePort> releaseSources) {
             super(
-                    botProperties,
+                    settingsPort,
                     buildPropertiesProvider,
                     objectMapper,
                     applicationContext,
@@ -842,7 +843,7 @@ class UpdateServiceTest {
     private static final class DeferredUpdateService extends UpdateService {
 
         private DeferredUpdateService(
-                BotProperties botProperties,
+                UpdateSettingsPort settingsPort,
                 ObjectProvider<BuildProperties> buildPropertiesProvider,
                 ObjectMapper objectMapper,
                 ApplicationContext applicationContext,
@@ -853,7 +854,7 @@ class UpdateServiceTest {
                 UpdateMaintenanceWindow updateMaintenanceWindow,
                 List<ReleaseSourcePort> releaseSources) {
             super(
-                    botProperties,
+                    settingsPort,
                     buildPropertiesProvider,
                     objectMapper,
                     applicationContext,

@@ -86,7 +86,7 @@ class ToolCallExecutionServiceTest {
                 List.of(toolComponent),
                 confirmationPolicy,
                 confirmationPort,
-                properties,
+                me.golemcore.bot.support.TestPorts.settings(properties),
                 toolArtifactService);
     }
 

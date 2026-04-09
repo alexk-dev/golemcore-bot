@@ -29,7 +29,8 @@ class WorkspaceInstructionServiceTest {
         Files.writeString(appClaude, "App instruction");
         Files.writeString(featureAgents, "Feature instruction");
 
-        WorkspaceInstructionService service = new WorkspaceInstructionService(createProperties(tempDir));
+        WorkspaceInstructionService service = new WorkspaceInstructionService(
+                me.golemcore.bot.support.TestPorts.settings(createProperties(tempDir)));
 
         String context = service.getWorkspaceInstructionsContext();
 
@@ -48,7 +49,8 @@ class WorkspaceInstructionServiceTest {
         Files.writeString(folder.resolve("CLAUDE.md"), "Claude local");
         Files.writeString(folder.resolve("AGENTS.md"), "Agents local");
 
-        WorkspaceInstructionService service = new WorkspaceInstructionService(createProperties(tempDir));
+        WorkspaceInstructionService service = new WorkspaceInstructionService(
+                me.golemcore.bot.support.TestPorts.settings(createProperties(tempDir)));
         String context = service.getWorkspaceInstructionsContext();
 
         assertTrue(context.indexOf("Claude local") < context.indexOf("Agents local"));
@@ -68,7 +70,8 @@ class WorkspaceInstructionServiceTest {
         Files.writeString(gitAgents, "Git instruction");
         Files.writeString(modulesClaude, "Modules instruction");
 
-        WorkspaceInstructionService service = new WorkspaceInstructionService(createProperties(tempDir));
+        WorkspaceInstructionService service = new WorkspaceInstructionService(
+                me.golemcore.bot.support.TestPorts.settings(createProperties(tempDir)));
         String context = service.getWorkspaceInstructionsContext();
 
         assertTrue(context.contains("Docs instruction"));

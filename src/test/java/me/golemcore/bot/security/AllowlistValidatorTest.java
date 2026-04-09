@@ -195,7 +195,8 @@ class AllowlistValidatorTest {
         private List<String> telegramAllowedUsers;
 
         StubRuntimeConfigService() {
-            super(mock(StoragePort.class), new SelfEvolvingBootstrapOverrideService(new BotProperties()));
+            super(mock(StoragePort.class), new SelfEvolvingBootstrapOverrideService(
+                    me.golemcore.bot.support.TestPorts.settings(new BotProperties())));
         }
 
         @Override

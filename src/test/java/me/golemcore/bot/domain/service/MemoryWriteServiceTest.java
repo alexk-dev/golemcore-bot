@@ -59,7 +59,7 @@ class MemoryWriteServiceTest {
         MemoryNormalizationService memoryNormalizationService = new MemoryNormalizationService(runtimeConfigService);
         MemoryPersistenceOrchestrator memoryPersistenceOrchestrator = new MemoryPersistenceOrchestrator(
                 storagePort,
-                properties,
+                me.golemcore.bot.support.TestPorts.settings(properties),
                 runtimeConfigService,
                 memoryNormalizationService,
                 objectMapper);

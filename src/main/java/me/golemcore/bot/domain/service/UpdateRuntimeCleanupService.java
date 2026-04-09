@@ -2,17 +2,16 @@ package me.golemcore.bot.domain.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Service;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
+import me.golemcore.bot.port.outbound.UpdateSettingsPort;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
@@ -23,7 +22,7 @@ public class UpdateRuntimeCleanupService {
     private static final String STAGED_MARKER_NAME = "staged.txt";
     private static final String JARS_DIR_NAME = "jars";
 
-    private final BotProperties botProperties;
+    private final UpdateSettingsPort settingsPort;
 
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
@@ -32,11 +31,11 @@ public class UpdateRuntimeCleanupService {
 
     @SuppressWarnings("PMD.NullAssignment")
     void cleanupAfterSuccessfulStartup() {
-        if (!botProperties.getUpdate().isEnabled()) {
+        if (!settingsPort.update().enabled()) {
             return;
         }
 
-        Path updatesDir = Path.of(botProperties.getUpdate().getUpdatesPath()).toAbsolutePath().normalize();
+        Path updatesDir = Path.of(settingsPort.update().updatesPath()).toAbsolutePath().normalize();
         Path jarsDir = updatesDir.resolve(JARS_DIR_NAME);
         if (!Files.isDirectory(jarsDir)) {
             return;

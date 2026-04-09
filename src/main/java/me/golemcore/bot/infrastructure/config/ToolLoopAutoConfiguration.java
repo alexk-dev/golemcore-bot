@@ -21,8 +21,9 @@ import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuild
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
 import me.golemcore.bot.port.outbound.LlmPort;
-import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import me.golemcore.bot.port.outbound.TelemetryRollupPort;
+import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
+import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -57,7 +58,7 @@ public class ToolLoopAutoConfiguration {
 
     @Bean
     public ToolLoopSystem toolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutorPort,
-            HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, BotProperties botProperties,
+            HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, ToolRuntimeSettingsPort settingsPort,
             ModelSelectionService modelSelectionService, PlanService planService,
             RuntimeConfigService runtimeConfigService,
             UsageTrackingPort usageTracker,
@@ -73,8 +74,8 @@ public class ToolLoopAutoConfiguration {
                 .toolExecutor(toolExecutorPort)
                 .historyWriter(historyWriter)
                 .viewBuilder(viewBuilder)
-                .turnSettings(botProperties.getTurn())
-                .settings(botProperties.getToolLoop())
+                .turnSettings(settingsPort.turn())
+                .settings(settingsPort.toolLoop())
                 .modelSelectionService(modelSelectionService)
                 .planService(planService)
                 .runtimeConfigService(runtimeConfigService)

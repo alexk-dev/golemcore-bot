@@ -48,7 +48,8 @@ class RuntimeConfigServiceSelfEvolvingTest {
                     return CompletableFuture.completedFuture(persistedSections.get(fileName));
                 });
 
-        service = new RuntimeConfigService(storagePort, new SelfEvolvingBootstrapOverrideService(new BotProperties()));
+        service = new RuntimeConfigService(storagePort, new SelfEvolvingBootstrapOverrideService(
+                me.golemcore.bot.support.TestPorts.settings(new BotProperties())));
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
     }

@@ -18,7 +18,7 @@ class SelfEvolvingBootstrapOverrideServiceTest {
     @BeforeEach
     void setUp() {
         botProperties = new BotProperties();
-        service = new SelfEvolvingBootstrapOverrideService(botProperties);
+        service = new SelfEvolvingBootstrapOverrideService(me.golemcore.bot.support.TestPorts.settings(botProperties));
     }
 
     @Test
