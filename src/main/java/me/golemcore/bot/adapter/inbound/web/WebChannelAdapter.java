@@ -201,6 +201,11 @@ public class WebChannelAdapter implements ChannelPort {
         return session != null && session.isOpen();
     }
 
+    @Override
+    public boolean supportsProactiveMessage(String chatId) {
+        return isRunning() && hasActiveSession(chatId);
+    }
+
     public void handleIncomingMessage(Message message, String connectionId) {
         bindConnectionToChatId(connectionId, message.getChatId());
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));

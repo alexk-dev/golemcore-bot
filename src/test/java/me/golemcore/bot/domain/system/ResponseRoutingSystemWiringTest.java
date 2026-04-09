@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.system;
 
+import me.golemcore.bot.adapter.outbound.channel.ChannelRegistryRuntimeAdapter;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.TraceBudgetService;
 import me.golemcore.bot.domain.service.TraceService;
@@ -25,6 +26,7 @@ class ResponseRoutingSystemWiringTest {
                 when(channel.getChannelType()).thenReturn("telegram");
                 return new ChannelRegistry(List.of(channel));
             })
+            .withBean(ChannelRegistryRuntimeAdapter.class)
             .withBean(UserPreferencesService.class, () -> mock(UserPreferencesService.class))
             .withBean(VoiceResponseHandler.class, () -> mock(VoiceResponseHandler.class))
             .withBean(RuntimeConfigService.class, () -> mock(RuntimeConfigService.class))
@@ -33,7 +35,7 @@ class ResponseRoutingSystemWiringTest {
             .withBean(ResponseRoutingSystem.class);
 
     @Test
-    void shouldCreateResponseRoutingSystemBeanUsingAutowiredConstructor() {
+    void shouldCreateResponseRoutingSystemBeanUsingChannelRuntimePort() {
         contextRunner.run(context -> assertThat(context).hasSingleBean(ResponseRoutingSystem.class));
     }
 }

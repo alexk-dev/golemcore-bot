@@ -41,10 +41,9 @@ import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -88,7 +87,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
     }
 
-    private final ChannelRegistry channelRegistry;
+    private final ChannelRuntimePort channelRuntimePort;
     private final Map<String, ChannelPort> overrides = new ConcurrentHashMap<>();
     private final UserPreferencesService preferencesService;
     private final VoiceResponseHandler voiceHandler;
@@ -96,21 +95,15 @@ public class ResponseRoutingSystem implements AgentSystem {
     private final TraceService traceService;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
-    public ResponseRoutingSystem(ChannelRegistry channelRegistry, UserPreferencesService preferencesService,
-            VoiceResponseHandler voiceHandler) {
-        this(channelRegistry, preferencesService, voiceHandler, null, null);
-    }
-
-    @Autowired
-    public ResponseRoutingSystem(ChannelRegistry channelRegistry, UserPreferencesService preferencesService,
+    public ResponseRoutingSystem(ChannelRuntimePort channelRuntimePort, UserPreferencesService preferencesService,
             VoiceResponseHandler voiceHandler, RuntimeConfigService runtimeConfigService, TraceService traceService) {
-        this.channelRegistry = channelRegistry;
+        this.channelRuntimePort = channelRuntimePort;
         this.preferencesService = preferencesService;
         this.voiceHandler = voiceHandler;
         this.runtimeConfigService = runtimeConfigService;
         this.traceService = traceService;
-        log.info("Registered {} channels: {}", channelRegistry.getAll().size(),
-                channelRegistry.getAll().stream().map(ChannelPort::getChannelType).toList());
+        log.info("Registered {} channels: {}", channelRuntimePort.listChannels().size(),
+                channelRuntimePort.listChannels().stream().map(ChannelPort::getChannelType).toList());
     }
 
     @Override
@@ -589,7 +582,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             return null;
         }
 
-        ChannelPort channel = channelRegistry.get(target.channelType()).orElse(null);
+        ChannelPort channel = channelRuntimePort.findChannel(target.channelType()).orElse(null);
         if (channel == null) {
             log.warn("[Response] Webhook delivery target channel is not registered: {}", target.channelType());
             return null;
@@ -668,7 +661,7 @@ public class ResponseRoutingSystem implements AgentSystem {
     private ChannelPort resolveChannel(AgentSession session) {
         ChannelPort channel = overrides.get(session.getChannelType());
         if (channel == null) {
-            channel = channelRegistry.get(session.getChannelType()).orElse(null);
+            channel = channelRuntimePort.findChannel(session.getChannelType()).orElse(null);
         }
         if (channel == null) {
             log.warn("[Response] No channel registered for type: {}", session.getChannelType());

@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 
+import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -128,6 +129,35 @@ public interface ChannelPort {
     default CompletableFuture<Void> sendDocument(String chatId, byte[] fileData,
             String filename, String caption) {
         return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Returns whether the channel can deliver proactive messages to the given
+     * transport chat at the moment.
+     */
+    default boolean supportsProactiveMessage(String chatId) {
+        return isRunning();
+    }
+
+    /**
+     * Returns whether the channel can proactively deliver files/documents at the
+     * moment.
+     */
+    default boolean supportsProactiveDocument(String chatId) {
+        return supportsProactiveMessage(chatId) && supportsDocumentDelivery();
+    }
+
+    /**
+     * Returns whether the channel overrides document delivery behavior.
+     */
+    default boolean supportsDocumentDelivery() {
+        try {
+            Method method = getClass().getMethod("sendDocument",
+                    String.class, byte[].class, String.class, String.class);
+            return !ChannelPort.class.equals(method.getDeclaringClass());
+        } catch (NoSuchMethodException exception) {
+            return false;
+        }
     }
 
     /**
