@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.inbound.command;
 
+import me.golemcore.bot.application.command.ModelSelectionCommandService;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
@@ -167,7 +168,7 @@ class CommandRouterTest {
                 preferencesService,
                 compactionService,
                 autoModeService,
-                modelSelectionService,
+                new ModelSelectionCommandService(preferencesService, modelSelectionService, runtimeConfigService),
                 planService,
                 planExecutionService,
                 scheduleService,

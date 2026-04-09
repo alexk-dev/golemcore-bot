@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.inbound.command;
 
+import me.golemcore.bot.application.command.ModelSelectionCommandService;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
@@ -104,7 +105,10 @@ class CommandRouterDelayedActionsTest {
                 preferencesService,
                 mock(CompactionOrchestrationService.class),
                 mock(AutoModeService.class),
-                mock(ModelSelectionService.class),
+                new ModelSelectionCommandService(
+                        preferencesService,
+                        mock(ModelSelectionService.class),
+                        mock(RuntimeConfigService.class)),
                 mock(PlanService.class),
                 mock(PlanExecutionService.class),
                 mock(ScheduleService.class),
@@ -185,7 +189,10 @@ class CommandRouterDelayedActionsTest {
                 preferencesService,
                 mock(CompactionOrchestrationService.class),
                 mock(AutoModeService.class),
-                mock(ModelSelectionService.class),
+                new ModelSelectionCommandService(
+                        preferencesService,
+                        mock(ModelSelectionService.class),
+                        runtimeConfigService),
                 mock(PlanService.class),
                 mock(PlanExecutionService.class),
                 mock(ScheduleService.class),
