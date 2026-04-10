@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.outbound.update;
 
+import me.golemcore.bot.application.update.UpdateService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.util.concurrent.Executors;
@@ -7,7 +8,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
-import me.golemcore.bot.domain.service.UpdateService;
 import org.springframework.stereotype.Component;
 
 @Component

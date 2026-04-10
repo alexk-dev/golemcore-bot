@@ -17,13 +17,10 @@ package me.golemcore.bot.domain.service;
  *
  * Contact: alex@kuleshov.tech
  */
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.IOException;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.port.outbound.LocalizationPort;
-import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.UserPreferencesStorePort;
 import org.springframework.stereotype.Service;
 
 /**
@@ -36,17 +33,15 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class UserPreferencesService {
 
-    private static final String PREFERENCES_DIR = "preferences";
-    private static final String SETTINGS_FILE = "settings.json";
-
-    private final StoragePort storagePort;
+    private final UserPreferencesStorePort userPreferencesStorePort;
     private final LocalizationPort localizationPort;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private volatile UserPreferences preferences;
 
-    public UserPreferencesService(StoragePort storagePort, LocalizationPort localizationPort) {
-        this.storagePort = storagePort;
+    public UserPreferencesService(
+            UserPreferencesStorePort userPreferencesStorePort,
+            LocalizationPort localizationPort) {
+        this.userPreferencesStorePort = userPreferencesStorePort;
         this.localizationPort = localizationPort;
     }
 
@@ -78,8 +73,7 @@ public class UserPreferencesService {
         localizationPort.setLanguage(prefs.getLanguage());
 
         try {
-            String json = objectMapper.writeValueAsString(prefs);
-            storagePort.putText(PREFERENCES_DIR, SETTINGS_FILE, json).join();
+            userPreferencesStorePort.savePreferences(prefs);
             log.debug("Saved global preferences");
         } catch (Exception e) {
             // Rollback in-memory state on persist failure
@@ -117,24 +111,27 @@ public class UserPreferencesService {
 
     private UserPreferences loadOrCreate() {
         try {
-            String json = storagePort.getText(PREFERENCES_DIR, SETTINGS_FILE).join();
-            if (json != null && !json.isBlank()) {
-                UserPreferences prefs = objectMapper.readValue(json, UserPreferences.class);
-                localizationPort.setLanguage(prefs.getLanguage());
-                log.debug("Loaded global preferences");
-                return prefs;
-            }
-        } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
+            return userPreferencesStorePort.loadPreferences()
+                    .map(prefs -> {
+                        localizationPort.setLanguage(prefs.getLanguage());
+                        log.debug("Loaded global preferences");
+                        return prefs;
+                    })
+                    .orElseGet(this::createDefaultPreferences);
+        } catch (RuntimeException e) { // NOSONAR - intentionally catch all for fallback
             log.debug("No saved preferences or failed to parse, creating default: {}", e.getMessage());
         }
 
+        return createDefaultPreferences();
+    }
+
+    private UserPreferences createDefaultPreferences() {
         UserPreferences prefs = UserPreferences.builder()
                 .language(localizationPort.defaultLanguage())
                 .build();
         localizationPort.setLanguage(prefs.getLanguage());
         try {
-            String json = objectMapper.writeValueAsString(prefs);
-            storagePort.putText(PREFERENCES_DIR, SETTINGS_FILE, json).join();
+            userPreferencesStorePort.savePreferences(prefs);
             log.debug("Created default preferences");
         } catch (Exception e) {
             log.error("Failed to save default preferences", e);

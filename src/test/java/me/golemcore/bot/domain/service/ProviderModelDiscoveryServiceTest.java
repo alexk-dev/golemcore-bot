@@ -1,28 +1,4 @@
-package me.golemcore.bot.domain.service;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.model.Secret;
-import org.junit.jupiter.api.Test;
-
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLParameters;
-import javax.net.ssl.SSLSession;
-import java.io.IOException;
-import java.net.Authenticator;
-import java.net.CookieHandler;
-import java.net.ProxySelector;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpHeaders;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
+package me.golemcore.bot.application.models;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -31,6 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+
+import java.util.List;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
+import org.junit.jupiter.api.Test;
 
 class ProviderModelDiscoveryServiceTest {
 
@@ -46,28 +29,53 @@ class ProviderModelDiscoveryServiceTest {
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("xmesh"));
         when(runtimeConfigService.getLlmProviderConfig("xmesh")).thenReturn(providerConfig);
 
-        StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
-                new ProviderModelDiscoveryService.DiscoveryResponse(200, """
-                        {"object":"list","data":[
-                          {"id":"deepseek-coder-v2-lite","object":"model","owned_by":"local"},
-                          {"created":1765440000,"id":"gpt-5.2","object":"model","owned_by":"openai"},
-                          {"created":1770307200,"id":"gpt-5.3-codex","object":"model","owned_by":"openai"},
-                          {"created":1750118400,"id":"gemini-2.5-pro","object":"model","owned_by":"google"},
-                          {"created":1750118400,"id":"gemini-2.5-flash","object":"model","owned_by":"google"},
-                          {"created":1753142400,"id":"gemini-2.5-flash-lite","object":"model","owned_by":"google"},
-                          {"created":1762473600,"id":"gpt-5-codex-mini","object":"model","owned_by":"openai"},
-                          {"created":1765440000,"id":"gpt-5.2-codex","object":"model","owned_by":"openai"},
-                          {"created":1770912000,"id":"gpt-5.3-codex-spark","object":"model","owned_by":"openai"},
-                          {"created":1765929600,"id":"gemini-3-flash-preview","object":"model","owned_by":"google"},
-                          {"created":1762905600,"id":"gpt-5.1","object":"model","owned_by":"openai"},
-                          {"created":1754524800,"id":"gpt-5","object":"model","owned_by":"openai"},
-                          {"created":1763424000,"id":"gpt-5.1-codex-max","object":"model","owned_by":"openai"},
-                          {"created":1737158400,"id":"gemini-3-pro-preview","object":"model","owned_by":"google"},
-                          {"created":1757894400,"id":"gpt-5-codex","object":"model","owned_by":"openai"},
-                          {"created":1762905600,"id":"gpt-5.1-codex","object":"model","owned_by":"openai"},
-                          {"created":1762905600,"id":"gpt-5.1-codex-mini","object":"model","owned_by":"openai"}
-                        ]}
-                        """));
+        StubProviderModelDiscoveryPort discoveryPort = new StubProviderModelDiscoveryPort(
+                new ProviderModelDiscoveryPort.DiscoveryResponse(
+                        200,
+                        List.of(
+                                openAiDocument("deepseek-coder-v2-lite", "deepseek-coder-v2-lite", "local", null,
+                                        null,
+                                        null, 0, 0),
+                                openAiDocument("gpt-5.2", "gpt-5.2", "openai", List.of("text"), null,
+                                        List.of("reasoning"),
+                                        0, 0),
+                                openAiDocument("gpt-5.3-codex-spark", "gpt-5.3-codex-spark", "openai",
+                                        List.of("text"), null,
+                                        List.of("reasoning"), 0, 0),
+                                openAiDocument("gemini-2.5-pro", "gemini-2.5-pro", "google", List.of("text", "image"),
+                                        null,
+                                        List.of("temperature"), 0, 0),
+                                openAiDocument("gemini-2.5-flash", "gemini-2.5-flash", "google",
+                                        List.of("text", "image"), null, List.of("temperature"), 0, 0),
+                                openAiDocument("gemini-2.5-flash-lite", "gemini-2.5-flash-lite", "google",
+                                        List.of("text", "image"), null, List.of("temperature"), 0, 0),
+                                openAiDocument("gpt-5-codex-mini", "gpt-5-codex-mini", "openai", List.of("text"),
+                                        null,
+                                        List.of("reasoning"), 0, 0),
+                                openAiDocument("gpt-5.2-codex", "gpt-5.2-codex", "openai", List.of("text"), null,
+                                        List.of("reasoning"), 0, 0),
+                                openAiDocument("gpt-5.1", "gpt-5.1", "openai", List.of("text"), null,
+                                        List.of("reasoning"),
+                                        0, 0),
+                                openAiDocument("gpt-5", "gpt-5", "openai", List.of("text"), null,
+                                        List.of("reasoning"), 0,
+                                        0),
+                                openAiDocument("gpt-5.1-codex-max", "gpt-5.1-codex-max", "openai", List.of("text"),
+                                        null,
+                                        List.of("reasoning"), 0, 0),
+                                openAiDocument("gemini-3-pro-preview", "gemini-3-pro-preview", "google",
+                                        List.of("text", "image"), null, List.of("temperature"), 0, 0),
+                                openAiDocument("gpt-5-codex", "gpt-5-codex", "openai", List.of("text"), null,
+                                        List.of("reasoning"), 0, 0),
+                                openAiDocument("gpt-5.1-codex", "gpt-5.1-codex", "openai", List.of("text"), null,
+                                        List.of("reasoning"), 0, 0),
+                                openAiDocument("gpt-5.1-codex-mini", "gpt-5.1-codex-mini", "openai",
+                                        List.of("text"), null, List.of("reasoning"), 0, 0),
+                                openAiDocument("gemini-3-flash-preview", "gemini-3-flash-preview", "google",
+                                        List.of("text", "image"), null, List.of("temperature"), 0, 0),
+                                openAiDocument("gpt-5.3-codex", "gpt-5.3-codex", "openai", List.of("text"), null,
+                                        List.of("reasoning"), 0, 0))));
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService, discoveryPort);
 
         List<ProviderModelDiscoveryService.DiscoveredModel> models = service.discoverModels("xmesh");
 
@@ -76,10 +84,9 @@ class ProviderModelDiscoveryServiceTest {
         assertTrue(models.stream().anyMatch(model -> "gpt-5.3-codex-spark".equals(model.id())));
         assertTrue(models.stream().anyMatch(model -> "gemini-2.5-pro".equals(model.id())));
         assertTrue(models.stream().anyMatch(model -> "deepseek-coder-v2-lite".equals(model.id())));
-
-        HttpRequest capturedRequest = service.getCapturedRequest();
-        assertEquals(URI.create("https://model.xmesh.click/v1/models"), capturedRequest.uri());
-        assertEquals("Bearer secret-token", capturedRequest.headers().firstValue("Authorization").orElse(""));
+        assertEquals("https://model.xmesh.click/v1/models", discoveryPort.capturedRequest().uri().toString());
+        assertEquals("secret-token", discoveryPort.capturedRequest().apiKey());
+        assertEquals(ProviderModelDiscoveryPort.AuthMode.BEARER, discoveryPort.capturedRequest().authMode());
     }
 
     @Test
@@ -94,31 +101,23 @@ class ProviderModelDiscoveryServiceTest {
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openrouter"));
         when(runtimeConfigService.getLlmProviderConfig("openrouter")).thenReturn(providerConfig);
 
-        StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
-                new ProviderModelDiscoveryService.DiscoveryResponse(200, """
-                        {"data":[
-                          {
-                            "id":"openai/gpt-5",
-                            "name":"OpenAI: GPT-5",
-                            "context_length":400000,
-                            "architecture":{"input_modalities":["text","image","file"]},
-                            "supported_parameters":["include_reasoning","max_tokens","reasoning","tools"]
-                          },
-                          {
-                            "id":"google/gemini-2.5-pro",
-                            "name":"Google: Gemini 2.5 Pro",
-                            "context_length":1048576,
-                            "architecture":{"input_modalities":["text","image","file","audio","video"]},
-                            "supported_parameters":["temperature","tools"]
-                          },
-                          {
-                            "id":"openai/gpt-4o-mini",
-                            "name":"OpenAI: GPT-4o Mini",
-                            "top_provider":{"context_length":8192},
-                            "architecture":{"modality":"text+image->text"}
-                          }
-                        ]}
-                        """));
+        StubProviderModelDiscoveryPort discoveryPort = new StubProviderModelDiscoveryPort(
+                new ProviderModelDiscoveryPort.DiscoveryResponse(
+                        200,
+                        List.of(
+                                openAiDocument("openai/gpt-5", "OpenAI: GPT-5", null,
+                                        List.of("text", "image", "file"), null,
+                                        List.of("include_reasoning", "max_tokens",
+                                                "reasoning", "tools"),
+                                        400000, 0),
+                                openAiDocument("google/gemini-2.5-pro", "Google: Gemini 2.5 Pro", null,
+                                        List.of("text", "image", "file", "audio", "video"),
+                                        null,
+                                        List.of("temperature", "tools"), 1048576, 0),
+                                openAiDocument("openai/gpt-4o-mini", "OpenAI: GPT-4o Mini", null, List.of(),
+                                        "text+image->text",
+                                        List.of(), 0, 8192))));
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService, discoveryPort);
 
         List<ProviderModelDiscoveryService.DiscoveredModel> models = service.discoverModels("openrouter");
 
@@ -160,7 +159,7 @@ class ProviderModelDiscoveryServiceTest {
     }
 
     @Test
-    void shouldDiscoverAnthropicModelsUsingDefaultEndpointAndHeaders() {
+    void shouldDiscoverAnthropicModelsUsingDefaultEndpointAndAuthMode() {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(Secret.of("anthropic-key"))
@@ -171,22 +170,22 @@ class ProviderModelDiscoveryServiceTest {
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("anthropic"));
         when(runtimeConfigService.getLlmProviderConfig("anthropic")).thenReturn(providerConfig);
 
-        StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
-                new ProviderModelDiscoveryService.DiscoveryResponse(200, """
-                        {"data":[{"id":"claude-opus-4.1","name":"Claude Opus 4.1","owned_by":"anthropic"}]}
-                        """));
+        StubProviderModelDiscoveryPort discoveryPort = new StubProviderModelDiscoveryPort(
+                new ProviderModelDiscoveryPort.DiscoveryResponse(200,
+                        List.of(openAiDocument("claude-opus-4.1", "Claude Opus 4.1", "anthropic",
+                                List.of("text"), null, List.of("temperature"), 0, 0))));
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService, discoveryPort);
 
         List<ProviderModelDiscoveryService.DiscoveredModel> models = service.discoverModels("anthropic");
 
         assertEquals(1, models.size());
-        HttpRequest request = service.getCapturedRequest();
-        assertEquals(URI.create("https://api.anthropic.com/v1/models"), request.uri());
-        assertEquals("anthropic-key", request.headers().firstValue("x-api-key").orElse(""));
-        assertEquals("2023-06-01", request.headers().firstValue("anthropic-version").orElse(""));
+        assertEquals("https://api.anthropic.com/v1/models", discoveryPort.capturedRequest().uri().toString());
+        assertEquals("anthropic-key", discoveryPort.capturedRequest().apiKey());
+        assertEquals(ProviderModelDiscoveryPort.AuthMode.ANTHROPIC, discoveryPort.capturedRequest().authMode());
     }
 
     @Test
-    void shouldDiscoverGeminiModelsUsingGoogleHeaderAndModelArray() {
+    void shouldDiscoverGeminiModelsUsingGoogleAuthMode() {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(Secret.of("google-key"))
@@ -197,31 +196,25 @@ class ProviderModelDiscoveryServiceTest {
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("google"));
         when(runtimeConfigService.getLlmProviderConfig("google")).thenReturn(providerConfig);
 
-        StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
-                new ProviderModelDiscoveryService.DiscoveryResponse(200, """
-                        {"models":[
-                          {
-                            "name":"models/embedding-001",
-                            "displayName":"Embedding 001",
-                            "publisher":"google",
-                            "supportedGenerationMethods":["embedContent"]
-                          },
-                          {
-                            "name":"models/gemini-2.0-flash",
-                            "displayName":"Gemini 2.0 Flash",
-                            "publisher":"google",
-                            "supportedGenerationMethods":["generateContent"]
-                          }
-                        ]}
-                        """));
+        StubProviderModelDiscoveryPort discoveryPort = new StubProviderModelDiscoveryPort(
+                new ProviderModelDiscoveryPort.DiscoveryResponse(
+                        200,
+                        List.of(
+                                geminiDocument("models/embedding-001", "Embedding 001", "google",
+                                        List.of("embedContent")),
+                                geminiDocument("models/gemini-2.0-flash", "Gemini 2.0 Flash", "google",
+                                        List.of("generateContent")))));
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService, discoveryPort);
 
         List<ProviderModelDiscoveryService.DiscoveredModel> models = service.discoverModels("google");
 
         assertEquals(1, models.size());
-        assertEquals("gemini-2.0-flash", models.getFirst().id());
-        HttpRequest request = service.getCapturedRequest();
-        assertEquals(URI.create("https://generativelanguage.googleapis.com/v1beta/models"), request.uri());
-        assertEquals("google-key", request.headers().firstValue("x-goog-api-key").orElse(""));
+        assertEquals("gemini-2.0-flash", models.get(0).id());
+        assertEquals(
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                discoveryPort.capturedRequest().uri().toString());
+        assertEquals("google-key", discoveryPort.capturedRequest().apiKey());
+        assertEquals(ProviderModelDiscoveryPort.AuthMode.GOOGLE, discoveryPort.capturedRequest().authMode());
     }
 
     @Test
@@ -236,12 +229,13 @@ class ProviderModelDiscoveryServiceTest {
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openai"));
         when(runtimeConfigService.getLlmProviderConfig("openai")).thenReturn(providerConfig);
 
-        StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
-                new ProviderModelDiscoveryService.DiscoveryResponse(200, "{\"data\":[]}"));
+        StubProviderModelDiscoveryPort discoveryPort = new StubProviderModelDiscoveryPort(
+                new ProviderModelDiscoveryPort.DiscoveryResponse(200, List.of()));
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService, discoveryPort);
 
         service.discoverModels("openai");
 
-        assertEquals(URI.create("https://api.openai.com/v1/models"), service.getCapturedRequest().uri());
+        assertEquals("https://api.openai.com/v1/models", discoveryPort.capturedRequest().uri().toString());
     }
 
     @Test
@@ -256,15 +250,16 @@ class ProviderModelDiscoveryServiceTest {
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("customrouter"));
         when(runtimeConfigService.getLlmProviderConfig("customrouter")).thenReturn(providerConfig);
 
-        StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
-                new ProviderModelDiscoveryService.DiscoveryResponse(200, """
-                        {"data":[{"id":"openai/gpt-4o","name":"OpenAI: GPT-4o","context_length":128000}]}
-                        """));
+        StubProviderModelDiscoveryPort discoveryPort = new StubProviderModelDiscoveryPort(
+                new ProviderModelDiscoveryPort.DiscoveryResponse(200,
+                        List.of(openAiDocument("openai/gpt-4o", "OpenAI: GPT-4o", null,
+                                List.of("text", "image"), null, List.of("temperature"), 128000, 0))));
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService, discoveryPort);
 
         List<ProviderModelDiscoveryService.DiscoveredModel> models = service.discoverModels("customrouter");
 
-        assertNotNull(models.getFirst().defaultSettings());
-        assertEquals("customrouter", models.getFirst().defaultSettings().getProvider());
+        assertNotNull(models.get(0).defaultSettings());
+        assertEquals("customrouter", models.get(0).defaultSettings().getProvider());
     }
 
     @Test
@@ -272,7 +267,9 @@ class ProviderModelDiscoveryServiceTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openai"));
 
-        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService);
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(
+                runtimeConfigService,
+                new StubProviderModelDiscoveryPort(new ProviderModelDiscoveryPort.DiscoveryResponse(200, List.of())));
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> service.discoverModels("missing"));
@@ -282,7 +279,9 @@ class ProviderModelDiscoveryServiceTest {
     @Test
     void shouldRejectBlankProviderName() {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
-        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService);
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(
+                runtimeConfigService,
+                new StubProviderModelDiscoveryPort(new ProviderModelDiscoveryPort.DiscoveryResponse(200, List.of())));
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> service.discoverModels(" "));
@@ -301,89 +300,13 @@ class ProviderModelDiscoveryServiceTest {
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("xmesh"));
         when(runtimeConfigService.getLlmProviderConfig("xmesh")).thenReturn(providerConfig);
 
-        StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
-                new ProviderModelDiscoveryService.DiscoveryResponse(502, "bad gateway"));
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(
+                runtimeConfigService,
+                new StubProviderModelDiscoveryPort(new ProviderModelDiscoveryPort.DiscoveryResponse(502, List.of())));
 
         IllegalStateException error = assertThrows(IllegalStateException.class,
                 () -> service.discoverModels("xmesh"));
         assertTrue(error.getMessage().contains("status 502"));
-    }
-
-    @Test
-    void shouldRejectInvalidDiscoveryPayload() {
-        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
-        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
-                .apiKey(Secret.of("secret-token"))
-                .baseUrl("https://model.xmesh.click/v1")
-                .requestTimeoutSeconds(45)
-                .apiType("openai")
-                .build();
-        when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("xmesh"));
-        when(runtimeConfigService.getLlmProviderConfig("xmesh")).thenReturn(providerConfig);
-
-        StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
-                new ProviderModelDiscoveryService.DiscoveryResponse(200, "{"));
-
-        IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> service.discoverModels("xmesh"));
-        assertTrue(error.getMessage().contains("Failed to parse model discovery response"));
-    }
-
-    @Test
-    void shouldUseBaseSendDiscoveryRequestImplementation() {
-        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
-        TestableProviderModelDiscoveryService service = new TestableProviderModelDiscoveryService(
-                runtimeConfigService,
-                new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 204, "{}"));
-
-        ProviderModelDiscoveryService.DiscoveryResponse response = service.sendDiscoveryRequest(HttpRequest.newBuilder()
-                .uri(URI.create("https://example.com/models"))
-                .GET()
-                .build());
-
-        assertEquals(204, response.statusCode());
-        assertEquals("{}", response.body());
-    }
-
-    @Test
-    void shouldWrapInterruptedDiscoveryRequests() {
-        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
-        TestableProviderModelDiscoveryService service = new TestableProviderModelDiscoveryService(
-                runtimeConfigService,
-                new FakeHttpClient(FakeHttpClient.Mode.INTERRUPTED, 0, null));
-
-        IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> service.sendDiscoveryRequest(HttpRequest.newBuilder()
-                        .uri(URI.create("https://example.com/models"))
-                        .GET()
-                        .build()));
-
-        assertTrue(error.getMessage().contains("interrupted"));
-        assertTrue(Thread.interrupted());
-    }
-
-    @Test
-    void shouldWrapIoDiscoveryFailures() {
-        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
-        TestableProviderModelDiscoveryService service = new TestableProviderModelDiscoveryService(
-                runtimeConfigService,
-                new FakeHttpClient(FakeHttpClient.Mode.IO_EXCEPTION, 0, null));
-
-        IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> service.sendDiscoveryRequest(HttpRequest.newBuilder()
-                        .uri(URI.create("https://example.com/models"))
-                        .GET()
-                        .build()));
-
-        assertTrue(error.getMessage().contains("failed"));
-    }
-
-    @Test
-    void shouldBuildDefaultHttpClient() {
-        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
-        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService);
-
-        assertNotNull(service.buildHttpClient());
     }
 
     @Test
@@ -397,12 +320,13 @@ class ProviderModelDiscoveryServiceTest {
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("xmesh"));
         when(runtimeConfigService.getLlmProviderConfig("xmesh")).thenReturn(providerConfig);
 
-        StubProviderModelDiscoveryService service = new StubProviderModelDiscoveryService(runtimeConfigService,
-                new ProviderModelDiscoveryService.DiscoveryResponse(200, "{\"data\":[]}"));
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(
+                runtimeConfigService,
+                new StubProviderModelDiscoveryPort(new ProviderModelDiscoveryPort.DiscoveryResponse(200, List.of())));
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> service.discoverModels("xmesh"));
-        assertEquals("Provider 'xmesh' does not have an API key configured", ex.getMessage());
+        assertEquals("Provider 'xmesh' does not have an API key configured", error.getMessage());
     }
 
     @Test
@@ -414,7 +338,9 @@ class ProviderModelDiscoveryServiceTest {
                 .requestTimeoutSeconds(20)
                 .apiType("openai")
                 .build();
-        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService);
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(
+                runtimeConfigService,
+                new StubProviderModelDiscoveryPort(new ProviderModelDiscoveryPort.DiscoveryResponse(200, List.of())));
 
         java.lang.reflect.Method shouldAttachMethod = ProviderModelDiscoveryService.class.getDeclaredMethod(
                 "shouldAttachOpenRouterDefaults",
@@ -426,164 +352,84 @@ class ProviderModelDiscoveryServiceTest {
 
         java.lang.reflect.Method resolveMaxInputTokensMethod = ProviderModelDiscoveryService.class.getDeclaredMethod(
                 "resolveMaxInputTokens",
-                com.fasterxml.jackson.databind.JsonNode.class);
+                ProviderModelDiscoveryPort.DiscoveryDocument.class);
         resolveMaxInputTokensMethod.setAccessible(true);
-        com.fasterxml.jackson.databind.JsonNode emptyNode = new ObjectMapper().readTree("{}");
-        int maxTokens = (int) resolveMaxInputTokensMethod.invoke(service, emptyNode);
+        ProviderModelDiscoveryPort.DiscoveryDocument emptyDocument = openAiDocument(
+                "gpt-5",
+                "GPT-5",
+                "openai",
+                List.of("text"),
+                null,
+                List.of("temperature"),
+                0,
+                0);
+        int maxTokens = (int) resolveMaxInputTokensMethod.invoke(service, emptyDocument);
         assertEquals(128000, maxTokens);
     }
 
-    private static final class StubProviderModelDiscoveryService extends ProviderModelDiscoveryService {
+    private static ProviderModelDiscoveryPort.DiscoveryDocument openAiDocument(
+            String id,
+            String displayName,
+            String ownedBy,
+            List<String> inputModalities,
+            String modality,
+            List<String> supportedParameters,
+            int contextLength,
+            int topProviderContextLength) {
+        return new ProviderModelDiscoveryPort.DiscoveryDocument(
+                ProviderModelDiscoveryPort.DocumentKind.OPENAI_LIKE,
+                id,
+                displayName,
+                ownedBy,
+                null,
+                null,
+                inputModalities != null ? inputModalities : List.of(),
+                modality,
+                supportedParameters != null ? supportedParameters : List.of(),
+                contextLength > 0 ? contextLength : null,
+                topProviderContextLength > 0 ? topProviderContextLength : null,
+                null,
+                List.of());
+    }
+
+    private static ProviderModelDiscoveryPort.DiscoveryDocument geminiDocument(
+            String id,
+            String displayName,
+            String publisher,
+            List<String> supportedGenerationMethods) {
+        return new ProviderModelDiscoveryPort.DiscoveryDocument(
+                ProviderModelDiscoveryPort.DocumentKind.GEMINI,
+                id,
+                displayName,
+                null,
+                null,
+                null,
+                List.of(),
+                null,
+                List.of(),
+                null,
+                null,
+                publisher,
+                supportedGenerationMethods);
+    }
+
+    private static final class StubProviderModelDiscoveryPort implements ProviderModelDiscoveryPort {
 
         private final DiscoveryResponse response;
-        private HttpRequest capturedRequest;
+        private DiscoveryRequest capturedRequest;
 
-        private StubProviderModelDiscoveryService(RuntimeConfigService runtimeConfigService,
-                DiscoveryResponse response) {
-            super(runtimeConfigService);
+        private StubProviderModelDiscoveryPort(DiscoveryResponse response) {
             this.response = response;
         }
 
         @Override
-        protected DiscoveryResponse sendDiscoveryRequest(HttpRequest request) {
+        public DiscoveryResponse discover(DiscoveryRequest request) {
             this.capturedRequest = request;
             return response;
         }
 
-        private HttpRequest getCapturedRequest() {
+        private DiscoveryRequest capturedRequest() {
             return capturedRequest;
         }
     }
-
-    private static final class TestableProviderModelDiscoveryService extends ProviderModelDiscoveryService {
-
-        private final HttpClient httpClient;
-
-        private TestableProviderModelDiscoveryService(RuntimeConfigService runtimeConfigService,
-                HttpClient httpClient) {
-            super(runtimeConfigService);
-            this.httpClient = httpClient;
-        }
-
-        @Override
-        protected HttpClient buildHttpClient() {
-            return httpClient;
-        }
-    }
-
-    private static final class FakeHttpClient extends HttpClient {
-
-        private enum Mode {
-            SUCCESS, INTERRUPTED, IO_EXCEPTION,
-        }
-
-        private final Mode mode;
-        private final int statusCode;
-        private final String responseBody;
-
-        private FakeHttpClient(Mode mode, int statusCode, String responseBody) {
-            this.mode = mode;
-            this.statusCode = statusCode;
-            this.responseBody = responseBody;
-        }
-
-        @Override
-        public Optional<CookieHandler> cookieHandler() {
-            return Optional.empty();
-        }
-
-        @Override
-        public Optional<Duration> connectTimeout() {
-            return Optional.of(Duration.ofSeconds(20));
-        }
-
-        @Override
-        public Redirect followRedirects() {
-            return Redirect.NORMAL;
-        }
-
-        @Override
-        public Optional<ProxySelector> proxy() {
-            return Optional.empty();
-        }
-
-        @Override
-        public SSLContext sslContext() {
-            return null;
-        }
-
-        @Override
-        public SSLParameters sslParameters() {
-            return null;
-        }
-
-        @Override
-        public Optional<Authenticator> authenticator() {
-            return Optional.empty();
-        }
-
-        @Override
-        public Version version() {
-            return Version.HTTP_1_1;
-        }
-
-        @Override
-        public Optional<Executor> executor() {
-            return Optional.empty();
-        }
-
-        @Override
-        public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler)
-                throws IOException, InterruptedException {
-            if (mode == Mode.INTERRUPTED) {
-                throw new InterruptedException("simulated interruption");
-            }
-            if (mode == Mode.IO_EXCEPTION) {
-                throw new IOException("simulated io error");
-            }
-            @SuppressWarnings("unchecked")
-            HttpResponse<T> response = (HttpResponse<T>) new FakeHttpResponse(request, statusCode, responseBody);
-            return response;
-        }
-
-        @Override
-        public <T> CompletableFuture<HttpResponse<T>> sendAsync(HttpRequest request,
-                HttpResponse.BodyHandler<T> responseBodyHandler) {
-            throw new UnsupportedOperationException("Not needed for test");
-        }
-
-        @Override
-        public <T> CompletableFuture<HttpResponse<T>> sendAsync(HttpRequest request,
-                HttpResponse.BodyHandler<T> responseBodyHandler,
-                HttpResponse.PushPromiseHandler<T> pushPromiseHandler) {
-            throw new UnsupportedOperationException("Not needed for test");
-        }
-    }
-
-    private record FakeHttpResponse(HttpRequest request, int statusCode, String body) implements HttpResponse<String> {
-
-    @Override
-    public Optional<HttpResponse<String>> previousResponse() {
-        return Optional.empty();
-    }
-
-    @Override
-    public HttpHeaders headers() {
-        return HttpHeaders.of(Map.of(), (left, right) -> true);
-    }
-
-    @Override
-    public URI uri() {
-        return request.uri();
-    }
-
-    @Override
-    public HttpClient.Version version() {
-        return HttpClient.Version.HTTP_1_1;
-    }
-
-    @Override
-    public Optional<SSLSession> sslSession() {
-        return Optional.empty();
-    }
-}}
+}

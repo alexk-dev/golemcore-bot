@@ -1,7 +1,12 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.models;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.net.URI;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -9,22 +14,9 @@ import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.catalog.ModelReasoningLevel;
 import me.golemcore.bot.domain.model.catalog.ModelReasoningProfile;
-import org.springframework.stereotype.Service;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-
-@Service
 @RequiredArgsConstructor
 @Slf4j
 public class ProviderModelDiscoveryService {
@@ -38,7 +30,6 @@ public class ProviderModelDiscoveryService {
     private static final String OPENROUTER_HOST = "openrouter.ai";
     private static final String OPENROUTER_PROVIDER_NAME = "openrouter";
     private static final String USER_AGENT = "golemcore-model-discovery";
-    private static final String GEMINI_GENERATE_CONTENT_METHOD = "generateContent";
     private static final int DEFAULT_MAX_INPUT_TOKENS = 128000;
     private static final Map<String, List<Integer>> GPT_REASONING_TOKEN_LEVELS = Map.of(
             "gpt-5", List.of(1000000, 1000000, 500000, 250000),
@@ -46,7 +37,7 @@ public class ProviderModelDiscoveryService {
             "gpt-5.2", List.of(1000000, 1000000, 500000, 250000));
 
     private final RuntimeConfigService runtimeConfigService;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ProviderModelDiscoveryPort providerModelDiscoveryPort;
 
     public List<DiscoveredModel> discoverModels(String providerName) {
         String normalizedProvider = normalizeProviderName(providerName);
@@ -57,39 +48,43 @@ public class ProviderModelDiscoveryService {
                     "Provider '" + normalizedProvider + "' does not have an API key configured");
         }
 
-        String apiType = getApiType(providerConfig);
-        HttpRequest request = buildDiscoveryRequest(providerConfig, apiType, apiKey);
-        DiscoveryResponse response = sendDiscoveryRequest(request);
+        ProviderModelDiscoveryPort.DiscoveryRequest request = buildDiscoveryRequest(providerConfig, apiKey);
+        ProviderModelDiscoveryPort.DiscoveryResponse response = sendDiscoveryRequest(request);
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IllegalStateException("Model discovery failed for provider '" + normalizedProvider
                     + "' with status " + response.statusCode());
         }
 
-        List<DiscoveredModel> models = parseModels(normalizedProvider, providerConfig, response.body());
+        List<DiscoveredModel> models = parseModels(normalizedProvider, providerConfig, response.documents());
         log.info("[ModelDiscovery] Discovered {} models for provider {}", models.size(), normalizedProvider);
         return models;
     }
 
-    protected DiscoveryResponse sendDiscoveryRequest(HttpRequest request) {
-        try {
-            HttpResponse<String> response = buildHttpClient().send(request,
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            return new DiscoveryResponse(response.statusCode(), response.body());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Model discovery request was interrupted", e);
-        } catch (IOException e) {
-            throw new IllegalStateException("Model discovery request failed: " + e.getMessage(), e);
+    protected ProviderModelDiscoveryPort.DiscoveryResponse sendDiscoveryRequest(
+            ProviderModelDiscoveryPort.DiscoveryRequest request) {
+        return providerModelDiscoveryPort.discover(request);
+    }
+
+    protected ProviderModelDiscoveryPort.DiscoveryRequest buildDiscoveryRequest(
+            RuntimeConfig.LlmProviderConfig providerConfig,
+            String apiKey) {
+        String apiType = getApiType(providerConfig);
+        return new ProviderModelDiscoveryPort.DiscoveryRequest(
+                buildDiscoveryUri(providerConfig, apiType),
+                resolveTimeout(providerConfig),
+                apiKey,
+                USER_AGENT,
+                resolveAuthMode(apiType));
+    }
+
+    protected ProviderModelDiscoveryPort.AuthMode resolveAuthMode(String apiType) {
+        if (API_TYPE_ANTHROPIC.equals(apiType)) {
+            return ProviderModelDiscoveryPort.AuthMode.ANTHROPIC;
         }
-    }
-
-    protected HttpClient buildHttpClient() {
-        return HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(20))
-                .build();
-    }
-
-    protected record DiscoveryResponse(int statusCode, String body) {
+        if (API_TYPE_GEMINI.equals(apiType)) {
+            return ProviderModelDiscoveryPort.AuthMode.GOOGLE;
+        }
+        return ProviderModelDiscoveryPort.AuthMode.BEARER;
     }
 
     public record DiscoveredModel(String provider, String id, String displayName, String ownedBy,
@@ -106,27 +101,6 @@ public class ProviderModelDiscoveryService {
             throw new IllegalArgumentException("Provider '" + providerName + "' is not configured");
         }
         return runtimeConfigService.getLlmProviderConfig(providerName);
-    }
-
-    private HttpRequest buildDiscoveryRequest(RuntimeConfig.LlmProviderConfig providerConfig, String apiType,
-            String apiKey) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(buildDiscoveryUri(providerConfig, apiType))
-                .timeout(resolveTimeout(providerConfig))
-                .header("Accept", "application/json")
-                .header("User-Agent", USER_AGENT)
-                .GET();
-
-        if (API_TYPE_ANTHROPIC.equals(apiType)) {
-            builder.header("x-api-key", apiKey);
-            builder.header("anthropic-version", "2023-06-01");
-        } else if (API_TYPE_GEMINI.equals(apiType)) {
-            builder.header("x-goog-api-key", apiKey);
-        } else {
-            builder.header("Authorization", "Bearer " + apiKey);
-        }
-
-        return builder.build();
     }
 
     private Duration resolveTimeout(RuntimeConfig.LlmProviderConfig providerConfig) {
@@ -192,28 +166,20 @@ public class ProviderModelDiscoveryService {
     }
 
     private List<DiscoveredModel> parseModels(String providerName, RuntimeConfig.LlmProviderConfig providerConfig,
-            String responseBody) {
-        try {
-            JsonNode root = objectMapper.readTree(responseBody);
-            List<DiscoveredModel> models = new ArrayList<>();
-            boolean attachDirectDefaults = shouldAttachOpenRouterDefaults(providerName, providerConfig);
-            JsonNode dataArray = root.path("data");
-            if (dataArray.isArray()) {
-                dataArray.forEach(node -> addOpenAiLikeModel(models, providerName, node, attachDirectDefaults));
+            List<ProviderModelDiscoveryPort.DiscoveryDocument> documents) {
+        List<DiscoveredModel> models = new ArrayList<>();
+        boolean attachDirectDefaults = shouldAttachOpenRouterDefaults(providerName, providerConfig);
+        for (ProviderModelDiscoveryPort.DiscoveryDocument document : documents) {
+            if (document.kind() == ProviderModelDiscoveryPort.DocumentKind.GEMINI) {
+                addGeminiModel(models, providerName, document);
+            } else {
+                addOpenAiLikeModel(models, providerName, document, attachDirectDefaults);
             }
-
-            JsonNode geminiModels = root.path("models");
-            if (geminiModels.isArray()) {
-                geminiModels.forEach(node -> addGeminiModel(models, providerName, node));
-            }
-
-            return models.stream()
-                    .filter(model -> model.id() != null && !model.id().isBlank())
-                    .sorted(Comparator.comparing(DiscoveredModel::displayName, String.CASE_INSENSITIVE_ORDER))
-                    .toList();
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to parse model discovery response", e);
         }
+        return models.stream()
+                .filter(model -> model.id() != null && !model.id().isBlank())
+                .sorted(Comparator.comparing(DiscoveredModel::displayName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
     }
 
     private boolean shouldAttachOpenRouterDefaults(String providerName,
@@ -230,45 +196,44 @@ public class ProviderModelDiscoveryService {
         }
     }
 
-    private void addOpenAiLikeModel(List<DiscoveredModel> models, String providerName, JsonNode node,
+    private void addOpenAiLikeModel(List<DiscoveredModel> models, String providerName,
+            ProviderModelDiscoveryPort.DiscoveryDocument document,
             boolean attachDirectDefaults) {
-        String id = text(node, "id");
+        String id = document.id();
         if (id == null || id.isBlank()) {
             return;
         }
 
         String displayName = firstNonBlank(
-                text(node, "display_name"),
-                text(node, "name"),
+                document.displayName(),
                 id);
         String ownedBy = firstNonBlank(
-                text(node, "owned_by"),
-                text(node, "provider"),
-                text(node, "type"));
+                document.ownedBy(),
+                document.provider(),
+                document.type());
         ModelCatalogEntry defaultSettings = attachDirectDefaults
-                ? buildOpenRouterDefaultSettings(providerName, id, node, displayName)
+                ? buildOpenRouterDefaultSettings(providerName, id, document, displayName)
                 : null;
         models.add(new DiscoveredModel(providerName, id, displayName, ownedBy, defaultSettings));
     }
 
     private ModelCatalogEntry buildOpenRouterDefaultSettings(String providerName, String modelId,
-            JsonNode node, String displayName) {
-        int maxInputTokens = resolveMaxInputTokens(node);
+            ProviderModelDiscoveryPort.DiscoveryDocument document, String displayName) {
+        int maxInputTokens = resolveMaxInputTokens(document);
         return new ModelCatalogEntry(
                 providerName,
                 displayName,
-                supportsVision(node),
-                supportsTemperature(node.path("supported_parameters")),
+                supportsVision(document),
+                supportsTemperature(document.supportedParameters()),
                 maxInputTokens,
                 buildReasoningConfig(modelId, maxInputTokens));
     }
 
-    private boolean supportsVision(JsonNode node) {
-        JsonNode inputModalities = node.path("architecture").path("input_modalities");
-        if (containsArrayValue(inputModalities, "image") || containsArrayValue(inputModalities, "video")) {
+    private boolean supportsVision(ProviderModelDiscoveryPort.DiscoveryDocument document) {
+        if (containsValue(document.inputModalities(), "image") || containsValue(document.inputModalities(), "video")) {
             return true;
         }
-        String modality = text(node.path("architecture"), "modality");
+        String modality = document.modality();
         if (modality == null) {
             return false;
         }
@@ -276,19 +241,21 @@ public class ProviderModelDiscoveryService {
         return normalizedModality.contains("image") || normalizedModality.contains("video");
     }
 
-    private boolean supportsTemperature(JsonNode supportedParameters) {
-        if (!supportedParameters.isArray()) {
+    private boolean supportsTemperature(List<String> supportedParameters) {
+        if (supportedParameters == null || supportedParameters.isEmpty()) {
             return true;
         }
-        return containsArrayValue(supportedParameters, "temperature");
+        return containsValue(supportedParameters, "temperature");
     }
 
-    private int resolveMaxInputTokens(JsonNode node) {
-        int contextLength = node.path("context_length").asInt(0);
+    private int resolveMaxInputTokens(ProviderModelDiscoveryPort.DiscoveryDocument document) {
+        int contextLength = document.contextLength() != null ? document.contextLength() : 0;
         if (contextLength > 0) {
             return contextLength;
         }
-        int topProviderContextLength = node.path("top_provider").path("context_length").asInt(0);
+        int topProviderContextLength = document.topProviderContextLength() != null
+                ? document.topProviderContextLength()
+                : 0;
         if (topProviderContextLength > 0) {
             return topProviderContextLength;
         }
@@ -314,12 +281,11 @@ public class ProviderModelDiscoveryService {
         return separatorIndex >= 0 ? modelId.substring(separatorIndex + 1) : modelId;
     }
 
-    private boolean containsArrayValue(JsonNode values, String expectedValue) {
-        if (!values.isArray()) {
+    private boolean containsValue(List<String> values, String expectedValue) {
+        if (values == null || values.isEmpty()) {
             return false;
         }
-        for (JsonNode valueNode : values) {
-            String value = valueNode.asText();
+        for (String value : values) {
             if (expectedValue.equalsIgnoreCase(value)) {
                 return true;
             }
@@ -327,12 +293,13 @@ public class ProviderModelDiscoveryService {
         return false;
     }
 
-    private void addGeminiModel(List<DiscoveredModel> models, String providerName, JsonNode node) {
-        if (!supportsGenerateContent(node.path("supportedGenerationMethods"))) {
+    private void addGeminiModel(List<DiscoveredModel> models, String providerName,
+            ProviderModelDiscoveryPort.DiscoveryDocument document) {
+        if (!supportsGenerateContent(document.supportedGenerationMethods())) {
             return;
         }
 
-        String rawName = text(node, "name");
+        String rawName = document.id();
         String id = rawName != null && rawName.startsWith("models/")
                 ? rawName.substring("models/".length())
                 : rawName;
@@ -340,30 +307,21 @@ public class ProviderModelDiscoveryService {
             return;
         }
 
-        String displayName = firstNonBlank(text(node, "displayName"), id);
-        String ownedBy = firstNonBlank(text(node, "publisher"), "google");
+        String displayName = firstNonBlank(document.displayName(), id);
+        String ownedBy = firstNonBlank(document.publisher(), "google");
         models.add(new DiscoveredModel(providerName, id, displayName, ownedBy, null));
     }
 
-    private boolean supportsGenerateContent(JsonNode methodsNode) {
-        if (!methodsNode.isArray()) {
+    private boolean supportsGenerateContent(List<String> methods) {
+        if (methods == null || methods.isEmpty()) {
             return true;
         }
-        for (JsonNode methodNode : methodsNode) {
-            if (GEMINI_GENERATE_CONTENT_METHOD.equals(methodNode.asText())) {
+        for (String method : methods) {
+            if ("generateContent".equals(method)) {
                 return true;
             }
         }
         return false;
-    }
-
-    private String text(JsonNode node, String fieldName) {
-        JsonNode valueNode = node.path(fieldName);
-        if (valueNode.isMissingNode() || valueNode.isNull()) {
-            return null;
-        }
-        String value = valueNode.asText();
-        return value != null && !value.isBlank() ? value : null;
     }
 
     private String firstNonBlank(String... values) {

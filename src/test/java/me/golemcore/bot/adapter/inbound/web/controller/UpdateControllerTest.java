@@ -1,11 +1,11 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import me.golemcore.bot.application.update.UpdateService;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UpdateActionResult;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.domain.model.UpdateVersionInfo;
-import me.golemcore.bot.domain.service.UpdateService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;

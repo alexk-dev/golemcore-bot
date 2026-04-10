@@ -106,6 +106,19 @@ class CommandRouterDelayedActionsTest {
                 mock(ScheduleService.class),
                 delayedActionPolicyService,
                 null);
+        AutomationCommandHandler automationCommandHandler = new AutomationCommandHandler(
+                automationCommandService,
+                preferencesService,
+                mock(ApplicationEventPublisher.class));
+        ModelSelectionCommandHandler modelSelectionCommandHandler = new ModelSelectionCommandHandler(
+                mock(ModelSelectionCommandService.class),
+                preferencesService);
+        PlanCommandHandler planCommandHandler = new PlanCommandHandler(
+                new PlanCommandService(
+                        mock(PlanService.class),
+                        mock(PlanExecutionService.class),
+                        runtimeConfigService),
+                preferencesService);
 
         CommandRouter router = new CommandRouter(
                 mock(SkillComponent.class),
@@ -114,16 +127,11 @@ class CommandRouterDelayedActionsTest {
                 mock(UsageTrackingPort.class),
                 preferencesService,
                 mock(CompactionOrchestrationService.class),
-                automationCommandService,
-                mock(ModelSelectionCommandService.class),
-                new PlanCommandService(
-                        mock(PlanService.class),
-                        mock(PlanExecutionService.class),
-                        runtimeConfigService),
+                automationCommandHandler,
+                modelSelectionCommandHandler,
+                planCommandHandler,
                 delayedActionPolicyService,
                 mock(SessionRunCoordinator.class),
-                mock(ApplicationEventPublisher.class),
-                runtimeConfigService,
                 mock(ObjectProvider.class));
 
         CommandPort.CommandResult result = router.execute("tools", List.of(), Map.of(
@@ -193,6 +201,19 @@ class CommandRouterDelayedActionsTest {
                 mock(ScheduleService.class),
                 delayedActionPolicyService,
                 delayedActionService);
+        AutomationCommandHandler automationCommandHandler = new AutomationCommandHandler(
+                automationCommandService,
+                preferencesService,
+                mock(ApplicationEventPublisher.class));
+        ModelSelectionCommandHandler modelSelectionCommandHandler = new ModelSelectionCommandHandler(
+                mock(ModelSelectionCommandService.class),
+                preferencesService);
+        PlanCommandHandler planCommandHandler = new PlanCommandHandler(
+                new PlanCommandService(
+                        mock(PlanService.class),
+                        mock(PlanExecutionService.class),
+                        runtimeConfigService),
+                preferencesService);
 
         return new CommandRouter(
                 mock(SkillComponent.class),
@@ -201,16 +222,11 @@ class CommandRouterDelayedActionsTest {
                 mock(UsageTrackingPort.class),
                 preferencesService,
                 mock(CompactionOrchestrationService.class),
-                automationCommandService,
-                mock(ModelSelectionCommandService.class),
-                new PlanCommandService(
-                        mock(PlanService.class),
-                        mock(PlanExecutionService.class),
-                        runtimeConfigService),
+                automationCommandHandler,
+                modelSelectionCommandHandler,
+                planCommandHandler,
                 delayedActionPolicyService,
                 mock(SessionRunCoordinator.class),
-                mock(ApplicationEventPublisher.class),
-                runtimeConfigService,
                 mock(ObjectProvider.class));
     }
 

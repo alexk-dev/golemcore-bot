@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.update;
 
 import me.golemcore.bot.adapter.outbound.update.BuildPropertiesUpdateVersionAdapter;
 import me.golemcore.bot.adapter.outbound.update.RuntimeConfigUpdateRuntimeAdapter;
@@ -8,6 +8,10 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UpdateBlockedReason;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
+import me.golemcore.bot.domain.service.JvmExitService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.UpdateActivityGate;
+import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import me.golemcore.bot.port.outbound.UpdateRestartPort;

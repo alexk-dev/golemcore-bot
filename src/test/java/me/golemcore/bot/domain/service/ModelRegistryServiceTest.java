@@ -1,7 +1,10 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.models;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.port.outbound.ModelRegistryCachePort;
+import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
+import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -10,7 +13,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -18,36 +20,21 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ModelRegistryServiceTest {
 
     private RuntimeConfigService runtimeConfigService;
-    private StoragePort storagePort;
-    private Map<String, String> persistedText;
+    private InMemoryModelRegistryCachePort cachePort;
+    private ModelRegistryDocumentPort documentPort;
     private StubModelRegistryService service;
 
     @BeforeEach
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
-        storagePort = mock(StoragePort.class);
-        persistedText = new ConcurrentHashMap<>();
-
-        when(storagePort.getText(anyString(), anyString())).thenAnswer(invocation -> CompletableFuture.completedFuture(
-                persistedText.get(storageKey(invocation.getArgument(0), invocation.getArgument(1)))));
-        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(),
-                org.mockito.ArgumentMatchers.anyBoolean()))
-                .thenAnswer(invocation -> {
-                    String directory = invocation.getArgument(0);
-                    String path = invocation.getArgument(1);
-                    String content = invocation.getArgument(2);
-                    persistedText.put(storageKey(directory, path), content);
-                    return CompletableFuture.completedFuture(null);
-                });
-        when(storagePort.exists(anyString(), anyString())).thenAnswer(invocation -> CompletableFuture.completedFuture(
-                persistedText.containsKey(storageKey(invocation.getArgument(0), invocation.getArgument(1)))));
+        cachePort = new InMemoryModelRegistryCachePort();
+        documentPort = new me.golemcore.bot.adapter.outbound.models.JacksonModelRegistryDocumentAdapter();
 
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .modelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
@@ -57,7 +44,7 @@ class ModelRegistryServiceTest {
                 .build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
 
-        service = new StubModelRegistryService(runtimeConfigService, storagePort);
+        service = new StubModelRegistryService(runtimeConfigService, cachePort, documentPort);
         service.setNow(Instant.parse("2026-03-23T12:00:00Z"));
     }
 
@@ -345,10 +332,6 @@ class ModelRegistryServiceTest {
         assertEquals("GPT-5.1", result.defaultSettings().getDisplayName());
     }
 
-    private String storageKey(String directory, String path) {
-        return directory + "/" + path;
-    }
-
     @SuppressWarnings("PMD.NullAssignment")
     private static final class StubModelRegistryService extends ModelRegistryService {
 
@@ -357,8 +340,11 @@ class ModelRegistryServiceTest {
         private Instant currentTime;
         private RuntimeException remoteFailure;
 
-        private StubModelRegistryService(RuntimeConfigService runtimeConfigService, StoragePort storagePort) {
-            super(runtimeConfigService, storagePort);
+        private StubModelRegistryService(
+                RuntimeConfigService runtimeConfigService,
+                ModelRegistryCachePort cachePort,
+                ModelRegistryDocumentPort documentPort) {
+            super(runtimeConfigService, mock(ModelRegistryRemotePort.class), cachePort, documentPort);
         }
 
         private void setNow(Instant now) {
@@ -399,6 +385,25 @@ class ModelRegistryServiceTest {
                 }
             }
             return null;
+        }
+    }
+
+    private static final class InMemoryModelRegistryCachePort implements ModelRegistryCachePort {
+
+        private final Map<String, CachedRegistryEntry> entries = new ConcurrentHashMap<>();
+
+        @Override
+        public CachedRegistryEntry read(String repositoryUrl, String branch, String relativePath) {
+            return entries.get(cacheKey(repositoryUrl, branch, relativePath));
+        }
+
+        @Override
+        public void write(String repositoryUrl, String branch, String relativePath, CachedRegistryEntry entry) {
+            entries.put(cacheKey(repositoryUrl, branch, relativePath), entry);
+        }
+
+        private String cacheKey(String repositoryUrl, String branch, String relativePath) {
+            return repositoryUrl + "|" + branch + "|" + relativePath;
         }
     }
 }

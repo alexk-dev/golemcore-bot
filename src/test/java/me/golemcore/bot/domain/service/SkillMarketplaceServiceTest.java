@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.skills;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -9,6 +9,10 @@ import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
 import me.golemcore.bot.domain.model.SkillMarketplaceItem;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SkillDocumentService;
+import me.golemcore.bot.domain.service.SkillService;
+import me.golemcore.bot.domain.service.WorkspacePathService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.Test;
