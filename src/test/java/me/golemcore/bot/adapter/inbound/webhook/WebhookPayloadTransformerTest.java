@@ -40,6 +40,61 @@ class WebhookPayloadTransformerTest {
     }
 
     @Test
+    void shouldResolveExplicitPathFromWrappedPayload() {
+        String template = "Command: {payload.request.command}";
+        byte[] body = """
+                {
+                  "method": "POST",
+                  "payload": {
+                    "request": {
+                      "command": "тест заметка какой сегодня день"
+                    }
+                  }
+                }
+                """.getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Command: тест заметка какой сегодня день", result);
+    }
+
+    @Test
+    void shouldNotFallbackToPayloadWrapperWhenRootPathIsMissing() {
+        String template = "Command: {request.command}";
+        byte[] body = """
+                {
+                  "payload": {
+                    "request": {
+                      "command": "wrapped-value"
+                    }
+                  }
+                }
+                """.getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Command: <missing>", result);
+    }
+
+    @Test
+    void shouldSupportFullJsonPathExpressions() {
+        String template = "Client: {$.payload.meta.client_id}";
+        byte[] body = """
+                {
+                  "payload": {
+                    "meta": {
+                      "client_id": "ru.yandex.searchplugin/7.16"
+                    }
+                  }
+                }
+                """.getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Client: ru.yandex.searchplugin/7.16", result);
+    }
+
+    @Test
     void shouldReplaceMissingFieldsWithMarker() {
         String template = "Event: {action} on {missing.field}";
         byte[] body = "{\"action\":\"push\"}".getBytes(StandardCharsets.UTF_8);
@@ -206,12 +261,11 @@ class WebhookPayloadTransformerTest {
 
     @Test
     void shouldHandleArrayIndexInPath() {
-        // Arrays accessed via numeric index are not supported - should return <missing>
-        String template = "First: {items.0}";
+        String template = "First: {items[0]}";
         byte[] body = "{\"items\":[\"one\",\"two\"]}".getBytes(StandardCharsets.UTF_8);
 
         String result = transformer.transform(template, body);
 
-        assertEquals("First: <missing>", result);
+        assertEquals("First: one", result);
     }
 }
