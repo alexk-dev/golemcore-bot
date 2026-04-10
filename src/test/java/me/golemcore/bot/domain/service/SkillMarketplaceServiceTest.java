@@ -582,6 +582,70 @@ class SkillMarketplaceServiceTest {
     }
 
     @Test
+    void shouldRejectBlankSkillId(@TempDir Path tempDir) {
+        StoragePort storagePort = mock(StoragePort.class);
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(new RuntimeConfig.SkillsConfig())
+                .build());
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.install("   "));
+
+        assertEquals("skillId is required", error.getMessage());
+    }
+
+    @Test
+    void shouldRejectInstallWhenMarketplaceDisabled(@TempDir Path tempDir) {
+        StoragePort storagePort = mock(StoragePort.class);
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(new RuntimeConfig.SkillsConfig())
+                .build());
+
+        BotProperties properties = botProperties("http://127.0.0.1:1");
+        properties.getSkills().setMarketplaceEnabled(false);
+        SkillMarketplaceService service = createService(properties, storagePort, skillService, runtimeConfigService);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.install("golemcore/code-reviewer"));
+
+        assertEquals("Skill marketplace is disabled", error.getMessage());
+    }
+
+    @Test
+    void shouldRejectUnknownSkillArtifact(@TempDir Path tempDir) throws Exception {
+        Path repoRoot = createLocalRegistry(tempDir);
+        StoragePort storagePort = mock(StoragePort.class);
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory(repoRoot.toString())
+                        .build())
+                .build());
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.install("golemcore/missing-skill"));
+
+        assertEquals("Unknown skill artifact: golemcore/missing-skill", error.getMessage());
+    }
+
+    @Test
     void shouldReturnUnavailableCatalogWhenMarketplaceDisabled(@TempDir Path tempDir) {
         StoragePort storagePort = mock(StoragePort.class);
         SkillService skillService = mock(SkillService.class);
@@ -599,6 +663,66 @@ class SkillMarketplaceServiceTest {
 
         assertFalse(catalog.isAvailable());
         assertTrue(catalog.getItems().isEmpty());
+    }
+
+    @Test
+    void shouldReturnUnavailableCatalogWhenDirectorySourceIsMissing() {
+        StoragePort storagePort = mock(StoragePort.class);
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory("/definitely/missing/marketplace")
+                        .build())
+                .build());
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        SkillMarketplaceCatalog catalog = service.getCatalog();
+
+        assertFalse(catalog.isAvailable());
+        assertTrue(catalog.getMessage().contains("Marketplace repository was not found"));
+    }
+
+    @Test
+    void shouldRewriteConditionalAndRequirementSkillAliasesDuringInstall(@TempDir Path tempDir) throws Exception {
+        Path repoRoot = createLocalRegistry(
+                tempDir,
+                standaloneSkillMarkdown(),
+                packArtifactYaml(),
+                deployReviewMarkdownWithConditionalRequirements());
+
+        InMemoryStoragePort storagePort = new InMemoryStoragePort();
+        SkillService skillService = mock(SkillService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder()
+                .skills(RuntimeConfig.SkillsConfig.builder()
+                        .marketplaceSourceType("directory")
+                        .marketplaceRepositoryDirectory(repoRoot.toString())
+                        .build())
+                .build());
+
+        SkillMarketplaceService service = createService(
+                botProperties("http://127.0.0.1:1"),
+                storagePort,
+                skillService,
+                runtimeConfigService);
+
+        SkillInstallResult result = service.install("golemcore/devops-pack");
+        String installedContent = storagePort
+                .getText("skills", "marketplace/golemcore/devops-pack/skills/deploy-review/SKILL.md")
+                .join();
+
+        assertEquals("installed", result.getStatus());
+        assertTrue(installedContent.contains("next_skill: golemcore/devops-pack/incident-triage"));
+        assertTrue(installedContent.contains("success: golemcore/devops-pack/incident-triage"));
+        assertTrue(installedContent.contains("- golemcore/devops-pack/incident-triage"));
+        assertFalse(installedContent.contains("- incident-triage"));
     }
 
     @Test
@@ -712,6 +836,15 @@ class SkillMarketplaceServiceTest {
 
     private Path createLocalRegistry(Path tempDir, String standaloneSkillContent, String packArtifactContent)
             throws IOException {
+        return createLocalRegistry(tempDir, standaloneSkillContent, packArtifactContent, deployReviewMarkdown());
+    }
+
+    private Path createLocalRegistry(
+            Path tempDir,
+            String standaloneSkillContent,
+            String packArtifactContent,
+            String deployReviewContent)
+            throws IOException {
         Path repoRoot = tempDir.resolve("golemcore-skills");
         Files.createDirectories(repoRoot.resolve("registry/golemcore/code-reviewer"));
         Files.createDirectories(repoRoot.resolve("registry/golemcore/devops-pack/skills/deploy-review"));
@@ -722,7 +855,7 @@ class SkillMarketplaceServiceTest {
         Files.writeString(repoRoot.resolve("registry/golemcore/code-reviewer/SKILL.md"), standaloneSkillContent);
         Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/artifact.yaml"), packArtifactContent);
         Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/skills/deploy-review/SKILL.md"),
-                deployReviewMarkdown());
+                deployReviewContent);
         Files.writeString(repoRoot.resolve("registry/golemcore/devops-pack/skills/incident-triage/SKILL.md"),
                 incidentTriageMarkdown());
         return repoRoot;
@@ -895,6 +1028,26 @@ class SkillMarketplaceServiceTest {
                 description: Review deploy plans before rollout.
                 model_tier: balanced
                 next_skill: incident-triage
+                ---
+
+                Review deployment checklists and verify risk areas.
+                """;
+    }
+
+    private static String deployReviewMarkdownWithConditionalRequirements() {
+        return """
+                ---
+                name: deploy-review
+                description: Review deploy plans before rollout.
+                model_tier: balanced
+                next_skill: incident-triage
+                conditional_next_skills:
+                  success: incident-triage
+                  fallback: external-skill
+                requirements:
+                  skills:
+                    - incident-triage
+                    - external-skill
                 ---
 
                 Review deployment checklists and verify risk areas.
