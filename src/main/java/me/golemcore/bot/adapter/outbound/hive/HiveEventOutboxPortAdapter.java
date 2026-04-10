@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.outbound.hive;
 
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.HiveSessionState;
+import me.golemcore.bot.domain.model.hive.HiveOutboxSummary;
 import me.golemcore.bot.port.outbound.HiveEventOutboxPort;
 import org.springframework.stereotype.Component;
 
@@ -9,31 +10,22 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class HiveEventOutboxPortAdapter implements HiveEventOutboxPort {
 
-    private final HiveApiClient hiveApiClient;
     private final HiveEventOutboxService hiveEventOutboxService;
+    private final HiveApiClient hiveApiClient;
 
     @Override
-    public OutboxSummary getSummary() {
-        return toSummary(hiveEventOutboxService.getSummary());
+    public HiveOutboxSummary getSummary() {
+        HiveEventOutboxService.OutboxSummary summary = hiveEventOutboxService.getSummary();
+        return new HiveOutboxSummary(summary.pendingBatchCount(), summary.pendingEventCount(), summary.lastError());
     }
 
     @Override
-    public OutboxSummary flush(HiveSessionState sessionState) {
-        return toSummary(hiveEventOutboxService.flush(
-                sessionState,
-                (serverUrl, golemId, accessToken, events) -> hiveApiClient.publishEventsBatch(
-                        serverUrl,
-                        golemId,
-                        accessToken,
-                        events)));
+    public void flushPending(HiveSessionState sessionState) {
+        hiveEventOutboxService.flush(sessionState, hiveApiClient::publishEventsBatch);
     }
 
     @Override
     public void clear() {
         hiveEventOutboxService.clear();
-    }
-
-    private OutboxSummary toSummary(HiveEventOutboxService.OutboxSummary summary) {
-        return new OutboxSummary(summary.pendingBatchCount(), summary.pendingEventCount(), summary.lastError());
     }
 }

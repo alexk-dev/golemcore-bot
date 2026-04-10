@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -19,10 +20,7 @@ import me.golemcore.bot.domain.view.SessionTraceStorageStatsView;
 import me.golemcore.bot.domain.view.SessionTraceSummaryView;
 import me.golemcore.bot.domain.view.SessionTraceView;
 import me.golemcore.bot.port.outbound.SessionPort;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -31,17 +29,23 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SessionInspectionService {
 
+    private static final String CHANNEL_WEB = "web";
     private static final String CHANNEL_TELEGRAM = "telegram";
     private static final int MAX_PAGE_LIMIT = 100;
     private static final int SNAPSHOT_PREVIEW_MAX_CHARS = 4096;
     private static final int START_WITH_INDEX = 0;
+    private static final Pattern CONTENT_TYPE_PATTERN = Pattern.compile("^[\\w!#$&^_.+-]+/[\\w!#$&^_.+-]+$");
+    private static final String CONTENT_TYPE_PARAMETER_NAME_CHARS = "!#$%&'*+.^_`|~-";
 
     private final SessionPort sessionPort;
     private final ActiveSessionPointerService pointerService;
@@ -59,28 +63,15 @@ public class SessionInspectionService {
 
     public SessionSummaryView resolveSession(String channel, String conversationKey) {
         if (StringValueSupport.isBlank(channel) || StringValueSupport.isBlank(conversationKey)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "conversationKey is required");
+            throw new IllegalArgumentException("conversationKey is required");
         }
         String normalizedChannel = channel.trim();
         String normalizedConversationKey = conversationKey.trim();
         AgentSession session = sessionPort.listByChannelType(normalizedChannel).stream()
                 .filter(candidate -> matchesConversationKey(candidate, normalizedConversationKey))
                 .findFirst()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+                .orElseThrow(() -> new NoSuchElementException("Session not found"));
         return summarizeSession(session, false);
-    }
-
-    public List<SessionSummaryView> listRecentSessions(
-            String channel,
-            String transportChatId,
-            String activeConversation,
-            int limit) {
-        int normalizedLimit = Math.max(1, limit);
-        return SessionConversationSupport.listRecentSessionsByOwner(sessionPort, channel, transportChatId).stream()
-                .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> summarizeSession(session, isActiveSession(session, activeConversation)))
-                .limit(normalizedLimit)
-                .toList();
     }
 
     public SessionSummaryView summarizeSession(AgentSession session, boolean active) {
@@ -125,10 +116,10 @@ public class SessionInspectionService {
     public SnapshotPayloadExport exportSessionTraceSnapshotPayload(String sessionId, String snapshotId) {
         AgentSession session = requireSession(sessionId);
         TraceSnapshot snapshot = findTraceSnapshot(session, snapshotId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Trace snapshot not found"));
+                .orElseThrow(() -> new NoSuchElementException("Trace snapshot not found"));
         String payloadText = decompressSnapshotPayload(snapshot);
         if (payloadText == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Trace snapshot payload not found");
+            throw new NoSuchElementException("Trace snapshot payload not found");
         }
         return new SnapshotPayloadExport(
                 payloadText,
@@ -168,7 +159,7 @@ public class SessionInspectionService {
 
     private AgentSession requireSession(String sessionId) {
         return sessionPort.get(sessionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+                .orElseThrow(() -> new NoSuchElementException("Session not found"));
     }
 
     private SessionDetailView toDetail(AgentSession session) {
@@ -533,20 +524,71 @@ public class SessionInspectionService {
                 .findFirst();
     }
 
-    private MediaType resolveSnapshotContentType(TraceSnapshot snapshot) {
+    private String resolveSnapshotContentType(TraceSnapshot snapshot) {
         if (snapshot == null || StringValueSupport.isBlank(snapshot.getContentType())) {
-            return MediaType.APPLICATION_JSON;
+            return "application/json";
         }
-        try {
-            return MediaType.parseMediaType(snapshot.getContentType());
-        } catch (IllegalArgumentException _) {
-            return MediaType.APPLICATION_OCTET_STREAM;
+        String contentType = snapshot.getContentType().trim();
+        String baseType = extractContentTypeBase(contentType);
+        if (!CONTENT_TYPE_PATTERN.matcher(baseType).matches() || !hasValidContentTypeParameters(contentType)) {
+            return "application/octet-stream";
         }
+        return contentType;
     }
 
     private String resolveSnapshotFileExtension(TraceSnapshot snapshot) {
-        MediaType contentType = resolveSnapshotContentType(snapshot);
-        return MediaType.APPLICATION_JSON.includes(contentType) ? ".json" : ".txt";
+        String contentType = resolveSnapshotContentType(snapshot);
+        return isJsonContentType(contentType) ? ".json" : ".txt";
+    }
+
+    private String extractContentTypeBase(String contentType) {
+        int separatorIndex = contentType.indexOf(';');
+        if (separatorIndex < 0) {
+            return contentType;
+        }
+        return contentType.substring(0, separatorIndex).trim();
+    }
+
+    private boolean hasValidContentTypeParameters(String contentType) {
+        String[] parts = contentType.split(";");
+        for (int index = 1; index < parts.length; index++) {
+            String parameter = parts[index].trim();
+            if (!isValidContentTypeParameter(parameter)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isValidContentTypeParameter(String parameter) {
+        if (parameter == null || parameter.isEmpty()) {
+            return false;
+        }
+
+        int separatorIndex = parameter.indexOf('=');
+        if (separatorIndex <= 0 || separatorIndex == parameter.length() - 1) {
+            return false;
+        }
+
+        String name = parameter.substring(0, separatorIndex).trim();
+        String value = parameter.substring(separatorIndex + 1).trim();
+        if (name.isEmpty() || value.isEmpty()) {
+            return false;
+        }
+
+        for (int index = 0; index < name.length(); index++) {
+            char character = name.charAt(index);
+            if (!Character.isLetterOrDigit(character)
+                    && CONTENT_TYPE_PARAMETER_NAME_CHARS.indexOf(character) < 0) {
+                return false;
+            }
+        }
+        return value.indexOf(';') < 0;
+    }
+
+    private boolean isJsonContentType(String contentType) {
+        String baseType = extractContentTypeBase(contentType);
+        return "application/json".equalsIgnoreCase(baseType) || baseType.endsWith("+json");
     }
 
     private int resolvePageEndExclusive(List<Message> messages, String beforeMessageId) {
@@ -563,7 +605,7 @@ public class SessionInspectionService {
                 return index;
             }
         }
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "beforeMessageId not found");
+        throw new IllegalArgumentException("beforeMessageId not found");
     }
 
     @SuppressWarnings("unchecked")
@@ -625,11 +667,11 @@ public class SessionInspectionService {
         return conversationKey.equals(resolvedConversationKey) || conversationKey.equals(session.getChatId());
     }
 
-    private boolean isActiveSession(AgentSession session, String activeConversation) {
-        if (StringValueSupport.isBlank(activeConversation)) {
-            return false;
+    private String defaultIfBlank(String value, String defaultValue) {
+        if (StringValueSupport.isBlank(value)) {
+            return defaultValue;
         }
-        return activeConversation.equals(SessionIdentitySupport.resolveConversationKey(session));
+        return value.trim();
     }
 
     private void repairPointersAfterDelete(String deletedSessionId, AgentSession deletedSession) {
@@ -727,6 +769,6 @@ public class SessionInspectionService {
         }
     }
 
-    public record SnapshotPayloadExport(String payloadText, MediaType contentType, String fileExtension) {
+    public record SnapshotPayloadExport(String payloadText, String contentType, String fileExtension) {
     }
 }

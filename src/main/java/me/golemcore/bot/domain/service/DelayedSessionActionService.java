@@ -32,7 +32,6 @@ import me.golemcore.bot.domain.model.DelayedJobReadyEvent;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -137,15 +136,6 @@ public class DelayedSessionActionService {
                 .createdBy("event:job_ready")
                 .payload(payload)
                 .build());
-    }
-
-    @EventListener
-    public void onDelayedJobReady(DelayedJobReadyEvent event) {
-        try {
-            scheduleJobReadyNotification(event);
-        } catch (RuntimeException e) {
-            log.warn("[DelayedActions] Failed to schedule job-ready event: {}", e.getMessage());
-        }
     }
 
     public Optional<DelayedSessionAction> get(String actionId) {

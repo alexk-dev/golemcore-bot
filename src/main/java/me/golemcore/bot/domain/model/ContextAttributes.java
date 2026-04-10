@@ -223,6 +223,9 @@ public final class ContextAttributes {
     /** String ? logical conversation key for the current turn/session. */
     public static final String CONVERSATION_KEY = "session.conversation.key";
 
+    /** String ? web dashboard client instance id owning the current session. */
+    public static final String WEB_CLIENT_INSTANCE_ID = "session.web.client.instance.id";
+
     /** String ? channel type from canonical session identity. */
     public static final String SESSION_IDENTITY_CHANNEL = "session.identity.channel";
 

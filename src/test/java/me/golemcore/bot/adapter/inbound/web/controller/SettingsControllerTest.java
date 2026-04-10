@@ -2,6 +2,9 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
+import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
+import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
+import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
 import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
@@ -21,9 +24,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,6 +48,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 class SettingsControllerTest {
@@ -69,9 +75,7 @@ class SettingsControllerTest {
         registerSttProvider("golemcore/whisper", "whisper");
         registerTtsProvider("golemcore/elevenlabs", "elevenlabs");
         registerTtsProvider("golemcore/whisper", "whisper");
-        controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
-                hiveManagedPolicyService,
-                memoryPresetService, sttProviderRegistry, ttsProviderRegistry);
+        controller = createController(sttProviderRegistry, ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
         when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(false);
         when(hiveManagedPolicyService.getBindingState()).thenReturn(java.util.Optional.empty());
@@ -85,6 +89,17 @@ class SettingsControllerTest {
             int delimiterIndex = model.indexOf('/');
             return delimiterIndex > 0 ? model.substring(0, delimiterIndex) : null;
         });
+    }
+
+    private SettingsController createController(SttProviderRegistry sttRegistry, TtsProviderRegistry ttsRegistry) {
+        RuntimeSettingsFacade runtimeSettingsFacade = new RuntimeSettingsFacade(
+                runtimeConfigService,
+                preferencesService,
+                memoryPresetService,
+                hiveManagedPolicyService,
+                new RuntimeSettingsValidator(modelSelectionService, sttRegistry, ttsRegistry),
+                new RuntimeSettingsMergeService());
+        return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade);
     }
 
     @Test
@@ -1707,14 +1722,7 @@ class SettingsControllerTest {
 
     @Test
     void shouldRejectUnloadedVoiceProvidersEvenWhenCanonicalIdsAreUsed() {
-        SettingsController unloadedController = new SettingsController(
-                preferencesService,
-                modelSelectionService,
-                runtimeConfigService,
-                hiveManagedPolicyService,
-                memoryPresetService,
-                new SttProviderRegistry(),
-                new TtsProviderRegistry());
+        SettingsController unloadedController = createController(new SttProviderRegistry(), new TtsProviderRegistry());
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder().build())
                 .build();
@@ -1852,14 +1860,7 @@ class SettingsControllerTest {
 
     @Test
     void shouldAllowDisabledVoiceConfigWhenNoVoiceProvidersAreLoaded() {
-        SettingsController unloadedController = new SettingsController(
-                preferencesService,
-                modelSelectionService,
-                runtimeConfigService,
-                hiveManagedPolicyService,
-                memoryPresetService,
-                new SttProviderRegistry(),
-                new TtsProviderRegistry());
+        SettingsController unloadedController = createController(new SttProviderRegistry(), new TtsProviderRegistry());
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder()
                         .enabled(false)
@@ -2420,6 +2421,88 @@ class SettingsControllerTest {
         assertNotNull(incomingMcp.getCatalog());
         assertEquals(1, incomingMcp.getCatalog().size());
         assertEquals("github", incomingMcp.getCatalog().get(0).getName());
+    }
+
+    @Test
+    void shouldGetRuntimeConfigFromFacade() {
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+
+        StepVerifier.create(controller.getRuntimeConfig())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(apiView, response.getBody());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldDelegateRuntimeEndpointUpdates() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of("openai",
+                                RuntimeConfig.LlmProviderConfig.builder().build())))
+                        .build())
+                .build();
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+        when(runtimeConfigService.removeLlmProvider("openai")).thenReturn(true);
+        when(preferencesService.getPreferences()).thenReturn(new UserPreferences());
+
+        StepVerifier.create(controller.updateModelRouterConfig(RuntimeConfig.ModelRouterConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateLlmProvider("openai", RuntimeConfig.LlmProviderConfig.builder()
+                .requestTimeoutSeconds(30)
+                .build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.removeLlmProvider("openai"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateToolsConfig(RuntimeConfig.ToolsConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateSkillsConfig(RuntimeConfig.SkillsConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateUsageConfig(RuntimeConfig.UsageConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateTelemetryConfig(RuntimeConfig.TelemetryConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateWebhooksConfig(UserPreferences.WebhookConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldDelegateAdvancedConfigUpdate() throws Exception {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+        Class<?> requestType = Class.forName(SettingsController.class.getName() + "$AdvancedConfigRequest");
+        var constructor = requestType.getDeclaredConstructor(
+                RuntimeConfig.RateLimitConfig.class,
+                RuntimeConfig.SecurityConfig.class,
+                RuntimeConfig.CompactionConfig.class);
+        constructor.setAccessible(true);
+        Object request = constructor.newInstance(
+                RuntimeConfig.RateLimitConfig.builder().build(),
+                RuntimeConfig.SecurityConfig.builder().build(),
+                RuntimeConfig.CompactionConfig.builder().build());
+        Method method = SettingsController.class.getMethod("updateAdvancedConfig", requestType);
+
+        Mono<ResponseEntity<RuntimeConfig>> response = (Mono<ResponseEntity<RuntimeConfig>>) method.invoke(controller,
+                request);
+
+        StepVerifier.create(response)
+                .assertNext(result -> assertEquals(HttpStatus.OK, result.getStatusCode()))
+                .verifyComplete();
     }
 
     @Test

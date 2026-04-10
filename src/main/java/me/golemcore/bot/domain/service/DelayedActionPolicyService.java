@@ -18,13 +18,10 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.inbound.web.WebChannelAdapter;
-import me.golemcore.bot.adapter.inbound.webhook.WebhookChannelAdapter;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import org.springframework.stereotype.Service;
 
-import java.lang.reflect.Method;
 import java.util.Locale;
 
 /**
@@ -37,14 +34,14 @@ public class DelayedActionPolicyService {
 
     private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
-    private final ChannelRegistry channelRegistry;
+    private final ChannelRuntimePort channelRuntimePort;
 
     public DelayedActionPolicyService(RuntimeConfigService runtimeConfigService,
             UserPreferencesService userPreferencesService,
-            ChannelRegistry channelRegistry) {
+            ChannelRuntimePort channelRuntimePort) {
         this.runtimeConfigService = runtimeConfigService;
         this.userPreferencesService = userPreferencesService;
-        this.channelRegistry = channelRegistry;
+        this.channelRuntimePort = channelRuntimePort;
     }
 
     public boolean canScheduleActions() {
@@ -87,13 +84,7 @@ public class DelayedActionPolicyService {
         if (channel == null || !channel.isRunning()) {
             return false;
         }
-        if (channel instanceof WebChannelAdapter webChannelAdapter) {
-            return webChannelAdapter.hasActiveSession(transportChatId);
-        }
-        if (channel instanceof WebhookChannelAdapter) {
-            return false;
-        }
-        return true;
+        return channel.supportsProactiveMessage(transportChatId);
     }
 
     public boolean supportsDelayedExecution(String channelType, String transportChatId) {
@@ -108,19 +99,13 @@ public class DelayedActionPolicyService {
         if (channel == null) {
             return false;
         }
-        try {
-            Method method = channel.getClass().getMethod("sendDocument",
-                    String.class, byte[].class, String.class, String.class);
-            return !ChannelPort.class.equals(method.getDeclaringClass());
-        } catch (NoSuchMethodException e) {
-            return false;
-        }
+        return channel.supportsProactiveDocument(transportChatId);
     }
 
     private ChannelPort findRunningChannel(String channelType) {
         if (StringValueSupport.isBlank(channelType)) {
             return null;
         }
-        return channelRegistry.get(channelType).orElse(null);
+        return channelRuntimePort.findChannel(channelType).orElse(null);
     }
 }

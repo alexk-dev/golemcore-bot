@@ -7,10 +7,10 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -212,10 +212,10 @@ class Langchain4jAdapterTest {
         when(runtimeConfigService.hasLlmProviderApiKey(OPENAI)).thenReturn(true);
         when(runtimeConfigService.hasLlmProviderApiKey("anthropic")).thenReturn(false);
 
-        ModelConfigService.ModelSettings openaiSettings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry openaiSettings = new ModelCatalogEntry();
         openaiSettings.setProvider(OPENAI);
         openaiSettings.setSupportsTemperature(true);
-        ModelConfigService.ModelSettings anthropicSettings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry anthropicSettings = new ModelCatalogEntry();
         anthropicSettings.setProvider("anthropic");
         anthropicSettings.setSupportsTemperature(true);
 

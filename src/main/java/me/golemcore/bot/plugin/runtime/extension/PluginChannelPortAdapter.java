@@ -92,6 +92,11 @@ public final class PluginChannelPortAdapter implements ChannelPort {
     }
 
     @Override
+    public boolean supportsDocumentDelivery() {
+        return true;
+    }
+
+    @Override
     public void showTyping(String chatId) {
         delegate.showTyping(chatId);
     }

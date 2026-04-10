@@ -4,6 +4,7 @@ import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveSessionState;
+import me.golemcore.bot.domain.model.hive.HiveControlChannelStatusSnapshot;
 import me.golemcore.bot.port.outbound.HiveControlChannelPort;
 import org.springframework.stereotype.Component;
 
@@ -24,12 +25,12 @@ public class HiveControlChannelPortAdapter implements HiveControlChannelPort {
     }
 
     @Override
-    public ControlChannelStatus getStatus() {
+    public HiveControlChannelStatusSnapshot getStatus() {
         HiveControlChannelStatus status = hiveControlChannelClient.getStatus();
         if (status == null) {
-            return ControlChannelStatus.disconnected();
+            return HiveControlChannelStatusSnapshot.disconnected();
         }
-        return new ControlChannelStatus(
+        return new HiveControlChannelStatusSnapshot(
                 status.state(),
                 status.connectedAt(),
                 status.lastMessageAt(),

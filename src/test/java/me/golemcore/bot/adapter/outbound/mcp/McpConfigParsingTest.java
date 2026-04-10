@@ -36,7 +36,8 @@ class McpConfigParsingTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isSkillsEnabled()).thenReturn(true);
         when(runtimeConfigService.isSkillsProgressiveLoadingEnabled()).thenReturn(true);
-        skillService = new SkillService(storagePort, properties, variableResolver, runtimeConfigService,
+        skillService = new SkillService(storagePort, me.golemcore.bot.support.TestPorts.settings(properties),
+                variableResolver, runtimeConfigService,
                 new SkillDocumentService());
 
         // Mock empty listings for reload

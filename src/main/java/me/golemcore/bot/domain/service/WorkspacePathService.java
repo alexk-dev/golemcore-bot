@@ -1,30 +1,29 @@
 package me.golemcore.bot.domain.service;
 
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Locale;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.port.outbound.WorkspaceSettingsPort;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class WorkspacePathService {
 
-    private final BotProperties botProperties;
+    private final WorkspaceSettingsPort settingsPort;
 
     private Path workspaceRoot;
 
     @PostConstruct
     public void init() {
-        String workspace = botProperties.getTools().getFilesystem().getWorkspace();
+        String workspace = settingsPort.workspace().filesystemWorkspace();
         this.workspaceRoot = Paths.get(workspace.replace("${user.home}", System.getProperty("user.home")))
                 .toAbsolutePath()
                 .normalize();

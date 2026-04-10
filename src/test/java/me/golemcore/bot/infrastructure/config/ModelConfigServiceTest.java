@@ -1,6 +1,7 @@
 package me.golemcore.bot.infrastructure.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -167,7 +168,7 @@ class ModelConfigServiceTest {
     @Test
     void prefixMatchWorks() {
         // "gpt-5.1-preview" should match "gpt-5.1" prefix
-        ModelConfigService.ModelSettings settings = service.getModelSettings(MODEL_GPT_5_1 + "-preview");
+        ModelCatalogEntry settings = service.getModelSettings(MODEL_GPT_5_1 + "-preview");
         assertEquals(PROVIDER_OPENAI, settings.getProvider());
         assertTrue(service.isReasoningRequired(MODEL_GPT_5_1 + "-preview"));
     }
@@ -181,7 +182,7 @@ class ModelConfigServiceTest {
     @Test
     void shouldMatchO3MiniByPrefix() {
         // "gpt-5.2-codex-2026" should match "gpt-5.2-codex"
-        ModelConfigService.ModelSettings settings = service.getModelSettings("gpt-5.2-codex-2026");
+        ModelCatalogEntry settings = service.getModelSettings("gpt-5.2-codex-2026");
         assertEquals(PROVIDER_OPENAI, settings.getProvider());
         assertTrue(service.isReasoningRequired("gpt-5.2-codex-2026"));
     }
@@ -196,7 +197,7 @@ class ModelConfigServiceTest {
 
     @Test
     void nullModelReturnDefaults() {
-        ModelConfigService.ModelSettings settings = service.getModelSettings(null);
+        ModelCatalogEntry settings = service.getModelSettings(null);
         assertNotNull(settings);
     }
 
@@ -227,7 +228,7 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldReturnAllKnownModels() {
-        Map<String, ModelConfigService.ModelSettings> models = service.getAllModels();
+        Map<String, ModelCatalogEntry> models = service.getAllModels();
         assertNotNull(models);
         assertFalse(models.isEmpty());
         assertTrue(models.containsKey(MODEL_GPT_5_1));
@@ -245,7 +246,7 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldReturnCorrectAnthropicHaikuSettings() {
-        ModelConfigService.ModelSettings settings = service.getModelSettings(MODEL_CLAUDE_3_5_HAIKU);
+        ModelCatalogEntry settings = service.getModelSettings(MODEL_CLAUDE_3_5_HAIKU);
         assertEquals(PROVIDER_ANTHROPIC, settings.getProvider());
         assertTrue(settings.isSupportsTemperature());
     }
@@ -261,17 +262,20 @@ class ModelConfigServiceTest {
     @Test
     void shouldRenameModelWhenPreviousIdDiffers() {
         ModelConfigService.ModelSettings settings = standardModel("openrouter", "Qwen Model", true, 128000);
-        service.getAllModels().put("qwen/model-name:version", settings);
+        service.getConfig().getModels().put("qwen/model-name:version", settings);
 
         service.saveModel("openrouter/qwen/model-name:version", "qwen/model-name:version", settings);
 
         assertFalse(service.getAllModels().containsKey("qwen/model-name:version"));
-        assertEquals(settings, service.getAllModels().get("openrouter/qwen/model-name:version"));
+        ModelCatalogEntry renamed = service.getAllModels().get("openrouter/qwen/model-name:version");
+        assertNotNull(renamed);
+        assertEquals(settings.getProvider(), renamed.getProvider());
+        assertEquals(settings.getDisplayName(), renamed.getDisplayName());
     }
 
     @Test
     void shouldKeepInMemoryCatalogUnchangedWhenReplacingSnapshotFailsToPersist() {
-        Map<String, ModelConfigService.ModelSettings> beforeModels = Map.copyOf(service.getAllModels());
+        Map<String, ModelCatalogEntry> beforeModels = Map.copyOf(service.getAllModels());
         ModelConfigService.ModelSettings beforeDefaults = service.getConfig().getDefaults();
         when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("disk full")));
@@ -347,7 +351,7 @@ class ModelConfigServiceTest {
 
         service.replaceCatalogSnapshot(snapshot);
 
-        ModelConfigService.ModelSettings managedSettings = service.getAllModels().get("managed/gpt-5.1");
+        ModelCatalogEntry managedSettings = service.getAllModels().get("managed/gpt-5.1");
         assertNotNull(managedSettings);
         assertEquals(PROVIDER_OPENAI, managedSettings.getProvider());
         assertEquals("Managed GPT", managedSettings.getDisplayName());
@@ -387,7 +391,7 @@ class ModelConfigServiceTest {
 
         service.replaceCatalogSnapshot(snapshot);
 
-        ModelConfigService.ModelSettings managedSettings = service.getAllModels().get("managed/gpt-5.1");
+        ModelCatalogEntry managedSettings = service.getAllModels().get("managed/gpt-5.1");
         assertNotNull(managedSettings);
         assertEquals(PROVIDER_OPENAI, managedSettings.getProvider());
         assertTrue(managedSettings.isSupportsVision());
@@ -598,7 +602,7 @@ class ModelConfigServiceTest {
     @Test
     void shouldReturnExactMatchOverPrefixMatch() {
         // "gpt-5-chat-latest" should return exact match
-        ModelConfigService.ModelSettings settings = service.getModelSettings(MODEL_GPT_5_CHAT_LATEST);
+        ModelCatalogEntry settings = service.getModelSettings(MODEL_GPT_5_CHAT_LATEST);
         assertEquals(PROVIDER_OPENAI, settings.getProvider());
         assertNull(settings.getReasoning());
         assertFalse(service.isReasoningRequired(MODEL_GPT_5_CHAT_LATEST));
@@ -848,7 +852,7 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldFilterModelsByOpenaiProvider() {
-        Map<String, ModelConfigService.ModelSettings> openaiModels = service
+        Map<String, ModelCatalogEntry> openaiModels = service
                 .getModelsForProviders(List.of(PROVIDER_OPENAI));
         assertNotNull(openaiModels);
         assertFalse(openaiModels.isEmpty());
@@ -865,7 +869,7 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldFilterModelsByAnthropicProvider() {
-        Map<String, ModelConfigService.ModelSettings> anthropicModels = service
+        Map<String, ModelCatalogEntry> anthropicModels = service
                 .getModelsForProviders(List.of(PROVIDER_ANTHROPIC));
         assertNotNull(anthropicModels);
         assertFalse(anthropicModels.isEmpty());
@@ -881,23 +885,23 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldFilterModelsByMultipleProviders() {
-        Map<String, ModelConfigService.ModelSettings> combined = service
+        Map<String, ModelCatalogEntry> combined = service
                 .getModelsForProviders(List.of(PROVIDER_OPENAI, PROVIDER_ANTHROPIC));
         assertNotNull(combined);
         // Should include both openai and anthropic models
         assertTrue(combined.containsKey(MODEL_GPT_5_1));
         assertTrue(combined.containsKey(MODEL_CLAUDE_SONNET_4));
         // Combined result should be larger than either individual provider filter
-        Map<String, ModelConfigService.ModelSettings> openaiOnly = service
+        Map<String, ModelCatalogEntry> openaiOnly = service
                 .getModelsForProviders(List.of(PROVIDER_OPENAI));
-        Map<String, ModelConfigService.ModelSettings> anthropicOnly = service
+        Map<String, ModelCatalogEntry> anthropicOnly = service
                 .getModelsForProviders(List.of(PROVIDER_ANTHROPIC));
         assertEquals(openaiOnly.size() + anthropicOnly.size(), combined.size());
     }
 
     @Test
     void shouldReturnEmptyMapForUnknownProvider() {
-        Map<String, ModelConfigService.ModelSettings> models = service
+        Map<String, ModelCatalogEntry> models = service
                 .getModelsForProviders(List.of("unknown-provider"));
         assertNotNull(models);
         assertTrue(models.isEmpty());
@@ -905,7 +909,7 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldReturnEmptyMapForEmptyProviderList() {
-        Map<String, ModelConfigService.ModelSettings> models = service.getModelsForProviders(Collections.emptyList());
+        Map<String, ModelCatalogEntry> models = service.getModelsForProviders(Collections.emptyList());
         assertNotNull(models);
         assertTrue(models.isEmpty());
     }
@@ -914,7 +918,7 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldReturnCorrectModelMapFromService() {
-        Map<String, ModelConfigService.ModelSettings> models = service.getAllModels();
+        Map<String, ModelCatalogEntry> models = service.getAllModels();
         assertNotNull(models);
         assertFalse(models.isEmpty());
         // Verify fixture models are present
@@ -923,10 +927,10 @@ class ModelConfigServiceTest {
         assertTrue(models.containsKey(MODEL_CLAUDE_SONNET_4));
 
         // Verify settings are populated correctly
-        ModelConfigService.ModelSettings gpt51Settings = models.get(MODEL_GPT_5_1);
+        ModelCatalogEntry gpt51Settings = models.get(MODEL_GPT_5_1);
         assertEquals(PROVIDER_OPENAI, gpt51Settings.getProvider());
         assertNotNull(gpt51Settings.getReasoning());
-        ModelConfigService.ModelSettings claudeSettings = models.get(MODEL_CLAUDE_SONNET_4);
+        ModelCatalogEntry claudeSettings = models.get(MODEL_CLAUDE_SONNET_4);
         assertEquals(PROVIDER_ANTHROPIC, claudeSettings.getProvider());
         assertNull(claudeSettings.getReasoning());
     }
@@ -962,7 +966,7 @@ class ModelConfigServiceTest {
 
         // After reload, the custom model should be gone — no classpath fallback, so
         // empty catalog
-        Map<String, ModelConfigService.ModelSettings> models = service.getAllModels();
+        Map<String, ModelCatalogEntry> models = service.getAllModels();
         assertFalse(models.containsKey(MODEL_CUSTOM));
         assertTrue(models.isEmpty());
     }

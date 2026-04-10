@@ -194,7 +194,9 @@ public class SelfEvolvingTacticsController {
             return;
         }
         try {
-            hiveEventPublishPort.publishSelfEvolvingTacticCatalogProjection(tactics);
+            hiveEventPublishPort.publishSelfEvolvingTacticCatalogProjection(tactics.stream()
+                    .map(this::toDomainTacticSearchResult)
+                    .toList());
         } catch (RuntimeException exception) {
             log.debug("[Hive] Skipping SelfEvolving tactic catalog publish: {}", exception.getMessage());
         }
@@ -281,6 +283,37 @@ public class SelfEvolvingTacticsController {
                 .embeddingStatus(result.getEmbeddingStatus())
                 .updatedAt(parseInstant(result.getUpdatedAt()))
                 .explanation(toDomainTacticSearchExplanation(result.getExplanation()))
+                .build();
+    }
+
+    private TacticSearchResult toDomainTacticSearchResult(SelfEvolvingTacticDto tactic) {
+        return TacticSearchResult.builder()
+                .tacticId(tactic.getTacticId())
+                .artifactStreamId(tactic.getArtifactStreamId())
+                .originArtifactStreamId(tactic.getOriginArtifactStreamId())
+                .artifactKey(tactic.getArtifactKey())
+                .artifactType(tactic.getArtifactType())
+                .title(tactic.getTitle())
+                .aliases(tactic.getAliases())
+                .contentRevisionId(tactic.getContentRevisionId())
+                .intentSummary(tactic.getIntentSummary())
+                .behaviorSummary(tactic.getBehaviorSummary())
+                .toolSummary(tactic.getToolSummary())
+                .outcomeSummary(tactic.getOutcomeSummary())
+                .benchmarkSummary(tactic.getBenchmarkSummary())
+                .approvalNotes(tactic.getApprovalNotes())
+                .evidenceSnippets(tactic.getEvidenceSnippets())
+                .taskFamilies(tactic.getTaskFamilies())
+                .tags(tactic.getTags())
+                .promotionState(tactic.getPromotionState())
+                .rolloutStage(tactic.getRolloutStage())
+                .successRate(tactic.getSuccessRate())
+                .benchmarkWinRate(tactic.getBenchmarkWinRate())
+                .regressionFlags(tactic.getRegressionFlags())
+                .recencyScore(tactic.getRecencyScore())
+                .golemLocalUsageSuccess(tactic.getGolemLocalUsageSuccess())
+                .embeddingStatus(tactic.getEmbeddingStatus())
+                .updatedAt(parseInstant(tactic.getUpdatedAt()))
                 .build();
     }
 

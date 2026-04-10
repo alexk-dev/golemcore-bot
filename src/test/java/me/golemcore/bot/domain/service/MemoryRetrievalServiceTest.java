@@ -55,7 +55,8 @@ class MemoryRetrievalServiceTest {
         service = new MemoryRetrievalService(
                 runtimeConfigService,
                 new MemoryRetrievalPlanner(runtimeConfigService),
-                new MemoryCandidateCollector(storagePort, properties, runtimeConfigService, objectMapper),
+                new MemoryCandidateCollector(storagePort, me.golemcore.bot.support.TestPorts.settings(properties),
+                        runtimeConfigService, objectMapper),
                 new MemoryCandidateScorer(),
                 new MemoryCandidateReranker(runtimeConfigService),
                 new MemoryCandidateSelector());

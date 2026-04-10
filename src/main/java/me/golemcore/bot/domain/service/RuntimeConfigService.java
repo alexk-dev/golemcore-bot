@@ -20,13 +20,6 @@ package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.model.ModelTierCatalog;
-import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.stereotype.Service;
-
 import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -40,7 +33,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService;
+import me.golemcore.bot.port.outbound.RuntimeConfigPersistencePort;
+import org.springframework.stereotype.Service;
 
 /**
  * Service for managing application-level runtime configuration.
@@ -63,7 +62,6 @@ import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService
 @Slf4j
 public class RuntimeConfigService {
 
-    private static final String PREFERENCES_DIR = "preferences";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final String INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int INVITE_CODE_LENGTH = 20;
@@ -239,15 +237,15 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_SELF_EVOLVING_AUTO_CREATE_REGRESSION_CASES = true;
     private static final boolean DEFAULT_SELF_EVOLVING_PUBLISH_INSPECTION_PROJECTION = true;
     private static final boolean DEFAULT_SELF_EVOLVING_READONLY_INSPECTION = true;
-    private final StoragePort storagePort;
+    private final RuntimeConfigPersistencePort runtimeConfigPersistencePort;
     private final SelfEvolvingBootstrapOverrideService selfEvolvingBootstrapOverrideService;
     private final ObjectMapper objectMapper;
 
     private final AtomicReference<RuntimeConfig> configRef = new AtomicReference<>();
 
-    public RuntimeConfigService(StoragePort storagePort,
+    public RuntimeConfigService(RuntimeConfigPersistencePort runtimeConfigPersistencePort,
             SelfEvolvingBootstrapOverrideService selfEvolvingBootstrapOverrideService) {
-        this.storagePort = storagePort;
+        this.runtimeConfigPersistencePort = runtimeConfigPersistencePort;
         this.selfEvolvingBootstrapOverrideService = selfEvolvingBootstrapOverrideService;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -288,11 +286,10 @@ public class RuntimeConfigService {
     public RuntimeConfig getRuntimeConfigForApi() {
         RuntimeConfig source = getRuntimeConfig();
         try {
-            String json = objectMapper.writeValueAsString(source);
-            RuntimeConfig copy = objectMapper.readValue(json, RuntimeConfig.class);
+            RuntimeConfig copy = copyRuntimeConfig(source);
             redactSecrets(copy);
             return copy;
-        } catch (IOException e) {
+        } catch (RuntimeException e) {
             log.warn("[RuntimeConfig] Failed to build redacted runtime config: {}", e.getMessage());
             RuntimeConfig fallback = RuntimeConfig.builder().build();
             redactSecrets(fallback);
@@ -310,7 +307,7 @@ public class RuntimeConfigService {
     public void updateRuntimeConfig(RuntimeConfig newConfig) {
         normalizeRuntimeConfig(newConfig);
         RuntimeConfig storedPersistedConfig = RuntimeConfig.builder()
-                .selfEvolving(loadSection(RuntimeConfig.ConfigSection.SELF_EVOLVING,
+                .selfEvolving(runtimeConfigPersistencePort.loadSection(RuntimeConfig.ConfigSection.SELF_EVOLVING,
                         RuntimeConfig.SelfEvolvingConfig.class,
                         RuntimeConfig.SelfEvolvingConfig::new,
                         false))
@@ -324,7 +321,7 @@ public class RuntimeConfigService {
         RuntimeConfig oldConfig = this.configRef.get();
         this.configRef.set(effectiveConfig);
         try {
-            persist(persistedConfig);
+            runtimeConfigPersistencePort.persist(persistedConfig);
         } catch (Exception e) {
             // Rollback in-memory change on persist failure
             this.configRef.set(oldConfig);
@@ -1617,7 +1614,7 @@ public class RuntimeConfigService {
         RuntimeConfig cfg = getRuntimeConfig();
         List<RuntimeConfig.InviteCode> inviteCodes = ensureMutableInviteCodes(cfg.getTelegram());
         inviteCodes.add(inviteCode);
-        persist(cfg);
+        runtimeConfigPersistencePort.persist(cfg);
 
         log.info("[RuntimeConfig] Generated invite code: {}", inviteCode.getCode());
         return inviteCode;
@@ -1631,7 +1628,7 @@ public class RuntimeConfigService {
         List<RuntimeConfig.InviteCode> codes = ensureMutableInviteCodes(cfg.getTelegram());
         boolean removed = codes.removeIf(ic -> ic.getCode().equals(code));
         if (removed) {
-            persist(cfg);
+            runtimeConfigPersistencePort.persist(cfg);
             log.info("[RuntimeConfig] Revoked invite code: {}", code);
         }
         return removed;
@@ -1659,7 +1656,7 @@ public class RuntimeConfigService {
                 if (!allowed.contains(userId)) {
                     allowed.add(userId);
                 }
-                persist(cfg);
+                runtimeConfigPersistencePort.persist(cfg);
                 log.info("[RuntimeConfig] Redeemed invite code {} for user {}", code, userId);
                 return true;
             }
@@ -1680,7 +1677,7 @@ public class RuntimeConfigService {
         boolean removed = allowedUsers.removeIf(existingUserId -> existingUserId.equals(userId));
         if (removed) {
             int revokedCodes = revokeActiveInviteCodes(telegramConfig);
-            persist(cfg);
+            runtimeConfigPersistencePort.persist(cfg);
             log.info("[RuntimeConfig] Removed telegram allowed user: {} (revoked {} active invite codes)",
                     userId, revokedCodes);
         }
@@ -1741,195 +1738,11 @@ public class RuntimeConfigService {
 
     // ==================== Persistence ====================
 
-    /**
-     * Persist all sections of the RuntimeConfig to separate files.
-     */
-    private void persist(RuntimeConfig cfg) {
-        persistSection(RuntimeConfig.ConfigSection.TELEGRAM, cfg.getTelegram(),
-                RuntimeConfig.TelegramConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.MODEL_ROUTER, cfg.getModelRouter(),
-                RuntimeConfig.ModelRouterConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.LLM, cfg.getLlm(),
-                RuntimeConfig.LlmConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.TOOLS, cfg.getTools(),
-                RuntimeConfig.ToolsConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.VOICE, cfg.getVoice(),
-                RuntimeConfig.VoiceConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.AUTO_MODE, cfg.getAutoMode(),
-                RuntimeConfig.AutoModeConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.UPDATE, cfg.getUpdate(),
-                RuntimeConfig.UpdateConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.TRACING, cfg.getTracing(),
-                RuntimeConfig.TracingConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.RATE_LIMIT, cfg.getRateLimit(),
-                RuntimeConfig.RateLimitConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.SECURITY, cfg.getSecurity(),
-                RuntimeConfig.SecurityConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.COMPACTION, cfg.getCompaction(),
-                RuntimeConfig.CompactionConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.TURN, cfg.getTurn(),
-                RuntimeConfig.TurnConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.MEMORY, cfg.getMemory(),
-                RuntimeConfig.MemoryConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.SKILLS, cfg.getSkills(),
-                RuntimeConfig.SkillsConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.MODEL_REGISTRY, cfg.getModelRegistry(),
-                RuntimeConfig.ModelRegistryConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.USAGE, cfg.getUsage(),
-                RuntimeConfig.UsageConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.TELEMETRY, cfg.getTelemetry(),
-                RuntimeConfig.TelemetryConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.MCP, cfg.getMcp(),
-                RuntimeConfig.McpConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.PLAN, cfg.getPlan(),
-                RuntimeConfig.PlanConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.DELAYED_ACTIONS, cfg.getDelayedActions(),
-                RuntimeConfig.DelayedActionsConfig::new);
-
-        persistSection(RuntimeConfig.ConfigSection.HIVE, cfg.getHive(),
-                RuntimeConfig.HiveConfig::new);
-        persistSection(RuntimeConfig.ConfigSection.SELF_EVOLVING, cfg.getSelfEvolving(),
-                RuntimeConfig.SelfEvolvingConfig::new);
-
-        log.debug("[RuntimeConfig] Persisted all config sections");
-    }
-
-    /**
-     * Persist a single configuration section to its file.
-     */
-    @SuppressWarnings("unchecked")
-    private <T> void persistSection(RuntimeConfig.ConfigSection section, T config,
-            Supplier<T> defaultSupplier) {
-        T toSave = config != null ? config : defaultSupplier.get();
-        String fileName = section.getFileName();
-
-        try {
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(toSave);
-            storagePort.putTextAtomic(PREFERENCES_DIR, fileName, json, true).join();
-
-            // Read-back validation
-            String persisted = storagePort.getText(PREFERENCES_DIR, fileName).join();
-            if (persisted == null || persisted.isBlank()) {
-                throw new IllegalStateException("Persisted " + section.getFileId() + " is empty after write");
-            }
-            Object validated = objectMapper.readValue(persisted, section.getConfigClass());
-            if (validated == null) {
-                throw new IllegalStateException("Persisted " + section.getFileId() + " failed validation");
-            }
-
-            log.trace("[RuntimeConfig] Persisted section: {}", section.getFileId());
-        } catch (Exception e) {
-            log.error("[RuntimeConfig] Failed to persist section {}: {}", section.getFileId(), e.getMessage());
-            throw new IllegalStateException("Failed to persist config section: " + section.getFileId(), e);
-        }
-    }
-
-    /**
-     * Load all configuration sections and assemble into RuntimeConfig.
-     */
     private RuntimeConfig loadOrCreate() {
-        boolean hasPersistedRuntimeSection = hasPersistedRuntimeSectionsExcludingTelemetry();
-        RuntimeConfig.TelegramConfig telegram = loadSection(RuntimeConfig.ConfigSection.TELEGRAM,
-                RuntimeConfig.TelegramConfig.class, RuntimeConfig.TelegramConfig::new);
-        RuntimeConfig.ModelRouterConfig modelRouter = loadSection(RuntimeConfig.ConfigSection.MODEL_ROUTER,
-                RuntimeConfig.ModelRouterConfig.class, RuntimeConfig.ModelRouterConfig::new);
-        RuntimeConfig.LlmConfig llm = loadSection(RuntimeConfig.ConfigSection.LLM,
-                RuntimeConfig.LlmConfig.class, RuntimeConfig.LlmConfig::new);
-        RuntimeConfig.ToolsConfig tools = loadSection(RuntimeConfig.ConfigSection.TOOLS,
-                RuntimeConfig.ToolsConfig.class, RuntimeConfig.ToolsConfig::new);
-        RuntimeConfig.VoiceConfig voice = loadSection(RuntimeConfig.ConfigSection.VOICE,
-                RuntimeConfig.VoiceConfig.class, RuntimeConfig.VoiceConfig::new);
-        RuntimeConfig.AutoModeConfig autoMode = loadSection(RuntimeConfig.ConfigSection.AUTO_MODE,
-                RuntimeConfig.AutoModeConfig.class, RuntimeConfig.AutoModeConfig::new);
-        RuntimeConfig.UpdateConfig update = loadSection(RuntimeConfig.ConfigSection.UPDATE,
-                RuntimeConfig.UpdateConfig.class, RuntimeConfig.UpdateConfig::new);
-        RuntimeConfig.TracingConfig tracing = loadSection(RuntimeConfig.ConfigSection.TRACING,
-                RuntimeConfig.TracingConfig.class, RuntimeConfig.TracingConfig::new);
-        RuntimeConfig.RateLimitConfig rateLimit = loadSection(RuntimeConfig.ConfigSection.RATE_LIMIT,
-                RuntimeConfig.RateLimitConfig.class, RuntimeConfig.RateLimitConfig::new);
-        RuntimeConfig.SecurityConfig security = loadSection(RuntimeConfig.ConfigSection.SECURITY,
-                RuntimeConfig.SecurityConfig.class, RuntimeConfig.SecurityConfig::new);
-        RuntimeConfig.CompactionConfig compaction = loadSection(RuntimeConfig.ConfigSection.COMPACTION,
-                RuntimeConfig.CompactionConfig.class, RuntimeConfig.CompactionConfig::new);
-        RuntimeConfig.TurnConfig turn = loadSection(RuntimeConfig.ConfigSection.TURN,
-                RuntimeConfig.TurnConfig.class, RuntimeConfig.TurnConfig::new);
-        RuntimeConfig.MemoryConfig memory = loadSection(RuntimeConfig.ConfigSection.MEMORY,
-                RuntimeConfig.MemoryConfig.class, RuntimeConfig.MemoryConfig::new);
-        RuntimeConfig.SkillsConfig skills = loadSection(RuntimeConfig.ConfigSection.SKILLS,
-                RuntimeConfig.SkillsConfig.class, RuntimeConfig.SkillsConfig::new);
-        RuntimeConfig.ModelRegistryConfig modelRegistry = loadSection(RuntimeConfig.ConfigSection.MODEL_REGISTRY,
-                RuntimeConfig.ModelRegistryConfig.class, RuntimeConfig.ModelRegistryConfig::new);
-        RuntimeConfig.UsageConfig usage = loadSection(RuntimeConfig.ConfigSection.USAGE,
-                RuntimeConfig.UsageConfig.class, RuntimeConfig.UsageConfig::new);
-        RuntimeConfig.TelemetryConfig telemetry = loadTelemetrySection(hasPersistedRuntimeSection);
-        RuntimeConfig.McpConfig mcp = loadSection(RuntimeConfig.ConfigSection.MCP,
-                RuntimeConfig.McpConfig.class, RuntimeConfig.McpConfig::new);
-        RuntimeConfig.PlanConfig plan = loadSection(RuntimeConfig.ConfigSection.PLAN,
-                RuntimeConfig.PlanConfig.class, RuntimeConfig.PlanConfig::new);
-        RuntimeConfig.DelayedActionsConfig delayedActions = loadSection(RuntimeConfig.ConfigSection.DELAYED_ACTIONS,
-                RuntimeConfig.DelayedActionsConfig.class, RuntimeConfig.DelayedActionsConfig::new);
-
-        RuntimeConfig.HiveConfig hive = loadSection(RuntimeConfig.ConfigSection.HIVE,
-                RuntimeConfig.HiveConfig.class, RuntimeConfig.HiveConfig::new);
-        RuntimeConfig.SelfEvolvingConfig selfEvolving = loadSection(RuntimeConfig.ConfigSection.SELF_EVOLVING,
-                RuntimeConfig.SelfEvolvingConfig.class, RuntimeConfig.SelfEvolvingConfig::new);
-
-        RuntimeConfig config = RuntimeConfig.builder()
-                .telegram(telegram)
-                .modelRouter(modelRouter)
-                .llm(llm)
-                .tools(tools)
-                .voice(voice)
-                .autoMode(autoMode)
-                .update(update)
-                .tracing(tracing)
-                .rateLimit(rateLimit)
-                .security(security)
-                .compaction(compaction)
-                .turn(turn)
-                .memory(memory)
-                .skills(skills)
-                .modelRegistry(modelRegistry)
-                .usage(usage)
-                .telemetry(telemetry)
-                .mcp(mcp)
-                .plan(plan)
-                .delayedActions(delayedActions)
-                .hive(hive)
-                .selfEvolving(selfEvolving)
-                .build();
-
+        RuntimeConfig config = runtimeConfigPersistencePort.loadOrCreate();
         log.info("[RuntimeConfig] Loaded runtime config from {} section files",
                 RuntimeConfig.ConfigSection.values().length);
         return config;
-    }
-
-    private RuntimeConfig.TelemetryConfig loadTelemetrySection(boolean hasPersistedRuntimeSection) {
-        return loadSection(
-                RuntimeConfig.ConfigSection.TELEMETRY,
-                RuntimeConfig.TelemetryConfig.class,
-                () -> RuntimeConfig.TelemetryConfig.builder()
-                        .enabled(!hasPersistedRuntimeSection)
-                        .build());
-    }
-
-    private boolean hasPersistedRuntimeSectionsExcludingTelemetry() {
-        for (RuntimeConfig.ConfigSection section : RuntimeConfig.ConfigSection.values()) {
-            if (section == RuntimeConfig.ConfigSection.TELEMETRY) {
-                continue;
-            }
-            try {
-                String persisted = storagePort.getText(PREFERENCES_DIR, section.getFileName()).join();
-                if (persisted != null && !persisted.isBlank()) {
-                    return true;
-                }
-            } catch (RuntimeException e) { // NOSONAR - storage failures should not block default loading
-                log.debug("[RuntimeConfig] Failed to inspect persisted {} config: {}",
-                        section.getFileId(),
-                        e.getMessage());
-            }
-        }
-        return false;
     }
 
     private RuntimeConfig buildEffectiveRuntimeConfig(RuntimeConfig baseConfig) {
@@ -1942,16 +1755,8 @@ public class RuntimeConfigService {
         return effectiveConfig;
     }
 
-    private RuntimeConfig copyRuntimeConfig(RuntimeConfig source) {
-        if (source == null) {
-            return RuntimeConfig.builder().build();
-        }
-        try {
-            String json = objectMapper.writeValueAsString(source);
-            return objectMapper.readValue(json, RuntimeConfig.class);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to copy runtime config", e);
-        }
+    public RuntimeConfig copyRuntimeConfig(RuntimeConfig source) {
+        return runtimeConfigPersistencePort.copy(source);
     }
 
     private <T> T copySection(T source, Class<T> sectionType, T defaultValue) {
@@ -1964,45 +1769,6 @@ public class RuntimeConfigService {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to copy runtime config section", e);
         }
-    }
-
-    /**
-     * Load a single configuration section from its file.
-     */
-    private <T> T loadSection(RuntimeConfig.ConfigSection section, Class<T> configClass,
-            Supplier<T> defaultSupplier) {
-        return loadSection(section, configClass, defaultSupplier, true);
-    }
-
-    private <T> T loadSection(RuntimeConfig.ConfigSection section, Class<T> configClass,
-            Supplier<T> defaultSupplier, boolean persistDefault) {
-        String fileName = section.getFileName();
-
-        try {
-            String json = storagePort.getText(PREFERENCES_DIR, fileName).join();
-            if (json != null && !json.isBlank()) {
-                T loaded = objectMapper.readValue(json, configClass);
-                log.trace("[RuntimeConfig] Loaded section: {}", section.getFileId());
-                return loaded;
-            }
-        } catch (IOException | RuntimeException e) { // NOSONAR - intentional fallback to default
-            log.debug("[RuntimeConfig] No saved {} config, using default: {}", section.getFileId(), e.getMessage());
-        }
-
-        T defaultConfig = defaultSupplier.get();
-        if (!persistDefault) {
-            return defaultConfig;
-        }
-
-        // Create default and persist it
-        try {
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(defaultConfig);
-            storagePort.putTextAtomic(PREFERENCES_DIR, fileName, json, true).join();
-            log.debug("[RuntimeConfig] Created default section: {}", section.getFileId());
-        } catch (Exception e) {
-            log.warn("[RuntimeConfig] Failed to persist default {}: {}", section.getFileId(), e.getMessage());
-        }
-        return defaultConfig;
     }
 
     private void normalizeRuntimeConfig(RuntimeConfig cfg) {

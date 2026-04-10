@@ -1,5 +1,8 @@
 package me.golemcore.bot.adapter.inbound.command;
 
+import me.golemcore.bot.application.command.AutomationCommandService;
+import me.golemcore.bot.application.command.ModelSelectionCommandService;
+import me.golemcore.bot.application.command.PlanCommandService;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
@@ -11,7 +14,6 @@ import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
-import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -96,6 +98,15 @@ class CommandRouterDelayedActionsTest {
                 .description("Delayed actions")
                 .build());
 
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isDelayedActionsEnabled()).thenReturn(true);
+        AutomationCommandService automationCommandService = new AutomationCommandService(
+                mock(AutoModeService.class),
+                runtimeConfigService,
+                mock(ScheduleService.class),
+                delayedActionPolicyService,
+                null);
+
         CommandRouter router = new CommandRouter(
                 mock(SkillComponent.class),
                 List.of(delayedTool),
@@ -103,16 +114,16 @@ class CommandRouterDelayedActionsTest {
                 mock(UsageTrackingPort.class),
                 preferencesService,
                 mock(CompactionOrchestrationService.class),
-                mock(AutoModeService.class),
-                mock(ModelSelectionService.class),
-                mock(PlanService.class),
-                mock(PlanExecutionService.class),
-                mock(ScheduleService.class),
+                automationCommandService,
+                mock(ModelSelectionCommandService.class),
+                new PlanCommandService(
+                        mock(PlanService.class),
+                        mock(PlanExecutionService.class),
+                        runtimeConfigService),
                 delayedActionPolicyService,
-                null,
                 mock(SessionRunCoordinator.class),
                 mock(ApplicationEventPublisher.class),
-                mock(RuntimeConfigService.class),
+                runtimeConfigService,
                 mock(ObjectProvider.class));
 
         CommandPort.CommandResult result = router.execute("tools", List.of(), Map.of(
@@ -176,6 +187,12 @@ class CommandRouterDelayedActionsTest {
         if (delayedActionPolicyService != null) {
             when(delayedActionPolicyService.canScheduleActions("telegram")).thenReturn(true);
         }
+        AutomationCommandService automationCommandService = new AutomationCommandService(
+                mock(AutoModeService.class),
+                runtimeConfigService,
+                mock(ScheduleService.class),
+                delayedActionPolicyService,
+                delayedActionService);
 
         return new CommandRouter(
                 mock(SkillComponent.class),
@@ -184,13 +201,13 @@ class CommandRouterDelayedActionsTest {
                 mock(UsageTrackingPort.class),
                 preferencesService,
                 mock(CompactionOrchestrationService.class),
-                mock(AutoModeService.class),
-                mock(ModelSelectionService.class),
-                mock(PlanService.class),
-                mock(PlanExecutionService.class),
-                mock(ScheduleService.class),
+                automationCommandService,
+                mock(ModelSelectionCommandService.class),
+                new PlanCommandService(
+                        mock(PlanService.class),
+                        mock(PlanExecutionService.class),
+                        runtimeConfigService),
                 delayedActionPolicyService,
-                delayedActionService,
                 mock(SessionRunCoordinator.class),
                 mock(ApplicationEventPublisher.class),
                 runtimeConfigService,

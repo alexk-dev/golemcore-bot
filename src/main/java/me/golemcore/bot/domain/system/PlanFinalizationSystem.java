@@ -29,8 +29,7 @@ import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.stereotype.Component;
+import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
 
 import java.util.Map;
 import java.util.Optional;
@@ -48,7 +47,6 @@ import java.util.Optional;
  * <li>Publishes PlanReadyEvent for the Telegram approval UI</li>
  * </ol>
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class PlanFinalizationSystem implements AgentSystem {
@@ -56,7 +54,7 @@ public class PlanFinalizationSystem implements AgentSystem {
     private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
 
     private final PlanService planService;
-    private final ApplicationEventPublisher eventPublisher;
+    private final PlanReadyNotificationPort planReadyNotificationPort;
 
     @Override
     public String getName() {
@@ -134,7 +132,7 @@ public class PlanFinalizationSystem implements AgentSystem {
                 ? planService.getActivePlan(sessionIdentity)
                 : planService.getActivePlan();
         String readyPlanId = readyPlan.map(Plan::getId).orElse(plan.getId());
-        eventPublisher.publishEvent(new PlanReadyEvent(readyPlanId, chatId));
+        planReadyNotificationPort.publish(new PlanReadyEvent(readyPlanId, chatId));
         context.setAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED, readyPlanId);
 
         log.info("[PlanSetContent] Plan '{}' updated and ready for approval", readyPlanId);

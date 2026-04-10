@@ -23,6 +23,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import me.golemcore.bot.adapter.outbound.hive.StorageHiveSessionStateAdapter;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,7 +55,7 @@ class HiveSessionStateStoreTest {
                     return CompletableFuture.completedFuture(null);
                 });
 
-        store = new HiveSessionStateStore(storagePort, objectMapper);
+        store = new HiveSessionStateStore(new StorageHiveSessionStateAdapter(storagePort, objectMapper));
     }
 
     @Test
@@ -117,8 +118,9 @@ class HiveSessionStateStoreTest {
                         .writerWithDefaultPrettyPrinter()
                         .writeValueAsString(persistedState));
 
-        HiveSessionStateStore freshStore = new HiveSessionStateStore(storagePort, new ObjectMapper()
-                .registerModule(new JavaTimeModule()));
+        HiveSessionStateStore freshStore = new HiveSessionStateStore(new StorageHiveSessionStateAdapter(
+                storagePort,
+                new ObjectMapper().registerModule(new JavaTimeModule())));
 
         HiveSessionState firstLoad = freshStore.load().orElseThrow();
         HiveSessionState secondLoad = freshStore.load().orElseThrow();
@@ -148,7 +150,8 @@ class HiveSessionStateStoreTest {
             return CompletableFuture.completedFuture(json);
         });
 
-        HiveSessionStateStore concurrentStore = new HiveSessionStateStore(concurrentStoragePort, mapper);
+        HiveSessionStateStore concurrentStore = new HiveSessionStateStore(
+                new StorageHiveSessionStateAdapter(concurrentStoragePort, mapper));
         try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
             var firstLoad = executor.submit(concurrentStore::load);
             assertTrue(firstReadStarted.await(2, TimeUnit.SECONDS));
@@ -167,8 +170,9 @@ class HiveSessionStateStoreTest {
     void shouldReturnEmptyWhenPersistedStateIsBlank() {
         persistedFiles.put("hive-session.json", "   ");
 
-        HiveSessionStateStore freshStore = new HiveSessionStateStore(storagePort, new ObjectMapper()
-                .registerModule(new JavaTimeModule()));
+        HiveSessionStateStore freshStore = new HiveSessionStateStore(new StorageHiveSessionStateAdapter(
+                storagePort,
+                new ObjectMapper().registerModule(new JavaTimeModule())));
 
         assertFalse(freshStore.load().isPresent());
     }
@@ -177,8 +181,9 @@ class HiveSessionStateStoreTest {
     void shouldReturnEmptyWhenPersistedStateIsInvalid() {
         persistedFiles.put("hive-session.json", "{broken");
 
-        HiveSessionStateStore freshStore = new HiveSessionStateStore(storagePort, new ObjectMapper()
-                .registerModule(new JavaTimeModule()));
+        HiveSessionStateStore freshStore = new HiveSessionStateStore(new StorageHiveSessionStateAdapter(
+                storagePort,
+                new ObjectMapper().registerModule(new JavaTimeModule())));
 
         assertFalse(freshStore.load().isPresent());
     }

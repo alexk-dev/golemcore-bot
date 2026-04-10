@@ -29,7 +29,8 @@ class UserPreferencesServiceTest {
         messageService = mock(MessageService.class);
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
-        service = new UserPreferencesService(storagePort, messageService);
+        service = new UserPreferencesService(storagePort,
+                me.golemcore.bot.support.TestPorts.localization(messageService));
     }
 
     // ==================== getPreferences ====================

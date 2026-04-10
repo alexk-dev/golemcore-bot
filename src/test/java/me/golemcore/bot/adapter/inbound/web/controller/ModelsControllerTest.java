@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
 import me.golemcore.bot.domain.service.HiveManagedPolicyService;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.service.ModelRegistryService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
@@ -200,12 +201,7 @@ class ModelsControllerTest {
 
     @Test
     void shouldDiscoverProviderModels() {
-        ModelConfigService.ModelSettings defaultSettings = new ModelConfigService.ModelSettings();
-        defaultSettings.setProvider("xmesh");
-        defaultSettings.setDisplayName("GPT-5.2");
-        defaultSettings.setSupportsVision(true);
-        defaultSettings.setSupportsTemperature(false);
-        defaultSettings.setMaxInputTokens(200000);
+        ModelCatalogEntry defaultSettings = new ModelCatalogEntry("xmesh", "GPT-5.2", true, false, 200000, null);
         List<ProviderModelDiscoveryService.DiscoveredModel> discovered = List.of(
                 new ProviderModelDiscoveryService.DiscoveredModel("xmesh", "gpt-5.2", "GPT-5.2", "openai",
                         defaultSettings),
@@ -240,12 +236,7 @@ class ModelsControllerTest {
 
     @Test
     void shouldResolveModelRegistryDefaults() {
-        ModelConfigService.ModelSettings settings = new ModelConfigService.ModelSettings();
-        settings.setProvider("openai");
-        settings.setDisplayName("GPT-5.1");
-        settings.setSupportsVision(true);
-        settings.setSupportsTemperature(false);
-        settings.setMaxInputTokens(1000000);
+        ModelCatalogEntry settings = new ModelCatalogEntry("openai", "GPT-5.1", true, false, 1000000, null);
         when(modelRegistryService.resolveDefaults("openai", "gpt-5.1"))
                 .thenReturn(new ModelRegistryService.ResolveResult(settings, "provider", "remote-hit"));
 

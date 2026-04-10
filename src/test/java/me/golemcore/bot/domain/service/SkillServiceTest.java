@@ -46,7 +46,8 @@ class SkillServiceTest {
         when(runtimeConfigService.isSkillsEnabled()).thenReturn(true);
         when(runtimeConfigService.isSkillsProgressiveLoadingEnabled()).thenReturn(true);
 
-        service = new SkillService(storagePort, properties, variableResolver, runtimeConfigService,
+        service = new SkillService(storagePort, me.golemcore.bot.support.TestPorts.settings(properties),
+                variableResolver, runtimeConfigService,
                 skillDocumentService);
     }
 

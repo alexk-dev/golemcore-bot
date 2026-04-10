@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import me.golemcore.bot.adapter.outbound.hive.HiveInspectionPayloadMapper;
+import me.golemcore.bot.adapter.shared.dto.SessionTraceExportPayload;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
@@ -23,8 +24,7 @@ import me.golemcore.bot.domain.view.SessionSummaryView;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
+import java.util.NoSuchElementException;
 
 class HiveInspectionCommandHandlerTest {
 
@@ -84,7 +84,7 @@ class HiveInspectionCommandHandlerTest {
         HiveInspectionCommandHandler handler = new HiveInspectionCommandHandler(
                 sessionInspectionService, publisher, new HiveInspectionPayloadMapper());
         when(sessionInspectionService.getSessionTraceSummary("missing"))
-                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+                .thenThrow(new NoSuchElementException("Session not found"));
 
         handler.handle(HiveControlCommandEnvelope.builder()
                 .eventType("inspection.request")
@@ -115,7 +115,7 @@ class HiveInspectionCommandHandlerTest {
         when(sessionInspectionService.exportSessionTraceSnapshotPayload("web:conv-1", "snap-1"))
                 .thenReturn(new SessionInspectionService.SnapshotPayloadExport(
                         "{\"ok\":true}",
-                        org.springframework.http.MediaType.APPLICATION_JSON,
+                        "application/json",
                         ".json"));
         when(sessionInspectionService.compactSession("web:conv-1", 5)).thenReturn(7);
 
@@ -182,11 +182,9 @@ class HiveInspectionCommandHandlerTest {
         ArgumentCaptor<HiveInspectionResponse> responseCaptor = ArgumentCaptor.forClass(HiveInspectionResponse.class);
         verify(publisher).publishInspectionResponse(responseCaptor.capture());
         HiveInspectionResponse response = responseCaptor.getValue();
-        Map<?, ?> payload = assertInstanceOf(Map.class, response.payload());
-        assertEquals("web:conv-1", payload.get("sessionId"));
-        List<?> traces = assertInstanceOf(List.class, payload.get("traces"));
-        Map<?, ?> trace = assertInstanceOf(Map.class, traces.get(0));
-        assertEquals("2026-03-20T10:00:00Z", trace.get("startedAt"));
+        SessionTraceExportPayload payload = assertInstanceOf(SessionTraceExportPayload.class, response.payload());
+        assertEquals("web:conv-1", payload.getSessionId());
+        assertEquals("2026-03-20T10:00:00Z", payload.getTraces().get(0).getStartedAt());
     }
 
     @Test

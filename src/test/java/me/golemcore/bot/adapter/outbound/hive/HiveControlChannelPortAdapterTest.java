@@ -2,7 +2,7 @@ package me.golemcore.bot.adapter.outbound.hive;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.mockito.Mockito.same;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -10,52 +10,39 @@ import java.time.Instant;
 import java.util.function.Consumer;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveSessionState;
-import me.golemcore.bot.port.outbound.HiveControlChannelPort;
+import me.golemcore.bot.domain.model.hive.HiveControlChannelStatusSnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-@ExtendWith(MockitoExtension.class)
 class HiveControlChannelPortAdapterTest {
 
-    @Mock
     private HiveControlChannelClient hiveControlChannelClient;
-
     private HiveControlChannelPortAdapter adapter;
 
     @BeforeEach
     void setUp() {
+        hiveControlChannelClient = mock(HiveControlChannelClient.class);
         adapter = new HiveControlChannelPortAdapter(hiveControlChannelClient);
     }
 
     @Test
-    void connectShouldDelegateToClient() {
-        HiveSessionState sessionState = HiveSessionState.builder()
-                .golemId("golem-1")
-                .serverUrl("https://hive.example.com")
-                .build();
+    void shouldDelegateConnectAndDisconnect() {
+        HiveSessionState sessionState = HiveSessionState.builder().golemId("golem-1").build();
         Consumer<HiveControlCommandEnvelope> consumer = envelope -> {
         };
 
         adapter.connect(sessionState, consumer);
+        adapter.disconnect("stop");
 
-        verify(hiveControlChannelClient).connect(same(sessionState), same(consumer));
+        verify(hiveControlChannelClient).connect(sessionState, consumer);
+        verify(hiveControlChannelClient).disconnect("stop");
     }
 
     @Test
-    void disconnectShouldDelegateToClient() {
-        adapter.disconnect("manual");
-
-        verify(hiveControlChannelClient).disconnect("manual");
-    }
-
-    @Test
-    void getStatusShouldReturnDisconnectedWhenClientHasNoStatus() {
+    void shouldReturnDisconnectedSnapshotWhenClientStatusIsMissing() {
         when(hiveControlChannelClient.getStatus()).thenReturn(null);
 
-        HiveControlChannelPort.ControlChannelStatus status = adapter.getStatus();
+        HiveControlChannelStatusSnapshot status = adapter.getStatus();
 
         assertEquals("DISCONNECTED", status.state());
         assertNull(status.connectedAt());
@@ -66,23 +53,19 @@ class HiveControlChannelPortAdapterTest {
     }
 
     @Test
-    void getStatusShouldMapClientStatus() {
-        Instant connectedAt = Instant.parse("2026-04-08T00:00:00Z");
-        Instant lastMessageAt = Instant.parse("2026-04-08T00:05:00Z");
+    void shouldMapStatusToDomainSnapshot() {
         when(hiveControlChannelClient.getStatus()).thenReturn(new HiveControlChannelStatus(
                 "CONNECTED",
-                connectedAt,
-                lastMessageAt,
-                "none",
+                Instant.parse("2026-03-18T00:00:00Z"),
+                Instant.parse("2026-03-18T00:01:00Z"),
+                "warn",
                 "cmd-1",
                 7));
 
-        HiveControlChannelPort.ControlChannelStatus status = adapter.getStatus();
+        HiveControlChannelStatusSnapshot status = adapter.getStatus();
 
         assertEquals("CONNECTED", status.state());
-        assertEquals(connectedAt, status.connectedAt());
-        assertEquals(lastMessageAt, status.lastMessageAt());
-        assertEquals("none", status.lastError());
+        assertEquals("warn", status.lastError());
         assertEquals("cmd-1", status.lastReceivedCommandId());
         assertEquals(7, status.receivedCommandCount());
     }

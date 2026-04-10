@@ -46,7 +46,8 @@ class PromptSectionServiceTest {
         when(storagePort.exists(eq(PROMPTS_DIR), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(true));
 
-        service = new PromptSectionService(storagePort, properties, runtimeConfigService, templateEngine);
+        service = new PromptSectionService(storagePort, me.golemcore.bot.support.TestPorts.settings(properties),
+                runtimeConfigService, templateEngine);
     }
 
     @Test

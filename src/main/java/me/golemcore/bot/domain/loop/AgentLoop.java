@@ -47,11 +47,11 @@ import me.golemcore.bot.domain.service.TraceNamingSupport;
 import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.domain.model.LlmRequest;
@@ -59,7 +59,6 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -86,7 +85,6 @@ import java.util.concurrent.TimeUnit;
  * -> LlmExecution -> ToolExecution -> MemoryPersist -> ResponseRouting).
  * Manages typing indicators and handles async message processing.
  */
-@Component
 @Slf4j
 public class AgentLoop {
 
@@ -98,7 +96,7 @@ public class AgentLoop {
     private final LlmPort llmPort;
     private final Clock clock;
     private final TraceService traceService;
-    private final ChannelRegistry channelRegistry;
+    private final ChannelRuntimePort channelRuntimePort;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final ScheduledExecutorService typingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "typing-indicator");
@@ -123,13 +121,13 @@ public class AgentLoop {
 
     public AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter,
             List<AgentSystem> systems,
-            ChannelRegistry channelRegistry, RuntimeConfigService runtimeConfigService,
+            ChannelRuntimePort channelRuntimePort, RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService,
             LlmPort llmPort, Clock clock, TraceService traceService) {
         this.sessionService = sessionService;
         this.rateLimiter = rateLimiter;
         this.systems = systems;
-        this.channelRegistry = channelRegistry;
+        this.channelRuntimePort = channelRuntimePort;
         this.runtimeConfigService = runtimeConfigService;
         this.preferencesService = preferencesService;
         this.llmPort = llmPort;
@@ -191,7 +189,7 @@ public class AgentLoop {
             log.info("[AgentLoop] routingSystem resolved: {}",
                     routingSystem != null ? routingSystem.getClass().getName() : "<null>");
 
-            ChannelPort channel = channelRegistry.get(message.getChannelType()).orElse(null);
+            ChannelPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
             ScheduledFuture<?> typingTask = null;
             String typingChatId = resolveTransportChatId(message);
             if (channel != null && typingChatId != null && !typingChatId.isBlank()) {
@@ -260,6 +258,13 @@ public class AgentLoop {
         }
 
         SessionIdentitySupport.bindTransportAndConversation(session, transportChatId, conversationKey);
+        String webClientInstanceId = readMetadataString(message, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
+        if (message.getChannelType() != null
+                && "web".equalsIgnoreCase(message.getChannelType())
+                && webClientInstanceId != null
+                && !webClientInstanceId.isBlank()) {
+            SessionIdentitySupport.bindWebClientInstance(session, webClientInstanceId);
+        }
     }
 
     private String resolveTransportChatId(Message message) {
@@ -288,7 +293,7 @@ public class AgentLoop {
             return;
         }
 
-        ChannelPort channel = channelRegistry.get(message.getChannelType()).orElse(null);
+        ChannelPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
         if (channel == null) {
             return;
         }
@@ -322,6 +327,13 @@ public class AgentLoop {
         }
         if (sessionIdentity != null && sessionIdentity.conversationKey() != null) {
             context.setAttribute(ContextAttributes.CONVERSATION_KEY, sessionIdentity.conversationKey());
+        }
+        String webClientInstanceId = readMetadataString(message, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
+        if ((webClientInstanceId == null || webClientInstanceId.isBlank()) && session != null) {
+            webClientInstanceId = SessionIdentitySupport.resolveWebClientInstanceId(session);
+        }
+        if (webClientInstanceId != null && !webClientInstanceId.isBlank()) {
+            context.setAttribute(ContextAttributes.WEB_CLIENT_INSTANCE_ID, webClientInstanceId);
         }
 
         if (AutoRunContextSupport.isAutoMessage(message)) {

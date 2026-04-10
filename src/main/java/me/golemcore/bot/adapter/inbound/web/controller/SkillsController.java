@@ -1,18 +1,17 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletionException;
+import java.util.NoSuchElementException;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
-import me.golemcore.bot.domain.model.ModelTierCatalog;
+import me.golemcore.bot.application.skills.SkillManagementFacade;
 import me.golemcore.bot.domain.model.Skill;
-import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.domain.model.SkillInstallRequest;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
-import me.golemcore.bot.domain.service.SkillDocumentService;
-import me.golemcore.bot.domain.service.SkillMarketplaceService;
-import me.golemcore.bot.domain.service.SkillService;
-import me.golemcore.bot.port.outbound.McpPort;
-import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -27,31 +26,16 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.function.Supplier;
-
-/**
- * Skills management endpoints.
- */
 @RestController
 @RequestMapping("/api/skills")
 @RequiredArgsConstructor
 public class SkillsController {
 
-    private static final String SKILLS_DIR = "skills";
-
-    private final SkillService skillService;
-    private final SkillDocumentService skillDocumentService;
-    private final SkillMarketplaceService skillMarketplaceService;
-    private final McpPort mcpPort;
-    private final StoragePort storagePort;
+    private final SkillManagementFacade skillManagementFacade;
 
     @GetMapping
     public Mono<ResponseEntity<List<SkillDto>>> listSkills() {
-        List<SkillDto> skills = skillService.getAllSkills().stream()
+        List<SkillDto> skills = skillManagementFacade.listSkills().stream()
                 .map(this::toDto)
                 .toList();
         return Mono.just(ResponseEntity.ok(skills));
@@ -59,12 +43,12 @@ public class SkillsController {
 
     @GetMapping("/marketplace")
     public Mono<ResponseEntity<SkillMarketplaceCatalog>> getMarketplace() {
-        return Mono.just(ResponseEntity.ok(skillMarketplaceService.getCatalog()));
+        return Mono.just(ResponseEntity.ok(skillManagementFacade.getMarketplace()));
     }
 
     @PostMapping("/marketplace/install")
     public Mono<ResponseEntity<SkillInstallResult>> installSkill(@RequestBody SkillInstallRequest request) {
-        return Mono.just(ResponseEntity.ok(skillMarketplaceService.install(request.getSkillId())));
+        return Mono.just(ResponseEntity.ok(skillManagementFacade.installSkill(request)));
     }
 
     @GetMapping("/detail")
@@ -77,41 +61,19 @@ public class SkillsController {
         return getSkillResponse(name);
     }
 
-    private Mono<ResponseEntity<SkillDto>> getSkillResponse(String name) {
-        Optional<Skill> skill = skillService.findByName(name);
-        if (skill.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found");
-        }
-        return Mono.just(ResponseEntity.ok(toDetailDto(skill.get())));
-    }
-
     @PostMapping
     public Mono<ResponseEntity<SkillDto>> createSkill(@RequestBody Map<String, String> body) {
-        String name = body.get("name");
-        String content = body.get("content");
-        if (name == null || name.isBlank() || !isValidMetadataName(name.trim()) || name.contains("/")) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Skill name is required and must match [a-z0-9][a-z0-9-]*");
+        java.util.concurrent.CompletableFuture<Skill> createFuture;
+        try {
+            createFuture = skillManagementFacade.createSkill(body.get("name"), body.get("content"));
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
         }
-        if (content == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill content is required");
-        }
-
-        String normalizedName = name.trim();
-        if (skillService.findByName(normalizedName).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Skill '" + normalizedName + "' already exists");
-        }
-
-        SkillDocument parsedDocument = skillDocumentService.parseNormalizedDocument(content);
-        Map<String, Object> metadata = skillDocumentService.mergeMetadata(
-                parsedDocument.metadata(),
-                Map.of("name", normalizedName));
-        validateMetadata(metadata);
-
-        String path = normalizedName + "/SKILL.md";
-        String document = skillDocumentService.renderDocument(metadata, parsedDocument.body());
-        return persistSkillAndReload(path, document,
-                () -> skillService.findByName(normalizedName), HttpStatus.CREATED);
+        return Mono.fromFuture(createFuture)
+                .map(created -> ResponseEntity.status(HttpStatus.CREATED).body(toDetailDto(created)))
+                .onErrorMap(this::translateSkillMutationError);
     }
 
     @PutMapping("/detail")
@@ -126,25 +88,6 @@ public class SkillsController {
         return updateSkillInternal(name, body);
     }
 
-    private Mono<ResponseEntity<SkillDto>> updateSkillInternal(String name, Map<String, Object> body) {
-        String content = extractContent(body);
-        if (content == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill content is required");
-        }
-
-        Skill skill = skillService.findByName(name)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found"));
-
-        SkillDocument parsedDocument = skillDocumentService.parseNormalizedDocument(content);
-        Map<String, Object> metadata = resolveUpdatedMetadata(skill, body, parsedDocument);
-        validateMetadata(metadata);
-
-        String path = skillMarketplaceService.resolveManagedSkillStoragePath(skill);
-        String document = skillDocumentService.renderDocument(metadata, parsedDocument.body());
-        return persistSkillAndReload(path, document,
-                () -> skillService.findByLocation(path), HttpStatus.OK);
-    }
-
     @PostMapping("/{name}/reload")
     public Mono<ResponseEntity<Map<String, String>>> reloadSkill(@PathVariable String name) {
         return reloadSkillInternal(name);
@@ -153,13 +96,6 @@ public class SkillsController {
     @PostMapping("/detail/reload")
     public Mono<ResponseEntity<Map<String, String>>> reloadSkillByQuery(@RequestParam String name) {
         return reloadSkillInternal(name);
-    }
-
-    private Mono<ResponseEntity<Map<String, String>>> reloadSkillInternal(String name) {
-        skillService.findByName(name)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found"));
-        skillService.reload();
-        return Mono.just(ResponseEntity.ok(Map.of("status", "reloaded")));
     }
 
     @DeleteMapping("/detail")
@@ -172,14 +108,6 @@ public class SkillsController {
         return deleteSkillInternal(name);
     }
 
-    private Mono<ResponseEntity<Void>> deleteSkillInternal(String name) {
-        Skill skill = skillService.findByName(name)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Skill '" + name + "' not found"));
-        return Mono.fromRunnable(() -> skillMarketplaceService.deleteManagedSkill(skill))
-                .then(Mono.fromRunnable(skillService::reload))
-                .then(Mono.just(ResponseEntity.noContent().<Void>build()));
-    }
-
     @GetMapping("/detail/mcp-status")
     public Mono<ResponseEntity<Map<String, Object>>> getMcpStatusByQuery(@RequestParam String name) {
         return getMcpStatusInternal(name);
@@ -190,43 +118,55 @@ public class SkillsController {
         return getMcpStatusInternal(name);
     }
 
+    private Mono<ResponseEntity<SkillDto>> getSkillResponse(String name) {
+        try {
+            return Mono.just(ResponseEntity.ok(toDetailDto(skillManagementFacade.getSkill(name))));
+        } catch (NoSuchElementException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
+        }
+    }
+
+    private Mono<ResponseEntity<SkillDto>> updateSkillInternal(String name, Map<String, Object> body) {
+        java.util.concurrent.CompletableFuture<Skill> updateFuture;
+        try {
+            updateFuture = skillManagementFacade.updateSkill(name, body);
+        } catch (NoSuchElementException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        }
+        return Mono.fromFuture(updateFuture)
+                .map(updated -> ResponseEntity.ok(toDetailDto(updated)))
+                .onErrorMap(this::translateSkillMutationError);
+    }
+
+    private Mono<ResponseEntity<Map<String, String>>> reloadSkillInternal(String name) {
+        try {
+            skillManagementFacade.reloadSkill(name);
+            return Mono.just(ResponseEntity.ok(Map.of("status", "reloaded")));
+        } catch (NoSuchElementException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
+        }
+    }
+
+    private Mono<ResponseEntity<Void>> deleteSkillInternal(String name) {
+        try {
+            skillManagementFacade.deleteSkill(name);
+            return Mono.just(ResponseEntity.noContent().<Void>build());
+        } catch (NoSuchElementException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
+        }
+    }
+
     private Mono<ResponseEntity<Map<String, Object>>> getMcpStatusInternal(String name) {
-        Optional<Skill> skill = skillService.findByName(name);
-        if (skill.isEmpty() || !skill.get().hasMcp()) {
+        SkillManagementFacade.McpStatusView status = skillManagementFacade.getMcpStatus(name);
+        if (!status.hasMcp()) {
             return Mono.just(ResponseEntity.ok(Map.of("hasMcp", false)));
         }
-        List<String> tools = mcpPort.getToolNames(name);
-        boolean running = !tools.isEmpty();
         return Mono.just(ResponseEntity.ok(Map.of(
                 "hasMcp", true,
-                "running", running,
-                "tools", tools)));
-    }
-
-    private Mono<ResponseEntity<SkillDto>> persistSkillAndReload(
-            String path,
-            String document,
-            Supplier<Optional<Skill>> skillLookup,
-            HttpStatus successStatus) {
-        return Mono.fromFuture(storagePort.putText(SKILLS_DIR, path, document))
-                .then(Mono.fromRunnable(skillService::reload))
-                .then(Mono.defer(() -> {
-                    Optional<Skill> saved = skillLookup.get();
-                    return saved
-                            .map(skill -> Mono.just(ResponseEntity.status(successStatus).body(toDetailDto(skill))))
-                            .orElse(Mono.just(ResponseEntity.notFound().build()));
-                }));
-    }
-
-    private Map<String, Object> resolveUpdatedMetadata(
-            Skill skill,
-            Map<String, Object> body,
-            SkillDocument parsedDocument) {
-        Optional<Map<String, Object>> explicitMetadata = extractMetadata(body);
-        if (explicitMetadata.isPresent()) {
-            return explicitMetadata.get();
-        }
-        return skillDocumentService.mergeMetadata(copyMetadata(skill.getMetadata()), parsedDocument.metadata());
+                "running", status.running(),
+                "tools", status.tools())));
     }
 
     private SkillDto toDto(Skill skill) {
@@ -246,105 +186,6 @@ public class SkillsController {
         dto.setRequirements(toRequirementsMap(skill));
         dto.setResolvedVariables(skill.getResolvedVariables());
         return dto;
-    }
-
-    private String extractContent(Map<String, Object> body) {
-        Object content = body.get("content");
-        if (content == null) {
-            return null;
-        }
-        if (!(content instanceof String stringContent)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill content must be a string");
-        }
-        return stringContent;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Optional<Map<String, Object>> extractMetadata(Map<String, Object> body) {
-        if (!body.containsKey("metadata")) {
-            return Optional.empty();
-        }
-        Object metadata = body.get("metadata");
-        if (metadata == null) {
-            return Optional.of(new LinkedHashMap<>());
-        }
-        if (!(metadata instanceof Map<?, ?> rawMetadata)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill metadata must be an object");
-        }
-        Map<String, Object> copied = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> entry : rawMetadata.entrySet()) {
-            copied.put(String.valueOf(entry.getKey()), entry.getValue());
-        }
-        return Optional.of(copied);
-    }
-
-    private void validateMetadata(Map<String, Object> metadata) {
-        Object name = metadata.get("name");
-        if (name != null) {
-            String normalizedName = name.toString().trim();
-            if (!isValidMetadataName(normalizedName)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Skill metadata name must match [a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*");
-            }
-            metadata.put("name", normalizedName);
-        }
-
-        normalizeTierMetadata(metadata, "model_tier");
-        normalizeTierMetadata(metadata, "reflection_tier");
-    }
-
-    private void normalizeTierMetadata(Map<String, Object> metadata, String key) {
-        Object value = metadata.get(key);
-        if (value == null) {
-            return;
-        }
-        String normalizedTier = ModelTierCatalog.normalizeTierId(value.toString());
-        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Skill metadata " + key + " must be a known tier id");
-        }
-        metadata.put(key, normalizedTier);
-    }
-
-    private boolean isValidMetadataName(String value) {
-        if (value == null || value.isBlank()) {
-            return false;
-        }
-
-        int segmentStart = 0;
-        for (int index = 0; index <= value.length(); index++) {
-            boolean atSeparator = index < value.length() && value.charAt(index) == '/';
-            boolean atEnd = index == value.length();
-            if (!atSeparator && !atEnd) {
-                continue;
-            }
-            if (!isValidMetadataSegment(value, segmentStart, index)) {
-                return false;
-            }
-            segmentStart = index + 1;
-        }
-        return true;
-    }
-
-    private boolean isValidMetadataSegment(String value, int startInclusive, int endExclusive) {
-        if (startInclusive >= endExclusive) {
-            return false;
-        }
-        char first = value.charAt(startInclusive);
-        if (!isLowercaseLetterOrDigit(first)) {
-            return false;
-        }
-        for (int index = startInclusive + 1; index < endExclusive; index++) {
-            char current = value.charAt(index);
-            if (!isLowercaseLetterOrDigit(current) && current != '-') {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean isLowercaseLetterOrDigit(char value) {
-        return (value >= 'a' && value <= 'z') || (value >= '0' && value <= '9');
     }
 
     private Map<String, Object> copyMetadata(Map<String, Object> metadata) {
@@ -369,5 +210,21 @@ public class SkillsController {
             requirements.put("skills", skill.getRequirements().getSkills());
         }
         return requirements;
+    }
+
+    private Throwable translateSkillMutationError(Throwable throwable) {
+        Throwable cause = throwable instanceof CompletionException && throwable.getCause() != null
+                ? throwable.getCause()
+                : throwable;
+        if (cause instanceof NoSuchElementException exception) {
+            return new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
+        }
+        if (cause instanceof IllegalArgumentException exception) {
+            return new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        }
+        if (cause instanceof IllegalStateException exception) {
+            return new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        }
+        return throwable;
     }
 }

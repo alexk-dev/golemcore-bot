@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.adapter.outbound.storage.ProtoSessionRecordCodecAdapter;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,7 +40,7 @@ class SessionServiceTest {
     private ObjectMapper objectMapper;
     private Clock clock;
     private SessionService service;
-    private SessionProtoMapper sessionProtoMapper;
+    private ProtoSessionRecordCodecAdapter sessionRecordCodecAdapter;
 
     @BeforeEach
     void setUp() {
@@ -48,8 +49,8 @@ class SessionServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         clock = Clock.fixed(FIXED_TIME, ZoneOffset.UTC);
-        service = new SessionService(storagePort, clock);
-        sessionProtoMapper = new SessionProtoMapper();
+        sessionRecordCodecAdapter = new ProtoSessionRecordCodecAdapter();
+        service = new SessionService(storagePort, sessionRecordCodecAdapter, clock);
 
         when(storagePort.getObject(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
@@ -126,7 +127,7 @@ class SessionServiceTest {
                         "modelTier", "coding")))
                 .timestamp(FIXED_TIME)
                 .build());
-        byte[] payload = sessionProtoMapper.toProto(stored).toByteArray();
+        byte[] payload = sessionRecordCodecAdapter.encode(stored);
 
         when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
                 .thenReturn(CompletableFuture.completedFuture(payload));

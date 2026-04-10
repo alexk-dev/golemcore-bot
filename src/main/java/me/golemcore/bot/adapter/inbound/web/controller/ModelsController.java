@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.LlmRequest;
@@ -7,6 +8,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
 import me.golemcore.bot.domain.service.HiveManagedPolicyService;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.service.ModelRegistryService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
@@ -128,7 +130,7 @@ public class ModelsController {
                     .discoverModels(provider);
             List<DiscoveredModelDto> response = discoveredModels.stream()
                     .map(model -> new DiscoveredModelDto(model.provider(), model.id(), model.displayName(),
-                            model.ownedBy(), model.defaultSettings()))
+                            model.ownedBy(), model.defaultCatalogEntry()))
                     .toList();
             return Mono.just(ResponseEntity.ok(response));
         } catch (IllegalArgumentException e) {
@@ -149,7 +151,7 @@ public class ModelsController {
         try {
             ModelRegistryService.ResolveResult result = modelRegistryService.resolveDefaults(provider, modelId);
             return Mono.just(ResponseEntity.ok(
-                    new ResolveRegistryResponse(result.defaultSettings(), result.configSource(),
+                    new ResolveRegistryResponse(result.defaultCatalogEntry(), result.configSource(),
                             result.cacheStatus())));
         } catch (IllegalArgumentException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
@@ -227,7 +229,8 @@ public class ModelsController {
     public record SaveModelRequest(String id, String previousId, ModelConfigService.ModelSettings settings) {
     }
 
-    public record ResolveRegistryResponse(ModelConfigService.ModelSettings defaultSettings, String configSource,
+    public record ResolveRegistryResponse(@JsonProperty("defaultSettings") ModelCatalogEntry defaultSettings,
+            String configSource,
             String cacheStatus) {
     }
 
@@ -242,6 +245,6 @@ public class ModelsController {
     }
 
     private record DiscoveredModelDto(String provider, String id, String displayName, String ownedBy,
-            ModelConfigService.ModelSettings defaultSettings) {
+            @JsonProperty("defaultSettings") ModelCatalogEntry defaultSettings) {
     }
 }

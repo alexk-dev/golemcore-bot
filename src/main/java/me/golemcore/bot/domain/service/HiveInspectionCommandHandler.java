@@ -4,15 +4,14 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.port.outbound.HiveInspectionPayloadPort;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
@@ -93,7 +92,7 @@ public class HiveInspectionCommandHandler {
     private Map<String, Object> toSnapshotPayloadExport(SessionInspectionService.SnapshotPayloadExport export) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("payloadText", export.payloadText());
-        payload.put("contentType", export.contentType().toString());
+        payload.put("contentType", export.contentType());
         payload.put("fileExtension", export.fileExtension());
         return payload;
     }
@@ -180,14 +179,8 @@ public class HiveInspectionCommandHandler {
     }
 
     private String resolveErrorCode(RuntimeException exception) {
-        if (exception instanceof ResponseStatusException responseStatusException) {
-            HttpStatus status = HttpStatus.resolve(responseStatusException.getStatusCode().value());
-            if (status == HttpStatus.NOT_FOUND) {
-                return "NOT_FOUND";
-            }
-            if (status == HttpStatus.BAD_REQUEST) {
-                return "INVALID_REQUEST";
-            }
+        if (exception instanceof NoSuchElementException) {
+            return "NOT_FOUND";
         }
         if (exception instanceof IllegalArgumentException) {
             return "INVALID_REQUEST";
@@ -196,10 +189,6 @@ public class HiveInspectionCommandHandler {
     }
 
     private String resolveErrorMessage(RuntimeException exception) {
-        if (exception instanceof ResponseStatusException responseStatusException
-                && !StringValueSupport.isBlank(responseStatusException.getReason())) {
-            return responseStatusException.getReason();
-        }
         if (!StringValueSupport.isBlank(exception.getMessage())) {
             return exception.getMessage();
         }

@@ -15,7 +15,6 @@ import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.Test;
@@ -28,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
+import static me.golemcore.bot.support.ChannelRuntimeTestSupport.responseRoutingSystem;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -103,8 +103,8 @@ class ToolLoopNoDuplicateHistoryBddTest {
                 .historyWriter(new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)))
                 .viewBuilder(new me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .turnSettings(new BotProperties.TurnProperties())
-                .settings(new BotProperties.ToolLoopProperties())
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(new BotProperties.TurnProperties()))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(new BotProperties.ToolLoopProperties()))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(NOW, ZoneOffset.UTC))
                 .build();
@@ -128,8 +128,7 @@ class ToolLoopNoDuplicateHistoryBddTest {
         VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
-        ResponseRoutingSystem routing = new ResponseRoutingSystem(new ChannelRegistry(List.of(channel)), preferences,
-                voiceHandler);
+        ResponseRoutingSystem routing = responseRoutingSystem(List.of(channel), preferences, voiceHandler);
 
         ctx.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
                 me.golemcore.bot.domain.model.OutgoingResponse.textOnly(second.getContent()));

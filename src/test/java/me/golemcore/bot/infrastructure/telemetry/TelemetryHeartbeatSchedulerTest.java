@@ -1,6 +1,7 @@
 package me.golemcore.bot.infrastructure.telemetry;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.plugin.runtime.PluginManager;
@@ -50,7 +51,7 @@ class TelemetryHeartbeatSchedulerTest {
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
 
-        ModelConfigService.ModelSettings modelSettings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry modelSettings = new ModelCatalogEntry();
         when(modelConfigService.getAllModels()).thenReturn(
                 new LinkedHashMap<>(Map.of("gpt-4o", modelSettings, "claude-sonnet", modelSettings)));
 

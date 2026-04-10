@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
+import me.golemcore.bot.application.skills.SkillManagementFacade;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillInstallRequest;
 import me.golemcore.bot.domain.model.SkillInstallResult;
@@ -54,8 +55,13 @@ class SkillsControllerTest {
         skillMarketplaceService = mock(SkillMarketplaceService.class);
         mcpPort = mock(McpPort.class);
         storagePort = mock(StoragePort.class);
-        controller = new SkillsController(skillService, skillDocumentService, skillMarketplaceService, mcpPort,
-                storagePort);
+        controller = new SkillsController(
+                new SkillManagementFacade(
+                        skillService,
+                        skillDocumentService,
+                        skillMarketplaceService,
+                        mcpPort,
+                        storagePort));
     }
 
     @Test

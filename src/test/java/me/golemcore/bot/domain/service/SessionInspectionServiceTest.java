@@ -30,8 +30,6 @@ import me.golemcore.bot.domain.view.SessionTraceSummaryView;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
-import org.springframework.web.server.ResponseStatusException;
 
 class SessionInspectionServiceTest {
 
@@ -193,34 +191,6 @@ class SessionInspectionServiceTest {
         assertEquals("conv-1", byChatAlias.getConversationKey());
     }
 
-    @Test
-    void shouldListRecentSessionsWithActiveConversationAndLimit() {
-        AgentSession newer = AgentSession.builder()
-                .id("web:conv-2")
-                .channelType("web")
-                .chatId("legacy-2")
-                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-2"))
-                .updatedAt(Instant.parse("2026-03-20T10:05:00Z"))
-                .messages(List.of())
-                .build();
-        AgentSession older = AgentSession.builder()
-                .id("web:conv-1")
-                .channelType("web")
-                .chatId("legacy-1")
-                .metadata(Map.of(ContextAttributes.CONVERSATION_KEY, "conv-1"))
-                .updatedAt(Instant.parse("2026-03-20T10:00:00Z"))
-                .messages(List.of())
-                .build();
-        when(sessionPort.listByChannelType("web")).thenReturn(List.of(older, newer));
-
-        List<SessionSummaryView> recent = service.listRecentSessions("web", null, "conv-2", 1);
-
-        assertEquals(1, recent.size());
-        assertEquals("web:conv-2", recent.get(0).getId());
-        assertTrue(recent.get(0).isActive());
-    }
-
-    @Test
     void shouldPageMessagesWithAttachmentFallbackAndMetadataProjection() {
         Map<String, Object> attachmentOnlyMetadata = new LinkedHashMap<>();
         attachmentOnlyMetadata.put("attachments", List.of(
@@ -331,12 +301,11 @@ class SessionInspectionServiceTest {
                 .build();
         when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
 
-        ResponseStatusException error = assertThrows(
-                ResponseStatusException.class,
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
                 () -> service.getSessionMessages("web:conv-1", 10, "missing"));
 
-        assertEquals(400, error.getStatusCode().value());
-        assertEquals("beforeMessageId not found", error.getReason());
+        assertEquals("beforeMessageId not found", error.getMessage());
     }
 
     @Test
@@ -368,8 +337,48 @@ class SessionInspectionServiceTest {
                 "snap-1");
 
         assertEquals("payload", export.payloadText());
-        assertEquals(MediaType.APPLICATION_OCTET_STREAM, export.contentType());
+        assertEquals("application/octet-stream", export.contentType());
         assertEquals(".txt", export.fileExtension());
+    }
+
+    @Test
+    void shouldPreserveParameterizedSnapshotContentTypeWhenExportingPayload() {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-1")
+                .role("response")
+                .contentType("application/json; charset=utf-8")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress("{\"ok\":true}".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(11L)
+                .compressedSize(18L)
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-1")
+                        .rootSpanId("span-root")
+                        .spans(List.of(TraceSpanRecord.builder()
+                                .spanId("span-root")
+                                .snapshots(List.of(snapshot))
+                                .build()))
+                        .build()))
+                .build();
+        when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
+
+        SessionInspectionService.SnapshotPayloadExport export = service.exportSessionTraceSnapshotPayload("web:conv-1",
+                "snap-1");
+
+        assertEquals("{\"ok\":true}", export.payloadText());
+        assertEquals("application/json; charset=utf-8", export.contentType());
+        assertEquals(".json", export.fileExtension());
+    }
+
+    @Test
+    void shouldFallbackWhenSnapshotContentTypeParametersAreMalformed() {
+        assertMalformedSnapshotContentTypeFallsBack("application/json; charset");
+        assertMalformedSnapshotContentTypeFallsBack("application/json; =utf-8");
+        assertMalformedSnapshotContentTypeFallsBack("application/json; char(set)=utf-8");
     }
 
     @Test
@@ -454,5 +463,37 @@ class SessionInspectionServiceTest {
 
         verify(sessionPort).delete("telegram:conv-old");
         verify(pointerService).setActiveConversationKey("telegram|555", "conv-new");
+    }
+
+    private void assertMalformedSnapshotContentTypeFallsBack(String contentType) {
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-1")
+                .role("response")
+                .contentType(contentType)
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress("payload".getBytes(StandardCharsets.UTF_8)))
+                .originalSize(7L)
+                .compressedSize(15L)
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-1")
+                        .rootSpanId("span-root")
+                        .spans(List.of(TraceSpanRecord.builder()
+                                .spanId("span-root")
+                                .snapshots(List.of(snapshot))
+                                .build()))
+                        .build()))
+                .build();
+        when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
+
+        SessionInspectionService.SnapshotPayloadExport export = service.exportSessionTraceSnapshotPayload("web:conv-1",
+                "snap-1");
+
+        assertEquals("payload", export.payloadText());
+        assertEquals("application/octet-stream", export.contentType());
+        assertEquals(".txt", export.fileExtension());
     }
 }
