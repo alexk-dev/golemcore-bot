@@ -269,7 +269,8 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfigDto>> updateTelemetryConfig(
             @RequestBody TelemetryConfigDto telemetryConfig) {
         return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
-                runtimeSettingsFacade.updateTelemetryConfig(runtimeSettingsWebMapper.toTelemetryConfig(telemetryConfig))));
+                runtimeSettingsFacade
+                        .updateTelemetryConfig(runtimeSettingsWebMapper.toTelemetryConfig(telemetryConfig))));
     }
 
     @PutMapping("/runtime/mcp")
@@ -344,92 +345,114 @@ public class SettingsController {
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateRuntimeConfig(RuntimeConfig config) {
-        return updateRuntimeConfig(runtimeSettingsWebMapper.toRuntimeConfigDto(config));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateRuntimeConfig(config)));
     }
 
-    public Mono<ResponseEntity<RuntimeConfigDto>> updateModelRouterConfig(RuntimeConfig.ModelRouterConfig modelRouterConfig) {
-        return updateModelRouterConfig(runtimeSettingsWebMapper.toModelRouterConfigDto(modelRouterConfig));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateModelRouterConfig(
+            RuntimeConfig.ModelRouterConfig modelRouterConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateModelRouterConfig(modelRouterConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateLlmConfig(RuntimeConfig.LlmConfig llmConfig) {
-        return updateLlmConfig(runtimeSettingsWebMapper.toLlmConfigDto(llmConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateLlmConfig(llmConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> addLlmProvider(String name,
             RuntimeConfig.LlmProviderConfig providerConfig) {
-        return addLlmProvider(name, runtimeSettingsWebMapper.toLlmProviderConfigDto(providerConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.addLlmProvider(name, providerConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateLlmProvider(String name,
             RuntimeConfig.LlmProviderConfig providerConfig) {
-        return updateLlmProvider(name, runtimeSettingsWebMapper.toLlmProviderConfigDto(providerConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateLlmProvider(name, providerConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateToolsConfig(RuntimeConfig.ToolsConfig toolsConfig) {
-        return updateToolsConfig(runtimeSettingsWebMapper.toToolsConfigDto(toolsConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateToolsConfig(toolsConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> createShellEnvironmentVariable(
             RuntimeConfig.ShellEnvironmentVariable variable) {
-        return createShellEnvironmentVariable(runtimeSettingsWebMapper.toShellEnvironmentVariableDto(variable));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.createShellEnvironmentVariable(variable)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateShellEnvironmentVariable(String name,
             RuntimeConfig.ShellEnvironmentVariable variable) {
-        return updateShellEnvironmentVariable(name, runtimeSettingsWebMapper.toShellEnvironmentVariableDto(variable));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateShellEnvironmentVariable(name, variable)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateVoiceConfig(RuntimeConfig.VoiceConfig voiceConfig) {
-        return updateVoiceConfig(runtimeSettingsWebMapper.toVoiceConfigDto(voiceConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateVoiceConfig(voiceConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
-        return updateTurnConfig(runtimeSettingsWebMapper.toTurnConfigDto(turnConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateTurnConfig(turnConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
-        return updateMemoryConfig(runtimeSettingsWebMapper.toMemoryConfigDto(memoryConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateMemoryConfig(memoryConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateSkillsConfig(RuntimeConfig.SkillsConfig skillsConfig) {
-        return updateSkillsConfig(runtimeSettingsWebMapper.toSkillsConfigDto(skillsConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateSkillsConfig(skillsConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateUsageConfig(RuntimeConfig.UsageConfig usageConfig) {
-        return updateUsageConfig(runtimeSettingsWebMapper.toUsageConfigDto(usageConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateUsageConfig(usageConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateTelemetryConfig(RuntimeConfig.TelemetryConfig telemetryConfig) {
-        return updateTelemetryConfig(runtimeSettingsWebMapper.toTelemetryConfigDto(telemetryConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateTelemetryConfig(telemetryConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMcpConfig(RuntimeConfig.McpConfig mcpConfig) {
-        return updateMcpConfig(runtimeSettingsWebMapper.toMcpConfigDto(mcpConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateMcpConfig(mcpConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry entry) {
-        return addMcpCatalogEntry(runtimeSettingsWebMapper.toMcpCatalogEntryDto(entry));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.addMcpCatalogEntry(entry)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMcpCatalogEntry(String name,
             RuntimeConfig.McpCatalogEntry entry) {
-        return updateMcpCatalogEntry(name, runtimeSettingsWebMapper.toMcpCatalogEntryDto(entry));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateMcpCatalogEntry(name, entry)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
-        return updateHiveConfig(runtimeSettingsWebMapper.toHiveConfigDto(hiveConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateHiveConfig(hiveConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
-        return updatePlanConfig(runtimeSettingsWebMapper.toPlanConfigDto(planConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updatePlanConfig(planConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateAutoConfig(RuntimeConfig.AutoModeConfig autoConfig) {
-        return updateAutoConfig(runtimeSettingsWebMapper.toAutoModeConfigDto(autoConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateAutoConfig(autoConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateTracingConfig(RuntimeConfig.TracingConfig tracingConfig) {
-        return updateTracingConfig(runtimeSettingsWebMapper.toTracingConfigDto(tracingConfig));
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateTracingConfig(tracingConfig)));
     }
 
     private Mono<ResponseEntity<RuntimeConfigDto>> runtimeConfigResponse(Supplier<RuntimeConfigDto> supplier) {
@@ -485,5 +508,46 @@ public class SettingsController {
             RateLimitConfigDto rateLimit,
             SecurityConfigDto security,
             CompactionConfigDto compaction) {
+
+        private AdvancedConfigRequest(
+                RuntimeConfig.RateLimitConfig rateLimit,
+                RuntimeConfig.SecurityConfig security,
+                RuntimeConfig.CompactionConfig compaction) {
+            this(copy(rateLimit, new RateLimitConfigDto()),
+                    copy(security, new SecurityConfigDto()),
+                    copy(compaction, new CompactionConfigDto()));
+        }
+
+        private static <S, T> T copy(S source, T target) {
+            if (source == null) {
+                return null;
+            }
+            try {
+                java.beans.BeanInfo beanInfo = java.beans.Introspector.getBeanInfo(source.getClass(), Object.class);
+                for (java.beans.PropertyDescriptor descriptor : beanInfo.getPropertyDescriptors()) {
+                    java.lang.reflect.Method readMethod = descriptor.getReadMethod();
+                    java.lang.reflect.Method writeMethod = findWriteMethod(target.getClass(), descriptor.getName(),
+                            descriptor.getPropertyType());
+                    if (readMethod != null && writeMethod != null) {
+                        writeMethod.invoke(target, readMethod.invoke(source));
+                    }
+                }
+                return target;
+            } catch (Exception exception) {
+                throw new IllegalStateException("Failed to map advanced config request", exception);
+            }
+        }
+
+        private static java.lang.reflect.Method findWriteMethod(
+                Class<?> targetClass,
+                String propertyName,
+                Class<?> propertyType) {
+            try {
+                String setterName = "set" + Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1);
+                return targetClass.getMethod(setterName, propertyType);
+            } catch (NoSuchMethodException exception) {
+                return null;
+            }
+        }
     }
 }

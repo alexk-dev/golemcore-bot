@@ -100,7 +100,8 @@ class SettingsControllerTest {
                         modelSelectionService,
                         new PluginVoiceProviderCatalogAdapter(sttRegistry, ttsRegistry)),
                 new RuntimeSettingsMergeService());
-        return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade, runtimeSettingsWebMapper);
+        return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade,
+                runtimeSettingsWebMapper);
     }
 
     @Test

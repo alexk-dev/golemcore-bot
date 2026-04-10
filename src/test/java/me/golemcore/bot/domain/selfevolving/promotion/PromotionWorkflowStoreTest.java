@@ -14,15 +14,20 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class PromotionWorkflowStoreTest {    private PromotionWorkflowStatePort promotionWorkflowStatePort;
+class PromotionWorkflowStoreTest {
+    private PromotionWorkflowStatePort promotionWorkflowStatePort;
 
     @BeforeEach
-    void setUp() {        promotionWorkflowStatePort = new InMemoryPromotionWorkflowStatePort();
+    void setUp() {
+        promotionWorkflowStatePort = new InMemoryPromotionWorkflowStatePort();
     }
 
     @Test
-    void shouldLoadAndCacheCandidatesAndDecisionsFromStorage() throws Exception {        ((InMemoryPromotionWorkflowStatePort) promotionWorkflowStatePort).saveCandidates(List.of(EvolutionCandidate.builder().id("candidate-1").build()));
-        ((InMemoryPromotionWorkflowStatePort) promotionWorkflowStatePort).savePromotionDecisions(List.of(PromotionDecision.builder().id("decision-1").build()));
+    void shouldLoadAndCacheCandidatesAndDecisionsFromStorage() throws Exception {
+        ((InMemoryPromotionWorkflowStatePort) promotionWorkflowStatePort)
+                .saveCandidates(List.of(EvolutionCandidate.builder().id("candidate-1").build()));
+        ((InMemoryPromotionWorkflowStatePort) promotionWorkflowStatePort)
+                .savePromotionDecisions(List.of(PromotionDecision.builder().id("decision-1").build()));
         PromotionWorkflowStore store = new PromotionWorkflowStore(promotionWorkflowStatePort);
 
         List<EvolutionCandidate> firstCandidates = store.getCandidates();
@@ -39,7 +44,8 @@ class PromotionWorkflowStoreTest {    private PromotionWorkflowStatePort promoti
     }
 
     @Test
-    void shouldPersistCandidatesAndDecisionsAndRefreshCache() {        PromotionWorkflowStore store = new PromotionWorkflowStore(promotionWorkflowStatePort);
+    void shouldPersistCandidatesAndDecisionsAndRefreshCache() {
+        PromotionWorkflowStore store = new PromotionWorkflowStore(promotionWorkflowStatePort);
         List<EvolutionCandidate> candidates = List.of(EvolutionCandidate.builder()
                 .id("candidate-2")
                 .createdAt(Instant.parse("2026-04-06T00:00:00Z"))
@@ -54,7 +60,8 @@ class PromotionWorkflowStoreTest {    private PromotionWorkflowStatePort promoti
     }
 
     @Test
-    void shouldReturnEmptyCollectionsWhenStoredJsonIsInvalid() {        PromotionWorkflowStatePort failingPort = new PromotionWorkflowStatePort() {
+    void shouldReturnEmptyCollectionsWhenStoredJsonIsInvalid() {
+        PromotionWorkflowStatePort failingPort = new PromotionWorkflowStatePort() {
             @Override
             public List<EvolutionCandidate> loadCandidates() {
                 return new ArrayList<>();

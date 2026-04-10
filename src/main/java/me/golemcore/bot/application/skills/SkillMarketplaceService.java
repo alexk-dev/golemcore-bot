@@ -40,10 +40,11 @@ public class SkillMarketplaceService {
     public SkillMarketplaceCatalog getCatalog() {
         SkillMarketplaceCatalogPort.SkillMarketplaceCatalogData catalogData = loadCatalogData();
         SkillMarketplaceCatalog catalog = catalogData.catalog();
-        return catalog != null ? catalog : SkillMarketplaceCatalog.builder()
-                .available(false)
-                .message("Skill marketplace is unavailable")
-                .build();
+        return catalog != null ? catalog
+                : SkillMarketplaceCatalog.builder()
+                        .available(false)
+                        .message("Skill marketplace is unavailable")
+                        .build();
     }
 
     public SkillInstallResult install(String skillId) {

@@ -110,7 +110,8 @@ class UpdateServiceTest {
             stagedArtifactRef.set(Optional.empty());
             return null;
         }).when(updateArtifactStorePort).activateStagedArtifact(any(String.class));
-        org.mockito.Mockito.doAnswer(invocation -> null).when(updateArtifactStorePort).cleanupTempArtifact(any(String.class));
+        org.mockito.Mockito.doAnswer(invocation -> null).when(updateArtifactStorePort)
+                .cleanupTempArtifact(any(String.class));
 
         Properties props = new Properties();
         props.setProperty("version", VERSION_CURRENT);
@@ -410,7 +411,8 @@ class UpdateServiceTest {
         when(updateArtifactStorePort.findStagedArtifact()).thenReturn(Optional.empty());
         when(updateArtifactStorePort.stageReleaseAsset(any(UpdateArtifactStorePort.StageArtifactRequest.class)))
                 .thenThrow(new IllegalStateException(
-                        "Update directory is not writable: " + blockedPath + ". Configure UPDATE_PATH to a writable path."));
+                        "Update directory is not writable: " + blockedPath
+                                + ". Configure UPDATE_PATH to a writable path."));
         TestableUpdateService service = createTestableService(source);
         service.check();
 

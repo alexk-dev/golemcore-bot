@@ -1,13 +1,7 @@
 package me.golemcore.bot.adapter.outbound.skills;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
@@ -26,70 +20,53 @@ import me.golemcore.bot.port.outbound.SkillSettingsPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Stream;
 
 /**
  * Reads skill marketplace metadata from a local registry directory or a remote
  * GitHub repository and installs skill artifacts into runtime storage.
  */
-@RequiredArgsConstructor
 @Slf4j
-public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPort, SkillMarketplaceArtifactPort, SkillMarketplaceInstallPort {
+public class SkillMarketplaceLegacySupport
+        implements SkillMarketplaceCatalogPort, SkillMarketplaceArtifactPort, SkillMarketplaceInstallPort {
 
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
-    private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory())
-            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
-    private static final String GITHUB_USER_AGENT = "golemcore-bot-skill-marketplace";
     private static final String SKILLS_DIR = "skills";
-    private static final String REGISTRY_DIR = "registry";
     private static final String MARKETPLACE_DIR = "marketplace";
-    private static final String MANIFEST_FILE = "artifact.yaml";
-    private static final String MAINTAINER_FILE = "maintainer.yaml";
     private static final String SKILL_FILE = "SKILL.md";
     private static final String INSTALL_METADATA_FILE = ".marketplace-install.json";
-    private static final String SOURCE_REPOSITORY = "repository";
-    private static final String SOURCE_DIRECTORY = "directory";
-    private static final String SOURCE_SANDBOX = "sandbox";
     private static final String TYPE_SKILL = "skill";
-    private static final String TYPE_PACK = "pack";
-    private static final String DEFAULT_REPOSITORY_URL = "https://github.com/alexk-dev/golemcore-skills";
-    private static final String DEFAULT_API_BASE_URL = "https://api.github.com";
-    private static final String DEFAULT_RAW_BASE_URL = "https://raw.githubusercontent.com";
-    private static final String DEFAULT_BRANCH = "main";
     private final SkillSettingsPort settingsPort;
     private final StoragePort storagePort;
     private final SkillService skillService;
-    private final RuntimeConfigService runtimeConfigService;
-    private final WorkspacePathService workspacePathService;
     private final SkillDocumentService skillDocumentService;
+    private final SkillMarketplaceRegistryLoader registryLoader;
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
-    private final Object remoteCatalogLock = new Object();
-    private final AtomicReference<RemoteCatalogCache> remoteCatalogCache = new AtomicReference<>();
+    public SkillMarketplaceLegacySupport(
+            SkillSettingsPort settingsPort,
+            StoragePort storagePort,
+            SkillService skillService,
+            RuntimeConfigService runtimeConfigService,
+            WorkspacePathService workspacePathService,
+            SkillDocumentService skillDocumentService) {
+        this.settingsPort = settingsPort;
+        this.storagePort = storagePort;
+        this.skillService = skillService;
+        this.skillDocumentService = skillDocumentService;
+        this.registryLoader = new SkillMarketplaceRegistryLoader(
+                settingsPort,
+                runtimeConfigService,
+                workspacePathService,
+                skillDocumentService);
+    }
 
     @Override
     public SkillMarketplaceCatalogData loadCatalog(
@@ -104,12 +81,18 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
                     unavailable("Skill marketplace is disabled by backend configuration."),
                     Map.of(),
                     Map.of(),
-                    new MarketplaceSourceRef(SOURCE_REPOSITORY, null, null, null));
+                    new MarketplaceSourceRef("repository", null, null, null));
         }
 
         try {
-            MarketplaceSource source = resolveMarketplaceSource();
-            Map<String, RegistryArtifact> artifacts = loadArtifacts(source);
+            MarketplaceSource source = registryLoader.resolveMarketplaceSource(
+                    marketplaceSettings,
+                    runtimeSkillSettings,
+                    repositoryDirectory,
+                    sandboxPath,
+                    repositoryUrl,
+                    branch);
+            Map<String, RegistryArtifact> artifacts = registryLoader.loadArtifacts(source);
             Map<String, InstalledArtifactMetadata> installed = loadInstalledArtifacts();
 
             List<SkillMarketplaceItem> items = artifacts.values().stream()
@@ -159,7 +142,7 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
                     unavailable(ex.getMessage()),
                     Map.of(),
                     Map.of(),
-                    new MarketplaceSourceRef(SOURCE_REPOSITORY, null, null, null));
+                    new MarketplaceSourceRef("repository", null, null, null));
         }
     }
 
@@ -169,11 +152,17 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
             MarketplaceArtifactData artifactData,
             String requestedArtifactRef) {
         String artifactRef = normalizeArtifactRef(requestedArtifactRef);
-        MarketplaceSource source = resolveMarketplaceSource();
-        Map<String, RegistryArtifact> artifacts = loadArtifacts(source);
+        MarketplaceSource source = registryLoader.resolveMarketplaceSource(sourceRef, artifactData);
+        Map<String, RegistryArtifact> artifacts = registryLoader.loadArtifacts(source);
         RegistryArtifact artifact = artifacts.get(artifactRef);
         if (artifact == null) {
             throw new IllegalArgumentException("Unknown skill artifact: " + artifactRef);
+        }
+        if (artifactData != null
+                && artifactData.contentHash() != null
+                && !Objects.equals(artifactData.contentHash(), artifact.contentHash())) {
+            throw new IllegalStateException("Skill marketplace artifact changed since catalog was loaded: "
+                    + artifactRef);
         }
 
         List<InstalledSkillPayload> payloads = buildInstalledSkillPayloads(source, artifact);
@@ -241,14 +230,18 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
         return MARKETPLACE_DIR + "/" + parts[0] + "/" + parts[1];
     }
 
+    private String normalizeArtifactRef(String artifactRef) {
+        return registryLoader.normalizeArtifactRef(artifactRef);
+    }
+
     public SkillMarketplaceCatalog getCatalog() {
         if (!marketplaceSettings().enabled()) {
             return unavailable("Skill marketplace is disabled by backend configuration.");
         }
 
         try {
-            MarketplaceSource source = resolveMarketplaceSource();
-            Map<String, RegistryArtifact> artifacts = loadArtifacts(source);
+            MarketplaceSource source = registryLoader.resolveMarketplaceSource();
+            Map<String, RegistryArtifact> artifacts = registryLoader.loadArtifacts(source);
             Map<String, InstalledArtifactMetadata> installed = loadInstalledArtifacts();
 
             List<SkillMarketplaceItem> items = artifacts.values().stream()
@@ -281,8 +274,8 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
             throw new IllegalStateException("Skill marketplace is disabled");
         }
 
-        MarketplaceSource source = resolveMarketplaceSource();
-        Map<String, RegistryArtifact> artifacts = loadArtifacts(source);
+        MarketplaceSource source = registryLoader.resolveMarketplaceSource();
+        Map<String, RegistryArtifact> artifacts = registryLoader.loadArtifacts(source);
         RegistryArtifact artifact = artifacts.get(artifactRef);
         if (artifact == null) {
             throw new IllegalArgumentException("Unknown skill artifact: " + artifactRef);
@@ -393,7 +386,7 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
 
         List<InstalledSkillPayload> payloads = new ArrayList<>();
         for (RegistrySkill skill : artifact.skills()) {
-            String sourceContent = readSkillContent(source, skill.sourcePath());
+            String sourceContent = registryLoader.readSkillContent(source, skill.sourcePath());
             String transformed = rewriteSkillContent(sourceContent, skill.runtimeName(), aliasMap);
             payloads.add(new InstalledSkillPayload(installSkillStoragePath(artifact, skill), transformed));
         }
@@ -450,349 +443,6 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
         if (value instanceof String stringValue && aliasMap.containsKey(stringValue)) {
             metadata.put(key, aliasMap.get(stringValue));
         }
-    }
-
-    private Map<String, RegistryArtifact> loadArtifacts(MarketplaceSource source) {
-        return (SOURCE_DIRECTORY.equals(source.type()) || SOURCE_SANDBOX.equals(source.type()))
-                ? loadLocalArtifacts(source)
-                : loadRemoteArtifacts(source);
-    }
-
-    private Map<String, RegistryArtifact> loadLocalArtifacts(MarketplaceSource source) {
-        Path repositoryRoot = source.localRepositoryRoot();
-        Path registryRoot = locateRegistryRoot(repositoryRoot)
-                .orElseThrow(() -> new IllegalStateException("Marketplace registry directory is missing under "
-                        + repositoryRoot));
-
-        Map<String, MaintainerInfo> maintainers = loadLocalMaintainers(registryRoot);
-        List<Path> manifestPaths;
-        try (Stream<Path> stream = Files.walk(registryRoot, 4)) {
-            manifestPaths = stream.filter(Files::isRegularFile)
-                    .filter(path -> MANIFEST_FILE.equals(fileNameOrEmpty(path)))
-                    .sorted()
-                    .toList();
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to scan marketplace registry " + registryRoot, ex);
-        }
-
-        Map<String, RegistryArtifact> artifacts = new LinkedHashMap<>();
-        for (Path manifestPath : manifestPaths) {
-            try {
-                RegistryArtifact artifact = loadLocalArtifact(registryRoot, manifestPath, maintainers);
-                artifacts.putIfAbsent(artifact.artifactRef(), artifact);
-            } catch (RuntimeException ex) {
-                log.warn("[Skills] Failed to read local artifact {}: {}", manifestPath, ex.getMessage());
-            }
-        }
-        return Map.copyOf(artifacts);
-    }
-
-    private Map<String, MaintainerInfo> loadLocalMaintainers(Path registryRoot) {
-        Map<String, MaintainerInfo> maintainers = new LinkedHashMap<>();
-        try (Stream<Path> stream = Files.walk(registryRoot, 2)) {
-            stream.filter(Files::isRegularFile)
-                    .filter(path -> MAINTAINER_FILE.equals(fileNameOrEmpty(path)))
-                    .sorted()
-                    .forEach(path -> {
-                        try {
-                            MaintainerManifest manifest = parseMaintainerManifest(Files.readString(path));
-                            String maintainerId = normalizeSlug(firstNonBlank(
-                                    trimToNull(manifest.getId()),
-                                    trimToNull(parentDirectoryNameOrNull(path))));
-                            maintainers.putIfAbsent(maintainerId, new MaintainerInfo(
-                                    maintainerId,
-                                    firstNonBlank(trimToNull(manifest.getDisplayName()), maintainerId)));
-                        } catch (IOException | RuntimeException ex) {
-                            log.warn("[Skills] Failed to read maintainer metadata {}: {}", path, ex.getMessage());
-                        }
-                    });
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to scan maintainer metadata under " + registryRoot, ex);
-        }
-        return Map.copyOf(maintainers);
-    }
-
-    private RegistryArtifact loadLocalArtifact(
-            Path registryRoot,
-            Path manifestPath,
-            Map<String, MaintainerInfo> maintainers) {
-        String content;
-        try {
-            content = Files.readString(manifestPath);
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to read artifact manifest " + manifestPath, ex);
-        }
-        ArtifactManifest manifest = parseArtifactManifest(content);
-
-        Path artifactDir = Objects.requireNonNull(manifestPath.getParent(),
-                "Artifact manifest must live under registry/<maintainer>/<artifact>");
-        Path maintainerDir = Objects.requireNonNull(artifactDir.getParent(),
-                "Artifact manifest must live under registry/<maintainer>/<artifact>");
-        String maintainerFileName = fileNameOrEmpty(maintainerDir);
-        String artifactFileName = fileNameOrEmpty(artifactDir);
-        Path registryParent = registryRoot.getParent();
-        if (maintainerFileName.isBlank() || artifactFileName.isBlank() || registryParent == null) {
-            throw new IllegalStateException("Artifact manifest path is invalid: " + manifestPath);
-        }
-
-        String maintainerId = normalizeMaintainerId(manifest, maintainerFileName);
-        String artifactId = normalizeArtifactId(manifest, artifactFileName);
-        validateManifestOwnership(manifest, maintainerId, artifactId);
-
-        MaintainerInfo maintainer = maintainers.getOrDefault(maintainerId,
-                new MaintainerInfo(maintainerId, maintainerId));
-        String type = normalizeArtifactType(manifest.getType());
-        List<ArtifactSkillEntry> manifestSkills = resolveManifestSkillsLocal(type, artifactDir, manifest);
-
-        List<RegistrySkill> skills = new ArrayList<>();
-        List<String> skillContentEntries = new ArrayList<>();
-        for (ArtifactSkillEntry manifestSkill : manifestSkills) {
-            Path skillPath = resolveLocalSkillPath(artifactDir, manifestSkill.path());
-            String skillContent;
-            try {
-                skillContent = Files.readString(skillPath);
-            } catch (IOException ex) {
-                throw new IllegalStateException("Failed to read skill file " + skillPath, ex);
-            }
-            SkillMetadata skillMetadata = parseSkillMetadata(skillContent);
-            String runtimeName = buildRuntimeSkillName(maintainerId, artifactId, type, manifestSkill.id());
-            skillContentEntries.add(runtimeName + "\n" + skillContent);
-            skills.add(new RegistrySkill(
-                    manifestSkill.id(),
-                    registryParent.relativize(skillPath).toString().replace('\\', '/'),
-                    runtimeName,
-                    skillMetadata.name(),
-                    skillMetadata.description(),
-                    skillMetadata.modelTier()));
-        }
-
-        return new RegistryArtifact(
-                maintainerId + "/" + artifactId,
-                maintainerId,
-                maintainer.displayName(),
-                artifactId,
-                type,
-                trimToNull(manifest.getVersion()),
-                trimToNull(manifest.getTitle()),
-                trimToNull(manifest.getDescription()),
-                registryParent.relativize(manifestPath).toString().replace('\\', '/'),
-                buildArtifactContentHash(content, skillContentEntries),
-                List.copyOf(skills));
-    }
-
-    private Map<String, RegistryArtifact> loadRemoteArtifacts(MarketplaceSource source) {
-        Duration cacheTtl = marketplaceSettings().remoteCacheTtl();
-        String sourceKey = source.repositoryUrl() + "#" + source.branch();
-        if (cacheTtl == null || cacheTtl.isZero() || cacheTtl.isNegative()) {
-            return fetchRemoteArtifacts(source, sourceKey);
-        }
-
-        RemoteCatalogCache currentCache = remoteCatalogCache.get();
-        Instant now = Instant.now();
-        if (currentCache != null
-                && currentCache.sourceKey().equals(sourceKey)
-                && now.isBefore(currentCache.loadedAt().plus(cacheTtl))) {
-            return currentCache.artifacts();
-        }
-
-        synchronized (remoteCatalogLock) {
-            RemoteCatalogCache locked = remoteCatalogCache.get();
-            Instant refreshedNow = Instant.now();
-            if (locked != null
-                    && locked.sourceKey().equals(sourceKey)
-                    && refreshedNow.isBefore(locked.loadedAt().plus(cacheTtl))) {
-                return locked.artifacts();
-            }
-            Map<String, RegistryArtifact> fetched = fetchRemoteArtifacts(source, sourceKey);
-            remoteCatalogCache.set(new RemoteCatalogCache(sourceKey, refreshedNow, fetched));
-            return fetched;
-        }
-    }
-
-    private Map<String, RegistryArtifact> fetchRemoteArtifacts(MarketplaceSource source, String sourceKey) {
-        RemoteRepositoryTree tree = fetchRemoteRepositoryTree(source);
-        Map<String, MaintainerInfo> maintainers = loadRemoteMaintainers(source, tree);
-        Map<String, RegistryArtifact> artifacts = new LinkedHashMap<>();
-
-        for (String manifestPath : tree.filePaths()) {
-            if (!isRemoteArtifactManifestPath(manifestPath)) {
-                continue;
-            }
-            try {
-                String manifestContent = fetchRemoteText(source, manifestPath);
-                ArtifactManifest manifest = parseArtifactManifest(manifestContent);
-                String[] segments = manifestPath.split("/");
-                String maintainerSegment = segments[1];
-                String artifactSegment = segments[2];
-                String maintainerId = normalizeMaintainerId(manifest, maintainerSegment);
-                String artifactId = normalizeArtifactId(manifest, artifactSegment);
-                validateManifestOwnership(manifest, maintainerId, artifactId);
-                MaintainerInfo maintainer = maintainers.getOrDefault(maintainerId,
-                        new MaintainerInfo(maintainerId, maintainerId));
-                String type = normalizeArtifactType(manifest.getType());
-                String artifactBasePath = REGISTRY_DIR + "/" + maintainerSegment + "/" + artifactSegment;
-                List<ArtifactSkillEntry> manifestSkills = resolveManifestSkillsRemote(type, artifactBasePath, manifest,
-                        tree);
-
-                List<RegistrySkill> skills = new ArrayList<>();
-                List<String> skillContentEntries = new ArrayList<>();
-                for (ArtifactSkillEntry manifestSkill : manifestSkills) {
-                    String skillSourcePath = artifactBasePath + "/"
-                            + normalizeRelativeArtifactPath(manifestSkill.path());
-                    String skillContent = fetchRemoteText(source, skillSourcePath);
-                    SkillMetadata skillMetadata = parseSkillMetadata(skillContent);
-                    String runtimeName = buildRuntimeSkillName(maintainerId, artifactId, type, manifestSkill.id());
-                    skillContentEntries.add(runtimeName + "\n" + skillContent);
-                    skills.add(new RegistrySkill(
-                            manifestSkill.id(),
-                            skillSourcePath,
-                            runtimeName,
-                            skillMetadata.name(),
-                            skillMetadata.description(),
-                            skillMetadata.modelTier()));
-                }
-
-                RegistryArtifact artifact = new RegistryArtifact(
-                        maintainerId + "/" + artifactId,
-                        maintainerId,
-                        maintainer.displayName(),
-                        artifactId,
-                        type,
-                        trimToNull(manifest.getVersion()),
-                        trimToNull(manifest.getTitle()),
-                        trimToNull(manifest.getDescription()),
-                        manifestPath,
-                        buildArtifactContentHash(manifestContent, skillContentEntries),
-                        List.copyOf(skills));
-                artifacts.putIfAbsent(artifact.artifactRef(), artifact);
-            } catch (RuntimeException ex) {
-                log.warn("[Skills] Failed to read remote artifact {}: {}", manifestPath, ex.getMessage());
-            }
-        }
-
-        return Map.copyOf(artifacts);
-    }
-
-    private Map<String, MaintainerInfo> loadRemoteMaintainers(MarketplaceSource source, RemoteRepositoryTree tree) {
-        Map<String, MaintainerInfo> maintainers = new LinkedHashMap<>();
-        for (String path : tree.filePaths()) {
-            if (!isRemoteMaintainerManifestPath(path)) {
-                continue;
-            }
-            try {
-                MaintainerManifest manifest = parseMaintainerManifest(fetchRemoteText(source, path));
-                String[] segments = path.split("/");
-                String maintainerId = normalizeSlug(firstNonBlank(trimToNull(manifest.getId()), segments[1]));
-                maintainers.putIfAbsent(maintainerId, new MaintainerInfo(
-                        maintainerId,
-                        firstNonBlank(trimToNull(manifest.getDisplayName()), maintainerId)));
-            } catch (RuntimeException ex) {
-                log.warn("[Skills] Failed to read remote maintainer {}: {}", path, ex.getMessage());
-            }
-        }
-        return Map.copyOf(maintainers);
-    }
-
-    private RemoteRepositoryTree fetchRemoteRepositoryTree(MarketplaceSource source) {
-        URI treeUri = remoteTreeApiUri(source);
-        String responseBody = fetchText(treeUri);
-        try {
-            com.fasterxml.jackson.databind.JsonNode root = JSON_MAPPER.readTree(responseBody);
-            com.fasterxml.jackson.databind.JsonNode treeNode = root.path("tree");
-            if (!treeNode.isArray()) {
-                return new RemoteRepositoryTree(List.of());
-            }
-
-            List<String> paths = new ArrayList<>();
-            for (com.fasterxml.jackson.databind.JsonNode entry : treeNode) {
-                String type = entry.path("type").asText("");
-                String path = entry.path("path").asText("");
-                if ("blob".equals(type) && !path.isBlank()) {
-                    paths.add(path);
-                }
-            }
-            paths.sort(String::compareTo);
-            return new RemoteRepositoryTree(List.copyOf(paths));
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to parse skill marketplace tree metadata", ex);
-        }
-    }
-
-    private List<ArtifactSkillEntry> resolveManifestSkillsLocal(String type, Path artifactDir,
-            ArtifactManifest manifest) {
-        List<ArtifactSkillEntry> declared = normalizeManifestSkills(manifest.getSkills());
-        if (!declared.isEmpty()) {
-            return declared;
-        }
-        if (TYPE_SKILL.equals(type)) {
-            Path artifactFileName = artifactDir.getFileName();
-            if (artifactFileName == null) {
-                throw new IllegalStateException("Artifact directory is invalid: " + artifactDir);
-            }
-            return List.of(new ArtifactSkillEntry(normalizeSlug(artifactFileName.toString()), SKILL_FILE));
-        }
-
-        try (Stream<Path> stream = Files.walk(artifactDir.resolve("skills"))) {
-            return stream.filter(Files::isRegularFile)
-                    .filter(path -> SKILL_FILE.equals(fileNameOrEmpty(path)))
-                    .sorted()
-                    .map(path -> {
-                        String skillId = normalizeSlug(requireParentDirectoryName(path));
-                        String relativePath = artifactDir.relativize(path).toString().replace('\\', '/');
-                        return new ArtifactSkillEntry(skillId, relativePath);
-                    })
-                    .toList();
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to scan pack skills under " + artifactDir, ex);
-        }
-    }
-
-    private List<ArtifactSkillEntry> resolveManifestSkillsRemote(
-            String type,
-            String artifactBasePath,
-            ArtifactManifest manifest,
-            RemoteRepositoryTree tree) {
-        List<ArtifactSkillEntry> declared = normalizeManifestSkills(manifest.getSkills());
-        if (!declared.isEmpty()) {
-            return declared;
-        }
-        if (TYPE_SKILL.equals(type)) {
-            String artifactId = normalizeSlug(artifactBasePath.substring(artifactBasePath.lastIndexOf('/') + 1));
-            return List.of(new ArtifactSkillEntry(artifactId, SKILL_FILE));
-        }
-
-        List<ArtifactSkillEntry> result = new ArrayList<>();
-        String prefix = artifactBasePath + "/skills/";
-        for (String path : tree.filePaths()) {
-            if (!path.startsWith(prefix) || !path.endsWith("/" + SKILL_FILE)) {
-                continue;
-            }
-            String relativePath = path.substring(artifactBasePath.length() + 1);
-            String[] segments = relativePath.split("/");
-            if (segments.length < 3) {
-                continue;
-            }
-            String skillId = normalizeSlug(segments[1]);
-            result.add(new ArtifactSkillEntry(skillId, relativePath));
-        }
-        result.sort(Comparator.comparing(ArtifactSkillEntry::id));
-        return List.copyOf(result);
-    }
-
-    private List<ArtifactSkillEntry> normalizeManifestSkills(List<ArtifactSkillManifest> declaredSkills) {
-        if (declaredSkills == null || declaredSkills.isEmpty()) {
-            return List.of();
-        }
-        List<ArtifactSkillEntry> skills = new ArrayList<>();
-        for (ArtifactSkillManifest skill : declaredSkills) {
-            if (skill == null) {
-                continue;
-            }
-            String id = normalizeSlug(skill.getId());
-            String path = normalizeRelativeArtifactPath(skill.getPath());
-            skills.add(new ArtifactSkillEntry(id, path));
-        }
-        return List.copyOf(skills);
     }
 
     private Map<String, InstalledArtifactMetadata> loadInstalledArtifacts() {
@@ -926,386 +576,8 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
         return base + "/skills/" + skill.skillId() + "/" + SKILL_FILE;
     }
 
-    private String readSkillContent(MarketplaceSource source, String sourcePath) {
-        if (SOURCE_DIRECTORY.equals(source.type()) || SOURCE_SANDBOX.equals(source.type())) {
-            Path root = source.localRepositoryRoot();
-            if (root == null) {
-                throw new IllegalStateException("Local marketplace repository is not configured");
-            }
-            Path filePath = root.resolve(normalizeRelativeArtifactPath(sourcePath)).normalize();
-            try {
-                return Files.readString(filePath);
-            } catch (IOException ex) {
-                throw new IllegalStateException("Failed to read skill file " + filePath, ex);
-            }
-        }
-        return fetchRemoteText(source, sourcePath);
-    }
-
-    private String fetchRemoteText(MarketplaceSource source, String relativePath) {
-        URI uri = remoteRawFileUri(source, relativePath);
-        return fetchText(uri);
-    }
-
-    private String fetchText(URI uri) {
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .GET()
-                .timeout(REQUEST_TIMEOUT)
-                .header("User-Agent", GITHUB_USER_AGENT)
-                .build();
-        HttpResponse<String> response;
-        try {
-            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while loading skill marketplace metadata from " + uri, ex);
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to load skill marketplace metadata from " + uri, ex);
-        }
-
-        int statusCode = response.statusCode();
-        if (statusCode < 200 || statusCode >= 300) {
-            throw new IllegalStateException("Skill marketplace request failed with HTTP " + statusCode + " for " + uri);
-        }
-        return response.body();
-    }
-
-    private MarketplaceSource resolveMarketplaceSource() {
-        RuntimeConfig.SkillsConfig skillsConfig = Optional
-                .ofNullable(runtimeConfigService.getRuntimeConfig().getSkills())
-                .orElseGet(RuntimeConfig.SkillsConfig::new);
-
-        String configuredSourceType = trimToNull(skillsConfig.getMarketplaceSourceType());
-        String configuredDirectory = firstNonBlank(
-                trimToNull(skillsConfig.getMarketplaceRepositoryDirectory()),
-                trimToNull(marketplaceSettings().repositoryDirectory()));
-        String configuredSandboxPath = firstNonBlank(
-                trimToNull(skillsConfig.getMarketplaceSandboxPath()),
-                trimToNull(marketplaceSettings().sandboxPath()));
-        String configuredRepositoryUrl = firstNonBlank(
-                trimToNull(skillsConfig.getMarketplaceRepositoryUrl()),
-                trimToNull(marketplaceSettings().repositoryUrl()),
-                DEFAULT_REPOSITORY_URL);
-        String configuredBranch = firstNonBlank(
-                trimToNull(skillsConfig.getMarketplaceBranch()),
-                trimToNull(marketplaceSettings().branch()),
-                DEFAULT_BRANCH);
-
-        String sourceType = normalizeSourceType(configuredSourceType, configuredDirectory, configuredSandboxPath);
-        if (SOURCE_DIRECTORY.equals(sourceType)) {
-            if (configuredDirectory == null) {
-                throw new IllegalStateException(
-                        "Local marketplace source is selected but no local path is configured.");
-            }
-            Path requestedPath = resolveConfiguredPath(configuredDirectory);
-            Path repositoryRoot = resolveLocalRepositoryRoot(requestedPath)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Marketplace repository was not found at " + requestedPath));
-            return new MarketplaceSource(sourceType, repositoryRoot.toString(), configuredRepositoryUrl,
-                    configuredBranch, repositoryRoot);
-        }
-        if (SOURCE_SANDBOX.equals(sourceType)) {
-            if (configuredSandboxPath == null) {
-                throw new IllegalStateException(
-                        "Sandbox marketplace source is selected but no sandbox path is configured.");
-            }
-            Path requestedPath = resolveSandboxConfiguredPath(configuredSandboxPath);
-            Path repositoryRoot = resolveLocalRepositoryRoot(requestedPath)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Marketplace repository was not found at sandbox path " + configuredSandboxPath));
-            return new MarketplaceSource(sourceType, sandboxDisplayPath(repositoryRoot), configuredRepositoryUrl,
-                    configuredBranch, repositoryRoot);
-        }
-
-        String repositoryUrl = configuredRepositoryUrl != null ? configuredRepositoryUrl : DEFAULT_REPOSITORY_URL;
-        return new MarketplaceSource(sourceType, remoteRepositoryUrl(repositoryUrl).toString(), repositoryUrl,
-                configuredBranch, null);
-    }
-
-    private String normalizeSourceType(
-            String configuredSourceType,
-            String configuredDirectory,
-            String configuredSandboxPath) {
-        if (configuredSourceType == null) {
-            if (configuredDirectory != null) {
-                return SOURCE_DIRECTORY;
-            }
-            if (configuredSandboxPath != null) {
-                return SOURCE_SANDBOX;
-            }
-            return SOURCE_REPOSITORY;
-        }
-        String normalized = configuredSourceType.trim().toLowerCase(Locale.ROOT);
-        if (SOURCE_DIRECTORY.equals(normalized)) {
-            return SOURCE_DIRECTORY;
-        }
-        if (SOURCE_SANDBOX.equals(normalized)) {
-            return SOURCE_SANDBOX;
-        }
-        return SOURCE_REPOSITORY;
-    }
-
-    private Path resolveConfiguredPath(String configuredPath) {
-        String expanded = configuredPath.replace("${user.home}", System.getProperty("user.home"));
-        if (expanded.startsWith("~/")) {
-            expanded = System.getProperty("user.home") + expanded.substring(1);
-        }
-        if ("~".equals(expanded)) {
-            expanded = System.getProperty("user.home");
-        }
-        return Path.of(expanded).toAbsolutePath().normalize();
-    }
-
-    private Path resolveSandboxConfiguredPath(String configuredPath) {
-        try {
-            return workspacePathService.resolveSafePath(configuredPath);
-        } catch (IllegalArgumentException ex) {
-            throw new IllegalStateException("Invalid sandbox path: " + ex.getMessage(), ex);
-        }
-    }
-
-    private Optional<Path> resolveLocalRepositoryRoot(Path configuredPath) {
-        if (!Files.isDirectory(configuredPath)) {
-            return Optional.empty();
-        }
-        if (REGISTRY_DIR.equals(fileNameOrEmpty(configuredPath))) {
-            return Optional.ofNullable(configuredPath.getParent());
-        }
-        if (Files.isDirectory(configuredPath.resolve(REGISTRY_DIR))) {
-            return Optional.of(configuredPath);
-        }
-        return Optional.empty();
-    }
-
-    private String sandboxDisplayPath(Path repositoryRoot) {
-        String relativePath = workspacePathService.toRelativePath(repositoryRoot);
-        return relativePath.isBlank() ? "." : relativePath;
-    }
-
-    private Optional<Path> locateRegistryRoot(Path repositoryRoot) {
-        if (repositoryRoot == null) {
-            return Optional.empty();
-        }
-        if (REGISTRY_DIR.equals(fileNameOrEmpty(repositoryRoot)) && Files.isDirectory(repositoryRoot)) {
-            return Optional.of(repositoryRoot);
-        }
-        Path registryRoot = repositoryRoot.resolve(REGISTRY_DIR);
-        return Files.isDirectory(registryRoot) ? Optional.of(registryRoot) : Optional.empty();
-    }
-
-    private Path resolveLocalSkillPath(Path artifactDir, String relativePath) {
-        Path resolved = artifactDir.resolve(normalizeRelativeArtifactPath(relativePath)).normalize();
-        if (!resolved.startsWith(artifactDir)) {
-            throw new IllegalStateException("Skill path escapes artifact directory: " + relativePath);
-        }
-        return resolved;
-    }
-
-    private String normalizeRelativeArtifactPath(String path) {
-        String normalized = trimToNull(path);
-        if (normalized == null) {
-            throw new IllegalArgumentException("Artifact skill path is required");
-        }
-        Path candidate = Path.of(normalized.replace('\\', '/')).normalize();
-        if (candidate.isAbsolute() || candidate.startsWith("..")) {
-            throw new IllegalArgumentException("Artifact skill path must stay within artifact directory");
-        }
-        return candidate.toString().replace('\\', '/');
-    }
-
-    private String buildRuntimeSkillName(String maintainerId, String artifactId, String type, String skillId) {
-        if (TYPE_SKILL.equals(type)) {
-            return maintainerId + "/" + artifactId;
-        }
-        return maintainerId + "/" + artifactId + "/" + skillId;
-    }
-
-    private void validateManifestOwnership(ArtifactManifest manifest, String maintainerId, String artifactId) {
-        String declaredMaintainer = trimToNull(manifest.getMaintainer());
-        if (declaredMaintainer != null && !normalizeSlug(declaredMaintainer).equals(maintainerId)) {
-            throw new IllegalStateException("Artifact maintainer does not match its registry path");
-        }
-        String declaredId = trimToNull(manifest.getId());
-        if (declaredId != null && !normalizeSlug(declaredId).equals(artifactId)) {
-            throw new IllegalStateException("Artifact id does not match its registry path");
-        }
-    }
-
-    private String normalizeMaintainerId(ArtifactManifest manifest, String fallback) {
-        return normalizeSlug(firstNonBlank(trimToNull(manifest.getMaintainer()), trimToNull(fallback)));
-    }
-
-    private String normalizeArtifactId(ArtifactManifest manifest, String fallback) {
-        return normalizeSlug(firstNonBlank(trimToNull(manifest.getId()), trimToNull(fallback)));
-    }
-
-    private String normalizeArtifactRef(String artifactRef) {
-        if (artifactRef == null || artifactRef.isBlank()) {
-            return null;
-        }
-        String normalized = artifactRef.trim().toLowerCase(Locale.ROOT);
-        String[] parts = normalized.split("/");
-        if (parts.length != 2) {
-            throw new IllegalArgumentException("Artifact ref must match <maintainer>/<artifact>");
-        }
-        return normalizeSlug(parts[0]) + "/" + normalizeSlug(parts[1]);
-    }
-
-    private String normalizeSlug(String value) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("Slug is required");
-        }
-        String normalized = value.trim().toLowerCase(Locale.ROOT);
-        for (int index = 0; index < normalized.length(); index++) {
-            char ch = normalized.charAt(index);
-            boolean alphanumeric = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9');
-            boolean hyphen = ch == '-';
-            if (index == 0 && !alphanumeric) {
-                throw new IllegalArgumentException("Slug must start with [a-z0-9]");
-            }
-            if (!alphanumeric && !hyphen) {
-                throw new IllegalArgumentException("Slug must contain only [a-z0-9-]");
-            }
-        }
-        return normalized;
-    }
-
-    private String parentDirectoryNameOrNull(Path path) {
-        if (path == null) {
-            return null;
-        }
-        Path parent = path.getParent();
-        if (parent == null) {
-            return null;
-        }
-        Path fileName = parent.getFileName();
-        if (fileName == null) {
-            return null;
-        }
-        return fileName.toString();
-    }
-
-    private String requireParentDirectoryName(Path path) {
-        String value = parentDirectoryNameOrNull(path);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Path has no parent directory name: " + path);
-        }
-        return value;
-    }
-
-    private String normalizeArtifactType(String value) {
-        String normalized = trimToNull(value);
-        if (normalized == null) {
-            throw new IllegalArgumentException("Artifact type is required");
-        }
-        String lower = normalized.toLowerCase(Locale.ROOT);
-        if (TYPE_SKILL.equals(lower) || TYPE_PACK.equals(lower)) {
-            return lower;
-        }
-        throw new IllegalArgumentException("Unsupported artifact type: " + value);
-    }
-
-    private ArtifactManifest parseArtifactManifest(String content) {
-        try {
-            ArtifactManifest manifest = YAML_MAPPER.readValue(content, ArtifactManifest.class);
-            if (manifest == null) {
-                throw new IllegalStateException("Artifact manifest is empty");
-            }
-            return manifest;
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to parse artifact manifest", ex);
-        }
-    }
-
-    private MaintainerManifest parseMaintainerManifest(String content) {
-        try {
-            MaintainerManifest manifest = YAML_MAPPER.readValue(content, MaintainerManifest.class);
-            return manifest != null ? manifest : new MaintainerManifest();
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to parse maintainer manifest", ex);
-        }
-    }
-
-    private SkillMetadata parseSkillMetadata(String content) {
-        Map<String, Object> metadata = skillDocumentService.parseDocument(content).metadata();
-        return new SkillMetadata(
-                trimToNull(asString(metadata.get("name"))),
-                trimToNull(asString(metadata.get("description"))),
-                trimToNull(asString(metadata.get("model_tier"))));
-    }
-
-    private boolean isRemoteArtifactManifestPath(String path) {
-        String[] segments = path.split("/");
-        return segments.length == 4
-                && REGISTRY_DIR.equals(segments[0])
-                && MANIFEST_FILE.equals(segments[3]);
-    }
-
-    private boolean isRemoteMaintainerManifestPath(String path) {
-        String[] segments = path.split("/");
-        return segments.length == 3
-                && REGISTRY_DIR.equals(segments[0])
-                && MAINTAINER_FILE.equals(segments[2]);
-    }
-
-    private URI remoteRepositoryUrl(String repositoryUrl) {
-        String value = trimToNull(repositoryUrl);
-        if (value == null) {
-            value = DEFAULT_REPOSITORY_URL;
-        }
-        return URI.create(value.endsWith("/") ? value : value + "/");
-    }
-
-    private URI remoteTreeApiUri(MarketplaceSource source) {
-        GitHubRepository repository = parseRemoteRepository(source.repositoryUrl());
-        String encodedBranch = encodePathSegment(source.branch());
-        String relativePath = "repos/" + repository.owner() + "/" + repository.name()
-                + "/git/trees/" + encodedBranch + "?recursive=1";
-        return repositoryApiBaseUrl().resolve(relativePath);
-    }
-
-    private URI remoteRawFileUri(MarketplaceSource source, String filePath) {
-        GitHubRepository repository = parseRemoteRepository(source.repositoryUrl());
-        String relativePath = repository.owner() + "/" + repository.name() + "/"
-                + source.branch() + "/" + normalizeRelativeArtifactPath(filePath);
-        return repositoryRawBaseUrl().resolve(relativePath);
-    }
-
-    private URI repositoryApiBaseUrl() {
-        String configured = trimToNull(marketplaceSettings().apiBaseUrl());
-        String value = configured != null ? configured : DEFAULT_API_BASE_URL;
-        return URI.create(value.endsWith("/") ? value : value + "/");
-    }
-
-    private URI repositoryRawBaseUrl() {
-        String configured = trimToNull(marketplaceSettings().rawBaseUrl());
-        String value = configured != null ? configured : DEFAULT_RAW_BASE_URL;
-        return URI.create(value.endsWith("/") ? value : value + "/");
-    }
-
     private SkillSettingsPort.MarketplaceSettings marketplaceSettings() {
         return settingsPort.skills().marketplace();
-    }
-
-    private GitHubRepository parseRemoteRepository(String repositoryUrl) {
-        URI url = remoteRepositoryUrl(repositoryUrl);
-        String path = url.getPath();
-        if (path == null || path.isBlank()) {
-            throw new IllegalStateException("Skill marketplace repository URL is invalid: " + url);
-        }
-        String normalized = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
-        if (normalized.endsWith(".git")) {
-            normalized = normalized.substring(0, normalized.length() - 4);
-        }
-        String[] segments = normalized.split("/");
-        if (segments.length < 3) {
-            throw new IllegalStateException("Skill marketplace repository URL must match <host>/<owner>/<repo>");
-        }
-        return new GitHubRepository(segments[segments.length - 2], segments[segments.length - 1]);
-    }
-
-    private String encodePathSegment(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private SkillMarketplaceCatalog unavailable(String message) {
@@ -1371,7 +643,7 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
         if (contentEntries.isEmpty()) {
             return null;
         }
-        return sha256Hex(String.join("\n---\n", contentEntries));
+        return SkillMarketplaceHashing.sha256Hex(String.join("\n---\n", contentEntries));
     }
 
     private String buildInstalledContentHash(List<InstalledSkillPayload> payloads) {
@@ -1382,14 +654,7 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
                 .sorted(Comparator.comparing(InstalledSkillPayload::storagePath))
                 .map(payload -> payload.storagePath() + "\n" + Optional.ofNullable(payload.content()).orElse(""))
                 .toList();
-        return sha256Hex(String.join("\n---\n", contentEntries));
-    }
-
-    private String buildArtifactContentHash(String manifestContent, List<String> skillContentEntries) {
-        List<String> parts = new ArrayList<>();
-        parts.add("manifest\n" + manifestContent);
-        parts.addAll(skillContentEntries.stream().sorted().toList());
-        return sha256Hex(String.join("\n===\n", parts));
+        return SkillMarketplaceHashing.sha256Hex(String.join("\n---\n", contentEntries));
     }
 
     private boolean hasLocalContentDrift(InstalledArtifactMetadata installed) {
@@ -1402,54 +667,6 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
             return false;
         }
         return !Objects.equals(expectedContentHash, currentContentHash);
-    }
-
-    private String sha256Hex(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder builder = new StringBuilder(bytes.length * 2);
-            for (byte current : bytes) {
-                builder.append(String.format("%02x", current & 0xff));
-            }
-            return builder.toString();
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is not available", ex);
-        }
-    }
-
-    private record MarketplaceSource(
-            String type,
-            String displayValue,
-            String repositoryUrl,
-            String branch,
-            Path localRepositoryRoot) {
-    }
-
-    private record RegistryArtifact(
-            String artifactRef,
-            String maintainerId,
-            String maintainerDisplayName,
-            String artifactId,
-            String type,
-            String version,
-            String title,
-            String description,
-            String manifestPath,
-            String contentHash,
-            List<RegistrySkill> skills) {
-    }
-
-    private record RegistrySkill(
-            String skillId,
-            String sourcePath,
-            String runtimeName,
-            String originalName,
-            String description,
-            String modelTier) {
-    }
-
-    private record ArtifactSkillEntry(String id, String path) {
     }
 
     private record InstalledSkillPayload(String storagePath, String content) {
@@ -1465,65 +682,5 @@ public class SkillMarketplaceLegacySupport implements SkillMarketplaceCatalogPor
             String currentContentHash,
             List<String> installedSkillNames,
             Instant installedAt) {
-    }
-
-    private record SkillMetadata(String name, String description, String modelTier) {
-    }
-
-    private record MaintainerInfo(String id, String displayName) {
-    }
-
-    private record RemoteRepositoryTree(List<String> filePaths) {
-    }
-
-    private record RemoteCatalogCache(String sourceKey, Instant loadedAt, Map<String, RegistryArtifact> artifacts) {
-    }
-
-    private record GitHubRepository(String owner, String name) {
-    }
-
-    @Data
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class ArtifactManifest {
-        private String schema;
-        private String type;
-        private String maintainer;
-        private String id;
-        private String version;
-        private String title;
-        private String description;
-        private String license;
-        private ArtifactSourceManifest source;
-        private String attribution;
-        private List<String> tags = List.of();
-        private List<ArtifactSkillManifest> skills = List.of();
-    }
-
-    @Data
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class ArtifactSourceManifest {
-        private String repository;
-        private String author;
-        @JsonProperty("author_url")
-        private String authorUrl;
-        private String license;
-    }
-
-    @Data
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class ArtifactSkillManifest {
-        private String id;
-        private String path;
-    }
-
-    @Data
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class MaintainerManifest {
-        private String schema;
-        private String id;
-        @JsonProperty("display_name")
-        private String displayName;
-        private String github;
-        private String contact;
     }
 }

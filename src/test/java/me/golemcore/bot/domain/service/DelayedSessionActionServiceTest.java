@@ -29,12 +29,14 @@ import static org.mockito.Mockito.when;
 
 class DelayedSessionActionServiceTest {
 
-    private static final Instant NOW = Instant.parse("2026-03-19T18:30:00Z");    private DelayedActionRegistryPort delayedActionRegistryPort;
+    private static final Instant NOW = Instant.parse("2026-03-19T18:30:00Z");
+    private DelayedActionRegistryPort delayedActionRegistryPort;
     private RuntimeConfigService runtimeConfigService;
     private DelayedSessionActionService service;
 
     @BeforeEach
-    void setUp() {        delayedActionRegistryPort = new InMemoryDelayedActionRegistryPort();
+    void setUp() {
+        delayedActionRegistryPort = new InMemoryDelayedActionRegistryPort();
         runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isDelayedActionsEnabled()).thenReturn(true);
         when(runtimeConfigService.getDelayedActionsMaxPendingPerSession()).thenReturn(50);
@@ -43,7 +45,8 @@ class DelayedSessionActionServiceTest {
         when(runtimeConfigService.getDelayedActionsLeaseDuration()).thenReturn(Duration.ofMinutes(2));
         when(runtimeConfigService.getDelayedActionsRetentionAfterCompletion()).thenReturn(Duration.ofDays(7));
 
-        service = new DelayedSessionActionService(delayedActionRegistryPort, runtimeConfigService, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new DelayedSessionActionService(delayedActionRegistryPort, runtimeConfigService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test

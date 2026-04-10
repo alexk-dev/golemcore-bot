@@ -327,7 +327,8 @@ public class ResponseRoutingSystem implements AgentSystem {
         return errorMessage;
     }
 
-    private String sendText(AgentContext context, ChannelDeliveryPort channel, String chatId, OutgoingResponse outgoing) {
+    private String sendText(AgentContext context, ChannelDeliveryPort channel, String chatId,
+            OutgoingResponse outgoing) {
         try {
             channel.sendMessage(chatId, outgoing.getText(), buildTransportHints(context, outgoing))
                     .get(30, TimeUnit.SECONDS);
@@ -403,7 +404,8 @@ public class ResponseRoutingSystem implements AgentSystem {
 
         AgentSession session = context.getSession();
         CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
-        ChannelDeliveryPort channel = crossChannelDelivery != null ? crossChannelDelivery.channel() : resolveChannel(session);
+        ChannelDeliveryPort channel = crossChannelDelivery != null ? crossChannelDelivery.channel()
+                : resolveChannel(session);
         if (channel == null) {
             return VoiceRoutingResult.none();
         }
@@ -427,7 +429,8 @@ public class ResponseRoutingSystem implements AgentSystem {
         return result == VoiceSendResult.SUCCESS ? VoiceRoutingResult.voiceSent() : VoiceRoutingResult.none();
     }
 
-    private String sendVoiceTextFallback(AgentContext context, ChannelDeliveryPort channel, String chatId, String textToSpeak,
+    private String sendVoiceTextFallback(AgentContext context, ChannelDeliveryPort channel, String chatId,
+            String textToSpeak,
             OutgoingResponse outgoing) {
         try {
             channel.sendMessage(chatId, textToSpeak, buildTransportHints(context, outgoing))
@@ -455,7 +458,8 @@ public class ResponseRoutingSystem implements AgentSystem {
 
         AgentSession session = context.getSession();
         CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
-        ChannelDeliveryPort channel = crossChannelDelivery != null ? crossChannelDelivery.channel() : resolveChannel(session);
+        ChannelDeliveryPort channel = crossChannelDelivery != null ? crossChannelDelivery.channel()
+                : resolveChannel(session);
         if (channel == null) {
             return 0;
         }

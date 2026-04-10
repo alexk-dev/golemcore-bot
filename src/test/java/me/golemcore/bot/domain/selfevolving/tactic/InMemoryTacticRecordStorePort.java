@@ -15,7 +15,8 @@ public class InMemoryTacticRecordStorePort implements TacticRecordStorePort {
     @Override
     public List<TacticRecord> loadAll() {
         return records.values().stream()
-                .sorted(Comparator.comparing(TacticRecord::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .sorted(Comparator.comparing(TacticRecord::getUpdatedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
                 .map(this::copy)
                 .toList();
     }
@@ -54,14 +55,17 @@ public class InMemoryTacticRecordStorePort implements TacticRecordStorePort {
                 .outcomeSummary(record.getOutcomeSummary())
                 .benchmarkSummary(record.getBenchmarkSummary())
                 .approvalNotes(record.getApprovalNotes())
-                .evidenceSnippets(record.getEvidenceSnippets() != null ? new ArrayList<>(record.getEvidenceSnippets()) : new ArrayList<>())
-                .taskFamilies(record.getTaskFamilies() != null ? new ArrayList<>(record.getTaskFamilies()) : new ArrayList<>())
+                .evidenceSnippets(record.getEvidenceSnippets() != null ? new ArrayList<>(record.getEvidenceSnippets())
+                        : new ArrayList<>())
+                .taskFamilies(record.getTaskFamilies() != null ? new ArrayList<>(record.getTaskFamilies())
+                        : new ArrayList<>())
                 .tags(record.getTags() != null ? new ArrayList<>(record.getTags()) : new ArrayList<>())
                 .promotionState(record.getPromotionState())
                 .rolloutStage(record.getRolloutStage())
                 .successRate(record.getSuccessRate())
                 .benchmarkWinRate(record.getBenchmarkWinRate())
-                .regressionFlags(record.getRegressionFlags() != null ? new ArrayList<>(record.getRegressionFlags()) : new ArrayList<>())
+                .regressionFlags(record.getRegressionFlags() != null ? new ArrayList<>(record.getRegressionFlags())
+                        : new ArrayList<>())
                 .recencyScore(record.getRecencyScore())
                 .golemLocalUsageSuccess(record.getGolemLocalUsageSuccess())
                 .embeddingStatus(record.getEmbeddingStatus())

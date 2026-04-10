@@ -30,6 +30,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import me.golemcore.bot.adapter.outbound.selfevolving.JsonPromotionWorkflowStateAdapter;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
 import me.golemcore.bot.domain.selfevolving.artifact.EvolutionArtifactIdentityService;
 import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateDerivationService;
@@ -102,7 +103,7 @@ class PromotionWorkflowServiceTest {
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
         PromotionWorkflowStateService promotionWorkflowStateService = new PromotionWorkflowStateService(
-                new PromotionWorkflowStore(new InMemoryPromotionWorkflowStatePort()),
+                new PromotionWorkflowStore(new JsonPromotionWorkflowStateAdapter(storagePort)),
                 evolutionCandidateService,
                 new PromotionDecisionHydrationService());
         promotionWorkflowService = new PromotionWorkflowService(

@@ -168,7 +168,8 @@ public class ApplicationLayerConfiguration {
     }
 
     @Bean
-    SkillMarketplaceCatalogPort skillMarketplaceCatalogPort(SkillMarketplaceLegacySupport skillMarketplaceLegacySupport) {
+    SkillMarketplaceCatalogPort skillMarketplaceCatalogPort(
+            SkillMarketplaceLegacySupport skillMarketplaceLegacySupport) {
         return skillMarketplaceLegacySupport;
     }
 

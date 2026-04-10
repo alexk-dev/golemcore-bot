@@ -313,7 +313,8 @@ public class UpdateService {
 
     private UpdateVersionInfo resolveCurrentInfo() {
         String currentVersion = getCurrentVersion();
-        Optional<UpdateArtifactStorePort.StoredArtifact> currentArtifact = updateArtifactStorePort.findCurrentArtifact();
+        Optional<UpdateArtifactStorePort.StoredArtifact> currentArtifact = updateArtifactStorePort
+                .findCurrentArtifact();
         if (currentArtifact.isPresent()) {
             String assetName = currentArtifact.orElseThrow().assetName();
             try {

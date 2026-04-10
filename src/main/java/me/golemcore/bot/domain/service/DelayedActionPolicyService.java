@@ -23,6 +23,7 @@ import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import org.springframework.stereotype.Service;
 
 import java.util.Locale;
+import me.golemcore.bot.port.inbound.InboundChannelPort;
 
 /**
  * Runtime policy for delayed action scheduling and proactive delivery.
@@ -82,6 +83,9 @@ public class DelayedActionPolicyService {
         }
         ChannelDeliveryPort channel = findChannel(channelType);
         if (channel == null) {
+            return false;
+        }
+        if (channel instanceof InboundChannelPort inboundChannel && !inboundChannel.isRunning()) {
             return false;
         }
         return channel.supportsProactiveMessage(transportChatId);

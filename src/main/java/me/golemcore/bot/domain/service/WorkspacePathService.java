@@ -110,8 +110,8 @@ public class WorkspacePathService {
         }
 
         try {
-            Path realExistingPath = workspaceFilePort.toRealPath(existingPath);
-            Path realWorkspacePath = workspaceFilePort.toRealPath(workspaceRoot);
+            Path realExistingPath = workspaceFilePort.resolveRealPath(existingPath);
+            Path realWorkspacePath = workspaceFilePort.resolveRealPath(workspaceRoot);
             if (!realExistingPath.startsWith(realWorkspacePath)) {
                 throw new IllegalArgumentException("Path must be inside workspace");
             }

@@ -82,7 +82,8 @@ class CoreLayerConfigurationTest {
         ContextLayerConfiguration contextLayerConfiguration = new ContextLayerConfiguration();
 
         assertNotNull(contextLayerConfiguration.promptComposer());
-        assertNotNull(contextLayerConfiguration.skillResolver(mock(me.golemcore.bot.domain.component.SkillComponent.class)));
+        assertNotNull(
+                contextLayerConfiguration.skillResolver(mock(me.golemcore.bot.domain.component.SkillComponent.class)));
         assertNotNull(contextLayerConfiguration.tierResolver(
                 mock(UserPreferencesService.class),
                 mock(me.golemcore.bot.domain.service.ModelSelectionService.class),
@@ -106,7 +107,8 @@ class CoreLayerConfigurationTest {
                 mock(PlanService.class),
                 mock(me.golemcore.bot.domain.service.DelayedActionPolicyService.class)));
         assertNotNull(contextLayerConfiguration.tierAwarenessLayer(mock(UserPreferencesService.class)));
-        assertNotNull(contextLayerConfiguration.autoModeLayer(mock(me.golemcore.bot.domain.service.AutoModeService.class)));
+        assertNotNull(
+                contextLayerConfiguration.autoModeLayer(mock(me.golemcore.bot.domain.service.AutoModeService.class)));
         assertNotNull(contextLayerConfiguration.planModeLayer(mock(PlanService.class)));
         assertNotNull(contextLayerConfiguration.hiveLayer());
         assertNotNull(contextLayerConfiguration.contextAssembler(

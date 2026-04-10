@@ -30,7 +30,7 @@ public class LocalTestWorkspaceFilePort implements WorkspaceFilePort {
     }
 
     @Override
-    public Path toRealPath(Path path) throws IOException {
+    public Path resolveRealPath(Path path) throws IOException {
         return path.toRealPath();
     }
 

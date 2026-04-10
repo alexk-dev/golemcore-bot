@@ -150,12 +150,15 @@ public class RuntimeSettingsWebMapper {
         return copy(source, new RuntimeConfig.HiveConfig());
     }
 
-    public RuntimeConfig.PlanConfig toPlanConfig(me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto source) {
+    public RuntimeConfig.PlanConfig toPlanConfig(
+            me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto source) {
         return copy(source, new RuntimeConfig.PlanConfig());
     }
 
-    public me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto toPlanConfigDto(RuntimeConfig.PlanConfig source) {
-        return copy(source, new me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto());
+    public me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto toPlanConfigDto(
+            RuntimeConfig.PlanConfig source) {
+        return copy(source,
+                new me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto());
     }
 
     public RuntimeConfig.AutoModeConfig toAutoModeConfig(AutoModeConfigDto source) {
@@ -216,7 +219,7 @@ public class RuntimeSettingsWebMapper {
 
     private <S, T> T copy(S source, T target) {
         if (source == null) {
-            return target;
+            return null;
         }
         try {
             java.beans.BeanInfo beanInfo = java.beans.Introspector.getBeanInfo(source.getClass(), Object.class);

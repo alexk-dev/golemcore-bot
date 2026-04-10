@@ -12,7 +12,7 @@ public interface WorkspaceFilePort {
 
     boolean exists(Path path);
 
-    Path toRealPath(Path path) throws IOException;
+    Path resolveRealPath(Path path) throws IOException;
 
     byte[] readAllBytes(Path path) throws IOException;
 
