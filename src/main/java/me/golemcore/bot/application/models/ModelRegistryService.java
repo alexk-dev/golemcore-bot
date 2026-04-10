@@ -1,55 +1,33 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.models;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
-import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.stereotype.Service;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.port.outbound.ModelRegistryCachePort;
+import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
+import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-
-@Service
 @RequiredArgsConstructor
 @Slf4j
 public class ModelRegistryService {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
     private static final Duration CACHE_TTL = Duration.ofDays(1);
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
-    private static final String CACHE_DIR = "cache";
-    private static final String CACHE_PREFIX = "model-registry";
     private static final String DEFAULT_BRANCH = "main";
     private static final String DEFAULT_REPOSITORY_URL = "https://github.com/alexk-dev/golemcore-models";
     private static final String DEFAULT_RAW_BASE_URL = "https://raw.githubusercontent.com";
-    private static final String GITHUB_USER_AGENT = "golemcore-bot-model-registry";
 
     private final RuntimeConfigService runtimeConfigService;
-    private final StoragePort storagePort;
-
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    private final ModelRegistryRemotePort modelRegistryRemotePort;
+    private final ModelRegistryCachePort modelRegistryCachePort;
+    private final ModelRegistryDocumentPort modelRegistryDocumentPort;
 
     public ResolveResult resolveDefaults(String provider, String modelId) {
         String normalizedProvider = requireValue(provider, "provider");
@@ -79,38 +57,17 @@ public class ModelRegistryService {
     }
 
     protected String fetchRemoteText(URI uri) {
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .GET()
-                .timeout(REQUEST_TIMEOUT)
-                .header("User-Agent", GITHUB_USER_AGENT)
-                .build();
-        try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(
-                    StandardCharsets.UTF_8));
-            if (response.statusCode() == 404) {
-                return null;
-            }
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                return response.body();
-            }
-            throw new IllegalStateException(
-                    "Model registry request failed with status " + response.statusCode() + " for " + uri);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while fetching model registry config: " + uri, ex);
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to fetch model registry config: " + uri, ex);
-        }
+        return modelRegistryRemotePort.fetchText(uri);
     }
 
     private ResolveResult findFreshCachedResult(RegistrySource source, List<RegistryCandidate> candidates,
             String provider) {
         for (RegistryCandidate candidate : candidates) {
-            CacheEntry cacheEntry = readCacheEntry(source, candidate);
-            if (cacheEntry == null || !cacheEntry.isFound() || !isFresh(cacheEntry)) {
+            ModelRegistryCachePort.CachedRegistryEntry cacheEntry = readCacheEntry(source, candidate);
+            if (cacheEntry == null || !cacheEntry.found() || !isFresh(cacheEntry)) {
                 continue;
             }
-            ModelCatalogEntry settings = tryParseSettings(cacheEntry.getContent(), provider,
+            ModelCatalogEntry settings = tryParseSettings(cacheEntry.content(), provider,
                     candidate.relativePath());
             if (settings != null) {
                 return new ResolveResult(settings, candidate.configSource(), "fresh-hit");
@@ -120,11 +77,11 @@ public class ModelRegistryService {
     }
 
     private ResolveResult resolveCandidate(RegistrySource source, RegistryCandidate candidate, String provider) {
-        CacheEntry cacheEntry = readCacheEntry(source, candidate);
+        ModelRegistryCachePort.CachedRegistryEntry cacheEntry = readCacheEntry(source, candidate);
         ModelCatalogEntry cachedSettings = null;
 
-        if (cacheEntry != null && cacheEntry.isFound()) {
-            cachedSettings = tryParseSettings(cacheEntry.getContent(), provider, candidate.relativePath());
+        if (cacheEntry != null && cacheEntry.found()) {
+            cachedSettings = tryParseSettings(cacheEntry.content(), provider, candidate.relativePath());
             if (cachedSettings != null && isFresh(cacheEntry)) {
                 return new ResolveResult(cachedSettings, candidate.configSource(), "fresh-hit");
             }
@@ -141,7 +98,7 @@ public class ModelRegistryService {
             URI remoteUri = remoteFileUri(source, candidate.relativePath());
             String remoteText = fetchRemoteText(remoteUri);
             if (remoteText == null) {
-                writeCacheEntry(source, candidate, new CacheEntry(now(), false, null));
+                writeCacheEntry(source, candidate, new ModelRegistryCachePort.CachedRegistryEntry(now(), false, null));
                 if (cachedSettings != null) {
                     return new ResolveResult(cachedSettings, candidate.configSource(), "stale-hit");
                 }
@@ -157,7 +114,7 @@ public class ModelRegistryService {
                 return null;
             }
 
-            writeCacheEntry(source, candidate, new CacheEntry(now(), true, remoteText));
+            writeCacheEntry(source, candidate, new ModelRegistryCachePort.CachedRegistryEntry(now(), true, remoteText));
             return new ResolveResult(settings, candidate.configSource(), "remote-hit");
         } catch (RuntimeException ex) {
             log.warn("[ModelRegistry] Failed to refresh {}: {}", candidate.relativePath(), ex.getMessage());
@@ -168,33 +125,26 @@ public class ModelRegistryService {
         }
     }
 
-    private CacheEntry readCacheEntry(RegistrySource source, RegistryCandidate candidate) {
+    private ModelRegistryCachePort.CachedRegistryEntry readCacheEntry(RegistrySource source,
+            RegistryCandidate candidate) {
         if (source == null) {
             return null;
         }
-        String cachePath = cachePath(source, candidate.relativePath());
         try {
-            Boolean exists = storagePort.exists(CACHE_DIR, cachePath).join();
-            if (!Boolean.TRUE.equals(exists)) {
-                return null;
-            }
-            String json = storagePort.getText(CACHE_DIR, cachePath).join();
-            if (json == null || json.isBlank()) {
-                return null;
-            }
-            return OBJECT_MAPPER.readValue(json, CacheEntry.class);
-        } catch (IOException | RuntimeException ex) { // NOSONAR
+            return modelRegistryCachePort.read(source.repositoryUrl(), source.branch(), candidate.relativePath());
+        } catch (RuntimeException ex) { // NOSONAR
             log.warn("[ModelRegistry] Failed to read cache entry {}: {}", candidate.relativePath(), ex.getMessage());
             return null;
         }
     }
 
-    private void writeCacheEntry(RegistrySource source, RegistryCandidate candidate, CacheEntry entry) {
-        String cachePath = cachePath(source, candidate.relativePath());
+    private void writeCacheEntry(
+            RegistrySource source,
+            RegistryCandidate candidate,
+            ModelRegistryCachePort.CachedRegistryEntry entry) {
         try {
-            String json = OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(entry);
-            storagePort.putTextAtomic(CACHE_DIR, cachePath, json, false).join();
-        } catch (IOException | RuntimeException ex) { // NOSONAR
+            modelRegistryCachePort.write(source.repositoryUrl(), source.branch(), candidate.relativePath(), entry);
+        } catch (RuntimeException ex) { // NOSONAR
             log.warn("[ModelRegistry] Failed to write cache entry {}: {}", candidate.relativePath(), ex.getMessage());
         }
     }
@@ -204,16 +154,16 @@ public class ModelRegistryService {
             return null;
         }
         try {
-            ModelCatalogEntry settings = OBJECT_MAPPER.readValue(json, ModelCatalogEntry.class);
+            ModelCatalogEntry settings = modelRegistryDocumentPort.parseCatalogEntry(json);
             return settings.withProvider(provider);
-        } catch (IOException ex) {
+        } catch (RuntimeException ex) {
             log.warn("[ModelRegistry] Invalid config for {}: {}", sourcePath, ex.getMessage());
             return null;
         }
     }
 
-    private boolean isFresh(CacheEntry entry) {
-        return entry.getCachedAt() != null && !entry.getCachedAt().plus(CACHE_TTL).isBefore(now());
+    private boolean isFresh(ModelRegistryCachePort.CachedRegistryEntry entry) {
+        return entry.cachedAt() != null && !entry.cachedAt().plus(CACHE_TTL).isBefore(now());
     }
 
     private RegistrySource resolveSource() {
@@ -256,11 +206,6 @@ public class ModelRegistryService {
             throw new IllegalStateException("Model registry repository URL must match <host>/<owner>/<repo>");
         }
         return new GitHubRepository(segments[segments.length - 2], segments[segments.length - 1]);
-    }
-
-    private String cachePath(RegistrySource source, String relativePath) {
-        return CACHE_PREFIX + "/" + sha256Hex(source.repositoryUrl() + "\n" + source.branch()) + "/"
-                + relativePath + ".cache.json";
     }
 
     private String encodeRelativePath(String value) {
@@ -411,36 +356,12 @@ public class ModelRegistryService {
         return normalized.isEmpty() ? null : normalized;
     }
 
-    private String sha256Hex(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder builder = new StringBuilder(bytes.length * 2);
-            for (byte current : bytes) {
-                builder.append(String.format("%02x", current & 0xff));
-            }
-            return builder.toString();
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is not available", ex);
-        }
-    }
-
     public record ResolveResult(ModelCatalogEntry defaultCatalogEntry, String configSource,
             String cacheStatus) {
 
         public ModelCatalogEntry defaultSettings() {
             return defaultCatalogEntry;
         }
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class CacheEntry {
-        private Instant cachedAt;
-        private boolean found;
-        private String content;
     }
 
     private record RegistrySource(String repositoryUrl, String branch) {

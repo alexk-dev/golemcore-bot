@@ -28,8 +28,6 @@ class HexagonalArchitectureContractTest {
             "me.golemcore.bot.infrastructure.",
             "me.golemcore.bot.plugin.",
             "me.golemcore.bot.proto.");
-    private static final Set<String> APPLICATION_FORBIDDEN_PACKAGE_ALLOWLIST = Set.of(
-            "me.golemcore.bot.application.settings.RuntimeSettingsValidator");
     private static final Set<String> FORBIDDEN_STEREOTYPE_TYPES = Set.of(
             "org.springframework.stereotype.Component",
             "org.springframework.stereotype.Service");
@@ -44,8 +42,20 @@ class HexagonalArchitectureContractTest {
             "org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder",
             "org.springframework.stereotype.Component",
             "org.springframework.stereotype.Service");
+    private static final Set<String> FORBIDDEN_DOMAIN_LOW_LEVEL_TYPES = Set.of(
+            "com.fasterxml.jackson.databind.JsonNode",
+            "com.fasterxml.jackson.databind.ObjectMapper",
+            "com.fasterxml.jackson.dataformat.yaml.YAMLFactory",
+            "java.net.http.HttpClient",
+            "java.net.http.HttpRequest",
+            "java.net.http.HttpResponse",
+            "java.nio.file.Files");
     private static final Set<String> DOMAIN_FRAMEWORK_ALLOWLIST = loadAllowlist(
             "architecture/domain-spring-stereotype-allowlist.txt");
+    private static final Set<String> DOMAIN_LOW_LEVEL_ALLOWLIST = loadAllowlist(
+            "architecture/domain-low-level-dependency-allowlist.txt");
+    private static final Set<String> APPLICATION_LOW_LEVEL_ALLOWLIST = loadAllowlist(
+            "architecture/application-low-level-dependency-allowlist.txt");
 
     @Test
     void domain_should_not_depend_on_adapter_plugin_infrastructure_or_proto_packages() {
@@ -54,10 +64,7 @@ class HexagonalArchitectureContractTest {
 
     @Test
     void application_should_not_depend_on_adapter_plugin_infrastructure_or_proto_packages() {
-        assertNoForbiddenDependencies(
-                APPLICATION_PACKAGE,
-                this::dependsOnForbiddenPackagePrefix,
-                APPLICATION_FORBIDDEN_PACKAGE_ALLOWLIST);
+        assertNoForbiddenDependencies(APPLICATION_PACKAGE, this::dependsOnForbiddenPackagePrefix);
     }
 
     @Test
@@ -78,6 +85,18 @@ class HexagonalArchitectureContractTest {
     @Test
     void port_should_not_depend_on_forbidden_framework_runtime_types() {
         assertNoForbiddenDependencies(PORT_PACKAGE, this::dependsOnForbiddenRuntimeType);
+    }
+
+    @Test
+    void domain_should_not_depend_on_low_level_io_http_or_serialization_types() {
+        assertNoForbiddenDependencies(DOMAIN_PACKAGE, this::dependsOnForbiddenDomainLowLevelType,
+                DOMAIN_LOW_LEVEL_ALLOWLIST);
+    }
+
+    @Test
+    void application_should_not_depend_on_low_level_io_http_or_serialization_types() {
+        assertNoForbiddenDependencies(APPLICATION_PACKAGE, this::dependsOnForbiddenDomainLowLevelType,
+                APPLICATION_LOW_LEVEL_ALLOWLIST);
     }
 
     private void assertNoForbiddenDependencies(String packagePrefix,
@@ -113,6 +132,11 @@ class HexagonalArchitectureContractTest {
     private boolean dependsOnForbiddenRuntimeType(Dependency dependency) {
         JavaClass targetClass = dependency.getTargetClass();
         return FORBIDDEN_RUNTIME_TYPES.contains(targetClass.getFullName());
+    }
+
+    private boolean dependsOnForbiddenDomainLowLevelType(Dependency dependency) {
+        JavaClass targetClass = dependency.getTargetClass();
+        return FORBIDDEN_DOMAIN_LOW_LEVEL_TYPES.contains(targetClass.getFullName());
     }
 
     private static Set<String> loadAllowlist(String resourcePath) {

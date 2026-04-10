@@ -95,10 +95,13 @@ class CommandRouterTest {
     private CompactionOrchestrationService compactionService;
     private AutoModeService autoModeService;
     private AutomationCommandService automationCommandService;
+    private AutomationCommandHandler automationCommandHandler;
     private ModelSelectionCommandService modelSelectionCommandService;
+    private ModelSelectionCommandHandler modelSelectionCommandHandler;
     private PlanService planService;
     private PlanExecutionService planExecutionService;
     private PlanCommandService planCommandService;
+    private PlanCommandHandler planCommandHandler;
     private RuntimeConfigService runtimeConfigService;
     private ScheduleService scheduleService;
     private DelayedActionPolicyService delayedActionPolicyService;
@@ -149,15 +152,23 @@ class CommandRouterTest {
         runtimeConfigService = mock(RuntimeConfigService.class);
         scheduleService = mock(ScheduleService.class);
         delayedActionPolicyService = mock(DelayedActionPolicyService.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         automationCommandService = new AutomationCommandService(
                 autoModeService,
                 runtimeConfigService,
                 scheduleService,
                 delayedActionPolicyService,
                 null);
+        automationCommandHandler = new AutomationCommandHandler(
+                automationCommandService,
+                preferencesService,
+                eventPublisher);
+        modelSelectionCommandHandler = new ModelSelectionCommandHandler(
+                modelSelectionCommandService,
+                preferencesService);
         planCommandService = new PlanCommandService(planService, planExecutionService, runtimeConfigService);
+        planCommandHandler = new PlanCommandHandler(planCommandService, preferencesService);
         runCoordinator = mock(SessionRunCoordinator.class);
-        eventPublisher = mock(ApplicationEventPublisher.class);
 
         ToolComponent tool1 = mockTool(TOOL_FILESYSTEM, "File system operations", true);
         ToolComponent tool2 = mockTool(TOOL_SHELL, "Shell command execution", true);
@@ -174,13 +185,11 @@ class CommandRouterTest {
                 usageTracker,
                 preferencesService,
                 compactionService,
-                automationCommandService,
-                modelSelectionCommandService,
-                planCommandService,
+                automationCommandHandler,
+                modelSelectionCommandHandler,
+                planCommandHandler,
                 delayedActionPolicyService,
                 runCoordinator,
-                eventPublisher,
-                runtimeConfigService,
                 buildPropertiesProvider);
     }
 

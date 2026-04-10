@@ -20,7 +20,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.service.SkillDocumentService;
-import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.StoragePort;

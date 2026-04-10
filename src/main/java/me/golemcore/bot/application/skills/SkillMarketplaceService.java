@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.skills;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -15,9 +15,12 @@ import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.domain.model.SkillInstallResult;
 import me.golemcore.bot.domain.model.SkillMarketplaceCatalog;
 import me.golemcore.bot.domain.model.SkillMarketplaceItem;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SkillDocumentService;
+import me.golemcore.bot.domain.service.SkillService;
+import me.golemcore.bot.domain.service.WorkspacePathService;
 import me.golemcore.bot.port.outbound.SkillSettingsPort;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.URI;
@@ -47,7 +50,6 @@ import java.util.stream.Stream;
  * Reads skill marketplace metadata from a local registry directory or a remote
  * GitHub repository and installs skill artifacts into runtime storage.
  */
-@Service
 @RequiredArgsConstructor
 @Slf4j
 public class SkillMarketplaceService {

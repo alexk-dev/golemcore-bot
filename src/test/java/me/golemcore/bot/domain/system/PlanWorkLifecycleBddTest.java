@@ -1,6 +1,5 @@
 package me.golemcore.bot.domain.system;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -46,6 +45,7 @@ import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
+import me.golemcore.bot.port.outbound.PlanStorePort;
 import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -86,9 +86,8 @@ class PlanWorkLifecycleBddTest {
     @Test
     void shouldPersistCanonicalMarkdownAndKeepPlanWorkActiveUntilPlanDone() {
         // GIVEN: a real PlanService with mocked storage
-        StoragePort storagePort = mock(StoragePort.class);
-        when(storagePort.getText(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
-        when(storagePort.putText(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        PlanStorePort planStorePort = mock(PlanStorePort.class);
+        when(planStorePort.loadPlans()).thenReturn(new ArrayList<>());
 
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isPlanEnabled()).thenReturn(true);
@@ -96,8 +95,7 @@ class PlanWorkLifecycleBddTest {
         when(runtimeConfigService.getPlanMaxStepsPerPlan()).thenReturn(50);
 
         PlanService planService = new PlanService(
-                storagePort,
-                new ObjectMapper().findAndRegisterModules(),
+                planStorePort,
                 runtimeConfigService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 

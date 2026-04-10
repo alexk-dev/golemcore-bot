@@ -5,6 +5,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
+import me.golemcore.bot.adapter.outbound.voice.PluginVoiceProviderCatalogAdapter;
 import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
@@ -91,7 +92,9 @@ class SettingsControllerTest {
                 runtimeConfigService,
                 preferencesService,
                 memoryPresetService,
-                new RuntimeSettingsValidator(modelSelectionService, sttRegistry, ttsRegistry),
+                new RuntimeSettingsValidator(
+                        modelSelectionService,
+                        new PluginVoiceProviderCatalogAdapter(sttRegistry, ttsRegistry)),
                 new RuntimeSettingsMergeService());
         return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade);
     }

@@ -3,6 +3,8 @@ package me.golemcore.bot.application.settings;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.adapter.outbound.voice.PluginVoiceProviderCatalogAdapter;
+import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;
 import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
 import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
 import me.golemcore.plugin.api.extension.spi.SttProvider;
@@ -25,15 +27,17 @@ import static org.mockito.Mockito.when;
 class RuntimeSettingsValidatorTest {
 
     private ModelSelectionService modelSelectionService;
+    private VoiceProviderCatalogPort voiceProviderCatalogPort;
     private RuntimeSettingsValidator validator;
 
     @BeforeEach
     void setUp() {
         modelSelectionService = mock(ModelSelectionService.class);
+        voiceProviderCatalogPort = new PluginVoiceProviderCatalogAdapter(new SttProviderRegistry(),
+                new TtsProviderRegistry());
         validator = new RuntimeSettingsValidator(
                 modelSelectionService,
-                new SttProviderRegistry(),
-                new TtsProviderRegistry());
+                voiceProviderCatalogPort);
     }
 
     @Test
@@ -177,8 +181,7 @@ class RuntimeSettingsValidatorTest {
         ttsProviderRegistry.replaceProviders("golemcore/whisper", List.of(ttsProvider));
         RuntimeSettingsValidator loadedValidator = new RuntimeSettingsValidator(
                 modelSelectionService,
-                sttProviderRegistry,
-                ttsProviderRegistry);
+                new PluginVoiceProviderCatalogAdapter(sttProviderRegistry, ttsProviderRegistry));
         RuntimeConfig.VoiceConfig voiceConfig = RuntimeConfig.VoiceConfig.builder()
                 .enabled(false)
                 .sttProvider("elevenlabs")
@@ -197,8 +200,7 @@ class RuntimeSettingsValidatorTest {
     void shouldRejectEnabledVoiceConfigWhenNoProvidersAreLoaded() {
         RuntimeSettingsValidator unloadedValidator = new RuntimeSettingsValidator(
                 modelSelectionService,
-                new SttProviderRegistry(),
-                new TtsProviderRegistry());
+                new PluginVoiceProviderCatalogAdapter(new SttProviderRegistry(), new TtsProviderRegistry()));
         RuntimeConfig.VoiceConfig voiceConfig = RuntimeConfig.VoiceConfig.builder()
                 .enabled(true)
                 .build();

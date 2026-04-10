@@ -1,13 +1,18 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.update;
 
 import me.golemcore.bot.adapter.outbound.update.BuildPropertiesUpdateVersionAdapter;
 import me.golemcore.bot.adapter.outbound.update.RuntimeConfigUpdateRuntimeAdapter;
 import me.golemcore.bot.adapter.outbound.update.UpdateAutoUpdateLifecycle;
 import me.golemcore.bot.domain.model.AvailableRelease;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.UpdateActionResult;
 import me.golemcore.bot.domain.model.UpdateBlockedReason;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
+import me.golemcore.bot.domain.service.JvmExitService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.UpdateActivityGate;
+import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import me.golemcore.bot.port.outbound.UpdateRestartPort;
@@ -32,6 +37,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -594,17 +600,81 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldFallbackToImageSourceWhenCurrentMarkerIsInvalid(@TempDir Path tempDir) throws Exception {
+        enableUpdates(tempDir);
+        Files.writeString(tempDir.resolve("current.txt"), "../bot-0.4.2.jar\n", StandardCharsets.UTF_8);
+
+        UpdateService service = createService(new StubReleaseSource());
+        UpdateStatus status = service.getStatus();
+
+        assertEquals("image", status.getCurrent().getSource());
+        assertEquals(VERSION_CURRENT, status.getCurrent().getVersion());
+    }
+
+    @Test
+    void shouldIgnoreStagedMarkerWhenJarIsMissing(@TempDir Path tempDir) throws Exception {
+        enableUpdates(tempDir);
+        Files.createDirectories(tempDir.resolve("jars"));
+        Files.writeString(tempDir.resolve("staged.txt"), "bot-0.4.2.jar\n", StandardCharsets.UTF_8);
+
+        UpdateService service = createService(new StubReleaseSource());
+        UpdateStatus status = service.getStatus();
+
+        assertNull(status.getStaged());
+        assertEquals(UpdateState.IDLE, status.getState());
+    }
+
+    @Test
+    void shouldRejectDangerousAssetNameDuringUpdateNow(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "../bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        TestableUpdateService service = createTestableService(source);
+
+        UpdateActionResult action = service.updateNow();
+        UpdateStatus status = service.getStatus();
+
+        assertEquals("Update workflow started. Checking the latest release.", action.getMessage());
+        assertEquals(UpdateState.FAILED, status.getState());
+        assertTrue(status.getLastError().contains("Asset name contains prohibited path characters"));
+        assertFalse(service.isRestartRequested());
+    }
+
+    @Test
+    void shouldSkipAutoCheckWhenIntervalHasNotElapsed(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        when(runtimeConfigService.getUpdateCheckIntervalMinutes()).thenReturn(120);
+
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        TestableUpdateService service = createTestableService(source);
+        writePrivateField(service, "lastCheckAt", BASE_TIME.minus(Duration.ofMinutes(30)));
+
+        service.runAutoUpdateCycle();
+
+        assertEquals(UpdateState.IDLE, service.getStatus().getState());
+        assertNull(service.getStatus().getAvailable());
+    }
+
+    @Test
     void shouldCoverVersionComparisonAndChecksumHelpersViaReflection(@TempDir Path tempDir) throws Exception {
         enableUpdates(tempDir);
         UpdateService service = createService(new StubReleaseSource());
 
         assertTrue(invokeCompareVersions(service, "1.2.4", "1.2.3") > 0);
         assertTrue(invokeCompareVersions(service, "1.2.3-rc.1", "1.2.3-rc.2") < 0);
+        assertTrue(invokeCompareVersions(service, "1.2.3", "1.2.3-rc.1") > 0);
+        assertTrue(invokeCompareVersions(service, "1.2.3-alpha", "1.2.3-1") > 0);
+        assertTrue(invokeCompareVersions(service, "1.2.3-1", "1.2.3-alpha") < 0);
+        assertTrue(invokeCompareVersions(service, "release-2", "release-10") > 0);
         assertEquals(0, invokeCompareVersions(service, "v1.2.3+build.1", "1.2.3"));
         assertEquals("1.2.3", service.extractVersionFromAssetName("bot-1.2.3.jar"));
         assertEquals("1.2.3-rc.1", service.extractVersionFromAssetName("release-v1.2.3-rc.1.jar"));
         assertEquals("1.2.3", service.extractVersionFromAssetName("bot-1.2.3-exec.jar"));
+        assertEquals("2.3.4-beta-2", service.extractVersionFromAssetName("release-V2.3.4-beta-2.jar"));
         assertNull(service.extractVersionFromAssetName("bot-latest.jar"));
+        assertNull(service.extractVersionFromAssetName("bot-1.2.jar"));
     }
 
     @Test
@@ -802,6 +872,17 @@ class UpdateServiceTest {
             return (T) field.get(target);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new IllegalStateException("Failed to read field: " + fieldName, e);
+        }
+    }
+
+    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+    private static void writePrivateField(Object target, String fieldName, Object value) {
+        try {
+            Field field = UpdateService.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            field.set(target, value);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new IllegalStateException("Failed to write field: " + fieldName, e);
         }
     }
 
