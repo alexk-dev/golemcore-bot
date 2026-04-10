@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.port.outbound.EmbeddingPort;
+import me.golemcore.bot.port.outbound.EmbeddingProviderIds;
 import me.golemcore.bot.port.outbound.selfevolving.TacticEmbeddingIndexPort;
 import org.springframework.stereotype.Service;
 
@@ -263,7 +264,7 @@ public class TacticEmbeddingIndexService {
 
     private boolean shouldSkipVectorSearch(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config) {
         TacticSearchMetricsService.Snapshot metricsSnapshot = metricsService.snapshot();
-        if (!"ollama".equalsIgnoreCase(config.getProvider())) {
+        if (!EmbeddingProviderIds.OLLAMA.equalsIgnoreCase(config.getProvider())) {
             return false;
         }
         if (!"bm25".equalsIgnoreCase(metricsSnapshot.activeMode())) {

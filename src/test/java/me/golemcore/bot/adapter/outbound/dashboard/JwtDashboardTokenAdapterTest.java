@@ -7,8 +7,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import org.junit.jupiter.api.Test;
+import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
 
 class JwtDashboardTokenAdapterTest {
 

@@ -15,6 +15,7 @@ import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
 
 /**
  * Reactive WebFilter that extracts and validates JWT from Authorization header,

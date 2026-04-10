@@ -1,6 +1,6 @@
 package me.golemcore.bot.plugin.runtime;
 
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;

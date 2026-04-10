@@ -1,7 +1,7 @@
 package me.golemcore.bot.plugin.runtime.extension;
 
 import me.golemcore.bot.domain.model.ProgressUpdate;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;

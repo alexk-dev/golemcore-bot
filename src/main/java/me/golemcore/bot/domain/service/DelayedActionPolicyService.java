@@ -20,18 +20,16 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import org.springframework.stereotype.Service;
 
 import java.util.Locale;
-import me.golemcore.bot.port.inbound.InboundChannelPort;
 
 /**
  * Runtime policy for delayed action scheduling and proactive delivery.
  */
 @Service
 public class DelayedActionPolicyService {
-
-    private static final String CHANNEL_WEBHOOK = "webhook";
 
     private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
@@ -74,7 +72,7 @@ public class DelayedActionPolicyService {
         if (StringValueSupport.isBlank(channelType)) {
             return false;
         }
-        return !CHANNEL_WEBHOOK.equals(channelType.trim().toLowerCase(Locale.ROOT));
+        return !ChannelTypes.WEBHOOK.equals(channelType.trim().toLowerCase(Locale.ROOT));
     }
 
     public boolean supportsProactiveMessage(String channelType, String transportChatId) {
@@ -85,7 +83,7 @@ public class DelayedActionPolicyService {
         if (channel == null) {
             return false;
         }
-        if (channel instanceof InboundChannelPort inboundChannel && !inboundChannel.isRunning()) {
+        if (!channelRuntimePort.isChannelRunning(channelType)) {
             return false;
         }
         return channel.supportsProactiveMessage(transportChatId);

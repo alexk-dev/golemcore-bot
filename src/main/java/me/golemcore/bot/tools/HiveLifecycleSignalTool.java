@@ -36,13 +36,14 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.ToolResult;
 import org.springframework.stereotype.Component;
 
 @Component
 public class HiveLifecycleSignalTool implements ToolComponent {
 
-    public static final String TOOL_NAME = "hive_lifecycle_signal";
+    public static final String TOOL_NAME = ToolNames.HIVE_LIFECYCLE_SIGNAL;
 
     private static final List<String> SUPPORTED_SIGNAL_TYPES = List.of(
             "PROGRESS_REPORTED",

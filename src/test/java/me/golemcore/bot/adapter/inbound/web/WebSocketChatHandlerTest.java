@@ -1,11 +1,11 @@
 package me.golemcore.bot.adapter.inbound.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
 import me.golemcore.bot.port.inbound.CommandPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

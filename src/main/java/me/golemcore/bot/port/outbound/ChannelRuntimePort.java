@@ -12,4 +12,8 @@ public interface ChannelRuntimePort {
     Optional<ChannelDeliveryPort> findChannel(String channelType);
 
     List<ChannelDeliveryPort> listChannels();
+
+    default boolean isChannelRunning(String channelType) {
+        return findChannel(channelType).isPresent();
+    }
 }

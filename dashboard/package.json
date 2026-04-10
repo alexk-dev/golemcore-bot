@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "node ./scripts/wait-for-build-bins.mjs && tsc && vite build",
     "preview": "vite preview",
     "lint": "node ./scripts/run-eslint.mjs",
     "lint:fix": "node ./scripts/run-eslint.mjs --fix",

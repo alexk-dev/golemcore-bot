@@ -1,4 +1,4 @@
-package me.golemcore.bot.port.inbound;
+package me.golemcore.bot.port.channel;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -18,10 +18,11 @@ package me.golemcore.bot.port.inbound;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.port.inbound.InboundChannelPort;
 import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 
 /**
- * Transitional combined channel contract kept for backward compatibility while
+ * Transitional combined channel contract kept in a neutral port namespace while
  * inbound and outbound channel responsibilities are being separated.
  */
 public interface ChannelPort extends InboundChannelPort, ChannelDeliveryPort {

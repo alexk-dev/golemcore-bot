@@ -1,6 +1,6 @@
 package me.golemcore.bot.plugin.runtime;
 
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

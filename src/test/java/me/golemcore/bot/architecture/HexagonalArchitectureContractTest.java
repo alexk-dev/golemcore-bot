@@ -25,9 +25,17 @@ class HexagonalArchitectureContractTest {
     private static final String PORT_PACKAGE = "me.golemcore.bot.port";
     private static final List<String> FORBIDDEN_PACKAGE_PREFIXES = List.of(
             "me.golemcore.bot.adapter.",
+            "me.golemcore.bot.auto.",
             "me.golemcore.bot.infrastructure.",
+            "me.golemcore.bot.launcher.",
             "me.golemcore.bot.plugin.",
-            "me.golemcore.bot.proto.");
+            "me.golemcore.bot.proto.",
+            "me.golemcore.bot.ratelimit.",
+            "me.golemcore.bot.security.",
+            "me.golemcore.bot.tools.",
+            "me.golemcore.bot.usage.");
+    private static final String INBOUND_ADAPTER_PACKAGE = "me.golemcore.bot.adapter.inbound";
+    private static final String OUTBOUND_ADAPTER_PACKAGE = "me.golemcore.bot.adapter.outbound";
     private static final Set<String> FORBIDDEN_STEREOTYPE_TYPES = Set.of(
             "org.springframework.stereotype.Component",
             "org.springframework.stereotype.Service");
@@ -97,6 +105,18 @@ class HexagonalArchitectureContractTest {
     void application_should_not_depend_on_low_level_io_http_or_serialization_types() {
         assertNoForbiddenDependencies(APPLICATION_PACKAGE, this::dependsOnForbiddenDomainLowLevelType,
                 APPLICATION_LOW_LEVEL_ALLOWLIST);
+    }
+
+    @Test
+    void inbound_adapters_should_not_depend_on_outbound_adapters() {
+        assertNoForbiddenDependencies(INBOUND_ADAPTER_PACKAGE,
+                dependency -> dependency.getTargetClass().getPackageName().startsWith(OUTBOUND_ADAPTER_PACKAGE));
+    }
+
+    @Test
+    void outbound_adapters_should_not_depend_on_inbound_adapters() {
+        assertNoForbiddenDependencies(OUTBOUND_ADAPTER_PACKAGE,
+                dependency -> dependency.getTargetClass().getPackageName().startsWith(INBOUND_ADAPTER_PACKAGE));
     }
 
     private void assertNoForbiddenDependencies(String packagePrefix,
