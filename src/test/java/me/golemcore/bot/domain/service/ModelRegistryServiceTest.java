@@ -244,6 +244,43 @@ class ModelRegistryServiceTest {
     }
 
     @Test
+    void shouldStripIsoDateSuffixAndTrimSlashesWhenResolvingSharedConfig() {
+        service.putRemoteFile("models/gemini-3-preview.json", """
+                {
+                  "displayName": "Gemini 3 Preview",
+                  "supportsVision": true,
+                  "supportsTemperature": true,
+                  "maxInputTokens": 1048576
+                }
+                """);
+
+        ModelRegistryService.ResolveResult result = service.resolveDefaults("google", "/gemini-3-preview-2025-09-30/");
+
+        assertNotNull(result.defaultSettings());
+        assertEquals("shared", result.configSource());
+        assertEquals("remote-hit", result.cacheStatus());
+        assertTrue(service.requestedUris().stream().anyMatch(uri -> uri.endsWith("/models/gemini-3-preview.json")));
+    }
+
+    @Test
+    void shouldStripCompactDateSuffixWhenResolvingSharedConfig() {
+        service.putRemoteFile("models/gemini-3-preview.json", """
+                {
+                  "displayName": "Gemini 3 Preview",
+                  "supportsVision": true,
+                  "supportsTemperature": true,
+                  "maxInputTokens": 1048576
+                }
+                """);
+
+        ModelRegistryService.ResolveResult result = service.resolveDefaults("google", "gemini-3-preview-20250930");
+
+        assertNotNull(result.defaultSettings());
+        assertEquals("shared", result.configSource());
+        assertEquals("remote-hit", result.cacheStatus());
+    }
+
+    @Test
     void shouldRefreshStaleCacheFromRemote() {
         service.putRemoteFile("models/gpt-5.1.json", """
                 {
@@ -330,6 +367,23 @@ class ModelRegistryServiceTest {
         assertNotNull(result.defaultSettings());
         assertEquals("stale-hit", result.cacheStatus());
         assertEquals("GPT-5.1", result.defaultSettings().getDisplayName());
+    }
+
+    @Test
+    void shouldReturnMissWhenRepositoryUrlIsInvalidAndNoCacheExists() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .modelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                        .repositoryUrl("https://github.com/invalid")
+                        .branch("main")
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        ModelRegistryService.ResolveResult result = service.resolveDefaults("openai", "gpt-5.1");
+
+        assertNull(result.defaultSettings());
+        assertNull(result.configSource());
+        assertEquals("miss", result.cacheStatus());
     }
 
     @SuppressWarnings("PMD.NullAssignment")
