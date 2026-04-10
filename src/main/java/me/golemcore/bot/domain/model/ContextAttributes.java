@@ -214,6 +214,15 @@ public final class ContextAttributes {
     /** WebSocketSession — reference to WebSocket session for streaming. */
     public static final String WEB_STREAM_SINK = "web.stream.sink";
 
+    /** Boolean ? webhook delivery should be routed to an external channel. */
+    public static final String WEBHOOK_DELIVER = "webhook.deliver";
+
+    /** String ? webhook delivery target channel type. */
+    public static final String WEBHOOK_DELIVER_CHANNEL = "webhook.deliver.channel";
+
+    /** String ? webhook delivery target chat identifier. */
+    public static final String WEBHOOK_DELIVER_TO = "webhook.deliver.to";
+
     /**
      * String ? transport chat id used for outbound delivery (for example Telegram
      * chat id when logical session key differs).
