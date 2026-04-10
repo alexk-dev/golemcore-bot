@@ -1,7 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.GlobalExceptionHandler;
-import me.golemcore.bot.domain.service.UpdateService;
+import me.golemcore.bot.application.update.UpdateService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.reactive.server.WebTestClient;

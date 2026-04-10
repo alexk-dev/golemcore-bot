@@ -18,9 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -239,7 +236,6 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_SELF_EVOLVING_READONLY_INSPECTION = true;
     private final RuntimeConfigPersistencePort runtimeConfigPersistencePort;
     private final SelfEvolvingBootstrapOverrideService selfEvolvingBootstrapOverrideService;
-    private final ObjectMapper objectMapper;
 
     private final AtomicReference<RuntimeConfig> configRef = new AtomicReference<>();
 
@@ -247,8 +243,6 @@ public class RuntimeConfigService {
             SelfEvolvingBootstrapOverrideService selfEvolvingBootstrapOverrideService) {
         this.runtimeConfigPersistencePort = runtimeConfigPersistencePort;
         this.selfEvolvingBootstrapOverrideService = selfEvolvingBootstrapOverrideService;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     // ==================== Section Validation ====================
@@ -338,12 +332,15 @@ public class RuntimeConfigService {
     public void replaceHiveManagedPolicySections(RuntimeConfig.LlmConfig llmConfig,
             RuntimeConfig.ModelRouterConfig modelRouterConfig) {
         RuntimeConfig snapshot = snapshotRuntimeConfig();
-        snapshot.setLlm(
-                copySection(llmConfig, RuntimeConfig.LlmConfig.class, RuntimeConfig.LlmConfig.builder().build()));
-        snapshot.setModelRouter(copySection(
-                modelRouterConfig,
-                RuntimeConfig.ModelRouterConfig.class,
-                RuntimeConfig.ModelRouterConfig.builder().build()));
+        RuntimeConfig llmSnapshot = copyRuntimeConfig(RuntimeConfig.builder()
+                .llm(llmConfig != null ? llmConfig : RuntimeConfig.LlmConfig.builder().build())
+                .build());
+        RuntimeConfig modelRouterSnapshot = copyRuntimeConfig(RuntimeConfig.builder()
+                .modelRouter(modelRouterConfig != null ? modelRouterConfig
+                        : RuntimeConfig.ModelRouterConfig.builder().build())
+                .build());
+        snapshot.setLlm(llmSnapshot.getLlm());
+        snapshot.setModelRouter(modelRouterSnapshot.getModelRouter());
         updateRuntimeConfig(snapshot);
     }
 
@@ -1757,18 +1754,6 @@ public class RuntimeConfigService {
 
     public RuntimeConfig copyRuntimeConfig(RuntimeConfig source) {
         return runtimeConfigPersistencePort.copy(source);
-    }
-
-    private <T> T copySection(T source, Class<T> sectionType, T defaultValue) {
-        if (source == null) {
-            return defaultValue;
-        }
-        try {
-            String json = objectMapper.writeValueAsString(source);
-            return objectMapper.readValue(json, sectionType);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to copy runtime config section", e);
-        }
     }
 
     private void normalizeRuntimeConfig(RuntimeConfig cfg) {

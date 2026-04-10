@@ -2,18 +2,11 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.model.LlmRequest;
-import me.golemcore.bot.domain.model.LlmResponse;
-import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
-import me.golemcore.bot.domain.service.HiveManagedPolicyService;
+import me.golemcore.bot.application.models.ModelManagementFacade;
+import me.golemcore.bot.application.models.ModelRegistryService;
+import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
-import me.golemcore.bot.domain.service.ModelRegistryService;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
-import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -31,7 +24,7 @@ import reactor.core.publisher.Mono;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.NoSuchElementException;
 
 /**
  * REST controller for model definitions CRUD (models.json management).
@@ -39,36 +32,30 @@ import java.util.concurrent.TimeUnit;
 @RestController
 @RequestMapping("/api/models")
 @RequiredArgsConstructor
-@Slf4j
 public class ModelsController {
 
-    private static final String TEST_PROMPT = "Reply in one short sentence: What model are you? Include your exact model name/version.";
-    private static final int TEST_TIMEOUT_SECONDS = 30;
-
-    private final ModelConfigService modelConfigService;
-    private final ModelSelectionService modelSelectionService;
-    private final ProviderModelDiscoveryService providerModelDiscoveryService;
-    private final ModelRegistryService modelRegistryService;
-    private final LlmPort llmPort;
-    private final HiveManagedPolicyService hiveManagedPolicyService;
+    private final ModelManagementFacade modelManagementFacade;
 
     /**
      * Get full models config (all models + defaults).
      */
     @GetMapping
-    public Mono<ResponseEntity<ModelConfigService.ModelsConfig>> getModelsConfig() {
-        return Mono.just(ResponseEntity.ok(modelConfigService.getConfig()));
+    public Mono<ResponseEntity<ModelsConfigDto>> getModelsConfig() {
+        return Mono.just(ResponseEntity.ok(toDto(modelManagementFacade.getModelsConfig())));
     }
 
     /**
      * Replace entire models config.
      */
     @PutMapping
-    public Mono<ResponseEntity<ModelConfigService.ModelsConfig>> replaceModelsConfig(
-            @RequestBody ModelConfigService.ModelsConfig newConfig) {
-        rejectManagedHivePolicyCatalogMutation();
-        modelConfigService.replaceConfig(newConfig);
-        return Mono.just(ResponseEntity.ok(modelConfigService.getConfig()));
+    public Mono<ResponseEntity<ModelsConfigDto>> replaceModelsConfig(
+            @RequestBody ModelsConfigDto newConfig) {
+        try {
+            return Mono
+                    .just(ResponseEntity.ok(toDto(modelManagementFacade.replaceModelsConfig(toSnapshot(newConfig)))));
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        }
     }
 
     /**
@@ -80,14 +67,13 @@ public class ModelsController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
         }
-        String id = requireValue(request.id(), "id");
-        String previousId = optionalValue(request.previousId());
-        ModelConfigService.ModelSettings settings = request.settings();
-        if (settings == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "settings is required");
+        try {
+            modelManagementFacade.saveModel(request.id(), request.previousId(), toSnapshot(request.settings()));
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
         }
-        rejectManagedHivePolicyCatalogMutation();
-        modelConfigService.saveModel(id, previousId, settings);
         return Mono.just(ResponseEntity.ok().build());
     }
 
@@ -96,11 +82,14 @@ public class ModelsController {
      */
     @DeleteMapping
     public Mono<ResponseEntity<Void>> deleteModel(@RequestParam String id) {
-        String normalizedId = requireValue(id, "id");
-        rejectManagedHivePolicyCatalogMutation();
-        boolean deleted = modelConfigService.deleteModel(normalizedId);
-        if (!deleted) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Model '" + normalizedId + "' not found");
+        try {
+            modelManagementFacade.deleteModel(id);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        } catch (NoSuchElementException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
         }
         return Mono.just(ResponseEntity.ok().build());
     }
@@ -110,12 +99,12 @@ public class ModelsController {
      */
     @GetMapping("/available")
     public Mono<ResponseEntity<Map<String, List<AvailableModelDto>>>> getAvailableModels() {
-        Map<String, List<ModelSelectionService.AvailableModel>> grouped = modelSelectionService
-                .getAvailableModelsGrouped();
+        Map<String, List<me.golemcore.bot.domain.service.ModelSelectionService.AvailableModel>> grouped = modelManagementFacade
+                .getAvailableModels();
         Map<String, List<AvailableModelDto>> result = new LinkedHashMap<>();
         grouped.forEach((provider, models) -> result.put(provider, models.stream()
-                .map(m -> new AvailableModelDto(m.id(), m.displayName(), m.hasReasoning(),
-                        m.reasoningLevels(), m.supportsVision()))
+                .map(model -> new AvailableModelDto(model.id(), model.displayName(), model.hasReasoning(),
+                        model.reasoningLevels(), model.supportsVision()))
                 .toList()));
         return Mono.just(ResponseEntity.ok(result));
     }
@@ -126,17 +115,17 @@ public class ModelsController {
     @GetMapping("/discover/{provider}")
     public Mono<ResponseEntity<List<DiscoveredModelDto>>> discoverProviderModels(@PathVariable String provider) {
         try {
-            List<ProviderModelDiscoveryService.DiscoveredModel> discoveredModels = providerModelDiscoveryService
-                    .discoverModels(provider);
+            List<ProviderModelDiscoveryService.DiscoveredModel> discoveredModels = modelManagementFacade
+                    .discoverProviderModels(provider);
             List<DiscoveredModelDto> response = discoveredModels.stream()
                     .map(model -> new DiscoveredModelDto(model.provider(), model.id(), model.displayName(),
                             model.ownedBy(), model.defaultCatalogEntry()))
                     .toList();
             return Mono.just(ResponseEntity.ok(response));
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        } catch (IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage());
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, exception.getMessage());
         }
     }
 
@@ -146,15 +135,14 @@ public class ModelsController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
         }
-        String provider = requireValue(request.provider(), "provider");
-        String modelId = requireValue(request.modelId(), "modelId");
         try {
-            ModelRegistryService.ResolveResult result = modelRegistryService.resolveDefaults(provider, modelId);
+            ModelRegistryService.ResolveResult result = modelManagementFacade
+                    .resolveModelRegistry(request.provider(), request.modelId());
             return Mono.just(ResponseEntity.ok(
                     new ResolveRegistryResponse(result.defaultCatalogEntry(), result.configSource(),
                             result.cacheStatus())));
-        } catch (IllegalArgumentException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
         }
     }
 
@@ -166,27 +154,15 @@ public class ModelsController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
         }
-        String model = requireValue(request.model(), "model");
-        log.info("[Models] Testing model: {}", model);
         try {
-            LlmRequest llmRequest = LlmRequest.builder()
-                    .model(model)
-                    .messages(List.of(Message.builder()
-                            .role("user")
-                            .content(TEST_PROMPT)
-                            .build()))
-                    .temperature(0.0)
-                    .maxTokens(256)
-                    .build();
-            LlmResponse response = llmPort.chat(llmRequest).get(TEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            String reply = response.getContent() != null ? response.getContent().trim() : "";
-            log.info("[Models] Test response from {}: {}", model, reply);
-            return Mono.just(ResponseEntity.ok(new TestModelResponse(true, reply, null)));
-        } catch (Exception e) { // NOSONAR - catching all for user-facing diagnostic
-            String errorMessage = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-            log.warn("[Models] Test failed for {}: {}", model, errorMessage);
+            ModelManagementFacade.TestModelResult result = modelManagementFacade.testModel(request.model());
+            if (result.success()) {
+                return Mono.just(ResponseEntity.ok(new TestModelResponse(true, result.reply(), null)));
+            }
             return Mono.just(ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                    .body(new TestModelResponse(false, null, errorMessage)));
+                    .body(new TestModelResponse(false, null, result.error())));
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
         }
     }
 
@@ -195,38 +171,14 @@ public class ModelsController {
      */
     @PostMapping("/reload")
     public Mono<ResponseEntity<Void>> reloadModels() {
-        modelConfigService.reload();
+        modelManagementFacade.reloadModels();
         return Mono.just(ResponseEntity.ok().build());
-    }
-
-    private String requireValue(String value, String fieldName) {
-        if (value == null || value.trim().isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required");
-        }
-        return value.trim();
-    }
-
-    private String optionalValue(String value) {
-        if (value == null || value.trim().isEmpty()) {
-            return null;
-        }
-        return value.trim();
-    }
-
-    private void rejectManagedHivePolicyCatalogMutation() {
-        HivePolicyBindingState bindingState = hiveManagedPolicyService.getBindingState().orElse(null);
-        if (bindingState == null || !bindingState.hasActiveBinding()) {
-            return;
-        }
-        throw new ResponseStatusException(HttpStatus.CONFLICT,
-                "Model catalog is managed by Hive policy group \"" + bindingState.getPolicyGroupId()
-                        + "\" and is read-only");
     }
 
     public record ResolveRegistryRequest(String provider, String modelId) {
     }
 
-    public record SaveModelRequest(String id, String previousId, ModelConfigService.ModelSettings settings) {
+    public record SaveModelRequest(String id, String previousId, ModelSettingsDto settings) {
     }
 
     public record ResolveRegistryResponse(@JsonProperty("defaultSettings") ModelCatalogEntry defaultSettings,
@@ -246,5 +198,85 @@ public class ModelsController {
 
     private record DiscoveredModelDto(String provider, String id, String displayName, String ownedBy,
             @JsonProperty("defaultSettings") ModelCatalogEntry defaultSettings) {
+    }
+
+    public record ModelsConfigDto(Map<String, ModelSettingsDto> models, ModelSettingsDto defaults) {
+    }
+
+    public record ModelSettingsDto(
+            String provider,
+            String displayName,
+            boolean supportsVision,
+            boolean supportsTemperature,
+            int maxInputTokens,
+            ReasoningConfigDto reasoning) {
+    }
+
+    public record ReasoningConfigDto(@JsonProperty("default") String defaultLevel,
+            Map<String, ReasoningLevelDto> levels) {
+    }
+
+    public record ReasoningLevelDto(int maxInputTokens) {
+    }
+
+    private ModelsConfigDto toDto(ModelConfigAdminPort.ModelsConfigSnapshot snapshot) {
+        Map<String, ModelSettingsDto> models = new LinkedHashMap<>();
+        snapshot.models().forEach((key, value) -> models.put(key, toDto(value)));
+        return new ModelsConfigDto(models, toDto(snapshot.defaults()));
+    }
+
+    private ModelSettingsDto toDto(ModelConfigAdminPort.ModelSettingsSnapshot snapshot) {
+        if (snapshot == null) {
+            return null;
+        }
+        return new ModelSettingsDto(
+                snapshot.provider(),
+                snapshot.displayName(),
+                snapshot.supportsVision(),
+                snapshot.supportsTemperature(),
+                snapshot.maxInputTokens(),
+                toDto(snapshot.reasoning()));
+    }
+
+    private ReasoningConfigDto toDto(ModelConfigAdminPort.ReasoningConfigSnapshot snapshot) {
+        if (snapshot == null) {
+            return null;
+        }
+        Map<String, ReasoningLevelDto> levels = new LinkedHashMap<>();
+        snapshot.levels().forEach((key, value) -> levels.put(key, new ReasoningLevelDto(value.maxInputTokens())));
+        return new ReasoningConfigDto(snapshot.defaultLevel(), levels);
+    }
+
+    private ModelConfigAdminPort.ModelsConfigSnapshot toSnapshot(ModelsConfigDto dto) {
+        Map<String, ModelConfigAdminPort.ModelSettingsSnapshot> models = new LinkedHashMap<>();
+        if (dto != null && dto.models() != null) {
+            dto.models().forEach((key, value) -> models.put(key, toSnapshot(value)));
+        }
+        return new ModelConfigAdminPort.ModelsConfigSnapshot(models, dto != null ? toSnapshot(dto.defaults()) : null);
+    }
+
+    private ModelConfigAdminPort.ModelSettingsSnapshot toSnapshot(ModelSettingsDto dto) {
+        if (dto == null) {
+            return null;
+        }
+        return new ModelConfigAdminPort.ModelSettingsSnapshot(
+                dto.provider(),
+                dto.displayName(),
+                dto.supportsVision(),
+                dto.supportsTemperature(),
+                dto.maxInputTokens(),
+                toSnapshot(dto.reasoning()));
+    }
+
+    private ModelConfigAdminPort.ReasoningConfigSnapshot toSnapshot(ReasoningConfigDto dto) {
+        if (dto == null) {
+            return null;
+        }
+        Map<String, ModelConfigAdminPort.ReasoningLevelSnapshot> levels = new LinkedHashMap<>();
+        if (dto.levels() != null) {
+            dto.levels().forEach((key, value) -> levels.put(key,
+                    new ModelConfigAdminPort.ReasoningLevelSnapshot(value.maxInputTokens())));
+        }
+        return new ModelConfigAdminPort.ReasoningConfigSnapshot(dto.defaultLevel(), levels);
     }
 }

@@ -5,8 +5,7 @@ import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
-import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
+import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -66,15 +65,12 @@ public class RuntimeSettingsValidator {
     private static final int SHELL_ENV_VAR_VALUE_MAX_LENGTH = 8192;
 
     private final ModelSelectionService modelSelectionService;
-    private final SttProviderRegistry sttProviderRegistry;
-    private final TtsProviderRegistry ttsProviderRegistry;
+    private final VoiceProviderCatalogPort voiceProviderCatalogPort;
 
     public RuntimeSettingsValidator(ModelSelectionService modelSelectionService,
-            SttProviderRegistry sttProviderRegistry,
-            TtsProviderRegistry ttsProviderRegistry) {
+            VoiceProviderCatalogPort voiceProviderCatalogPort) {
         this.modelSelectionService = modelSelectionService;
-        this.sttProviderRegistry = sttProviderRegistry;
-        this.ttsProviderRegistry = ttsProviderRegistry;
+        this.voiceProviderCatalogPort = voiceProviderCatalogPort;
     }
 
     public void validateRuntimeConfigUpdate(RuntimeConfig current, RuntimeConfig merged,
@@ -764,19 +760,19 @@ public class RuntimeSettingsValidator {
     }
 
     private boolean isKnownSttProvider(String providerId) {
-        return providerId != null && sttProviderRegistry.find(providerId).isPresent();
+        return voiceProviderCatalogPort.hasSttProvider(providerId);
     }
 
     private boolean isKnownTtsProvider(String providerId) {
-        return providerId != null && ttsProviderRegistry.find(providerId).isPresent();
+        return voiceProviderCatalogPort.hasTtsProvider(providerId);
     }
 
     private String firstLoadedSttProvider() {
-        return sttProviderRegistry.listProviderIds().keySet().stream().findFirst().orElse(null);
+        return voiceProviderCatalogPort.firstSttProviderId();
     }
 
     private String firstLoadedTtsProvider() {
-        return ttsProviderRegistry.listProviderIds().keySet().stream().findFirst().orElse(null);
+        return voiceProviderCatalogPort.firstTtsProviderId();
     }
 
     private boolean isValidHttpUrl(String value) {

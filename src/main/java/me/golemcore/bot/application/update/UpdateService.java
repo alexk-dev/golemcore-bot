@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.update;
 
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AvailableRelease;
@@ -7,6 +7,8 @@ import me.golemcore.bot.domain.model.UpdateActionResult;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.domain.model.UpdateVersionInfo;
+import me.golemcore.bot.domain.service.UpdateActivityGate;
+import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import me.golemcore.bot.port.outbound.UpdateRestartPort;
 import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;

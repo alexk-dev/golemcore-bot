@@ -1,10 +1,10 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import me.golemcore.bot.application.update.UpdateService;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UpdateActionResult;
 import me.golemcore.bot.domain.model.UpdateStatus;
-import me.golemcore.bot.domain.service.UpdateService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;

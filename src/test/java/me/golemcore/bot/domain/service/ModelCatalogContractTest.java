@@ -3,6 +3,8 @@ package me.golemcore.bot.domain.service;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.util.Map;
+import me.golemcore.bot.application.models.ModelRegistryService;
+import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.catalog.ModelReasoningLevel;
 import me.golemcore.bot.domain.model.catalog.ModelReasoningProfile;

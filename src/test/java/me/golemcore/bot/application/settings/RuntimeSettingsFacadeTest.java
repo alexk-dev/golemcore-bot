@@ -10,8 +10,7 @@ import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
-import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
+import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -43,10 +42,10 @@ class RuntimeSettingsFacadeTest {
         memoryPresetService = mock(MemoryPresetService.class);
         hiveManagedPolicyService = mock(HiveManagedPolicyService.class);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        VoiceProviderCatalogPort voiceProviderCatalogPort = mock(VoiceProviderCatalogPort.class);
         RuntimeSettingsValidator validator = new RuntimeSettingsValidator(
                 modelSelectionService,
-                new SttProviderRegistry(),
-                new TtsProviderRegistry());
+                voiceProviderCatalogPort);
         RuntimeSettingsMergeService mergeService = new RuntimeSettingsMergeService();
         facade = new RuntimeSettingsFacade(
                 runtimeConfigService,
