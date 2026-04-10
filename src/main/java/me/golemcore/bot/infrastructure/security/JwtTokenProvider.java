@@ -1,4 +1,4 @@
-package me.golemcore.bot.adapter.inbound.web.security;
+package me.golemcore.bot.infrastructure.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;

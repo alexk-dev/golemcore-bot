@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.loop;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
@@ -260,7 +261,7 @@ public class AgentLoop {
         SessionIdentitySupport.bindTransportAndConversation(session, transportChatId, conversationKey);
         String webClientInstanceId = readMetadataString(message, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
         if (message.getChannelType() != null
-                && "web".equalsIgnoreCase(message.getChannelType())
+                && ChannelTypes.WEB.equalsIgnoreCase(message.getChannelType())
                 && webClientInstanceId != null
                 && !webClientInstanceId.isBlank()) {
             SessionIdentitySupport.bindWebClientInstance(session, webClientInstanceId);

@@ -18,6 +18,7 @@ package me.golemcore.bot.adapter.outbound.embedding;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.port.outbound.EmbeddingProviderIds;
 import me.golemcore.bot.port.outbound.EmbeddingPort;
 import org.springframework.stereotype.Component;
 
@@ -42,8 +43,10 @@ public class EmbeddingClientFactory implements me.golemcore.bot.port.outbound.Em
     public EmbeddingPort resolve(String provider) {
         String normalized = provider != null ? provider.trim().toLowerCase(Locale.ROOT) : "";
         return switch (normalized) {
-        case "ollama" -> ollamaEmbeddingClient;
-        case "openai", "openai_compatible", "openai-compatible" -> openAiCompatibleEmbeddingClient;
+        case EmbeddingProviderIds.OLLAMA -> ollamaEmbeddingClient;
+        case EmbeddingProviderIds.OPENAI, EmbeddingProviderIds.OPENAI_COMPATIBLE_UNDERSCORE,
+                EmbeddingProviderIds.OPENAI_COMPATIBLE ->
+            openAiCompatibleEmbeddingClient;
         default -> throw new IllegalArgumentException("Unsupported embedding provider: " + provider);
         };
     }

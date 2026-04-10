@@ -22,6 +22,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+import me.golemcore.bot.port.outbound.EmbeddingProviderIds;
 import me.golemcore.bot.port.outbound.OllamaProcessPort;
 import me.golemcore.bot.port.outbound.OllamaRuntimeModelPort;
 import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
@@ -45,7 +46,7 @@ public class LocalEmbeddingBootstrapService {
 
     private static final String MODE_BM25 = "bm25";
     private static final String MODE_HYBRID = "hybrid";
-    private static final String PROVIDER_OLLAMA = "ollama";
+    private static final String PROVIDER_OLLAMA = EmbeddingProviderIds.OLLAMA;
     private static final String DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
     private static final String DEFAULT_OLLAMA_MODEL = "qwen3-embedding:0.6b";
     private static final long LOCAL_RUNTIME_PROBE_TIMEOUT_SECONDS = 5L;

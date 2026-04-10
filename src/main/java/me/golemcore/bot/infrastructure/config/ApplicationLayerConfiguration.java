@@ -7,6 +7,7 @@ import me.golemcore.bot.application.models.ModelManagementFacade;
 import me.golemcore.bot.application.models.ModelRegistryService;
 import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
 import me.golemcore.bot.application.prompts.PromptManagementFacade;
+import me.golemcore.bot.application.selfevolving.tactic.TacticEmbeddingProbeService;
 import me.golemcore.bot.application.scheduler.SchedulerFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
@@ -29,6 +30,7 @@ import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.WorkspacePathService;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
+import me.golemcore.bot.port.outbound.EmbeddingClientResolverPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.ModelRegistryCachePort;
@@ -221,5 +223,12 @@ public class ApplicationLayerConfiguration {
                 skillMarketplaceService,
                 mcpPort,
                 storagePort);
+    }
+
+    @Bean
+    TacticEmbeddingProbeService tacticEmbeddingProbeService(
+            EmbeddingClientResolverPort embeddingClientResolverPort,
+            RuntimeConfigService runtimeConfigService) {
+        return new TacticEmbeddingProbeService(embeddingClientResolverPort, runtimeConfigService);
     }
 }

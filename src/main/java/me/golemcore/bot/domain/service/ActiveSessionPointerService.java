@@ -25,6 +25,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
@@ -46,8 +47,6 @@ public class ActiveSessionPointerService {
 
     private static final String PREFERENCES_DIR = "preferences";
     private static final String POINTERS_FILE = "session-pointers.json";
-    private static final String CHANNEL_WEB = "web";
-    private static final String CHANNEL_TELEGRAM = "telegram";
     private static final String KEY_SEPARATOR = "|";
 
     private final StoragePort storagePort;
@@ -59,12 +58,12 @@ public class ActiveSessionPointerService {
     private volatile boolean loaded = false;
 
     public String buildWebPointerKey(String username, String clientInstanceId) {
-        return CHANNEL_WEB + KEY_SEPARATOR + normalizeSegment(username) + KEY_SEPARATOR
+        return ChannelTypes.WEB + KEY_SEPARATOR + normalizeSegment(username) + KEY_SEPARATOR
                 + normalizeSegment(clientInstanceId);
     }
 
     public String buildTelegramPointerKey(String transportChatId) {
-        return CHANNEL_TELEGRAM + KEY_SEPARATOR + normalizeSegment(transportChatId);
+        return ChannelTypes.TELEGRAM + KEY_SEPARATOR + normalizeSegment(transportChatId);
     }
 
     public Optional<String> getActiveConversationKey(String pointerKey) {

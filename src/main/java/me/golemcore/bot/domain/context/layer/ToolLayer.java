@@ -27,13 +27,12 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.port.outbound.McpPort;
-import me.golemcore.bot.tools.HiveLifecycleSignalTool;
-import me.golemcore.bot.tools.ScheduleSessionActionTool;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -61,7 +60,7 @@ public class ToolLayer implements ContextLayer {
 
     private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
     private static final String TOOL_PLAN_GET = "plan_get";
-    private static final String TOOL_HIVE_LIFECYCLE_SIGNAL = HiveLifecycleSignalTool.TOOL_NAME;
+    private static final String TOOL_HIVE_LIFECYCLE_SIGNAL = ToolNames.HIVE_LIFECYCLE_SIGNAL;
 
     private final ToolCallExecutionService toolCallExecutionService;
     private final McpPort mcpPort;
@@ -153,7 +152,7 @@ public class ToolLayer implements ContextLayer {
         if (TOOL_PLAN_SET_CONTENT.equals(toolName) || TOOL_PLAN_GET.equals(toolName)) {
             return planModeActive;
         }
-        if (ScheduleSessionActionTool.TOOL_NAME.equals(toolName)) {
+        if (ToolNames.SCHEDULE_SESSION_ACTION.equals(toolName)) {
             String channelType = context != null && context.getSession() != null
                     ? context.getSession().getChannelType()
                     : null;

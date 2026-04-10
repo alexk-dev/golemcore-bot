@@ -22,7 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
-import me.golemcore.bot.tools.HiveLifecycleSignalTool;
+import me.golemcore.bot.domain.model.ToolNames;
 
 /**
  * Injects Hive card lifecycle guidance when the current session is bound to a
@@ -57,7 +57,7 @@ public class HiveLayer implements ContextLayer {
     public ContextLayerResult assemble(AgentContext context) {
         String content = "# Hive Card Lifecycle\n"
                 + "This thread is bound to a Hive card. Use the `"
-                + HiveLifecycleSignalTool.TOOL_NAME
+                + ToolNames.HIVE_LIFECYCLE_SIGNAL
                 + "` tool whenever you need to report structured board-relevant state "
                 + "such as blocker raised, blocker cleared, review requested, work completed, "
                 + "progress reported, or intentional work failure. "

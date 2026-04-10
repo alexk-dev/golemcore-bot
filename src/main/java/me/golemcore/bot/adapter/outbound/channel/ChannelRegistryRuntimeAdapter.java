@@ -26,4 +26,11 @@ public class ChannelRegistryRuntimeAdapter implements ChannelRuntimePort {
                 .map(channel -> (ChannelDeliveryPort) channel)
                 .collect(Collectors.toList());
     }
+
+    @Override
+    public boolean isChannelRunning(String channelType) {
+        return channelRegistry.get(channelType)
+                .map(channel -> channel.isRunning())
+                .orElse(false);
+    }
 }

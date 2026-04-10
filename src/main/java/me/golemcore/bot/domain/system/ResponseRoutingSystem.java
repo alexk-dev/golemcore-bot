@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
@@ -67,8 +68,6 @@ import java.util.concurrent.TimeoutException;
 @Slf4j
 public class ResponseRoutingSystem implements AgentSystem {
 
-    private static final String CHANNEL_WEB = "web";
-    private static final String CHANNEL_WEBHOOK = "webhook";
     private static final String WEBHOOK_DELIVER_FLAG = "webhook.deliver";
     private static final String WEBHOOK_DELIVER_CHANNEL = "webhook.deliver.channel";
     private static final String WEBHOOK_DELIVER_TO = "webhook.deliver.to";
@@ -285,13 +284,13 @@ public class ResponseRoutingSystem implements AgentSystem {
 
         AgentSession session = context.getSession();
         ChannelDeliveryPort primaryChannel = session != null ? resolveChannel(session) : null;
-        if (primaryChannel != null && CHANNEL_WEB.equalsIgnoreCase(primaryChannel.getChannelType())) {
+        if (primaryChannel != null && ChannelTypes.WEB.equalsIgnoreCase(primaryChannel.getChannelType())) {
             return true;
         }
 
         CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
         return crossChannelDelivery != null
-                && CHANNEL_WEB.equalsIgnoreCase(crossChannelDelivery.channel().getChannelType());
+                && ChannelTypes.WEB.equalsIgnoreCase(crossChannelDelivery.channel().getChannelType());
     }
 
     private String sendCombinedWebMessage(AgentContext context, OutgoingResponse outgoing) {
@@ -304,7 +303,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
 
         String errorMessage = null;
-        if (CHANNEL_WEB.equalsIgnoreCase(channel.getChannelType())) {
+        if (ChannelTypes.WEB.equalsIgnoreCase(channel.getChannelType())) {
             errorMessage = sendStructuredMessage(channel, buildStructuredWebMessage(chatId, outgoing));
         } else if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
             errorMessage = sendText(context, channel, chatId, outgoing);
@@ -312,7 +311,7 @@ public class ResponseRoutingSystem implements AgentSystem {
 
         if (crossChannelDelivery != null) {
             String deliveryError = null;
-            if (CHANNEL_WEB.equalsIgnoreCase(crossChannelDelivery.channel().getChannelType())) {
+            if (ChannelTypes.WEB.equalsIgnoreCase(crossChannelDelivery.channel().getChannelType())) {
                 deliveryError = sendStructuredMessage(
                         crossChannelDelivery.channel(),
                         buildStructuredWebMessage(crossChannelDelivery.chatId(), outgoing));
@@ -560,7 +559,7 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     private CrossChannelDelivery resolveWebhookCrossChannelDelivery(AgentContext context) {
         AgentSession session = context.getSession();
-        if (session == null || !CHANNEL_WEBHOOK.equalsIgnoreCase(session.getChannelType())) {
+        if (session == null || !ChannelTypes.WEBHOOK.equalsIgnoreCase(session.getChannelType())) {
             return null;
         }
 
@@ -607,7 +606,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             }
 
             String normalizedChannel = channelType.trim().toLowerCase(Locale.ROOT);
-            if (normalizedChannel.isEmpty() || CHANNEL_WEBHOOK.equals(normalizedChannel)) {
+            if (normalizedChannel.isEmpty() || ChannelTypes.WEBHOOK.equals(normalizedChannel)) {
                 continue;
             }
 

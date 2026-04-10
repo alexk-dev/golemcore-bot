@@ -27,7 +27,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.infrastructure.lifecycle.ManagedLocalOllamaLifecycleBridge;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.plugin.runtime.PluginManager;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.OllamaProcessPort;
 import me.golemcore.bot.port.outbound.OllamaRuntimeApiPort;
 import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;

@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.DelayedActionStatus;
 import me.golemcore.bot.domain.model.DelayedJobReadyEvent;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.port.outbound.DelayedActionRegistryPort;
 import org.springframework.stereotype.Service;
 
@@ -49,7 +50,6 @@ import java.util.UUID;
 public class DelayedSessionActionService {
 
     private static final int REGISTRY_VERSION = 1;
-    private static final String CHANNEL_WEBHOOK = "webhook";
 
     private final DelayedActionRegistryPort delayedActionRegistryPort;
     private final RuntimeConfigService runtimeConfigService;
@@ -373,8 +373,8 @@ public class DelayedSessionActionService {
                 || StringValueSupport.isBlank(normalized.getConversationKey())) {
             throw new IllegalArgumentException("channelType and conversationKey are required");
         }
-        if (CHANNEL_WEBHOOK.equals(normalized.getChannelType())) {
-            throw new IllegalStateException("Delayed actions are not supported for channel: " + CHANNEL_WEBHOOK);
+        if (ChannelTypes.WEBHOOK.equals(normalized.getChannelType())) {
+            throw new IllegalStateException("Delayed actions are not supported for channel: " + ChannelTypes.WEBHOOK);
         }
         if (normalized.getMaxAttempts() < 1) {
             normalized.setMaxAttempts(runtimeConfigService.getDelayedActionsDefaultMaxAttempts());

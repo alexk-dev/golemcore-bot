@@ -28,7 +28,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.hive.HiveAuthSession;
 import me.golemcore.bot.domain.model.hive.HiveControlChannelStatusSnapshot;
 import me.golemcore.bot.domain.model.hive.HiveOutboxSummary;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort;
 import me.golemcore.bot.port.outbound.HiveControlChannelPort;
