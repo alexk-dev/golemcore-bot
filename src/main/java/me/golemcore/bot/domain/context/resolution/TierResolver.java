@@ -30,7 +30,6 @@ import me.golemcore.bot.domain.service.AutoRunContextSupport;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import org.springframework.stereotype.Component;
 
 import java.util.Optional;
 
@@ -63,7 +62,6 @@ import java.util.Optional;
  * {@code MODEL_TIER_MODEL_ID}, {@code MODEL_TIER_REASONING}) is published to
  * {@link ContextAttributes} for observability.
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class TierResolver {

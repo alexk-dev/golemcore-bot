@@ -15,6 +15,7 @@ import me.golemcore.bot.application.scheduler.SchedulerFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
+import me.golemcore.bot.adapter.outbound.skills.SkillMarketplaceLegacySupport;
 import me.golemcore.bot.application.skills.SkillManagementFacade;
 import me.golemcore.bot.application.skills.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -39,6 +40,9 @@ import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
+import me.golemcore.bot.port.outbound.SkillMarketplaceArtifactPort;
+import me.golemcore.bot.port.outbound.SkillMarketplaceCatalogPort;
+import me.golemcore.bot.port.outbound.SkillMarketplaceInstallPort;
 import me.golemcore.bot.port.outbound.SkillSettingsPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;
@@ -109,13 +113,22 @@ class ApplicationLayerConfigurationTest {
                 discovery,
                 modelRegistry,
                 mock(LlmPort.class));
-        SkillMarketplaceService marketplace = configuration.skillMarketplaceService(
+        SkillMarketplaceLegacySupport legacySupport = configuration.skillMarketplaceLegacySupport(
                 mock(SkillSettingsPort.class),
                 mock(StoragePort.class),
                 mock(SkillService.class),
                 mock(RuntimeConfigService.class),
                 mock(WorkspacePathService.class),
                 new SkillDocumentService());
+        SkillMarketplaceCatalogPort catalogPort = configuration.skillMarketplaceCatalogPort(legacySupport);
+        SkillMarketplaceArtifactPort artifactPort = configuration.skillMarketplaceArtifactPort(legacySupport);
+        SkillMarketplaceInstallPort installPort = configuration.skillMarketplaceInstallPort(legacySupport);
+        SkillMarketplaceService marketplace = configuration.skillMarketplaceService(
+                mock(SkillSettingsPort.class),
+                mock(RuntimeConfigService.class),
+                catalogPort,
+                artifactPort,
+                installPort);
         PromptManagementFacade prompts = configuration.promptManagementFacade(
                 mock(PromptSectionService.class),
                 mock(UserPreferencesService.class),

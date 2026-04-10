@@ -30,7 +30,6 @@ import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.MemoryScopeSupport;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 
@@ -44,7 +43,6 @@ import java.util.List;
  * {@link ContextAttributes} and sets {@code memoryContext} on the
  * {@link AgentContext}.
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class MemoryLayer implements ContextLayer {

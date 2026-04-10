@@ -26,7 +26,6 @@ import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.service.SkillTemplateEngine;
-import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
@@ -44,7 +43,6 @@ import java.util.Map;
  * lightweight skill descriptions by default, and only gets full instructions
  * when a skill is explicitly activated.
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class SkillLayer implements ContextLayer {

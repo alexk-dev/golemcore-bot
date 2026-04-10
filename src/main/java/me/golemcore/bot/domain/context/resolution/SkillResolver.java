@@ -25,7 +25,6 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
-import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -50,7 +49,6 @@ import java.util.Optional;
  * subsequent turns continue with the same skill ("sticky activation"). If the
  * resolved skill is not found or unavailable, the persisted state is cleared.
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class SkillResolver {

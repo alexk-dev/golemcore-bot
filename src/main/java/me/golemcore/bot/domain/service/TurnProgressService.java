@@ -8,7 +8,7 @@ import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.ProgressUpdateType;
 import me.golemcore.bot.domain.model.ToolExecutionTrace;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import org.springframework.stereotype.Service;
 
@@ -226,7 +226,7 @@ public class TurnProgressService {
         if (chatId == null || chatId.isBlank() || channelType == null || channelType.isBlank()) {
             return;
         }
-        ChannelPort channel = channelRuntimePort.findChannel(channelType).orElse(null);
+        ChannelDeliveryPort channel = channelRuntimePort.findChannel(channelType).orElse(null);
         if (channel == null) {
             return;
         }

@@ -21,7 +21,7 @@ import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 
 public class SchedulerFacade {
@@ -223,7 +223,7 @@ public class SchedulerFacade {
     private List<ScheduleReportChannelOptionView> buildReportChannelOptions() {
         String telegramSuggestedChatId = resolveTelegramSuggestedChatId();
         return channelRuntimePort.listChannels().stream()
-                .map(ChannelPort::getChannelType)
+                .map(ChannelDeliveryPort::getChannelType)
                 .filter(type -> !StringValueSupport.isBlank(type))
                 .map(type -> type.trim().toLowerCase(Locale.ROOT))
                 .filter(type -> !"web".equals(type))

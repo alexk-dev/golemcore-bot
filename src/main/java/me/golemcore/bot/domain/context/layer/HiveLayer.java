@@ -23,7 +23,6 @@ import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.tools.HiveLifecycleSignalTool;
-import org.springframework.stereotype.Component;
 
 /**
  * Injects Hive card lifecycle guidance when the current session is bound to a
@@ -34,7 +33,6 @@ import org.springframework.stereotype.Component;
  * use the {@code hive_lifecycle_signal} tool for structured board state
  * transitions.
  */
-@Component
 @Slf4j
 public class HiveLayer implements ContextLayer {
 
