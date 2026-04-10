@@ -92,6 +92,14 @@ class ModelsControllerTest {
     }
 
     @Test
+    void shouldRejectNullSaveRequest() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> controller.saveModel(null));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("request body is required", ex.getReason());
+    }
+
+    @Test
     void shouldMapSaveModelBadRequest() {
         ModelsController.ModelSettingsDto settings = new ModelsController.ModelSettingsDto(
                 "openai",
@@ -190,6 +198,17 @@ class ModelsControllerTest {
     }
 
     @Test
+    void shouldReturnGatewayErrorWhenProviderDiscoveryFailsUpstream() {
+        when(modelManagementFacade.discoverProviderModels("xmesh"))
+                .thenThrow(new IllegalStateException("Discovery request failed"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.discoverProviderModels("xmesh").block());
+        assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
+        assertEquals("Discovery request failed", ex.getReason());
+    }
+
+    @Test
     void shouldResolveModelRegistryDefaults() {
         ModelCatalogEntry settings = new ModelCatalogEntry("openai", "GPT-5.1", true, false, 1000000, null);
         when(modelManagementFacade.resolveModelRegistry("openai", "gpt-5.1"))
@@ -231,6 +250,15 @@ class ModelsControllerTest {
     }
 
     @Test
+    void shouldRejectNullTestModelRequest() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.testModel(null).block());
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("request body is required", ex.getReason());
+    }
+
+    @Test
     void shouldTestModelSuccessfully() {
         when(modelManagementFacade.testModel("gpt-5"))
                 .thenReturn(new ModelManagementFacade.TestModelResult(true, "I am GPT-5, version 5.0.", null));
@@ -257,5 +285,41 @@ class ModelsControllerTest {
         assertEquals(HttpStatus.BAD_GATEWAY, result.getStatusCode());
         assertFalse(result.getBody().success());
         assertEquals("Connection refused", result.getBody().error());
+    }
+
+    @Test
+    void shouldMapBadRequestWhenTestModelValidationFails() {
+        when(modelManagementFacade.testModel(" "))
+                .thenThrow(new IllegalArgumentException("model is required"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.testModel(new ModelsController.TestModelRequest(" ")).block());
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("model is required", ex.getReason());
+    }
+
+    @Test
+    void shouldRoundTripReasoningConfigInModelsConfigResponse() {
+        ModelConfigAdminPort.ModelsConfigSnapshot config = new ModelConfigAdminPort.ModelsConfigSnapshot(
+                Map.of("gpt-5",
+                        new ModelConfigAdminPort.ModelSettingsSnapshot(
+                                "openai",
+                                "GPT-5",
+                                true,
+                                false,
+                                200000,
+                                new ModelConfigAdminPort.ReasoningConfigSnapshot(
+                                        "high",
+                                        Map.of("high", new ModelConfigAdminPort.ReasoningLevelSnapshot(200000))))),
+                null);
+        when(modelManagementFacade.getModelsConfig()).thenReturn(config);
+
+        ResponseEntity<ModelsController.ModelsConfigDto> result = controller.getModelsConfig().block();
+
+        assertEquals("high",
+                result.getBody().models().get("gpt-5").reasoning().defaultLevel());
+        assertEquals(200000,
+                result.getBody().models().get("gpt-5").reasoning().levels().get("high").maxInputTokens());
     }
 }

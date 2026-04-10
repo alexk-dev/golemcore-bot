@@ -148,6 +148,19 @@ class PromptsControllerTest {
     }
 
     @Test
+    void shouldMapCreateConflicts() {
+        PromptCreateRequest request = new PromptCreateRequest("custom", "Custom section", 40, true, "Custom body");
+        when(promptManagementFacade.createSection(new PromptSectionDraft("custom", "Custom section", 40, true,
+                "Custom body")))
+                .thenThrow(new IllegalStateException("Prompt section 'custom' already exists"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.createSection(request));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+        assertEquals("Prompt section 'custom' already exists", ex.getReason());
+    }
+
+    @Test
     void shouldUpdateSection() {
         PromptSection updated = PromptSection.builder()
                 .name("custom")
@@ -174,6 +187,45 @@ class PromptsControllerTest {
     }
 
     @Test
+    void shouldMapUpdateValidationErrors() {
+        PromptCreateRequest request = new PromptCreateRequest("ignored-body-name", "Updated section", 50, false,
+                "Updated body");
+        when(promptManagementFacade.updateSection("custom",
+                new PromptSectionDraft("ignored-body-name", "Updated section", 50, false, "Updated body")))
+                .thenThrow(new IllegalArgumentException("Prompt name is required and must match [a-z0-9][a-z0-9-]*"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.updateSection("custom", request));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Prompt name is required and must match [a-z0-9][a-z0-9-]*", ex.getReason());
+    }
+
+    @Test
+    void shouldMapUpdateMissingSection() {
+        PromptCreateRequest request = new PromptCreateRequest("ignored-body-name", "Updated section", 50, false,
+                "Updated body");
+        when(promptManagementFacade.updateSection("custom",
+                new PromptSectionDraft("ignored-body-name", "Updated section", 50, false, "Updated body")))
+                .thenThrow(new NoSuchElementException("Prompt section 'custom' not found"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.updateSection("custom", request));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertEquals("Prompt section 'custom' not found", ex.getReason());
+    }
+
+    @Test
+    void shouldMapPreviewMissingSection() {
+        when(promptManagementFacade.previewSection("missing", null))
+                .thenThrow(new NoSuchElementException("Prompt section 'missing' not found"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.previewSection("missing", null));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertEquals("Prompt section 'missing' not found", ex.getReason());
+    }
+
+    @Test
     void shouldDeleteSection() {
         StepVerifier.create(controller.deleteSection("custom"))
                 .assertNext(response -> assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode()))
@@ -191,6 +243,17 @@ class PromptsControllerTest {
                 () -> controller.deleteSection("identity"));
         assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
         assertEquals("Prompt section 'identity' cannot be deleted", ex.getReason());
+    }
+
+    @Test
+    void shouldMapDeleteMissingSection() {
+        doThrow(new NoSuchElementException("Prompt section 'missing' not found"))
+                .when(promptManagementFacade).deleteSection("missing");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.deleteSection("missing"));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertEquals("Prompt section 'missing' not found", ex.getReason());
     }
 
     @Test

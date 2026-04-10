@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -64,6 +65,21 @@ class ModelManagementFacadeTest {
     }
 
     @Test
+    void shouldTrimIdentifiersBeforeSavingModel() {
+        ModelConfigAdminPort.ModelSettingsSnapshot settings = new ModelConfigAdminPort.ModelSettingsSnapshot(
+                "openai",
+                "GPT-5",
+                true,
+                true,
+                128000,
+                null);
+
+        facade.saveModel(" gpt-5 ", " legacy ", settings);
+
+        verify(modelConfigAdminPort).saveModel("gpt-5", "legacy", settings);
+    }
+
+    @Test
     void shouldRejectBlankModelId() {
         ModelConfigAdminPort.ModelSettingsSnapshot settings = new ModelConfigAdminPort.ModelSettingsSnapshot(
                 "openai",
@@ -75,6 +91,32 @@ class ModelManagementFacadeTest {
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
                 () -> facade.saveModel(" ", null, settings));
         assertEquals("id is required", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectMissingSettings() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> facade.saveModel("gpt-5", null, null));
+
+        assertEquals("settings is required", exception.getMessage());
+    }
+
+    @Test
+    void shouldReturnModelsConfig() {
+        ModelConfigAdminPort.ModelsConfigSnapshot snapshot = new ModelConfigAdminPort.ModelsConfigSnapshot(Map.of(),
+                null);
+        when(modelConfigAdminPort.getConfig()).thenReturn(snapshot);
+
+        assertEquals(snapshot, facade.getModelsConfig());
+    }
+
+    @Test
+    void shouldReplaceModelsConfig() {
+        ModelConfigAdminPort.ModelsConfigSnapshot snapshot = new ModelConfigAdminPort.ModelsConfigSnapshot(Map.of(),
+                null);
+        when(modelConfigAdminPort.replaceConfig(snapshot)).thenReturn(snapshot);
+
+        assertEquals(snapshot, facade.replaceModelsConfig(snapshot));
     }
 
     @Test
@@ -102,6 +144,26 @@ class ModelManagementFacadeTest {
     }
 
     @Test
+    void shouldRejectBlankResolveInputs() {
+        IllegalArgumentException providerError = assertThrows(IllegalArgumentException.class,
+                () -> facade.resolveModelRegistry(" ", "gpt-5"));
+        IllegalArgumentException modelError = assertThrows(IllegalArgumentException.class,
+                () -> facade.resolveModelRegistry("openai", " "));
+
+        assertEquals("provider is required", providerError.getMessage());
+        assertEquals("modelId is required", modelError.getMessage());
+    }
+
+    @Test
+    void shouldDiscoverProviderModels() {
+        List<ProviderModelDiscoveryService.DiscoveredModel> discoveredModels = List.of(
+                new ProviderModelDiscoveryService.DiscoveredModel("openai", "gpt-5", "GPT-5", "openai", null));
+        when(providerModelDiscoveryService.discoverModels("openai")).thenReturn(discoveredModels);
+
+        assertEquals(discoveredModels, facade.discoverProviderModels("openai"));
+    }
+
+    @Test
     void shouldMapSuccessfulModelTest() throws Exception {
         when(llmPort.chat(any(LlmRequest.class)))
                 .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content("I am GPT-5").build()));
@@ -110,6 +172,13 @@ class ModelManagementFacadeTest {
 
         assertTrue(result.success());
         assertEquals("I am GPT-5", result.reply());
+    }
+
+    @Test
+    void shouldRejectBlankTestModelTarget() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> facade.testModel(" "));
+
+        assertEquals("model is required", exception.getMessage());
     }
 
     @Test
@@ -131,5 +200,31 @@ class ModelManagementFacadeTest {
         NoSuchElementException exception = assertThrows(NoSuchElementException.class,
                 () -> facade.deleteModel("missing"));
         assertEquals("Model 'missing' not found", exception.getMessage());
+    }
+
+    @Test
+    void shouldDeleteExistingModel() {
+        when(modelConfigAdminPort.deleteModel("gpt-5")).thenReturn(true);
+
+        facade.deleteModel("gpt-5");
+
+        verify(modelConfigAdminPort).deleteModel("gpt-5");
+    }
+
+    @Test
+    void shouldReloadModels() {
+        facade.reloadModels();
+
+        verify(modelConfigAdminPort).reload();
+    }
+
+    @Test
+    void shouldReturnErrorMessageFromDirectModelTestException() {
+        when(llmPort.chat(any(LlmRequest.class))).thenThrow(new IllegalStateException("transport unavailable"));
+
+        ModelManagementFacade.TestModelResult result = facade.testModel("gpt-5");
+
+        assertFalse(result.success());
+        assertEquals("transport unavailable", result.error());
     }
 }
