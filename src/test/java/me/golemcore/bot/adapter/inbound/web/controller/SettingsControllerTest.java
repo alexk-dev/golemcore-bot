@@ -3,6 +3,8 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
+import me.golemcore.bot.adapter.inbound.web.mapper.RuntimeSettingsWebMapper;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
 import me.golemcore.bot.adapter.outbound.voice.PluginVoiceProviderCatalogAdapter;
@@ -58,6 +60,7 @@ class SettingsControllerTest {
     private MemoryPresetService memoryPresetService;
     private SttProviderRegistry sttProviderRegistry;
     private TtsProviderRegistry ttsProviderRegistry;
+    private RuntimeSettingsWebMapper runtimeSettingsWebMapper;
     private SettingsController controller;
 
     @BeforeEach
@@ -68,6 +71,7 @@ class SettingsControllerTest {
         memoryPresetService = mock(MemoryPresetService.class);
         sttProviderRegistry = new SttProviderRegistry();
         ttsProviderRegistry = new TtsProviderRegistry();
+        runtimeSettingsWebMapper = new RuntimeSettingsWebMapper();
         registerSttProvider("golemcore/elevenlabs", "elevenlabs");
         registerSttProvider("golemcore/whisper", "whisper");
         registerTtsProvider("golemcore/elevenlabs", "elevenlabs");
@@ -96,7 +100,7 @@ class SettingsControllerTest {
                         modelSelectionService,
                         new PluginVoiceProviderCatalogAdapter(sttRegistry, ttsRegistry)),
                 new RuntimeSettingsMergeService());
-        return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade);
+        return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade, runtimeSettingsWebMapper);
     }
 
     @Test
@@ -1259,7 +1263,7 @@ class SettingsControllerTest {
         StepVerifier.create(controller.getShellEnvironmentVariables())
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
-                    List<RuntimeConfig.ShellEnvironmentVariable> body = response.getBody();
+                    List<ShellEnvironmentVariableDto> body = response.getBody();
                     assertNotNull(body);
                     assertEquals(1, body.size());
                     assertEquals("API_TOKEN", body.get(0).getName());
@@ -1277,7 +1281,7 @@ class SettingsControllerTest {
         StepVerifier.create(controller.getShellEnvironmentVariables())
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
-                    List<RuntimeConfig.ShellEnvironmentVariable> body = response.getBody();
+                    List<ShellEnvironmentVariableDto> body = response.getBody();
                     assertNotNull(body);
                     assertTrue(body.isEmpty());
                 })

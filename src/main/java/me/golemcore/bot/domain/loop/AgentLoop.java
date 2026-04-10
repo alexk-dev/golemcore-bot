@@ -50,7 +50,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -189,7 +189,7 @@ public class AgentLoop {
             log.info("[AgentLoop] routingSystem resolved: {}",
                     routingSystem != null ? routingSystem.getClass().getName() : "<null>");
 
-            ChannelPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
+            ChannelDeliveryPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
             ScheduledFuture<?> typingTask = null;
             String typingChatId = resolveTransportChatId(message);
             if (channel != null && typingChatId != null && !typingChatId.isBlank()) {
@@ -275,7 +275,7 @@ public class AgentLoop {
         return message != null ? message.getChatId() : null;
     }
 
-    private void sendTypingIndicator(ChannelPort channel, String chatId) {
+    private void sendTypingIndicator(ChannelDeliveryPort channel, String chatId) {
         try {
             channel.showTyping(chatId);
         } catch (Exception e) {
@@ -293,7 +293,7 @@ public class AgentLoop {
             return;
         }
 
-        ChannelPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
+        ChannelDeliveryPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
         if (channel == null) {
             return;
         }

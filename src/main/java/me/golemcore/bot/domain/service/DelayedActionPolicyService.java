@@ -18,7 +18,7 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import org.springframework.stereotype.Service;
 
@@ -80,8 +80,8 @@ public class DelayedActionPolicyService {
         if (!canPersistDelayedIntent(channelType) || !notificationsEnabled()) {
             return false;
         }
-        ChannelPort channel = findRunningChannel(channelType);
-        if (channel == null || !channel.isRunning()) {
+        ChannelDeliveryPort channel = findChannel(channelType);
+        if (channel == null) {
             return false;
         }
         return channel.supportsProactiveMessage(transportChatId);
@@ -95,14 +95,14 @@ public class DelayedActionPolicyService {
         if (!supportsProactiveMessage(channelType, transportChatId)) {
             return false;
         }
-        ChannelPort channel = findRunningChannel(channelType);
+        ChannelDeliveryPort channel = findChannel(channelType);
         if (channel == null) {
             return false;
         }
         return channel.supportsProactiveDocument(transportChatId);
     }
 
-    private ChannelPort findRunningChannel(String channelType) {
+    private ChannelDeliveryPort findChannel(String channelType) {
         if (StringValueSupport.isBlank(channelType)) {
             return null;
         }

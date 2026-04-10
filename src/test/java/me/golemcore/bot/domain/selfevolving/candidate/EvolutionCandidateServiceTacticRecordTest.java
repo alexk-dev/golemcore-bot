@@ -53,6 +53,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
 import me.golemcore.bot.domain.selfevolving.artifact.EvolutionArtifactIdentityService;
+import me.golemcore.bot.domain.selfevolving.tactic.InMemoryTacticRecordStorePort;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
@@ -103,7 +104,7 @@ class EvolutionCandidateServiceTacticRecordTest {
                 });
 
         Clock clock = Clock.fixed(Instant.parse("2026-04-01T21:15:00Z"), ZoneOffset.UTC);
-        tacticRecordService = new TacticRecordService(storagePort, clock, null, null);
+        tacticRecordService = new TacticRecordService(new InMemoryTacticRecordStorePort(), clock, null, null);
         artifactBundleService = mock(ArtifactBundleService.class);
         evolutionCandidateService = new EvolutionCandidateService(
                 tacticRecordService,

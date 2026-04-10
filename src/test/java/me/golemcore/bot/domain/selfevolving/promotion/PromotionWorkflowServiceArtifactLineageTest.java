@@ -73,7 +73,7 @@ class PromotionWorkflowServiceArtifactLineageTest {
                 new EvolutionCandidateDerivationService(FIXED_CLOCK),
                 new EvolutionCandidateTacticMaterializer(FIXED_CLOCK));
         PromotionWorkflowStateService promotionWorkflowStateService = new PromotionWorkflowStateService(
-                new PromotionWorkflowStore(storagePort),
+                new PromotionWorkflowStore(new InMemoryPromotionWorkflowStatePort()),
                 evolutionCandidateService,
                 new PromotionDecisionHydrationService());
         service = new PromotionWorkflowService(runtimeConfigService,

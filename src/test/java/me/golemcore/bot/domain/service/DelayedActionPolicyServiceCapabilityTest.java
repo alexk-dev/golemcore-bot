@@ -13,6 +13,7 @@ import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import org.junit.jupiter.api.Test;
 
@@ -45,15 +46,18 @@ class DelayedActionPolicyServiceCapabilityTest {
 
         ChannelRuntimePort channelRuntimePort = new ChannelRuntimePort() {
             @Override
-            public java.util.Optional<ChannelPort> findChannel(String channelType) {
+            public java.util.Optional<ChannelDeliveryPort> findChannel(String channelType) {
                 return channels.stream()
                         .filter(channel -> channel.getChannelType().equals(channelType))
+                        .map(channel -> (ChannelDeliveryPort) channel)
                         .findFirst();
             }
 
             @Override
-            public List<ChannelPort> listChannels() {
-                return channels;
+            public List<ChannelDeliveryPort> listChannels() {
+                return channels.stream()
+                        .map(channel -> (ChannelDeliveryPort) channel)
+                        .toList();
             }
         };
 

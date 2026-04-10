@@ -35,6 +35,7 @@ import me.golemcore.bot.domain.selfevolving.artifact.EvolutionArtifactIdentitySe
 import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateDerivationService;
 import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateService;
 import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateTacticMaterializer;
+import me.golemcore.bot.domain.selfevolving.tactic.InMemoryTacticRecordStorePort;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.adapter.outbound.selfevolving.JsonArtifactRepositoryAdapter;
@@ -88,7 +89,7 @@ class PromotionWorkflowServiceTest {
         when(runtimeConfigService.getSelfEvolvingPromotionMode()).thenReturn("approval_gate");
         when(runtimeConfigService.isSelfEvolvingPromotionShadowRequired()).thenReturn(false);
         when(runtimeConfigService.isSelfEvolvingPromotionCanaryRequired()).thenReturn(false);
-        tacticRecordService = new TacticRecordService(storagePort,
+        tacticRecordService = new TacticRecordService(new InMemoryTacticRecordStorePort(),
                 Clock.fixed(Instant.parse("2026-03-31T16:00:00Z"), ZoneOffset.UTC), null, null);
         artifactBundleService = new ArtifactBundleService(new JsonArtifactRepositoryAdapter(storagePort),
                 runtimeConfigService,
@@ -101,7 +102,7 @@ class PromotionWorkflowServiceTest {
                 new EvolutionCandidateDerivationService(clock),
                 new EvolutionCandidateTacticMaterializer(clock));
         PromotionWorkflowStateService promotionWorkflowStateService = new PromotionWorkflowStateService(
-                new PromotionWorkflowStore(storagePort),
+                new PromotionWorkflowStore(new InMemoryPromotionWorkflowStatePort()),
                 evolutionCandidateService,
                 new PromotionDecisionHydrationService());
         promotionWorkflowService = new PromotionWorkflowService(
@@ -560,7 +561,7 @@ class PromotionWorkflowServiceTest {
     void shouldBindCandidateBaseRevisionsWhenArtifactBundleServiceIsPresent() {
         ArtifactBundleService artifactBundleService = mock(ArtifactBundleService.class);
         PromotionWorkflowStateService promotionWorkflowStateService = new PromotionWorkflowStateService(
-                new PromotionWorkflowStore(storagePort),
+                new PromotionWorkflowStore(new InMemoryPromotionWorkflowStatePort()),
                 evolutionCandidateService,
                 new PromotionDecisionHydrationService());
         PromotionWorkflowService serviceWithBundleBinding = new PromotionWorkflowService(

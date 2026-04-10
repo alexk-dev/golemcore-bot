@@ -18,7 +18,7 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.VoicePort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Unified voice response handler. Synthesizes text via {@link VoicePort} and
- * sends via {@link ChannelPort}. Falls back to text on any failure.
+ * sends via {@link ChannelDeliveryPort}. Falls back to text on any failure.
  *
  * <p>
  * Returns {@code true} if voice was successfully sent, {@code false} if caller
@@ -60,7 +60,7 @@ public class VoiceResponseHandler {
      *            text to synthesize
      * @return result indicating success, failure, or quota exceeded
      */
-    public VoiceSendResult trySendVoice(ChannelPort channel, String chatId, String text) {
+    public VoiceSendResult trySendVoice(ChannelDeliveryPort channel, String chatId, String text) {
         if (!voicePort.isAvailable()) {
             log.debug("[Voice] Not available, skipping synthesis");
             return VoiceSendResult.FAILED;
@@ -99,7 +99,7 @@ public class VoiceResponseHandler {
      *            text to synthesize / send as fallback
      * @return result indicating success, failure, or quota exceeded
      */
-    public VoiceSendResult sendVoiceWithFallback(ChannelPort channel, String chatId, String text) {
+    public VoiceSendResult sendVoiceWithFallback(ChannelDeliveryPort channel, String chatId, String text) {
         VoiceSendResult voiceResult = trySendVoice(channel, chatId, text);
         if (voiceResult == VoiceSendResult.SUCCESS) {
             return VoiceSendResult.SUCCESS;

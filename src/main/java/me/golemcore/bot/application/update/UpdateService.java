@@ -1,5 +1,9 @@
 package me.golemcore.bot.application.update;
 
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AvailableRelease;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -10,51 +14,28 @@ import me.golemcore.bot.domain.model.UpdateVersionInfo;
 import me.golemcore.bot.domain.service.UpdateActivityGate;
 import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
+import me.golemcore.bot.port.outbound.UpdateArtifactStorePort;
 import me.golemcore.bot.port.outbound.UpdateRestartPort;
 import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;
 import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import me.golemcore.bot.port.outbound.UpdateVersionPort;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 @Slf4j
 public class UpdateService {
 
-    private static final String JARS_DIR_NAME = "jars";
-    private static final String CURRENT_MARKER_NAME = "current.txt";
-    private static final String STAGED_MARKER_NAME = "staged.txt";
-    private static final String UPDATE_PATH_ENV = "UPDATE_PATH";
     private static final int RESTART_EXIT_CODE = 42;
-    private static final int DOWNLOAD_BUFFER_SIZE = 8192;
     private static final long RESTART_DELAY_MILLIS = 500L;
-    private static final Pattern SEMVER_PATTERN = Pattern
-            .compile("^(\\d++)\\.(\\d++)\\.(\\d++)(?:-([0-9A-Za-z.-]++))?$");
 
     private final UpdateSettingsPort settingsPort;
     private final UpdateVersionPort updateVersionPort;
     private final UpdateRuntimeConfigPort updateRuntimeConfigPort;
     private final UpdateRestartPort updateRestartPort;
-    private final Clock clock;
+    private final java.time.Clock clock;
     private final UpdateActivityGate updateActivityGate;
     private final UpdateMaintenanceWindow updateMaintenanceWindow;
     private final List<ReleaseSourcePort> releaseSources;
+    private final UpdateArtifactStorePort updateArtifactStorePort;
+    private final UpdateVersionSupport updateVersionSupport = new UpdateVersionSupport();
 
     private final Object lock = new Object();
 
@@ -69,10 +50,11 @@ public class UpdateService {
             UpdateVersionPort updateVersionPort,
             UpdateRuntimeConfigPort updateRuntimeConfigPort,
             UpdateRestartPort updateRestartPort,
-            Clock clock,
+            java.time.Clock clock,
             UpdateActivityGate updateActivityGate,
             UpdateMaintenanceWindow updateMaintenanceWindow,
-            List<ReleaseSourcePort> releaseSources) {
+            List<ReleaseSourcePort> releaseSources,
+            UpdateArtifactStorePort updateArtifactStorePort) {
         this.settingsPort = settingsPort;
         this.updateVersionPort = updateVersionPort;
         this.updateRuntimeConfigPort = updateRuntimeConfigPort;
@@ -81,6 +63,7 @@ public class UpdateService {
         this.updateActivityGate = updateActivityGate;
         this.updateMaintenanceWindow = updateMaintenanceWindow;
         this.releaseSources = releaseSources;
+        this.updateArtifactStorePort = updateArtifactStorePort;
     }
 
     public UpdateStatus getStatus() {
@@ -135,11 +118,11 @@ public class UpdateService {
                     .message(resolution.message())
                     .version(resolution.version())
                     .build();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw handleCheckFailure(e);
-        } catch (IOException | RuntimeException e) {
-            throw handleCheckFailure(e);
+            throw handleCheckFailure(exception);
+        } catch (java.io.IOException | RuntimeException exception) {
+            throw handleCheckFailure(exception);
         }
     }
 
@@ -161,27 +144,12 @@ public class UpdateService {
             transientState = UpdateState.PREPARING;
         }
 
-        Path tempJar = null;
         try {
-            validateAssetName(release.getAssetName());
-            Path jarsDir = getJarsDir();
-            ensureUpdateDirectoryWritable(jarsDir);
-
-            Path targetJar = resolveJarPath(release.getAssetName());
-            tempJar = targetJar.resolveSibling(release.getAssetName() + ".tmp");
-
-            ReleaseSourcePort sourcePort = findSourcePort(release.getSource());
-            downloadReleaseAsset(sourcePort, release, tempJar);
-            ReleaseSourcePort.ChecksumInfo checksumInfo = sourcePort.downloadChecksum(release);
-            String actualHash = computeDigest(tempJar, checksumInfo.algorithm());
-
-            if (!checksumInfo.hexDigest().equalsIgnoreCase(actualHash)) {
-                Files.deleteIfExists(tempJar);
-                throw new IllegalStateException("Checksum mismatch for " + release.getAssetName());
-            }
-
-            moveAtomically(tempJar, targetJar);
-            writeMarker(getStagedMarkerPath(), release.getAssetName());
+            UpdateArtifactStorePort.PreparedArtifact preparedArtifact = updateArtifactStorePort.stageReleaseAsset(
+                    new UpdateArtifactStorePort.StageArtifactRequest(
+                            release.getAssetName(),
+                            findSourcePort(release.getSource()).downloadAsset(release),
+                            findSourcePort(release.getSource()).downloadChecksum(release)));
 
             synchronized (lock) {
                 availableRelease = Optional.empty();
@@ -189,7 +157,7 @@ public class UpdateService {
                         .version(release.getVersion())
                         .tag(release.getTagName())
                         .assetName(release.getAssetName())
-                        .preparedAt(Files.getLastModifiedTime(getStagedMarkerPath()).toInstant())
+                        .preparedAt(preparedArtifact.preparedAt())
                         .publishedAt(release.getPublishedAt())
                         .build());
                 transientState = UpdateState.IDLE;
@@ -200,11 +168,11 @@ public class UpdateService {
                     .message("Update staged: " + release.getVersion())
                     .version(release.getVersion())
                     .build();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw handlePrepareFailure(tempJar, e);
-        } catch (IOException | RuntimeException e) {
-            throw handlePrepareFailure(tempJar, e);
+            throw handlePrepareFailure(release.getAssetName(), exception);
+        } catch (java.io.IOException | RuntimeException exception) {
+            throw handlePrepareFailure(release.getAssetName(), exception);
         }
     }
 
@@ -257,8 +225,7 @@ public class UpdateService {
 
             activeTarget = Optional.of(copyVersionInfo(staged));
             availableRelease = Optional.empty();
-            writeMarker(getCurrentMarkerPath(), staged.getAssetName());
-            deleteMarker(getStagedMarkerPath());
+            updateArtifactStorePort.activateStagedArtifact(staged.getAssetName());
             transientState = UpdateState.APPLYING;
 
             requestRestartAsync();
@@ -275,10 +242,8 @@ public class UpdateService {
         return settingsPort.update().enabled();
     }
 
-    // ==================== Release Source Delegation ====================
-
-    private AvailableRelease fetchLatestRelease() throws IOException, InterruptedException {
-        IOException lastException = null;
+    private AvailableRelease fetchLatestRelease() throws java.io.IOException, InterruptedException {
+        java.io.IOException lastException = null;
 
         for (ReleaseSourcePort source : releaseSources) {
             if (!source.isEnabled()) {
@@ -291,14 +256,14 @@ public class UpdateService {
                     return result.get();
                 }
                 log.debug("[update] No release found via {}", source.name());
-            } catch (IOException e) {
-                log.warn("[update] Release source {} failed: {}", source.name(), e.getMessage());
-                lastException = e;
+            } catch (java.io.IOException exception) {
+                log.warn("[update] Release source {} failed: {}", source.name(), exception.getMessage());
+                lastException = exception;
             }
         }
 
         if (lastException != null) {
-            throw new IOException("All release sources failed", lastException);
+            throw new java.io.IOException("All release sources failed", lastException);
         }
         return null;
     }
@@ -316,20 +281,6 @@ public class UpdateService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("No release source available"));
     }
-
-    private void downloadReleaseAsset(ReleaseSourcePort source, AvailableRelease release, Path targetPath)
-            throws IOException, InterruptedException {
-        Path parent = targetPath.getParent();
-        if (parent == null) {
-            throw new IllegalStateException("Failed to resolve target parent path: " + targetPath);
-        }
-        ensureUpdateDirectoryWritable(parent);
-        try (InputStream inputStream = source.downloadAsset(release)) {
-            Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    // ==================== State Resolution ====================
 
     private UpdateState resolveState(boolean enabled, UpdateVersionInfo staged, UpdateVersionInfo available) {
         if (!enabled) {
@@ -362,23 +313,22 @@ public class UpdateService {
 
     private UpdateVersionInfo resolveCurrentInfo() {
         String currentVersion = getCurrentVersion();
-        String marker = readMarker(getCurrentMarkerPath());
-        if (marker != null) {
+        Optional<UpdateArtifactStorePort.StoredArtifact> currentArtifact = updateArtifactStorePort.findCurrentArtifact();
+        if (currentArtifact.isPresent()) {
+            String assetName = currentArtifact.orElseThrow().assetName();
             try {
-                Path jarPath = resolveJarPath(marker);
-                if (Files.exists(jarPath)) {
-                    String markerVersion = extractVersionFromAssetName(marker);
-                    if (markerVersion != null
-                            && normalizeVersion(markerVersion).equals(normalizeVersion(currentVersion))) {
-                        return UpdateVersionInfo.builder()
-                                .version(currentVersion)
-                                .source("jar")
-                                .assetName(marker)
-                                .build();
-                    }
+                String markerVersion = updateVersionSupport.extractVersionFromAssetName(assetName);
+                if (markerVersion != null
+                        && updateVersionSupport.normalizeVersion(markerVersion)
+                                .equals(updateVersionSupport.normalizeVersion(currentVersion))) {
+                    return UpdateVersionInfo.builder()
+                            .version(currentVersion)
+                            .source("jar")
+                            .assetName(assetName)
+                            .build();
                 }
-            } catch (IllegalArgumentException e) {
-                log.warn("[update] Invalid current marker value: {}", marker);
+            } catch (IllegalArgumentException exception) {
+                log.warn("[update] Invalid current marker value: {}", assetName);
             }
         }
 
@@ -389,25 +339,20 @@ public class UpdateService {
     }
 
     private UpdateVersionInfo resolveStagedInfo() {
-        String marker = readMarker(getStagedMarkerPath());
-        if (marker == null) {
+        Optional<UpdateArtifactStorePort.StoredArtifact> stagedArtifact = updateArtifactStorePort.findStagedArtifact();
+        if (stagedArtifact.isEmpty()) {
             return null;
         }
-
         try {
-            Path jarPath = resolveJarPath(marker);
-            if (!Files.exists(jarPath)) {
-                return null;
-            }
-            Instant preparedAt = Files.getLastModifiedTime(getStagedMarkerPath()).toInstant();
-            String version = extractVersionFromAssetName(marker);
+            String assetName = stagedArtifact.orElseThrow().assetName();
+            String version = updateVersionSupport.extractVersionFromAssetName(assetName);
             return UpdateVersionInfo.builder()
                     .version(version)
-                    .assetName(marker)
-                    .preparedAt(preparedAt)
+                    .assetName(assetName)
+                    .preparedAt(stagedArtifact.orElseThrow().modifiedAt())
                     .build();
-        } catch (IOException | IllegalArgumentException e) {
-            log.warn("[update] Invalid staged marker value: {}", marker);
+        } catch (IllegalArgumentException exception) {
+            log.warn("[update] Invalid staged marker value: {}", stagedArtifact.orElseThrow().assetName());
             return null;
         }
     }
@@ -421,8 +366,6 @@ public class UpdateService {
                 .build())
                 .orElse(null);
     }
-
-    // ==================== Guards ====================
 
     private void ensureEnabled() {
         if (!isEnabled()) {
@@ -445,9 +388,7 @@ public class UpdateService {
         }
     }
 
-    // ==================== Check Resolution ====================
-
-    private CheckResolution resolveCheck() throws IOException, InterruptedException {
+    private CheckResolution resolveCheck() throws java.io.IOException, InterruptedException {
         AvailableRelease latestRelease = fetchLatestRelease();
         Instant now = Instant.now(clock);
         synchronized (lock) {
@@ -462,13 +403,13 @@ public class UpdateService {
             }
 
             String currentVersion = getCurrentVersion();
-            if (!isRemoteVersionNewer(latestRelease.getVersion(), currentVersion)) {
+            if (!updateVersionSupport.isRemoteVersionNewer(latestRelease.getVersion(), currentVersion)) {
                 availableRelease = Optional.empty();
                 transientState = UpdateState.IDLE;
                 return new CheckResolution(null, "Already up to date", currentVersion);
             }
 
-            if (!isSameMajorUpdate(currentVersion, latestRelease.getVersion())) {
+            if (!updateVersionSupport.isSameMajorUpdate(currentVersion, latestRelease.getVersion())) {
                 availableRelease = Optional.empty();
                 transientState = UpdateState.IDLE;
                 return new CheckResolution(null, "New major version found. Use Docker image upgrade.",
@@ -483,364 +424,19 @@ public class UpdateService {
         }
     }
 
-    // ==================== Version Helpers ====================
-
     private String getCurrentVersion() {
-        return normalizeVersion(updateVersionPort.currentVersion());
-    }
-
-    // ==================== File System ====================
-
-    private Path getUpdatesDir() {
-        String configuredPath = settingsPort.update().updatesPath();
-        return Path.of(configuredPath).toAbsolutePath().normalize();
-    }
-
-    private Path getJarsDir() {
-        return getUpdatesDir().resolve(JARS_DIR_NAME);
-    }
-
-    private Path getCurrentMarkerPath() {
-        return getUpdatesDir().resolve(CURRENT_MARKER_NAME);
-    }
-
-    private Path getStagedMarkerPath() {
-        return getUpdatesDir().resolve(STAGED_MARKER_NAME);
-    }
-
-    private Path resolveJarPath(String assetName) {
-        Path jarsDir = getJarsDir();
-        Path resolved = jarsDir.resolve(assetName).normalize();
-        if (!resolved.startsWith(jarsDir)) {
-            throw new IllegalArgumentException("Invalid asset path");
-        }
-        return resolved;
-    }
-
-    private void validateAssetName(String assetName) {
-        if (assetName == null || assetName.isBlank()) {
-            throw new IllegalArgumentException("Invalid asset name");
-        }
-        if (assetName.contains("/") || assetName.contains("\\") || assetName.contains("..")) {
-            throw new IllegalArgumentException("Asset name contains prohibited path characters");
-        }
-    }
-
-    private String readMarker(Path markerPath) {
-        try {
-            if (!Files.exists(markerPath)) {
-                return null;
-            }
-            String content = Files.readString(markerPath, StandardCharsets.UTF_8).trim();
-            return content.isBlank() ? null : content;
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
-    private void writeMarker(Path markerPath, String value) {
-        try {
-            Path parent = markerPath.getParent();
-            if (parent == null) {
-                throw new IllegalStateException("Failed to resolve marker parent path: " + markerPath);
-            }
-            ensureUpdateDirectoryWritable(parent);
-            Files.writeString(
-                    markerPath,
-                    value + System.lineSeparator(),
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to write marker file: " + markerPath, e);
-        }
-    }
-
-    private void deleteMarker(Path markerPath) {
-        try {
-            Files.deleteIfExists(markerPath);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to delete marker file: " + markerPath, e);
-        }
-    }
-
-    private void moveAtomically(Path source, Path target) throws IOException {
-        try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private void ensureUpdateDirectoryWritable(Path directoryPath) {
-        try {
-            Files.createDirectories(directoryPath);
-        } catch (IOException e) {
-            throw new IllegalStateException("Update directory is not writable: " + directoryPath
-                    + ". Configure " + UPDATE_PATH_ENV + " to a writable path.", e);
-        }
-    }
-
-    // ==================== Checksum ====================
-
-    private String computeDigest(Path filePath, String algorithm) {
-        MessageDigest digest;
-        try {
-            digest = MessageDigest.getInstance(algorithm);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(algorithm + " is not available", e);
-        }
-
-        try (InputStream inputStream = Files.newInputStream(filePath, StandardOpenOption.READ)) {
-            byte[] buffer = new byte[DOWNLOAD_BUFFER_SIZE];
-            while (true) {
-                int read = inputStream.read(buffer);
-                if (read == -1) {
-                    break;
-                }
-                digest.update(buffer, 0, read);
-            }
-            byte[] hash = digest.digest();
-            StringBuilder builder = new StringBuilder();
-            for (byte value : hash) {
-                builder.append(String.format("%02x", value));
-            }
-            return builder.toString();
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to compute " + algorithm, e);
-        }
+        return updateVersionSupport.normalizeVersion(updateVersionPort.currentVersion());
     }
 
     String extractVersionFromAssetName(String assetName) {
-        if (assetName == null || assetName.isBlank()) {
-            return null;
-        }
-        int length = assetName.length();
-        for (int i = 0; i < length; i++) {
-            char current = assetName.charAt(i);
-            if (!isAsciiDigit(current)) {
-                continue;
-            }
-            if (i > 0 && isAsciiDigit(assetName.charAt(i - 1))) {
-                continue;
-            }
-
-            String candidate = readVersionCandidate(assetName, i);
-            if (candidate != null) {
-                return normalizeVersion(candidate);
-            }
-        }
-        return null;
+        return updateVersionSupport.extractVersionFromAssetName(assetName);
     }
-
-    private String readVersionCandidate(String value, int start) {
-        int length = value.length();
-        int majorEnd = consumeDigits(value, start);
-        if (majorEnd == start || majorEnd >= length || value.charAt(majorEnd) != '.') {
-            return null;
-        }
-
-        int minorStart = majorEnd + 1;
-        int minorEnd = consumeDigits(value, minorStart);
-        if (minorEnd == minorStart || minorEnd >= length || value.charAt(minorEnd) != '.') {
-            return null;
-        }
-
-        int patchStart = minorEnd + 1;
-        int patchEnd = consumeDigits(value, patchStart);
-        if (patchEnd == patchStart) {
-            return null;
-        }
-
-        int versionEnd = patchEnd;
-        if (patchEnd < length && value.charAt(patchEnd) == '-') {
-            int prereleaseStart = patchEnd + 1;
-            if (prereleaseStart < length && isSemverPrereleaseStartChar(value.charAt(prereleaseStart))) {
-                int prereleaseEnd = consumePrereleaseChars(value, prereleaseStart);
-                if (prereleaseEnd > prereleaseStart) {
-                    versionEnd = prereleaseEnd;
-                }
-            }
-        }
-
-        return value.substring(start, versionEnd);
-    }
-
-    private int consumeDigits(String value, int start) {
-        int cursor = start;
-        int length = value.length();
-        while (cursor < length && isAsciiDigit(value.charAt(cursor))) {
-            cursor++;
-        }
-        return cursor;
-    }
-
-    private int consumePrereleaseChars(String value, int start) {
-        int cursor = start;
-        int length = value.length();
-        while (cursor < length && isSemverPrereleaseChar(value.charAt(cursor))) {
-            cursor++;
-        }
-        return cursor;
-    }
-
-    private boolean isAsciiDigit(char value) {
-        return value >= '0' && value <= '9';
-    }
-
-    private boolean isAsciiLetter(char value) {
-        return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z');
-    }
-
-    private boolean isSemverPrereleaseChar(char value) {
-        return isAsciiDigit(value) || isAsciiLetter(value) || value == '.' || value == '-';
-    }
-
-    private boolean isSemverPrereleaseStartChar(char value) {
-        return isAsciiDigit(value) || isAsciiLetter(value);
-    }
-
-    private String normalizeVersion(String version) {
-        String normalized = version.trim();
-        if (normalized.startsWith("v") || normalized.startsWith("V")) {
-            normalized = normalized.substring(1);
-        }
-        if (normalized.endsWith(".jar")) {
-            normalized = normalized.substring(0, normalized.length() - ".jar".length());
-        }
-        if (normalized.endsWith("-exec")) {
-            String withoutClassifier = normalized.substring(0, normalized.length() - "-exec".length());
-            Matcher matcher = SEMVER_PATTERN.matcher(withoutClassifier);
-            if (matcher.matches()) {
-                normalized = withoutClassifier;
-            }
-        }
-        return normalized;
-    }
-
-    private boolean isRemoteVersionNewer(String remoteVersion, String currentVersion) {
-        int comparison = compareVersions(remoteVersion, currentVersion);
-        return comparison > 0;
-    }
-
-    private boolean isSameMajorUpdate(String currentVersion, String remoteVersion) {
-        Semver current = parseSemver(currentVersion);
-        Semver remote = parseSemver(remoteVersion);
-
-        if (current == null || remote == null) {
-            return false;
-        }
-
-        return current.major == remote.major;
-    }
-
-    private int compareVersions(String left, String right) {
-        Semver leftSemver = parseSemver(left);
-        Semver rightSemver = parseSemver(right);
-
-        if (leftSemver == null || rightSemver == null) {
-            return normalizeVersion(left).compareTo(normalizeVersion(right));
-        }
-
-        if (leftSemver.major != rightSemver.major) {
-            return Integer.compare(leftSemver.major, rightSemver.major);
-        }
-        if (leftSemver.minor != rightSemver.minor) {
-            return Integer.compare(leftSemver.minor, rightSemver.minor);
-        }
-        if (leftSemver.patch != rightSemver.patch) {
-            return Integer.compare(leftSemver.patch, rightSemver.patch);
-        }
-
-        String leftPrerelease = leftSemver.preRelease;
-        String rightPrerelease = rightSemver.preRelease;
-        if (leftPrerelease == null && rightPrerelease == null) {
-            return 0;
-        }
-        if (leftPrerelease == null) {
-            return 1;
-        }
-        if (rightPrerelease == null) {
-            return -1;
-        }
-
-        return comparePrerelease(leftPrerelease, rightPrerelease);
-    }
-
-    private int comparePrerelease(String left, String right) {
-        String[] leftParts = left.split("\\.");
-        String[] rightParts = right.split("\\.");
-        int max = Math.max(leftParts.length, rightParts.length);
-
-        for (int i = 0; i < max; i++) {
-            if (i >= leftParts.length) {
-                return -1;
-            }
-            if (i >= rightParts.length) {
-                return 1;
-            }
-
-            String leftPart = leftParts[i];
-            String rightPart = rightParts[i];
-
-            boolean leftNumeric = leftPart.matches("\\d+");
-            boolean rightNumeric = rightPart.matches("\\d+");
-
-            if (leftNumeric && rightNumeric) {
-                int cmp = Integer.compare(Integer.parseInt(leftPart), Integer.parseInt(rightPart));
-                if (cmp != 0) {
-                    return cmp;
-                }
-                continue;
-            }
-            if (leftNumeric) {
-                return -1;
-            }
-            if (rightNumeric) {
-                return 1;
-            }
-
-            int cmp = leftPart.compareTo(rightPart);
-            if (cmp != 0) {
-                return cmp;
-            }
-        }
-
-        return 0;
-    }
-
-    private Semver parseSemver(String version) {
-        if (version == null || version.isBlank()) {
-            return null;
-        }
-
-        String normalized = normalizeVersion(version);
-        int plusIndex = normalized.indexOf('+');
-        if (plusIndex >= 0) {
-            normalized = normalized.substring(0, plusIndex);
-        }
-
-        Matcher matcher = SEMVER_PATTERN.matcher(normalized);
-        if (!matcher.matches()) {
-            return null;
-        }
-
-        int major = Integer.parseInt(matcher.group(1));
-        int minor = Integer.parseInt(matcher.group(2));
-        int patch = Integer.parseInt(matcher.group(3));
-        String preRelease = matcher.group(4);
-
-        return new Semver(major, minor, patch, preRelease);
-    }
-
-    // ==================== Async Workflows ====================
 
     protected void requestRestartAsync() {
         Thread restartThread = new Thread(() -> {
             try {
                 Thread.sleep(RESTART_DELAY_MILLIS);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
             }
 
@@ -888,35 +484,35 @@ public class UpdateService {
 
             prepare();
             tryApplyStagedUpdate(true);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             UpdateState state = transientState;
             if (state == UpdateState.FAILED) {
                 return;
             }
             if (state == UpdateState.APPLYING || state == UpdateState.VERIFYING) {
-                handleApplyFailure(e);
+                handleApplyFailure(exception);
                 return;
             }
             if (state == UpdateState.CHECKING) {
-                handleCheckFailure(e);
+                handleCheckFailure(exception);
                 return;
             }
-            handlePrepareFailure(null, e);
-        } catch (IOException | RuntimeException e) {
+            handlePrepareFailure(null, exception);
+        } catch (java.io.IOException | RuntimeException exception) {
             UpdateState state = transientState;
             if (state == UpdateState.FAILED) {
                 return;
             }
             if (state == UpdateState.CHECKING) {
-                handleCheckFailure(e);
+                handleCheckFailure(exception);
                 return;
             }
             if (state == UpdateState.APPLYING || state == UpdateState.VERIFYING) {
-                handleApplyFailure(e);
+                handleApplyFailure(exception);
                 return;
             }
-            handlePrepareFailure(null, e);
+            handlePrepareFailure(null, exception);
         }
     }
 
@@ -964,19 +560,19 @@ public class UpdateService {
 
             prepare();
             tryApplyStagedUpdate(false);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            handleAutoWorkflowFailure(e);
-        } catch (IOException | RuntimeException e) {
-            handleAutoWorkflowFailure(e);
+            handleAutoWorkflowFailure(exception);
+        } catch (java.io.IOException | RuntimeException exception) {
+            handleAutoWorkflowFailure(exception);
         }
     }
 
     public void runAutoUpdateCycleSafely() {
         try {
             runAutoUpdateCycle();
-        } catch (RuntimeException e) {
-            log.warn("[update] auto update cycle failed: {}", safeMessage(e));
+        } catch (RuntimeException exception) {
+            log.warn("[update] auto update cycle failed: {}", safeMessage(exception));
         }
     }
 
@@ -989,7 +585,7 @@ public class UpdateService {
         if (previousCheck == null) {
             return true;
         }
-        return !previousCheck.plus(Duration.ofMinutes(intervalMinutes)).isAfter(Instant.now(clock));
+        return !previousCheck.plus(java.time.Duration.ofMinutes(intervalMinutes)).isAfter(Instant.now(clock));
     }
 
     private UpdateMaintenanceWindow.Status evaluateMaintenanceWindow() {
@@ -1032,8 +628,6 @@ public class UpdateService {
         return true;
     }
 
-    // ==================== Error Handling ====================
-
     private IllegalStateException handleCheckFailure(Throwable throwable) {
         String message = "Failed to check updates: " + safeMessage(throwable);
         synchronized (lock) {
@@ -1044,8 +638,8 @@ public class UpdateService {
         return new IllegalStateException(message, throwable);
     }
 
-    private IllegalStateException handlePrepareFailure(Path tempJar, Throwable throwable) {
-        cleanupTempJar(tempJar);
+    private IllegalStateException handlePrepareFailure(String assetName, Throwable throwable) {
+        cleanupTempJar(assetName);
         String message = "Failed to prepare update: " + safeMessage(throwable);
         synchronized (lock) {
             transientState = UpdateState.FAILED;
@@ -1079,15 +673,11 @@ public class UpdateService {
         handlePrepareFailure(null, throwable);
     }
 
-    private void cleanupTempJar(Path tempJar) {
-        if (tempJar == null) {
+    private void cleanupTempJar(String assetName) {
+        if (assetName == null || assetName.isBlank()) {
             return;
         }
-        try {
-            Files.deleteIfExists(tempJar);
-        } catch (IOException ignored) {
-            // best effort cleanup
-        }
+        updateArtifactStorePort.cleanupTempArtifact(assetName);
     }
 
     private String safeMessage(Throwable throwable) {
@@ -1096,8 +686,6 @@ public class UpdateService {
         }
         return throwable.getMessage();
     }
-
-    // ==================== Status Presentation ====================
 
     private UpdateVersionInfo resolveTargetInfo(UpdateState effectiveState, UpdateVersionInfo staged,
             UpdateVersionInfo available) {
@@ -1186,8 +774,6 @@ public class UpdateService {
         return prefix + " " + version;
     }
 
-    // ==================== Helpers ====================
-
     private UpdateVersionInfo toVersionInfo(AvailableRelease release) {
         return UpdateVersionInfo.builder()
                 .version(release.getVersion())
@@ -1209,9 +795,6 @@ public class UpdateService {
                 .preparedAt(value.getPreparedAt())
                 .publishedAt(value.getPublishedAt())
                 .build();
-    }
-
-    private record Semver(int major, int minor, int patch, String preRelease) {
     }
 
     private record CheckResolution(AvailableRelease release, String message, String version) {

@@ -34,7 +34,6 @@ import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.tools.HiveLifecycleSignalTool;
 import me.golemcore.bot.tools.ScheduleSessionActionTool;
-import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -56,7 +55,6 @@ import java.util.Map;
  * context</li>
  * </ul>
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class ToolLayer implements ContextLayer {

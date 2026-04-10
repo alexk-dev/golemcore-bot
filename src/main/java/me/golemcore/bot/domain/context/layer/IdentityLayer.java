@@ -26,7 +26,6 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
@@ -43,7 +42,6 @@ import java.util.Map;
  * If no sections are configured or loaded, falls back to a minimal "You are a
  * helpful AI assistant." identity.
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class IdentityLayer implements ContextLayer {

@@ -2,13 +2,13 @@ package me.golemcore.bot.domain.service;
 
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import me.golemcore.bot.port.outbound.WorkspaceSettingsPort;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 public class WorkspacePathService {
 
     private final WorkspaceSettingsPort settingsPort;
+    private final WorkspaceFilePort workspaceFilePort;
 
     private Path workspaceRoot;
 
@@ -28,7 +29,7 @@ public class WorkspacePathService {
                 .toAbsolutePath()
                 .normalize();
         try {
-            Files.createDirectories(workspaceRoot);
+            workspaceFilePort.createDirectories(workspaceRoot);
             log.info("[WorkspaceFiles] Workspace root: {}", workspaceRoot);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to initialize workspace root", e);
@@ -78,7 +79,7 @@ public class WorkspacePathService {
             return requestedMimeType;
         }
         try {
-            String detected = Files.probeContentType(path);
+            String detected = workspaceFilePort.probeContentType(path);
             if (detected != null && !detected.isBlank()) {
                 return detected;
             }
@@ -109,8 +110,8 @@ public class WorkspacePathService {
         }
 
         try {
-            Path realExistingPath = existingPath.toRealPath();
-            Path realWorkspacePath = workspaceRoot.toRealPath();
+            Path realExistingPath = workspaceFilePort.toRealPath(existingPath);
+            Path realWorkspacePath = workspaceFilePort.toRealPath(workspaceRoot);
             if (!realExistingPath.startsWith(realWorkspacePath)) {
                 throw new IllegalArgumentException("Path must be inside workspace");
             }
@@ -121,7 +122,7 @@ public class WorkspacePathService {
 
     private Path findExistingPath(Path path) {
         Path current = path;
-        while (current != null && !Files.exists(current)) {
+        while (current != null && !workspaceFilePort.exists(current)) {
             current = current.getParent();
         }
         return current;
