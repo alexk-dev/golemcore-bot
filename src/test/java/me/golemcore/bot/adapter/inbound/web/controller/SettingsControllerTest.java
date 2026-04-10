@@ -5,6 +5,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.adapter.inbound.web.mapper.RuntimeSettingsWebMapper;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
 import me.golemcore.bot.adapter.outbound.voice.PluginVoiceProviderCatalogAdapter;
@@ -43,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -2421,6 +2423,150 @@ class SettingsControllerTest {
                 .verifyComplete();
         StepVerifier.create(controller.updateWebhooksConfig(UserPreferences.WebhookConfig.builder().build()))
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldDelegateRuntimeDtoEndpointUpdates() throws Exception {
+        RuntimeSettingsFacade facade = mock(RuntimeSettingsFacade.class);
+        SettingsController dtoController = new SettingsController(preferencesService, modelSelectionService, facade,
+                runtimeSettingsWebMapper);
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        when(facade.updateRuntimeConfig(any(RuntimeConfig.class))).thenReturn(apiView);
+        when(facade.updateModelRouterConfig(any(RuntimeConfig.ModelRouterConfig.class))).thenReturn(apiView);
+        when(facade.updateLlmConfig(any(RuntimeConfig.LlmConfig.class))).thenReturn(apiView);
+        when(facade.addLlmProvider(anyString(), any(RuntimeConfig.LlmProviderConfig.class))).thenReturn(apiView);
+        when(facade.updateLlmProvider(anyString(), any(RuntimeConfig.LlmProviderConfig.class))).thenReturn(apiView);
+        when(facade.updateToolsConfig(any(RuntimeConfig.ToolsConfig.class))).thenReturn(apiView);
+        when(facade.getShellEnvironmentVariables()).thenReturn(List.of(
+                RuntimeConfig.ShellEnvironmentVariable.builder().name("API_TOKEN").value("secret").build()));
+        when(facade.createShellEnvironmentVariable(any(RuntimeConfig.ShellEnvironmentVariable.class)))
+                .thenReturn(apiView);
+        when(facade.updateShellEnvironmentVariable(anyString(), any(RuntimeConfig.ShellEnvironmentVariable.class)))
+                .thenReturn(apiView);
+        when(facade.deleteShellEnvironmentVariable(anyString())).thenReturn(apiView);
+        when(facade.updateVoiceConfig(any(RuntimeConfig.VoiceConfig.class))).thenReturn(apiView);
+        when(facade.updateTurnConfig(any(RuntimeConfig.TurnConfig.class))).thenReturn(apiView);
+        when(facade.updateMemoryConfig(any(RuntimeConfig.MemoryConfig.class))).thenReturn(apiView);
+        when(facade.updateSkillsConfig(any(RuntimeConfig.SkillsConfig.class))).thenReturn(apiView);
+        when(facade.updateUsageConfig(any(RuntimeConfig.UsageConfig.class))).thenReturn(apiView);
+        when(facade.updateTelemetryConfig(any(RuntimeConfig.TelemetryConfig.class))).thenReturn(apiView);
+        when(facade.updateMcpConfig(any(RuntimeConfig.McpConfig.class))).thenReturn(apiView);
+        when(facade.getMcpCatalog()).thenReturn(List.of(
+                RuntimeConfig.McpCatalogEntry.builder().name("github").command("npx github").build()));
+        when(facade.addMcpCatalogEntry(any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(apiView);
+        when(facade.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(apiView);
+        when(facade.updateHiveConfig(any(RuntimeConfig.HiveConfig.class))).thenReturn(apiView);
+        when(facade.updatePlanConfig(any(RuntimeConfig.PlanConfig.class))).thenReturn(apiView);
+        when(facade.updateAutoConfig(any(RuntimeConfig.AutoModeConfig.class))).thenReturn(apiView);
+        when(facade.updateTracingConfig(any(RuntimeConfig.TracingConfig.class))).thenReturn(apiView);
+        when(facade.updateAdvancedConfig(any(RuntimeConfig.RateLimitConfig.class),
+                any(RuntimeConfig.SecurityConfig.class),
+                any(RuntimeConfig.CompactionConfig.class))).thenReturn(apiView);
+
+        StepVerifier.create(dtoController.updateRuntimeConfig(new RuntimeSettingsWebDtos.RuntimeConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateModelRouterConfig(new RuntimeSettingsWebDtos.ModelRouterConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateLlmConfig(new RuntimeSettingsWebDtos.LlmConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.addLlmProvider("openai", new RuntimeSettingsWebDtos.LlmProviderConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateLlmProvider("openai",
+                new RuntimeSettingsWebDtos.LlmProviderConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.removeLlmProvider("openai"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateToolsConfig(new RuntimeSettingsWebDtos.ToolsConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.getShellEnvironmentVariables())
+                .assertNext(response -> assertEquals(1, response.getBody().size()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.createShellEnvironmentVariable(
+                new RuntimeSettingsWebDtos.ShellEnvironmentVariableDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateShellEnvironmentVariable("API_TOKEN",
+                new RuntimeSettingsWebDtos.ShellEnvironmentVariableDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.deleteShellEnvironmentVariable("API_TOKEN"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateVoiceConfig(new RuntimeSettingsWebDtos.VoiceConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateTurnConfig(new RuntimeSettingsWebDtos.TurnConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateMemoryConfig(new RuntimeSettingsWebDtos.MemoryConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.getMemoryPresets())
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateSkillsConfig(new RuntimeSettingsWebDtos.SkillsConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateUsageConfig(new RuntimeSettingsWebDtos.UsageConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateTelemetryConfig(new RuntimeSettingsWebDtos.TelemetryConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateMcpConfig(new RuntimeSettingsWebDtos.McpConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.getMcpCatalog())
+                .assertNext(response -> assertEquals(1, response.getBody().size()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.addMcpCatalogEntry(new RuntimeSettingsWebDtos.McpCatalogEntryDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateMcpCatalogEntry("github",
+                new RuntimeSettingsWebDtos.McpCatalogEntryDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.removeMcpCatalogEntry("github"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateHiveConfig(new RuntimeSettingsWebDtos.HiveConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updatePlanConfig(new RuntimeSettingsWebDtos.PlanConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateAutoConfig(new RuntimeSettingsWebDtos.AutoModeConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateTracingConfig(new RuntimeSettingsWebDtos.TracingConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        Class<?> requestType = Class.forName(SettingsController.class.getName() + "$AdvancedConfigRequest");
+        var constructor = requestType.getDeclaredConstructor(
+                RuntimeSettingsWebDtos.RateLimitConfigDto.class,
+                RuntimeSettingsWebDtos.SecurityConfigDto.class,
+                RuntimeSettingsWebDtos.CompactionConfigDto.class);
+        constructor.setAccessible(true);
+        Object request = constructor.newInstance(
+                new RuntimeSettingsWebDtos.RateLimitConfigDto(),
+                new RuntimeSettingsWebDtos.SecurityConfigDto(),
+                new RuntimeSettingsWebDtos.CompactionConfigDto());
+        Method method = SettingsController.class.getMethod("updateAdvancedConfig", requestType);
+        Mono<ResponseEntity<RuntimeSettingsWebDtos.RuntimeConfigDto>> response = (Mono<ResponseEntity<RuntimeSettingsWebDtos.RuntimeConfigDto>>) method
+                .invoke(dtoController, request);
+
+        StepVerifier.create(response)
+                .assertNext(result -> assertEquals(HttpStatus.OK, result.getStatusCode()))
                 .verifyComplete();
     }
 
