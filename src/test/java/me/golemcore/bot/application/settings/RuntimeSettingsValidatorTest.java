@@ -358,6 +358,83 @@ class RuntimeSettingsValidatorTest {
     }
 
     @Test
+    void shouldSkipSelfEvolvingRuntimeValidationWhenNestedSectionsAreMissing() {
+        RuntimeConfig.SelfEvolvingConfig noTactics = RuntimeConfig.SelfEvolvingConfig.builder().build();
+        noTactics.setTactics(null);
+        RuntimeConfig.SelfEvolvingTacticsConfig tacticsWithoutSearch = RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                .build();
+        tacticsWithoutSearch.setSearch(null);
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchWithoutEmbeddings = RuntimeConfig.SelfEvolvingTacticSearchConfig
+                .builder().build();
+        searchWithoutEmbeddings.setEmbeddings(null);
+
+        assertDoesNotThrow(() -> validator.validateAndNormalizeSelfEvolvingConfig(null));
+        assertDoesNotThrow(() -> validator.validateAndNormalizeSelfEvolvingConfig(noTactics));
+        assertDoesNotThrow(
+                () -> validator.validateAndNormalizeSelfEvolvingConfig(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .tactics(tacticsWithoutSearch)
+                        .build()));
+        assertDoesNotThrow(
+                () -> validator.validateAndNormalizeSelfEvolvingConfig(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                                .search(searchWithoutEmbeddings)
+                                .build())
+                        .build()));
+    }
+
+    @Test
+    void shouldCreateMissingSelfEvolvingLocalEmbeddingRuntimeSettings() {
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddings = RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig
+                .builder()
+                .build();
+        embeddings.setLocal(null);
+        RuntimeConfig.SelfEvolvingConfig config = RuntimeConfig.SelfEvolvingConfig.builder()
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                .embeddings(embeddings)
+                                .build())
+                        .build())
+                .build();
+
+        validator.validateAndNormalizeSelfEvolvingConfig(config);
+
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = config.getTactics()
+                .getSearch()
+                .getEmbeddings()
+                .getLocal();
+        assertNotNull(localConfig);
+        assertEquals(5000, localConfig.getStartupTimeoutMs());
+        assertEquals(1000, localConfig.getInitialRestartBackoffMs());
+        assertEquals("0.19.0", localConfig.getMinimumRuntimeVersion());
+    }
+
+    @Test
+    void shouldNormalizeMissingOrBlankSelfEvolvingMinimumRuntimeVersion() {
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig
+                .builder()
+                .minimumRuntimeVersion("   ")
+                .build();
+        RuntimeConfig.SelfEvolvingConfig config = RuntimeConfig.SelfEvolvingConfig.builder()
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                .embeddings(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig.builder()
+                                        .local(localConfig)
+                                        .build())
+                                .build())
+                        .build())
+                .build();
+
+        validator.validateAndNormalizeSelfEvolvingConfig(config);
+
+        assertNull(localConfig.getMinimumRuntimeVersion());
+
+        localConfig.setMinimumRuntimeVersion(null);
+        validator.validateAndNormalizeSelfEvolvingConfig(config);
+
+        assertNull(localConfig.getMinimumRuntimeVersion());
+    }
+
+    @Test
     void shouldDefaultMissingProvidersAndCompactionTriggerMode() {
         RuntimeConfig.LlmConfig llmConfig = RuntimeConfig.LlmConfig.builder().build();
         RuntimeConfig.CompactionConfig compactionConfig = RuntimeConfig.CompactionConfig.builder().build();
