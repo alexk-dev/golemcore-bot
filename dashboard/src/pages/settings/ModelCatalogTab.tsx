@@ -4,7 +4,7 @@ import { Alert } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
-import type { LlmConfig, ModelRegistryConfig } from '../../api/settings';
+import type { LlmConfig, ModelRegistryConfig } from '../../api/settingsTypes';
 import { ModelCatalogEditor } from './models/ModelCatalogEditor';
 import { ModelRegistrySourceCard } from './models/ModelRegistrySourceCard';
 import { getProviderProfileSummaries } from './models/modelCatalogProviderProfiles';

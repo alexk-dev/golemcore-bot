@@ -1,5 +1,5 @@
 import type { SkillMarketplaceCatalogResponse, SkillMarketplaceItem } from '../../api/skills';
-import type { SkillsConfig } from '../../api/settings';
+import type { SkillsConfig } from '../../api/settingsTypes';
 
 export const DEFAULT_SKILLS_REPOSITORY = 'https://github.com/alexk-dev/golemcore-skills';
 

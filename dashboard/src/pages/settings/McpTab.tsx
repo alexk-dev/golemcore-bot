@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { useUpdateMcp } from '../../hooks/useSettings';
-import type { McpConfig } from '../../api/settings';
+import type { McpConfig } from '../../api/settingsTypes';
 import { McpCatalogSection } from './McpCatalogSection';
 
 function hasDiff<T>(current: T, initial: T): boolean {

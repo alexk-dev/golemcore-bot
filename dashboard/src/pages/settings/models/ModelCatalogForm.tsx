@@ -1,16 +1,15 @@
 import { type ReactElement, useState } from 'react';
-import { FiPlay, FiSave, FiTrash2 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import type { TestModelResponse } from '../../../api/models';
 import ConfirmModal from '../../../components/common/ConfirmModal';
 import { SaveStateHint } from '../../../components/common/SettingsSaveBar';
 import { Button } from '../../../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
-import { Badge } from '../../../components/ui/badge';
+import { Card, CardContent } from '../../../components/ui/card';
 import { Modal } from '../../../components/ui/bootstrap-overlay';
 import { Form } from '../../../lib/react-bootstrap';
 import { useTestModel } from '../../../hooks/useModels';
 import type { ProviderProfileSummary } from './modelCatalogProviderProfiles';
+import { ModelCatalogFormHeader } from './ModelCatalogFormHeader';
 import { ModelCatalogIdentityFields } from './ModelCatalogIdentityFields';
 import { ReasoningLevelsEditor } from './ReasoningLevelsEditor';
 import { canTestModelDraft, type ModelDraft, toPersistedModelId } from './modelCatalogTypes';
@@ -106,47 +105,18 @@ export function ModelCatalogForm({
   return (
     <>
       <Card className="h-full">
-        <CardHeader className="items-start">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle>{title}</CardTitle>
-              <Badge variant={isExisting ? 'secondary' : 'default'}>
-                {isExisting ? 'Existing' : 'New'}
-              </Badge>
-              <Badge variant={draft.supportsVision ? 'info' : 'secondary'}>
-                {draft.supportsVision ? 'Vision enabled' : 'Text only'}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Model IDs act as stable catalog keys. Existing IDs stay locked to keep updates predictable.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={onSave} disabled={isSaving}>
-              <FiSave size={15} />
-              {isSaving ? 'Saving...' : isExisting ? 'Save Changes' : 'Create Model'}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={handleTestModel}
-              disabled={testModelMutation.isPending || !canTestModel}
-            >
-              <FiPlay size={15} />
-              {testModelMutation.isPending ? 'Testing...' : 'Test Model'}
-            </Button>
-            {isExisting && (
-              <Button
-                variant="secondary"
-                onClick={() => setIsDeleteConfirmOpen(true)}
-                disabled={isDeleting}
-              >
-                <FiTrash2 size={15} />
-                {isDeleting ? 'Deleting...' : 'Delete'}
-              </Button>
-            )}
-          </div>
-        </CardHeader>
+        <ModelCatalogFormHeader
+          title={title}
+          isExisting={isExisting}
+          isSaving={isSaving}
+          isDeleting={isDeleting}
+          isTesting={testModelMutation.isPending}
+          canTestModel={canTestModel}
+          supportsVision={draft.supportsVision}
+          onSave={onSave}
+          onTest={handleTestModel}
+          onDeleteClick={() => setIsDeleteConfirmOpen(true)}
+        />
 
         <CardContent className="space-y-6">
           <ModelCatalogIdentityFields

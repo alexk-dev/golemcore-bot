@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import { ProviderNameCombobox } from '../../components/common/ProviderNameCombobox';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
-import type { LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
+import type { LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settingsTypes';
 import { useAddLlmProvider, useRemoveLlmProvider, useUpdateLlmProvider } from '../../hooks/useSettings';
 import { listConfiguredModelSpecs } from '../../lib/modelRouter';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';

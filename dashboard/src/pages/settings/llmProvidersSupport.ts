@@ -1,4 +1,4 @@
-import type { ApiType, LlmProviderConfig } from '../../api/settings';
+import type { ApiType, LlmProviderConfig } from '../../api/settingsTypes';
 
 export interface ApiTypeDetail {
   label: string;

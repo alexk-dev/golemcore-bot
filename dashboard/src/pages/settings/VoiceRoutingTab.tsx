@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
-import type { VoiceConfig } from '../../api/settings';
+import type { VoiceConfig } from '../../api/settingsTypes';
 import { useUpdateVoice } from '../../hooks/useSettings';
 import { usePluginSettingsCatalog, useVoiceProviders } from '../../hooks/usePlugins';
 

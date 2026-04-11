@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 
-import type { TracingConfig } from '../../api/settings';
+import type { TracingConfig } from '../../api/settingsTypes';
 import { SettingsSaveBar, SaveStateHint } from '../../components/common/SettingsSaveBar';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateTracing } from '../../hooks/useSettings';

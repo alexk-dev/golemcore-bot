@@ -2,7 +2,7 @@ import { type ReactElement, useEffect, useState } from 'react';
 import { Alert, Button, Card, Form, Modal } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 
-import type { TelemetryConfig } from '../../api/settings';
+import type { TelemetryConfig } from '../../api/settingsTypes';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { useUpdateTelemetry } from '../../hooks/useSettings';

@@ -2,7 +2,6 @@ import type { ReactElement } from 'react';
 
 import type {
   SelfEvolvingCandidate,
-  SelfEvolvingCandidateEvidenceRef,
   SelfEvolvingPromotionDecision,
 } from '../../api/selfEvolving';
 import {
@@ -15,11 +14,14 @@ import {
   statusBadgeClass,
 } from './selfEvolvingUi';
 import {
-  SelfEvolvingRolloutPipeline,
-  resolveCurrentStageKey,
-  resolveNextStageKey,
-  stageLabel,
-} from './SelfEvolvingRolloutPipeline';
+  CandidateEvidenceSection,
+  CandidateMetadataSection,
+  CandidateNarrativeSections,
+  PromotionResultSection,
+  SourceRunsSection,
+} from './SelfEvolvingCandidateDetailSections';
+import { SelfEvolvingRolloutPipeline } from './SelfEvolvingRolloutPipeline';
+import { resolveCurrentStageKey, resolveNextStageKey, stageLabel } from './SelfEvolvingRolloutPipelineUtils';
 
 interface SelfEvolvingCandidateQueueProps {
   candidates: SelfEvolvingCandidate[];
@@ -96,10 +98,6 @@ function resolvePromotionActionTitle(currentStage: string, nextStage: string | n
   return `Advance this change: ${stageLabel(currentStage)} → ${stageLabel(nextStage)}`;
 }
 
-function resolveEvidenceItems(candidate: SelfEvolvingCandidate): SelfEvolvingCandidateEvidenceRef[] {
-  return candidate.evidenceRefs ?? [];
-}
-
 function CandidateCard({ candidate, isSelected, onSelect }: CandidateCardProps): ReactElement {
   const risk = riskBadge(candidate.riskLevel);
 
@@ -160,7 +158,7 @@ function CandidateDetail({
   onPlanPromotion,
 }: CandidateDetailProps): ReactElement {
   const hasDiff = !isPlaceholderDiff(candidate.proposedDiff);
-  const evidenceItems = resolveEvidenceItems(candidate);
+  const evidenceItems = candidate.evidenceRefs ?? [];
   const rationale = resolveCandidateRationale(candidate);
   const behaviorInstructions = resolveCandidateBehavior(candidate);
   const toolInstructions = resolveCandidateToolInstructions(candidate);
@@ -183,60 +181,13 @@ function CandidateDetail({
         <p className="text-sm">{resolveCandidateHeadline(candidate)}</p>
       </div>
 
-      {rationale != null ? (
-        <div className="mb-4">
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Why this change</span>
-          <p className="text-sm mt-1 mb-0">{rationale}</p>
-        </div>
-      ) : null}
+      <CandidateNarrativeSections
+        rationale={rationale}
+        behaviorInstructions={behaviorInstructions}
+        toolInstructions={toolInstructions}
+      />
 
-      {behaviorInstructions != null ? (
-        <div className="mb-4">
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Proposed behavior</span>
-          <p className="text-sm mt-1 mb-0">{behaviorInstructions}</p>
-        </div>
-      ) : null}
-
-      {toolInstructions != null ? (
-        <div className="mb-4">
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Tooling guidance</span>
-          <p className="text-sm mt-1 mb-0">{toolInstructions}</p>
-        </div>
-      ) : null}
-
-      {evidenceItems.length > 0 ? (
-        <div className="mb-4">
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            What the judge observed
-          </span>
-          <div className="flex flex-col gap-2 mt-1">
-            {evidenceItems.map((ref, index) => (
-              <div
-                key={`${ref.traceId}-${ref.spanId}-${index}`}
-                className="rounded-lg bg-muted/40 border border-border/60 p-3"
-              >
-                <p className="text-sm mb-1">
-                  {ref.outputFragment != null && ref.outputFragment.length > 0
-                    ? ref.outputFragment
-                    : 'Evidence anchor recorded without an output fragment.'}
-                </p>
-                <div className="text-xs text-muted-foreground flex gap-3 flex-wrap">
-                  {ref.spanId != null ? (
-                    <span>
-                      Span: <span className="font-mono">{shortId(ref.spanId)}</span>
-                    </span>
-                  ) : null}
-                  {ref.traceId != null ? (
-                    <span>
-                      Trace: <span className="font-mono">{shortId(ref.traceId)}</span>
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      <CandidateEvidenceSection evidenceItems={evidenceItems} />
 
       {hasDiff ? (
         <div className="mb-4">
@@ -247,40 +198,11 @@ function CandidateDetail({
         </div>
       ) : null}
 
-      <div className="rounded-xl bg-muted/30 border border-border/60 p-4 mb-4">
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-          <div>
-            <span className="text-xs text-muted-foreground">Artifact</span>
-            <div>{candidate.artifactKey ?? humanizeStatus(candidate.artifactType)}</div>
-          </div>
-          <div>
-            <span className="text-xs text-muted-foreground">Risk level</span>
-            <div>{humanizeStatus(candidate.riskLevel)}</div>
-          </div>
-          <div>
-            <span className="text-xs text-muted-foreground">Status</span>
-            <div>{humanizeStatus(candidate.status)}</div>
-          </div>
-          <div>
-            <span className="text-xs text-muted-foreground">ID</span>
-            <div className="font-mono text-xs" title={candidate.id}>
-              {shortId(candidate.id)}
-            </div>
-          </div>
-          {expectedOutcome != null ? (
-            <div className="col-span-2">
-              <span className="text-xs text-muted-foreground">Expected outcome</span>
-              <div>{expectedOutcome}</div>
-            </div>
-          ) : null}
-          {approvalNotes != null ? (
-            <div className="col-span-2">
-              <span className="text-xs text-muted-foreground">Approval notes</span>
-              <div>{approvalNotes}</div>
-            </div>
-          ) : null}
-        </div>
-      </div>
+      <CandidateMetadataSection
+        candidate={candidate}
+        expectedOutcome={expectedOutcome}
+        approvalNotes={approvalNotes}
+      />
 
       <SelfEvolvingRolloutPipeline currentStage={currentStage} nextStage={nextStage} />
 
@@ -289,54 +211,13 @@ function CandidateDetail({
         <p className="text-sm mt-1">{describeCandidateStatus(candidate.status)}</p>
       </div>
 
-      <div className="mb-4">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2 block">
-          Source runs
-        </span>
-        {candidate.sourceRunIds.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No source runs linked.</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {candidate.sourceRunIds.map((runId) => (
-              <button
-                key={runId}
-                type="button"
-                className="btn btn-sm btn-secondary font-mono"
-                title={`Open run ${runId}`}
-                onClick={() => onSelectRun(runId)}
-              >
-                {shortId(runId)}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <SourceRunsSection runIds={candidate.sourceRunIds} onSelectRun={onSelectRun} />
 
-      {promotionDone ? (
-        <div className="rounded-xl border border-green-300/40 bg-green-50/60 dark:border-green-500/30 dark:bg-green-950/30 p-4 mb-3">
-          <p className="text-sm font-semibold mb-2 text-green-800 dark:text-green-300">
-            Rollout advanced
-          </p>
-          <p className="text-sm text-green-700 dark:text-green-400">
-            Status: <span className="font-medium">{humanizeStatus(lastPromotionResult.toState)}</span>.
-            {lastPromotionResult.toState === 'shadowed'
-              ? ' The change is now running in shadow mode alongside the current version. If metrics hold, it will be promoted to full traffic.'
-              : null}
-            {lastPromotionResult.toState === 'canary'
-              ? ' The change is now in canary rollout with limited exposure before full activation.'
-              : null}
-            {lastPromotionResult.toState === 'active'
-              ? ' The change is now live and serving all traffic.'
-              : null}
-          </p>
-        </div>
-      ) : null}
-
-      {promotionFailed ? (
-        <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 mb-3">
-          <p className="text-sm text-destructive">Promotion failed. Check backend logs for details.</p>
-        </div>
-      ) : null}
+      <PromotionResultSection
+        promotionDone={promotionDone}
+        promotionFailed={promotionFailed}
+        lastPromotionResult={lastPromotionResult}
+      />
 
       {canApprove ? (
         <button

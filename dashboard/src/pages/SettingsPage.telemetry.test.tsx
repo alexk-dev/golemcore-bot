@@ -51,7 +51,7 @@ vi.mock('../hooks/useSelfEvolving', () => ({
   useSelfEvolvingTacticSearchStatus: () => ({ data: null }),
 }));
 
-vi.mock('../lib/telemetry/TelemetryProvider', () => ({
+vi.mock('../lib/telemetry/TelemetryContext', () => ({
   useTelemetry: () => ({
     recordCounter,
     recordKeyedCounter,

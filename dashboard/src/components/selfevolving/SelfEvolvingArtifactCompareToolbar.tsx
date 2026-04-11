@@ -1,9 +1,10 @@
 import type { ReactElement } from 'react';
-import { Button, ButtonGroup, Card, Form } from 'react-bootstrap';
+import { Button, ButtonGroup, Card } from 'react-bootstrap';
 
 import type { SelfEvolvingArtifactCompareOptions } from '../../api/selfEvolving';
 
-export type SelfEvolvingArtifactCompareMode = 'revision' | 'transition';
+import { SelfEvolvingArtifactCompareSelect } from './SelfEvolvingArtifactCompareSelect';
+import type { SelfEvolvingArtifactCompareMode } from './SelfEvolvingArtifactCompareTypes';
 
 interface SelfEvolvingArtifactCompareToolbarProps {
   compareMode: SelfEvolvingArtifactCompareMode;
@@ -28,8 +29,6 @@ export function SelfEvolvingArtifactCompareToolbar({
   onSelectRevisionPair,
   onSelectTransitionPair,
 }: SelfEvolvingArtifactCompareToolbarProps): ReactElement {
-  const formatOptionLabel = (label: string): string => label.split('_').join(' ');
-
   return (
     <Card className="selfevolving-section-card">
       <Card.Body>
@@ -57,43 +56,19 @@ export function SelfEvolvingArtifactCompareToolbar({
         </div>
 
         {compareMode === 'revision' ? (
-          <div className="d-flex flex-column gap-2">
-            <Form.Select
-              value={`${selectedFromRevisionId ?? ''}::${selectedToRevisionId ?? ''}`}
-              onChange={(event) => {
-                const [fromRevisionId, toRevisionId] = event.target.value.split('::');
-                onSelectRevisionPair(fromRevisionId, toRevisionId);
-              }}
-            >
-              {(compareOptions?.revisionOptions ?? []).map((option) => (
-                <option key={`${option.fromId}-${option.toId}`} value={`${option.fromId}::${option.toId}`}>
-                  {formatOptionLabel(option.label)}
-                </option>
-              ))}
-            </Form.Select>
-            <div className="small text-body-secondary">
-              {selectedFromRevisionId ?? 'n/a'} → {selectedToRevisionId ?? 'n/a'}
-            </div>
-          </div>
+          <SelfEvolvingArtifactCompareSelect
+            fromId={selectedFromRevisionId}
+            toId={selectedToRevisionId}
+            options={compareOptions?.revisionOptions ?? []}
+            onSelectPair={onSelectRevisionPair}
+          />
         ) : (
-          <div className="d-flex flex-column gap-2">
-            <Form.Select
-              value={`${selectedFromNodeId ?? ''}::${selectedToNodeId ?? ''}`}
-              onChange={(event) => {
-                const [fromNodeId, toNodeId] = event.target.value.split('::');
-                onSelectTransitionPair(fromNodeId, toNodeId);
-              }}
-            >
-              {(compareOptions?.transitionOptions ?? []).map((option) => (
-                <option key={`${option.fromId}-${option.toId}`} value={`${option.fromId}::${option.toId}`}>
-                  {formatOptionLabel(option.label)}
-                </option>
-              ))}
-            </Form.Select>
-            <div className="small text-body-secondary">
-              {selectedFromNodeId ?? 'n/a'} → {selectedToNodeId ?? 'n/a'}
-            </div>
-          </div>
+          <SelfEvolvingArtifactCompareSelect
+            fromId={selectedFromNodeId}
+            toId={selectedToNodeId}
+            options={compareOptions?.transitionOptions ?? []}
+            onSelectPair={onSelectTransitionPair}
+          />
         )}
       </Card.Body>
     </Card>

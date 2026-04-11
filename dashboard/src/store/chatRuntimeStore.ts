@@ -9,13 +9,11 @@ import type {
 } from '../components/chat/chatRuntimeTypes';
 import type { OutboundChatPayload } from '../components/chat/chatInputTypes';
 import {
-  applyAssistantTextUpdate,
-  applyLiveProgressUpdate,
   createEmptySessionState,
   dedupeMessages,
   mergeInitialHistory,
-  patchTurnMetadata,
 } from './chatRuntimeStoreUtils';
+import { createMessageActions } from './chatRuntimeMessageActions';
 
 export type ChatConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
@@ -33,7 +31,7 @@ interface HydrateHistoryPayload {
   oldestLoadedMessageId: string | null;
 }
 
-interface ChatRuntimeState {
+export interface ChatRuntimeState {
   connectionState: ChatConnectionState;
   sessions: Record<string, ChatRuntimeSessionState>;
   transport: ChatTransport | null;
@@ -90,28 +88,28 @@ function cloneSessions(
   };
 }
 
-type ChatRuntimeSet = (
+export type ChatRuntimeSet = (
   partial:
     | ChatRuntimeState
     | Partial<ChatRuntimeState>
     | ((state: ChatRuntimeState) => ChatRuntimeState | Partial<ChatRuntimeState>),
 ) => void;
 
-type ChatRuntimeGet = () => ChatRuntimeState;
+export type ChatRuntimeGet = () => ChatRuntimeState;
 
 function createCoreActions(set: ChatRuntimeSet): Pick<
   ChatRuntimeState,
   'setConnectionState' | 'registerTransport' | 'clearTransport' | 'resetAll' | 'resetSession'
 > {
   return {
-  setConnectionState: (connectionState) => set({ connectionState }),
-  registerTransport: (transport) => set({ transport }),
-  clearTransport: () => set({ transport: null }),
-  resetAll: () => set({ connectionState: 'disconnected', sessions: {}, transport: null }),
-  resetSession: (sessionId) =>
-    set((state) => ({
-      sessions: cloneSessions(state.sessions, sessionId, createEmptySessionState()),
-    })),
+    setConnectionState: (connectionState) => set({ connectionState }),
+    registerTransport: (transport) => set({ transport }),
+    clearTransport: () => set({ transport: null }),
+    resetAll: () => set({ connectionState: 'disconnected', sessions: {}, transport: null }),
+    resetSession: (sessionId) =>
+      set((state) => ({
+        sessions: cloneSessions(state.sessions, sessionId, createEmptySessionState()),
+      })),
   };
 }
 
@@ -120,310 +118,61 @@ function createHistoryActions(set: ChatRuntimeSet): Pick<
   'registerSessionRecord' | 'setHistoryLoading' | 'setHistoryError' | 'hydrateHistory' | 'prependHistory'
 > {
   return {
-  registerSessionRecord: (sessionId, sessionRecordId) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          sessionRecordId,
-        }),
-      };
-    }),
-  setHistoryLoading: (sessionId, loading) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          historyLoading: loading,
-          historyError: loading ? null : current.historyError,
-        }),
-      };
-    }),
-  setHistoryError: (sessionId, error) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          historyLoading: false,
-          historyError: error,
-        }),
-      };
-    }),
-  hydrateHistory: ({ sessionId, sessionRecordId, messages, hasMoreHistory, oldestLoadedMessageId }) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      const nextMessages = mergeInitialHistory(current.messages, messages);
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          sessionRecordId,
-          messages: nextMessages,
-          historyLoaded: true,
-          historyLoading: false,
-          historyError: null,
-          hasMoreHistory,
-          oldestLoadedMessageId,
-        }),
-      };
-    }),
-  prependHistory: ({ sessionId, sessionRecordId, messages, hasMoreHistory, oldestLoadedMessageId }) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      const nextMessages = dedupeMessages([...messages, ...current.messages]);
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          sessionRecordId,
-          messages: nextMessages,
-          historyLoaded: true,
-          historyLoading: false,
-          historyError: null,
-          hasMoreHistory,
-          oldestLoadedMessageId,
-        }),
-      };
-    }),
-  };
-}
-
-function createMessageActions(
-  set: ChatRuntimeSet,
-  get: ChatRuntimeGet,
-): Pick<
-  ChatRuntimeState,
-  | 'appendOptimisticUserMessage'
-  | 'retryUserMessage'
-  | 'sendMessage'
-  | 'stopSession'
-  | 'markFirstPendingAsSent'
-  | 'markMessageAsFailed'
-  | 'markPendingMessagesAsFailed'
-  | 'setTyping'
-  | 'setRunning'
-  | 'applyProgressUpdate'
-  | 'applyTurnMetadataPatch'
-  | 'applyAssistantText'
-> {
-  return {
-  appendOptimisticUserMessage: (sessionId, message) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          messages: [...current.messages, message],
-          running: true,
-        }),
-      };
-    }),
-  retryUserMessage: (sessionId, messageId) => {
-    let outbound: OutboundChatPayload | null = null;
-
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      const nextMessages = current.messages.map((message) => {
-        if (message.id !== messageId || message.role !== 'user' || message.outbound == null) {
-          return message;
-        }
-        outbound = message.outbound;
+    registerSessionRecord: (sessionId, sessionRecordId) =>
+      set((state) => {
+        const current = ensureSessionState(state.sessions, sessionId);
+        return { sessions: cloneSessions(state.sessions, sessionId, { ...current, sessionRecordId }) };
+      }),
+    setHistoryLoading: (sessionId, loading) =>
+      set((state) => {
+        const current = ensureSessionState(state.sessions, sessionId);
         return {
-          ...message,
-          clientStatus: 'pending' as const,
+          sessions: cloneSessions(state.sessions, sessionId, {
+            ...current,
+            historyLoading: loading,
+            historyError: loading ? null : current.historyError,
+          }),
         };
-      });
-
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          messages: nextMessages,
-          running: outbound != null ? true : current.running,
-        }),
-      };
-    });
-
-    return outbound;
-  },
-  sendMessage: (sessionId, clientInstanceId, clientMessageId, payload) => {
-    const transport = get().transport;
-    if (transport == null) {
-      get().markMessageAsFailed(sessionId, clientMessageId);
-      return false;
-    }
-
-    const sent = transport.sendMessage({
-      text: payload.text,
-      attachments: payload.attachments,
-      sessionId,
-      clientInstanceId,
-      clientMessageId,
-    });
-    if (!sent) {
-      get().markMessageAsFailed(sessionId, clientMessageId);
-      return false;
-    }
-
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          running: true,
-        }),
-      };
-    });
-    return true;
-  },
-  stopSession: (sessionId, clientInstanceId) => {
-    const transport = get().transport;
-    if (transport == null) {
-      return false;
-    }
-    return transport.stop(sessionId, clientInstanceId);
-  },
-  markFirstPendingAsSent: (sessionId) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      const targetIndex = current.messages.findIndex((message) => message.role === 'user' && message.clientStatus === 'pending');
-      if (targetIndex < 0) {
-        return state;
-      }
-
-      const nextMessages = [...current.messages];
-      nextMessages[targetIndex] = {
-        ...nextMessages[targetIndex],
-        clientStatus: undefined,
-        outbound: undefined,
-        persisted: nextMessages[targetIndex].persisted,
-      };
-
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          messages: nextMessages,
-        }),
-      };
-    }),
-  markMessageAsFailed: (sessionId, messageId) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      const nextMessages = current.messages.map((message) => {
-        if (message.role === 'user' && message.id === messageId) {
-          return {
-            ...message,
-            clientStatus: 'failed' as const,
-          };
-        }
-        return message;
-      });
-
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          messages: nextMessages,
-          running: false,
-        }),
-      };
-    }),
-  markPendingMessagesAsFailed: () =>
-    set((state) => {
-      let changed = false;
-      const nextSessions = { ...state.sessions };
-
-      for (const [sessionId, current] of Object.entries(state.sessions)) {
-        let sessionChanged = false;
-        const nextMessages = current.messages.map((message) => {
-          if (message.role !== 'user' || message.clientStatus !== 'pending') {
-            return message;
-          }
-          sessionChanged = true;
-          return {
-            ...message,
-            clientStatus: 'failed' as const,
-          };
-        });
-
-        if (!sessionChanged && !current.running && !current.typing) {
-          continue;
-        }
-
-        nextSessions[sessionId] = {
-          ...current,
-          messages: nextMessages,
-          running: false,
-          typing: false,
+      }),
+    setHistoryError: (sessionId, error) =>
+      set((state) => {
+        const current = ensureSessionState(state.sessions, sessionId);
+        return { sessions: cloneSessions(state.sessions, sessionId, { ...current, historyLoading: false, historyError: error }) };
+      }),
+    hydrateHistory: ({ sessionId, sessionRecordId, messages, hasMoreHistory, oldestLoadedMessageId }) =>
+      set((state) => {
+        const current = ensureSessionState(state.sessions, sessionId);
+        return {
+          sessions: cloneSessions(state.sessions, sessionId, {
+            ...current,
+            sessionRecordId,
+            messages: mergeInitialHistory(current.messages, messages),
+            historyLoaded: true,
+            historyLoading: false,
+            historyError: null,
+            hasMoreHistory,
+            oldestLoadedMessageId,
+          }),
         };
-        changed = true;
-      }
-
-      return changed ? { sessions: nextSessions } : state;
-    }),
-  setTyping: (sessionId, typing) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          typing,
-          running: typing || current.running,
-        }),
-      };
-    }),
-  setRunning: (sessionId, running) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          running,
-          typing: running ? current.typing : false,
-        }),
-      };
-    }),
-  applyProgressUpdate: (sessionId, progress) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      const nextSession = applyLiveProgressUpdate(current, progress);
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          ...nextSession,
-        }),
-      };
-    }),
-  applyTurnMetadataPatch: (sessionId, hint) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          turnMetadata: patchTurnMetadata(current.turnMetadata, hint),
-        }),
-      };
-    }),
-  applyAssistantText: (sessionId, text, hint, attachments, isFinal) =>
-    set((state) => {
-      const current = ensureSessionState(state.sessions, sessionId);
-      const nextSession = applyAssistantTextUpdate(current, {
-        sessionId,
-        text,
-        hint,
-        attachments,
-        isFinal,
-      });
-
-      return {
-        sessions: cloneSessions(state.sessions, sessionId, {
-          ...current,
-          ...nextSession,
-        }),
-      };
-    }),
+      }),
+    prependHistory: ({ sessionId, sessionRecordId, messages, hasMoreHistory, oldestLoadedMessageId }) =>
+      set((state) => {
+        const current = ensureSessionState(state.sessions, sessionId);
+        return {
+          sessions: cloneSessions(state.sessions, sessionId, {
+            ...current,
+            sessionRecordId,
+            messages: dedupeMessages([...messages, ...current.messages]),
+            historyLoaded: true,
+            historyLoading: false,
+            historyError: null,
+            hasMoreHistory,
+            oldestLoadedMessageId,
+          }),
+        };
+      }),
   };
 }
-
 function createChatRuntimeState(set: ChatRuntimeSet, get: ChatRuntimeGet): ChatRuntimeState {
   return {
     connectionState: 'disconnected',
