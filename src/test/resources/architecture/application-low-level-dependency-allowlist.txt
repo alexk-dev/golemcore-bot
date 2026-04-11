@@ -1,3 +1,2 @@
-# Remaining application-layer IO/serialization debt to be extracted behind outbound adapters.
-me.golemcore.bot.application.skills.SkillMarketplaceService
-me.golemcore.bot.application.update.UpdateService
+# No remaining application-layer IO/serialization debt is allowed here.
+# Add entries only with explicit architecture review.

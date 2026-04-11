@@ -19,7 +19,7 @@ Common env vars (Spring) for local/Docker:
 
 ## Architecture
 
-Spring Boot 4.0.2, Java 17, Hexagonal Architecture (Ports & Adapters).
+Spring Boot 4.0.5, Java 25, Hexagonal Architecture (Ports & Adapters).
 
 ### Package Structure
 

@@ -68,10 +68,6 @@ import java.util.concurrent.TimeoutException;
 @Slf4j
 public class ResponseRoutingSystem implements AgentSystem {
 
-    private static final String WEBHOOK_DELIVER_FLAG = "webhook.deliver";
-    private static final String WEBHOOK_DELIVER_CHANNEL = "webhook.deliver.channel";
-    private static final String WEBHOOK_DELIVER_TO = "webhook.deliver.to";
-
     private record VoiceRoutingResult(boolean sentVoice, boolean sentTextFallback, String errorMessage) {
         private static VoiceRoutingResult none() {
             return new VoiceRoutingResult(false, false, null);
@@ -599,8 +595,8 @@ public class ResponseRoutingSystem implements AgentSystem {
             }
             webhookDeliveryCandidateSeen = true;
 
-            String channelType = readMetadataString(metadata, WEBHOOK_DELIVER_CHANNEL);
-            String chatId = readMetadataString(metadata, WEBHOOK_DELIVER_TO);
+            String channelType = readMetadataString(metadata, ContextAttributes.WEBHOOK_DELIVER_CHANNEL);
+            String chatId = readMetadataString(metadata, ContextAttributes.WEBHOOK_DELIVER_TO);
             if (channelType == null || chatId == null) {
                 continue;
             }
@@ -621,7 +617,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             return false;
         }
 
-        Object value = metadata.get(WEBHOOK_DELIVER_FLAG);
+        Object value = metadata.get(ContextAttributes.WEBHOOK_DELIVER);
         if (value instanceof Boolean booleanValue) {
             return booleanValue;
         }
