@@ -83,7 +83,8 @@ class HiveApiClientTest {
     void shouldSendBearerTokenWithHeartbeat() throws Exception {
         server.enqueue(new MockResponse.Builder().code(200).body("{\"ok\":true}").build());
 
-        hiveApiClient.heartbeat(server.url("/").toString(), "golem-1", "access", "connected", "healthy", null, 15L);
+        hiveApiClient.heartbeat(server.url("/").toString(), "golem-1", "access", "connected", "healthy", null, 15L,
+                "https://bot.example.com/dashboard");
 
         RecordedRequest recordedRequest = server.takeRequest();
         assertEquals("/api/v1/golems/golem-1/heartbeat", recordedRequest.getTarget());

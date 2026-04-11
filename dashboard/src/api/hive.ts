@@ -9,6 +9,8 @@ export interface HiveStatusResponse {
   serverUrl: string | null;
   displayName: string | null;
   hostLabel: string | null;
+  dashboardBaseUrl: string | null;
+  ssoEnabled: boolean;
   sessionPresent: boolean;
   golemId: string | null;
   controlChannelUrl: string | null;

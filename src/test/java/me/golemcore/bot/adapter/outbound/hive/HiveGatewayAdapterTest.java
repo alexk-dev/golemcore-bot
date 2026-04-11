@@ -94,7 +94,8 @@ class HiveGatewayAdapterTest {
                 "connected",
                 "healthy",
                 null,
-                42L);
+                42L,
+                "https://bot.example.com/dashboard");
 
         verify(hiveApiClient).heartbeat(
                 "https://hive.example.com",
@@ -103,7 +104,8 @@ class HiveGatewayAdapterTest {
                 "connected",
                 "healthy",
                 null,
-                42L);
+                42L,
+                "https://bot.example.com/dashboard");
     }
 
     @Test

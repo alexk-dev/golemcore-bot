@@ -85,6 +85,13 @@ public class JwtTokenProvider {
         return parseClaims(token).get("type", String.class);
     }
 
+    public String getAudience(String token) {
+        Claims claims = parseClaims(token);
+        return claims.getAudience().iterator().hasNext()
+                ? claims.getAudience().iterator().next()
+                : null;
+    }
+
     public boolean isAccessToken(String token) {
         return "access".equals(getTokenType(token));
     }
@@ -97,6 +104,7 @@ public class JwtTokenProvider {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(username)
+                .audience().add("golemcore-bot-dashboard").and()
                 .claim("type", type)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(expiration)))

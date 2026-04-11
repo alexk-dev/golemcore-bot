@@ -73,6 +73,13 @@ class JwtTokenProviderTest {
     }
 
     @Test
+    void shouldSetDashboardAudience() {
+        String token = provider.generateAccessToken("admin");
+
+        assertEquals("golemcore-bot-dashboard", provider.getAudience(token));
+    }
+
+    @Test
     void shouldIdentifyAccessToken() {
         String token = provider.generateAccessToken("admin");
         assertTrue(provider.isAccessToken(token));

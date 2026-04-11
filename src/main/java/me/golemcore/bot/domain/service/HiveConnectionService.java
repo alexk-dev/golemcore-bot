@@ -134,6 +134,8 @@ public class HiveConnectionService {
                 hiveConfig.getServerUrl(),
                 hiveConfig.getDisplayName(),
                 hiveConfig.getHostLabel(),
+                hiveConfig.getDashboardBaseUrl(),
+                Boolean.TRUE.equals(hiveConfig.getSsoEnabled()),
                 sessionState != null,
                 sessionState != null ? sessionState.getGolemId() : null,
                 sessionState != null ? sessionState.getControlChannelUrl() : null,
@@ -422,8 +424,17 @@ public class HiveConnectionService {
                 "CONNECTED".equals(controlChannelStatus.state()) ? "connected" : "degraded",
                 healthSummary,
                 controlChannelStatus.lastError(),
-                hiveRuntimeMetadataPort.uptimeSeconds());
+                hiveRuntimeMetadataPort.uptimeSeconds(),
+                resolveDashboardBaseUrl());
         sessionState.setLastHeartbeatAt(Instant.now(clock));
+    }
+
+    private String resolveDashboardBaseUrl() {
+        RuntimeConfig.HiveConfig hiveConfig = runtimeConfigService.getHiveConfig();
+        if (hiveConfig.getDashboardBaseUrl() == null || hiveConfig.getDashboardBaseUrl().isBlank()) {
+            return null;
+        }
+        return hiveConfig.getDashboardBaseUrl().trim();
     }
 
     private String buildHealthSummary() {
@@ -589,6 +600,8 @@ public class HiveConnectionService {
             String serverUrl,
             String displayName,
             String hostLabel,
+            String dashboardBaseUrl,
+            boolean ssoEnabled,
             boolean sessionPresent,
             String golemId,
             String controlChannelUrl,

@@ -3,6 +3,8 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.ChangePasswordRequest;
+import me.golemcore.bot.adapter.inbound.web.dto.HiveSsoExchangeRequest;
+import me.golemcore.bot.adapter.inbound.web.dto.HiveSsoStatusResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.LoginRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.LoginResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.MfaDisableRequest;
@@ -10,7 +12,9 @@ import me.golemcore.bot.adapter.inbound.web.dto.MfaEnableRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.MfaSetupResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.MfaStatusResponse;
 import me.golemcore.bot.domain.model.AdminCredentials;
+import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
 import me.golemcore.bot.domain.service.DashboardAuthService;
+import me.golemcore.bot.domain.service.HiveSsoService;
 import org.springframework.http.HttpCookie;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -40,6 +44,7 @@ public class AuthController {
     private static final String KEY_SUCCESS = "success";
 
     private final DashboardAuthService authService;
+    private final HiveSsoService hiveSsoService;
 
     @GetMapping("/mfa-status")
     public Mono<ResponseEntity<MfaStatusResponse>> getMfaStatus() {
@@ -47,6 +52,33 @@ public class AuthController {
                 .mfaRequired(authService.isMfaEnabled())
                 .build();
         return Mono.just(ResponseEntity.ok(response));
+    }
+
+    @GetMapping("/hive/sso-status")
+    public Mono<ResponseEntity<HiveSsoStatusResponse>> hiveSsoStatus() {
+        HiveSsoService.HiveSsoStatus status = hiveSsoService.getStatus();
+        HiveSsoStatusResponse response = HiveSsoStatusResponse.builder()
+                .enabled(status.enabled())
+                .available(status.available())
+                .loginUrl(status.loginUrl())
+                .reason(status.reason())
+                .build();
+        return Mono.just(ResponseEntity.ok(response));
+    }
+
+    @PostMapping("/hive/exchange")
+    public Mono<ResponseEntity<LoginResponse>> exchangeHiveSso(@RequestBody HiveSsoExchangeRequest request) {
+        HiveSsoTokenResponse tokenResponse = hiveSsoService.exchange(request.getCode());
+        DashboardAuthService.TokenPair tokens = authService.authenticateHiveSso(tokenResponse);
+        if (tokens == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Hive SSO operator is not allowed");
+        }
+        LoginResponse response = LoginResponse.builder()
+                .accessToken(tokens.getAccessToken())
+                .build();
+        return Mono.just(ResponseEntity.ok()
+                .header("Set-Cookie", buildRefreshCookie(tokens.getRefreshToken()).toString())
+                .body(response));
     }
 
     @PostMapping("/login")

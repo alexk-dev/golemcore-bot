@@ -89,6 +89,7 @@ class HiveConnectionServiceTest {
                 .serverUrl("https://hive.example.com")
                 .displayName("Builder")
                 .hostLabel("lab-a")
+                .dashboardBaseUrl("https://bot.example.com/dashboard")
                 .autoConnect(false)
                 .managedByProperties(false)
                 .build());
@@ -172,7 +173,7 @@ class HiveConnectionServiceTest {
         assertEquals("golem-1", status.golemId());
         assertEquals("CONNECTED", status.controlChannelState());
         verify(hiveGatewayPort).sendHeartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
-                eq("connected"), eq("Hive join completed"), eq(null), anyLong());
+                eq("connected"), eq("Hive join completed"), eq(null), anyLong(), eq("https://bot.example.com/dashboard"));
         verify(hiveControlChannelPort).connect(any(HiveSessionState.class), any());
         verify(hiveSessionStateStore).save(any(HiveSessionState.class));
         verify(runtimeConfigService).updateRuntimeConfig(any(RuntimeConfig.class));
@@ -214,7 +215,7 @@ class HiveConnectionServiceTest {
 
         assertEquals("CONNECTED", status.state());
         verify(hiveGatewayPort).sendHeartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access-new"),
-                eq("connected"), eq("Hive reconnect completed"), eq(null), anyLong());
+                eq("connected"), eq("Hive reconnect completed"), eq(null), anyLong(), eq("https://bot.example.com/dashboard"));
         verify(hiveControlChannelPort).connect(any(HiveSessionState.class), any());
         verify(runtimeConfigService, never()).updateRuntimeConfig(any(RuntimeConfig.class));
     }
@@ -340,7 +341,7 @@ class HiveConnectionServiceTest {
         service.runHeartbeatMaintenanceCycle();
 
         verify(hiveGatewayPort).sendHeartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access"),
-                eq("connected"), eq("Control channel connected"), eq(null), anyLong());
+                eq("connected"), eq("Control channel connected"), eq(null), anyLong(), eq("https://bot.example.com/dashboard"));
     }
 
     @Test
@@ -382,7 +383,8 @@ class HiveConnectionServiceTest {
         verify(hiveGatewayPort).rotateSession("https://hive.example.com", "golem-1", "refresh-old");
         verify(hiveControlChannelPort).disconnect("token-refresh");
         verify(hiveGatewayPort).sendHeartbeat(eq("https://hive.example.com"), eq("golem-1"), eq("access-new"),
-                eq("degraded"), eq("Waiting for control channel reconnect"), eq(null), anyLong());
+                eq("degraded"), eq("Waiting for control channel reconnect"), eq(null), anyLong(),
+                eq("https://bot.example.com/dashboard"));
     }
 
     @Test

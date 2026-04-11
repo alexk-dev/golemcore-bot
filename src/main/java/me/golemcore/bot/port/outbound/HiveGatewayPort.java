@@ -2,6 +2,7 @@ package me.golemcore.bot.port.outbound;
 
 import java.util.Set;
 import me.golemcore.bot.domain.model.hive.HiveAuthSession;
+import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
 
 public interface HiveGatewayPort {
 
@@ -23,7 +24,10 @@ public interface HiveGatewayPort {
             String status,
             String healthSummary,
             String lastErrorSummary,
-            Long uptimeSeconds);
+            Long uptimeSeconds,
+            String dashboardBaseUrl);
+
+    HiveSsoTokenResponse exchangeSsoCode(String serverUrl, String code, String clientId, String redirectUri);
 
     boolean isAuthorizationFailure(RuntimeException exception);
 }

@@ -35,4 +35,14 @@ public class BotPropertiesHiveBootstrapSettingsAdapter implements HiveBootstrapS
     public String hostLabel() {
         return botProperties.getHive().getHostLabel();
     }
+
+    @Override
+    public String dashboardBaseUrl() {
+        return botProperties.getHive().getDashboardBaseUrl();
+    }
+
+    @Override
+    public Boolean ssoEnabled() {
+        return botProperties.getHive().getSsoEnabled();
+    }
 }

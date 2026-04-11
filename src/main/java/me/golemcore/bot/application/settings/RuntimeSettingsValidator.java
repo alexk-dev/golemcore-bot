@@ -380,6 +380,10 @@ public class RuntimeSettingsValidator {
         if (serverUrl != null && !serverUrl.isBlank() && !isValidHttpUrl(serverUrl)) {
             throw new IllegalArgumentException("hive.serverUrl must be a valid http(s) URL");
         }
+        String dashboardBaseUrl = hiveConfig.getDashboardBaseUrl();
+        if (dashboardBaseUrl != null && !dashboardBaseUrl.isBlank() && !isValidHttpUrl(dashboardBaseUrl)) {
+            throw new IllegalArgumentException("hive.dashboardBaseUrl must be a valid http(s) URL");
+        }
     }
 
     public void validateAndNormalizeModelRegistryConfig(RuntimeConfig.ModelRegistryConfig modelRegistryConfig) {

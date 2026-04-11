@@ -952,6 +952,9 @@ public class RuntimeConfig {
         private String serverUrl;
         private String displayName;
         private String hostLabel;
+        private String dashboardBaseUrl;
+        @Builder.Default
+        private Boolean ssoEnabled = true;
         @Builder.Default
         private Boolean autoConnect = false;
         @Builder.Default

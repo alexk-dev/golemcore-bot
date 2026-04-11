@@ -202,6 +202,33 @@ function HiveRuntimeSettings({ form, isManaged, setForm }: HiveRuntimeSettingsPr
 
       <Row className="g-3 mb-3">
         <Col md={6}>
+          <Form.Group controlId="hive-dashboard-base-url">
+            <Form.Label className="small fw-medium">
+              Dashboard Public URL <HelpTip text="Public bot dashboard URL used as the OAuth2 redirect origin, for example https://bot.example.com/dashboard." />
+            </Form.Label>
+            <Form.Control
+              type="url"
+              size="sm"
+              value={form.dashboardBaseUrl ?? ''}
+              onChange={(event) => setForm({ ...form, dashboardBaseUrl: event.target.value || null })}
+              disabled={isManaged}
+              placeholder="https://bot.example.com/dashboard"
+            />
+          </Form.Group>
+        </Col>
+        <Col md={6} className="d-flex align-items-end">
+          <Form.Check
+            type="switch"
+            label={<>Enable Hive SSO <HelpTip text="Allows this bot dashboard to accept operator login through Hive OAuth2 SSO when connected." /></>}
+            checked={form.ssoEnabled ?? true}
+            onChange={(event) => setForm({ ...form, ssoEnabled: event.target.checked })}
+            disabled={isManaged}
+          />
+        </Col>
+      </Row>
+
+      <Row className="g-3 mb-3">
+        <Col md={6}>
           <Form.Group controlId="hive-host-label">
             <Form.Label className="small fw-medium">
               Host Label <HelpTip text="Optional machine label surfaced in Hive for assignment and diagnostics." />
@@ -329,6 +356,8 @@ function resolveDetailValue(
 function HiveSessionDetails({ status, fallbackServerUrl }: HiveSessionDetailsProps): ReactElement {
   const detailRows = [
     ['Server URL', resolveDetailValue(status?.serverUrl, fallbackServerUrl ?? '—')],
+    ['Dashboard URL', resolveDetailValue(status?.dashboardBaseUrl)],
+    ['SSO enabled', status?.ssoEnabled === true ? 'yes' : 'no'],
     ['Last connected', resolveDetailValue(status?.lastConnectedAt)],
     ['Last heartbeat', resolveDetailValue(status?.lastHeartbeatAt)],
     ['Last token refresh', resolveDetailValue(status?.lastTokenRotatedAt)],

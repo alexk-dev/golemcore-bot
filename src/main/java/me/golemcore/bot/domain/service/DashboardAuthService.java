@@ -14,6 +14,7 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AdminCredentials;
+import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
 import me.golemcore.bot.port.outbound.DashboardCredentialsPort;
 import me.golemcore.bot.port.outbound.DashboardAuthSettingsPort;
 import me.golemcore.bot.port.outbound.DashboardTokenPort;
@@ -80,6 +81,18 @@ public class DashboardAuthService {
 
     public boolean isMfaEnabled() {
         return credentials != null && credentials.isMfaEnabled();
+    }
+
+    public TokenPair authenticateHiveSso(HiveSsoTokenResponse tokenResponse) {
+        if (credentials == null || tokenResponse == null) {
+            return null;
+        }
+        if (tokenResponse.roles() == null
+                || tokenResponse.roles().stream().noneMatch(role -> "ADMIN".equals(role) || "OPERATOR".equals(role))) {
+            return null;
+        }
+        log.info("[Dashboard] Hive SSO login accepted for operator {}", tokenResponse.username());
+        return generateTokens(ADMIN_USERNAME);
     }
 
     public TokenPair refreshAccessToken(String refreshToken) {

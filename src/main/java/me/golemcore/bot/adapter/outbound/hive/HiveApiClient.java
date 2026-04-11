@@ -57,7 +57,8 @@ public class HiveApiClient {
             String status,
             String healthSummary,
             String lastErrorSummary,
-            Long uptimeSeconds) {
+            Long uptimeSeconds,
+            String dashboardBaseUrl) {
         HeartbeatRequest request = new HeartbeatRequest(
                 status,
                 null,
@@ -71,12 +72,22 @@ public class HiveApiClient {
                 healthSummary,
                 lastErrorSummary,
                 uptimeSeconds,
-                null);
+                null,
+                dashboardBaseUrl);
         postJson(serverUrl,
                 "/api/v1/golems/" + golemId + "/heartbeat",
                 request,
                 accessToken,
                 JsonNode.class);
+    }
+
+    public OAuth2TokenResponse exchangeSsoCode(String serverUrl, String code, String clientId, String redirectUri) {
+        return postJson(
+                serverUrl,
+                "/api/v1/oauth2/token",
+                new OAuth2TokenRequest(code, clientId, redirectUri),
+                null,
+                OAuth2TokenResponse.class);
     }
 
     public void publishEventsBatch(
@@ -149,6 +160,18 @@ public class HiveApiClient {
     private record RefreshTokenRequest(String refreshToken) {
     }
 
+    private record OAuth2TokenRequest(String code, String clientId, String redirectUri) {
+    }
+
+    public record OperatorResponse(String id, String username, String displayName, List<String> roles) {
+    }
+
+    public record LoginResponse(String accessToken, OperatorResponse operator) {
+    }
+
+    public record OAuth2TokenResponse(LoginResponse login, String code) {
+    }
+
     private record HeartbeatRequest(
             String status,
             String currentRunState,
@@ -162,7 +185,8 @@ public class HiveApiClient {
             String healthSummary,
             String lastErrorSummary,
             Long uptimeSeconds,
-            String capabilitySnapshotHash) {
+            String capabilitySnapshotHash,
+            String dashboardBaseUrl) {
     }
 
     public record GolemAuthResponse(

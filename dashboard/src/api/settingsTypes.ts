@@ -48,7 +48,7 @@ export interface VoiceConfig { enabled: boolean | null; apiKey: string | null; a
 export interface UsageConfig { enabled: boolean | null; }
 export interface TelemetryConfig { enabled: boolean | null; clientId?: string; }
 export interface PlanConfig { enabled: boolean | null; maxPlans: number | null; maxStepsPerPlan: number | null; stopOnFailure: boolean | null; }
-export interface HiveConfig { enabled: boolean | null; serverUrl: string | null; displayName: string | null; hostLabel: string | null; autoConnect: boolean | null; managedByProperties: boolean | null; }
+export interface HiveConfig { enabled: boolean | null; serverUrl: string | null; displayName: string | null; hostLabel: string | null; dashboardBaseUrl: string | null; ssoEnabled: boolean | null; autoConnect: boolean | null; managedByProperties: boolean | null; }
 export interface SelfEvolvingConfig { enabled: boolean | null; tracePayloadOverride: boolean | null; managedByProperties?: boolean | null; overriddenPaths?: string[]; capture: SelfEvolvingCaptureConfig; judge: SelfEvolvingJudgeConfig; evolution: SelfEvolvingEvolutionConfig; tactics: SelfEvolvingTacticsConfig; promotion: SelfEvolvingPromotionConfig; benchmark: SelfEvolvingBenchmarkConfig; hive: SelfEvolvingHiveConfig; }
 export interface SelfEvolvingCaptureConfig { llm: string | null; tool: string | null; context: string | null; skill: string | null; tier: string | null; infra: string | null; }
 export interface SelfEvolvingJudgeConfig { enabled: boolean | null; primaryTier: string | null; tiebreakerTier: string | null; evolutionTier: string | null; requireEvidenceAnchors: boolean | null; uncertaintyThreshold: number | null; }
