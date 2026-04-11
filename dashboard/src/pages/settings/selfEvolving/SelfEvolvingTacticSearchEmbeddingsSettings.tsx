@@ -1,7 +1,7 @@
 import { type Dispatch, type ReactElement, type SetStateAction, useCallback, useEffect, useState } from 'react';
 import { Alert, Col, Row } from 'react-bootstrap';
 
-import type { SelfEvolvingConfig } from '../../../api/settings';
+import type { SelfEvolvingConfig } from '../../../api/settingsTypes';
 import type { SelfEvolvingTacticSearchStatus } from '../../../api/selfEvolving';
 import { hasOverriddenPath, hasOverriddenPathPrefix } from './selfEvolvingOverridePaths';
 import { buildLocalEmbeddingDiagnostics, type LocalEmbeddingDiagnostics } from './SelfEvolvingTacticLocalDiagnostics';

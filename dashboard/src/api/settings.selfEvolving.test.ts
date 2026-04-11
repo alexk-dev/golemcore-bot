@@ -1,4 +1,4 @@
-import type { SelfEvolvingConfig } from './settings';
+import type { SelfEvolvingConfig } from './settingsTypes';
 import { buildRemoteSelfEvolvingConfig, buildRuntimeConfigFixture } from './settingsSelfEvolvingFixtures.testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

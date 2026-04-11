@@ -1,7 +1,7 @@
 import { type ReactElement, useState } from 'react';
 import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import { FiPlus, FiTrash2 } from 'react-icons/fi';
-import type { McpCatalogEntry } from '../../api/settings';
+import type { McpCatalogEntry } from '../../api/settingsTypes';
 
 interface EnvEntry {
   key: string;

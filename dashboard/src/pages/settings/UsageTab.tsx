@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateUsage } from '../../hooks/useSettings';
-import type { UsageConfig } from '../../api/settings';
+import type { UsageConfig } from '../../api/settingsTypes';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {

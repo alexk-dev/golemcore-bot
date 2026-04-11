@@ -1,7 +1,7 @@
 import type { Dispatch, ReactElement, SetStateAction } from 'react';
 import { Col, Form, Row } from 'react-bootstrap';
 
-import type { SelfEvolvingConfig } from '../../../api/settings';
+import type { SelfEvolvingConfig } from '../../../api/settingsTypes';
 import HelpTip from '../../../components/common/HelpTip';
 
 interface AdvisoryCountSettingsProps {

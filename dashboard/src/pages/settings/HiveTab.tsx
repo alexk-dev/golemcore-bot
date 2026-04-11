@@ -6,7 +6,7 @@ import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import type { HiveStatusResponse } from '../../api/hive';
 import { useUpdateHive } from '../../hooks/useSettings';
 import { useHiveStatus, useJoinHive, useLeaveHive, useReconnectHive } from '../../hooks/useHive';
-import type { HiveConfig } from '../../api/settings';
+import type { HiveConfig } from '../../api/settingsTypes';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { HiveActionButtons } from './HiveActionButtons';
 

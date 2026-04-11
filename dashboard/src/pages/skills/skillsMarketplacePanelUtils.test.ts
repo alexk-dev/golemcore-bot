@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SkillsConfig } from '../../api/settings';
+import type { SkillsConfig } from '../../api/settingsTypes';
 import type { SkillMarketplaceCatalogResponse, SkillMarketplaceItem } from '../../api/skills';
 import {
   buildSourceForm,

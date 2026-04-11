@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAuto } from '../../hooks/useSettings';
-import type { AutoModeConfig } from '../../api/settings';
+import type { AutoModeConfig } from '../../api/settingsTypes';
 import { getExplicitModelTierOptions } from '../../lib/modelTiers';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 

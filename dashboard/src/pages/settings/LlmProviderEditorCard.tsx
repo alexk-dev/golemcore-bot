@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { Button, Card, Col, Form, Row } from 'react-bootstrap';
-import type { LlmProviderConfig } from '../../api/settings';
+import type { LlmProviderConfig } from '../../api/settingsTypes';
 import {
   API_TYPE_DETAILS,
   API_TYPE_OPTIONS,

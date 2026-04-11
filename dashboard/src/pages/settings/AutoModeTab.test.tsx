@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { AutoModeConfig } from '../../api/settings';
+import type { AutoModeConfig } from '../../api/settingsTypes';
 import AutoModeTab from './AutoModeTab';
 
 vi.mock('../../hooks/useSettings', () => ({

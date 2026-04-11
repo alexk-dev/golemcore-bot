@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { Badge, Button, Form, InputGroup } from 'react-bootstrap';
 
-import type { LlmProviderConfig } from '../../api/settings';
+import type { LlmProviderConfig } from '../../api/settingsTypes';
 import { toNullableString } from './llmProvidersSupport';
 
 interface LlmProviderSecretFieldProps {
