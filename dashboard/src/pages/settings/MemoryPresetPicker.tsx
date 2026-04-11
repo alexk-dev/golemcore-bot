@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { Button, Form } from 'react-bootstrap';
-import type { MemoryPreset } from '../../api/settings';
+import type { MemoryPreset } from '../../api/settingsTypes';
 import HelpTip from '../../components/common/HelpTip';
 
 export interface MemoryPresetPickerProps {

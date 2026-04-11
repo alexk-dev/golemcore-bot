@@ -7,7 +7,7 @@ import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import {
   useAddMcpCatalogEntry, useUpdateMcpCatalogEntry, useRemoveMcpCatalogEntry,
 } from '../../hooks/useSettings';
-import type { McpCatalogEntry } from '../../api/settings';
+import type { McpCatalogEntry } from '../../api/settingsTypes';
 import { McpCatalogEntryEditor } from './McpCatalogEntryEditor';
 
 const ENTRY_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;

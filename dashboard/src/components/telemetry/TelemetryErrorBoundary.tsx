@@ -1,6 +1,6 @@
 import React, { type ReactElement, type ReactNode } from 'react';
 
-import { useTelemetry } from '../../lib/telemetry/TelemetryProvider';
+import { useTelemetry } from '../../lib/telemetry/TelemetryContext';
 import {
   sanitizeTelemetryErrorName,
   sanitizeTelemetryRoute,

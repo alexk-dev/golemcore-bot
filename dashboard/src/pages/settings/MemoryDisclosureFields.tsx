@@ -4,7 +4,7 @@ import type {
   MemoryDiagnosticsVerbosity,
   MemoryDisclosureMode,
   MemoryPromptStyle,
-} from '../../api/settings';
+} from '../../api/settingsTypes';
 import HelpTip from '../../components/common/HelpTip';
 
 export interface MemoryDisclosureFieldsProps {

@@ -1,4 +1,5 @@
-import type { SelfEvolvingConfig } from './settings';
+import type { SelfEvolvingConfig } from './settingsTypes';
+import { buildRemoteSelfEvolvingConfig, buildRuntimeConfigFixture } from './settingsSelfEvolvingFixtures.testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const clientGetMock = vi.fn();
@@ -13,77 +14,6 @@ vi.mock('./client', () => ({
 
 interface RuntimeConfigPutPayload {
   selfEvolving: SelfEvolvingConfig;
-}
-
-function buildRuntimeConfigFixture(selfEvolving: Record<string, unknown>): Record<string, unknown> {
-  return {
-    telegram: {
-      enabled: false,
-      token: null,
-      authMode: 'invite_only',
-      allowedUsers: [],
-      inviteCodes: [],
-    },
-    modelRouter: {
-      temperature: null,
-      routing: { model: null, reasoning: null },
-      tiers: {
-        balanced: { model: null, reasoning: null },
-        smart: { model: null, reasoning: null },
-        deep: { model: null, reasoning: null },
-        coding: { model: null, reasoning: null },
-        special1: { model: null, reasoning: null },
-        special2: { model: null, reasoning: null },
-        special3: { model: null, reasoning: null },
-        special4: { model: null, reasoning: null },
-        special5: { model: null, reasoning: null },
-      },
-      dynamicTierEnabled: true,
-    },
-    modelRegistry: {
-      repositoryUrl: null,
-      branch: 'main',
-    },
-    llm: {
-      providers: {},
-    },
-    tools: {
-      filesystemEnabled: true,
-      shellEnabled: true,
-      skillManagementEnabled: true,
-      skillTransitionEnabled: true,
-      tierEnabled: true,
-      goalManagementEnabled: true,
-      shellEnvironmentVariables: [],
-    },
-    voice: {
-      enabled: false,
-      apiKey: null,
-      voiceId: null,
-      ttsModelId: null,
-      sttModelId: null,
-      speed: null,
-      telegramRespondWithVoice: false,
-      telegramTranscribeIncoming: false,
-      sttProvider: null,
-      ttsProvider: null,
-      whisperSttUrl: null,
-      whisperSttApiKey: null,
-    },
-    memory: {},
-    skills: {},
-    turn: {},
-    usage: { enabled: true },
-    mcp: { enabled: false, defaultStartupTimeout: null, defaultIdleTimeout: null, catalog: [] },
-    plan: { enabled: false, maxPlans: null, maxStepsPerPlan: null, stopOnFailure: true },
-    hive: { enabled: false, serverUrl: null, displayName: null, hostLabel: null, autoConnect: false, managedByProperties: false },
-    selfEvolving,
-    autoMode: {},
-    tracing: {},
-    rateLimit: {},
-    security: {},
-    compaction: {},
-  };
 }
 
 function isRuntimeConfigPutPayload(value: unknown): value is RuntimeConfigPutPayload {
@@ -137,103 +67,11 @@ describe('settings selfEvolving normalization', () => {
 
   it('round-trips selfevolving tactic embeddings through runtime config updates', async () => {
     clientPutMock.mockResolvedValue({
-      data: buildRuntimeConfigFixture({
-        enabled: true,
-        tracePayloadOverride: true,
-        capture: { llm: 'full', tool: 'full', context: 'full', skill: 'full', tier: 'full', infra: 'meta_only' },
-        judge: {
-          enabled: true,
-          primaryTier: 'smart',
-          tiebreakerTier: 'deep',
-          evolutionTier: 'deep',
-          requireEvidenceAnchors: true,
-          uncertaintyThreshold: 0.22,
-        },
-        evolution: { enabled: true, modes: ['fix'], artifactTypes: ['skill'] },
-        tactics: {
-          enabled: true,
-          search: {
-            mode: 'hybrid',
-            embeddings: {
-              enabled: true,
-              provider: 'openai_compatible',
-              baseUrl: 'https://api.example.com/v1',
-              apiKey: 'emb-key',
-              model: 'text-embedding-3-large',
-              dimensions: 3072,
-              batchSize: 32,
-              timeoutMs: 10000,
-              autoFallbackToBm25: true,
-              local: {
-                autoInstall: false,
-                pullOnStart: false,
-                requireHealthyRuntime: true,
-                failOpen: true,
-              },
-            },
-          },
-        },
-        promotion: {
-          mode: 'approval_gate',
-          allowAutoAccept: true,
-          shadowRequired: true,
-          canaryRequired: true,
-          hiveApprovalPreferred: true,
-        },
-        benchmark: { enabled: true, harvestProductionRuns: true, autoCreateRegressionCases: true },
-        hive: { publishInspectionProjection: true, readonlyInspection: true },
-        managedByProperties: true,
-        overriddenPaths: ['enabled', 'tactics.search.mode'],
-      }),
+      data: buildRuntimeConfigFixture(buildRemoteSelfEvolvingConfig(true)),
     });
 
     const api = await import('./settings');
-    const result = await api.updateRuntimeConfig(buildRuntimeConfigFixture({
-      enabled: true,
-      tracePayloadOverride: true,
-      capture: { llm: 'full', tool: 'full', context: 'full', skill: 'full', tier: 'full', infra: 'meta_only' },
-      judge: {
-        enabled: true,
-        primaryTier: 'smart',
-        tiebreakerTier: 'deep',
-        evolutionTier: 'deep',
-        requireEvidenceAnchors: true,
-        uncertaintyThreshold: 0.22,
-      },
-      evolution: { enabled: true, modes: ['fix'], artifactTypes: ['skill'] },
-      tactics: {
-        enabled: true,
-        search: {
-          mode: 'hybrid',
-          embeddings: {
-            enabled: true,
-            provider: 'openai_compatible',
-            baseUrl: 'https://api.example.com/v1',
-            apiKey: 'emb-key',
-            model: 'text-embedding-3-large',
-            dimensions: 3072,
-            batchSize: 32,
-            timeoutMs: 10000,
-            autoFallbackToBm25: true,
-            local: {
-              autoInstall: false,
-              pullOnStart: false,
-              requireHealthyRuntime: true,
-              failOpen: true,
-            },
-          },
-        },
-      },
-      promotion: {
-        mode: 'approval_gate',
-        allowAutoAccept: true,
-        shadowRequired: true,
-        canaryRequired: true,
-        hiveApprovalPreferred: true,
-      },
-      benchmark: { enabled: true, harvestProductionRuns: true, autoCreateRegressionCases: true },
-      hive: { publishInspectionProjection: true, readonlyInspection: true },
-    }) as never);
+    const result = await api.updateRuntimeConfig(buildRuntimeConfigFixture(buildRemoteSelfEvolvingConfig(false)) as never);
 
     expect(clientPutMock).toHaveBeenCalled();
     const payload = clientPutMock.mock.calls[0]?.[1] as unknown;

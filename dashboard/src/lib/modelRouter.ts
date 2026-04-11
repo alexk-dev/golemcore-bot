@@ -1,8 +1,5 @@
-import {
-  modelReferenceToSpec,
-  type ModelRouterConfig,
-  type TierBinding,
-} from '../api/settings';
+import { modelReferenceToSpec } from '../api/settings';
+import type { ModelRouterConfig, TierBinding } from '../api/settingsTypes';
 import { EXPLICIT_MODEL_TIER_ORDER, type ExplicitModelTierId } from './modelTiers';
 
 function hasText(value: string | null | undefined): value is string {
