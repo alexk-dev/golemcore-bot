@@ -49,6 +49,7 @@
         <totp.version>1.7.1</totp.version>
         <protobuf.version>4.34.1</protobuf.version>
         <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
+        <bouncycastle.version>1.81</bouncycastle.version>
 
         <spotbugs.version>4.9.8.3</spotbugs.version>
         <pmd.version>3.28.0</pmd.version>
@@ -189,6 +190,13 @@
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-google-ai-gemini</artifactId>
             <version>${langchain4j.version}</version>
+        </dependency>
+
+        <!-- Cryptography -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
         </dependency>
 
         <!-- Jackson -->

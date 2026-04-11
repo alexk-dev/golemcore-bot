@@ -367,6 +367,27 @@ class ProviderModelDiscoveryServiceTest {
         assertEquals(128000, maxTokens);
     }
 
+    @Test
+    void shouldUseNoneAuthForGonkaDiscoveryWhenBaseUrlConfigured() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("0000000000000000000000000000000000000000000000000000000000000001"))
+                .baseUrl("https://node3.gonka.ai/v1")
+                .apiType("gonka")
+                .build();
+        when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("gonka"));
+        when(runtimeConfigService.getLlmProviderConfig("gonka")).thenReturn(providerConfig);
+        StubProviderModelDiscoveryPort discoveryPort = new StubProviderModelDiscoveryPort(
+                new ProviderModelDiscoveryPort.DiscoveryResponse(200, List.of()));
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService, discoveryPort);
+
+        List<ProviderModelDiscoveryService.DiscoveredModel> models = service.discoverModels("gonka");
+
+        assertTrue(models.isEmpty());
+        assertEquals("https://node3.gonka.ai/v1/models", discoveryPort.capturedRequest().uri().toString());
+        assertEquals(ProviderModelDiscoveryPort.AuthMode.NONE, discoveryPort.capturedRequest().authMode());
+    }
+
     private static ProviderModelDiscoveryPort.DiscoveryDocument openAiDocument(
             String id,
             String displayName,

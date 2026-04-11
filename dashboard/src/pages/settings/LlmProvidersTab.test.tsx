@@ -18,6 +18,9 @@ const config: LlmConfig = {
       requestTimeoutSeconds: 30,
       apiType: 'openai',
       legacyApi: null,
+      sourceUrl: null,
+      gonkaAddress: null,
+      endpoints: [],
     },
   },
 };

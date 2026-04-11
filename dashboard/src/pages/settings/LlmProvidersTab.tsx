@@ -88,7 +88,15 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
       return;
     }
     setEditingName(name);
-    setEditForm({ ...provider, apiKey: null, apiType: normalizeApiType(provider.apiType), legacyApi: provider.legacyApi ?? null });
+    setEditForm({
+      ...provider,
+      apiKey: null,
+      apiType: normalizeApiType(provider.apiType),
+      legacyApi: provider.legacyApi ?? null,
+      sourceUrl: provider.sourceUrl ?? null,
+      gonkaAddress: provider.gonkaAddress ?? null,
+      endpoints: provider.endpoints ?? [],
+    });
     setIsNewProvider(false);
     setShowKey(false);
   };

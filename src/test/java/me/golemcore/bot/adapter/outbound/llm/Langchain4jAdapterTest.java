@@ -29,6 +29,9 @@ import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.output.FinishReason;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import me.golemcore.bot.adapter.outbound.gonka.GonkaEndpointResolver;
+import me.golemcore.bot.adapter.outbound.gonka.GonkaHttpClientBuilderFactory;
+import me.golemcore.bot.adapter.outbound.gonka.GonkaRequestSigner;
 import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import org.mockito.ArgumentCaptor;
@@ -88,6 +91,7 @@ class Langchain4jAdapterTest {
     private ModelConfigPort modelConfig;
     private RuntimeConfigService runtimeConfigService;
     private ToolArtifactService toolArtifactService;
+    private GonkaEndpointResolver gonkaEndpointResolutionPort;
     private Langchain4jAdapter adapter;
 
     @BeforeEach
@@ -95,6 +99,10 @@ class Langchain4jAdapterTest {
         modelConfig = mock(ModelConfigPort.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         toolArtifactService = mock(ToolArtifactService.class);
+        gonkaEndpointResolutionPort = mock(GonkaEndpointResolver.class);
+        when(gonkaEndpointResolutionPort.resolve(any()))
+                .thenReturn(new GonkaEndpointResolver.GonkaResolvedEndpoint(
+                        "https://node3.gonka.ai/v1", "gonka1provideraddress"));
         when(modelConfig.supportsTemperature(anyString())).thenReturn(true);
         when(modelConfig.supportsVision(anyString())).thenReturn(false);
         when(modelConfig.getProvider(anyString())).thenReturn(OPENAI);
@@ -108,7 +116,8 @@ class Langchain4jAdapterTest {
         when(runtimeConfigService.getLlmProviderConfig(anyString()))
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder().legacyApi(true).build());
 
-        adapter = new Langchain4jAdapter(runtimeConfigService, modelConfig, toolArtifactService) {
+        adapter = new Langchain4jAdapter(runtimeConfigService, modelConfig, toolArtifactService,
+                new GonkaHttpClientBuilderFactory(gonkaEndpointResolutionPort, new GonkaRequestSigner())) {
             @Override
             protected void sleepBeforeRetry(long backoffMs) {
                 // No-op for deterministic fast retry tests.
@@ -1927,6 +1936,23 @@ class Langchain4jAdapterTest {
         ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "getModelForRequest", request);
 
         assertSame(defaultModel, result);
+    }
+
+    @Test
+    void shouldCreateOpenAiCompatibleModelForGonkaApiType() {
+        String requestModel = "gonka/Qwen/Qwen3-235B-A22B-Instruct-2507-FP8";
+        when(modelConfig.getProvider(requestModel)).thenReturn("gonka");
+        when(runtimeConfigService.getLlmProviderConfig("gonka"))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("0000000000000000000000000000000000000000000000000000000000000001"))
+                        .apiType("gonka")
+                        .sourceUrl("https://node3.gonka.ai")
+                        .build());
+
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null);
+
+        assertTrue(result instanceof OpenAiChatModel);
+        verify(gonkaEndpointResolutionPort).resolve(any());
     }
 
     @Test

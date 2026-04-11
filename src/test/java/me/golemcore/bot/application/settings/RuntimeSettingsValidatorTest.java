@@ -317,4 +317,29 @@ class RuntimeSettingsValidatorTest {
         assertEquals(Map.of(), llmConfig.getProviders());
         assertEquals("model_ratio", compactionConfig.getTriggerMode());
     }
+
+    @Test
+    void shouldAcceptGonkaProviderWhenSourceUrlConfigured() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(me.golemcore.bot.domain.model.Secret
+                        .of("0000000000000000000000000000000000000000000000000000000000000001"))
+                .apiType("gonka")
+                .sourceUrl("https://node3.gonka.ai")
+                .build();
+
+        assertDoesNotThrow(() -> validator.validateProviderConfig("gonka", config));
+    }
+
+    @Test
+    void shouldRejectGonkaProviderWithoutSourceUrlOrEndpoints() {
+        RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder()
+                .apiType("gonka")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateProviderConfig("gonka", config));
+
+        assertTrue(error.getMessage().contains("sourceUrl or endpoints is required"));
+    }
+
 }

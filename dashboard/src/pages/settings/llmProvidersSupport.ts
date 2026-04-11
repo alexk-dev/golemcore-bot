@@ -24,6 +24,7 @@ export const KNOWN_BASE_URLS: Record<string, string> = {
   qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
   cerebras: 'https://api.cerebras.ai/v1',
   deepinfra: 'https://api.deepinfra.com/v1/openai',
+  gonka: 'https://node3.gonka.ai/v1',
 };
 
 export const KNOWN_PROVIDERS: string[] = Object.keys(KNOWN_BASE_URLS);
@@ -32,9 +33,10 @@ export const PROVIDER_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 const KNOWN_API_TYPES: Record<string, ApiType> = {
   anthropic: 'anthropic',
   google: 'gemini',
+  gonka: 'gonka',
 };
 
-export const API_TYPE_OPTIONS: ApiType[] = ['openai', 'anthropic', 'gemini'];
+export const API_TYPE_OPTIONS: ApiType[] = ['openai', 'anthropic', 'gemini', 'gonka'];
 
 export const API_TYPE_DETAILS: Record<ApiType, ApiTypeDetail> = {
   openai: {
@@ -54,6 +56,12 @@ export const API_TYPE_DETAILS: Record<ApiType, ApiTypeDetail> = {
     help: 'Native Google Gemini protocol. Use this for direct Gemini providers.',
     badgeBg: 'success-subtle',
     badgeText: 'success',
+  },
+  gonka: {
+    label: 'Gonka',
+    help: 'Gonka protocol: OpenAI chat completions with ECDSA request signing.',
+    badgeBg: 'dark',
+    badgeText: 'light',
   },
 };
 
@@ -82,7 +90,7 @@ export function getDefaultApiTypeForProvider(name: string): ApiType {
 }
 
 export function getSuggestedBaseUrl(name: string, apiType: ApiType): string | null {
-  if (apiType === 'gemini') {
+  if (apiType === 'gemini' || apiType === 'gonka') {
     return null;
   }
 
@@ -103,5 +111,8 @@ export function buildDefaultProviderConfig(name: string): LlmProviderConfig {
     requestTimeoutSeconds: 300,
     apiType: defaultApiType,
     legacyApi: null,
+    sourceUrl: defaultApiType === 'gonka' ? 'https://node3.gonka.ai' : null,
+    gonkaAddress: null,
+    endpoints: [],
   };
 }

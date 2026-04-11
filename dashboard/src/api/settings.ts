@@ -135,6 +135,9 @@ export async function updateLlmConfig(config: LlmConfig): Promise<RuntimeConfig>
           apiKey: toSecretPayload(provider.apiKey ?? null),
           apiType: normalizeLlmApiType(provider.apiType),
           legacyApi: provider.legacyApi === true ? true : null,
+          sourceUrl: provider.sourceUrl,
+          gonkaAddress: provider.gonkaAddress,
+          endpoints: provider.endpoints,
         },
       ]),
     ),
@@ -154,6 +157,9 @@ export async function addLlmProvider(name: string, config: LlmProviderConfig): P
     apiKey: toSecretPayload(config.apiKey ?? null),
     apiType: normalizeLlmApiType(config.apiType),
     legacyApi: config.legacyApi === true ? true : null,
+    sourceUrl: config.sourceUrl,
+    gonkaAddress: config.gonkaAddress,
+    endpoints: config.endpoints,
   };
   const { data } = await client.post<RuntimeConfigUiRecord>(
     `/settings/runtime/llm/providers/${name}`,
@@ -170,6 +176,9 @@ export async function updateLlmProvider(name: string, config: LlmProviderConfig)
     apiKey: toSecretPayload(config.apiKey ?? null),
     apiType: normalizeLlmApiType(config.apiType),
     legacyApi: config.legacyApi === true ? true : null,
+    sourceUrl: config.sourceUrl,
+    gonkaAddress: config.gonkaAddress,
+    endpoints: config.endpoints,
   };
   const { data } = await client.put<RuntimeConfigUiRecord>(
     `/settings/runtime/llm/providers/${name}`,

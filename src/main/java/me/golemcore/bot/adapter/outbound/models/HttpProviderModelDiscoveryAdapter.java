@@ -53,7 +53,7 @@ public class HttpProviderModelDiscoveryAdapter implements ProviderModelDiscovery
             builder.header("anthropic-version", "2023-06-01");
         } else if (request.authMode() == AuthMode.GOOGLE) {
             builder.header("x-goog-api-key", request.apiKey());
-        } else {
+        } else if (request.authMode() == AuthMode.BEARER) {
             builder.header("Authorization", "Bearer " + request.apiKey());
         }
         return builder.build();
