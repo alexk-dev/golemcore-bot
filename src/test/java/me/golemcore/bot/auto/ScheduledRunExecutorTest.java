@@ -30,7 +30,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@SuppressWarnings("PMD.UnusedLocalVariable")
 class ScheduledRunExecutorTest {
 
     private AutoModeService autoModeService;
@@ -132,7 +131,7 @@ class ScheduledRunExecutorTest {
         when(runtimeConfigService.isAutoReflectionEnabled()).thenReturn(false);
 
         Message syntheticMessage = stubSyntheticMessage(runMessage, schedule, ctx);
-        CompletableFuture<Void> future = stubNeverCompletingFuture(syntheticMessage);
+        stubNeverCompletingFuture(syntheticMessage);
 
         executor.executeSchedule(schedule, ctx, TIMEOUT);
 

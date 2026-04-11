@@ -39,17 +39,16 @@ import me.golemcore.bot.domain.service.StringValueSupport;
  * In-memory lexical tactic index with BM25-style scoring.
  */
 @Service
-@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public class TacticBm25IndexService {
 
     private static final double K1 = 1.2d;
     private static final double B = 0.75d;
 
-    private final AtomicReference<Snapshot> snapshot = new AtomicReference<>(Snapshot.empty());
+    private final AtomicReference<Snapshot> indexSnapshot = new AtomicReference<>(Snapshot.empty());
 
     public void replaceDocuments(List<TacticIndexDocument> documents) {
         List<TacticIndexDocument> safeDocuments = documents != null ? new ArrayList<>(documents) : new ArrayList<>();
-        snapshot.set(buildSnapshot(safeDocuments));
+        indexSnapshot.set(buildSnapshot(safeDocuments));
     }
 
     public List<ScoredDocument> search(TacticSearchQuery query, int limit) {
@@ -94,7 +93,7 @@ public class TacticBm25IndexService {
     }
 
     public Snapshot snapshot() {
-        return snapshot.get();
+        return indexSnapshot.get();
     }
 
     private Snapshot buildSnapshot(List<TacticIndexDocument> documents) {

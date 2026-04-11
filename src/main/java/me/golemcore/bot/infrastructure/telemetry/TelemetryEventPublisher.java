@@ -14,7 +14,6 @@ import java.util.UUID;
 
 @Component
 @Slf4j
-@SuppressWarnings("PMD.NullAssignment")
 public class TelemetryEventPublisher {
 
     private final RuntimeConfigService runtimeConfigService;
@@ -67,7 +66,7 @@ public class TelemetryEventPublisher {
             return;
         }
         BuildProperties buildProps = buildPropertiesProvider.getIfAvailable();
-        resolvedAppVersion = buildProps != null ? buildProps.getVersion() : null;
+        resolvedAppVersion = buildProps != null && buildProps.getVersion() != null ? buildProps.getVersion() : "";
         resolvedSessionId = clock.instant().getEpochSecond();
         initialized = true;
     }

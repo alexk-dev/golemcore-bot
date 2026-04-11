@@ -44,7 +44,6 @@ import me.golemcore.bot.domain.service.StringValueSupport;
  */
 @Service
 @Slf4j
-@SuppressWarnings("PMD.AvoidBranchingStatementAsLastInLoop")
 public class ArtifactBundleService {
 
     private final ArtifactRepositoryPort artifactRepository;
@@ -121,11 +120,9 @@ public class ArtifactBundleService {
         List<ArtifactBundleRecord> bundles = new ArrayList<>(getBundles());
         boolean updated = false;
         for (ArtifactBundleRecord bundle : bundles) {
-            if (bundle == null || !bundleId.equals(bundle.getId())) {
-                continue;
+            if (bundle != null && bundleId.equals(bundle.getId())) {
+                updated = bindBaseRevisions(bundle, candidates);
             }
-            updated = bindBaseRevisions(bundle, candidates);
-            break;
         }
         if (updated) {
             saveBundles(bundles);

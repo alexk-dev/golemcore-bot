@@ -581,12 +581,11 @@ class ResponsesCompatibilityHttpClientBuilderTest {
                 .build();
     }
 
-    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
     private static final class StubHttpClientBuilder implements HttpClientBuilder {
 
         private final HttpClient httpClient;
-        private Duration connectTimeout;
-        private Duration readTimeout;
+        private Duration configuredConnectTimeout;
+        private Duration configuredReadTimeout;
 
         private StubHttpClientBuilder(HttpClient httpClient) {
             this.httpClient = httpClient;
@@ -594,23 +593,23 @@ class ResponsesCompatibilityHttpClientBuilderTest {
 
         @Override
         public Duration connectTimeout() {
-            return connectTimeout;
+            return configuredConnectTimeout;
         }
 
         @Override
         public HttpClientBuilder connectTimeout(Duration timeout) {
-            this.connectTimeout = timeout;
+            this.configuredConnectTimeout = timeout;
             return this;
         }
 
         @Override
         public Duration readTimeout() {
-            return readTimeout;
+            return configuredReadTimeout;
         }
 
         @Override
         public HttpClientBuilder readTimeout(Duration timeout) {
-            this.readTimeout = timeout;
+            this.configuredReadTimeout = timeout;
             return this;
         }
 

@@ -16,7 +16,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
-@SuppressWarnings({ "PMD.CloseResource", "PMD.UseProperClassLoader" })
 class ArchitectureAllowlistConsistencyTest {
 
     private static final Path MAIN_JAVA_ROOT = Paths.get("src/main/java");
@@ -65,17 +64,22 @@ class ArchitectureAllowlistConsistencyTest {
     }
 
     private List<String> loadEntries(String resourcePath) {
-        InputStream resourceStream = ArchitectureAllowlistConsistencyTest.class.getClassLoader()
-                .getResourceAsStream(resourcePath);
-        if (resourceStream == null) {
-            throw new IllegalStateException("Missing architecture allowlist resource: " + resourcePath);
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        if (classLoader == null) {
+            throw new IllegalStateException("Missing context class loader for architecture allowlist: "
+                    + resourcePath);
         }
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceStream))) {
-            return reader.lines()
-                    .map(String::trim)
-                    .filter(line -> !line.isEmpty())
-                    .filter(line -> !line.startsWith("#"))
-                    .collect(Collectors.toList());
+        try (InputStream resourceStream = classLoader.getResourceAsStream(resourcePath)) {
+            if (resourceStream == null) {
+                throw new IllegalStateException("Missing architecture allowlist resource: " + resourcePath);
+            }
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceStream))) {
+                return reader.lines()
+                        .map(String::trim)
+                        .filter(line -> !line.isEmpty())
+                        .filter(line -> !line.startsWith("#"))
+                        .collect(Collectors.toList());
+            }
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to load architecture allowlist: " + resourcePath, exception);
         }

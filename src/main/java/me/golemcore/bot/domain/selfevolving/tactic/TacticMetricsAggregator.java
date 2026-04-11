@@ -28,24 +28,23 @@ import java.time.Instant;
  * Holding every observation dimension on a single aggregator keeps the metrics
  * pipeline honest: new signals become fields here, not parallel maps.
  */
-@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public final class TacticMetricsAggregator {
 
-    private Instant latestObservation;
-    private int observedRuns;
-    private int successfulRuns;
+    private Instant latestObservationAt;
+    private int observedRunCount;
+    private int successfulRunCount;
     private Instant latestOutcomeAt;
-    private boolean latestOutcomeFailed;
-    private int observedCampaigns;
-    private int wonCampaigns;
+    private boolean latestOutcomeWasFailure;
+    private int observedCampaignCount;
+    private int wonCampaignCount;
 
     void noteObservation(Instant... candidates) {
         if (candidates == null) {
             return;
         }
         for (Instant candidate : candidates) {
-            if (candidate != null && (latestObservation == null || candidate.isAfter(latestObservation))) {
-                latestObservation = candidate;
+            if (candidate != null && (latestObservationAt == null || candidate.isAfter(latestObservationAt))) {
+                latestObservationAt = candidate;
             }
         }
     }
@@ -54,44 +53,44 @@ public final class TacticMetricsAggregator {
         if (observedOutcome == null) {
             return;
         }
-        observedRuns++;
+        observedRunCount++;
         if ("completed".equals(observedOutcome)) {
-            successfulRuns++;
+            successfulRunCount++;
         }
         if (outcomeAt != null && (latestOutcomeAt == null || outcomeAt.isAfter(latestOutcomeAt))) {
             latestOutcomeAt = outcomeAt;
-            latestOutcomeFailed = "failed".equals(observedOutcome);
+            latestOutcomeWasFailure = "failed".equals(observedOutcome);
         }
     }
 
     void noteCampaignOutcome(boolean won) {
-        observedCampaigns++;
+        observedCampaignCount++;
         if (won) {
-            wonCampaigns++;
+            wonCampaignCount++;
         }
     }
 
     Instant latestObservation() {
-        return latestObservation;
+        return latestObservationAt;
     }
 
     int observedRuns() {
-        return observedRuns;
+        return observedRunCount;
     }
 
     int successfulRuns() {
-        return successfulRuns;
+        return successfulRunCount;
     }
 
     boolean latestOutcomeFailed() {
-        return latestOutcomeFailed;
+        return latestOutcomeWasFailure;
     }
 
     int observedCampaigns() {
-        return observedCampaigns;
+        return observedCampaignCount;
     }
 
     int wonCampaigns() {
-        return wonCampaigns;
+        return wonCampaignCount;
     }
 }

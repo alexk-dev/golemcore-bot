@@ -30,6 +30,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import me.golemcore.bot.domain.service.StringValueSupport;
 
 /**
@@ -37,7 +38,6 @@ import me.golemcore.bot.domain.service.StringValueSupport;
  * tier-resolved reranker verdict.
  */
 @Service
-@SuppressWarnings("PMD.LooseCoupling")
 public class TacticHybridRankingService {
 
     private static final double RRF_K = 60.0d;
@@ -242,9 +242,9 @@ public class TacticHybridRankingService {
     }
 
     private double overlapPenalty(TacticSearchResult left, TacticSearchResult right) {
-        LinkedHashSet<String> leftTokens = tokens(
+        Set<String> leftTokens = tokens(
                 left.getTitle() + " " + left.getBehaviorSummary() + " " + left.getToolSummary());
-        LinkedHashSet<String> rightTokens = tokens(
+        Set<String> rightTokens = tokens(
                 right.getTitle() + " " + right.getBehaviorSummary() + " " + right.getToolSummary());
         if (leftTokens.isEmpty() || rightTokens.isEmpty()) {
             return 0.0d;
@@ -259,8 +259,8 @@ public class TacticHybridRankingService {
                 * ((double) intersection / Math.max(1, Math.min(leftTokens.size(), rightTokens.size())));
     }
 
-    private LinkedHashSet<String> tokens(String value) {
-        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+    private Set<String> tokens(String value) {
+        Set<String> tokens = new LinkedHashSet<>();
         if (StringValueSupport.isBlank(value)) {
             return tokens;
         }

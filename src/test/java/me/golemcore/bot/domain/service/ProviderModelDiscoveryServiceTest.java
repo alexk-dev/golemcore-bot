@@ -8,6 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.List;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
@@ -15,7 +18,6 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
 import org.junit.jupiter.api.Test;
 
-@SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "PMD.AvoidFieldNameMatchingMethodName" })
 class ProviderModelDiscoveryServiceTest {
 
     @Test
@@ -85,9 +87,9 @@ class ProviderModelDiscoveryServiceTest {
         assertTrue(models.stream().anyMatch(model -> "gpt-5.3-codex-spark".equals(model.id())));
         assertTrue(models.stream().anyMatch(model -> "gemini-2.5-pro".equals(model.id())));
         assertTrue(models.stream().anyMatch(model -> "deepseek-coder-v2-lite".equals(model.id())));
-        assertEquals("https://model.xmesh.click/v1/models", discoveryPort.capturedRequest().uri().toString());
-        assertEquals("secret-token", discoveryPort.capturedRequest().apiKey());
-        assertEquals(ProviderModelDiscoveryPort.AuthMode.BEARER, discoveryPort.capturedRequest().authMode());
+        assertEquals("https://model.xmesh.click/v1/models", discoveryPort.discoveryRequest().uri().toString());
+        assertEquals("secret-token", discoveryPort.discoveryRequest().apiKey());
+        assertEquals(ProviderModelDiscoveryPort.AuthMode.BEARER, discoveryPort.discoveryRequest().authMode());
     }
 
     @Test
@@ -180,9 +182,9 @@ class ProviderModelDiscoveryServiceTest {
         List<ProviderModelDiscoveryService.DiscoveredModel> models = service.discoverModels("anthropic");
 
         assertEquals(1, models.size());
-        assertEquals("https://api.anthropic.com/v1/models", discoveryPort.capturedRequest().uri().toString());
-        assertEquals("anthropic-key", discoveryPort.capturedRequest().apiKey());
-        assertEquals(ProviderModelDiscoveryPort.AuthMode.ANTHROPIC, discoveryPort.capturedRequest().authMode());
+        assertEquals("https://api.anthropic.com/v1/models", discoveryPort.discoveryRequest().uri().toString());
+        assertEquals("anthropic-key", discoveryPort.discoveryRequest().apiKey());
+        assertEquals(ProviderModelDiscoveryPort.AuthMode.ANTHROPIC, discoveryPort.discoveryRequest().authMode());
     }
 
     @Test
@@ -213,9 +215,9 @@ class ProviderModelDiscoveryServiceTest {
         assertEquals("gemini-2.0-flash", models.get(0).id());
         assertEquals(
                 "https://generativelanguage.googleapis.com/v1beta/models",
-                discoveryPort.capturedRequest().uri().toString());
-        assertEquals("google-key", discoveryPort.capturedRequest().apiKey());
-        assertEquals(ProviderModelDiscoveryPort.AuthMode.GOOGLE, discoveryPort.capturedRequest().authMode());
+                discoveryPort.discoveryRequest().uri().toString());
+        assertEquals("google-key", discoveryPort.discoveryRequest().apiKey());
+        assertEquals(ProviderModelDiscoveryPort.AuthMode.GOOGLE, discoveryPort.discoveryRequest().authMode());
     }
 
     @Test
@@ -236,7 +238,7 @@ class ProviderModelDiscoveryServiceTest {
 
         service.discoverModels("openai");
 
-        assertEquals("https://api.openai.com/v1/models", discoveryPort.capturedRequest().uri().toString());
+        assertEquals("https://api.openai.com/v1/models", discoveryPort.discoveryRequest().uri().toString());
     }
 
     @Test
@@ -331,7 +333,7 @@ class ProviderModelDiscoveryServiceTest {
     }
 
     @Test
-    void shouldTreatInvalidOpenRouterBaseUrlAsNonOpenRouterAndUseDefaultMaxTokensFallback() throws Exception {
+    void shouldTreatInvalidOpenRouterBaseUrlAsNonOpenRouterAndUseDefaultMaxTokensFallback() throws Throwable {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         RuntimeConfig.LlmProviderConfig invalidProviderConfig = RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(Secret.of("custom-key"))
@@ -343,18 +345,19 @@ class ProviderModelDiscoveryServiceTest {
                 runtimeConfigService,
                 new StubProviderModelDiscoveryPort(new ProviderModelDiscoveryPort.DiscoveryResponse(200, List.of())));
 
-        java.lang.reflect.Method shouldAttachMethod = ProviderModelDiscoveryService.class.getDeclaredMethod(
+        MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(ProviderModelDiscoveryService.class,
+                MethodHandles.lookup());
+        MethodHandle shouldAttachMethod = lookup.findVirtual(
+                ProviderModelDiscoveryService.class,
                 "shouldAttachOpenRouterDefaults",
-                String.class,
-                RuntimeConfig.LlmProviderConfig.class);
-        shouldAttachMethod.setAccessible(true);
+                MethodType.methodType(boolean.class, String.class, RuntimeConfig.LlmProviderConfig.class));
         boolean shouldAttach = (boolean) shouldAttachMethod.invoke(service, "customrouter", invalidProviderConfig);
         assertFalse(shouldAttach);
 
-        java.lang.reflect.Method resolveMaxInputTokensMethod = ProviderModelDiscoveryService.class.getDeclaredMethod(
+        MethodHandle resolveMaxInputTokensMethod = lookup.findVirtual(
+                ProviderModelDiscoveryService.class,
                 "resolveMaxInputTokens",
-                ProviderModelDiscoveryPort.DiscoveryDocument.class);
-        resolveMaxInputTokensMethod.setAccessible(true);
+                MethodType.methodType(int.class, ProviderModelDiscoveryPort.DiscoveryDocument.class));
         ProviderModelDiscoveryPort.DiscoveryDocument emptyDocument = openAiDocument(
                 "gpt-5",
                 "GPT-5",
@@ -417,7 +420,7 @@ class ProviderModelDiscoveryServiceTest {
     private static final class StubProviderModelDiscoveryPort implements ProviderModelDiscoveryPort {
 
         private final DiscoveryResponse response;
-        private DiscoveryRequest capturedRequest;
+        private DiscoveryRequest capturedDiscoveryRequest;
 
         private StubProviderModelDiscoveryPort(DiscoveryResponse response) {
             this.response = response;
@@ -425,12 +428,12 @@ class ProviderModelDiscoveryServiceTest {
 
         @Override
         public DiscoveryResponse discover(DiscoveryRequest request) {
-            this.capturedRequest = request;
+            this.capturedDiscoveryRequest = request;
             return response;
         }
 
-        private DiscoveryRequest capturedRequest() {
-            return capturedRequest;
+        private DiscoveryRequest discoveryRequest() {
+            return capturedDiscoveryRequest;
         }
     }
 }

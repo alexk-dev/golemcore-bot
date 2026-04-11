@@ -13,7 +13,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SuppressWarnings("PMD.NullAssignment")
 class StorageDelayedActionRegistryAdapterTest {
 
     @Test
@@ -59,7 +58,8 @@ class StorageDelayedActionRegistryAdapterTest {
 
     private static final class InMemoryStoragePort implements StoragePort {
 
-        private String content;
+        private String content = "";
+        private boolean contentPresent;
         private boolean failRead;
         private boolean failWrite;
 
@@ -71,6 +71,7 @@ class StorageDelayedActionRegistryAdapterTest {
         @Override
         public CompletableFuture<Void> putText(String directory, String path, String content) {
             this.content = content;
+            contentPresent = true;
             return CompletableFuture.completedFuture(null);
         }
 
@@ -84,17 +85,18 @@ class StorageDelayedActionRegistryAdapterTest {
             if (failRead) {
                 return failedFuture(new RuntimeException("read failed"));
             }
-            return CompletableFuture.completedFuture(content);
+            return CompletableFuture.completedFuture(contentPresent ? content : null);
         }
 
         @Override
         public CompletableFuture<Boolean> exists(String directory, String path) {
-            return CompletableFuture.completedFuture(content != null);
+            return CompletableFuture.completedFuture(contentPresent);
         }
 
         @Override
         public CompletableFuture<Void> deleteObject(String directory, String path) {
-            content = null;
+            content = "";
+            contentPresent = false;
             return CompletableFuture.completedFuture(null);
         }
 
@@ -105,7 +107,8 @@ class StorageDelayedActionRegistryAdapterTest {
 
         @Override
         public CompletableFuture<Void> appendText(String directory, String path, String content) {
-            this.content = this.content == null ? content : this.content + content;
+            this.content = contentPresent ? this.content + content : content;
+            contentPresent = true;
             return CompletableFuture.completedFuture(null);
         }
 
@@ -115,6 +118,7 @@ class StorageDelayedActionRegistryAdapterTest {
                 return failedFuture(new RuntimeException("write failed"));
             }
             this.content = content;
+            contentPresent = true;
             return CompletableFuture.completedFuture(null);
         }
 

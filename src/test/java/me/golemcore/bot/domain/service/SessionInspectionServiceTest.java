@@ -31,7 +31,6 @@ import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-@SuppressWarnings("PMD.DetachedTestCase")
 class SessionInspectionServiceTest {
 
     private SessionPort sessionPort;
@@ -192,6 +191,7 @@ class SessionInspectionServiceTest {
         assertEquals("conv-1", byChatAlias.getConversationKey());
     }
 
+    @Test
     void shouldPageMessagesWithAttachmentFallbackAndMetadataProjection() {
         Map<String, Object> attachmentOnlyMetadata = new LinkedHashMap<>();
         attachmentOnlyMetadata.put("attachments", List.of(

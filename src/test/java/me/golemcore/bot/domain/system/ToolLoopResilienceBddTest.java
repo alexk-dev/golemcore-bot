@@ -52,7 +52,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@SuppressWarnings("PMD.DetachedTestCase")
 class ToolLoopResilienceBddTest {
 
     private static final Instant NOW = Instant.parse("2026-03-01T00:00:00Z");
@@ -307,6 +306,7 @@ class ToolLoopResilienceBddTest {
         assertFalse(events.stream().anyMatch(event -> RuntimeEventType.TURN_FAILED.equals(event.type())));
     }
 
+    @Test
     void shouldFailWhenInterruptedDuringLlmWaitWithoutStopRequest() throws Exception {
         AgentSession session = AgentSession.builder()
                 .id("s3c")

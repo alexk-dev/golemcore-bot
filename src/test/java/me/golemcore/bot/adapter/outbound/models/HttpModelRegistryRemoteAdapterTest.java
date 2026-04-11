@@ -22,57 +22,59 @@ import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSession;
 import org.junit.jupiter.api.Test;
 
-@SuppressWarnings({ "PMD.CloseResource", "PMD.TestClassWithoutTestCases" })
 class HttpModelRegistryRemoteAdapterTest {
 
     @Test
     void shouldReturnBodyOnSuccess() {
-        FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 200, "{\"ok\":true}");
-        TestHttpModelRegistryRemoteAdapter adapter = new TestHttpModelRegistryRemoteAdapter(httpClient);
+        try (FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 200, "{\"ok\":true}")) {
+            StubHttpModelRegistryRemoteAdapter adapter = new StubHttpModelRegistryRemoteAdapter(httpClient);
 
-        String body = adapter.fetchText(URI.create("https://example.com/models/gpt-5.1.json"));
+            String body = adapter.fetchText(URI.create("https://example.com/models/gpt-5.1.json"));
 
-        assertEquals("{\"ok\":true}", body);
-        assertEquals("golemcore-bot-model-registry",
-                httpClient.getCapturedRequest().headers().firstValue("User-Agent").orElse(""));
+            assertEquals("{\"ok\":true}", body);
+            assertEquals("golemcore-bot-model-registry",
+                    httpClient.getCapturedRequest().headers().firstValue("User-Agent").orElse(""));
+        }
     }
 
     @Test
     void shouldReturnNullOnNotFound() {
-        TestHttpModelRegistryRemoteAdapter adapter = new TestHttpModelRegistryRemoteAdapter(
-                new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 404, ""));
-
-        assertNull(adapter.fetchText(URI.create("https://example.com/models/missing.json")));
+        try (FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 404, "")) {
+            StubHttpModelRegistryRemoteAdapter adapter = new StubHttpModelRegistryRemoteAdapter(httpClient);
+            assertNull(adapter.fetchText(URI.create("https://example.com/models/missing.json")));
+        }
     }
 
     @Test
     void shouldWrapInterruptedRequests() {
-        TestHttpModelRegistryRemoteAdapter adapter = new TestHttpModelRegistryRemoteAdapter(
-                new FakeHttpClient(FakeHttpClient.Mode.INTERRUPTED, 0, null));
+        try (FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.INTERRUPTED, 0, null)) {
+            StubHttpModelRegistryRemoteAdapter adapter = new StubHttpModelRegistryRemoteAdapter(httpClient);
 
-        IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> adapter.fetchText(URI.create("https://example.com/models/gpt-5.1.json")));
+            IllegalStateException error = assertThrows(IllegalStateException.class,
+                    () -> adapter.fetchText(URI.create("https://example.com/models/gpt-5.1.json")));
 
-        assertEquals(true, error.getMessage().contains("Interrupted"));
-        assertEquals(true, Thread.interrupted());
+            assertEquals(true, error.getMessage().contains("Interrupted"));
+            assertEquals(true, Thread.interrupted());
+        }
     }
 
     @Test
     void shouldWrapIoFailures() {
-        TestHttpModelRegistryRemoteAdapter adapter = new TestHttpModelRegistryRemoteAdapter(
-                new FakeHttpClient(FakeHttpClient.Mode.IO_EXCEPTION, 0, null));
+        try (FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.IO_EXCEPTION, 0, null)) {
+            StubHttpModelRegistryRemoteAdapter adapter = new StubHttpModelRegistryRemoteAdapter(httpClient);
 
-        IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> adapter.fetchText(URI.create("https://example.com/models/gpt-5.1.json")));
+            IllegalStateException error = assertThrows(IllegalStateException.class,
+                    () -> adapter.fetchText(URI.create("https://example.com/models/gpt-5.1.json")));
 
-        assertEquals(true, error.getMessage().contains("Failed to fetch"));
+            assertEquals(true, error.getMessage().contains("Failed to fetch"));
+        }
     }
 
-    private static final class TestHttpModelRegistryRemoteAdapter extends HttpModelRegistryRemoteAdapter {
+    private static final class StubHttpModelRegistryRemoteAdapter extends HttpModelRegistryRemoteAdapter {
 
         private final HttpClient httpClient;
 
-        private TestHttpModelRegistryRemoteAdapter(HttpClient httpClient) {
+        private StubHttpModelRegistryRemoteAdapter(HttpClient httpClient) {
             this.httpClient = httpClient;
         }
 
@@ -82,7 +84,7 @@ class HttpModelRegistryRemoteAdapterTest {
         }
     }
 
-    private static final class FakeHttpClient extends HttpClient {
+    private static final class FakeHttpClient extends HttpClient implements AutoCloseable {
 
         private enum Mode {
             SUCCESS, INTERRUPTED, IO_EXCEPTION
@@ -174,12 +176,17 @@ class HttpModelRegistryRemoteAdapterTest {
             throw new UnsupportedOperationException();
         }
 
+        @Override
+        public void close() {
+        }
+
         private HttpRequest getCapturedRequest() {
             return capturedRequest;
         }
     }
 
-    private record FakeHttpResponse(HttpRequest request, int statusCode, String body) implements HttpResponse<String> {
+    private record FakeHttpResponse(HttpRequest request, int statusCode, String body)
+            implements HttpResponse<String> {
 
     @Override
     public int statusCode() {

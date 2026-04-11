@@ -144,48 +144,4 @@
         <Field name="planService" />
     </Match>
 
-    <!--
-        Low-priority SpotBugs findings accepted for the large self-evolving and
-        runtime settings refactor. Keep the suppression scoped to the classes
-        that produced the current low-signal findings instead of muting the
-        entire codebase.
-    -->
-    <Match>
-        <Bug pattern="REC_CATCH_EXCEPTION,DM_CONVERT_CASE,UPM_UNCALLED_PRIVATE_METHOD,BC_UNCONFIRMED_CAST,RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE,URF_UNREAD_FIELD,DB_DUPLICATE_SWITCH_CLAUSES,THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
-        <Or>
-                <Class name="me.golemcore.bot.adapter.inbound.web.controller.SettingsController$AdvancedConfigRequest" />
-                <Class name="me.golemcore.bot.adapter.inbound.web.mapper.RuntimeSettingsWebMapper" />
-                <Class name="me.golemcore.bot.adapter.inbound.web.projection.ArtifactProjectionService" />
-                <Class name="me.golemcore.bot.adapter.outbound.config.StoragePluginConfigurationStoreAdapter" />
-                <Class name="me.golemcore.bot.adapter.outbound.config.StorageRuntimeConfigPersistenceAdapter" />
-                <Class name="me.golemcore.bot.adapter.outbound.embedding.OllamaEmbeddingClient" />
-                <Class name="me.golemcore.bot.adapter.outbound.embedding.OllamaRuntimeProbeAdapter" />
-                <Class name="me.golemcore.bot.adapter.outbound.hive.HiveEventBatchPublisher" />
-                <Class name="me.golemcore.bot.adapter.outbound.skills.SkillMarketplaceLegacySupport" />
-                <Class name="me.golemcore.bot.adapter.outbound.storage.StorageSchedulePersistenceAdapter" />
-                <Class name="me.golemcore.bot.application.command.ModelSelectionCommandService" />
-                <Class name="me.golemcore.bot.application.models.ModelManagementFacade" />
-                <Class name="me.golemcore.bot.application.selfevolving.tactic.TacticEmbeddingProbeService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.artifact.ArtifactDiffService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.artifact.ArtifactWorkspaceProjectionRebuildService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.benchmark.DeterministicJudgeService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.benchmark.JudgeTierResolver" />
-                <Class name="me.golemcore.bot.domain.selfevolving.benchmark.LlmJudgeService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.candidate.LlmEvolutionService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.tactic.TacticEmbeddingIndexService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.tactic.TacticMaintenanceService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.tactic.TacticOutcomeJournalService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.tactic.TacticQueryExpansionService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.tactic.TacticSearchService" />
-                <Class name="me.golemcore.bot.domain.selfevolving.tactic.TacticTurnContextService" />
-                <Class name="me.golemcore.bot.domain.service.HiveControlCommandDispatcher" />
-                <Class name="me.golemcore.bot.domain.service.SessionInspectionService" />
-                <Class name="me.golemcore.bot.domain.system.PostRunAnalysisSystem" />
-                <Class name="me.golemcore.bot.infrastructure.lifecycle.ManagedLocalOllamaLifecycleBridge" />
-                <Class name="me.golemcore.bot.infrastructure.telemetry.TelemetryRollupScheduler" />
-        </Or>
-    </Match>
-
 </FindBugsFilter>

@@ -64,10 +64,10 @@ public class ModelConfigAdminAdapter implements ModelConfigAdminPort {
                 settings.isSupportsVision(),
                 settings.isSupportsTemperature(),
                 settings.getMaxInputTokens(),
-                toSnapshot(settings.getReasoning()));
+                toReasoningSnapshot(settings.getReasoning()));
     }
 
-    private ReasoningConfigSnapshot toSnapshot(ModelConfigService.ReasoningConfig reasoning) {
+    private ReasoningConfigSnapshot toReasoningSnapshot(ModelConfigService.ReasoningConfig reasoning) {
         if (reasoning == null) {
             return null;
         }

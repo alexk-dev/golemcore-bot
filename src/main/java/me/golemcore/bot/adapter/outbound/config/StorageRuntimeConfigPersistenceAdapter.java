@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.outbound.config;
 
+import java.io.IOException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.util.function.Supplier;
@@ -157,7 +158,7 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
         try {
             String json = objectMapper.writeValueAsString(runtimeConfig);
             return objectMapper.readValue(json, RuntimeConfig.class);
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to copy runtime config", exception);
         }
     }
@@ -174,7 +175,7 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
             if (json != null && !json.isBlank()) {
                 return objectMapper.readValue(json, configClass);
             }
-        } catch (Exception exception) { // NOSONAR
+        } catch (IOException | RuntimeException exception) {
             log.debug("[RuntimeConfig] No saved {} config, using default: {}", section.getFileId(),
                     exception.getMessage());
         }
@@ -184,7 +185,7 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
             try {
                 String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(defaultConfig);
                 storagePort.putTextAtomic(PREFERENCES_DIR, fileName, json, true).join();
-            } catch (Exception exception) { // NOSONAR
+            } catch (IOException | RuntimeException exception) {
                 log.warn("[RuntimeConfig] Failed to persist default {}: {}", section.getFileId(),
                         exception.getMessage());
             }
@@ -192,7 +193,6 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
         return defaultConfig;
     }
 
-    @SuppressWarnings("unchecked")
     private <T> void persistSection(
             RuntimeConfig.ConfigSection section,
             T config,
@@ -210,7 +210,7 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
             if (validated == null) {
                 throw new IllegalStateException("Persisted " + section.getFileId() + " failed validation");
             }
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to persist config section: " + section.getFileId(), exception);
         }
     }
@@ -225,7 +225,7 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
                 if (persisted != null && !persisted.isBlank()) {
                     return true;
                 }
-            } catch (RuntimeException exception) { // NOSONAR
+            } catch (RuntimeException exception) {
                 log.debug("[RuntimeConfig] Failed to inspect persisted {} config: {}", section.getFileId(),
                         exception.getMessage());
             }

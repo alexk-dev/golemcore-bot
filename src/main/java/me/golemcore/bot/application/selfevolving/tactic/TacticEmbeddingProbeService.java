@@ -106,8 +106,7 @@ public class TacticEmbeddingProbeService {
             return requestedApiKey.trim();
         }
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
-        if (selfEvolvingConfig == null
-                || selfEvolvingConfig.getTactics() == null
+        if (selfEvolvingConfig.getTactics() == null
                 || selfEvolvingConfig.getTactics().getSearch() == null
                 || selfEvolvingConfig.getTactics().getSearch().getEmbeddings() == null) {
             return null;

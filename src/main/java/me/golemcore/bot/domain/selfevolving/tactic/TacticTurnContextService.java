@@ -38,6 +38,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -46,7 +47,6 @@ import java.util.UUID;
  */
 @Service
 @Slf4j
-@SuppressWarnings("PMD.LooseCoupling")
 public class TacticTurnContextService {
 
     private final RuntimeConfigService runtimeConfigService;
@@ -128,7 +128,7 @@ public class TacticTurnContextService {
         if (selectedId == null || selectedId.isBlank()) {
             return;
         }
-        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        Set<String> merged = new LinkedHashSet<>();
         List<String> existing = context.getAttribute(ContextAttributes.APPLIED_TACTIC_IDS);
         if (existing != null) {
             for (String id : existing) {
@@ -149,7 +149,7 @@ public class TacticTurnContextService {
         String advisoryContent = selectedTactics.size() == 1
                 ? buildTacticAdvisoryContent(selectedTactics.getFirst())
                 : buildMultiTacticAdvisoryContent(selectedTactics);
-        if (advisoryContent == null || advisoryContent.isBlank()) {
+        if (advisoryContent.isBlank()) {
             return;
         }
         Map<String, Object> metadata = new LinkedHashMap<>();

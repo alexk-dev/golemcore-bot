@@ -225,7 +225,7 @@ public class TacticQueryExpansionService {
             Thread.currentThread().interrupt();
             log.debug("[TacticQueryExpansion] LLM expansion interrupted, falling back to keyword expansion");
             return List.of();
-        } catch (Exception exception) {
+        } catch (java.util.concurrent.ExecutionException exception) {
             log.debug("[TacticQueryExpansion] LLM expansion failed, falling back to keyword expansion: {}",
                     exception.getMessage());
             return List.of();
@@ -247,7 +247,7 @@ public class TacticQueryExpansionService {
                     .map(s -> s.toLowerCase(Locale.ROOT).trim())
                     .limit(3)
                     .toList();
-        } catch (Exception exception) {
+        } catch (java.io.IOException exception) {
             log.debug("[TacticQueryExpansion] Failed to parse LLM expansion response: {}", exception.getMessage());
             return List.of();
         }

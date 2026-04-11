@@ -24,19 +24,19 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import me.golemcore.bot.port.outbound.OllamaProcessPort;
 
 /**
  * Concrete process adapter for starting and stopping a managed local Ollama
  * runtime.
  */
-@SuppressWarnings("PMD.NullAssignment")
 public class OllamaProcessAdapter implements OllamaProcessPort {
 
     private static final Duration STOP_TIMEOUT = Duration.ofSeconds(2);
 
     private final String executable;
-    private Process ownedProcess;
+    private Optional<Process> ownedProcess = Optional.empty();
 
     public OllamaProcessAdapter() {
         this("ollama");
@@ -67,7 +67,7 @@ public class OllamaProcessAdapter implements OllamaProcessPort {
             ProcessBuilder builder = new ProcessBuilder(buildServeCommand(endpoint));
             builder.environment().putAll(buildEnvironment(endpoint));
             builder.redirectErrorStream(true);
-            ownedProcess = builder.start();
+            ownedProcess = Optional.of(builder.start());
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to start managed Ollama process", exception);
         }
@@ -75,16 +75,17 @@ public class OllamaProcessAdapter implements OllamaProcessPort {
 
     @Override
     public synchronized boolean isOwnedProcessAlive() {
-        return ownedProcess != null && ownedProcess.isAlive();
+        return ownedProcess.map(Process::isAlive).orElse(false);
     }
 
     @Override
     public synchronized Integer getOwnedProcessExitCode() {
-        if (ownedProcess == null) {
+        Process process = ownedProcess.orElse(null);
+        if (process == null) {
             return null;
         }
         try {
-            return ownedProcess.exitValue();
+            return process.exitValue();
         } catch (IllegalThreadStateException ignored) {
             return null;
         }
@@ -92,22 +93,22 @@ public class OllamaProcessAdapter implements OllamaProcessPort {
 
     @Override
     public synchronized void stopOwnedProcess() {
-        if (ownedProcess == null) {
+        Process process = ownedProcess.orElse(null);
+        if (process == null) {
             return;
         }
-        ownedProcess.destroy();
+        ownedProcess = Optional.empty();
+        process.destroy();
         try {
-            boolean finished = ownedProcess.waitFor(STOP_TIMEOUT.toMillis(),
+            boolean finished = process.waitFor(STOP_TIMEOUT.toMillis(),
                     java.util.concurrent.TimeUnit.MILLISECONDS);
             if (!finished) {
-                ownedProcess.destroyForcibly();
-                ownedProcess.waitFor(STOP_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+                process.destroyForcibly();
+                process.waitFor(STOP_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            ownedProcess.destroyForcibly();
-        } finally {
-            ownedProcess = null;
+            process.destroyForcibly();
         }
     }
 
@@ -126,28 +127,27 @@ public class OllamaProcessAdapter implements OllamaProcessPort {
     }
 
     private VersionProbeResult runVersionProbe() {
-        Process process = null;
         try {
-            process = new ProcessBuilder(buildVersionCommand())
+            Process process = new ProcessBuilder(buildVersionCommand())
                     .redirectErrorStream(true)
                     .start();
-            boolean finished = process.waitFor(STOP_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                return new VersionProbeResult(false, null, null);
+            try {
+                boolean finished = process.waitFor(STOP_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+                if (!finished) {
+                    process.destroyForcibly();
+                    return new VersionProbeResult(false, null, null);
+                }
+                String output = new String(process.getInputStream().readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8).trim();
+                return new VersionProbeResult(true, process.exitValue(), output);
+            } finally {
+                process.destroy();
             }
-            String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
-                    .trim();
-            return new VersionProbeResult(true, process.exitValue(), output);
         } catch (IOException exception) {
             return new VersionProbeResult(false, null, null);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return new VersionProbeResult(false, null, null);
-        } finally {
-            if (process != null) {
-                process.destroy();
-            }
         }
     }
 

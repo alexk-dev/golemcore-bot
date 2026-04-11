@@ -50,7 +50,6 @@ import org.springframework.stereotype.Service;
  * evolve independently of run/candidate/tactic projections.
  */
 @Service
-@SuppressWarnings("PMD.NullAssignment")
 public class ArtifactProjectionService {
 
     private final ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService;
@@ -148,7 +147,7 @@ public class ArtifactProjectionService {
             String fromRevisionId,
             String toRevisionId) {
         return getArtifactWorkspaceSummary(artifactStreamId)
-                .map(ignored -> toArtifactEvidenceDto(artifactWorkspaceProjectionService.getCompareEvidence(
+                .map(ignored -> toArtifactCompareEvidenceDto(artifactWorkspaceProjectionService.getCompareEvidence(
                         artifactStreamId,
                         fromRevisionId,
                         toRevisionId)));
@@ -159,10 +158,11 @@ public class ArtifactProjectionService {
             String fromNodeId,
             String toNodeId) {
         return getArtifactWorkspaceSummary(artifactStreamId)
-                .map(ignored -> toArtifactEvidenceDto(artifactWorkspaceProjectionService.getTransitionEvidence(
-                        artifactStreamId,
-                        fromNodeId,
-                        toNodeId)));
+                .map(ignored -> toArtifactTransitionEvidenceDto(
+                        artifactWorkspaceProjectionService.getTransitionEvidence(
+                                artifactStreamId,
+                                fromNodeId,
+                                toNodeId)));
     }
 
     public Optional<SelfEvolvingArtifactCompareOptionsDto> getArtifactCompareOptions(String artifactStreamId) {
@@ -197,8 +197,8 @@ public class ArtifactProjectionService {
         List<ArtifactRevisionProjection> revisions = artifactWorkspaceProjectionService.listRevisions(artifactStreamId);
         ArtifactLineageProjection lineageProjection = artifactWorkspaceProjectionService.getLineage(artifactStreamId);
         List<SelfEvolvingArtifactCompareOptionsDto.CompareOptionDto> revisionOptions = new ArrayList<>();
-        String defaultFromRevisionId = null;
-        String defaultToRevisionId = null;
+        String defaultFromRevisionId = "";
+        String defaultToRevisionId = "";
         if (!revisions.isEmpty()) {
             ArtifactRevisionProjection latestRevision = revisions.getLast();
             ArtifactRevisionProjection previousRevision = revisions.size() > 1 ? revisions.get(revisions.size() - 2)
@@ -207,8 +207,8 @@ public class ArtifactProjectionService {
                     .filter(entry -> artifactStreamId.equals(entry.getArtifactStreamId()))
                     .findFirst()
                     .orElse(null);
-            defaultFromRevisionId = catalogEntry != null ? catalogEntry.getActiveRevisionId() : null;
-            defaultToRevisionId = catalogEntry != null ? catalogEntry.getLatestCandidateRevisionId() : null;
+            defaultFromRevisionId = catalogEntry != null ? catalogEntry.getActiveRevisionId() : "";
+            defaultToRevisionId = catalogEntry != null ? catalogEntry.getLatestCandidateRevisionId() : "";
             if (!StringValueSupport.isBlank(defaultFromRevisionId)
                     && !StringValueSupport.isBlank(defaultToRevisionId)) {
                 revisionOptions.add(compareOption("active_vs_candidate", defaultFromRevisionId, defaultToRevisionId));
@@ -242,8 +242,8 @@ public class ArtifactProjectionService {
         }
         return SelfEvolvingArtifactCompareOptionsDto.builder()
                 .artifactStreamId(artifactStreamId)
-                .defaultFromRevisionId(defaultFromRevisionId)
-                .defaultToRevisionId(defaultToRevisionId)
+                .defaultFromRevisionId(StringValueSupport.isBlank(defaultFromRevisionId) ? null : defaultFromRevisionId)
+                .defaultToRevisionId(StringValueSupport.isBlank(defaultToRevisionId) ? null : defaultToRevisionId)
                 .defaultFromNodeId(defaultFromNodeId)
                 .defaultToNodeId(defaultToNodeId)
                 .revisionOptions(revisionOptions)
@@ -357,7 +357,7 @@ public class ArtifactProjectionService {
                 .build();
     }
 
-    private SelfEvolvingArtifactEvidenceDto toArtifactEvidenceDto(ArtifactCompareEvidenceProjection projection) {
+    private SelfEvolvingArtifactEvidenceDto toArtifactCompareEvidenceDto(ArtifactCompareEvidenceProjection projection) {
         return SelfEvolvingArtifactEvidenceDto.builder()
                 .artifactStreamId(projection.getArtifactStreamId())
                 .artifactKey(projection.getArtifactKey())
@@ -376,7 +376,8 @@ public class ArtifactProjectionService {
                 .build();
     }
 
-    private SelfEvolvingArtifactEvidenceDto toArtifactEvidenceDto(ArtifactTransitionEvidenceProjection projection) {
+    private SelfEvolvingArtifactEvidenceDto toArtifactTransitionEvidenceDto(
+            ArtifactTransitionEvidenceProjection projection) {
         return SelfEvolvingArtifactEvidenceDto.builder()
                 .artifactStreamId(projection.getArtifactStreamId())
                 .artifactKey(projection.getArtifactKey())
