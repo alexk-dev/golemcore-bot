@@ -13,6 +13,34 @@ export interface AutocompleteComboboxProps {
   onSubmit?: () => void;
 }
 
+
+interface ComboboxMenuProps {
+  listboxId: string;
+  activeIndex: number;
+  selectedSuggestion: string;
+  filteredSuggestions: string[];
+  emptyState?: string;
+  onSelectSuggestion: (value: string) => void;
+}
+
+interface ComboboxTriggerProps {
+  disabled: boolean;
+  showMenu: boolean;
+  onToggleMenu: () => void;
+}
+
+type KeyHandler = (event: KeyboardEvent<HTMLInputElement>) => boolean;
+
+function wrapSuggestionIndex(currentIndex: number, suggestionCount: number, direction: 1 | -1): number {
+  if (suggestionCount === 0) {
+    return -1;
+  }
+  if (currentIndex < 0) {
+    return direction === 1 ? 0 : suggestionCount - 1;
+  }
+  return (currentIndex + direction + suggestionCount) % suggestionCount;
+}
+
 function normalizeSuggestions(suggestions: string[], value: string): string[] {
   const loweredValue = value.trim().toLowerCase();
   const uniqueSuggestions = Array.from(new Set(suggestions));
@@ -91,68 +119,56 @@ export function AutocompleteCombobox({
     });
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
-      if (filteredSuggestions.length === 0 && emptyState == null) {
-        return;
+  const keyHandlers: Record<string, KeyHandler> = {
+    ArrowDown: (event) => {
+      event.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        setActiveIndex(filteredSuggestions.length > 0 ? 0 : -1);
+        return true;
       }
+      setActiveIndex((currentIndex) => wrapSuggestionIndex(currentIndex, filteredSuggestions.length, 1));
+      return true;
+    },
+    ArrowUp: (event) => {
       event.preventDefault();
-      setIsOpen(true);
-      setActiveIndex(filteredSuggestions.length > 0 ? 0 : -1);
-      return;
-    }
-
-    if (!isOpen) {
-      if (event.key === 'Enter' && onSubmit != null) {
-        event.preventDefault();
-        onSubmit();
+      if (!isOpen) {
+        setIsOpen(true);
+        setActiveIndex(filteredSuggestions.length > 0 ? 0 : -1);
+        return true;
       }
-      return;
-    }
-
-    if (event.key === 'ArrowDown') {
+      setActiveIndex((currentIndex) => wrapSuggestionIndex(currentIndex, filteredSuggestions.length, -1));
+      return true;
+    },
+    Enter: (event) => {
       event.preventDefault();
-      setActiveIndex((currentIndex) => {
-        if (filteredSuggestions.length === 0) {
-          return -1;
-        }
-        if (currentIndex < 0) {
-          return 0;
-        }
-        return (currentIndex + 1) % filteredSuggestions.length;
-      });
-      return;
-    }
-
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setActiveIndex((currentIndex) => {
-        if (filteredSuggestions.length === 0) {
-          return -1;
-        }
-        if (currentIndex < 0) {
-          return filteredSuggestions.length - 1;
-        }
-        return (currentIndex - 1 + filteredSuggestions.length) % filteredSuggestions.length;
-      });
-      return;
-    }
-
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      if (activeSuggestion != null) {
+      if (isOpen && activeSuggestion != null) {
         handleSelectSuggestion(activeSuggestion);
-      } else if (onSubmit != null) {
-        onSubmit();
+      } else {
+        onSubmit?.();
       }
-      return;
-    }
-
-    if (event.key === 'Escape') {
+      return true;
+    },
+    Escape: (event) => {
+      if (!isOpen) {
+        return false;
+      }
       event.preventDefault();
       setIsOpen(false);
       setActiveIndex(-1);
+      return true;
+    },
+  };
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    const handler = keyHandlers[event.key];
+    if (handler == null) {
+      return;
     }
+    if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && filteredSuggestions.length === 0 && emptyState == null) {
+      return;
+    }
+    handler(event);
   }
 
   return (
@@ -193,64 +209,112 @@ export function AutocompleteCombobox({
           }}
           onKeyDown={handleKeyDown}
         />
-        <button
-          type="button"
-          className={cn(
-            'autocomplete-combobox__trigger flex h-full shrink-0 items-center px-3 text-muted-foreground transition-colors',
-            disabled ? 'cursor-not-allowed opacity-60' : 'hover:text-foreground',
-          )}
-          aria-label="Toggle suggestions"
-          aria-haspopup="listbox"
-          aria-expanded={showMenu}
-          disabled={disabled}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            handleToggleMenu();
-          }}
-        >
-          <FiChevronDown className={cn('h-4 w-4 transition-transform duration-200', showMenu && 'rotate-180')} />
-        </button>
+        <ComboboxTrigger disabled={disabled} showMenu={showMenu} onToggleMenu={handleToggleMenu} />
       </div>
 
       {showMenu && (
-        <div
-          className="autocomplete-combobox__menu absolute inset-x-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-border/80 bg-popover/95 shadow-lg ring-1 ring-black/5 backdrop-blur-sm"
-          role="presentation"
-        >
-          <div id={listboxId} role="listbox" className="autocomplete-combobox__list max-h-64 overflow-y-auto p-2">
-            {filteredSuggestions.length > 0 ? (
-              filteredSuggestions.map((suggestion, index) => {
-                const isActive = index === activeIndex;
-                const isSelected = suggestion === selectedSuggestion;
-                return (
-                  <button
-                    key={suggestion}
-                    id={`${listboxId}-${index}`}
-                    type="button"
-                    role="option"
-                    aria-selected={isActive}
-                    className={cn(
-                      'autocomplete-combobox__option flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition-colors',
-                      isActive ? 'bg-primary/10 text-foreground' : 'text-foreground/80 hover:bg-accent/70 hover:text-foreground',
-                    )}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      handleSelectSuggestion(suggestion);
-                    }}
-                  >
-                    <span className="truncate">{suggestion}</span>
-                    <FiCheck className={cn('ml-auto h-4 w-4 shrink-0 text-primary transition-opacity', isSelected ? 'opacity-100' : 'opacity-0')} />
-                  </button>
-                );
-              })
-            ) : (
-              <div className="autocomplete-combobox__empty px-3 py-2 text-sm text-muted-foreground">
-                {emptyState}
-              </div>
-            )}
-          </div>
-        </div>
+        <ComboboxMenu
+          listboxId={listboxId}
+          activeIndex={activeIndex}
+          selectedSuggestion={selectedSuggestion}
+          filteredSuggestions={filteredSuggestions}
+          emptyState={emptyState}
+          onSelectSuggestion={handleSelectSuggestion}
+        />
       )}
     </div>
+  );
+}
+
+function ComboboxTrigger({ disabled, showMenu, onToggleMenu }: ComboboxTriggerProps): ReactElement {
+  return (
+    <button
+      type="button"
+      className={cn(
+        'autocomplete-combobox__trigger flex h-full shrink-0 items-center px-3 text-muted-foreground transition-colors',
+        disabled ? 'cursor-not-allowed opacity-60' : 'hover:text-foreground',
+      )}
+      aria-label="Toggle suggestions"
+      aria-haspopup="listbox"
+      aria-expanded={showMenu}
+      disabled={disabled}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        onToggleMenu();
+      }}
+    >
+      <FiChevronDown className={cn('h-4 w-4 transition-transform duration-200', showMenu && 'rotate-180')} />
+    </button>
+  );
+}
+
+function ComboboxMenu({
+  listboxId,
+  activeIndex,
+  selectedSuggestion,
+  filteredSuggestions,
+  emptyState,
+  onSelectSuggestion,
+}: ComboboxMenuProps): ReactElement {
+  return (
+    <div
+      className="autocomplete-combobox__menu absolute inset-x-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-border/80 bg-popover/95 shadow-lg ring-1 ring-black/5 backdrop-blur-sm"
+      role="presentation"
+    >
+      <div id={listboxId} role="listbox" className="autocomplete-combobox__list max-h-64 overflow-y-auto p-2">
+        {filteredSuggestions.length > 0 ? (
+          filteredSuggestions.map((suggestion, index) => (
+            <ComboboxOption
+              key={suggestion}
+              id={`${listboxId}-${index}`}
+              suggestion={suggestion}
+              isActive={index === activeIndex}
+              isSelected={suggestion === selectedSuggestion}
+              onSelectSuggestion={onSelectSuggestion}
+            />
+          ))
+        ) : (
+          <div className="autocomplete-combobox__empty px-3 py-2 text-sm text-muted-foreground">
+            {emptyState}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ComboboxOptionProps {
+  id: string;
+  suggestion: string;
+  isActive: boolean;
+  isSelected: boolean;
+  onSelectSuggestion: (value: string) => void;
+}
+
+function ComboboxOption({
+  id,
+  suggestion,
+  isActive,
+  isSelected,
+  onSelectSuggestion,
+}: ComboboxOptionProps): ReactElement {
+  return (
+    <button
+      id={id}
+      type="button"
+      role="option"
+      aria-selected={isActive}
+      className={cn(
+        'autocomplete-combobox__option flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition-colors',
+        isActive ? 'bg-primary/10 text-foreground' : 'text-foreground/80 hover:bg-accent/70 hover:text-foreground',
+      )}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        onSelectSuggestion(suggestion);
+      }}
+    >
+      <span className="truncate">{suggestion}</span>
+      <FiCheck className={cn('ml-auto h-4 w-4 shrink-0 text-primary transition-opacity', isSelected ? 'opacity-100' : 'opacity-0')} />
+    </button>
   );
 }

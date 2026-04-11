@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const recordUiError = vi.hoisted(() => vi.fn());
 
-vi.mock('../../lib/telemetry/TelemetryProvider', () => ({
+vi.mock('../../lib/telemetry/TelemetryContext', () => ({
   useTelemetry: () => ({
     recordUiError,
   }),

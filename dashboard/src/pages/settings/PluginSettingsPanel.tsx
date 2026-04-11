@@ -11,7 +11,7 @@ import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import type { PluginSettingsAction } from '../../api/plugins';
 import { useExecutePluginSettingsAction, usePluginSettingsSection, useSavePluginSettingsSection } from '../../hooks/usePlugins';
-import { useTelemetry } from '../../lib/telemetry/TelemetryProvider';
+import { useTelemetry } from '../../lib/telemetry/TelemetryContext';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import {
   PluginActionConfirmModal,

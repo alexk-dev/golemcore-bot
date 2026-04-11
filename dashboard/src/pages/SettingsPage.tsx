@@ -43,7 +43,7 @@ import {
   type SettingsSectionMeta,
 } from './settings/settingsCatalog';
 import { filterCatalogBlocks } from './settings/settingsCatalogSearch';
-import { useTelemetry } from '../lib/telemetry/TelemetryProvider';
+import { useTelemetry } from '../lib/telemetry/TelemetryContext';
 
 interface CatalogCardItem {
   key: string;

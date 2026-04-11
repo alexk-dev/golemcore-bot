@@ -1,7 +1,7 @@
 import { type ReactElement, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
-import { useTelemetry } from '../../lib/telemetry/TelemetryProvider';
+import { useTelemetry } from '../../lib/telemetry/TelemetryContext';
 import { sanitizeTelemetryRoute } from '../../lib/telemetry/telemetrySanitizers';
 
 export function TelemetryRouteTracker(): ReactElement | null {

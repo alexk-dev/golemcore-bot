@@ -12,7 +12,7 @@ const sendMessage = vi.hoisted(() => vi.fn(() => true));
 const resetSession = vi.hoisted(() => vi.fn());
 const updatePreferences = vi.hoisted(() => vi.fn(() => new Promise(() => {})));
 
-vi.mock('../../lib/telemetry/TelemetryProvider', () => ({
+vi.mock('../../lib/telemetry/TelemetryContext', () => ({
   useTelemetry: () => ({
     recordCounter,
     recordKeyedCounter,

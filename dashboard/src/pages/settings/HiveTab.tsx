@@ -8,6 +8,7 @@ import { useUpdateHive } from '../../hooks/useSettings';
 import { useHiveStatus, useJoinHive, useLeaveHive, useReconnectHive } from '../../hooks/useHive';
 import type { HiveConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
+import { HiveActionButtons } from './HiveActionButtons';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -347,70 +348,5 @@ function HiveSessionDetails({ status, fallbackServerUrl }: HiveSessionDetailsPro
         <div className="small text-danger">Control error: {status.controlChannelLastError}</div>
       ) : null}
     </Col>
-  );
-}
-
-interface HiveActionButtonsProps {
-  isManaged: boolean;
-  isBusy: boolean;
-  joinCode: string;
-  status: HiveStatusResponse | undefined;
-  joinPending: boolean;
-  reconnectPending: boolean;
-  leavePending: boolean;
-  onJoin: () => Promise<void>;
-  onReconnect: () => Promise<void>;
-  onLeave: () => Promise<void>;
-}
-
-function HiveActionButtons({
-  isManaged,
-  isBusy,
-  joinCode,
-  status,
-  joinPending,
-  reconnectPending,
-  leavePending,
-  onJoin,
-  onReconnect,
-  onLeave,
-}: HiveActionButtonsProps): ReactElement {
-  const canJoin = status?.sessionPresent === true
-    ? false
-    : isManaged
-      ? status?.managedJoinCodeAvailable === true
-      : joinCode.trim().length > 0;
-  const canReconnect = status?.sessionPresent === true || (isManaged && status?.managedJoinCodeAvailable === true);
-
-  return (
-    <div className="d-flex flex-wrap gap-2 mb-4">
-      <Button
-        type="button"
-        variant="success"
-        size="sm"
-        onClick={() => { void onJoin(); }}
-        disabled={!canJoin || isBusy}
-      >
-        {joinPending ? 'Joining...' : 'Join'}
-      </Button>
-      <Button
-        type="button"
-        variant="outline-primary"
-        size="sm"
-        onClick={() => { void onReconnect(); }}
-        disabled={!canReconnect || isBusy}
-      >
-        {reconnectPending ? 'Reconnecting...' : 'Reconnect'}
-      </Button>
-      <Button
-        type="button"
-        variant="outline-danger"
-        size="sm"
-        onClick={() => { void onLeave(); }}
-        disabled={status?.sessionPresent !== true || isBusy}
-      >
-        {leavePending ? 'Clearing...' : 'Leave'}
-      </Button>
-    </div>
   );
 }
