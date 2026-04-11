@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 public class RuntimeSettingsValidator {
@@ -28,7 +27,7 @@ public class RuntimeSettingsValidator {
     private static final String STT_PROVIDER_WHISPER = "golemcore/whisper";
     private static final String LEGACY_STT_PROVIDER_ELEVENLABS = "elevenlabs";
     private static final String LEGACY_STT_PROVIDER_WHISPER = "whisper";
-    private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
+    private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini", "gonka");
     private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
     private static final String COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
     private static final Set<String> VALID_COMPACTION_TRIGGER_MODES = Set.of(
@@ -177,9 +176,45 @@ public class RuntimeSettingsValidator {
                     "llm.providers." + name + ".baseUrl must be a valid http(s) URL");
         }
         String apiType = config.getApiType();
-        if (apiType != null && !apiType.isBlank() && !VALID_API_TYPES.contains(apiType.toLowerCase(Locale.ROOT))) {
+        String normalizedApiType = apiType != null ? apiType.trim().toLowerCase(Locale.ROOT) : "";
+        if (!normalizedApiType.isBlank() && !VALID_API_TYPES.contains(normalizedApiType)) {
             throw new IllegalArgumentException(
                     "llm.providers." + name + ".apiType must be one of " + VALID_API_TYPES);
+        }
+        validateGonkaProviderConfig(name, config, normalizedApiType);
+    }
+
+    private void validateGonkaProviderConfig(String name, RuntimeConfig.LlmProviderConfig config,
+            String normalizedApiType) {
+        if (!"gonka".equals(normalizedApiType)) {
+            return;
+        }
+        boolean hasSourceUrl = config.getSourceUrl() != null && !config.getSourceUrl().isBlank();
+        boolean hasEndpoints = config.getEndpoints() != null && !config.getEndpoints().isEmpty();
+        if (!hasSourceUrl && !hasEndpoints) {
+            throw new IllegalArgumentException(
+                    "llm.providers." + name + ".sourceUrl or endpoints is required for gonka apiType");
+        }
+        if (hasSourceUrl && !isValidHttpUrl(config.getSourceUrl())) {
+            throw new IllegalArgumentException(
+                    "llm.providers." + name + ".sourceUrl must be a valid http(s) URL");
+        }
+        if (hasEndpoints) {
+            validateGonkaEndpoints(name, config.getEndpoints());
+        }
+    }
+
+    private void validateGonkaEndpoints(String name, List<RuntimeConfig.GonkaEndpointConfig> endpoints) {
+        for (RuntimeConfig.GonkaEndpointConfig endpoint : endpoints) {
+            if (endpoint == null || endpoint.getUrl() == null || endpoint.getUrl().isBlank()
+                    || !isValidHttpUrl(endpoint.getUrl())) {
+                throw new IllegalArgumentException(
+                        "llm.providers." + name + ".endpoints.url must be a valid http(s) URL");
+            }
+            if (endpoint.getTransferAddress() == null || endpoint.getTransferAddress().isBlank()) {
+                throw new IllegalArgumentException(
+                        "llm.providers." + name + ".endpoints.transferAddress is required");
+            }
         }
     }
 

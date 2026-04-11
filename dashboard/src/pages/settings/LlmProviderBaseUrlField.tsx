@@ -15,7 +15,7 @@ export function LlmProviderBaseUrlField({ name, form, onFormChange }: LlmProvide
   const hasBaseUrl = (form.baseUrl ?? '').trim().length > 0;
   const suggestedBaseUrl = getSuggestedBaseUrl(name, apiType);
   const shouldShowUseDefaultBaseUrl = suggestedBaseUrl != null && form.baseUrl !== suggestedBaseUrl;
-  const shouldShowClearBaseUrl = apiType === 'gemini' && hasBaseUrl;
+  const shouldShowClearBaseUrl = (apiType === 'gemini' || apiType === 'gonka') && hasBaseUrl;
 
   return (
     <Form.Group className="mb-2">
@@ -41,9 +41,11 @@ export function LlmProviderBaseUrlField({ name, form, onFormChange }: LlmProvide
       <Form.Text className="text-body-secondary">
         {apiType === 'gemini'
           ? 'Gemini uses the native Google endpoint, so Base URL is usually left empty.'
-          : suggestedBaseUrl != null
-            ? `Recommended endpoint: ${suggestedBaseUrl}`
-            : 'Leave empty to use the provider default endpoint.'}
+          : apiType === 'gonka'
+            ? 'Optional: direct /v1 endpoint for model discovery. Runtime requests use Gonka Source URL or endpoints below.'
+            : suggestedBaseUrl != null
+              ? `Recommended endpoint: ${suggestedBaseUrl}`
+              : 'Leave empty to use the provider default endpoint.'}
       </Form.Text>
     </Form.Group>
   );

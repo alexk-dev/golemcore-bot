@@ -9,7 +9,7 @@ public interface ProviderModelDiscoveryPort {
     DiscoveryResponse discover(DiscoveryRequest request);
 
     enum AuthMode {
-        BEARER, ANTHROPIC, GOOGLE
+        BEARER, ANTHROPIC, GOOGLE, NONE
     }
 
     enum DocumentKind {

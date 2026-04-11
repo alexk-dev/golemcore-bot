@@ -243,7 +243,7 @@ Configure provider API keys in `preferences/runtime-config.json`:
 The `Langchain4jAdapter` creates per-request model instances when the requested model differs from the default.
 
 - Provider config lookup is still based on the model prefix (`provider/model`).
-- Protocol dispatch is controlled by `llm.providers.<provider>.apiType` (`openai`, `anthropic`, `gemini`).
+- Protocol dispatch is controlled by `llm.providers.<provider>.apiType` (`openai`, `anthropic`, `gemini`, `gonka`).
 
 This decouples provider naming from wire protocol, so custom provider keys can still use the correct adapter.
 

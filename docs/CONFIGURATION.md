@@ -247,7 +247,7 @@ Configure provider credentials under `llm.providers`.
 
 - Provider key is the model prefix in `provider/model` (and should match `provider` in `models/models.json`).
 - `apiType` selects the wire protocol used by the adapter.
-- Supported `apiType` values: `openai` (default), `anthropic`, `gemini`.
+- Supported `apiType` values: `openai` (default), `anthropic`, `gemini`, `gonka`.
 
 ```json
 {
@@ -266,6 +266,13 @@ Configure provider credentials under `llm.providers`.
       "google": {
         "apiKey": "AIza...",
         "apiType": "gemini"
+      },
+      "gonka": {
+        "apiKey": "0x...secp256k1-private-key...",
+        "apiType": "gonka",
+        "sourceUrl": "https://node3.gonka.ai",
+        "gonkaAddress": null,
+        "endpoints": []
       }
     }
   }
@@ -275,7 +282,7 @@ Configure provider credentials under `llm.providers`.
 Notes:
 
 - Use lowercase `apiType` values.
-- `baseUrl` is optional; for `gemini` it is typically left empty.
+- `baseUrl` is optional; for `gemini` it is typically left empty. For `gonka`, use `sourceUrl` for participant discovery or `endpoints` as `url` + `transferAddress` pairs.
 - These same provider profiles are used by the dashboard `Model Catalog` for live model discovery via `/api/models/discover/{provider}`.
 
 ### Model Configuration

@@ -1,6 +1,6 @@
 import { toModelRegistryConfig, toModelRouterConfig } from './settingsModelMappers';
 import { toSelfEvolvingConfig } from './settingsSelfEvolvingMappers';
-import type { RuntimeConfig } from './settingsTypes';
+import type { GonkaEndpointConfig, RuntimeConfig } from './settingsTypes';
 import { hasSecretValue, type UnknownRecord } from './settingsUtils';
 import { normalizeLlmApiType, toSecretPayload } from './settingsApiUtils';
 
@@ -70,6 +70,9 @@ function normalizeLlmProviders(providers: Record<string, UnknownRecord>): Record
     apiKeyPresent: hasSecretValue(provider.apiKey as UnknownRecord | undefined),
     apiType: normalizeLlmApiType(provider.apiType),
     legacyApi: provider.legacyApi === true ? true : null,
+    sourceUrl: typeof provider.sourceUrl === 'string' ? provider.sourceUrl : null,
+    gonkaAddress: typeof provider.gonkaAddress === 'string' ? provider.gonkaAddress : null,
+    endpoints: toGonkaEndpoints(provider.endpoints),
   }]));
 }
 
@@ -95,7 +98,25 @@ function toBackendLlmProviders(providers: RuntimeConfig['llm']['providers']): Un
     apiKey: toSecretPayload(provider.apiKey ?? null),
     apiType: normalizeLlmApiType(provider.apiType),
     legacyApi: provider.legacyApi === true ? true : null,
+    sourceUrl: provider.sourceUrl,
+    gonkaAddress: provider.gonkaAddress,
+    endpoints: provider.endpoints,
   }]));
+}
+
+function toGonkaEndpoints(value: unknown): GonkaEndpointConfig[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) => {
+    if (entry == null || typeof entry !== 'object') {
+      return [];
+    }
+    const record = entry as UnknownRecord;
+    const url = typeof record.url === 'string' ? record.url.trim() : '';
+    const transferAddress = typeof record.transferAddress === 'string' ? record.transferAddress.trim() : '';
+    return url.length > 0 && transferAddress.length > 0 ? [{ url, transferAddress }] : [];
+  });
 }
 
 function toBackendSelfEvolvingConfig(selfEvolving: UnknownRecord): UnknownRecord {

@@ -10,7 +10,7 @@ export function toSecretPayload(value: string | null | undefined): SecretPayload
   return { value, encrypted: false };
 }
 
-const SUPPORTED_LLM_API_TYPES = ['openai', 'anthropic', 'gemini'] as const;
+const SUPPORTED_LLM_API_TYPES = ['openai', 'anthropic', 'gemini', 'gonka'] as const;
 type SupportedLlmApiType = (typeof SUPPORTED_LLM_API_TYPES)[number];
 
 function isSupportedLlmApiType(value: string): value is SupportedLlmApiType {

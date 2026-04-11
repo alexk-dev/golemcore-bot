@@ -24,6 +24,7 @@ public class ProviderModelDiscoveryService {
     private static final String API_TYPE_OPENAI = "openai";
     private static final String API_TYPE_ANTHROPIC = "anthropic";
     private static final String API_TYPE_GEMINI = "gemini";
+    private static final String API_TYPE_GONKA = "gonka";
     private static final String DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
     private static final String DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
     private static final String DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
@@ -84,6 +85,9 @@ public class ProviderModelDiscoveryService {
         if (API_TYPE_GEMINI.equals(apiType)) {
             return ProviderModelDiscoveryPort.AuthMode.GOOGLE;
         }
+        if (API_TYPE_GONKA.equals(apiType)) {
+            return ProviderModelDiscoveryPort.AuthMode.NONE;
+        }
         return ProviderModelDiscoveryPort.AuthMode.BEARER;
     }
 
@@ -133,6 +137,9 @@ public class ProviderModelDiscoveryService {
         }
         if (API_TYPE_GEMINI.equals(apiType)) {
             return DEFAULT_GEMINI_BASE_URL;
+        }
+        if (API_TYPE_GONKA.equals(apiType)) {
+            throw new IllegalArgumentException("Gonka model discovery requires an explicit provider baseUrl endpoint");
         }
         return DEFAULT_OPENAI_BASE_URL;
     }

@@ -46,6 +46,9 @@ const llmConfig: LlmConfig = {
       requestTimeoutSeconds: null,
       apiType: 'openai',
       legacyApi: null,
+      sourceUrl: null,
+      gonkaAddress: null,
+      endpoints: [],
     },
     anthropic: {
       apiKey: null,
@@ -54,6 +57,9 @@ const llmConfig: LlmConfig = {
       requestTimeoutSeconds: null,
       apiType: 'anthropic',
       legacyApi: null,
+      sourceUrl: null,
+      gonkaAddress: null,
+      endpoints: [],
     },
     openrouter: {
       apiKey: null,
@@ -62,6 +68,9 @@ const llmConfig: LlmConfig = {
       requestTimeoutSeconds: 30,
       apiType: 'openai',
       legacyApi: null,
+      sourceUrl: null,
+      gonkaAddress: null,
+      endpoints: [],
     },
   },
 };

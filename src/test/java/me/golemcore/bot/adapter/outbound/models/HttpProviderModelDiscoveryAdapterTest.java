@@ -65,6 +65,21 @@ class HttpProviderModelDiscoveryAdapterTest {
     }
 
     @Test
+    void shouldOmitAuthorizationHeaderForNoneAuthMode() {
+        FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 200, "{\"data\":[]}");
+        TestHttpProviderModelDiscoveryAdapter adapter = new TestHttpProviderModelDiscoveryAdapter(httpClient);
+
+        adapter.discover(new ProviderModelDiscoveryPort.DiscoveryRequest(
+                URI.create("https://node3.gonka.ai/v1/models"),
+                Duration.ofSeconds(20),
+                "private-key",
+                "golemcore-model-discovery",
+                ProviderModelDiscoveryPort.AuthMode.NONE));
+
+        assertEquals(Optional.empty(), httpClient.getCapturedRequest().headers().firstValue("Authorization"));
+    }
+
+    @Test
     void shouldUseGoogleHeaderAndParseGeminiPayload() {
         FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 200,
                 """

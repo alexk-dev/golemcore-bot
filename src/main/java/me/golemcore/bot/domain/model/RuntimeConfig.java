@@ -13,6 +13,7 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
 
+import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -525,6 +526,10 @@ public class RuntimeConfig {
         private String baseUrl;
         private Integer requestTimeoutSeconds;
         private String apiType;
+        private String sourceUrl;
+        private String gonkaAddress;
+        @Builder.Default
+        private List<GonkaEndpointConfig> endpoints = new ArrayList<>();
         /**
          * When {@code true}, forces the legacy {@code /v1/chat/completions} endpoint
          * for OpenAI-type providers. When {@code null} or {@code false}, the adapter
@@ -532,6 +537,23 @@ public class RuntimeConfig {
          * {@code apiType} is {@code "openai"}.
          */
         private Boolean legacyApi;
+
+        @JsonIgnore
+        public URI getSourceUri() {
+            if (sourceUrl == null || sourceUrl.isBlank()) {
+                return null;
+            }
+            return URI.create(sourceUrl.trim());
+        }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class GonkaEndpointConfig {
+        private String url;
+        private String transferAddress;
     }
 
     @Data

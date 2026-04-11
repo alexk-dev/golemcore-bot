@@ -10,6 +10,7 @@ import {
 } from './llmProvidersSupport';
 import { LlmProviderBaseUrlField } from './LlmProviderBaseUrlField';
 import { LlmProviderSecretField } from './LlmProviderSecretField';
+import { LlmProviderGonkaFields } from './LlmProviderGonkaFields';
 
 export interface LlmProviderEditorCardProps {
   name: string;
@@ -79,6 +80,9 @@ export function LlmProviderEditorCard({
               </Form.Text>
             </Form.Group>
           </Col>
+          {apiType === 'gonka' && (
+            <LlmProviderGonkaFields form={form} onFormChange={onFormChange} />
+          )}
           {apiType === 'openai' && (
             <Col md={3}>
               <Form.Group className="mb-2">

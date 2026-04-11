@@ -1,6 +1,6 @@
 import type { ExplicitModelTierId } from '../lib/modelTiers';
 
-export type ApiType = 'openai' | 'anthropic' | 'gemini';
+export type ApiType = 'openai' | 'anthropic' | 'gemini' | 'gonka';
 
 export interface RuntimeConfig {
   telegram: TelegramConfig;
@@ -27,7 +27,8 @@ export interface RuntimeConfig {
 
 export interface ModelRegistryConfig { repositoryUrl: string | null; branch: string | null; }
 export interface LlmConfig { providers: Record<string, LlmProviderConfig>; }
-export interface LlmProviderConfig { apiKey: string | null; apiKeyPresent?: boolean; baseUrl: string | null; requestTimeoutSeconds: number | null; apiType: ApiType | null; legacyApi: boolean | null; }
+export interface GonkaEndpointConfig { url: string; transferAddress: string; }
+export interface LlmProviderConfig { apiKey: string | null; apiKeyPresent?: boolean; baseUrl: string | null; requestTimeoutSeconds: number | null; apiType: ApiType | null; legacyApi: boolean | null; sourceUrl: string | null; gonkaAddress: string | null; endpoints: GonkaEndpointConfig[]; }
 export interface MemoryConfig { enabled: boolean | null; softPromptBudgetTokens: number | null; maxPromptBudgetTokens: number | null; workingTopK: number | null; episodicTopK: number | null; semanticTopK: number | null; proceduralTopK: number | null; promotionEnabled: boolean | null; promotionMinConfidence: number | null; decayEnabled: boolean | null; decayDays: number | null; retrievalLookbackDays: number | null; codeAwareExtractionEnabled: boolean | null; disclosure?: MemoryDisclosureConfig | null; diagnostics?: MemoryDiagnosticsConfig | null; }
 export interface MemoryPreset { id: string; label: string; comment: string; memory: MemoryConfig; }
 export type MemoryDisclosureMode = 'index' | 'summary' | 'selective_detail' | 'full_pack';

@@ -18,6 +18,7 @@
 
 package me.golemcore.bot.adapter.outbound.llm;
 
+import me.golemcore.bot.adapter.outbound.gonka.GonkaHttpClientBuilderFactory;
 import me.golemcore.bot.domain.component.LlmComponent;
 import me.golemcore.bot.domain.model.LlmChunk;
 import me.golemcore.bot.domain.model.LlmProviderMetadataKeys;
@@ -28,6 +29,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
+import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -84,7 +86,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.time.Duration;
 
 /**
  * LLM adapter using the langchain4j library.
@@ -132,6 +133,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final String API_TYPE_OPENAI = "openai";
     private static final String API_TYPE_ANTHROPIC = "anthropic";
     private static final String API_TYPE_GEMINI = "gemini";
+    private static final String API_TYPE_GONKA = "gonka";
     private static final String GEMINI_THINKING_SIGNATURE_KEY = "thinking_signature";
     private static final String TOOL_ATTACHMENTS_METADATA_KEY = "toolAttachments";
     private static final String SYNTH_ID_PREFIX = "synth_call_";
@@ -146,6 +148,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigPort modelConfig;
     private final ToolArtifactService toolArtifactService;
+    private final GonkaHttpClientBuilderFactory gonkaHttpClientBuilderFactory;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private ChatModel chatModel;
@@ -233,8 +236,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for OpenAI Responses provider in runtime config");
         }
-        Duration timeout = Duration.ofSeconds(
-                config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300);
+        Duration timeout = resolveProviderTimeout(config);
         OpenAiResponsesStreamingChatModel.Builder builder = OpenAiResponsesStreamingChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
@@ -300,6 +302,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             return createAnthropicModel(model, modelName, config);
         case API_TYPE_GEMINI:
             return createGeminiModel(model, modelName, config);
+        case API_TYPE_GONKA:
+            return createGonkaModel(modelName, model, config);
         default:
             return createOpenAiModel(modelName, model, reasoningEffort, config);
         }
@@ -323,8 +327,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
                 .maxTokens(4096)
-                .timeout(java.time.Duration.ofSeconds(
-                        config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
+                .timeout(resolveProviderTimeout(config));
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -350,8 +353,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 // both returnThinking and sendThinking are enabled.
                 .returnThinking(true)
                 .sendThinking(true)
-                .timeout(java.time.Duration.ofSeconds(
-                        config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
+                .timeout(resolveProviderTimeout(config));
 
         if (supportsTemperature(fullModel)) {
             builder.temperature(runtimeConfigService.getTemperature());
@@ -370,8 +372,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
-                .timeout(java.time.Duration.ofSeconds(
-                        config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
+                .timeout(resolveProviderTimeout(config));
 
         if (config.getBaseUrl() != null) {
             builder.baseUrl(config.getBaseUrl());
@@ -389,6 +390,32 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         return builder.build();
+    }
+
+    private ChatModel createGonkaModel(String modelName, String fullModel, RuntimeConfig.LlmProviderConfig config) {
+        if (gonkaHttpClientBuilderFactory == null) {
+            throw new IllegalStateException("Gonka support is not configured");
+        }
+        Duration timeout = resolveProviderTimeout(config);
+        GonkaHttpClientBuilderFactory.ResolvedGonkaHttpClientBuilder gonkaBuilder = gonkaHttpClientBuilderFactory
+                .create(config, timeout);
+        OpenAiChatModel.OpenAiChatModelBuilder builder = OpenAiChatModel.builder()
+                .apiKey("mock-api-key")
+                .modelName(modelName)
+                .maxRetries(0)
+                .baseUrl(gonkaBuilder.baseUrl())
+                .httpClientBuilder(gonkaBuilder.httpClientBuilder())
+                .timeout(timeout);
+
+        if (supportsTemperature(fullModel)) {
+            builder.temperature(runtimeConfigService.getTemperature());
+        }
+
+        return builder.build();
+    }
+
+    private Duration resolveProviderTimeout(RuntimeConfig.LlmProviderConfig config) {
+        return Duration.ofSeconds(config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300);
     }
 
     @Override
@@ -1059,7 +1086,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             }
 
             try {
-                var download = toolArtifactService.getDownload(internalFilePath);
+                ToolArtifactDownload download = toolArtifactService.getDownload(internalFilePath);
                 String mimeType = download.getMimeType();
                 if (mimeType == null || !mimeType.startsWith("image/")) {
                     continue;
