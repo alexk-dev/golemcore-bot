@@ -54,6 +54,7 @@ import static org.mockito.Mockito.when;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+@SuppressWarnings({ "PMD.UnnecessaryFullyQualifiedName", "PMD.AvoidAccessibilityAlteration" })
 class SettingsControllerTest {
 
     private UserPreferencesService preferencesService;

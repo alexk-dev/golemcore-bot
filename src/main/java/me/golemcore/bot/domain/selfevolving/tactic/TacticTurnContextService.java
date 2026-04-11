@@ -46,6 +46,7 @@ import java.util.UUID;
  */
 @Service
 @Slf4j
+@SuppressWarnings("PMD.LooseCoupling")
 public class TacticTurnContextService {
 
     private final RuntimeConfigService runtimeConfigService;

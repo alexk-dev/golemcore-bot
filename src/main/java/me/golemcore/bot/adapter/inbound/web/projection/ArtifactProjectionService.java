@@ -21,6 +21,7 @@ package me.golemcore.bot.adapter.inbound.web.projection;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactCatalogEntryDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactCompareOptionsDto;
@@ -49,6 +50,7 @@ import org.springframework.stereotype.Service;
  * evolve independently of run/candidate/tactic projections.
  */
 @Service
+@SuppressWarnings("PMD.NullAssignment")
 public class ArtifactProjectionService {
 
     private final ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService;
@@ -404,15 +406,17 @@ public class ArtifactProjectionService {
         if (StringValueSupport.isBlank(query)) {
             return true;
         }
-        String normalizedQuery = query.toLowerCase();
-        if (StringValueSupport.nullSafe(entry.getArtifactStreamId()).toLowerCase().contains(normalizedQuery)
-                || StringValueSupport.nullSafe(entry.getArtifactKey()).toLowerCase().contains(normalizedQuery)
-                || StringValueSupport.nullSafe(entry.getDisplayName()).toLowerCase().contains(normalizedQuery)) {
+        String normalizedQuery = query.toLowerCase(Locale.ROOT);
+        if (StringValueSupport.nullSafe(entry.getArtifactStreamId()).toLowerCase(Locale.ROOT).contains(normalizedQuery)
+                || StringValueSupport.nullSafe(entry.getArtifactKey()).toLowerCase(Locale.ROOT)
+                        .contains(normalizedQuery)
+                || StringValueSupport.nullSafe(entry.getDisplayName()).toLowerCase(Locale.ROOT)
+                        .contains(normalizedQuery)) {
             return true;
         }
         return entry.getArtifactAliases() != null && entry.getArtifactAliases().stream()
                 .filter(alias -> !StringValueSupport.isBlank(alias))
-                .map(String::toLowerCase)
+                .map(alias -> alias.toLowerCase(Locale.ROOT))
                 .anyMatch(alias -> alias.contains(normalizedQuery));
     }
 

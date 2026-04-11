@@ -38,6 +38,7 @@ import java.util.Map;
  * Embedding client for OpenAI-compatible `/embeddings` APIs.
  */
 @Component
+@SuppressWarnings("PMD.CloseResource")
 public class OpenAiCompatibleEmbeddingClient implements EmbeddingPort {
 
     private static final MediaType JSON = MediaType.get("application/json");

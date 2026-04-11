@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
+@SuppressWarnings({ "PMD.CloseResource", "PMD.UseProperClassLoader" })
 class ArchitectureAllowlistConsistencyTest {
 
     private static final Path MAIN_JAVA_ROOT = Paths.get("src/main/java");

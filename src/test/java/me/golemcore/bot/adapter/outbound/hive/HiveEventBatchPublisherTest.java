@@ -52,6 +52,7 @@ import me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
 import me.golemcore.bot.port.outbound.StoragePort;
 
+@SuppressWarnings("PMD.UnnecessaryFullyQualifiedName")
 class HiveEventBatchPublisherTest {
 
     private HiveSessionStateStore hiveSessionStateStore;

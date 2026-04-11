@@ -18,6 +18,7 @@ package me.golemcore.bot.domain.selfevolving.benchmark;
  * Contact: alex@kuleshov.tech
  */
 
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -51,6 +52,6 @@ public class JudgeTierResolver {
     }
 
     private String normalizeLane(String judgeLane) {
-        return judgeLane == null ? "" : judgeLane.trim().toLowerCase();
+        return judgeLane == null ? "" : judgeLane.trim().toLowerCase(Locale.ROOT);
     }
 }

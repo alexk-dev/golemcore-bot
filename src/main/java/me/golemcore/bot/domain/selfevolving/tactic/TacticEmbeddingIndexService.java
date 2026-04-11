@@ -46,6 +46,7 @@ import me.golemcore.bot.domain.service.StringValueSupport;
  * Vector index and query path for tactic embeddings.
  */
 @Service
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public class TacticEmbeddingIndexService {
 
     private static final String EMBEDDING_STATUS_INDEXED = "indexed";

@@ -29,6 +29,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -116,7 +117,8 @@ public class TacticMaintenanceService {
             if (record == null || StringValueSupport.isBlank(record.getArtifactKey())) {
                 continue;
             }
-            byArtifactKey.computeIfAbsent(record.getArtifactKey().trim().toLowerCase(), k -> new ArrayList<>())
+            byArtifactKey
+                    .computeIfAbsent(record.getArtifactKey().trim().toLowerCase(Locale.ROOT), k -> new ArrayList<>())
                     .add(record);
         }
         List<DuplicateGroup> groups = new ArrayList<>();
@@ -273,7 +275,7 @@ public class TacticMaintenanceService {
         if (StringValueSupport.isBlank(value)) {
             return List.of();
         }
-        return List.of(value.toLowerCase().split("[^a-z0-9]+")).stream()
+        return List.of(value.toLowerCase(Locale.ROOT).split("[^a-z0-9]+")).stream()
                 .filter(token -> !token.isBlank() && token.length() > 1)
                 .toList();
     }

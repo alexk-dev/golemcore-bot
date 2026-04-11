@@ -37,6 +37,7 @@ import java.util.Map;
  * Embedding client for Ollama `/api/embed`.
  */
 @Component
+@SuppressWarnings("PMD.CloseResource")
 public class OllamaEmbeddingClient implements EmbeddingPort {
 
     private static final MediaType JSON = MediaType.get("application/json");

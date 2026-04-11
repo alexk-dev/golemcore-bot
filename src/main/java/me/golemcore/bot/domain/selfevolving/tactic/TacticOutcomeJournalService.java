@@ -89,7 +89,7 @@ public class TacticOutcomeJournalService {
                 return new ArrayList<>();
             }
             List<TacticOutcomeEntry> entries = objectMapper.readValue(json,
-                    new TypeReference<List<TacticOutcomeEntry>>() {
+                    new TypeReference<>() {
                     });
             return entries != null ? new ArrayList<>(entries) : new ArrayList<>();
         } catch (Exception exception) { // NOSONAR - storage read failure returns empty

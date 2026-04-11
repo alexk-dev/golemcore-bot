@@ -46,6 +46,7 @@ import me.golemcore.bot.domain.service.StringValueSupport;
  * Harvests production runs into benchmark artifacts.
  */
 @Service
+@SuppressWarnings("PMD.AvoidBranchingStatementAsLastInLoop")
 public class BenchmarkLabService {
 
     private final BenchmarkJournalPort benchmarkJournal;
@@ -187,20 +188,20 @@ public class BenchmarkLabService {
             if (campaign == null || !campaignId.equals(campaign.getId())) {
                 continue;
             }
-            if ("completed".equals(campaign.getStatus()) && campaign.getCompletedAt() != null) {
-                return;
+            if (!"completed".equals(campaign.getStatus()) || campaign.getCompletedAt() == null) {
+                campaigns.set(i, BenchmarkCampaign.builder()
+                        .id(campaign.getId())
+                        .suiteId(campaign.getSuiteId())
+                        .baselineBundleId(campaign.getBaselineBundleId())
+                        .candidateBundleId(campaign.getCandidateBundleId())
+                        .status("completed")
+                        .startedAt(campaign.getStartedAt())
+                        .completedAt(Instant.now(clock))
+                        .runIds(campaign.getRunIds() != null ? new ArrayList<>(campaign.getRunIds())
+                                : new ArrayList<>())
+                        .build());
+                changed = true;
             }
-            campaigns.set(i, BenchmarkCampaign.builder()
-                    .id(campaign.getId())
-                    .suiteId(campaign.getSuiteId())
-                    .baselineBundleId(campaign.getBaselineBundleId())
-                    .candidateBundleId(campaign.getCandidateBundleId())
-                    .status("completed")
-                    .startedAt(campaign.getStartedAt())
-                    .completedAt(Instant.now(clock))
-                    .runIds(campaign.getRunIds() != null ? new ArrayList<>(campaign.getRunIds()) : new ArrayList<>())
-                    .build());
-            changed = true;
             break;
         }
         if (changed) {

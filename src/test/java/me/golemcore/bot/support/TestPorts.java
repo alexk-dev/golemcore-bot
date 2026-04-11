@@ -7,6 +7,7 @@ import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.outbound.LocalizationPort;
 import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 
+@SuppressWarnings("PMD.TestClassWithoutTestCases")
 public final class TestPorts {
 
     private TestPorts() {

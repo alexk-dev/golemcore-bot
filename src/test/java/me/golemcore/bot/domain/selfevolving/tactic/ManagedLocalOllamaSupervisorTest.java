@@ -42,6 +42,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
+@SuppressWarnings({ "PMD.TestClassWithoutTestCases", "PMD.NullAssignment", "PMD.AvoidFieldNameMatchingMethodName",
+        "PMD.UnusedPrivateMethod" })
 class ManagedLocalOllamaSupervisorTest {
 
     private static final String ENDPOINT = "http://127.0.0.1:11434";

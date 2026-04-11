@@ -307,6 +307,57 @@ class RuntimeSettingsValidatorTest {
     }
 
     @Test
+    void shouldValidateSelfEvolvingLocalEmbeddingRuntimeSettings() {
+        RuntimeConfig config = RuntimeConfig.builder()
+                .telegram(RuntimeConfig.TelegramConfig.builder().build())
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new java.util.LinkedHashMap<>()).build())
+                .hive(RuntimeConfig.HiveConfig.builder().enabled(false).build())
+                .selfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                        .enabled(true)
+                        .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                                .enabled(true)
+                                .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
+                                        .mode("hybrid")
+                                        .embeddings(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig.builder()
+                                                .provider("ollama")
+                                                .model("qwen3-embedding:0.6b")
+                                                .local(RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig.builder()
+                                                        .startupTimeoutMs(0)
+                                                        .initialRestartBackoffMs(1000)
+                                                        .minimumRuntimeVersion("0.19.0")
+                                                        .build())
+                                                .build())
+                                        .build())
+                                .build())
+                        .build())
+                .build();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config, false));
+
+        config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal().setStartupTimeoutMs(5000);
+        config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
+                .setMinimumRuntimeVersion("bad version");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config, false));
+
+        config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
+                .setMinimumRuntimeVersion("0.19.0");
+
+        validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config, false);
+
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = config.getSelfEvolving()
+                .getTactics()
+                .getSearch()
+                .getEmbeddings()
+                .getLocal();
+        assertEquals(5000, localConfig.getStartupTimeoutMs());
+        assertEquals(1000, localConfig.getInitialRestartBackoffMs());
+        assertEquals("0.19.0", localConfig.getMinimumRuntimeVersion());
+    }
+
+    @Test
     void shouldDefaultMissingProvidersAndCompactionTriggerMode() {
         RuntimeConfig.LlmConfig llmConfig = RuntimeConfig.LlmConfig.builder().build();
         RuntimeConfig.CompactionConfig compactionConfig = RuntimeConfig.CompactionConfig.builder().build();

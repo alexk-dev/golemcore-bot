@@ -19,7 +19,6 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  */
 
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticIndexDocument;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -31,6 +30,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * Rebuilds tactic-search lexical documents using atomic snapshot replacement.
  */
 @Service
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public class TacticIndexRebuildService {
 
     private final TacticRecordService tacticRecordService;

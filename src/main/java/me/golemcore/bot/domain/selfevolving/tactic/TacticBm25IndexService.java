@@ -24,7 +24,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -40,6 +39,7 @@ import me.golemcore.bot.domain.service.StringValueSupport;
  * In-memory lexical tactic index with BM25-style scoring.
  */
 @Service
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public class TacticBm25IndexService {
 
     private static final double K1 = 1.2d;
@@ -68,7 +68,7 @@ public class TacticBm25IndexService {
                     Map.of());
             int documentLength = Math.max(current.documentLengths().getOrDefault(document.getTacticId(), 0), 1);
             double score = 0.0d;
-            LinkedHashSet<String> matchedTerms = new LinkedHashSet<>();
+            Set<String> matchedTerms = new LinkedHashSet<>();
             for (String queryTerm : queryTerms) {
                 Integer frequency = termFrequencies.get(queryTerm);
                 if (frequency == null || frequency <= 0) {
@@ -136,7 +136,7 @@ public class TacticBm25IndexService {
     }
 
     private List<String> expandQueryTerms(TacticSearchQuery query) {
-        LinkedHashSet<String> terms = new LinkedHashSet<>();
+        Set<String> terms = new LinkedHashSet<>();
         terms.addAll(tokenize(query.getRawQuery()));
         if (query.getQueryViews() != null) {
             query.getQueryViews().forEach(view -> terms.addAll(tokenize(view)));

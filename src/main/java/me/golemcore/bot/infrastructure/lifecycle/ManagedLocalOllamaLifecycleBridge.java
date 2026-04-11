@@ -189,7 +189,6 @@ public class ManagedLocalOllamaLifecycleBridge {
             return;
         }
         watchdogExecutor.shutdownNow();
-        watchdogExecutor = null;
     }
 
     private void safeRunWatchdogTick() {

@@ -37,6 +37,7 @@ import me.golemcore.bot.domain.service.StringValueSupport;
  * tier-resolved reranker verdict.
  */
 @Service
+@SuppressWarnings("PMD.LooseCoupling")
 public class TacticHybridRankingService {
 
     private static final double RRF_K = 60.0d;

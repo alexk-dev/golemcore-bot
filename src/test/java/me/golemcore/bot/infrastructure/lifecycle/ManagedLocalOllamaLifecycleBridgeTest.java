@@ -41,6 +41,7 @@ import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@SuppressWarnings({ "PMD.NullAssignment", "PMD.AvoidFieldNameMatchingMethodName", "PMD.UnnecessaryFullyQualifiedName" })
 class ManagedLocalOllamaLifecycleBridgeTest {
 
     private RuntimeConfigService runtimeConfigService;

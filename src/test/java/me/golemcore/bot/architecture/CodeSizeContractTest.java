@@ -18,6 +18,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
+@SuppressWarnings({ "PMD.CloseResource", "PMD.UseProperClassLoader" })
 class CodeSizeContractTest {
 
     private static final Path MAIN_JAVA_ROOT = Paths.get("src/main/java");

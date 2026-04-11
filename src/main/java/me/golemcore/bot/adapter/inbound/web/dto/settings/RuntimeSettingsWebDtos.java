@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.dto.settings;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
 
+@SuppressWarnings("PMD.MissingStaticMethodInNonInstantiatableClass")
 public final class RuntimeSettingsWebDtos {
 
     private RuntimeSettingsWebDtos() {

@@ -15,6 +15,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
 import org.junit.jupiter.api.Test;
 
+@SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "PMD.AvoidFieldNameMatchingMethodName" })
 class ProviderModelDiscoveryServiceTest {
 
     @Test

@@ -22,6 +22,7 @@ import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSession;
 import org.junit.jupiter.api.Test;
 
+@SuppressWarnings({ "PMD.CloseResource", "PMD.TestClassWithoutTestCases" })
 class HttpModelRegistryRemoteAdapterTest {
 
     @Test

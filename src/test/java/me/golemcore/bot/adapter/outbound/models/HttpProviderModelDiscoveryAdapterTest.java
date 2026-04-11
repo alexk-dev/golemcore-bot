@@ -13,7 +13,6 @@ import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executor;
@@ -23,6 +22,7 @@ import javax.net.ssl.SSLSession;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
 import org.junit.jupiter.api.Test;
 
+@SuppressWarnings({ "PMD.CloseResource", "PMD.TestClassWithoutTestCases" })
 class HttpProviderModelDiscoveryAdapterTest {
 
     @Test

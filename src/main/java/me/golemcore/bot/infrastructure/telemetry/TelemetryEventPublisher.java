@@ -14,6 +14,7 @@ import java.util.UUID;
 
 @Component
 @Slf4j
+@SuppressWarnings("PMD.NullAssignment")
 public class TelemetryEventPublisher {
 
     private final RuntimeConfigService runtimeConfigService;

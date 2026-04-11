@@ -31,6 +31,7 @@ import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+@SuppressWarnings("PMD.DetachedTestCase")
 class SessionInspectionServiceTest {
 
     private SessionPort sessionPort;

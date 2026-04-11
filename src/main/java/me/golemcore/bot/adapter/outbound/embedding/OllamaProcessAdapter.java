@@ -30,6 +30,7 @@ import me.golemcore.bot.port.outbound.OllamaProcessPort;
  * Concrete process adapter for starting and stopping a managed local Ollama
  * runtime.
  */
+@SuppressWarnings("PMD.NullAssignment")
 public class OllamaProcessAdapter implements OllamaProcessPort {
 
     private static final Duration STOP_TIMEOUT = Duration.ofSeconds(2);

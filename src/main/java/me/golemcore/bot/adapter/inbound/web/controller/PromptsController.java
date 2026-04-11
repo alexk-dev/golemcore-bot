@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
-import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;

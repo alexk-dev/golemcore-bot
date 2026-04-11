@@ -38,10 +38,10 @@ import me.golemcore.bot.port.outbound.OllamaRuntimeModelPort;
 import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
 import me.golemcore.bot.domain.selfevolving.SelfEvolvingTacticSearchStatusProjectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 
+@SuppressWarnings("PMD.TestClassWithoutTestCases")
 class LocalEmbeddingBootstrapServiceTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-04-02T00:30:00Z"), ZoneOffset.UTC);

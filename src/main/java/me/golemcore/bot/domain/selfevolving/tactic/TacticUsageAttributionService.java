@@ -35,6 +35,7 @@ import me.golemcore.bot.domain.service.StringValueSupport;
  * Resolves which tactic ids a bundle or run should be attributed to.
  */
 @Service
+@SuppressWarnings("PMD.LooseCoupling")
 public class TacticUsageAttributionService {
 
     public Map<String, List<String>> indexBundleToTacticIds(

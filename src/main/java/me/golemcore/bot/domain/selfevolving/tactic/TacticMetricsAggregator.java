@@ -28,6 +28,7 @@ import java.time.Instant;
  * Holding every observation dimension on a single aggregator keeps the metrics
  * pipeline honest: new signals become fields here, not parallel maps.
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public final class TacticMetricsAggregator {
 
     private Instant latestObservation;

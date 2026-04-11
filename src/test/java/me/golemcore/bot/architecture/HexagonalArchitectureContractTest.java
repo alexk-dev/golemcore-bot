@@ -17,6 +17,7 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
+@SuppressWarnings({ "PMD.UnusedPrivateField", "PMD.LooseCoupling", "PMD.CloseResource", "PMD.UseProperClassLoader" })
 class HexagonalArchitectureContractTest {
 
     private static final String ROOT_PACKAGE = "me.golemcore.bot";

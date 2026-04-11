@@ -28,6 +28,7 @@ import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
 import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
 
+@SuppressWarnings("PMD.LooseCoupling")
 class TacticQualityMetricsServiceTest {
 
     private ArtifactBundleService artifactBundleService;

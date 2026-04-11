@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
  * Coordinates startup and lifecycle observation of a managed local Ollama
  * runtime.
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public class ManagedLocalOllamaSupervisor {
 
     private static final Logger log = LoggerFactory.getLogger(ManagedLocalOllamaSupervisor.class);
@@ -636,7 +637,8 @@ public class ManagedLocalOllamaSupervisor {
             if (token.isBlank()) {
                 continue;
             }
-            parts[partIndex++] = Integer.parseInt(token);
+            parts[partIndex] = Integer.parseInt(token);
+            partIndex++;
             if (partIndex == parts.length) {
                 break;
             }

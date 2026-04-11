@@ -32,6 +32,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -43,6 +44,7 @@ import me.golemcore.bot.domain.service.StringValueSupport;
  */
 @Service
 @Slf4j
+@SuppressWarnings("PMD.AvoidBranchingStatementAsLastInLoop")
 public class ArtifactBundleService {
 
     private final ArtifactRepositoryPort artifactRepository;
@@ -148,7 +150,8 @@ public class ArtifactBundleService {
             bindings.put(candidate.getArtifactStreamId(), candidate.getContentRevisionId());
         }
         promotedBundle.setArtifactRevisionBindings(bindings);
-        promotedBundle.setStatus(StringValueSupport.isBlank(status) ? "snapshot" : status.trim().toLowerCase());
+        promotedBundle
+                .setStatus(StringValueSupport.isBlank(status) ? "snapshot" : status.trim().toLowerCase(Locale.ROOT));
         promotedBundle.setActivatedAt(Instant.now(clock));
         promotedBundle.setSourceCandidateId(candidate.getId());
         if (candidate.getSourceRunIds() != null && !candidate.getSourceRunIds().isEmpty()) {
@@ -188,9 +191,7 @@ public class ArtifactBundleService {
             }
             String previous = bindings.putIfAbsent(candidate.getArtifactStreamId(),
                     candidate.getBaseContentRevisionId());
-            if (previous == null) {
-                updated = true;
-            }
+            updated = updated || previous == null;
         }
         if (updated) {
             bundle.setArtifactRevisionBindings(bindings);
