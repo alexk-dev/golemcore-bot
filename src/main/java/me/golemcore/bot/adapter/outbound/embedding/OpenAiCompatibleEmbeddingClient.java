@@ -77,9 +77,6 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingPort {
                 throw new IllegalStateException("Embedding request failed with status " + response.code());
             }
             try (ResponseBody responseBody = response.body()) {
-                if (responseBody == null) {
-                    throw new IllegalStateException("Embedding response body is empty");
-                }
                 byte[] responseBytes = responseBody.bytes();
                 if (responseBytes.length == 0) {
                     throw new IllegalStateException("Embedding response body is empty");

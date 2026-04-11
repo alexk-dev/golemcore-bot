@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -117,6 +118,64 @@ class TacticOutcomeJournalServiceTest {
     }
 
     @Test
+    void shouldRestoreInterruptStatusWhenStorageWriteIsInterrupted() {
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new InterruptedCompletableFuture<>());
+        TacticOutcomeEntry entry = TacticOutcomeEntry.builder()
+                .tacticId("tactic-1")
+                .finishReason("success")
+                .build();
+
+        try {
+            service.record(entry);
+
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    void shouldRestoreInterruptStatusWhenStorageReadIsInterrupted() {
+        when(storagePort.getText("self-evolving", "tactic-outcome-journal.json"))
+                .thenReturn(new InterruptedCompletableFuture<>());
+
+        try {
+            List<TacticOutcomeEntry> entries = service.getEntries();
+
+            assertTrue(entries.isEmpty());
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    void shouldKeepOnlyMostRecentJournalEntries() {
+        AtomicReference<String> storageJson = new AtomicReference<>(null);
+        when(storagePort.getText("self-evolving", "tactic-outcome-journal.json"))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(storageJson.get()));
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenAnswer(invocation -> {
+                    storageJson.set(invocation.getArgument(2));
+                    return CompletableFuture.completedFuture(null);
+                });
+
+        for (int index = 0; index <= 500; index++) {
+            service.record(TacticOutcomeEntry.builder()
+                    .tacticId("tactic-" + index)
+                    .finishReason("success")
+                    .build());
+        }
+
+        List<TacticOutcomeEntry> entries = service.getEntries();
+
+        assertEquals(500, entries.size());
+        assertEquals("tactic-1", entries.getFirst().getTacticId());
+        assertEquals("tactic-500", entries.getLast().getTacticId());
+    }
+
+    @Test
     void shouldNotLoseEntriesWhenTwoRecordsOverlap() throws Exception {
         AtomicReference<String> storageJson = new AtomicReference<>(null);
         AtomicInteger writeCount = new AtomicInteger();
@@ -162,5 +221,13 @@ class TacticOutcomeJournalServiceTest {
 
         List<TacticOutcomeEntry> entries = service.getEntries();
         assertEquals(2, entries.size());
+    }
+
+    private static final class InterruptedCompletableFuture<T> extends CompletableFuture<T> {
+
+        @Override
+        public T get() throws InterruptedException, ExecutionException {
+            throw new InterruptedException("interrupted");
+        }
     }
 }

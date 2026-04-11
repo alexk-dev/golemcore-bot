@@ -121,6 +121,28 @@ class PluginConfigurationServiceTest {
     }
 
     @Test
+    void shouldWrapPluginConfigReadFailures() {
+        when(storagePort.getText("preferences", "plugins/golemcore/browser.json"))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("read failed")));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> service.getPluginConfig("golemcore/browser"));
+
+        assertEquals("Failed to read plugin config for golemcore/browser", exception.getMessage());
+    }
+
+    @Test
+    void shouldWrapPluginConfigWriteFailures() {
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("write failed")));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> service.savePluginConfig("golemcore/browser", Map.of("enabled", true)));
+
+        assertEquals("Failed to write plugin config for golemcore/browser", exception.getMessage());
+    }
+
+    @Test
     void shouldRejectInvalidPluginId() {
         assertThrows(IllegalArgumentException.class,
                 () -> service.savePluginConfig("../browser", Map.of("enabled", true)));
