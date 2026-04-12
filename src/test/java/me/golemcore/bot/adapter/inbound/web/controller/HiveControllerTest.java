@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import me.golemcore.bot.domain.model.hive.HiveStatusSnapshot;
 import me.golemcore.bot.domain.service.HiveConnectionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,7 +27,7 @@ class HiveControllerTest {
 
     @Test
     void shouldReturnHiveStatus() {
-        when(hiveConnectionService.getStatus()).thenReturn(new HiveConnectionService.HiveStatusSnapshot(
+        when(hiveConnectionService.getStatus()).thenReturn(new HiveStatusSnapshot(
                 "CONNECTED",
                 true,
                 false,
@@ -53,6 +54,11 @@ class HiveControllerTest {
                 0,
                 0,
                 0,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null));
 
@@ -67,7 +73,7 @@ class HiveControllerTest {
 
     @Test
     void shouldForwardJoinRequest() {
-        HiveConnectionService.HiveStatusSnapshot snapshot = new HiveConnectionService.HiveStatusSnapshot(
+        HiveStatusSnapshot snapshot = new HiveStatusSnapshot(
                 "CONNECTED",
                 true,
                 false,
@@ -94,6 +100,11 @@ class HiveControllerTest {
                 0,
                 0,
                 0,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null);
         when(hiveConnectionService.join("token:https://hive.example.com")).thenReturn(snapshot);
@@ -111,7 +122,7 @@ class HiveControllerTest {
 
     @Test
     void shouldForwardJoinRequestWithoutBody() {
-        HiveConnectionService.HiveStatusSnapshot snapshot = new HiveConnectionService.HiveStatusSnapshot(
+        HiveStatusSnapshot snapshot = new HiveStatusSnapshot(
                 "DISCONNECTED",
                 false,
                 false,
@@ -139,6 +150,11 @@ class HiveControllerTest {
                 0,
                 0,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null);
         when(hiveConnectionService.join(null)).thenReturn(snapshot);
 
@@ -151,7 +167,7 @@ class HiveControllerTest {
 
     @Test
     void shouldForwardReconnectRequest() {
-        HiveConnectionService.HiveStatusSnapshot snapshot = new HiveConnectionService.HiveStatusSnapshot(
+        HiveStatusSnapshot snapshot = new HiveStatusSnapshot(
                 "CONNECTED",
                 true,
                 false,
@@ -179,6 +195,11 @@ class HiveControllerTest {
                 0,
                 0,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null);
         when(hiveConnectionService.reconnect()).thenReturn(snapshot);
 
@@ -195,7 +216,7 @@ class HiveControllerTest {
 
     @Test
     void shouldForwardLeaveRequest() {
-        HiveConnectionService.HiveStatusSnapshot snapshot = new HiveConnectionService.HiveStatusSnapshot(
+        HiveStatusSnapshot snapshot = new HiveStatusSnapshot(
                 "DISCONNECTED",
                 false,
                 false,
@@ -222,6 +243,11 @@ class HiveControllerTest {
                 0,
                 0,
                 0,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null);
         when(hiveConnectionService.leave()).thenReturn(snapshot);

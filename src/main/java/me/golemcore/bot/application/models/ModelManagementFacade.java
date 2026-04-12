@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
+import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
@@ -25,18 +27,21 @@ public class ModelManagementFacade {
     private final ProviderModelDiscoveryService providerModelDiscoveryService;
     private final ModelRegistryService modelRegistryService;
     private final LlmPort llmPort;
+    private final HiveManagedPolicyService hiveManagedPolicyService;
 
     public ModelManagementFacade(
             ModelConfigAdminPort modelConfigAdminPort,
             ModelSelectionService modelSelectionService,
             ProviderModelDiscoveryService providerModelDiscoveryService,
             ModelRegistryService modelRegistryService,
-            LlmPort llmPort) {
+            LlmPort llmPort,
+            HiveManagedPolicyService hiveManagedPolicyService) {
         this.modelConfigAdminPort = modelConfigAdminPort;
         this.modelSelectionService = modelSelectionService;
         this.providerModelDiscoveryService = providerModelDiscoveryService;
         this.modelRegistryService = modelRegistryService;
         this.llmPort = llmPort;
+        this.hiveManagedPolicyService = hiveManagedPolicyService;
     }
 
     public ModelConfigAdminPort.ModelsConfigSnapshot getModelsConfig() {
@@ -45,15 +50,21 @@ public class ModelManagementFacade {
 
     public ModelConfigAdminPort.ModelsConfigSnapshot replaceModelsConfig(
             ModelConfigAdminPort.ModelsConfigSnapshot newConfig) {
+        rejectManagedHivePolicyCatalogMutation();
         return modelConfigAdminPort.replaceConfig(newConfig);
     }
 
     public void saveModel(String id, String previousId, ModelConfigAdminPort.ModelSettingsSnapshot settings) {
-        modelConfigAdminPort.saveModel(requireValue(id, "id"), optionalValue(previousId), requireSettings(settings));
+        String normalizedId = requireValue(id, "id");
+        String normalizedPreviousId = optionalValue(previousId);
+        ModelConfigAdminPort.ModelSettingsSnapshot normalizedSettings = requireSettings(settings);
+        rejectManagedHivePolicyCatalogMutation();
+        modelConfigAdminPort.saveModel(normalizedId, normalizedPreviousId, normalizedSettings);
     }
 
     public void deleteModel(String id) {
         String normalizedId = requireValue(id, "id");
+        rejectManagedHivePolicyCatalogMutation();
         if (!modelConfigAdminPort.deleteModel(normalizedId)) {
             throw new NoSuchElementException("Model '" + normalizedId + "' not found");
         }
@@ -132,6 +143,15 @@ public class ModelManagementFacade {
             throw new IllegalArgumentException("settings is required");
         }
         return settings;
+    }
+
+    private void rejectManagedHivePolicyCatalogMutation() {
+        HivePolicyBindingState bindingState = hiveManagedPolicyService.getBindingState().orElse(null);
+        if (bindingState == null || !bindingState.hasActiveBinding()) {
+            return;
+        }
+        throw new IllegalStateException("Model catalog is managed by Hive policy group \""
+                + bindingState.getPolicyGroupId() + "\" and is read-only");
     }
 
     public record TestModelResult(boolean success, String reply, String error) {

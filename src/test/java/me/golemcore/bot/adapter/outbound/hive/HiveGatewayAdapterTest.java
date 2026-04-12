@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import me.golemcore.bot.domain.model.hive.HiveAuthSession;
+import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -34,7 +35,8 @@ class HiveGatewayAdapterTest {
                 "lab-a",
                 "1.2.3",
                 "abc123",
-                Set.of("web"))).thenReturn(new HiveApiClient.GolemAuthResponse(
+                Set.of("web"),
+                HiveCapabilitySnapshot.builder().build())).thenReturn(new HiveApiClient.GolemAuthResponse(
                         "golem-1",
                         "access",
                         "refresh",
@@ -102,7 +104,13 @@ class HiveGatewayAdapterTest {
                 "connected",
                 "healthy",
                 null,
-                42L);
+                42L,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 
     @Test

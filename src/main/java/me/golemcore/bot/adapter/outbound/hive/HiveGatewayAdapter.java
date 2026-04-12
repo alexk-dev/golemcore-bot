@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.outbound.hive;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.hive.HiveAuthSession;
+import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
 import me.golemcore.bot.port.outbound.HiveGatewayPort;
 import org.springframework.stereotype.Component;
 
@@ -28,7 +29,8 @@ public class HiveGatewayAdapter implements HiveGatewayPort {
                 hostLabel,
                 runtimeVersion,
                 buildVersion,
-                supportedChannels));
+                supportedChannels,
+                HiveCapabilitySnapshot.builder().build()));
     }
 
     @Override
@@ -52,7 +54,13 @@ public class HiveGatewayAdapter implements HiveGatewayPort {
                 status,
                 healthSummary,
                 lastErrorSummary,
-                uptimeSeconds);
+                uptimeSeconds,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 
     @Override

@@ -6,6 +6,9 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
+import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;
+import me.golemcore.bot.domain.model.hive.HivePolicyPackage;
 import me.golemcore.bot.domain.service.HiveJoinCodeParser;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -31,14 +34,16 @@ public class HiveApiClient {
             String hostLabel,
             String runtimeVersion,
             String buildVersion,
-            Set<String> supportedChannels) {
+            Set<String> supportedChannels,
+            HiveCapabilitySnapshot capabilities) {
         RegisterRequest request = new RegisterRequest(
                 enrollmentToken,
                 displayName,
                 hostLabel,
                 runtimeVersion,
                 buildVersion,
-                supportedChannels);
+                supportedChannels,
+                capabilities);
         return postJson(serverUrl, "/api/v1/golems/register", request, null, GolemAuthResponse.class);
     }
 
@@ -57,7 +62,13 @@ public class HiveApiClient {
             String status,
             String healthSummary,
             String lastErrorSummary,
-            Long uptimeSeconds) {
+            Long uptimeSeconds,
+            String capabilitySnapshotHash,
+            String policyGroupId,
+            Integer targetPolicyVersion,
+            Integer appliedPolicyVersion,
+            String syncStatus,
+            String lastPolicyErrorDigest) {
         HeartbeatRequest request = new HeartbeatRequest(
                 status,
                 null,
@@ -71,12 +82,41 @@ public class HiveApiClient {
                 healthSummary,
                 lastErrorSummary,
                 uptimeSeconds,
-                null);
+                capabilitySnapshotHash,
+                policyGroupId,
+                targetPolicyVersion,
+                appliedPolicyVersion,
+                syncStatus,
+                lastPolicyErrorDigest);
         postJson(serverUrl,
                 "/api/v1/golems/" + golemId + "/heartbeat",
                 request,
                 accessToken,
                 JsonNode.class);
+    }
+
+    public HivePolicyPackage getPolicyPackage(String serverUrl, String golemId, String accessToken) {
+        return getJson(serverUrl, "/api/v1/golems/" + golemId + "/policy-package", accessToken,
+                HivePolicyPackage.class);
+    }
+
+    public HivePolicyApplyResult reportPolicyApplyResult(
+            String serverUrl,
+            String golemId,
+            String accessToken,
+            HivePolicyApplyResult applyResult) {
+        return postJson(serverUrl,
+                "/api/v1/golems/" + golemId + "/policy-apply-result",
+                new PolicyApplyResultRequest(
+                        applyResult.getPolicyGroupId(),
+                        applyResult.getTargetVersion(),
+                        applyResult.getAppliedVersion(),
+                        applyResult.getSyncStatus(),
+                        applyResult.getChecksum(),
+                        applyResult.getErrorDigest(),
+                        applyResult.getErrorDetails()),
+                accessToken,
+                HivePolicyApplyResult.class);
     }
 
     public void publishEventsBatch(
@@ -121,6 +161,33 @@ public class HiveApiClient {
         }
     }
 
+    private <T> T getJson(
+            String serverUrl,
+            String path,
+            String bearerToken,
+            Class<T> responseType) {
+        String normalizedServerUrl = HiveJoinCodeParser.normalizeServerUrl(serverUrl);
+        String url = normalizedServerUrl + path;
+        try {
+            Request.Builder requestBuilder = new Request.Builder()
+                    .url(url)
+                    .get()
+                    .header("Accept", "application/json");
+            if (bearerToken != null && !bearerToken.isBlank()) {
+                requestBuilder.header("Authorization", "Bearer " + bearerToken);
+            }
+            try (Response response = okHttpClient.newCall(requestBuilder.build()).execute()) {
+                String responseBody = response.body().string();
+                if (!response.isSuccessful()) {
+                    throw new HiveApiException(response.code(), extractMessage(responseBody));
+                }
+                return objectMapper.readValue(responseBody, responseType);
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to call Hive API at " + url, exception);
+        }
+    }
+
     private String extractMessage(String responseBody) {
         if (responseBody == null || responseBody.isBlank()) {
             return "Hive API request failed";
@@ -143,7 +210,8 @@ public class HiveApiClient {
             String hostLabel,
             String runtimeVersion,
             String buildVersion,
-            Set<String> supportedChannels) {
+            Set<String> supportedChannels,
+            HiveCapabilitySnapshot capabilities) {
     }
 
     private record RefreshTokenRequest(String refreshToken) {
@@ -162,7 +230,22 @@ public class HiveApiClient {
             String healthSummary,
             String lastErrorSummary,
             Long uptimeSeconds,
-            String capabilitySnapshotHash) {
+            String capabilitySnapshotHash,
+            String policyGroupId,
+            Integer targetPolicyVersion,
+            Integer appliedPolicyVersion,
+            String syncStatus,
+            String lastPolicyErrorDigest) {
+    }
+
+    private record PolicyApplyResultRequest(
+            String policyGroupId,
+            Integer targetVersion,
+            Integer appliedVersion,
+            String syncStatus,
+            String checksum,
+            String errorDigest,
+            String errorDetails) {
     }
 
     public record GolemAuthResponse(

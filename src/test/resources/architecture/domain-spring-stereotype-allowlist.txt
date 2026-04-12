@@ -83,6 +83,8 @@ me.golemcore.bot.domain.service.HiveConnectionService
 me.golemcore.bot.domain.service.HiveControlCommandDispatcher
 me.golemcore.bot.domain.service.HiveControlInboxService
 me.golemcore.bot.domain.service.HiveInspectionCommandHandler
+me.golemcore.bot.domain.service.HiveManagedPolicyService
+me.golemcore.bot.domain.service.HivePolicySyncCommandHandler
 me.golemcore.bot.domain.service.HiveSessionStateStore
 me.golemcore.bot.domain.service.InternalTurnService
 me.golemcore.bot.domain.service.JvmExitService

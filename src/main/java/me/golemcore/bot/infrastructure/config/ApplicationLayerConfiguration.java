@@ -19,6 +19,7 @@ import me.golemcore.bot.application.skills.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
+import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
@@ -68,6 +69,7 @@ public class ApplicationLayerConfiguration {
             RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService,
             MemoryPresetService memoryPresetService,
+            HiveManagedPolicyService hiveManagedPolicyService,
             RuntimeSettingsValidator validator,
             RuntimeSettingsMergeService mergeService,
             ProviderModelImportService providerModelImportService,
@@ -76,6 +78,7 @@ public class ApplicationLayerConfiguration {
                 runtimeConfigService,
                 preferencesService,
                 memoryPresetService,
+                hiveManagedPolicyService,
                 validator,
                 mergeService,
                 providerModelImportService,
@@ -155,13 +158,15 @@ public class ApplicationLayerConfiguration {
             ModelSelectionService modelSelectionService,
             ProviderModelDiscoveryService providerModelDiscoveryService,
             ModelRegistryService modelRegistryService,
-            LlmPort llmPort) {
+            LlmPort llmPort,
+            HiveManagedPolicyService hiveManagedPolicyService) {
         return new ModelManagementFacade(
                 modelConfigAdminPort,
                 modelSelectionService,
                 providerModelDiscoveryService,
                 modelRegistryService,
-                llmPort);
+                llmPort,
+                hiveManagedPolicyService);
     }
 
     @Bean

@@ -50,7 +50,12 @@ public class ModelsController {
     @PutMapping
     public Mono<ResponseEntity<ModelsConfigDto>> replaceModelsConfig(
             @RequestBody ModelsConfigDto newConfig) {
-        return Mono.just(ResponseEntity.ok(toDto(modelManagementFacade.replaceModelsConfig(toSnapshot(newConfig)))));
+        try {
+            return Mono
+                    .just(ResponseEntity.ok(toDto(modelManagementFacade.replaceModelsConfig(toSnapshot(newConfig)))));
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        }
     }
 
     /**
@@ -66,6 +71,8 @@ public class ModelsController {
             modelManagementFacade.saveModel(request.id(), request.previousId(), toSnapshot(request.settings()));
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
         }
         return Mono.just(ResponseEntity.ok().build());
     }
@@ -79,6 +86,8 @@ public class ModelsController {
             modelManagementFacade.deleteModel(id);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
         } catch (NoSuchElementException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage());
         }
@@ -94,8 +103,8 @@ public class ModelsController {
                 .getAvailableModels();
         Map<String, List<AvailableModelDto>> result = new LinkedHashMap<>();
         grouped.forEach((provider, models) -> result.put(provider, models.stream()
-                .map(m -> new AvailableModelDto(m.id(), m.displayName(), m.hasReasoning(),
-                        m.reasoningLevels(), m.supportsVision()))
+                .map(model -> new AvailableModelDto(model.id(), model.displayName(), model.hasReasoning(),
+                        model.reasoningLevels(), model.supportsVision()))
                 .toList()));
         return Mono.just(ResponseEntity.ok(result));
     }
@@ -113,10 +122,10 @@ public class ModelsController {
                             model.ownedBy(), model.defaultCatalogEntry()))
                     .toList();
             return Mono.just(ResponseEntity.ok(response));
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        } catch (IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage());
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, exception.getMessage());
         }
     }
 
@@ -132,8 +141,8 @@ public class ModelsController {
             return Mono.just(ResponseEntity.ok(
                     new ResolveRegistryResponse(result.defaultCatalogEntry(), result.configSource(),
                             result.cacheStatus())));
-        } catch (IllegalArgumentException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
         }
     }
 

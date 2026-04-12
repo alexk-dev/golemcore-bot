@@ -291,6 +291,10 @@ public class RuntimeConfigService {
         }
     }
 
+    public RuntimeConfig snapshotRuntimeConfig() {
+        return copyRuntimeConfig(getRuntimeConfig());
+    }
+
     /**
      * Update and persist RuntimeConfig.
      */
@@ -323,6 +327,25 @@ public class RuntimeConfigService {
         RuntimeConfig reloaded = buildEffectiveRuntimeConfig(loadOrCreate());
         configRef.set(reloaded);
         return reloaded;
+    }
+
+    public void replaceHiveManagedPolicySections(RuntimeConfig.LlmConfig llmConfig,
+            RuntimeConfig.ModelRouterConfig modelRouterConfig) {
+        RuntimeConfig snapshot = snapshotRuntimeConfig();
+        RuntimeConfig llmSnapshot = copyRuntimeConfig(RuntimeConfig.builder()
+                .llm(llmConfig != null ? llmConfig : RuntimeConfig.LlmConfig.builder().build())
+                .build());
+        RuntimeConfig modelRouterSnapshot = copyRuntimeConfig(RuntimeConfig.builder()
+                .modelRouter(modelRouterConfig != null ? modelRouterConfig
+                        : RuntimeConfig.ModelRouterConfig.builder().build())
+                .build());
+        snapshot.setLlm(llmSnapshot.getLlm());
+        snapshot.setModelRouter(modelRouterSnapshot.getModelRouter());
+        updateRuntimeConfig(snapshot);
+    }
+
+    public void restoreRuntimeConfigSnapshot(RuntimeConfig snapshot) {
+        updateRuntimeConfig(copyRuntimeConfig(snapshot));
     }
 
     public RuntimeConfig.HiveConfig getHiveConfig() {

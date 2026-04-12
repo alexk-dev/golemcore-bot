@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.outbound.hive;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,6 +36,20 @@ class HiveControlChannelPortAdapterTest {
 
         verify(hiveControlChannelClient).connect(sessionState, consumer);
         verify(hiveControlChannelClient).disconnect("stop");
+    }
+
+    @Test
+    void shouldReturnDisconnectedSnapshotWhenClientStatusIsMissing() {
+        when(hiveControlChannelClient.getStatus()).thenReturn(null);
+
+        HiveControlChannelStatusSnapshot status = adapter.getStatus();
+
+        assertEquals("DISCONNECTED", status.state());
+        assertNull(status.connectedAt());
+        assertNull(status.lastMessageAt());
+        assertNull(status.lastError());
+        assertNull(status.lastReceivedCommandId());
+        assertEquals(0, status.receivedCommandCount());
     }
 
     @Test

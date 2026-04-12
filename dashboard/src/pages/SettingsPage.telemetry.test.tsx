@@ -51,6 +51,10 @@ vi.mock('../hooks/useSelfEvolving', () => ({
   useSelfEvolvingTacticSearchStatus: () => ({ data: null }),
 }));
 
+vi.mock('../hooks/useHive', () => ({
+  useHiveStatus: () => ({ data: undefined }),
+}));
+
 vi.mock('../lib/telemetry/TelemetryContext', () => ({
   useTelemetry: () => ({
     recordCounter,

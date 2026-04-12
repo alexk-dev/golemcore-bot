@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.model;
+package me.golemcore.bot.domain.model.hive;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.time.Instant;
@@ -12,22 +12,22 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Builder
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class HiveControlCommandEnvelope {
+public class HivePolicyBindingState {
 
     @Builder.Default
     private int schemaVersion = 1;
 
-    private String eventType;
-    private String commandId;
-    private String requestId;
-    private String threadId;
-    private String cardId;
-    private String golemId;
-    private String runId;
-    private String body;
-    private HiveInspectionRequestBody inspection;
     private String policyGroupId;
     private Integer targetVersion;
+    private Integer appliedVersion;
     private String checksum;
-    private Instant createdAt;
+    private String syncStatus;
+    private Instant lastSyncRequestedAt;
+    private Instant lastAppliedAt;
+    private String lastErrorDigest;
+    private Instant lastErrorAt;
+
+    public boolean hasActiveBinding() {
+        return policyGroupId != null && !policyGroupId.isBlank();
+    }
 }

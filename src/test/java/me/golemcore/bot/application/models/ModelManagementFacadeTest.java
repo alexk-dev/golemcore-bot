@@ -8,12 +8,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -21,6 +23,8 @@ import java.util.concurrent.TimeoutException;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
+import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
+import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
@@ -34,6 +38,7 @@ class ModelManagementFacadeTest {
     private ProviderModelDiscoveryService providerModelDiscoveryService;
     private ModelRegistryService modelRegistryService;
     private LlmPort llmPort;
+    private HiveManagedPolicyService hiveManagedPolicyService;
     private ModelManagementFacade facade;
 
     @BeforeEach
@@ -43,12 +48,15 @@ class ModelManagementFacadeTest {
         providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         modelRegistryService = mock(ModelRegistryService.class);
         llmPort = mock(LlmPort.class);
+        hiveManagedPolicyService = mock(HiveManagedPolicyService.class);
         facade = new ModelManagementFacade(
                 modelConfigAdminPort,
                 modelSelectionService,
                 providerModelDiscoveryService,
                 modelRegistryService,
-                llmPort);
+                llmPort,
+                hiveManagedPolicyService);
+        when(hiveManagedPolicyService.getBindingState()).thenReturn(Optional.empty());
     }
 
     @Test
@@ -90,8 +98,10 @@ class ModelManagementFacadeTest {
                 true,
                 128000,
                 null);
+
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
                 () -> facade.saveModel(" ", null, settings));
+
         assertEquals("id is required", exception.getMessage());
     }
 
@@ -101,6 +111,27 @@ class ModelManagementFacadeTest {
                 () -> facade.saveModel("gpt-5", null, null));
 
         assertEquals("settings is required", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectSavingModelWhenManagedByHivePolicy() {
+        ModelConfigAdminPort.ModelSettingsSnapshot settings = new ModelConfigAdminPort.ModelSettingsSnapshot(
+                "openai",
+                "GPT-5",
+                true,
+                true,
+                128000,
+                null);
+        when(hiveManagedPolicyService.getBindingState()).thenReturn(Optional.of(HivePolicyBindingState.builder()
+                .policyGroupId("pg-1")
+                .build()));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> facade.saveModel("gpt-5", null, settings));
+
+        assertEquals("Model catalog is managed by Hive policy group \"pg-1\" and is read-only",
+                exception.getMessage());
+        verifyNoInteractions(modelConfigAdminPort);
     }
 
     @Test
@@ -119,6 +150,22 @@ class ModelManagementFacadeTest {
         when(modelConfigAdminPort.replaceConfig(snapshot)).thenReturn(snapshot);
 
         assertEquals(snapshot, facade.replaceModelsConfig(snapshot));
+    }
+
+    @Test
+    void shouldRejectReplacingModelsConfigWhenManagedByHivePolicy() {
+        ModelConfigAdminPort.ModelsConfigSnapshot snapshot = new ModelConfigAdminPort.ModelsConfigSnapshot(Map.of(),
+                null);
+        when(hiveManagedPolicyService.getBindingState()).thenReturn(Optional.of(HivePolicyBindingState.builder()
+                .policyGroupId("pg-1")
+                .build()));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> facade.replaceModelsConfig(snapshot));
+
+        assertEquals("Model catalog is managed by Hive policy group \"pg-1\" and is read-only",
+                exception.getMessage());
+        verifyNoInteractions(modelConfigAdminPort);
     }
 
     @Test
@@ -238,6 +285,20 @@ class ModelManagementFacadeTest {
         NoSuchElementException exception = assertThrows(NoSuchElementException.class,
                 () -> facade.deleteModel("missing"));
         assertEquals("Model 'missing' not found", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectDeletingModelWhenManagedByHivePolicy() {
+        when(hiveManagedPolicyService.getBindingState()).thenReturn(Optional.of(HivePolicyBindingState.builder()
+                .policyGroupId("pg-1")
+                .build()));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> facade.deleteModel("gpt-5"));
+
+        assertEquals("Model catalog is managed by Hive policy group \"pg-1\" and is read-only",
+                exception.getMessage());
+        verifyNoInteractions(modelConfigAdminPort);
     }
 
     @Test

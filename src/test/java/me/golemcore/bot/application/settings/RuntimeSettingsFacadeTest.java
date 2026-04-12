@@ -6,6 +6,8 @@ import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.MemoryPreset;
+import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
+import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -34,6 +36,7 @@ class RuntimeSettingsFacadeTest {
     private RuntimeConfigService runtimeConfigService;
     private UserPreferencesService preferencesService;
     private MemoryPresetService memoryPresetService;
+    private HiveManagedPolicyService hiveManagedPolicyService;
     private ProviderModelImportService providerModelImportService;
     private ProviderModelDiscoveryService providerModelDiscoveryService;
     private RuntimeSettingsFacade facade;
@@ -43,6 +46,7 @@ class RuntimeSettingsFacadeTest {
         runtimeConfigService = mock(RuntimeConfigService.class);
         preferencesService = mock(UserPreferencesService.class);
         memoryPresetService = mock(MemoryPresetService.class);
+        hiveManagedPolicyService = mock(HiveManagedPolicyService.class);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         VoiceProviderCatalogPort voiceProviderCatalogPort = mock(VoiceProviderCatalogPort.class);
         providerModelImportService = mock(ProviderModelImportService.class);
@@ -55,6 +59,7 @@ class RuntimeSettingsFacadeTest {
                 runtimeConfigService,
                 preferencesService,
                 memoryPresetService,
+                hiveManagedPolicyService,
                 validator,
                 mergeService,
                 providerModelImportService,
@@ -202,6 +207,29 @@ class RuntimeSettingsFacadeTest {
     }
 
     @Test
+    void shouldRejectAddingProviderAndImportingModelsWhenHivePolicyManagesLlm() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new java.util.LinkedHashMap<>()).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(hiveManagedPolicyService.getBindingState()).thenReturn(java.util.Optional.of(HivePolicyBindingState
+                .builder()
+                .policyGroupId("pg-1")
+                .build()));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> facade.addLlmProviderAndImportModels(
+                        "openai",
+                        RuntimeConfig.LlmProviderConfig.builder().build(),
+                        List.of("openai/gpt-5.2")));
+
+        assertEquals("LLM settings are managed by Hive policy group \"pg-1\" and are read-only",
+                error.getMessage());
+        verify(runtimeConfigService, never()).addLlmProvider(any(), any());
+        verify(providerModelImportService, never()).importMissingModels(any(), any());
+    }
+
+    @Test
     void shouldReturnSavedProviderTestFailure() {
         when(providerModelDiscoveryService.discoverModelsForProvider("openai"))
                 .thenThrow(new IllegalStateException("bad gateway"));
@@ -284,6 +312,32 @@ class RuntimeSettingsFacadeTest {
 
         assertEquals(apiView, response);
         verify(runtimeConfigService).updateLlmProvider("openai", update);
+    }
+
+    @Test
+    void shouldRejectHiveManagedLlmMutation() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new java.util.LinkedHashMap<>()).build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .build();
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(Map.of("openai", RuntimeConfig.LlmProviderConfig.builder().build()))
+                        .build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(hiveManagedPolicyService.getBindingState()).thenReturn(java.util.Optional.of(HivePolicyBindingState
+                .builder()
+                .policyGroupId("pg-1")
+                .build()));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> facade.updateRuntimeConfig(incoming));
+
+        assertEquals("LLM settings are managed by Hive policy group \"pg-1\" and are read-only",
+                error.getMessage());
+        verify(runtimeConfigService, never()).updateRuntimeConfig(any());
     }
 
     @Test

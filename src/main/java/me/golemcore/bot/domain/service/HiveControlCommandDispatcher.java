@@ -41,12 +41,14 @@ public class HiveControlCommandDispatcher {
     private static final String EVENT_TYPE_COMMAND_STOP = "command.stop";
     private static final String EVENT_TYPE_COMMAND_CANCEL = "command.cancel";
     private static final String EVENT_TYPE_INSPECTION_REQUEST = "inspection.request";
+    private static final String EVENT_TYPE_POLICY_SYNC_REQUESTED = "policy.sync_requested";
     private static final String CANCELLED_BY_HIVE_MESSAGE = "Cancelled by Hive control command";
 
     private final SessionRunCoordinator sessionRunCoordinator;
     private final HiveControlInboxService hiveControlInboxService;
     private final HiveEventPublishPort hiveEventPublishPort;
     private final HiveInspectionCommandHandler hiveInspectionCommandHandler;
+    private final HivePolicySyncCommandHandler hivePolicySyncCommandHandler;
     private final Clock clock;
 
     public void dispatch(HiveControlCommandEnvelope envelope) {
@@ -72,6 +74,18 @@ public class HiveControlCommandDispatcher {
                     envelope.getRequestId(),
                     envelope.getThreadId(),
                     envelope.getInspection() != null ? envelope.getInspection().getOperation() : null);
+            return;
+        }
+        if (EVENT_TYPE_POLICY_SYNC_REQUESTED.equals(eventType)) {
+            try {
+                hivePolicySyncCommandHandler.handle(envelope);
+                hiveControlInboxService.markProcessed(trackingId);
+            } catch (RuntimeException exception) {
+                hiveControlInboxService.markFailedIfPending(trackingId, exception);
+                throw policySyncDispatchFailure(exception);
+            }
+            log.info("[Hive] Registered policy sync request: commandId={}, policyGroupId={}, targetVersion={}",
+                    envelope.getCommandId(), envelope.getPolicyGroupId(), envelope.getTargetVersion());
             return;
         }
 
@@ -130,7 +144,6 @@ public class HiveControlCommandDispatcher {
 
     private String validateEnvelope(HiveControlCommandEnvelope envelope) {
         requireEnvelope(envelope);
-        requireThreadId(envelope);
         String eventType = normalizeEventType(envelope.getEventType());
         requireTrackingId(envelope);
         requireSupportedEventType(eventType);
@@ -161,7 +174,8 @@ public class HiveControlCommandDispatcher {
         if (EVENT_TYPE_COMMAND.equals(eventType)
                 || EVENT_TYPE_COMMAND_STOP.equals(eventType)
                 || EVENT_TYPE_COMMAND_CANCEL.equals(eventType)
-                || EVENT_TYPE_INSPECTION_REQUEST.equals(eventType)) {
+                || EVENT_TYPE_INSPECTION_REQUEST.equals(eventType)
+                || EVENT_TYPE_POLICY_SYNC_REQUESTED.equals(eventType)) {
             return;
         }
         throw new IllegalArgumentException("Unsupported Hive control command eventType: " + eventType);
@@ -172,6 +186,11 @@ public class HiveControlCommandDispatcher {
             requireInspectionRequestId(envelope);
             return;
         }
+        if (EVENT_TYPE_POLICY_SYNC_REQUESTED.equals(eventType)) {
+            requirePolicySyncPayload(envelope);
+            return;
+        }
+        requireThreadId(envelope);
         requireCommandId(envelope);
         if (EVENT_TYPE_COMMAND.equals(eventType)) {
             requireCommandBody(envelope);
@@ -193,6 +212,19 @@ public class HiveControlCommandDispatcher {
     private void requireInspectionRequestId(HiveControlCommandEnvelope envelope) {
         if (envelope.getRequestId() == null || envelope.getRequestId().isBlank()) {
             throw new IllegalArgumentException("Hive inspection requestId is required");
+        }
+    }
+
+    private void requirePolicySyncPayload(HiveControlCommandEnvelope envelope) {
+        requireCommandId(envelope);
+        if (envelope.getPolicyGroupId() == null || envelope.getPolicyGroupId().isBlank()) {
+            throw new IllegalArgumentException("Hive policy sync policyGroupId is required");
+        }
+        if (envelope.getTargetVersion() == null) {
+            throw new IllegalArgumentException("Hive policy sync targetVersion is required");
+        }
+        if (envelope.getChecksum() == null || envelope.getChecksum().isBlank()) {
+            throw new IllegalArgumentException("Hive policy sync checksum is required");
         }
     }
 
@@ -249,5 +281,12 @@ public class HiveControlCommandDispatcher {
             return illegalStateException;
         }
         return new IllegalStateException("Failed to handle Hive inspection request", exception);
+    }
+
+    private static IllegalStateException policySyncDispatchFailure(RuntimeException exception) {
+        if (exception instanceof IllegalStateException illegalStateException) {
+            return illegalStateException;
+        }
+        return new IllegalStateException("Failed to handle Hive policy sync request", exception);
     }
 }

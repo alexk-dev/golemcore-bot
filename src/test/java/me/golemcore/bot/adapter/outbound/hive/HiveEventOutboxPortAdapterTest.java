@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.List;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.hive.HiveOutboxSummary;
@@ -45,7 +46,13 @@ class HiveEventOutboxPortAdapterTest {
                 .golemId("golem-1")
                 .accessToken("access")
                 .build();
-        List<HiveEventPayload> events = List.of(HiveEventPayload.builder().eventType("runtime_event").build());
+        List<HiveEventPayload> events = List.of(HiveEventPayload.builder()
+                .schemaVersion(1)
+                .eventType("runtime_event")
+                .runtimeEventType("COMMAND_ACKNOWLEDGED")
+                .commandId("cmd-1")
+                .createdAt(Instant.parse("2026-04-08T00:00:00Z"))
+                .build());
         doAnswer(invocation -> {
             HiveEventOutboxService.BatchSender sender = invocation.getArgument(1);
             sender.send("https://hive.example.com", "golem-1", "access", events);

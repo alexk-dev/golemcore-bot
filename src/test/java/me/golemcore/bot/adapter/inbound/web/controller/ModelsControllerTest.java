@@ -6,8 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -59,17 +59,33 @@ class ModelsControllerTest {
     @Test
     void shouldReplaceModelsConfig() {
         ModelsController.ModelsConfigDto newConfig = new ModelsController.ModelsConfigDto(Map.of(), null);
-        ModelConfigAdminPort.ModelsConfigSnapshot savedConfig = new ModelConfigAdminPort.ModelsConfigSnapshot(
+        ModelConfigAdminPort.ModelsConfigSnapshot snapshot = new ModelConfigAdminPort.ModelsConfigSnapshot(
                 Map.of(),
                 null);
         when(modelManagementFacade.replaceModelsConfig(new ModelConfigAdminPort.ModelsConfigSnapshot(Map.of(), null)))
-                .thenReturn(savedConfig);
+                .thenReturn(snapshot);
 
         ResponseEntity<ModelsController.ModelsConfigDto> result = controller.replaceModelsConfig(newConfig).block();
 
         verify(modelManagementFacade)
                 .replaceModelsConfig(new ModelConfigAdminPort.ModelsConfigSnapshot(Map.of(), null));
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals(0, result.getBody().models().size());
+    }
+
+    @Test
+    void shouldRejectReplacingModelsConfigWhenManagedByHivePolicy() {
+        ModelsController.ModelsConfigDto newConfig = new ModelsController.ModelsConfigDto(Map.of(), null);
+        doThrow(new IllegalStateException("Model catalog is managed by Hive policy group \"pg-1\" and is read-only"))
+                .when(modelManagementFacade)
+                .replaceModelsConfig(new ModelConfigAdminPort.ModelsConfigSnapshot(Map.of(), null));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.replaceModelsConfig(newConfig).block());
+
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        assertEquals("Model catalog is managed by Hive policy group \"pg-1\" and is read-only", error.getReason());
     }
 
     @Test
@@ -88,15 +104,67 @@ class ModelsControllerTest {
 
         verify(modelManagementFacade).saveModel("gpt-5", null, new ModelConfigAdminPort.ModelSettingsSnapshot(
                 "openai", "GPT-5", true, true, 128000, null));
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+    }
+
+    @Test
+    void shouldSaveModelWithSlashHeavyId() {
+        ModelsController.ModelSettingsDto settings = new ModelsController.ModelSettingsDto(
+                "openrouter",
+                "Qwen",
+                false,
+                true,
+                128000,
+                null);
+
+        ResponseEntity<Void> result = controller
+                .saveModel(new ModelsController.SaveModelRequest(
+                        "openrouter/qwen/model-name:version",
+                        null,
+                        settings))
+                .block();
+
+        verify(modelManagementFacade).saveModel(
+                "openrouter/qwen/model-name:version",
+                null,
+                new ModelConfigAdminPort.ModelSettingsSnapshot("openrouter", "Qwen", false, true, 128000, null));
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+    }
+
+    @Test
+    void shouldSaveModelWithPreviousIdForRename() {
+        ModelsController.ModelSettingsDto settings = new ModelsController.ModelSettingsDto(
+                "openrouter",
+                "Qwen",
+                false,
+                true,
+                128000,
+                null);
+
+        ResponseEntity<Void> result = controller
+                .saveModel(new ModelsController.SaveModelRequest(
+                        "openrouter/qwen/model-name:version",
+                        "qwen/model-name:version",
+                        settings))
+                .block();
+
+        verify(modelManagementFacade).saveModel(
+                "openrouter/qwen/model-name:version",
+                "qwen/model-name:version",
+                new ModelConfigAdminPort.ModelSettingsSnapshot("openrouter", "Qwen", false, true, 128000, null));
+        assertNotNull(result);
         assertEquals(HttpStatus.OK, result.getStatusCode());
     }
 
     @Test
     void shouldRejectNullSaveRequest() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> controller.saveModel(null));
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.saveModel(null));
 
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("request body is required", ex.getReason());
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("request body is required", exception.getReason());
     }
 
     @Test
@@ -112,10 +180,32 @@ class ModelsControllerTest {
                 .when(modelManagementFacade).saveModel(" ", null,
                         new ModelConfigAdminPort.ModelSettingsSnapshot("openai", "GPT-5", true, true, 128000, null));
 
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.saveModel(new ModelsController.SaveModelRequest(" ", null, settings)));
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("id is required", ex.getReason());
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("id is required", exception.getReason());
+    }
+
+    @Test
+    void shouldReturnConflictWhenSavingModelManagedByHivePolicy() {
+        ModelsController.ModelSettingsDto settings = new ModelsController.ModelSettingsDto(
+                "openai",
+                "GPT-5",
+                true,
+                true,
+                128000,
+                null);
+        doThrow(new IllegalStateException("Model catalog is managed by Hive policy group \"pg-1\" and is read-only"))
+                .when(modelManagementFacade).saveModel("gpt-5", null,
+                        new ModelConfigAdminPort.ModelSettingsSnapshot("openai", "GPT-5", true, true, 128000, null));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.saveModel(new ModelsController.SaveModelRequest("gpt-5", null, settings)).block());
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        assertEquals("Model catalog is managed by Hive policy group \"pg-1\" and is read-only",
+                exception.getReason());
     }
 
     @Test
@@ -123,6 +213,7 @@ class ModelsControllerTest {
         ResponseEntity<Void> result = controller.deleteModel("gpt-5").block();
 
         verify(modelManagementFacade).deleteModel("gpt-5");
+        assertNotNull(result);
         assertEquals(HttpStatus.OK, result.getStatusCode());
     }
 
@@ -131,10 +222,23 @@ class ModelsControllerTest {
         doThrow(new NoSuchElementException("Model 'nonexistent' not found"))
                 .when(modelManagementFacade).deleteModel("nonexistent");
 
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.deleteModel("nonexistent").block());
-        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
-        assertEquals("Model 'nonexistent' not found", ex.getReason());
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertEquals("Model 'nonexistent' not found", exception.getReason());
+    }
+
+    @Test
+    void shouldReturnConflictWhenDeletingManagedModel() {
+        doThrow(new IllegalStateException("Model catalog is managed by Hive policy group \"pg-1\" and is read-only"))
+                .when(modelManagementFacade).deleteModel("gpt-5");
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.deleteModel("gpt-5").block());
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        assertEquals("Model catalog is managed by Hive policy group \"pg-1\" and is read-only",
+                exception.getReason());
     }
 
     @Test
@@ -152,8 +256,11 @@ class ModelsControllerTest {
         ResponseEntity<Map<String, List<?>>> result = (ResponseEntity<Map<String, List<?>>>) (ResponseEntity<?>) controller
                 .getAvailableModels().block();
 
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
         assertNotNull(result.getBody());
         assertTrue(result.getBody().containsKey("openai"));
+        assertTrue(result.getBody().containsKey("anthropic"));
         assertEquals(1, result.getBody().get("openai").size());
     }
 
@@ -179,6 +286,8 @@ class ModelsControllerTest {
         ResponseEntity<List<?>> result = (ResponseEntity<List<?>>) (ResponseEntity<?>) controller
                 .discoverProviderModels("xmesh").block();
 
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals(2, result.getBody().size());
         Map<?, ?> firstModel = objectMapper.convertValue(result.getBody().getFirst(), Map.class);
         Map<?, ?> firstDefaults = objectMapper.convertValue(firstModel.get("defaultSettings"), Map.class);
@@ -191,10 +300,10 @@ class ModelsControllerTest {
         when(modelManagementFacade.discoverProviderModels("missing"))
                 .thenThrow(new IllegalArgumentException("Provider 'missing' is not configured"));
 
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.discoverProviderModels("missing").block());
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("Provider 'missing' is not configured", ex.getReason());
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("Provider 'missing' is not configured", exception.getReason());
     }
 
     @Test
@@ -202,10 +311,10 @@ class ModelsControllerTest {
         when(modelManagementFacade.discoverProviderModels("xmesh"))
                 .thenThrow(new IllegalStateException("Discovery request failed"));
 
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.discoverProviderModels("xmesh").block());
-        assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
-        assertEquals("Discovery request failed", ex.getReason());
+        assertEquals(HttpStatus.BAD_GATEWAY, exception.getStatusCode());
+        assertEquals("Discovery request failed", exception.getReason());
     }
 
     @Test
@@ -218,6 +327,8 @@ class ModelsControllerTest {
                 .resolveModelRegistry(new ModelsController.ResolveRegistryRequest("openai", "gpt-5.1"))
                 .block();
 
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
         Map<?, ?> body = objectMapper.convertValue(result.getBody(), Map.class);
         assertEquals("provider", body.get("configSource"));
         assertEquals("remote-hit", body.get("cacheStatus"));
@@ -227,12 +338,29 @@ class ModelsControllerTest {
     }
 
     @Test
+    void shouldReturnMissWhenModelRegistryDefaultsAreUnavailable() {
+        when(modelManagementFacade.resolveModelRegistry("openai", "unknown-model"))
+                .thenReturn(new ModelRegistryService.ResolveResult(null, null, "miss"));
+
+        ResponseEntity<ModelsController.ResolveRegistryResponse> result = controller
+                .resolveModelRegistry(new ModelsController.ResolveRegistryRequest("openai", "unknown-model"))
+                .block();
+
+        assertNotNull(result);
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        Map<?, ?> body = objectMapper.convertValue(result.getBody(), Map.class);
+        assertNull(body.get("defaultSettings"));
+        assertNull(body.get("configSource"));
+        assertEquals("miss", body.get("cacheStatus"));
+    }
+
+    @Test
     void shouldRejectNullModelRegistryResolveRequest() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.resolveModelRegistry(null).block());
 
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("request body is required", ex.getReason());
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("request body is required", exception.getReason());
         verifyNoInteractions(modelManagementFacade);
     }
 
@@ -241,21 +369,34 @@ class ModelsControllerTest {
         when(modelManagementFacade.resolveModelRegistry("  ", "gpt-5.1"))
                 .thenThrow(new IllegalArgumentException("provider is required"));
 
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.resolveModelRegistry(new ModelsController.ResolveRegistryRequest("  ", "gpt-5.1"))
                         .block());
 
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("provider is required", ex.getReason());
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("provider is required", exception.getReason());
+    }
+
+    @Test
+    void shouldRejectModelRegistryResolveRequestWithBlankModelId() {
+        when(modelManagementFacade.resolveModelRegistry("openai", "  "))
+                .thenThrow(new IllegalArgumentException("modelId is required"));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.resolveModelRegistry(new ModelsController.ResolveRegistryRequest("openai", "  "))
+                        .block());
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("modelId is required", exception.getReason());
     }
 
     @Test
     void shouldRejectNullTestModelRequest() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.testModel(null).block());
 
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("request body is required", ex.getReason());
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("request body is required", exception.getReason());
     }
 
     @Test
@@ -267,6 +408,7 @@ class ModelsControllerTest {
                 .testModel(new ModelsController.TestModelRequest("gpt-5"))
                 .block();
 
+        assertNotNull(result);
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertTrue(result.getBody().success());
         assertEquals("I am GPT-5, version 5.0.", result.getBody().reply());
@@ -282,6 +424,7 @@ class ModelsControllerTest {
                 .testModel(new ModelsController.TestModelRequest("gpt-5"))
                 .block();
 
+        assertNotNull(result);
         assertEquals(HttpStatus.BAD_GATEWAY, result.getStatusCode());
         assertFalse(result.getBody().success());
         assertEquals("Connection refused", result.getBody().error());
@@ -292,11 +435,11 @@ class ModelsControllerTest {
         when(modelManagementFacade.testModel(" "))
                 .thenThrow(new IllegalArgumentException("model is required"));
 
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> controller.testModel(new ModelsController.TestModelRequest(" ")).block());
 
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("model is required", ex.getReason());
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("model is required", exception.getReason());
     }
 
     @Test

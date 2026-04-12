@@ -15,6 +15,8 @@ import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
+import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -65,6 +67,7 @@ class SettingsControllerTest {
     private UserPreferencesService preferencesService;
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
+    private HiveManagedPolicyService hiveManagedPolicyService;
     private MemoryPresetService memoryPresetService;
     private ProviderModelImportService providerModelImportService;
     private ProviderModelDiscoveryService providerModelDiscoveryService;
@@ -78,6 +81,7 @@ class SettingsControllerTest {
         preferencesService = mock(UserPreferencesService.class);
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        hiveManagedPolicyService = mock(HiveManagedPolicyService.class);
         memoryPresetService = mock(MemoryPresetService.class);
         providerModelImportService = mock(ProviderModelImportService.class);
         providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
@@ -91,6 +95,7 @@ class SettingsControllerTest {
         controller = createController(sttProviderRegistry, ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
         when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(false);
+        when(hiveManagedPolicyService.getBindingState()).thenReturn(java.util.Optional.empty());
         when(modelSelectionService.validateModel(anyString(), anyList()))
                 .thenReturn(new ModelSelectionService.ValidationResult(true, null));
         when(modelSelectionService.resolveProviderForModel(anyString())).thenAnswer(invocation -> {
@@ -108,6 +113,7 @@ class SettingsControllerTest {
                 runtimeConfigService,
                 preferencesService,
                 memoryPresetService,
+                hiveManagedPolicyService,
                 new RuntimeSettingsValidator(
                         modelSelectionService,
                         new PluginVoiceProviderCatalogAdapter(sttRegistry, ttsRegistry)),
@@ -261,6 +267,62 @@ class SettingsControllerTest {
         assertEquals("special3", prefs.getModelTier());
         assertTrue(prefs.isTierForce());
         assertTrue(prefs.isNotificationsEnabled());
+    }
+
+    @Test
+    void shouldRejectHiveManagedLlmMutation() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .build();
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(Map.of("openai", RuntimeConfig.LlmProviderConfig.builder()
+                                .apiKey(Secret.of("sk-test"))
+                                .apiType("openai")
+                                .build()))
+                        .build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(hiveManagedPolicyService.getBindingState())
+                .thenReturn(java.util.Optional.of(HivePolicyBindingState.builder()
+                        .policyGroupId("pg-1")
+                        .targetVersion(4)
+                        .appliedVersion(4)
+                        .syncStatus("IN_SYNC")
+                        .build()));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.updateLlmConfig(incoming.getLlm()).block());
+
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        assertEquals("LLM settings are managed by Hive policy group \"pg-1\" and are read-only", error.getReason());
+    }
+
+    @Test
+    void shouldRejectHiveManagedModelRouterMutation() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().balancedModel("openai/gpt-5.1").build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(hiveManagedPolicyService.getBindingState())
+                .thenReturn(java.util.Optional.of(HivePolicyBindingState.builder()
+                        .policyGroupId("pg-1")
+                        .targetVersion(4)
+                        .appliedVersion(4)
+                        .syncStatus("IN_SYNC")
+                        .build()));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.updateModelRouterConfig(RuntimeConfig.ModelRouterConfig.builder()
+                        .balancedModel("openai/gpt-5.2")
+                        .build()).block());
+
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        assertEquals("Model router settings are managed by Hive policy group \"pg-1\" and are read-only",
+                error.getReason());
     }
 
     @Test
