@@ -24,7 +24,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -45,11 +44,11 @@ public class TacticBm25IndexService {
     private static final double K1 = 1.2d;
     private static final double B = 0.75d;
 
-    private final AtomicReference<Snapshot> snapshot = new AtomicReference<>(Snapshot.empty());
+    private final AtomicReference<Snapshot> indexSnapshot = new AtomicReference<>(Snapshot.empty());
 
     public void replaceDocuments(List<TacticIndexDocument> documents) {
         List<TacticIndexDocument> safeDocuments = documents != null ? new ArrayList<>(documents) : new ArrayList<>();
-        snapshot.set(buildSnapshot(safeDocuments));
+        indexSnapshot.set(buildSnapshot(safeDocuments));
     }
 
     public List<ScoredDocument> search(TacticSearchQuery query, int limit) {
@@ -68,7 +67,7 @@ public class TacticBm25IndexService {
                     Map.of());
             int documentLength = Math.max(current.documentLengths().getOrDefault(document.getTacticId(), 0), 1);
             double score = 0.0d;
-            LinkedHashSet<String> matchedTerms = new LinkedHashSet<>();
+            Set<String> matchedTerms = new LinkedHashSet<>();
             for (String queryTerm : queryTerms) {
                 Integer frequency = termFrequencies.get(queryTerm);
                 if (frequency == null || frequency <= 0) {
@@ -94,7 +93,7 @@ public class TacticBm25IndexService {
     }
 
     public Snapshot snapshot() {
-        return snapshot.get();
+        return indexSnapshot.get();
     }
 
     private Snapshot buildSnapshot(List<TacticIndexDocument> documents) {
@@ -136,7 +135,7 @@ public class TacticBm25IndexService {
     }
 
     private List<String> expandQueryTerms(TacticSearchQuery query) {
-        LinkedHashSet<String> terms = new LinkedHashSet<>();
+        Set<String> terms = new LinkedHashSet<>();
         terms.addAll(tokenize(query.getRawQuery()));
         if (query.getQueryViews() != null) {
             query.getQueryViews().forEach(view -> terms.addAll(tokenize(view)));

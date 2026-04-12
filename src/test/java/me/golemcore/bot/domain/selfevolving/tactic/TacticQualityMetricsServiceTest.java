@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -198,7 +199,7 @@ class TacticQualityMetricsServiceTest {
                 .artifactStreamId(" ")
                 .contentRevisionId("revision-4")
                 .build();
-        java.util.ArrayList<ArtifactBundleRecord> bundles = new java.util.ArrayList<>();
+        List<ArtifactBundleRecord> bundles = new ArrayList<>();
         bundles.add(null);
         bundles.add(ArtifactBundleRecord.builder()
                 .artifactRevisionBindings(java.util.Map.of("stream-4", "revision-4"))

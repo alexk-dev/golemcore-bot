@@ -4,15 +4,19 @@ import { Alert } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import type { HiveStatusResponse } from '../../api/hive';
+import { HiveManagedPolicyNotice } from './HiveManagedPolicyNotice';
 import type { LlmConfig, ModelRegistryConfig } from '../../api/settingsTypes';
 import { ModelCatalogEditor } from './models/ModelCatalogEditor';
 import { ModelRegistrySourceCard } from './models/ModelRegistrySourceCard';
+import { getHiveManagedPolicyDetails } from './hiveManagedPolicySupport';
 import { getProviderProfileSummaries } from './models/modelCatalogProviderProfiles';
 
 interface ModelCatalogTabProps {
   llmConfig: LlmConfig;
   modelRegistryConfig: ModelRegistryConfig;
   isSavingModelRegistry: boolean;
+  hiveStatus?: HiveStatusResponse | null;
   onSaveModelRegistry: (config: ModelRegistryConfig) => Promise<void>;
 }
 
@@ -20,11 +24,13 @@ export function ModelCatalogTab({
   llmConfig,
   modelRegistryConfig,
   isSavingModelRegistry,
+  hiveStatus,
   onSaveModelRegistry,
 }: ModelCatalogTabProps): ReactElement {
   const navigate = useNavigate();
   const providerProfiles = useMemo(() => getProviderProfileSummaries(llmConfig), [llmConfig]);
   const readyProfilesCount = providerProfiles.filter((profile) => profile.isReady).length;
+  const managedPolicy = getHiveManagedPolicyDetails(hiveStatus);
 
   return (
     <div className="space-y-4">
@@ -96,7 +102,13 @@ export function ModelCatalogTab({
         onSave={onSaveModelRegistry}
       />
 
-      <ModelCatalogEditor providerProfiles={providerProfiles} />
+      {managedPolicy ? (
+        <HiveManagedPolicyNotice policy={managedPolicy} sectionLabel="Model Catalog" className="mb-0" />
+      ) : null}
+
+      <fieldset disabled={managedPolicy != null} className="border-0 m-0 p-0">
+        <ModelCatalogEditor providerProfiles={providerProfiles} />
+      </fieldset>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import me.golemcore.bot.application.command.PlanCommandService;
 import me.golemcore.bot.application.models.ModelManagementFacade;
 import me.golemcore.bot.application.models.ModelRegistryService;
 import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
+import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.prompts.PromptManagementFacade;
 import me.golemcore.bot.application.selfevolving.tactic.TacticEmbeddingProbeService;
 import me.golemcore.bot.application.scheduler.SchedulerFacade;
@@ -18,6 +19,7 @@ import me.golemcore.bot.application.skills.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
+import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
@@ -67,14 +69,20 @@ public class ApplicationLayerConfiguration {
             RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService,
             MemoryPresetService memoryPresetService,
+            HiveManagedPolicyService hiveManagedPolicyService,
             RuntimeSettingsValidator validator,
-            RuntimeSettingsMergeService mergeService) {
+            RuntimeSettingsMergeService mergeService,
+            ProviderModelImportService providerModelImportService,
+            ProviderModelDiscoveryService providerModelDiscoveryService) {
         return new RuntimeSettingsFacade(
                 runtimeConfigService,
                 preferencesService,
                 memoryPresetService,
+                hiveManagedPolicyService,
                 validator,
-                mergeService);
+                mergeService,
+                providerModelImportService,
+                providerModelDiscoveryService);
     }
 
     @Bean
@@ -138,18 +146,27 @@ public class ApplicationLayerConfiguration {
     }
 
     @Bean
+    ProviderModelImportService providerModelImportService(
+            ProviderModelDiscoveryService providerModelDiscoveryService,
+            ModelConfigAdminPort modelConfigAdminPort) {
+        return new ProviderModelImportService(providerModelDiscoveryService, modelConfigAdminPort);
+    }
+
+    @Bean
     ModelManagementFacade modelManagementFacade(
             ModelConfigAdminPort modelConfigAdminPort,
             ModelSelectionService modelSelectionService,
             ProviderModelDiscoveryService providerModelDiscoveryService,
             ModelRegistryService modelRegistryService,
-            LlmPort llmPort) {
+            LlmPort llmPort,
+            HiveManagedPolicyService hiveManagedPolicyService) {
         return new ModelManagementFacade(
                 modelConfigAdminPort,
                 modelSelectionService,
                 providerModelDiscoveryService,
                 modelRegistryService,
-                llmPort);
+                llmPort,
+                hiveManagedPolicyService);
     }
 
     @Bean

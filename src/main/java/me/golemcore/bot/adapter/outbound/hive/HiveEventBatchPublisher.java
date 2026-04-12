@@ -49,7 +49,6 @@ import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionDiffP
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionDiffProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionEvidenceProjection;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.model.hive.HiveEvidenceRef;
@@ -745,17 +744,6 @@ public class HiveEventBatchPublisher implements HiveEventPublishPort {
 
     private String resolveSourceBotVersion() {
         return firstNonBlank(System.getProperty("golemcore.bot.version"), "dev");
-    }
-
-    private Instant parseInstantOrNow(String value) {
-        if (isBlank(value)) {
-            return Instant.now();
-        }
-        try {
-            return Instant.parse(value);
-        } catch (RuntimeException ignored) {
-            return Instant.now();
-        }
     }
 
     private HiveEventPayload buildUsageEvent(HiveEventContext context, Map<String, Object> metadata) {

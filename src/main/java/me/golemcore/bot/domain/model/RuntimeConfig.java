@@ -472,7 +472,7 @@ public class RuntimeConfig {
             if (modelNode instanceof ModelReference ref) {
                 return normalize(ref);
             }
-            if (modelNode instanceof java.util.Map<?, ?> map) {
+            if (modelNode instanceof Map<?, ?> map) {
                 return normalize(ModelReference.builder()
                         .provider(trimToNull(map.get("provider") instanceof String s ? s : null))
                         .id(trimToNull(map.get("id") instanceof String s ? s : null))

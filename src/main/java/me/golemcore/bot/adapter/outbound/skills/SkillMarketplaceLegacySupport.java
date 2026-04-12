@@ -3,7 +3,6 @@ package me.golemcore.bot.adapter.outbound.skills;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillDocument;
 import me.golemcore.bot.domain.model.SkillInstallResult;
@@ -604,18 +603,6 @@ public class SkillMarketplaceLegacySupport
             }
         }
         return null;
-    }
-
-    private String asString(Object value) {
-        return value != null ? value.toString() : null;
-    }
-
-    private String fileNameOrEmpty(Path path) {
-        if (path == null) {
-            return "";
-        }
-        Path fileName = path.getFileName();
-        return fileName != null ? fileName.toString() : "";
     }
 
     private String resolveDeleteScope(Path location, String storagePath) {

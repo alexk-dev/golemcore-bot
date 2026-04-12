@@ -420,6 +420,29 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void shouldWrapScheduleLoadFailures() {
+        when(storagePort.getText("auto", "schedules.json"))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("read failed")));
+        StorageSchedulePersistenceAdapter adapter = new StorageSchedulePersistenceAdapter(storagePort, objectMapper);
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, adapter::loadSchedules);
+
+        assertEquals("Failed to load schedules", exception.getMessage());
+    }
+
+    @Test
+    void shouldWrapScheduleSaveFailures() {
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("write failed")));
+        StorageSchedulePersistenceAdapter adapter = new StorageSchedulePersistenceAdapter(storagePort, objectMapper);
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> adapter.saveSchedules(List.of()));
+
+        assertEquals("Failed to persist schedules", exception.getMessage());
+    }
+
+    @Test
     void shouldCreateScheduleWithReportConfig() {
         ScheduleReportConfig report = ScheduleReportConfig.builder()
                 .channelType("telegram")

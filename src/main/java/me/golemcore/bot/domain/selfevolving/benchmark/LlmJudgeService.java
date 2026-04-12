@@ -369,7 +369,7 @@ public class LlmJudgeService {
                     role, data.length, spanContext.getSpanId());
             traceService.captureSnapshot(session, spanContext, tracingConfig,
                     role, "application/json", data);
-        } catch (Exception exception) { // NOSONAR - tracing must not break judge flow
+        } catch (RuntimeException exception) {
             log.warn("[SelfEvolving] Failed to capture {} snapshot: {}", role, exception.getMessage(), exception);
         }
     }
@@ -377,7 +377,7 @@ public class LlmJudgeService {
     private void saveJudgeSession(AgentSession session) {
         try {
             sessionService.save(session);
-        } catch (RuntimeException exception) { // NOSONAR - persistence failure must not break judge
+        } catch (RuntimeException exception) {
             log.warn("[SelfEvolving] Failed to save judge session {}: {}", session.getId(), exception.getMessage());
         }
     }
@@ -396,7 +396,7 @@ public class LlmJudgeService {
                 verdict.setCreatedAt(Instant.now());
             }
             return verdict;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             throw new IllegalArgumentException("Unable to parse judge verdict", e);
         }
     }
@@ -630,8 +630,7 @@ public class LlmJudgeService {
 
     private boolean shouldEscalate(RunVerdict mergedVerdict) {
         RuntimeConfig.SelfEvolvingConfig config = runtimeConfigService.getSelfEvolvingConfig();
-        Double threshold = config != null && config.getJudge() != null ? config.getJudge().getUncertaintyThreshold()
-                : null;
+        Double threshold = config.getJudge() != null ? config.getJudge().getUncertaintyThreshold() : null;
         return mergedVerdict != null
                 && mergedVerdict.getConfidence() != null
                 && threshold != null
@@ -640,14 +639,12 @@ public class LlmJudgeService {
 
     private boolean isJudgeEnabled() {
         RuntimeConfig.SelfEvolvingConfig config = runtimeConfigService.getSelfEvolvingConfig();
-        return config != null && config.getJudge() != null && Boolean.TRUE.equals(config.getJudge().getEnabled());
+        return config.getJudge() != null && Boolean.TRUE.equals(config.getJudge().getEnabled());
     }
 
     private boolean requireEvidenceAnchors() {
         RuntimeConfig.SelfEvolvingConfig config = runtimeConfigService.getSelfEvolvingConfig();
-        return config == null
-                || config.getJudge() == null
-                || Boolean.TRUE.equals(config.getJudge().getRequireEvidenceAnchors());
+        return config.getJudge() == null || Boolean.TRUE.equals(config.getJudge().getRequireEvidenceAnchors());
     }
 
     private String resolveSystemPrompt(String judgeType) {

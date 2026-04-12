@@ -3,7 +3,6 @@ package me.golemcore.bot.adapter.outbound.hive;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -12,6 +11,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import me.golemcore.bot.domain.model.hive.HiveAuthSession;
+import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
 import me.golemcore.bot.domain.model.hive.HiveCardDetail;
 import me.golemcore.bot.domain.model.hive.HiveCardSearchRequest;
 import me.golemcore.bot.domain.model.hive.HiveCardSummary;
@@ -41,7 +41,8 @@ class HiveGatewayAdapterTest {
                 "lab-a",
                 "1.2.3",
                 "abc123",
-                Set.of("web"))).thenReturn(new HiveApiClient.GolemAuthResponse(
+                Set.of("web"),
+                HiveCapabilitySnapshot.builder().build())).thenReturn(new HiveApiClient.GolemAuthResponse(
                         "golem-1",
                         "access",
                         "refresh",
@@ -109,7 +110,13 @@ class HiveGatewayAdapterTest {
                 "connected",
                 "healthy",
                 null,
-                42L);
+                42L,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 
     @Test

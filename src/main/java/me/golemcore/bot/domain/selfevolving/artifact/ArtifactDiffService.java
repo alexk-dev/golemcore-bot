@@ -23,12 +23,11 @@ import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageNode;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactNormalizedRevisionProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionDiffProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionDiffProjection;
-import org.springframework.stereotype.Service;
-
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import me.golemcore.bot.domain.service.StringValueSupport;
+import org.springframework.stereotype.Service;
 
 /**
  * Computes semantic and raw diffs between artifact revisions and transitions.
@@ -38,10 +37,7 @@ public class ArtifactDiffService {
 
     private static final int PROJECTION_SCHEMA_VERSION = 1;
 
-    private final ArtifactNormalizedRevisionProjectionService normalizedRevisionProjectionService;
-
     public ArtifactDiffService(ArtifactNormalizedRevisionProjectionService normalizedRevisionProjectionService) {
-        this.normalizedRevisionProjectionService = normalizedRevisionProjectionService;
     }
 
     public ArtifactRevisionDiffProjection compareRevisions(

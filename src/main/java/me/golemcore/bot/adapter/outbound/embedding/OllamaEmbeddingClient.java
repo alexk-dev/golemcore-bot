@@ -20,6 +20,7 @@ package me.golemcore.bot.adapter.outbound.embedding;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import me.golemcore.bot.port.outbound.EmbeddingPort;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -63,19 +64,20 @@ public class OllamaEmbeddingClient implements EmbeddingPort {
                 if (!response.isSuccessful()) {
                     throw new IllegalStateException("Embedding request failed with status " + response.code());
                 }
-                ResponseBody responseBody = response.body();
-                JsonNode json = objectMapper.readTree(responseBody.bytes());
-                List<List<Double>> vectors = new ArrayList<>();
-                for (JsonNode item : json.path("embeddings")) {
-                    List<Double> vector = new ArrayList<>();
-                    for (JsonNode value : item) {
-                        vector.add(value.asDouble());
+                try (ResponseBody responseBody = response.body()) {
+                    JsonNode json = objectMapper.readTree(responseBody.bytes());
+                    List<List<Double>> vectors = new ArrayList<>();
+                    for (JsonNode item : json.path("embeddings")) {
+                        List<Double> vector = new ArrayList<>();
+                        for (JsonNode value : item) {
+                            vector.add(value.asDouble());
+                        }
+                        vectors.add(vector);
                     }
-                    vectors.add(vector);
+                    return new EmbeddingResponse(json.path("model").asText(request.model()), vectors);
                 }
-                return new EmbeddingResponse(json.path("model").asText(request.model()), vectors);
             }
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to fetch Ollama embeddings", exception);
         }
     }

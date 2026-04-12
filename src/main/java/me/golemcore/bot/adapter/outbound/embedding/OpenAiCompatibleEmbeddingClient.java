@@ -76,21 +76,22 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingPort {
             if (!response.isSuccessful()) {
                 throw new IllegalStateException("Embedding request failed with status " + response.code());
             }
-            ResponseBody responseBody = response.body();
-            byte[] responseBytes = responseBody.bytes();
-            if (responseBytes.length == 0) {
-                throw new IllegalStateException("Embedding response body is empty");
-            }
-            JsonNode json = objectMapper.readTree(responseBytes);
-            List<List<Double>> vectors = new ArrayList<>();
-            for (JsonNode item : json.path("data")) {
-                List<Double> vector = new ArrayList<>();
-                for (JsonNode value : item.path("embedding")) {
-                    vector.add(value.asDouble());
+            try (ResponseBody responseBody = response.body()) {
+                byte[] responseBytes = responseBody.bytes();
+                if (responseBytes.length == 0) {
+                    throw new IllegalStateException("Embedding response body is empty");
                 }
-                vectors.add(vector);
+                JsonNode json = objectMapper.readTree(responseBytes);
+                List<List<Double>> vectors = new ArrayList<>();
+                for (JsonNode item : json.path("data")) {
+                    List<Double> vector = new ArrayList<>();
+                    for (JsonNode value : item.path("embedding")) {
+                        vector.add(value.asDouble());
+                    }
+                    vectors.add(vector);
+                }
+                return new EmbeddingResponse(json.path("model").asText(request.model()), vectors);
             }
-            return new EmbeddingResponse(json.path("model").asText(request.model()), vectors);
         }
     }
 

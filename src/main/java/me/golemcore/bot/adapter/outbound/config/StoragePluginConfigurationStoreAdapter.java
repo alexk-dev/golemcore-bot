@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.outbound.config;
 
+import java.io.IOException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -37,7 +38,7 @@ public class StoragePluginConfigurationStoreAdapter implements PluginConfigurati
             }
             Map<String, Object> config = objectMapper.readValue(json, MAP_TYPE);
             return config != null ? new LinkedHashMap<>(config) : new LinkedHashMap<>();
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to read plugin config for " + pluginId, exception);
         }
     }
@@ -47,7 +48,7 @@ public class StoragePluginConfigurationStoreAdapter implements PluginConfigurati
         try {
             String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(config);
             storagePort.putTextAtomic(PREFERENCES_DIR, pathFor(pluginId), json, true).join();
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to write plugin config for " + pluginId, exception);
         }
     }

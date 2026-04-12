@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -30,7 +29,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -294,6 +292,10 @@ public class RuntimeConfigService {
         }
     }
 
+    public RuntimeConfig snapshotRuntimeConfig() {
+        return copyRuntimeConfig(getRuntimeConfig());
+    }
+
     /**
      * Update and persist RuntimeConfig.
      */
@@ -326,6 +328,25 @@ public class RuntimeConfigService {
         RuntimeConfig reloaded = buildEffectiveRuntimeConfig(loadOrCreate());
         configRef.set(reloaded);
         return reloaded;
+    }
+
+    public void replaceHiveManagedPolicySections(RuntimeConfig.LlmConfig llmConfig,
+            RuntimeConfig.ModelRouterConfig modelRouterConfig) {
+        RuntimeConfig snapshot = snapshotRuntimeConfig();
+        RuntimeConfig llmSnapshot = copyRuntimeConfig(RuntimeConfig.builder()
+                .llm(llmConfig != null ? llmConfig : RuntimeConfig.LlmConfig.builder().build())
+                .build());
+        RuntimeConfig modelRouterSnapshot = copyRuntimeConfig(RuntimeConfig.builder()
+                .modelRouter(modelRouterConfig != null ? modelRouterConfig
+                        : RuntimeConfig.ModelRouterConfig.builder().build())
+                .build());
+        snapshot.setLlm(llmSnapshot.getLlm());
+        snapshot.setModelRouter(modelRouterSnapshot.getModelRouter());
+        updateRuntimeConfig(snapshot);
+    }
+
+    public void restoreRuntimeConfigSnapshot(RuntimeConfig snapshot) {
+        updateRuntimeConfig(copyRuntimeConfig(snapshot));
     }
 
     public RuntimeConfig.HiveConfig getHiveConfig() {

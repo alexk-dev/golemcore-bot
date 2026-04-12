@@ -104,13 +104,13 @@ class UpdateServiceTest {
                             request.assetName(), BASE_TIME)));
                     return preparedArtifact;
                 });
-        org.mockito.Mockito.doAnswer(invocation -> {
+        doAnswer(invocation -> {
             String assetName = invocation.getArgument(0);
             currentArtifactRef.set(Optional.of(new UpdateArtifactStorePort.StoredArtifact(assetName, BASE_TIME)));
             stagedArtifactRef.set(Optional.empty());
             return null;
         }).when(updateArtifactStorePort).activateStagedArtifact(any(String.class));
-        org.mockito.Mockito.doAnswer(invocation -> null).when(updateArtifactStorePort)
+        doAnswer(invocation -> null).when(updateArtifactStorePort)
                 .cleanupTempArtifact(any(String.class));
 
         Properties props = new Properties();
@@ -278,7 +278,6 @@ class UpdateServiceTest {
         enableUpdates(tempDir);
         byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
         String checksum = sha256Hex(jarBytes);
-        Path expectedJar = tempDir.resolve("jars").resolve("bot-0.4.2.jar");
 
         StubReleaseSource source = new StubReleaseSource();
         source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");

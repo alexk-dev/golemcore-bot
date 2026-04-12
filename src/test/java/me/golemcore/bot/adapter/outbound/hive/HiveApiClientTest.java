@@ -3,15 +3,21 @@ package me.golemcore.bot.adapter.outbound.hive;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import me.golemcore.bot.domain.model.Secret;
+import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
+import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;
+import me.golemcore.bot.domain.model.hive.HivePolicyPackage;
 import me.golemcore.bot.domain.view.SessionDetailView;
 import me.golemcore.bot.domain.view.SessionMessagesPageView;
 import me.golemcore.bot.domain.view.SessionSummaryView;
@@ -70,24 +76,154 @@ class HiveApiClientTest {
                 "lab-a",
                 "1.0.0",
                 "abc1234",
-                Set.of("web"));
+                Set.of("web"),
+                HiveCapabilitySnapshot.builder()
+                        .enabledAutonomyFeatures(Set.of("policy-sync-v1"))
+                        .supportedChannels(Set.of("web", "control"))
+                        .snapshotHash("hash-1")
+                        .defaultModel("openai/gpt-5.1")
+                        .build());
 
         RecordedRequest recordedRequest = server.takeRequest();
         assertEquals("/api/v1/golems/register", recordedRequest.getTarget());
         assertEquals("POST", recordedRequest.getMethod());
         assertEquals("golem-1", response.golemId());
         assertEquals(Instant.parse("2026-03-18T00:10:00Z"), response.accessTokenExpiresAt());
+        JsonNode requestJson = new ObjectMapper().readTree(recordedRequest.getBody().utf8());
+        assertEquals("policy-sync-v1", requestJson.get("capabilities").get("enabledAutonomyFeatures").get(0).asText());
+        Set<String> supportedChannels = new HashSet<>();
+        requestJson.get("capabilities").get("supportedChannels").forEach(node -> supportedChannels.add(node.asText()));
+        assertTrue(supportedChannels.contains("web"));
+        assertTrue(supportedChannels.contains("control"));
     }
 
     @Test
     void shouldSendBearerTokenWithHeartbeat() throws Exception {
         server.enqueue(new MockResponse.Builder().code(200).body("{\"ok\":true}").build());
 
-        hiveApiClient.heartbeat(server.url("/").toString(), "golem-1", "access", "connected", "healthy", null, 15L);
+        hiveApiClient.heartbeat(server.url("/").toString(),
+                "golem-1",
+                "access",
+                "connected",
+                "healthy",
+                null,
+                15L,
+                "cap-hash",
+                "pg-1",
+                3,
+                2,
+                "OUT_OF_SYNC",
+                "missing-provider");
 
         RecordedRequest recordedRequest = server.takeRequest();
         assertEquals("/api/v1/golems/golem-1/heartbeat", recordedRequest.getTarget());
         assertEquals("Bearer access", recordedRequest.getHeaders().get("Authorization"));
+        JsonNode payload = new ObjectMapper().readTree(recordedRequest.getBody().utf8());
+        assertEquals("pg-1", payload.get("policyGroupId").asText());
+        assertEquals(3, payload.get("targetPolicyVersion").asInt());
+        assertEquals(2, payload.get("appliedPolicyVersion").asInt());
+        assertEquals("OUT_OF_SYNC", payload.get("syncStatus").asText());
+        assertEquals("missing-provider", payload.get("lastPolicyErrorDigest").asText());
+        assertEquals("cap-hash", payload.get("capabilitySnapshotHash").asText());
+    }
+
+    @Test
+    void shouldFetchPolicyPackageWithBearerToken() throws Exception {
+        server.enqueue(new MockResponse.Builder().code(200).body("""
+                {
+                  "policyGroupId": "pg-1",
+                  "targetVersion": 4,
+                  "checksum": "sha256:abcd",
+                  "llmProviders": {
+                    "openai": {
+                      "apiKey": "sk-test",
+                      "baseUrl": "https://api.openai.com/v1",
+                      "requestTimeoutSeconds": 30,
+                      "apiType": "openai",
+                      "legacyApi": false
+                    }
+                  },
+                  "modelRouter": {
+                    "temperature": 0.2,
+                    "routing": {
+                      "model": "openai/gpt-5.1",
+                      "reasoning": "none"
+                    },
+                    "tiers": {
+                      "balanced": {
+                        "model": "openai/gpt-5.1",
+                        "reasoning": "none"
+                      }
+                    },
+                    "dynamicTierEnabled": true
+                  },
+                  "modelCatalog": {
+                    "defaultModel": "openai/gpt-5.1",
+                    "models": {
+                      "openai/gpt-5.1": {
+                        "provider": "openai",
+                        "displayName": "GPT-5.1",
+                        "supportsVision": true,
+                        "supportsTemperature": false,
+                        "maxInputTokens": 400000
+                      }
+                    }
+                  }
+                }
+                """).build());
+
+        HivePolicyPackage response = hiveApiClient.getPolicyPackage(
+                server.url("/").toString(),
+                "golem-1",
+                "access");
+
+        RecordedRequest recordedRequest = server.takeRequest();
+        assertEquals("/api/v1/golems/golem-1/policy-package", recordedRequest.getTarget());
+        assertEquals("GET", recordedRequest.getMethod());
+        assertEquals("Bearer access", recordedRequest.getHeaders().get("Authorization"));
+        assertEquals("pg-1", response.getPolicyGroupId());
+        assertEquals(4, response.getTargetVersion());
+        assertEquals("sha256:abcd", response.getChecksum());
+        assertEquals("sk-test", Secret.valueOrEmpty(response.getLlmProviders().get("openai").getApiKey()));
+        assertEquals("openai/gpt-5.1", response.getModelCatalog().getDefaultModel());
+    }
+
+    @Test
+    void shouldReportPolicyApplyResultWithBearerToken() throws Exception {
+        server.enqueue(new MockResponse.Builder().code(200).body("""
+                {
+                  "policyGroupId": "pg-1",
+                  "targetVersion": 4,
+                  "appliedVersion": 4,
+                  "syncStatus": "IN_SYNC",
+                  "checksum": "sha256:abcd",
+                  "errorDigest": null,
+                  "errorDetails": null
+                }
+                """).build());
+
+        HivePolicyApplyResult response = hiveApiClient.reportPolicyApplyResult(
+                server.url("/").toString(),
+                "golem-1",
+                "access",
+                HivePolicyApplyResult.builder()
+                        .policyGroupId("pg-1")
+                        .targetVersion(4)
+                        .appliedVersion(4)
+                        .syncStatus("IN_SYNC")
+                        .checksum("sha256:abcd")
+                        .build());
+
+        RecordedRequest recordedRequest = server.takeRequest();
+        assertEquals("/api/v1/golems/golem-1/policy-apply-result", recordedRequest.getTarget());
+        assertEquals("POST", recordedRequest.getMethod());
+        assertEquals("Bearer access", recordedRequest.getHeaders().get("Authorization"));
+        JsonNode payload = new ObjectMapper().readTree(recordedRequest.getBody().utf8());
+        assertEquals("pg-1", payload.get("policyGroupId").asText());
+        assertEquals(4, payload.get("targetVersion").asInt());
+        assertEquals("IN_SYNC", payload.get("syncStatus").asText());
+        assertEquals("IN_SYNC", response.getSyncStatus());
+        assertEquals(4, response.getAppliedVersion());
     }
 
     @Test

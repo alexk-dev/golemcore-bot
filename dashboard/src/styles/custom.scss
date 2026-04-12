@@ -2501,6 +2501,10 @@ textarea:focus-visible,
   background-color: var(--bs-tertiary-bg);
 }
 
+.provider-model-selection-list {
+  max-height: 18rem;
+}
+
 .login-page {
   min-height: 100vh;
   min-height: 100dvh;

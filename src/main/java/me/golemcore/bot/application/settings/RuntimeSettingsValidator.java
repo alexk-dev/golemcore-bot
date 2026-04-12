@@ -1,6 +1,5 @@
 package me.golemcore.bot.application.settings;
 
-import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
@@ -18,7 +17,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 public class RuntimeSettingsValidator {
@@ -63,6 +61,11 @@ public class RuntimeSettingsValidator {
     private static final Set<String> RESERVED_SHELL_ENV_VAR_NAMES = Set.of("HOME", "PWD");
     private static final int SHELL_ENV_VAR_NAME_MAX_LENGTH = 128;
     private static final int SHELL_ENV_VAR_VALUE_MAX_LENGTH = 8192;
+    private static final int LOCAL_EMBEDDING_STARTUP_TIMEOUT_MS_MIN = 1;
+    private static final int LOCAL_EMBEDDING_STARTUP_TIMEOUT_MS_MAX = 300000;
+    private static final int LOCAL_EMBEDDING_RESTART_BACKOFF_MS_MIN = 1;
+    private static final int LOCAL_EMBEDDING_RESTART_BACKOFF_MS_MAX = 60000;
+    private static final Pattern SEMVER_PATTERN = Pattern.compile("v?\\d+(?:\\.\\d+){0,2}");
 
     private final ModelSelectionService modelSelectionService;
     private final VoiceProviderCatalogPort voiceProviderCatalogPort;
@@ -99,6 +102,7 @@ public class RuntimeSettingsValidator {
         validateVoiceConfig(merged.getVoice());
         validateAndNormalizeModelRegistryConfig(merged.getModelRegistry());
         validateHiveConfig(merged.getHive());
+        validateAndNormalizeSelfEvolvingConfig(merged.getSelfEvolving());
     }
 
     public void validateModelRouterConfig(RuntimeConfig.ModelRouterConfig modelRouterConfig,
@@ -405,6 +409,48 @@ public class RuntimeSettingsValidator {
         } else {
             modelRegistryConfig.setBranch(branch.trim());
         }
+    }
+
+    public void validateAndNormalizeSelfEvolvingConfig(RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig) {
+        if (selfEvolvingConfig == null || selfEvolvingConfig.getTactics() == null
+                || selfEvolvingConfig.getTactics().getSearch() == null
+                || selfEvolvingConfig.getTactics().getSearch().getEmbeddings() == null) {
+            return;
+        }
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = selfEvolvingConfig
+                .getTactics()
+                .getSearch()
+                .getEmbeddings()
+                .getLocal();
+        if (localConfig == null) {
+            localConfig = RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig.builder().build();
+            selfEvolvingConfig.getTactics().getSearch().getEmbeddings().setLocal(localConfig);
+        }
+
+        validateRange(localConfig.getStartupTimeoutMs(),
+                LOCAL_EMBEDDING_STARTUP_TIMEOUT_MS_MIN,
+                LOCAL_EMBEDDING_STARTUP_TIMEOUT_MS_MAX,
+                "selfEvolving.tactics.search.embeddings.local.startupTimeoutMs");
+        validateRange(localConfig.getInitialRestartBackoffMs(),
+                LOCAL_EMBEDDING_RESTART_BACKOFF_MS_MIN,
+                LOCAL_EMBEDDING_RESTART_BACKOFF_MS_MAX,
+                "selfEvolving.tactics.search.embeddings.local.initialRestartBackoffMs");
+        normalizeAndValidateMinimumRuntimeVersion(localConfig);
+    }
+
+    private void normalizeAndValidateMinimumRuntimeVersion(
+            RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig) {
+        String minimumRuntimeVersion = localConfig.getMinimumRuntimeVersion();
+        if (minimumRuntimeVersion == null || minimumRuntimeVersion.isBlank()) {
+            localConfig.setMinimumRuntimeVersion(null);
+            return;
+        }
+        String normalized = minimumRuntimeVersion.trim();
+        if (!SEMVER_PATTERN.matcher(normalized).matches()) {
+            throw new IllegalArgumentException(
+                    "selfEvolving.tactics.search.embeddings.local.minimumRuntimeVersion must be a semantic version");
+        }
+        localConfig.setMinimumRuntimeVersion(normalized);
     }
 
     public void validateWebhookConfig(UserPreferences.WebhookConfig webhookConfig) {
