@@ -7,7 +7,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.CodeSource;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -387,12 +386,11 @@ public final class RuntimeLauncher {
             if (!isSystemPropertyArg(arg)) {
                 continue;
             }
-            if (!extractSystemPropertyName(arg).equals(propertyName)) {
-                continue;
+            if (extractSystemPropertyName(arg).equals(propertyName)) {
+                int equalsIndex = arg.indexOf('=');
+                String value = arg.substring(equalsIndex + 1).trim();
+                return value.isBlank() ? null : value;
             }
-            int equalsIndex = arg.indexOf('=');
-            String value = arg.substring(equalsIndex + 1).trim();
-            return value.isBlank() ? null : value;
         }
         return null;
     }
