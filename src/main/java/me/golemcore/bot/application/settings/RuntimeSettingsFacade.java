@@ -1,5 +1,7 @@
 package me.golemcore.bot.application.settings;
 
+import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
+import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
@@ -21,19 +23,25 @@ public class RuntimeSettingsFacade {
     private final HiveManagedPolicyService hiveManagedPolicyService;
     private final RuntimeSettingsValidator validator;
     private final RuntimeSettingsMergeService mergeService;
+    private final ProviderModelImportService providerModelImportService;
+    private final ProviderModelDiscoveryService providerModelDiscoveryService;
 
     public RuntimeSettingsFacade(RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService,
             MemoryPresetService memoryPresetService,
             HiveManagedPolicyService hiveManagedPolicyService,
             RuntimeSettingsValidator validator,
-            RuntimeSettingsMergeService mergeService) {
+            RuntimeSettingsMergeService mergeService,
+            ProviderModelImportService providerModelImportService,
+            ProviderModelDiscoveryService providerModelDiscoveryService) {
         this.runtimeConfigService = runtimeConfigService;
         this.preferencesService = preferencesService;
         this.memoryPresetService = memoryPresetService;
         this.hiveManagedPolicyService = hiveManagedPolicyService;
         this.validator = validator;
         this.mergeService = mergeService;
+        this.providerModelImportService = providerModelImportService;
+        this.providerModelDiscoveryService = providerModelDiscoveryService;
     }
 
     public RuntimeConfig getRuntimeConfigForApi() {
@@ -83,6 +91,21 @@ public class RuntimeSettingsFacade {
         return runtimeConfigService.getRuntimeConfigForApi();
     }
 
+    public ProviderModelImportService.ProviderImportResult addLlmProviderAndImportModels(String name,
+            RuntimeConfig.LlmProviderConfig providerConfig,
+            List<String> selectedModelIds) {
+        String normalizedName = validator.normalizeProviderName(name);
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        RuntimeConfig.LlmConfig llmConfig = ensureLlmConfig(config);
+        rejectManagedHivePolicyLlmWrite();
+        if (llmConfig.getProviders().containsKey(normalizedName)) {
+            throw new IllegalArgumentException("Provider '" + normalizedName + "' already exists");
+        }
+        validator.validateProviderConfig(normalizedName, providerConfig);
+        runtimeConfigService.addLlmProvider(normalizedName, providerConfig);
+        return providerModelImportService.importMissingModels(normalizedName, selectedModelIds);
+    }
+
     public RuntimeConfig updateLlmProvider(String name, RuntimeConfig.LlmProviderConfig providerConfig) {
         String normalizedName = validator.normalizeProviderName(name);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
@@ -94,6 +117,31 @@ public class RuntimeSettingsFacade {
         validator.validateProviderConfig(normalizedName, providerConfig);
         runtimeConfigService.updateLlmProvider(normalizedName, providerConfig);
         return runtimeConfigService.getRuntimeConfigForApi();
+    }
+
+    public LlmProviderTestResult testSavedLlmProvider(String providerName) {
+        String normalizedName = validator.normalizeProviderName(providerName);
+        try {
+            ProviderModelDiscoveryService.DiscoveryResult discoveryResult = providerModelDiscoveryService
+                    .discoverModelsForProvider(normalizedName);
+            return toProviderTestResult("saved", normalizedName, discoveryResult, null);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return new LlmProviderTestResult("saved", normalizedName, null, List.of(), false, e.getMessage());
+        }
+    }
+
+    public LlmProviderTestResult testDraftLlmProvider(String providerName,
+            RuntimeConfig.LlmProviderConfig providerConfig) {
+        String normalizedName = validator.normalizeProviderName(providerName);
+        RuntimeConfig.LlmProviderConfig effectiveConfig = buildDraftProviderTestConfig(normalizedName, providerConfig);
+        try {
+            validator.validateProviderConfig(normalizedName, effectiveConfig);
+            ProviderModelDiscoveryService.DiscoveryResult discoveryResult = providerModelDiscoveryService
+                    .discoverModelsForConfig(normalizedName, effectiveConfig);
+            return toProviderTestResult("draft", normalizedName, discoveryResult, null);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return new LlmProviderTestResult("draft", normalizedName, null, List.of(), false, e.getMessage());
+        }
     }
 
     public void removeLlmProvider(String name) {
@@ -409,5 +457,46 @@ public class RuntimeSettingsFacade {
         }
         throw new IllegalStateException("LLM settings are managed by Hive policy group \""
                 + bindingState.getPolicyGroupId() + "\" and are read-only");
+    }
+
+    private RuntimeConfig.LlmProviderConfig buildDraftProviderTestConfig(String providerName,
+            RuntimeConfig.LlmProviderConfig draftConfig) {
+        if (draftConfig == null) {
+            throw new IllegalArgumentException("config is required");
+        }
+        RuntimeConfig.LlmProviderConfig savedProviderConfig = null;
+        RuntimeConfig runtimeConfig = runtimeConfigService.getRuntimeConfig();
+        if (runtimeConfig != null && runtimeConfig.getLlm() != null && runtimeConfig.getLlm().getProviders() != null) {
+            savedProviderConfig = runtimeConfig.getLlm().getProviders().get(providerName);
+        }
+
+        return RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(mergeService.mergeSecret(savedProviderConfig != null ? savedProviderConfig.getApiKey() : null,
+                        draftConfig.getApiKey()))
+                .baseUrl(draftConfig.getBaseUrl())
+                .requestTimeoutSeconds(draftConfig.getRequestTimeoutSeconds())
+                .apiType(draftConfig.getApiType())
+                .legacyApi(draftConfig.getLegacyApi())
+                .build();
+    }
+
+    private LlmProviderTestResult toProviderTestResult(String mode, String providerName,
+            ProviderModelDiscoveryService.DiscoveryResult discoveryResult,
+            String error) {
+        return new LlmProviderTestResult(
+                mode,
+                providerName,
+                discoveryResult != null ? discoveryResult.resolvedEndpoint() : null,
+                discoveryResult != null
+                        ? discoveryResult.models().stream()
+                                .map(model -> providerName + "/" + model.id())
+                                .toList()
+                        : List.of(),
+                error == null,
+                error);
+    }
+
+    public record LlmProviderTestResult(String mode, String providerName, String resolvedEndpoint,
+            List<String> models, boolean success, String error) {
     }
 }

@@ -116,12 +116,13 @@ public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPor
 
     private void persistConfig(ModelsConfig candidateConfig) {
         try {
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(candidateConfig);
+            ModelsConfig snapshot = copyConfig(candidateConfig);
+            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(snapshot);
             storagePort.putTextAtomic(MODELS_DIR, CONFIG_FILE, json, true).join();
-            config = candidateConfig;
-            log.info("[ModelConfig] Saved to workspace: {} models", candidateConfig.getModels().size());
+            config = snapshot;
+            log.info("[ModelConfig] Saved to workspace: {} models", snapshot.getModels().size());
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to persist model catalog", e);
+            throw new IllegalStateException("Failed to save models config", e);
         }
     }
 
@@ -143,6 +144,32 @@ public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPor
         }
         nextConfig.getModels().put(id, settings);
         persistConfig(nextConfig);
+    }
+
+    public void saveModelStrict(String id, ModelSettings settings) {
+        saveModelStrict(id, null, settings);
+    }
+
+    public void saveModelStrict(String id, String previousId, ModelSettings settings) {
+        saveModel(id, previousId, settings);
+    }
+
+    public boolean hasModel(String id) {
+        return config.getModels().containsKey(id);
+    }
+
+    public ModelSettings copyModelSettings(ModelSettings source) {
+        ModelSettings copy = new ModelSettings();
+        if (source == null) {
+            return copy;
+        }
+        copy.setProvider(source.getProvider());
+        copy.setDisplayName(source.getDisplayName());
+        copy.setSupportsVision(source.isSupportsVision());
+        copy.setSupportsTemperature(source.isSupportsTemperature());
+        copy.setMaxInputTokens(source.getMaxInputTokens());
+        copy.setReasoning(copyReasoningConfig(source.getReasoning()));
+        return copy;
     }
 
     /**
@@ -518,5 +545,24 @@ public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPor
         defaults.setMaxInputTokens(source.getMaxInputTokens());
         defaults.setReasoning(source.getReasoning());
         return defaults;
+    }
+
+    private ReasoningConfig copyReasoningConfig(ReasoningConfig source) {
+        if (source == null) {
+            return null;
+        }
+        ReasoningConfig copy = new ReasoningConfig();
+        copy.setDefaultLevel(source.getDefaultLevel());
+        Map<String, ReasoningLevelConfig> copiedLevels = new LinkedHashMap<>();
+        if (source.getLevels() != null) {
+            for (Map.Entry<String, ReasoningLevelConfig> entry : source.getLevels().entrySet()) {
+                ReasoningLevelConfig levelConfig = entry.getValue();
+                copiedLevels.put(entry.getKey(), levelConfig == null
+                        ? new ReasoningLevelConfig()
+                        : new ReasoningLevelConfig(levelConfig.getMaxInputTokens()));
+            }
+        }
+        copy.setLevels(copiedLevels);
+        return copy;
     }
 }

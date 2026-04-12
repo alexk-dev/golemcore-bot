@@ -6,6 +6,8 @@ import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.adapter.inbound.web.mapper.RuntimeSettingsWebMapper;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos;
+import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
+import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
 import me.golemcore.bot.adapter.outbound.voice.PluginVoiceProviderCatalogAdapter;
@@ -67,6 +69,8 @@ class SettingsControllerTest {
     private RuntimeConfigService runtimeConfigService;
     private HiveManagedPolicyService hiveManagedPolicyService;
     private MemoryPresetService memoryPresetService;
+    private ProviderModelImportService providerModelImportService;
+    private ProviderModelDiscoveryService providerModelDiscoveryService;
     private SttProviderRegistry sttProviderRegistry;
     private TtsProviderRegistry ttsProviderRegistry;
     private RuntimeSettingsWebMapper runtimeSettingsWebMapper;
@@ -79,6 +83,8 @@ class SettingsControllerTest {
         runtimeConfigService = mock(RuntimeConfigService.class);
         hiveManagedPolicyService = mock(HiveManagedPolicyService.class);
         memoryPresetService = mock(MemoryPresetService.class);
+        providerModelImportService = mock(ProviderModelImportService.class);
+        providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         sttProviderRegistry = new SttProviderRegistry();
         ttsProviderRegistry = new TtsProviderRegistry();
         runtimeSettingsWebMapper = new RuntimeSettingsWebMapper();
@@ -111,7 +117,9 @@ class SettingsControllerTest {
                 new RuntimeSettingsValidator(
                         modelSelectionService,
                         new PluginVoiceProviderCatalogAdapter(sttRegistry, ttsRegistry)),
-                new RuntimeSettingsMergeService());
+                new RuntimeSettingsMergeService(),
+                providerModelImportService,
+                providerModelDiscoveryService);
         return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade,
                 runtimeSettingsWebMapper);
     }
@@ -900,6 +908,178 @@ class SettingsControllerTest {
                 .build();
 
         assertDoesNotThrow(() -> controller.addLlmProvider("test", providerConfig));
+    }
+
+    @Test
+    void shouldSaveProviderAndImportOnlySelectedModels() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .build();
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("x"))
+                .apiType("openai")
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(providerModelImportService.importMissingModels("test", List.of("test/gpt-5.2")))
+                .thenReturn(new ProviderModelImportService.ProviderImportResult(
+                        "https://models.example.com/v1/models",
+                        List.of("test/gpt-5.2"),
+                        List.of(),
+                        List.of()));
+
+        StepVerifier.create(controller.addLlmProviderAndImportModels(
+                "test",
+                new SettingsController.LlmProviderImportRequest(providerConfig, List.of("test/gpt-5.2"))))
+                .assertNext(response -> {
+                    SettingsController.LlmProviderImportResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.providerSaved());
+                    assertEquals("test", body.providerName());
+                    assertEquals(List.of("test/gpt-5.2"), body.addedModels());
+                    assertEquals(List.of(), body.skippedModels());
+                    assertEquals(List.of(), body.errors());
+                })
+                .verifyComplete();
+
+        verify(runtimeConfigService).addLlmProvider("test", providerConfig);
+        verify(providerModelImportService).importMissingModels("test", List.of("test/gpt-5.2"));
+    }
+
+    @Test
+    void shouldRejectProviderImportWithoutConfig() {
+        ResponseStatusException nullRequest = assertThrows(ResponseStatusException.class,
+                () -> controller.addLlmProviderAndImportModels("test", null));
+        assertEquals(HttpStatus.BAD_REQUEST, nullRequest.getStatusCode());
+        assertTrue(nullRequest.getReason().contains("config is required"));
+
+        ResponseStatusException missingConfig = assertThrows(ResponseStatusException.class,
+                () -> controller.addLlmProviderAndImportModels(
+                        "test",
+                        new SettingsController.LlmProviderImportRequest(null, List.of("test/gpt-5.2"))));
+        assertEquals(HttpStatus.BAD_REQUEST, missingConfig.getStatusCode());
+        assertTrue(missingConfig.getReason().contains("config is required"));
+    }
+
+    @Test
+    void shouldTestSavedProvider() {
+        when(providerModelDiscoveryService.discoverModelsForProvider("openrouter"))
+                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
+                        "https://openrouter.ai/api/v1/models",
+                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("openrouter", "openai/gpt-5",
+                                "OpenAI: GPT-5", "openai", null))));
+
+        StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                "saved",
+                "openrouter",
+                null)))
+                .assertNext(response -> {
+                    SettingsController.LlmProviderTestResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.success());
+                    assertEquals("openrouter", body.providerName());
+                    assertEquals("https://openrouter.ai/api/v1/models", body.resolvedEndpoint());
+                    assertEquals(List.of("openrouter/openai/gpt-5"), body.models());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldRejectInvalidProviderTestRequests() {
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiType("openai")
+                .build();
+
+        ResponseStatusException nullRequest = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(null));
+        assertEquals(HttpStatus.BAD_REQUEST, nullRequest.getStatusCode());
+        assertTrue(nullRequest.getReason().contains("request body is required"));
+
+        ResponseStatusException missingMode = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        null,
+                        "openrouter",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, missingMode.getStatusCode());
+        assertTrue(missingMode.getReason().contains("mode is required"));
+
+        ResponseStatusException blankProvider = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "saved",
+                        " ",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, blankProvider.getStatusCode());
+        assertTrue(blankProvider.getReason().contains("providerName is required"));
+
+        ResponseStatusException draftWithoutConfig = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "draft",
+                        "openrouter",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, draftWithoutConfig.getStatusCode());
+        assertTrue(draftWithoutConfig.getReason().contains("config is required"));
+
+        ResponseStatusException invalidMode = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "delete",
+                        "openrouter",
+                        providerConfig)));
+        assertEquals(HttpStatus.BAD_REQUEST, invalidMode.getStatusCode());
+        assertTrue(invalidMode.getReason().contains("mode must be one of"));
+
+        ResponseStatusException invalidProvider = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "saved",
+                        "bad name",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, invalidProvider.getStatusCode());
+        assertTrue(invalidProvider.getReason().contains("Provider name must match"));
+    }
+
+    @Test
+    void shouldReuseSavedSecretWhenTestingDraftProviderWithoutApiKeyOverride() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "draftmesh", RuntimeConfig.LlmProviderConfig.builder()
+                                        .apiKey(Secret.of("saved-key"))
+                                        .baseUrl("https://saved.example.com")
+                                        .apiType("openai")
+                                        .build())))
+                        .build())
+                .build();
+        RuntimeConfig.LlmProviderConfig requestConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(null)
+                .baseUrl("https://draft.example.com")
+                .apiType("openai")
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(providerModelDiscoveryService.discoverModelsForConfig(anyString(),
+                any(RuntimeConfig.LlmProviderConfig.class)))
+                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
+                        "https://draft.example.com/v1/models",
+                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("draftmesh", "draft-gpt",
+                                "Draft GPT", "draft", null))));
+
+        StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                "draft",
+                "draftmesh",
+                requestConfig)))
+                .assertNext(response -> {
+                    SettingsController.LlmProviderTestResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.success());
+                    assertEquals(List.of("draftmesh/draft-gpt"), body.models());
+                })
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig.LlmProviderConfig> captor = ArgumentCaptor
+                .forClass(RuntimeConfig.LlmProviderConfig.class);
+        verify(providerModelDiscoveryService).discoverModelsForConfig(anyString(), captor.capture());
+        RuntimeConfig.LlmProviderConfig effectiveConfig = captor.getValue();
+        assertNotNull(effectiveConfig);
+        assertEquals("saved-key", effectiveConfig.getApiKey().getValue());
+        assertEquals("https://draft.example.com", effectiveConfig.getBaseUrl());
+        assertEquals("openai", effectiveConfig.getApiType());
     }
 
     @Test

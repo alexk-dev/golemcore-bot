@@ -10,6 +10,7 @@ import {
 } from './llmProvidersSupport';
 import { LlmProviderBaseUrlField } from './LlmProviderBaseUrlField';
 import { LlmProviderSecretField } from './LlmProviderSecretField';
+import { ProviderModelSelectionForm } from './ProviderModelSelectionForm';
 
 export interface LlmProviderEditorCardProps {
   name: string;
@@ -17,10 +18,19 @@ export interface LlmProviderEditorCardProps {
   isNew: boolean;
   showKey: boolean;
   isSaving: boolean;
+  isTesting: boolean;
+  importableModels: string[];
+  selectedImportModels: string[];
   onFormChange: (form: LlmProviderConfig) => void;
   onToggleShowKey: () => void;
+  onToggleImportModel: (modelId: string) => void;
+  onSelectAllImportModels: () => void;
+  onClearImportModels: () => void;
+  onInvertImportModels: () => void;
   onSave: () => void;
   onCancel: () => void;
+  onTestDraft: () => void;
+  onTestSaved: () => void;
 }
 
 export function LlmProviderEditorCard({
@@ -29,10 +39,19 @@ export function LlmProviderEditorCard({
   isNew,
   showKey,
   isSaving,
+  isTesting,
+  importableModels,
+  selectedImportModels,
   onFormChange,
   onToggleShowKey,
+  onToggleImportModel,
+  onSelectAllImportModels,
+  onClearImportModels,
+  onInvertImportModels,
   onSave,
   onCancel,
+  onTestDraft,
+  onTestSaved,
 }: LlmProviderEditorCardProps): ReactElement {
   const apiType = normalizeApiType(form.apiType);
   const recommendedApiType = getDefaultApiTypeForProvider(name);
@@ -119,10 +138,26 @@ export function LlmProviderEditorCard({
             </Form.Group>
           </Col>
         </Row>
+        <ProviderModelSelectionForm
+          models={importableModels}
+          selectedModels={selectedImportModels}
+          onToggleModel={onToggleImportModel}
+          onSelectAll={onSelectAllImportModels}
+          onClearAll={onClearImportModels}
+          onInvert={onInvertImportModels}
+        />
         <div className="d-flex gap-2 mt-2">
           <Button type="button" variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={onTestDraft} disabled={isSaving || isTesting}>
+            {isTesting ? 'Testing...' : 'Test Draft'}
+          </Button>
+          {!isNew && (
+            <Button type="button" variant="dark" size="sm" onClick={onTestSaved} disabled={isSaving || isTesting}>
+              {isTesting ? 'Testing...' : 'Test Saved'}
+            </Button>
+          )}
           <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={isSaving}>
             Cancel
           </Button>

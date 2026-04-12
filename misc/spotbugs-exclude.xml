@@ -90,6 +90,15 @@
         </Or>
     </Match>
     <!--
+        Strict model saves rollback the in-memory catalog and rethrow the same
+        persistence failure so admin callers can report partial import errors.
+    -->
+    <Match>
+        <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
+        <Class name="me.golemcore.bot.infrastructure.config.ModelConfigService" />
+        <Method name="saveModelStrict" />
+    </Match>
+    <!--
         Methods that declare 'throws Exception' due to framework callback interfaces
         (OkHttp Callback, TelegramBots LongPollingBot, MCP lifecycle, etc.)
         or catch-all error handling in pipeline systems.

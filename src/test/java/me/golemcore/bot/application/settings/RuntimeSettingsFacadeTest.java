@@ -1,5 +1,7 @@
 package me.golemcore.bot.application.settings;
 
+import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
+import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -18,10 +20,12 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -33,6 +37,8 @@ class RuntimeSettingsFacadeTest {
     private UserPreferencesService preferencesService;
     private MemoryPresetService memoryPresetService;
     private HiveManagedPolicyService hiveManagedPolicyService;
+    private ProviderModelImportService providerModelImportService;
+    private ProviderModelDiscoveryService providerModelDiscoveryService;
     private RuntimeSettingsFacade facade;
 
     @BeforeEach
@@ -43,6 +49,8 @@ class RuntimeSettingsFacadeTest {
         hiveManagedPolicyService = mock(HiveManagedPolicyService.class);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         VoiceProviderCatalogPort voiceProviderCatalogPort = mock(VoiceProviderCatalogPort.class);
+        providerModelImportService = mock(ProviderModelImportService.class);
+        providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         RuntimeSettingsValidator validator = new RuntimeSettingsValidator(
                 modelSelectionService,
                 voiceProviderCatalogPort);
@@ -53,7 +61,9 @@ class RuntimeSettingsFacadeTest {
                 memoryPresetService,
                 hiveManagedPolicyService,
                 validator,
-                mergeService);
+                mergeService,
+                providerModelImportService,
+                providerModelDiscoveryService);
     }
 
     @Test
@@ -146,6 +156,141 @@ class RuntimeSettingsFacadeTest {
                 () -> facade.addLlmProvider("openai", RuntimeConfig.LlmProviderConfig.builder().build()));
 
         assertTrue(error.getMessage().contains("already exists"));
+    }
+
+    @Test
+    void shouldAddProviderAndImportSelectedModels() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new java.util.LinkedHashMap<>()).build())
+                .build();
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiType("openai")
+                .build();
+        ProviderModelImportService.ProviderImportResult importResult = new ProviderModelImportService.ProviderImportResult(
+                "https://models.example.com/v1/models",
+                List.of("openai/gpt-5.2"),
+                List.of(),
+                List.of());
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(providerModelImportService.importMissingModels("openai", List.of("openai/gpt-5.2")))
+                .thenReturn(importResult);
+
+        ProviderModelImportService.ProviderImportResult result = facade.addLlmProviderAndImportModels(
+                "openai",
+                providerConfig,
+                List.of("openai/gpt-5.2"));
+
+        assertEquals(importResult, result);
+        verify(runtimeConfigService).addLlmProvider("openai", providerConfig);
+        verify(providerModelImportService).importMissingModels("openai", List.of("openai/gpt-5.2"));
+    }
+
+    @Test
+    void shouldRejectAddingDuplicateProviderBeforeImportingModels() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new java.util.LinkedHashMap<>(Map.of("openai",
+                                RuntimeConfig.LlmProviderConfig.builder().build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> facade.addLlmProviderAndImportModels(
+                        "openai",
+                        RuntimeConfig.LlmProviderConfig.builder().build(),
+                        List.of("openai/gpt-5.2")));
+
+        assertTrue(error.getMessage().contains("already exists"));
+        verify(runtimeConfigService, never()).addLlmProvider(any(), any());
+        verify(providerModelImportService, never()).importMissingModels(any(), any());
+    }
+
+    @Test
+    void shouldRejectAddingProviderAndImportingModelsWhenHivePolicyManagesLlm() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new java.util.LinkedHashMap<>()).build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(hiveManagedPolicyService.getBindingState()).thenReturn(java.util.Optional.of(HivePolicyBindingState
+                .builder()
+                .policyGroupId("pg-1")
+                .build()));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> facade.addLlmProviderAndImportModels(
+                        "openai",
+                        RuntimeConfig.LlmProviderConfig.builder().build(),
+                        List.of("openai/gpt-5.2")));
+
+        assertEquals("LLM settings are managed by Hive policy group \"pg-1\" and are read-only",
+                error.getMessage());
+        verify(runtimeConfigService, never()).addLlmProvider(any(), any());
+        verify(providerModelImportService, never()).importMissingModels(any(), any());
+    }
+
+    @Test
+    void shouldReturnSavedProviderTestFailure() {
+        when(providerModelDiscoveryService.discoverModelsForProvider("openai"))
+                .thenThrow(new IllegalStateException("bad gateway"));
+
+        RuntimeSettingsFacade.LlmProviderTestResult result = facade.testSavedLlmProvider("openai");
+
+        assertFalse(result.success());
+        assertEquals("saved", result.mode());
+        assertEquals("openai", result.providerName());
+        assertTrue(result.models().isEmpty());
+        assertEquals("bad gateway", result.error());
+    }
+
+    @Test
+    void shouldTestDraftProviderWithoutSavedRuntimeConfig() {
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiType("openai")
+                .baseUrl("https://draft.example.com")
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(null);
+        when(providerModelDiscoveryService.discoverModelsForConfig(eq("draftmesh"),
+                any(RuntimeConfig.LlmProviderConfig.class)))
+                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
+                        "https://draft.example.com/v1/models",
+                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("draftmesh", "gpt-5.2",
+                                "GPT-5.2", "openai", null))));
+
+        RuntimeSettingsFacade.LlmProviderTestResult result = facade.testDraftLlmProvider("draftmesh", providerConfig);
+
+        assertTrue(result.success());
+        assertEquals("draft", result.mode());
+        assertEquals("https://draft.example.com/v1/models", result.resolvedEndpoint());
+        assertEquals(List.of("draftmesh/gpt-5.2"), result.models());
+    }
+
+    @Test
+    void shouldReturnDraftProviderTestFailure() {
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiType("openai")
+                .baseUrl("https://draft.example.com")
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(RuntimeConfig.builder().build());
+        when(providerModelDiscoveryService.discoverModelsForConfig(eq("draftmesh"),
+                any(RuntimeConfig.LlmProviderConfig.class)))
+                .thenThrow(new IllegalStateException("bad gateway"));
+
+        RuntimeSettingsFacade.LlmProviderTestResult result = facade.testDraftLlmProvider("draftmesh", providerConfig);
+
+        assertFalse(result.success());
+        assertEquals("draft", result.mode());
+        assertEquals("draftmesh", result.providerName());
+        assertTrue(result.models().isEmpty());
+        assertEquals("bad gateway", result.error());
+    }
+
+    @Test
+    void shouldRejectDraftProviderTestWithoutConfig() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> facade.testDraftLlmProvider("draftmesh", null));
+
+        assertEquals("config is required", error.getMessage());
     }
 
     @Test
