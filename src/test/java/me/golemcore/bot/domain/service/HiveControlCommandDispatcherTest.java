@@ -169,6 +169,37 @@ class HiveControlCommandDispatcherTest {
     }
 
     @Test
+    void shouldRoutePolicySyncRequestWithoutThreadContext() {
+        SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
+        HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        HivePolicySyncCommandHandler policySyncCommandHandler = mock(HivePolicySyncCommandHandler.class);
+        HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
+                coordinator,
+                inboxService,
+                publisher,
+                inspectionCommandHandler,
+                policySyncCommandHandler,
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+
+        HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
+                .eventType("policy.sync_requested")
+                .commandId("cmd-sync-2")
+                .policyGroupId("pg-1")
+                .targetVersion(8)
+                .checksum("sha256:efgh")
+                .build();
+
+        dispatcher.dispatch(envelope);
+
+        verify(policySyncCommandHandler).handle(envelope);
+        verify(inboxService).markProcessed("cmd-sync-2");
+        verify(coordinator, never()).submit(any(Message.class), any(Runnable.class));
+        verify(publisher, never()).publishCommandAcknowledged(envelope);
+    }
+
+    @Test
     void shouldMarkPolicySyncRequestFailedWhenHandlerThrows() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);

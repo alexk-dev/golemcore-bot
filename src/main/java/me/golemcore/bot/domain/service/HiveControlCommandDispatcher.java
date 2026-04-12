@@ -144,7 +144,6 @@ public class HiveControlCommandDispatcher {
 
     private String validateEnvelope(HiveControlCommandEnvelope envelope) {
         requireEnvelope(envelope);
-        requireThreadId(envelope);
         String eventType = normalizeEventType(envelope.getEventType());
         requireTrackingId(envelope);
         requireSupportedEventType(eventType);
@@ -191,6 +190,7 @@ public class HiveControlCommandDispatcher {
             requirePolicySyncPayload(envelope);
             return;
         }
+        requireThreadId(envelope);
         requireCommandId(envelope);
         if (EVENT_TYPE_COMMAND.equals(eventType)) {
             requireCommandBody(envelope);
