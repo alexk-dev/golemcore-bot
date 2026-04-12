@@ -47,7 +47,7 @@ class WebhookPayloadTransformerTest {
                   "method": "POST",
                   "payload": {
                     "request": {
-                      "command": "тест заметка какой сегодня день"
+                      "command": "test note what day is today"
                     }
                   }
                 }
@@ -55,7 +55,7 @@ class WebhookPayloadTransformerTest {
 
         String result = transformer.transform(template, body);
 
-        assertEquals("Command: тест заметка какой сегодня день", result);
+        assertEquals("Command: test note what day is today", result);
     }
 
     @Test
@@ -267,5 +267,15 @@ class WebhookPayloadTransformerTest {
         String result = transformer.transform(template, body);
 
         assertEquals("First: one", result);
+    }
+
+    @Test
+    void shouldHandleNestedFieldAfterArrayIndexInPath() {
+        String template = "First id: {items[0].id}";
+        byte[] body = "{\"items\":[{\"id\":\"one\"},{\"id\":\"two\"}]}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("First id: one", result);
     }
 }

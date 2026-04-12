@@ -474,7 +474,7 @@ HTTP Request
 WebhookController          REST controller (WebFlux, Mono<ResponseEntity>)
      |
      +-- WebhookAuthenticator    Bearer token + HMAC-SHA256 verification
-     +-- WebhookPayloadTransformer    {field.path} template resolution
+     +-- WebhookPayloadTransformer    {json.path} template resolution
      +-- InputSanitizer              Unicode normalization, injection detection
      |
      v
