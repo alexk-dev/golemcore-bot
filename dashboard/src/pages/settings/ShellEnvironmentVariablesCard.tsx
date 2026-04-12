@@ -1,7 +1,7 @@
 import { type ReactElement, useState } from 'react';
 import { Button, Card, Form, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
-import type { ShellEnvironmentVariable } from '../../api/settings';
+import type { ShellEnvironmentVariable } from '../../api/settingsTypes';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 

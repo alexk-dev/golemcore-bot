@@ -32,7 +32,7 @@ import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;
 import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
 import me.golemcore.bot.domain.model.hive.HivePolicyPackage;
 import me.golemcore.bot.domain.model.hive.HiveStatusSnapshot;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort;
 import me.golemcore.bot.port.outbound.HiveControlChannelPort;

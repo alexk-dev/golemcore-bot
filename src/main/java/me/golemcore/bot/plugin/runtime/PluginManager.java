@@ -11,7 +11,7 @@ import me.golemcore.bot.plugin.runtime.extension.PluginChannelPortAdapter;
 import me.golemcore.bot.plugin.runtime.extension.PluginConfirmationPortAdapter;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import me.golemcore.plugin.api.extension.spi.PluginBootstrap;
 import me.golemcore.plugin.api.extension.spi.PluginDescriptor;

@@ -134,6 +134,9 @@ public class HiveManagedPolicyService {
         if (policyPackage.getTargetVersion() == null) {
             throw new IllegalArgumentException("Hive policy package targetVersion is required");
         }
+        if (policyPackage.getChecksum() == null || policyPackage.getChecksum().isBlank()) {
+            throw new IllegalArgumentException("Hive policy package checksum is required");
+        }
     }
 
     private boolean isAlreadyApplied(HivePolicyBindingState existingState, HivePolicyPackage policyPackage) {

@@ -8,7 +8,7 @@ import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapServic
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;

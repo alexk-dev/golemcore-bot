@@ -7,7 +7,7 @@ import type {
   SchedulerStateResponse,
 } from '../../api/scheduler';
 import type { useSchedulerForm } from '../../hooks/useSchedulerForm';
-import type { ReportChannelOption } from './SchedulerCreateCardSections';
+import type { ReportChannelOption } from './SchedulerCreateCardReportChannel';
 import { SchedulerCreateCard } from './SchedulerCreateCard';
 import { SchedulerRunLogsModal } from './SchedulerRunLogsModal';
 import { SchedulerSchedulesCard } from './SchedulerSchedulesCard';

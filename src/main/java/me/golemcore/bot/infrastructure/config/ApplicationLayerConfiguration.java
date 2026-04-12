@@ -7,10 +7,12 @@ import me.golemcore.bot.application.models.ModelManagementFacade;
 import me.golemcore.bot.application.models.ModelRegistryService;
 import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
 import me.golemcore.bot.application.prompts.PromptManagementFacade;
+import me.golemcore.bot.application.selfevolving.tactic.TacticEmbeddingProbeService;
 import me.golemcore.bot.application.scheduler.SchedulerFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
+import me.golemcore.bot.adapter.outbound.skills.SkillMarketplaceLegacySupport;
 import me.golemcore.bot.application.skills.SkillManagementFacade;
 import me.golemcore.bot.application.skills.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -29,6 +31,7 @@ import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.WorkspacePathService;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
+import me.golemcore.bot.port.outbound.EmbeddingClientResolverPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.ModelRegistryCachePort;
@@ -36,6 +39,9 @@ import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
+import me.golemcore.bot.port.outbound.SkillMarketplaceArtifactPort;
+import me.golemcore.bot.port.outbound.SkillMarketplaceCatalogPort;
+import me.golemcore.bot.port.outbound.SkillMarketplaceInstallPort;
 import me.golemcore.bot.port.outbound.SkillSettingsPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;
@@ -152,20 +158,53 @@ public class ApplicationLayerConfiguration {
     }
 
     @Bean
-    SkillMarketplaceService skillMarketplaceService(
+    SkillMarketplaceLegacySupport skillMarketplaceLegacySupport(
             SkillSettingsPort skillSettingsPort,
             StoragePort storagePort,
             SkillService skillService,
             RuntimeConfigService runtimeConfigService,
             WorkspacePathService workspacePathService,
             SkillDocumentService skillDocumentService) {
-        return new SkillMarketplaceService(
+        return new SkillMarketplaceLegacySupport(
                 skillSettingsPort,
                 storagePort,
                 skillService,
                 runtimeConfigService,
                 workspacePathService,
                 skillDocumentService);
+    }
+
+    @Bean
+    SkillMarketplaceCatalogPort skillMarketplaceCatalogPort(
+            SkillMarketplaceLegacySupport skillMarketplaceLegacySupport) {
+        return skillMarketplaceLegacySupport;
+    }
+
+    @Bean
+    SkillMarketplaceArtifactPort skillMarketplaceArtifactPort(
+            SkillMarketplaceLegacySupport skillMarketplaceLegacySupport) {
+        return skillMarketplaceLegacySupport;
+    }
+
+    @Bean
+    SkillMarketplaceInstallPort skillMarketplaceInstallPort(
+            SkillMarketplaceLegacySupport skillMarketplaceLegacySupport) {
+        return skillMarketplaceLegacySupport;
+    }
+
+    @Bean
+    SkillMarketplaceService skillMarketplaceService(
+            SkillSettingsPort skillSettingsPort,
+            RuntimeConfigService runtimeConfigService,
+            SkillMarketplaceCatalogPort skillMarketplaceCatalogPort,
+            SkillMarketplaceArtifactPort skillMarketplaceArtifactPort,
+            SkillMarketplaceInstallPort skillMarketplaceInstallPort) {
+        return new SkillMarketplaceService(
+                skillSettingsPort,
+                runtimeConfigService,
+                skillMarketplaceCatalogPort,
+                skillMarketplaceArtifactPort,
+                skillMarketplaceInstallPort);
     }
 
     @Bean
@@ -189,5 +228,12 @@ public class ApplicationLayerConfiguration {
                 skillMarketplaceService,
                 mcpPort,
                 storagePort);
+    }
+
+    @Bean
+    TacticEmbeddingProbeService tacticEmbeddingProbeService(
+            EmbeddingClientResolverPort embeddingClientResolverPort,
+            RuntimeConfigService runtimeConfigService) {
+        return new TacticEmbeddingProbeService(embeddingClientResolverPort, runtimeConfigService);
     }
 }

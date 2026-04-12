@@ -258,7 +258,7 @@ Custom mappings transform raw JSON payloads from external services into structur
 | `hmacHeader` | string | — | Header containing HMAC signature |
 | `hmacSecret` | string | — | HMAC shared secret |
 | `hmacPrefix` | string | — | Prefix to strip from signature (e.g. `"sha256="`) |
-| `messageTemplate` | string | — | Template with `{field.path}` placeholders |
+| `messageTemplate` | string | — | Template with `{json.path}` placeholders |
 | `model` | string | — | Model tier override (for agent action) |
 | `deliver` | boolean | `false` | Route response to a messaging channel |
 | `channel` | string | — | Target channel type for delivery |
@@ -266,13 +266,17 @@ Custom mappings transform raw JSON payloads from external services into structur
 
 ### Message Templates
 
-Templates use `{field.path}` placeholders resolved against the incoming JSON body:
+Templates use `{json.path}` placeholders resolved against the incoming JSON body root.
+Bare dotted paths are normalized to JSONPath automatically, so both `{request.command}`
+and full expressions like `{$.payload.meta.client_id}` are supported.
 
 | Template | JSON Body | Result |
 |----------|-----------|--------|
 | `Push by {user}` | `{"user": "alex"}` | `Push by alex` |
 | `Repo: {repo.name}` | `{"repo": {"name": "myapp"}}` | `Repo: myapp` |
 | `Stars: {count}` | `{"count": 42}` | `Stars: 42` |
+| `Client: {payload.meta.client_id}` | `{"payload":{"meta":{"client_id":"alice"}}}` | `Client: alice` |
+| `First tag: {tags[0]}` | `{"tags":["v1.0","release"]}` | `First tag: v1.0` |
 | `Event: {missing}` | `{"other": "val"}` | `Event: <missing>` |
 
 When the template is null or blank, the raw JSON body is used as the message text.
@@ -470,7 +474,7 @@ HTTP Request
 WebhookController          REST controller (WebFlux, Mono<ResponseEntity>)
      |
      +-- WebhookAuthenticator    Bearer token + HMAC-SHA256 verification
-     +-- WebhookPayloadTransformer    {field.path} template resolution
+     +-- WebhookPayloadTransformer    {json.path} template resolution
      +-- InputSanitizer              Unicode normalization, injection detection
      |
      v

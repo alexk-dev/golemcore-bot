@@ -209,12 +209,26 @@ class HiveManagedPolicyServiceTest {
     void shouldRejectMissingTargetVersion() {
         HivePolicyPackage policyPackage = HivePolicyPackage.builder()
                 .policyGroupId("pg-1")
+                .checksum("sha256:abcd")
                 .build();
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> service.applyPolicyPackage(policyPackage));
 
         assertEquals("Hive policy package targetVersion is required", error.getMessage());
+    }
+
+    @Test
+    void shouldRejectMissingChecksum() {
+        HivePolicyPackage policyPackage = HivePolicyPackage.builder()
+                .policyGroupId("pg-1")
+                .targetVersion(4)
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.applyPolicyPackage(policyPackage));
+
+        assertEquals("Hive policy package checksum is required", error.getMessage());
     }
 
     @Test

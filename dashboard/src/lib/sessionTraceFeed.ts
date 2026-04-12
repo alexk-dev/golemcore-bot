@@ -5,6 +5,7 @@ import type {
   SessionTraceSpan,
   SessionTraceSpanEvent,
 } from '../api/sessions';
+import { appendEventTags } from './sessionTraceFeedTags';
 import { formatTraceDuration } from './traceFormat';
 
 export interface SessionTraceFeedTag {
@@ -204,49 +205,6 @@ function buildEventNote(event: SessionTraceSpanEvent): string {
       return formatTacticSearchNote(event);
     default:
       return event.name ?? 'event';
-  }
-}
-
-function appendEventTags(tags: SessionTraceFeedTag[], span: SessionTraceSpan): void {
-  for (const event of span.events) {
-    if (event.name === 'tier.resolved') {
-      const skill = event.attributes.skill;
-      const tier = event.attributes.tier;
-      const model = event.attributes.model_id;
-      if (typeof skill === 'string' && skill.length > 0) {
-        tags.push({ label: `skill ${skill}`, variant: 'info' });
-      }
-      if (typeof tier === 'string' && tier.length > 0) {
-        tags.push({ label: `tier ${tier}`, variant: 'secondary' });
-      }
-      if (typeof model === 'string' && model.length > 0) {
-        tags.push({ label: `model ${model}`, variant: 'warning' });
-      }
-    }
-    if (event.name === 'tier.transition') {
-      const nextTier = event.attributes.to_tier;
-      const nextModel = event.attributes.to_model_id;
-      if (typeof nextTier === 'string' && nextTier.length > 0) {
-        tags.push({ label: `tier ${nextTier}`, variant: 'secondary' });
-      }
-      if (typeof nextModel === 'string' && nextModel.length > 0) {
-        tags.push({ label: `model ${nextModel}`, variant: 'warning' });
-      }
-    }
-    if (event.name === 'tactic.search.completed') {
-      const tacticTitle = event.attributes['tactic.selected_title'];
-      const artifactType = event.attributes['tactic.artifact_type'];
-      const searchMode = event.attributes['tactic.search_mode'];
-      if (typeof tacticTitle === 'string' && tacticTitle.length > 0) {
-        tags.push({ label: `tactic ${tacticTitle}`, variant: 'info' });
-      }
-      if (typeof artifactType === 'string' && artifactType.length > 0) {
-        tags.push({ label: artifactType, variant: 'secondary' });
-      }
-      if (typeof searchMode === 'string' && searchMode.length > 0) {
-        tags.push({ label: `search ${searchMode}`, variant: 'secondary' });
-      }
-    }
   }
 }
 

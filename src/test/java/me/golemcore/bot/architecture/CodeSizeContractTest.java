@@ -96,16 +96,22 @@ class CodeSizeContractTest {
     }
 
     private static Set<String> loadAllowlist(String resourcePath) {
-        InputStream resourceStream = CodeSizeContractTest.class.getClassLoader().getResourceAsStream(resourcePath);
-        if (resourceStream == null) {
-            throw new IllegalStateException("Missing architecture allowlist resource: " + resourcePath);
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        if (classLoader == null) {
+            throw new IllegalStateException("Missing context class loader for architecture allowlist: "
+                    + resourcePath);
         }
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceStream))) {
-            return reader.lines()
-                    .map(String::trim)
-                    .filter(line -> !line.isEmpty())
-                    .filter(line -> !line.startsWith("#"))
-                    .collect(Collectors.toUnmodifiableSet());
+        try (InputStream resourceStream = classLoader.getResourceAsStream(resourcePath)) {
+            if (resourceStream == null) {
+                throw new IllegalStateException("Missing architecture allowlist resource: " + resourcePath);
+            }
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceStream))) {
+                return reader.lines()
+                        .map(String::trim)
+                        .filter(line -> !line.isEmpty())
+                        .filter(line -> !line.startsWith("#"))
+                        .collect(Collectors.toUnmodifiableSet());
+            }
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to load architecture allowlist: " + resourcePath, exception);
         }

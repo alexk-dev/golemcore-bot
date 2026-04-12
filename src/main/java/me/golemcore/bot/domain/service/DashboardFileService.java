@@ -3,23 +3,17 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.charset.MalformedInputException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -28,13 +22,14 @@ public class DashboardFileService {
     private static final long MAX_EDITABLE_FILE_SIZE = 1024L * 1024L * 2L;
 
     private final WorkspacePathService workspacePathService;
+    private final WorkspaceFilePort workspaceFilePort;
 
     public List<DashboardFileNode> getTree(String relativePath) {
         Path base = resolveSafePath(relativePath == null ? "" : relativePath);
-        if (!Files.exists(base)) {
+        if (!workspaceFilePort.exists(base)) {
             throw new IllegalArgumentException("Path not found: " + relativePath);
         }
-        if (!Files.isDirectory(base)) {
+        if (!workspaceFilePort.isDirectory(base)) {
             throw new IllegalArgumentException("Path is not a directory: " + relativePath);
         }
 
@@ -47,21 +42,21 @@ public class DashboardFileService {
         }
 
         Path path = resolveSafePath(relativePath);
-        if (!Files.exists(path)) {
+        if (!workspaceFilePort.exists(path)) {
             throw new IllegalArgumentException("File not found: " + relativePath);
         }
-        if (!Files.isRegularFile(path)) {
+        if (!workspaceFilePort.isRegularFile(path)) {
             throw new IllegalArgumentException("Not a file: " + relativePath);
         }
 
         try {
-            long size = Files.size(path);
+            long size = workspaceFilePort.size(path);
             if (size > MAX_EDITABLE_FILE_SIZE) {
                 throw new IllegalArgumentException("File too large for editor (max 2 MB)");
             }
 
-            String content = Files.readString(path, StandardCharsets.UTF_8);
-            String updatedAt = Files.getLastModifiedTime(path).toInstant().toString();
+            String content = workspaceFilePort.readString(path);
+            String updatedAt = workspaceFilePort.getLastModifiedTime(path);
             return DashboardFileContent.builder()
                     .path(toRelativePath(path))
                     .content(content)
@@ -83,20 +78,18 @@ public class DashboardFileService {
         String value = content == null ? "" : content;
         Path path = resolveSafePath(relativePath);
 
-        if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+        if (workspaceFilePort.exists(path)) {
             throw new IllegalArgumentException("Path already exists: " + relativePath);
         }
 
         try {
             Path parent = path.getParent();
             if (parent != null) {
-                Files.createDirectories(parent);
+                workspaceFilePort.createDirectories(parent);
             }
-            Files.writeString(path, value, StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE_NEW,
-                    StandardOpenOption.WRITE);
+            workspaceFilePort.write(path, value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-            long size = Files.size(path);
+            long size = workspaceFilePort.size(path);
             String updatedAt = Instant.now().toString();
             return DashboardFileContent.builder()
                     .path(toRelativePath(path))
@@ -121,14 +114,11 @@ public class DashboardFileService {
         try {
             Path parent = path.getParent();
             if (parent != null) {
-                Files.createDirectories(parent);
+                workspaceFilePort.createDirectories(parent);
             }
-            Files.writeString(path, content, StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE);
+            workspaceFilePort.writeString(path, content);
 
-            long size = Files.size(path);
+            long size = workspaceFilePort.size(path);
             String updatedAt = Instant.now().toString();
             return DashboardFileContent.builder()
                     .path(toRelativePath(path))
@@ -155,19 +145,19 @@ public class DashboardFileService {
         if (sourcePath.equals(getWorkspaceRoot()) || targetPath.equals(getWorkspaceRoot())) {
             throw new IllegalArgumentException("Workspace root cannot be renamed");
         }
-        if (!Files.exists(sourcePath, LinkOption.NOFOLLOW_LINKS)) {
+        if (!workspaceFilePort.exists(sourcePath)) {
             throw new IllegalArgumentException("Source path not found: " + sourceRelativePath);
         }
-        if (Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
+        if (workspaceFilePort.exists(targetPath)) {
             throw new IllegalArgumentException("Target path already exists: " + targetRelativePath);
         }
 
         try {
             Path targetParent = targetPath.getParent();
             if (targetParent != null) {
-                Files.createDirectories(targetParent);
+                workspaceFilePort.createDirectories(targetParent);
             }
-            movePath(sourcePath, targetPath);
+            workspaceFilePort.move(sourcePath, targetPath);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to rename path", e);
         }
@@ -182,62 +172,53 @@ public class DashboardFileService {
         if (path.equals(getWorkspaceRoot())) {
             throw new IllegalArgumentException("Workspace root cannot be deleted");
         }
-        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+        if (!workspaceFilePort.exists(path)) {
             throw new IllegalArgumentException("Path not found: " + relativePath);
         }
 
         try {
-            if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+            if (workspaceFilePort.isDirectory(path)) {
                 deleteDirectoryRecursively(path);
                 return;
             }
-            Files.delete(path);
+            workspaceFilePort.delete(path);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to delete path", e);
         }
     }
 
-    private void movePath(Path sourcePath, Path targetPath) throws IOException {
-        try {
-            Files.move(sourcePath, targetPath, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(sourcePath, targetPath);
-        }
-    }
-
     private void deleteDirectoryRecursively(Path path) throws IOException {
-        try (Stream<Path> walk = Files.walk(path)) {
-            List<Path> paths = walk.sorted(Comparator.reverseOrder()).toList();
-            for (Path current : paths) {
-                if (current.equals(getWorkspaceRoot())) {
-                    continue;
-                }
-                Files.delete(current);
+        List<Path> paths = new ArrayList<>(workspaceFilePort.walk(path));
+        paths.sort(Comparator.reverseOrder());
+        for (Path current : paths) {
+            if (current.equals(getWorkspaceRoot())) {
+                continue;
             }
+            workspaceFilePort.delete(current);
         }
     }
 
     private List<DashboardFileNode> buildChildren(Path dir) {
-        try (Stream<Path> stream = Files.list(dir)) {
-            List<Path> sorted = stream
-                    .filter(path -> !Files.isSymbolicLink(path))
+        try {
+            List<Path> sorted = workspaceFilePort.list(dir).stream()
+                    .filter(path -> !workspaceFilePort.isSymbolicLink(path))
                     .sorted(Comparator
-                            .comparing((Path p) -> !Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS))
+                            .comparing((Path p) -> !workspaceFilePort.isDirectory(p))
                             .thenComparing(p -> requireFileName(p).toLowerCase(Locale.ROOT)))
                     .toList();
 
             List<DashboardFileNode> nodes = new ArrayList<>();
             for (Path path : sorted) {
                 String nodeName = requireFileName(path);
-                if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+                if (workspaceFilePort.isDirectory(path)) {
                     nodes.add(DashboardFileNode.builder()
                             .path(toRelativePath(path))
                             .name(nodeName)
                             .type("directory")
                             .children(buildChildren(path))
                             .build());
-                } else if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
-                    long size = Files.size(path);
+                } else if (workspaceFilePort.isRegularFile(path)) {
+                    long size = workspaceFilePort.size(path);
                     nodes.add(DashboardFileNode.builder()
                             .path(toRelativePath(path))
                             .name(nodeName)

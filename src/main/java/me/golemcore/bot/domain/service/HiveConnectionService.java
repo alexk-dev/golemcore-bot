@@ -28,7 +28,7 @@ import me.golemcore.bot.domain.model.hive.HivePolicyPackage;
 import me.golemcore.bot.domain.model.hive.HiveStatusSnapshot;
 import me.golemcore.bot.domain.model.hive.HiveControlChannelStatusSnapshot;
 import me.golemcore.bot.domain.model.hive.HiveOutboxSummary;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort;
 import me.golemcore.bot.port.outbound.HiveControlChannelPort;
@@ -384,7 +384,7 @@ public class HiveConnectionService {
 
     private Set<String> resolveSupportedChannels() {
         Set<String> supportedChannels = new LinkedHashSet<>();
-        for (ChannelPort port : channelRuntimePort.listChannels()) {
+        for (ChannelDeliveryPort port : channelRuntimePort.listChannels()) {
             supportedChannels.add(port.getChannelType());
         }
         return supportedChannels;

@@ -4,13 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
-import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -25,12 +25,17 @@ class HexagonalArchitectureContractTest {
     private static final String PORT_PACKAGE = "me.golemcore.bot.port";
     private static final List<String> FORBIDDEN_PACKAGE_PREFIXES = List.of(
             "me.golemcore.bot.adapter.",
+            "me.golemcore.bot.auto.",
             "me.golemcore.bot.infrastructure.",
+            "me.golemcore.bot.launcher.",
             "me.golemcore.bot.plugin.",
-            "me.golemcore.bot.proto.");
-    private static final Set<String> FORBIDDEN_STEREOTYPE_TYPES = Set.of(
-            "org.springframework.stereotype.Component",
-            "org.springframework.stereotype.Service");
+            "me.golemcore.bot.proto.",
+            "me.golemcore.bot.ratelimit.",
+            "me.golemcore.bot.security.",
+            "me.golemcore.bot.tools.",
+            "me.golemcore.bot.usage.");
+    private static final String INBOUND_ADAPTER_PACKAGE = "me.golemcore.bot.adapter.inbound";
+    private static final String OUTBOUND_ADAPTER_PACKAGE = "me.golemcore.bot.adapter.outbound";
     private static final Set<String> FORBIDDEN_RUNTIME_TYPES = Set.of(
             "org.springframework.boot.SpringApplication",
             "org.springframework.boot.context.event.ApplicationReadyEvent",
@@ -99,6 +104,18 @@ class HexagonalArchitectureContractTest {
                 APPLICATION_LOW_LEVEL_ALLOWLIST);
     }
 
+    @Test
+    void inbound_adapters_should_not_depend_on_outbound_adapters() {
+        assertNoForbiddenDependencies(INBOUND_ADAPTER_PACKAGE,
+                dependency -> dependency.getTargetClass().getPackageName().startsWith(OUTBOUND_ADAPTER_PACKAGE));
+    }
+
+    @Test
+    void outbound_adapters_should_not_depend_on_inbound_adapters() {
+        assertNoForbiddenDependencies(OUTBOUND_ADAPTER_PACKAGE,
+                dependency -> dependency.getTargetClass().getPackageName().startsWith(INBOUND_ADAPTER_PACKAGE));
+    }
+
     private void assertNoForbiddenDependencies(String packagePrefix,
             java.util.function.Predicate<Dependency> predicate) {
         assertNoForbiddenDependencies(packagePrefix, predicate, Set.of());
@@ -108,7 +125,7 @@ class HexagonalArchitectureContractTest {
             String packagePrefix,
             java.util.function.Predicate<Dependency> predicate,
             Set<String> allowlistedOrigins) {
-        JavaClasses importedClasses = new ClassFileImporter()
+        Collection<JavaClass> importedClasses = new ClassFileImporter()
                 .withImportOption(new ImportOption.DoNotIncludeTests())
                 .importPackages(ROOT_PACKAGE);
 
@@ -140,17 +157,22 @@ class HexagonalArchitectureContractTest {
     }
 
     private static Set<String> loadAllowlist(String resourcePath) {
-        InputStream resourceStream = HexagonalArchitectureContractTest.class.getClassLoader()
-                .getResourceAsStream(resourcePath);
-        if (resourceStream == null) {
-            throw new IllegalStateException("Missing architecture allowlist resource: " + resourcePath);
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        if (classLoader == null) {
+            throw new IllegalStateException("Missing context class loader for architecture allowlist: "
+                    + resourcePath);
         }
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceStream))) {
-            return reader.lines()
-                    .map(String::trim)
-                    .filter(line -> !line.isEmpty())
-                    .filter(line -> !line.startsWith("#"))
-                    .collect(Collectors.toUnmodifiableSet());
+        try (InputStream resourceStream = classLoader.getResourceAsStream(resourcePath)) {
+            if (resourceStream == null) {
+                throw new IllegalStateException("Missing architecture allowlist resource: " + resourcePath);
+            }
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceStream))) {
+                return reader.lines()
+                        .map(String::trim)
+                        .filter(line -> !line.isEmpty())
+                        .filter(line -> !line.startsWith("#"))
+                        .collect(Collectors.toUnmodifiableSet());
+            }
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to load architecture allowlist: " + resourcePath, exception);
         }

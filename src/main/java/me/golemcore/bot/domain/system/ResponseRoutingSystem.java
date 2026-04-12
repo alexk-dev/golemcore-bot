@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
@@ -41,7 +42,7 @@ import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -67,12 +68,6 @@ import java.util.concurrent.TimeoutException;
 @Slf4j
 public class ResponseRoutingSystem implements AgentSystem {
 
-    private static final String CHANNEL_WEB = "web";
-    private static final String CHANNEL_WEBHOOK = "webhook";
-    private static final String WEBHOOK_DELIVER_FLAG = "webhook.deliver";
-    private static final String WEBHOOK_DELIVER_CHANNEL = "webhook.deliver.channel";
-    private static final String WEBHOOK_DELIVER_TO = "webhook.deliver.to";
-
     private record VoiceRoutingResult(boolean sentVoice, boolean sentTextFallback, String errorMessage) {
         private static VoiceRoutingResult none() {
             return new VoiceRoutingResult(false, false, null);
@@ -88,7 +83,7 @@ public class ResponseRoutingSystem implements AgentSystem {
     }
 
     private final ChannelRuntimePort channelRuntimePort;
-    private final Map<String, ChannelPort> overrides = new ConcurrentHashMap<>();
+    private final Map<String, ChannelDeliveryPort> overrides = new ConcurrentHashMap<>();
     private final UserPreferencesService preferencesService;
     private final VoiceResponseHandler voiceHandler;
     private final RuntimeConfigService runtimeConfigService;
@@ -103,7 +98,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         this.runtimeConfigService = runtimeConfigService;
         this.traceService = traceService;
         log.info("Registered {} channels: {}", channelRuntimePort.listChannels().size(),
-                channelRuntimePort.listChannels().stream().map(ChannelPort::getChannelType).toList());
+                channelRuntimePort.listChannels().stream().map(ChannelDeliveryPort::getChannelType).toList());
     }
 
     @Override
@@ -139,7 +134,6 @@ public class ResponseRoutingSystem implements AgentSystem {
         TraceContext routingSpan = startRoutingSpan(context);
         captureOutgoingSnapshot(context, routingSpan, tracingConfig, outgoing);
 
-        // Track routing results for RoutingOutcome
         boolean sentText = false;
         boolean sentVoice = false;
         String errorMessage = null;
@@ -173,7 +167,6 @@ public class ResponseRoutingSystem implements AgentSystem {
             }
         }
 
-        // Build and record RoutingOutcome
         RoutingOutcome routingOutcome = RoutingOutcome.builder()
                 .attempted(true)
                 .sentText(sentText)
@@ -234,7 +227,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
         try {
             return objectMapper.writeValueAsBytes(payload);
-        } catch (Exception e) { // NOSONAR - tracing must not break routing
+        } catch (Exception e) {
             return String.valueOf(payload).getBytes(StandardCharsets.UTF_8);
         }
     }
@@ -242,7 +235,6 @@ public class ResponseRoutingSystem implements AgentSystem {
     private void recordRoutingOutcome(AgentContext context, RoutingOutcome routingOutcome) {
         TurnOutcome existing = context.getTurnOutcome();
         if (existing != null) {
-            // Rebuild with routingOutcome added
             TurnOutcome updated = TurnOutcome.builder()
                     .finishReason(existing.getFinishReason())
                     .assistantText(existing.getAssistantText())
@@ -258,14 +250,9 @@ public class ResponseRoutingSystem implements AgentSystem {
         context.setAttribute(ContextAttributes.ROUTING_OUTCOME, routingOutcome);
     }
 
-    // --- OutgoingResponse handlers ---
-
-    /**
-     * Sends text and returns null on success or error message on failure.
-     */
     private String sendOutgoingText(AgentContext context, OutgoingResponse outgoing) {
         AgentSession session = context.getSession();
-        ChannelPort channel = resolveChannel(session);
+        ChannelDeliveryPort channel = resolveChannel(session);
         if (channel == null) {
             return null;
         }
@@ -292,19 +279,19 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
 
         AgentSession session = context.getSession();
-        ChannelPort primaryChannel = session != null ? resolveChannel(session) : null;
-        if (primaryChannel != null && CHANNEL_WEB.equalsIgnoreCase(primaryChannel.getChannelType())) {
+        ChannelDeliveryPort primaryChannel = session != null ? resolveChannel(session) : null;
+        if (primaryChannel != null && ChannelTypes.WEB.equalsIgnoreCase(primaryChannel.getChannelType())) {
             return true;
         }
 
         CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
         return crossChannelDelivery != null
-                && CHANNEL_WEB.equalsIgnoreCase(crossChannelDelivery.channel().getChannelType());
+                && ChannelTypes.WEB.equalsIgnoreCase(crossChannelDelivery.channel().getChannelType());
     }
 
     private String sendCombinedWebMessage(AgentContext context, OutgoingResponse outgoing) {
         AgentSession session = context.getSession();
-        ChannelPort channel = resolveChannel(session);
+        ChannelDeliveryPort channel = resolveChannel(session);
         if (channel == null) {
             return null;
         }
@@ -312,7 +299,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
 
         String errorMessage = null;
-        if (CHANNEL_WEB.equalsIgnoreCase(channel.getChannelType())) {
+        if (ChannelTypes.WEB.equalsIgnoreCase(channel.getChannelType())) {
             errorMessage = sendStructuredMessage(channel, buildStructuredWebMessage(chatId, outgoing));
         } else if (outgoing.getText() != null && !outgoing.getText().isBlank()) {
             errorMessage = sendText(context, channel, chatId, outgoing);
@@ -320,7 +307,7 @@ public class ResponseRoutingSystem implements AgentSystem {
 
         if (crossChannelDelivery != null) {
             String deliveryError = null;
-            if (CHANNEL_WEB.equalsIgnoreCase(crossChannelDelivery.channel().getChannelType())) {
+            if (ChannelTypes.WEB.equalsIgnoreCase(crossChannelDelivery.channel().getChannelType())) {
                 deliveryError = sendStructuredMessage(
                         crossChannelDelivery.channel(),
                         buildStructuredWebMessage(crossChannelDelivery.chatId(), outgoing));
@@ -335,7 +322,8 @@ public class ResponseRoutingSystem implements AgentSystem {
         return errorMessage;
     }
 
-    private String sendText(AgentContext context, ChannelPort channel, String chatId, OutgoingResponse outgoing) {
+    private String sendText(AgentContext context, ChannelDeliveryPort channel, String chatId,
+            OutgoingResponse outgoing) {
         try {
             channel.sendMessage(chatId, outgoing.getText(), buildTransportHints(context, outgoing))
                     .get(30, TimeUnit.SECONDS);
@@ -378,7 +366,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
     }
 
-    private String sendStructuredMessage(ChannelPort channel, Message message) {
+    private String sendStructuredMessage(ChannelDeliveryPort channel, Message message) {
         try {
             channel.sendMessage(message).get(30, TimeUnit.SECONDS);
             return null;
@@ -397,9 +385,6 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
     }
 
-    /**
-     * Returns true if voice was successfully sent.
-     */
     private VoiceRoutingResult sendOutgoingVoiceIfRequested(AgentContext context, OutgoingResponse outgoing) {
         if (outgoing == null || !outgoing.isVoiceRequested()) {
             return VoiceRoutingResult.none();
@@ -414,7 +399,8 @@ public class ResponseRoutingSystem implements AgentSystem {
 
         AgentSession session = context.getSession();
         CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
-        ChannelPort channel = crossChannelDelivery != null ? crossChannelDelivery.channel() : resolveChannel(session);
+        ChannelDeliveryPort channel = crossChannelDelivery != null ? crossChannelDelivery.channel()
+                : resolveChannel(session);
         if (channel == null) {
             return VoiceRoutingResult.none();
         }
@@ -438,7 +424,8 @@ public class ResponseRoutingSystem implements AgentSystem {
         return result == VoiceSendResult.SUCCESS ? VoiceRoutingResult.voiceSent() : VoiceRoutingResult.none();
     }
 
-    private String sendVoiceTextFallback(AgentContext context, ChannelPort channel, String chatId, String textToSpeak,
+    private String sendVoiceTextFallback(AgentContext context, ChannelDeliveryPort channel, String chatId,
+            String textToSpeak,
             OutgoingResponse outgoing) {
         try {
             channel.sendMessage(chatId, textToSpeak, buildTransportHints(context, outgoing))
@@ -459,9 +446,6 @@ public class ResponseRoutingSystem implements AgentSystem {
         }
     }
 
-    /**
-     * Returns count of successfully sent attachments.
-     */
     private int sendOutgoingAttachments(AgentContext context, OutgoingResponse outgoing) {
         if (outgoing == null || outgoing.getAttachments() == null || outgoing.getAttachments().isEmpty()) {
             return 0;
@@ -469,7 +453,8 @@ public class ResponseRoutingSystem implements AgentSystem {
 
         AgentSession session = context.getSession();
         CrossChannelDelivery crossChannelDelivery = resolveWebhookCrossChannelDelivery(context);
-        ChannelPort channel = crossChannelDelivery != null ? crossChannelDelivery.channel() : resolveChannel(session);
+        ChannelDeliveryPort channel = crossChannelDelivery != null ? crossChannelDelivery.channel()
+                : resolveChannel(session);
         if (channel == null) {
             return 0;
         }
@@ -570,7 +555,7 @@ public class ResponseRoutingSystem implements AgentSystem {
 
     private CrossChannelDelivery resolveWebhookCrossChannelDelivery(AgentContext context) {
         AgentSession session = context.getSession();
-        if (session == null || !CHANNEL_WEBHOOK.equalsIgnoreCase(session.getChannelType())) {
+        if (session == null || !ChannelTypes.WEBHOOK.equalsIgnoreCase(session.getChannelType())) {
             return null;
         }
 
@@ -582,7 +567,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             return null;
         }
 
-        ChannelPort channel = channelRuntimePort.findChannel(target.channelType()).orElse(null);
+        ChannelDeliveryPort channel = channelRuntimePort.findChannel(target.channelType()).orElse(null);
         if (channel == null) {
             log.warn("[Response] Webhook delivery target channel is not registered: {}", target.channelType());
             return null;
@@ -610,14 +595,14 @@ public class ResponseRoutingSystem implements AgentSystem {
             }
             webhookDeliveryCandidateSeen = true;
 
-            String channelType = readMetadataString(metadata, WEBHOOK_DELIVER_CHANNEL);
-            String chatId = readMetadataString(metadata, WEBHOOK_DELIVER_TO);
+            String channelType = readMetadataString(metadata, ContextAttributes.WEBHOOK_DELIVER_CHANNEL);
+            String chatId = readMetadataString(metadata, ContextAttributes.WEBHOOK_DELIVER_TO);
             if (channelType == null || chatId == null) {
                 continue;
             }
 
             String normalizedChannel = channelType.trim().toLowerCase(Locale.ROOT);
-            if (normalizedChannel.isEmpty() || CHANNEL_WEBHOOK.equals(normalizedChannel)) {
+            if (normalizedChannel.isEmpty() || ChannelTypes.WEBHOOK.equals(normalizedChannel)) {
                 continue;
             }
 
@@ -632,7 +617,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             return false;
         }
 
-        Object value = metadata.get(WEBHOOK_DELIVER_FLAG);
+        Object value = metadata.get(ContextAttributes.WEBHOOK_DELIVER);
         if (value instanceof Boolean booleanValue) {
             return booleanValue;
         }
@@ -656,10 +641,8 @@ public class ResponseRoutingSystem implements AgentSystem {
         return normalized.isEmpty() ? null : normalized;
     }
 
-    // --- Channel resolution ---
-
-    private ChannelPort resolveChannel(AgentSession session) {
-        ChannelPort channel = overrides.get(session.getChannelType());
+    private ChannelDeliveryPort resolveChannel(AgentSession session) {
+        ChannelDeliveryPort channel = overrides.get(session.getChannelType());
         if (channel == null) {
             channel = channelRuntimePort.findChannel(session.getChannelType()).orElse(null);
         }
@@ -669,9 +652,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         return channel;
     }
 
-    // --- Quota notification ---
-
-    private void sendVoiceQuotaNotification(ChannelPort channel, String chatId) {
+    private void sendVoiceQuotaNotification(ChannelDeliveryPort channel, String chatId) {
         String message = preferencesService.getMessage("voice.error.quota");
         try {
             channel.sendMessage(chatId, message).get(30, TimeUnit.SECONDS);
@@ -684,8 +665,6 @@ public class ResponseRoutingSystem implements AgentSystem {
             log.error("[Response] Failed to send quota notification: {}", e.getMessage());
         }
     }
-
-    // --- shouldProcess ---
 
     @Override
     public boolean shouldProcess(AgentContext context) {
@@ -702,7 +681,7 @@ public class ResponseRoutingSystem implements AgentSystem {
         return outgoing.getAttachments() != null && !outgoing.getAttachments().isEmpty();
     }
 
-    public void registerChannel(ChannelPort channel) {
+    public void registerChannel(ChannelDeliveryPort channel) {
         overrides.put(channel.getChannelType(), channel);
     }
 
@@ -717,6 +696,6 @@ public class ResponseRoutingSystem implements AgentSystem {
     private record WebhookDeliveryTarget(String channelType, String chatId) {
     }
 
-    private record CrossChannelDelivery(ChannelPort channel, String chatId) {
+    private record CrossChannelDelivery(ChannelDeliveryPort channel, String chatId) {
     }
 }

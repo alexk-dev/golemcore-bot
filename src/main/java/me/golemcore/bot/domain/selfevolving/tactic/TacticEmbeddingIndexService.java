@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.port.outbound.EmbeddingPort;
+import me.golemcore.bot.port.outbound.EmbeddingProviderIds;
 import me.golemcore.bot.port.outbound.selfevolving.TacticEmbeddingIndexPort;
 import org.springframework.stereotype.Service;
 
@@ -56,7 +57,7 @@ public class TacticEmbeddingIndexService {
     private final EmbeddingClientResolverPort embeddingClientResolver;
     private final TacticSearchMetricsService metricsService;
     private final TacticEmbeddingIndexPort indexStore;
-    private final AtomicReference<Snapshot> snapshot = new AtomicReference<>(Snapshot.empty());
+    private final AtomicReference<Snapshot> indexSnapshot = new AtomicReference<>(Snapshot.empty());
 
     public TacticEmbeddingIndexService(
             RuntimeConfigService runtimeConfigService,
@@ -131,7 +132,7 @@ public class TacticEmbeddingIndexService {
     }
 
     public Snapshot snapshot() {
-        return snapshot.get();
+        return indexSnapshot.get();
     }
 
     List<String> findMissingPersistedEntryTacticIds() {
@@ -161,7 +162,7 @@ public class TacticEmbeddingIndexService {
 
     public void rebuildAll() {
         if (!isTacticsSearchEnabled()) {
-            snapshot.set(Snapshot.empty());
+            indexSnapshot.set(Snapshot.empty());
             metricsService.recordActiveMode("bm25", "selfevolving tactics disabled");
             return;
         }
@@ -171,13 +172,13 @@ public class TacticEmbeddingIndexService {
             return;
         }
         if (shouldSkipVectorSearch(config)) {
-            snapshot.set(Snapshot.empty());
+            indexSnapshot.set(Snapshot.empty());
             return;
         }
         List<TacticIndexDocument> documents = tacticDocuments();
         if (documents.isEmpty()) {
             indexStore.replaceAll(config.getProvider(), config.getModel(), config.getDimensions(), List.of());
-            snapshot.set(Snapshot.empty());
+            indexSnapshot.set(Snapshot.empty());
             return;
         }
         try {
@@ -206,10 +207,10 @@ public class TacticEmbeddingIndexService {
                     config.getDimensions(),
                     toStoreEntries(documentMap, vectorMap));
             tacticRecordService.updateEmbeddingStatuses(statusMap(documentMap.keySet(), EMBEDDING_STATUS_INDEXED));
-            snapshot.set(new Snapshot(documentMap, vectorMap, Instant.now()));
+            indexSnapshot.set(new Snapshot(documentMap, vectorMap, Instant.now()));
         } catch (RuntimeException exception) {
             tacticRecordService.updateEmbeddingStatuses(statusMap(documents, EMBEDDING_STATUS_FAILED));
-            snapshot.set(Snapshot.empty());
+            indexSnapshot.set(Snapshot.empty());
             metricsService.recordIndexFailure(exception.getMessage());
             metricsService.recordActiveMode("bm25", exception.getMessage());
         }
@@ -236,7 +237,7 @@ public class TacticEmbeddingIndexService {
 
     private boolean isTacticsSearchEnabled() {
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
-        if (selfEvolvingConfig == null || !Boolean.TRUE.equals(selfEvolvingConfig.getEnabled())) {
+        if (!Boolean.TRUE.equals(selfEvolvingConfig.getEnabled())) {
             return false;
         }
         RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics();
@@ -263,7 +264,7 @@ public class TacticEmbeddingIndexService {
 
     private boolean shouldSkipVectorSearch(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig config) {
         TacticSearchMetricsService.Snapshot metricsSnapshot = metricsService.snapshot();
-        if (!"ollama".equalsIgnoreCase(config.getProvider())) {
+        if (!EmbeddingProviderIds.OLLAMA.equalsIgnoreCase(config.getProvider())) {
             return false;
         }
         if (!"bm25".equalsIgnoreCase(metricsSnapshot.activeMode())) {
@@ -302,7 +303,7 @@ public class TacticEmbeddingIndexService {
             }
         }
         tacticRecordService.updateEmbeddingStatuses(statusMap(documentMap.keySet(), EMBEDDING_STATUS_INDEXED));
-        snapshot.set(new Snapshot(documentMap, vectorMap, updatedAt));
+        indexSnapshot.set(new Snapshot(documentMap, vectorMap, updatedAt));
         return true;
     }
 

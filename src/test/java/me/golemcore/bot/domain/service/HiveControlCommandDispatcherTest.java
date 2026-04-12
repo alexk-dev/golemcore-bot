@@ -169,6 +169,41 @@ class HiveControlCommandDispatcherTest {
     }
 
     @Test
+    void shouldMarkPolicySyncRequestFailedWhenHandlerThrows() {
+        SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        HiveControlInboxService inboxService = mock(HiveControlInboxService.class);
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
+        HiveInspectionCommandHandler inspectionCommandHandler = mock(HiveInspectionCommandHandler.class);
+        HivePolicySyncCommandHandler policySyncCommandHandler = mock(HivePolicySyncCommandHandler.class);
+        IllegalArgumentException failure = new IllegalArgumentException("policy failed");
+        org.mockito.Mockito.doThrow(failure).when(policySyncCommandHandler)
+                .handle(any(HiveControlCommandEnvelope.class));
+        HiveControlCommandDispatcher dispatcher = new HiveControlCommandDispatcher(
+                coordinator,
+                inboxService,
+                publisher,
+                inspectionCommandHandler,
+                policySyncCommandHandler,
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+
+        HiveControlCommandEnvelope envelope = HiveControlCommandEnvelope.builder()
+                .eventType("policy.sync_requested")
+                .commandId("cmd-sync-2")
+                .threadId("thread-1")
+                .policyGroupId("pg-1")
+                .targetVersion(8)
+                .checksum("sha256:efgh")
+                .build();
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> dispatcher.dispatch(envelope));
+
+        assertEquals("Failed to handle Hive policy sync request", error.getMessage());
+        assertEquals(failure, error.getCause());
+        verify(inboxService).markFailedIfPending("cmd-sync-2", failure);
+        verify(publisher, never()).publishCommandAcknowledged(envelope);
+    }
+
+    @Test
     void shouldRejectUnsupportedEventType() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
         HiveControlInboxService inboxService = mock(HiveControlInboxService.class);

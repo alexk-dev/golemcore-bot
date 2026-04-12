@@ -20,7 +20,7 @@ package me.golemcore.bot.adapter.inbound.webhook;
 
 import me.golemcore.bot.adapter.inbound.webhook.dto.CallbackPayload;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

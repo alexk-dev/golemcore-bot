@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
@@ -14,9 +15,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -31,6 +30,7 @@ public class ToolArtifactService {
     private static final String THUMBNAIL_MIME_TYPE = "image/png";
 
     private final WorkspacePathService workspacePathService;
+    private final WorkspaceFilePort workspaceFilePort;
 
     public ToolArtifact saveArtifact(
             String sessionId,
@@ -53,9 +53,9 @@ public class ToolArtifactService {
         try {
             Path parent = path.getParent();
             if (parent != null) {
-                Files.createDirectories(parent);
+                workspaceFilePort.createDirectories(parent);
             }
-            Files.write(path, data, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+            workspaceFilePort.write(path, data);
 
             String storedPath = workspacePathService.toRelativePath(path);
             String resolvedMimeType = workspacePathService.resolveMimeType(path, mimeType);
@@ -80,15 +80,15 @@ public class ToolArtifactService {
         if (!path.startsWith(getArtifactsRoot())) {
             throw new IllegalArgumentException("Path is not a tool artifact: " + relativePath);
         }
-        if (!Files.exists(path)) {
+        if (!workspaceFilePort.exists(path)) {
             throw new IllegalArgumentException("File not found: " + relativePath);
         }
-        if (!Files.isRegularFile(path)) {
+        if (!workspaceFilePort.isRegularFile(path)) {
             throw new IllegalArgumentException("Not a file: " + relativePath);
         }
 
         try {
-            byte[] data = Files.readAllBytes(path);
+            byte[] data = workspaceFilePort.readAllBytes(path);
             return ToolArtifactDownload.builder()
                     .path(workspacePathService.toRelativePath(path))
                     .filename(workspacePathService.requireFileName(path))

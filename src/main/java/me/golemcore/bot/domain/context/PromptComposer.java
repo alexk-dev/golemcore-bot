@@ -19,7 +19,6 @@ package me.golemcore.bot.domain.context;
  */
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 
@@ -43,7 +42,6 @@ import java.util.List;
  * // → "# Identity\n...\n\n# Memory\n...\n\n# Tools\n..."
  * </pre>
  */
-@Component
 @Slf4j
 public class PromptComposer {
 

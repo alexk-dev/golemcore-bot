@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.List;
 import java.util.Set;
-import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
 import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;

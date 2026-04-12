@@ -6,13 +6,15 @@ import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import type { HiveStatusResponse } from '../../api/hive';
 import { useUpdateHive } from '../../hooks/useSettings';
 import { useHiveStatus, useJoinHive, useLeaveHive, useReconnectHive } from '../../hooks/useHive';
-import type { HiveConfig } from '../../api/settings';
+import type { HiveConfig } from '../../api/settingsTypes';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import {
   formatHivePolicyVersion,
   getHiveManagedPolicyDetails,
+  type HiveManagedPolicyDetails,
   resolveHiveManagedPolicyVariant,
 } from './hiveManagedPolicySupport';
+import { HiveActionButtons } from './HiveActionButtons';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -132,49 +134,75 @@ interface HiveConnectionSummaryProps {
 }
 
 function HiveConnectionSummary({ status }: HiveConnectionSummaryProps): ReactElement {
-  const statusVariant = resolveStatusVariant(status?.state ?? 'DISCONNECTED');
-  const controlStatusVariant = resolveStatusVariant(status?.controlChannelState ?? 'DISCONNECTED');
   const managedPolicy = getHiveManagedPolicyDetails(status);
 
   return (
     <>
-      <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <span className="small text-body-secondary">Connection status</span>
-        <Badge bg={statusVariant}>{status?.state ?? 'LOADING'}</Badge>
-        <span className="small text-body-secondary">Control channel</span>
-        <Badge bg={controlStatusVariant}>{status?.controlChannelState ?? 'DISCONNECTED'}</Badge>
-        {status?.golemId ? <span className="small text-body-secondary">Golem ID: {status.golemId}</span> : null}
-      </div>
-
-      {managedPolicy ? (
-        <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-          <span className="small text-body-secondary">Policy group</span>
-          <Badge bg="dark">{managedPolicy.policyGroupId}</Badge>
-          <span className="small text-body-secondary">Policy sync</span>
-          <Badge bg={resolveHiveManagedPolicyVariant(managedPolicy.syncStatus)}>
-            {managedPolicy.syncStatus ?? 'UNKNOWN'}
-          </Badge>
-          <span className="small text-body-secondary">
-            Applied {formatHivePolicyVersion(managedPolicy.appliedVersion)}
-          </span>
-          <span className="small text-body-secondary">
-            Target {formatHivePolicyVersion(managedPolicy.targetVersion)}
-          </span>
-        </div>
-      ) : null}
-
-      {managedPolicy?.lastErrorDigest ? (
-        <Alert variant="warning" className="mb-3">
-          Last policy error: {managedPolicy.lastErrorDigest}
-        </Alert>
-      ) : null}
-
-      {status?.lastError ? (
-        <Alert variant="danger" className="mb-3">
-          {status.lastError}
-        </Alert>
-      ) : null}
+      <HiveConnectionBadges status={status} />
+      <HivePolicySummary policy={managedPolicy} />
+      <HiveStatusAlert variant="warning" message={managedPolicy?.lastErrorDigest} prefix="Last policy error: " />
+      <HiveStatusAlert variant="danger" message={status?.lastError} />
     </>
+  );
+}
+
+function HiveConnectionBadges({ status }: HiveConnectionSummaryProps): ReactElement {
+  const state = status?.state ?? 'DISCONNECTED';
+  const controlState = status?.controlChannelState ?? 'DISCONNECTED';
+
+  return (
+    <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <span className="small text-body-secondary">Connection status</span>
+      <Badge bg={resolveStatusVariant(state)}>{status?.state ?? 'LOADING'}</Badge>
+      <span className="small text-body-secondary">Control channel</span>
+      <Badge bg={resolveStatusVariant(controlState)}>{controlState}</Badge>
+      {status?.golemId ? <span className="small text-body-secondary">Golem ID: {status.golemId}</span> : null}
+    </div>
+  );
+}
+
+interface HivePolicySummaryProps {
+  policy: HiveManagedPolicyDetails | null;
+}
+
+function HivePolicySummary({ policy }: HivePolicySummaryProps): ReactElement | null {
+  if (policy == null) {
+    return null;
+  }
+
+  return (
+    <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <span className="small text-body-secondary">Policy group</span>
+      <Badge bg="dark">{policy.policyGroupId}</Badge>
+      <span className="small text-body-secondary">Policy sync</span>
+      <Badge bg={resolveHiveManagedPolicyVariant(policy.syncStatus)}>
+        {policy.syncStatus ?? 'UNKNOWN'}
+      </Badge>
+      <span className="small text-body-secondary">
+        Applied {formatHivePolicyVersion(policy.appliedVersion)}
+      </span>
+      <span className="small text-body-secondary">
+        Target {formatHivePolicyVersion(policy.targetVersion)}
+      </span>
+    </div>
+  );
+}
+
+interface HiveStatusAlertProps {
+  variant: 'warning' | 'danger';
+  message: string | null | undefined;
+  prefix?: string;
+}
+
+function HiveStatusAlert({ variant, message, prefix = '' }: HiveStatusAlertProps): ReactElement | null {
+  if (message == null || message.length === 0) {
+    return null;
+  }
+
+  return (
+    <Alert variant={variant} className="mb-3">
+      {prefix}{message}
+    </Alert>
   );
 }
 
@@ -377,70 +405,5 @@ function HiveSessionDetails({ status, fallbackServerUrl }: HiveSessionDetailsPro
         <div className="small text-danger">Control error: {status.controlChannelLastError}</div>
       ) : null}
     </Col>
-  );
-}
-
-interface HiveActionButtonsProps {
-  isManaged: boolean;
-  isBusy: boolean;
-  joinCode: string;
-  status: HiveStatusResponse | undefined;
-  joinPending: boolean;
-  reconnectPending: boolean;
-  leavePending: boolean;
-  onJoin: () => Promise<void>;
-  onReconnect: () => Promise<void>;
-  onLeave: () => Promise<void>;
-}
-
-function HiveActionButtons({
-  isManaged,
-  isBusy,
-  joinCode,
-  status,
-  joinPending,
-  reconnectPending,
-  leavePending,
-  onJoin,
-  onReconnect,
-  onLeave,
-}: HiveActionButtonsProps): ReactElement {
-  const canJoin = status?.sessionPresent === true
-    ? false
-    : isManaged
-      ? status?.managedJoinCodeAvailable === true
-      : joinCode.trim().length > 0;
-  const canReconnect = status?.sessionPresent === true || (isManaged && status?.managedJoinCodeAvailable === true);
-
-  return (
-    <div className="d-flex flex-wrap gap-2 mb-4">
-      <Button
-        type="button"
-        variant="success"
-        size="sm"
-        onClick={() => { void onJoin(); }}
-        disabled={!canJoin || isBusy}
-      >
-        {joinPending ? 'Joining...' : 'Join'}
-      </Button>
-      <Button
-        type="button"
-        variant="outline-primary"
-        size="sm"
-        onClick={() => { void onReconnect(); }}
-        disabled={!canReconnect || isBusy}
-      >
-        {reconnectPending ? 'Reconnecting...' : 'Reconnect'}
-      </Button>
-      <Button
-        type="button"
-        variant="outline-danger"
-        size="sm"
-        onClick={() => { void onLeave(); }}
-        disabled={status?.sessionPresent !== true || isBusy}
-      >
-        {leavePending ? 'Clearing...' : 'Leave'}
-      </Button>
-    </div>
   );
 }

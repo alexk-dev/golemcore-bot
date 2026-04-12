@@ -221,11 +221,11 @@ public class ModelsController {
 
     private ModelsConfigDto toDto(ModelConfigAdminPort.ModelsConfigSnapshot snapshot) {
         Map<String, ModelSettingsDto> models = new LinkedHashMap<>();
-        snapshot.models().forEach((key, value) -> models.put(key, toDto(value)));
-        return new ModelsConfigDto(models, toDto(snapshot.defaults()));
+        snapshot.models().forEach((key, value) -> models.put(key, toModelSettingsDto(value)));
+        return new ModelsConfigDto(models, toModelSettingsDto(snapshot.defaults()));
     }
 
-    private ModelSettingsDto toDto(ModelConfigAdminPort.ModelSettingsSnapshot snapshot) {
+    private ModelSettingsDto toModelSettingsDto(ModelConfigAdminPort.ModelSettingsSnapshot snapshot) {
         if (snapshot == null) {
             return null;
         }
@@ -235,10 +235,10 @@ public class ModelsController {
                 snapshot.supportsVision(),
                 snapshot.supportsTemperature(),
                 snapshot.maxInputTokens(),
-                toDto(snapshot.reasoning()));
+                toReasoningConfigDto(snapshot.reasoning()));
     }
 
-    private ReasoningConfigDto toDto(ModelConfigAdminPort.ReasoningConfigSnapshot snapshot) {
+    private ReasoningConfigDto toReasoningConfigDto(ModelConfigAdminPort.ReasoningConfigSnapshot snapshot) {
         if (snapshot == null) {
             return null;
         }

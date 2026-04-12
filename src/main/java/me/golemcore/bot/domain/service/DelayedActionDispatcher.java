@@ -23,7 +23,7 @@ import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import org.springframework.stereotype.Service;
 
@@ -74,7 +74,7 @@ public class DelayedActionDispatcher {
                     action.getChannelType(),
                     "Proactive message delivery unavailable"));
         }
-        ChannelPort channel = channelRuntimePort.findChannel(action.getChannelType()).orElse(null);
+        ChannelDeliveryPort channel = channelRuntimePort.findChannel(action.getChannelType()).orElse(null);
         if (channel == null) {
             return CompletableFuture
                     .completedFuture(DispatchResult.retryable("Channel not found: " + action.getChannelType()));
@@ -101,7 +101,7 @@ public class DelayedActionDispatcher {
         }
         String caption = payloadString(action, "message");
         String configuredFilename = payloadString(action, "artifactName");
-        ChannelPort channel = channelRuntimePort.findChannel(action.getChannelType()).orElse(null);
+        ChannelDeliveryPort channel = channelRuntimePort.findChannel(action.getChannelType()).orElse(null);
         if (channel == null) {
             return CompletableFuture
                     .completedFuture(DispatchResult.retryable("Channel not found: " + action.getChannelType()));

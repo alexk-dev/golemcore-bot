@@ -1,4 +1,4 @@
-import type { ApiType, LlmConfig } from '../../../api/settings';
+import type { ApiType, LlmConfig } from '../../../api/settingsTypes';
 
 export interface ProviderProfileSummary {
   name: string;

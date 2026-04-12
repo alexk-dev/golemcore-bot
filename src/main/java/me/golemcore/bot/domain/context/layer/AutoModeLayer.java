@@ -26,7 +26,6 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.AutoModeService;
-import org.springframework.stereotype.Component;
 
 /**
  * Injects autonomous execution context (goals, tasks, diary) when the current
@@ -37,7 +36,6 @@ import org.springframework.stereotype.Component;
  * turn is a reflection/recovery run, an additional preamble is added to guide
  * the LLM toward diagnosing failures.
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class AutoModeLayer implements ContextLayer {

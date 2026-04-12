@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HiveStatusResponse } from '../../api/hive';
-import type { LlmConfig, ModelRouterConfig } from '../../api/settings';
+import type { LlmConfig, ModelRouterConfig } from '../../api/settingsTypes';
 import ModelsTab from './ModelsTab';
 
 const availableModels = {

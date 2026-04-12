@@ -24,7 +24,6 @@ import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
 import java.util.List;
@@ -63,7 +62,6 @@ import java.util.List;
  * downstream inspection via {@code ContextAttributes}. It records which layers
  * contributed, their token estimates, and any metadata they produced.
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class ContextAssembler {

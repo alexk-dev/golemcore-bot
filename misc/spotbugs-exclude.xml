@@ -143,4 +143,5 @@
         <Class name="me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem" />
         <Field name="planService" />
     </Match>
+
 </FindBugsFilter>

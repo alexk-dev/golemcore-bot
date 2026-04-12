@@ -278,6 +278,7 @@ public class RuntimeSettingsFacade {
     public RuntimeConfig updateMcpCatalogEntry(String name, RuntimeConfig.McpCatalogEntry entry) {
         String normalizedName = validator.normalizeCatalogEntryName(name);
         validator.validateMcpCatalogEntry(entry);
+        entry.setName(normalizedName);
         boolean updated = runtimeConfigService.updateMcpCatalogEntry(normalizedName, entry);
         if (!updated) {
             throw new NoSuchElementException("MCP catalog entry '" + normalizedName + "' not found");
@@ -349,7 +350,8 @@ public class RuntimeSettingsFacade {
             config.setCompaction(compactionConfig);
         }
         runtimeConfigService.updateRuntimeConfig(config);
-        return runtimeConfigService.getRuntimeConfig();
+        RuntimeConfig apiView = runtimeConfigService.getRuntimeConfigForApi();
+        return apiView != null ? apiView : config;
     }
 
     private RuntimeConfig.LlmConfig ensureLlmConfig(RuntimeConfig config) {

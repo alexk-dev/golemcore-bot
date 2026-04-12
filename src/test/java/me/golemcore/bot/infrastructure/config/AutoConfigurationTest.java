@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.plugin.runtime.PluginManager;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;

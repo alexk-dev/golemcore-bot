@@ -1,6 +1,7 @@
 package me.golemcore.bot.port.inbound;
 
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.port.channel.ChannelPort;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;

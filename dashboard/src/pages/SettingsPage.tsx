@@ -1,8 +1,5 @@
 import { useDeferredValue, useEffect, useState, type ReactElement } from 'react';
-import {
-  Badge, Card, Button, Row, Col, Spinner, Placeholder, Form, InputGroup,
-} from 'react-bootstrap';
-import { FiPackage, FiSearch, FiX } from 'react-icons/fi';
+import { Card, Button, Spinner, Placeholder } from 'react-bootstrap';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   useSettings, useRuntimeConfig, useUpdateRuntimeConfig,
@@ -38,71 +35,12 @@ import {
 } from '../hooks/useSelfEvolving';
 import type { SelfEvolvingTacticSearchStatusPreview } from '../api/selfEvolving';
 import {
-  SETTINGS_BLOCKS,
-  SETTINGS_SECTIONS,
   isSettingsSectionKey,
-  type SettingsSectionMeta,
 } from './settings/settingsCatalog';
 import { filterCatalogBlocks } from './settings/settingsCatalogSearch';
-import { useTelemetry } from '../lib/telemetry/TelemetryProvider';
-
-interface CatalogCardItem {
-  key: string;
-  routeKey: string;
-  title: string;
-  description: string;
-  icon: SettingsSectionMeta['icon'];
-  badgeLabel?: string;
-  badgeVariant?: string;
-  metaText?: string;
-}
-
-interface CatalogBlockView {
-  key: string;
-  title: string;
-  description: string;
-  items: CatalogCardItem[];
-}
-
-interface CatalogBadgeMeta {
-  label: string;
-  variant: string;
-  meta: string;
-}
-
-function buildMarketplaceBadge(
-  pluginMarketplace: ReturnType<typeof usePluginMarketplace>['data'],
-): CatalogBadgeMeta | null {
-  if (pluginMarketplace == null) {
-    return null;
-  }
-
-  const installedCount = pluginMarketplace.items.filter((item) => item.installed).length;
-  const updatesCount = pluginMarketplace.items.filter((item) => item.updateAvailable).length;
-  const installedMeta = `${installedCount} installed plugin${installedCount === 1 ? '' : 's'}`;
-
-  if (!pluginMarketplace.available) {
-    return {
-      label: 'Unavailable',
-      variant: 'secondary',
-      meta: pluginMarketplace.message ?? 'Marketplace metadata is not available.',
-    };
-  }
-
-  if (updatesCount > 0) {
-    return {
-      label: `${updatesCount} update${updatesCount === 1 ? '' : 's'}`,
-      variant: 'warning',
-      meta: installedMeta,
-    };
-  }
-
-  return {
-    label: `${pluginMarketplace.items.length} plugins`,
-    variant: 'secondary',
-    meta: installedMeta,
-  };
-}
+import { SettingsCatalogView, type CatalogBlockView } from './settings/SettingsCatalogView';
+import { buildCatalogBlocks, buildMarketplaceBadge, resolveSectionMeta } from './settings/SettingsPageState';
+import { useTelemetry } from '../lib/telemetry/TelemetryContext';
 
 // ==================== Main ====================
 
@@ -134,77 +72,10 @@ export default function SettingsPage(): ReactElement {
     ? pluginCatalog.find((item) => item.routeKey === section) ?? null
     : null;
 
-  const sectionMeta = staticSection != null
-    ? SETTINGS_SECTIONS.find((entry) => entry.key === staticSection) ?? null
-    : pluginSection != null
-      ? {
-        key: pluginSection.routeKey,
-        title: pluginSection.title,
-        description: pluginSection.description,
-        icon: FiPackage,
-      }
-      : null;
+  const sectionMeta = resolveSectionMeta(staticSection, pluginSection);
   const selectedSectionKey = staticSection ?? pluginSection?.routeKey ?? 'catalog';
 
-  const catalogBlocks: CatalogBlockView[] = (() => {
-    const byKey = new Map<string, CatalogBlockView>();
-
-    SETTINGS_BLOCKS.forEach((block) => {
-      const items = block.sections.flatMap((sectionKey) => {
-        const entry = SETTINGS_SECTIONS.find((candidate) => candidate.key === sectionKey);
-        if (entry == null) {
-          return [];
-        }
-
-        return {
-          key: entry.key,
-          routeKey: entry.key,
-          title: entry.title,
-          description: entry.description,
-          icon: entry.icon,
-          badgeLabel: entry.key === 'plugins-marketplace' ? marketplaceBadge?.label : undefined,
-          badgeVariant: entry.key === 'plugins-marketplace' ? marketplaceBadge?.variant : undefined,
-          metaText: entry.key === 'plugins-marketplace' ? marketplaceBadge?.meta : undefined,
-        };
-      });
-      byKey.set(block.key, {
-        key: block.key,
-        title: block.title,
-        description: block.description,
-        items,
-      });
-    });
-
-    pluginCatalog
-      .slice()
-      .sort((left, right) => {
-        const leftOrder = left.order ?? Number.MAX_SAFE_INTEGER;
-        const rightOrder = right.order ?? Number.MAX_SAFE_INTEGER;
-        if (leftOrder !== rightOrder) {
-          return leftOrder - rightOrder;
-        }
-        return left.title.localeCompare(right.title);
-      })
-      .forEach((item) => {
-        const blockKey = item.blockKey ?? 'plugins';
-        const current = byKey.get(blockKey) ?? {
-          key: blockKey,
-          title: item.blockTitle ?? 'Plugins',
-          description: item.blockDescription ?? 'Plugin-provided settings',
-          items: [],
-        };
-        current.items.push({
-          key: item.routeKey,
-          routeKey: item.routeKey,
-          title: item.title,
-          description: item.description,
-          icon: FiPackage,
-        });
-        byKey.set(blockKey, current);
-      });
-
-    return Array.from(byKey.values()).filter((block) => block.items.length > 0);
-  })();
+  const catalogBlocks: CatalogBlockView[] = buildCatalogBlocks(pluginCatalog, marketplaceBadge);
   const filteredCatalogBlocks = filterCatalogBlocks(catalogBlocks, deferredCatalogSearch);
 
   useEffect(() => {
@@ -240,86 +111,16 @@ export default function SettingsPage(): ReactElement {
 
   if (staticSection == null && pluginSection == null) {
     return (
-      <div>
-        <div className="page-header">
-          <h4>Settings</h4>
-          <p className="text-body-secondary mb-0">Select a settings category</p>
-        </div>
-        <Card className="settings-card mb-4">
-          <Card.Body>
-            <Form.Group controlId="settings-catalog-search" className="mb-0">
-              <Form.Label className="small fw-medium">Search settings</Form.Label>
-              <InputGroup>
-                <InputGroup.Text aria-hidden="true"><FiSearch size={16} /></InputGroup.Text>
-                <Form.Control
-                  type="search"
-                  placeholder="Search by name"
-                  value={catalogSearch}
-                  onChange={(event) => {
-                    telemetry.recordCounter('settings_search_count');
-                    setCatalogSearch(event.target.value);
-                  }}
-                />
-                {catalogSearch.trim().length > 0 && (
-                  <Button type="button" variant="outline-secondary" onClick={() => setCatalogSearch('')}>
-                    <FiX size={16} className="me-1" />
-                    Clear
-                  </Button>
-                )}
-              </InputGroup>
-              <Form.Text className="text-muted">
-                Start typing to quickly find the setting you need.
-              </Form.Text>
-            </Form.Group>
-          </Card.Body>
-        </Card>
-
-        {filteredCatalogBlocks.length === 0 ? (
-          <Card className="settings-card">
-            <Card.Body>
-              <h2 className="h6 mb-2">Nothing found</h2>
-              <p className="text-body-secondary small mb-0">
-                No settings match `{catalogSearch}`. Try another name or clear the search.
-              </p>
-            </Card.Body>
-          </Card>
-        ) : filteredCatalogBlocks.map((block) => (
-          <div key={block.key} className="mb-4">
-            <div className="mb-2">
-              <h2 className="h6 mb-1">{block.title}</h2>
-              <p className="text-body-secondary small mb-0">{block.description}</p>
-            </div>
-            <Row className="g-3">
-              {block.items.map((item) => (
-                <Col sm={6} lg={4} xl={3} key={item.key}>
-                  <Card className="settings-card h-100">
-                    <Card.Body className="d-flex flex-column">
-                      <div className="d-flex align-items-start justify-content-between gap-2 mb-2">
-                        <h3 className="h6 mb-0 settings-catalog-title">
-                          <span className="text-primary"><item.icon size={18} /></span>
-                          <span>{item.title}</span>
-                        </h3>
-                        {item.badgeLabel != null && item.badgeVariant != null && (
-                          <Badge bg={item.badgeVariant}>{item.badgeLabel}</Badge>
-                        )}
-                      </div>
-                      <Card.Text className="text-body-secondary small mb-3">{item.description}</Card.Text>
-                      {item.metaText != null && (
-                        <div className="small text-body-secondary mb-3">{item.metaText}</div>
-                      )}
-                      <div className="mt-auto">
-                        <Button type="button" size="sm" variant="primary" onClick={() => navigate(`/settings/${item.routeKey}`)}>
-                          Open
-                        </Button>
-                      </div>
-                    </Card.Body>
-                  </Card>
-                </Col>
-              ))}
-            </Row>
-          </div>
-        ))}
-      </div>
+      <SettingsCatalogView
+        catalogSearch={catalogSearch}
+        filteredCatalogBlocks={filteredCatalogBlocks}
+        onSearchChange={(value) => {
+          telemetry.recordCounter('settings_search_count');
+          setCatalogSearch(value);
+        }}
+        onClearSearch={() => setCatalogSearch('')}
+        onOpenSection={(routeKey) => navigate(`/settings/${routeKey}`)}
+      />
     );
   }
 

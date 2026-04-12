@@ -71,10 +71,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
-import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
@@ -84,7 +84,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.time.Duration;
 
 /**
  * LLM adapter using the langchain4j library.
@@ -323,7 +322,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
                 .maxTokens(4096)
-                .timeout(java.time.Duration.ofSeconds(
+                .timeout(Duration.ofSeconds(
                         config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (config.getBaseUrl() != null) {
@@ -350,7 +349,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 // both returnThinking and sendThinking are enabled.
                 .returnThinking(true)
                 .sendThinking(true)
-                .timeout(java.time.Duration.ofSeconds(
+                .timeout(Duration.ofSeconds(
                         config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (supportsTemperature(fullModel)) {
@@ -370,7 +369,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
-                .timeout(java.time.Duration.ofSeconds(
+                .timeout(Duration.ofSeconds(
                         config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (config.getBaseUrl() != null) {

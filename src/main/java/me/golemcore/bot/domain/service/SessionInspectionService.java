@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.trace.TraceEventRecord;
@@ -39,8 +40,6 @@ import java.util.regex.Pattern;
 @Slf4j
 public class SessionInspectionService {
 
-    private static final String CHANNEL_WEB = "web";
-    private static final String CHANNEL_TELEGRAM = "telegram";
     private static final int MAX_PAGE_LIMIT = 100;
     private static final int SNAPSHOT_PREVIEW_MAX_CHARS = 4096;
     private static final int START_WITH_INDEX = 0;
@@ -667,13 +666,6 @@ public class SessionInspectionService {
         return conversationKey.equals(resolvedConversationKey) || conversationKey.equals(session.getChatId());
     }
 
-    private String defaultIfBlank(String value, String defaultValue) {
-        if (StringValueSupport.isBlank(value)) {
-            return defaultValue;
-        }
-        return value.trim();
-    }
-
     private void repairPointersAfterDelete(String deletedSessionId, AgentSession deletedSession) {
         String channel = deletedSession != null ? deletedSession.getChannelType()
                 : resolveDeletedChannel(deletedSessionId);
@@ -697,7 +689,7 @@ public class SessionInspectionService {
                 continue;
             }
 
-            String pointerTransportChatId = CHANNEL_TELEGRAM.equals(channel)
+            String pointerTransportChatId = ChannelTypes.TELEGRAM.equals(channel)
                     ? extractTelegramTransportChatId(pointerKey)
                     : null;
             String replacement = SessionConversationSupport.resolveOrCreateConversationKey(
@@ -717,7 +709,7 @@ public class SessionInspectionService {
         if (StringValueSupport.isBlank(pointerKey)) {
             return null;
         }
-        String prefix = CHANNEL_TELEGRAM + "|";
+        String prefix = ChannelTypes.TELEGRAM + "|";
         if (!pointerKey.startsWith(prefix) || pointerKey.length() <= prefix.length()) {
             return null;
         }

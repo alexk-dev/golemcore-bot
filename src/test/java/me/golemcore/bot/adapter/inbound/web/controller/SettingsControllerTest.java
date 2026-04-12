@@ -3,6 +3,9 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
+import me.golemcore.bot.adapter.inbound.web.mapper.RuntimeSettingsWebMapper;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
 import me.golemcore.bot.adapter.outbound.voice.PluginVoiceProviderCatalogAdapter;
@@ -29,6 +32,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -43,8 +49,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,6 +69,7 @@ class SettingsControllerTest {
     private MemoryPresetService memoryPresetService;
     private SttProviderRegistry sttProviderRegistry;
     private TtsProviderRegistry ttsProviderRegistry;
+    private RuntimeSettingsWebMapper runtimeSettingsWebMapper;
     private SettingsController controller;
 
     @BeforeEach
@@ -72,6 +81,7 @@ class SettingsControllerTest {
         memoryPresetService = mock(MemoryPresetService.class);
         sttProviderRegistry = new SttProviderRegistry();
         ttsProviderRegistry = new TtsProviderRegistry();
+        runtimeSettingsWebMapper = new RuntimeSettingsWebMapper();
         registerSttProvider("golemcore/elevenlabs", "elevenlabs");
         registerSttProvider("golemcore/whisper", "whisper");
         registerTtsProvider("golemcore/elevenlabs", "elevenlabs");
@@ -102,7 +112,8 @@ class SettingsControllerTest {
                         modelSelectionService,
                         new PluginVoiceProviderCatalogAdapter(sttRegistry, ttsRegistry)),
                 new RuntimeSettingsMergeService());
-        return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade);
+        return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade,
+                runtimeSettingsWebMapper);
     }
 
     @Test
@@ -1321,7 +1332,7 @@ class SettingsControllerTest {
         StepVerifier.create(controller.getShellEnvironmentVariables())
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
-                    List<RuntimeConfig.ShellEnvironmentVariable> body = response.getBody();
+                    List<ShellEnvironmentVariableDto> body = response.getBody();
                     assertNotNull(body);
                     assertEquals(1, body.size());
                     assertEquals("API_TOKEN", body.get(0).getName());
@@ -1339,7 +1350,7 @@ class SettingsControllerTest {
         StepVerifier.create(controller.getShellEnvironmentVariables())
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
-                    List<RuntimeConfig.ShellEnvironmentVariable> body = response.getBody();
+                    List<ShellEnvironmentVariableDto> body = response.getBody();
                     assertNotNull(body);
                     assertTrue(body.isEmpty());
                 })
@@ -2327,8 +2338,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldUpdateMcpCatalogEntry() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(true);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(true);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("github")
@@ -2342,8 +2353,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldReturnNotFoundWhenUpdatingNonexistentCatalogEntry() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(false);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(false);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("nonexistent")
@@ -2356,8 +2367,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldNormalizeNameOnUpdate() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(true);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(true);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("github")
@@ -2368,8 +2379,7 @@ class SettingsControllerTest {
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
 
-        verify(runtimeConfigService).updateMcpCatalogEntry(org.mockito.ArgumentMatchers.eq("github"),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class));
+        verify(runtimeConfigService).updateMcpCatalogEntry(eq("github"), any(RuntimeConfig.McpCatalogEntry.class));
     }
 
     @Test
@@ -2483,18 +2493,154 @@ class SettingsControllerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void shouldDelegateAdvancedConfigUpdate() throws Exception {
+    void shouldDelegateRuntimeDtoEndpointUpdates() throws Throwable {
+        RuntimeSettingsFacade facade = mock(RuntimeSettingsFacade.class);
+        SettingsController dtoController = new SettingsController(preferencesService, modelSelectionService, facade,
+                runtimeSettingsWebMapper);
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        when(facade.updateRuntimeConfig(any(RuntimeConfig.class))).thenReturn(apiView);
+        when(facade.updateModelRouterConfig(any(RuntimeConfig.ModelRouterConfig.class))).thenReturn(apiView);
+        when(facade.updateLlmConfig(any(RuntimeConfig.LlmConfig.class))).thenReturn(apiView);
+        when(facade.addLlmProvider(anyString(), any(RuntimeConfig.LlmProviderConfig.class))).thenReturn(apiView);
+        when(facade.updateLlmProvider(anyString(), any(RuntimeConfig.LlmProviderConfig.class))).thenReturn(apiView);
+        when(facade.updateToolsConfig(any(RuntimeConfig.ToolsConfig.class))).thenReturn(apiView);
+        when(facade.getShellEnvironmentVariables()).thenReturn(List.of(
+                RuntimeConfig.ShellEnvironmentVariable.builder().name("API_TOKEN").value("secret").build()));
+        when(facade.createShellEnvironmentVariable(any(RuntimeConfig.ShellEnvironmentVariable.class)))
+                .thenReturn(apiView);
+        when(facade.updateShellEnvironmentVariable(anyString(), any(RuntimeConfig.ShellEnvironmentVariable.class)))
+                .thenReturn(apiView);
+        when(facade.deleteShellEnvironmentVariable(anyString())).thenReturn(apiView);
+        when(facade.updateVoiceConfig(any(RuntimeConfig.VoiceConfig.class))).thenReturn(apiView);
+        when(facade.updateTurnConfig(any(RuntimeConfig.TurnConfig.class))).thenReturn(apiView);
+        when(facade.updateMemoryConfig(any(RuntimeConfig.MemoryConfig.class))).thenReturn(apiView);
+        when(facade.updateSkillsConfig(any(RuntimeConfig.SkillsConfig.class))).thenReturn(apiView);
+        when(facade.updateUsageConfig(any(RuntimeConfig.UsageConfig.class))).thenReturn(apiView);
+        when(facade.updateTelemetryConfig(any(RuntimeConfig.TelemetryConfig.class))).thenReturn(apiView);
+        when(facade.updateMcpConfig(any(RuntimeConfig.McpConfig.class))).thenReturn(apiView);
+        when(facade.getMcpCatalog()).thenReturn(List.of(
+                RuntimeConfig.McpCatalogEntry.builder().name("github").command("npx github").build()));
+        when(facade.addMcpCatalogEntry(any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(apiView);
+        when(facade.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(apiView);
+        when(facade.updateHiveConfig(any(RuntimeConfig.HiveConfig.class))).thenReturn(apiView);
+        when(facade.updatePlanConfig(any(RuntimeConfig.PlanConfig.class))).thenReturn(apiView);
+        when(facade.updateAutoConfig(any(RuntimeConfig.AutoModeConfig.class))).thenReturn(apiView);
+        when(facade.updateTracingConfig(any(RuntimeConfig.TracingConfig.class))).thenReturn(apiView);
+        when(facade.updateAdvancedConfig(any(RuntimeConfig.RateLimitConfig.class),
+                any(RuntimeConfig.SecurityConfig.class),
+                any(RuntimeConfig.CompactionConfig.class))).thenReturn(apiView);
+
+        StepVerifier.create(dtoController.updateRuntimeConfig(new RuntimeSettingsWebDtos.RuntimeConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateModelRouterConfig(new RuntimeSettingsWebDtos.ModelRouterConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateLlmConfig(new RuntimeSettingsWebDtos.LlmConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.addLlmProvider("openai", new RuntimeSettingsWebDtos.LlmProviderConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateLlmProvider("openai",
+                new RuntimeSettingsWebDtos.LlmProviderConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.removeLlmProvider("openai"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateToolsConfig(new RuntimeSettingsWebDtos.ToolsConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.getShellEnvironmentVariables())
+                .assertNext(response -> assertEquals(1, response.getBody().size()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.createShellEnvironmentVariable(
+                new RuntimeSettingsWebDtos.ShellEnvironmentVariableDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateShellEnvironmentVariable("API_TOKEN",
+                new RuntimeSettingsWebDtos.ShellEnvironmentVariableDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.deleteShellEnvironmentVariable("API_TOKEN"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateVoiceConfig(new RuntimeSettingsWebDtos.VoiceConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateTurnConfig(new RuntimeSettingsWebDtos.TurnConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateMemoryConfig(new RuntimeSettingsWebDtos.MemoryConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.getMemoryPresets())
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateSkillsConfig(new RuntimeSettingsWebDtos.SkillsConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateUsageConfig(new RuntimeSettingsWebDtos.UsageConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateTelemetryConfig(new RuntimeSettingsWebDtos.TelemetryConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateMcpConfig(new RuntimeSettingsWebDtos.McpConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.getMcpCatalog())
+                .assertNext(response -> assertEquals(1, response.getBody().size()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.addMcpCatalogEntry(new RuntimeSettingsWebDtos.McpCatalogEntryDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateMcpCatalogEntry("github",
+                new RuntimeSettingsWebDtos.McpCatalogEntryDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.removeMcpCatalogEntry("github"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateHiveConfig(new RuntimeSettingsWebDtos.HiveConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updatePlanConfig(new RuntimeSettingsWebDtos.PlanConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateAutoConfig(new RuntimeSettingsWebDtos.AutoModeConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateTracingConfig(new RuntimeSettingsWebDtos.TracingConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        Class<?> requestType = Class.forName(SettingsController.class.getName() + "$AdvancedConfigRequest");
+        Object request = instantiateAdvancedConfigRequest(
+                requestType,
+                new RuntimeSettingsWebDtos.RateLimitConfigDto(),
+                new RuntimeSettingsWebDtos.SecurityConfigDto(),
+                new RuntimeSettingsWebDtos.CompactionConfigDto());
+        Method method = SettingsController.class.getMethod("updateAdvancedConfig", requestType);
+        Mono<ResponseEntity<RuntimeSettingsWebDtos.RuntimeConfigDto>> response = (Mono<ResponseEntity<RuntimeSettingsWebDtos.RuntimeConfigDto>>) method
+                .invoke(dtoController, request);
+
+        StepVerifier.create(response)
+                .assertNext(result -> assertEquals(HttpStatus.OK, result.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldDelegateAdvancedConfigUpdate() throws Throwable {
         RuntimeConfig current = RuntimeConfig.builder().build();
         RuntimeConfig apiView = RuntimeConfig.builder().build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
         Class<?> requestType = Class.forName(SettingsController.class.getName() + "$AdvancedConfigRequest");
-        var constructor = requestType.getDeclaredConstructor(
-                RuntimeConfig.RateLimitConfig.class,
-                RuntimeConfig.SecurityConfig.class,
-                RuntimeConfig.CompactionConfig.class);
-        constructor.setAccessible(true);
-        Object request = constructor.newInstance(
+        Object request = instantiateAdvancedConfigRequest(
+                requestType,
                 RuntimeConfig.RateLimitConfig.builder().build(),
                 RuntimeConfig.SecurityConfig.builder().build(),
                 RuntimeConfig.CompactionConfig.builder().build());
@@ -2527,5 +2673,14 @@ class SettingsControllerTest {
         when(provider.getAliases()).thenReturn(Set.of(alias));
         when(provider.isAvailable()).thenReturn(true);
         ttsProviderRegistry.replaceProviders(providerId, List.of(provider));
+    }
+
+    private Object instantiateAdvancedConfigRequest(Class<?> requestType, Object first, Object second, Object third)
+            throws Throwable {
+        MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(requestType, MethodHandles.lookup());
+        MethodHandle constructor = lookup.findConstructor(
+                requestType,
+                MethodType.methodType(void.class, first.getClass(), second.getClass(), third.getClass()));
+        return constructor.invoke(first, second, third);
     }
 }

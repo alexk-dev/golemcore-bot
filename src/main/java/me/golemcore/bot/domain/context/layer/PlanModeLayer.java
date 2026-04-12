@@ -27,7 +27,6 @@ import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
-import org.springframework.stereotype.Component;
 
 import java.util.Optional;
 
@@ -39,7 +38,6 @@ import java.util.Optional;
  * plan context (current plan content, instructions) and may apply a
  * plan-specified model tier override.
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class PlanModeLayer implements ContextLayer {

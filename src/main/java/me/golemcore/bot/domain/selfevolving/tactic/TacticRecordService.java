@@ -18,15 +18,12 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
-import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.selfevolving.TacticRecordStorePort;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -45,28 +42,21 @@ import me.golemcore.bot.domain.service.StringValueSupport;
 @Slf4j
 public class TacticRecordService {
 
-    private static final String SELF_EVOLVING_DIR = "self-evolving";
-    private static final String TACTICS_PREFIX = "tactics/";
-    private static final String TACTICS_LIST_PREFIX = "tactics";
-
-    private final StoragePort storagePort;
+    private final TacticRecordStorePort tacticRecordStorePort;
     private final Clock clock;
-    private final ObjectMapper objectMapper;
     private final ObjectProvider<TacticIndexRebuildService> rebuildServiceProvider;
     private final ObjectProvider<TacticQualityMetricsService> qualityMetricsServiceProvider;
     private final AtomicReference<List<TacticRecord>> cache = new AtomicReference<>();
 
     public TacticRecordService(
-            StoragePort storagePort,
+            TacticRecordStorePort tacticRecordStorePort,
             Clock clock,
             ObjectProvider<TacticIndexRebuildService> rebuildServiceProvider,
             ObjectProvider<TacticQualityMetricsService> qualityMetricsServiceProvider) {
-        this.storagePort = storagePort;
+        this.tacticRecordStorePort = tacticRecordStorePort;
         this.clock = clock;
         this.rebuildServiceProvider = rebuildServiceProvider;
         this.qualityMetricsServiceProvider = qualityMetricsServiceProvider;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     public TacticRecord save(TacticRecord record) {
@@ -167,46 +157,21 @@ public class TacticRecordService {
     public void delete(String tacticId) {
         TacticRecord existing = getRawById(tacticId)
                 .orElseThrow(() -> new IllegalArgumentException("Tactic not found: " + tacticId));
-        try {
-            storagePort.deleteObject(SELF_EVOLVING_DIR, TACTICS_PREFIX + existing.getTacticId() + ".json").join();
-            removeFromCache(existing.getTacticId());
-            invalidateQualityMetricsCache();
-            triggerRebuild(existing.getTacticId());
-        } catch (RuntimeException exception) {
-            throw new IllegalStateException("Failed to delete tactic record", exception);
-        }
+        tacticRecordStorePort.delete(existing.getTacticId());
+        removeFromCache(existing.getTacticId());
+        invalidateQualityMetricsCache();
+        triggerRebuild(existing.getTacticId());
     }
 
     private List<TacticRecord> loadAll() {
-        List<String> paths;
-        try {
-            paths = storagePort.listObjects(SELF_EVOLVING_DIR, TACTICS_LIST_PREFIX).join();
-        } catch (RuntimeException exception) {
-            log.debug("[TacticSearch] Failed to list tactics: {}", exception.getMessage());
-            return new ArrayList<>();
-        }
-
-        List<TacticRecord> records = new ArrayList<>();
-        for (String path : paths) {
-            if (StringValueSupport.isBlank(path) || !path.startsWith(TACTICS_PREFIX) || !path.endsWith(".json")) {
-                continue;
-            }
-            try {
-                String json = storagePort.getText(SELF_EVOLVING_DIR, path).join();
-                if (StringValueSupport.isBlank(json)) {
-                    continue;
-                }
-                TacticRecord record = objectMapper.readValue(json, TacticRecord.class);
-                if (record != null) {
-                    records.add(normalize(record));
-                }
-            } catch (IOException | RuntimeException exception) { // NOSONAR - best-effort storage read
-                log.debug("[TacticSearch] Failed to load tactic '{}': {}", path, exception.getMessage());
-            }
-        }
+        List<TacticRecord> records = new ArrayList<>(tacticRecordStorePort.loadAll());
         records.sort(Comparator.comparing(TacticRecord::getUpdatedAt,
                 Comparator.nullsLast(Comparator.reverseOrder())));
-        return records;
+        List<TacticRecord> normalizedRecords = new ArrayList<>();
+        for (TacticRecord record : records) {
+            normalizedRecords.add(normalize(record));
+        }
+        return normalizedRecords;
     }
 
     private void upsertCache(TacticRecord record) {
@@ -342,21 +307,13 @@ public class TacticRecordService {
 
     private TacticRecord saveInternal(TacticRecord record, boolean triggerRebuild) {
         TacticRecord normalized = normalize(record);
-        try {
-            String path = TACTICS_PREFIX + normalized.getTacticId() + ".json";
-            storagePort.putTextAtomic(SELF_EVOLVING_DIR, path, objectMapper.writeValueAsString(normalized), true)
-                    .join();
-            upsertCache(normalized);
-            invalidateQualityMetricsCache();
-            if (triggerRebuild) {
-                triggerRebuild(normalized.getTacticId());
-            }
-            return normalized;
-        } catch (IOException exception) {
-            throw new IllegalStateException("Failed to serialize tactic record", exception);
-        } catch (RuntimeException exception) {
-            throw new IllegalStateException("Failed to persist tactic record", exception);
+        tacticRecordStorePort.save(normalized);
+        upsertCache(normalized);
+        invalidateQualityMetricsCache();
+        if (triggerRebuild) {
+            triggerRebuild(normalized.getTacticId());
         }
+        return normalized;
     }
 
     private TacticRecord enrichMetrics(TacticRecord record) {

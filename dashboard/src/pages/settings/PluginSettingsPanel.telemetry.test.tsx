@@ -28,7 +28,7 @@ vi.mock('react-hot-toast', () => ({
   },
 }));
 
-vi.mock('../../lib/telemetry/TelemetryProvider', () => ({
+vi.mock('../../lib/telemetry/TelemetryContext', () => ({
   useTelemetry: () => ({
     recordCounter: vi.fn(),
     recordKeyedCounter,

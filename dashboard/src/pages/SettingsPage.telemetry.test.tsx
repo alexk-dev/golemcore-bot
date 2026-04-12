@@ -55,7 +55,7 @@ vi.mock('../hooks/useHive', () => ({
   useHiveStatus: () => ({ data: undefined }),
 }));
 
-vi.mock('../lib/telemetry/TelemetryProvider', () => ({
+vi.mock('../lib/telemetry/TelemetryContext', () => ({
   useTelemetry: () => ({
     recordCounter,
     recordKeyedCounter,

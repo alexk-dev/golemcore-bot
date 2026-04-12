@@ -22,14 +22,14 @@ public class JsonHivePolicyStateAdapter implements HivePolicyStatePort {
     private final ObjectMapper objectMapper;
 
     private final Object lock = new Object();
-    private HivePolicyBindingState cachedState;
+    private Optional<HivePolicyBindingState> cachedState = Optional.empty();
     private volatile boolean loaded;
 
     @Override
     public Optional<HivePolicyBindingState> load() {
         ensureLoaded();
         synchronized (lock) {
-            return Optional.ofNullable(copy(cachedState));
+            return cachedState.map(this::copy);
         }
     }
 
@@ -43,7 +43,7 @@ public class JsonHivePolicyStateAdapter implements HivePolicyStatePort {
             try {
                 String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(snapshot);
                 storagePort.putTextAtomic(PREFERENCES_DIR, POLICY_STATE_FILE, json, true).join();
-                cachedState = snapshot;
+                cachedState = Optional.of(snapshot);
                 loaded = true;
             } catch (Exception exception) {
                 throw new IllegalStateException("Failed to persist Hive policy binding state", exception);
@@ -52,7 +52,6 @@ public class JsonHivePolicyStateAdapter implements HivePolicyStatePort {
     }
 
     @Override
-    @SuppressWarnings("PMD.NullAssignment")
     public void clear() {
         synchronized (lock) {
             try {
@@ -60,7 +59,7 @@ public class JsonHivePolicyStateAdapter implements HivePolicyStatePort {
             } catch (RuntimeException exception) {
                 log.warn("[Hive] Failed to delete persisted policy binding state: {}", exception.getMessage());
             }
-            cachedState = null;
+            cachedState = Optional.empty();
             loaded = true;
         }
     }
@@ -78,16 +77,16 @@ public class JsonHivePolicyStateAdapter implements HivePolicyStatePort {
         }
     }
 
-    private HivePolicyBindingState loadState() {
+    private Optional<HivePolicyBindingState> loadState() {
         try {
             String json = storagePort.getText(PREFERENCES_DIR, POLICY_STATE_FILE).join();
             if (json == null || json.isBlank()) {
-                return null;
+                return Optional.empty();
             }
-            return objectMapper.readValue(json, HivePolicyBindingState.class);
-        } catch (IOException | RuntimeException exception) { // NOSONAR - startup should degrade gracefully
+            return Optional.of(objectMapper.readValue(json, HivePolicyBindingState.class));
+        } catch (IOException | RuntimeException exception) {
             log.warn("[Hive] Failed to load persisted policy binding state: {}", exception.getMessage());
-            return null;
+            return Optional.empty();
         }
     }
 

@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.outbound.storage;
 
+import java.io.IOException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
@@ -31,7 +32,7 @@ public class StorageSchedulePersistenceAdapter implements SchedulePersistencePor
             }
             List<ScheduleEntry> schedules = objectMapper.readValue(json, SCHEDULE_LIST_TYPE_REF);
             return schedules != null ? new ArrayList<>(schedules) : new ArrayList<>();
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to load schedules", exception);
         }
     }
@@ -41,7 +42,7 @@ public class StorageSchedulePersistenceAdapter implements SchedulePersistencePor
         try {
             String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(schedules);
             storagePort.putTextAtomic(AUTO_DIR, SCHEDULES_FILE, json, true).join();
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to persist schedules", exception);
         }
     }

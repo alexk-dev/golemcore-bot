@@ -20,6 +20,7 @@ package me.golemcore.bot.adapter.outbound.embedding;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Arrays;
@@ -56,7 +57,7 @@ public class OllamaRuntimeProbeAdapter implements OllamaRuntimeApiPort {
             try (Response response = buildClient(timeout).newCall(request).execute()) {
                 return response.isSuccessful();
             }
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             return false;
         }
     }
@@ -76,7 +77,7 @@ public class OllamaRuntimeProbeAdapter implements OllamaRuntimeApiPort {
                 String version = json.path("version").asText(null);
                 return version != null && !version.isBlank() ? version : null;
             }
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             return null;
         }
     }
@@ -101,7 +102,7 @@ public class OllamaRuntimeProbeAdapter implements OllamaRuntimeApiPort {
                 }
                 return false;
             }
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             return false;
         }
     }
@@ -119,7 +120,7 @@ public class OllamaRuntimeProbeAdapter implements OllamaRuntimeApiPort {
             try (Response response = buildClient(timeout).newCall(request).execute()) {
                 return response.isSuccessful();
             }
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             return false;
         }
     }

@@ -14,7 +14,7 @@ import { ChatConversation } from './ChatConversation';
 import { ChatToolbar } from './ChatToolbar';
 import type { OutboundChatPayload } from './chatInputTypes';
 import { useChatSessionHistory } from './useChatSessionHistory';
-import { useTelemetry } from '../../lib/telemetry/TelemetryProvider';
+import { useTelemetry } from '../../lib/telemetry/TelemetryContext';
 import { normalizeExplicitModelTier } from '../../lib/modelTiers';
 
 const GOALS_POLL_INTERVAL = 30000;

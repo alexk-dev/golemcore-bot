@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAdvanced } from '../../hooks/useSettings';
-import type { CompactionConfig, RateLimitConfig, SecurityConfig } from '../../api/settings';
+import type { CompactionConfig, RateLimitConfig, SecurityConfig } from '../../api/settingsTypes';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 export type AdvancedMode = 'all' | 'rateLimit' | 'security' | 'compaction';

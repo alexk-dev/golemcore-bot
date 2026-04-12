@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { SelfEvolvingConfig } from '../../../api/settings';
+import type { SelfEvolvingConfig } from '../../../api/settingsTypes';
 import type { SelfEvolvingTacticSearchStatus } from '../../../api/selfEvolving';
 import { SelfEvolvingTacticSearchEmbeddingsSettings } from './SelfEvolvingTacticSearchEmbeddingsSettings';
 

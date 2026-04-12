@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatu
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.selfevolving.tactic.ManagedLocalOllamaSupervisor;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.port.outbound.EmbeddingProviderIds;
 
 /**
  * Builds a single tactic-search runtime status projection from runtime config
@@ -36,7 +37,7 @@ public class SelfEvolvingTacticSearchStatusProjectionService {
 
     private static final String MODE_BM25 = "bm25";
     private static final String MODE_HYBRID = "hybrid";
-    private static final String PROVIDER_OLLAMA = "ollama";
+    private static final String PROVIDER_OLLAMA = EmbeddingProviderIds.OLLAMA;
     private static final String DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
     private static final String DEFAULT_OLLAMA_MODEL = "qwen3-embedding:0.6b";
 
