@@ -1,5 +1,5 @@
-# Recorded legacy Spring stereotype debt in domain layer.
 # New domain/application stereotype usage must not be added without explicit review.
+# Recorded legacy Spring stereotype debt in domain layer.
 me.golemcore.bot.domain.memory.diagnostics.MemoryDiagnosticsAssembler
 me.golemcore.bot.domain.memory.disclosure.MemoryDisclosurePlanner
 me.golemcore.bot.domain.memory.disclosure.MemoryDisclosurePolicy
@@ -83,6 +83,7 @@ me.golemcore.bot.domain.service.HiveConnectionService
 me.golemcore.bot.domain.service.HiveControlCommandDispatcher
 me.golemcore.bot.domain.service.HiveControlInboxService
 me.golemcore.bot.domain.service.HiveInspectionCommandHandler
+me.golemcore.bot.domain.service.HiveSdlcService
 me.golemcore.bot.domain.service.HiveSessionStateStore
 me.golemcore.bot.domain.service.InternalTurnService
 me.golemcore.bot.domain.service.JvmExitService
@@ -140,5 +141,3 @@ me.golemcore.bot.domain.system.TacticOutcomeFeedbackSystem
 me.golemcore.bot.domain.system.ToolLoopExecutionSystem
 me.golemcore.bot.domain.system.TurnOutcomeFinalizationSystem
 me.golemcore.bot.domain.system.toolloop.ToolFailureRecoveryService
-
-me.golemcore.bot.domain.service.HiveSdlcService

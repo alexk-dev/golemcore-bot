@@ -62,15 +62,12 @@ final class HiveSdlcToolSupport {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    static Boolean booleanParam(Map<String, Object> parameters, String name) {
+    static boolean booleanParam(Map<String, Object> parameters, String name) {
         if (parameters == null) {
-            return null;
+            return false;
         }
         Object value = parameters.get(name);
-        if (value instanceof Boolean booleanValue) {
-            return booleanValue;
-        }
-        return null;
+        return value instanceof Boolean booleanValue && booleanValue;
     }
 
     static Integer integerParam(Map<String, Object> parameters, String name) {

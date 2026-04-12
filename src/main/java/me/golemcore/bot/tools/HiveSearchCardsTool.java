@@ -75,7 +75,7 @@ public class HiveSearchCardsTool implements ToolComponent {
                     HiveSdlcToolSupport.stringParam(parameters, "epic_card_id"),
                     HiveSdlcToolSupport.stringParam(parameters, "review_of_card_id"),
                     HiveSdlcToolSupport.stringParam(parameters, "objective_id"),
-                    Boolean.TRUE.equals(HiveSdlcToolSupport.booleanParam(parameters, "include_archived")));
+                    HiveSdlcToolSupport.booleanParam(parameters, "include_archived"));
             List<HiveCardSummary> cards = hiveSdlcService.searchCards(request);
             return CompletableFuture.completedFuture(ToolResult.success(
                     "Hive cards found: " + cards.size(),

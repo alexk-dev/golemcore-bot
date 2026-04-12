@@ -108,10 +108,10 @@ public class HiveCreateFollowupCardTool implements ToolComponent {
             Map<String, Object> parameters,
             String title,
             String prompt) {
-        Boolean inheritCurrentCard = HiveSdlcToolSupport.booleanParam(parameters, "inherit_current_card");
+        boolean inheritCurrentCard = HiveSdlcToolSupport.booleanParam(parameters, "inherit_current_card");
         String currentCardId = HiveSdlcToolSupport.contextAttribute(context, ContextAttributes.HIVE_CARD_ID);
         String parentCardId = HiveSdlcToolSupport.stringParam(parameters, "parent_card_id");
-        if (parentCardId == null && Boolean.TRUE.equals(inheritCurrentCard)) {
+        if (parentCardId == null && inheritCurrentCard) {
             parentCardId = currentCardId;
         }
         return new HiveCreateCardRequest(
@@ -130,6 +130,6 @@ public class HiveCreateFollowupCardTool implements ToolComponent {
                 HiveSdlcToolSupport.stringParam(parameters, "objective_id"),
                 HiveSdlcToolSupport.stringParam(parameters, "assignee_golem_id"),
                 HiveSdlcToolSupport.stringParam(parameters, "assignment_policy"),
-                Boolean.TRUE.equals(HiveSdlcToolSupport.booleanParam(parameters, "auto_assign")));
+                HiveSdlcToolSupport.booleanParam(parameters, "auto_assign"));
     }
 }
