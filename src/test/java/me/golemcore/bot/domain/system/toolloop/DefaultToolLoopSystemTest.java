@@ -1,19 +1,33 @@
 package me.golemcore.bot.domain.system.toolloop;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.LlmProviderMetadataKeys;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
+import me.golemcore.bot.domain.service.TraceBudgetService;
+import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
+import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
@@ -25,8 +39,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -76,6 +92,12 @@ class DefaultToolLoopSystemTest {
     @Mock
     private ModelSelectionService modelSelectionService;
 
+    @Mock
+    private RuntimeConfigService runtimeConfigService;
+
+    @Mock
+    private TurnProgressService turnProgressService;
+
     private BotProperties.TurnProperties turnSettings;
 
     private BotProperties.ToolLoopProperties settings;
@@ -99,8 +121,21 @@ class DefaultToolLoopSystemTest {
                 .thenReturn(new ConversationView(List.of(), List.of()));
 
         turnSettings = new BotProperties.TurnProperties();
-        system = new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, viewBuilder,
-                turnSettings, settings, modelSelectionService, planService, clock);
+        system = buildSystem();
+    }
+
+    private DefaultToolLoopSystem buildSystem() {
+        return DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .clock(clock)
+                .build();
     }
 
     private AgentContext buildContext() {
@@ -140,10 +175,80 @@ class DefaultToolLoopSystemTest {
     }
 
     private DefaultToolLoopSystem buildSystemWithRuntimeEvents() {
-        RuntimeEventService runtimeEventService = new RuntimeEventService(clock, List.of());
-        return new DefaultToolLoopSystem(llmPort, toolExecutor, historyWriter, viewBuilder,
-                turnSettings, settings, modelSelectionService, planService,
-                null, null, runtimeEventService, clock);
+        RuntimeEventService runtimeEventService = new RuntimeEventService(clock);
+        return DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .runtimeEventService(runtimeEventService)
+                .clock(clock)
+                .build();
+    }
+
+    private DefaultToolLoopSystem buildSystemWithRuntimeConfig() {
+        return DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .runtimeConfigService(runtimeConfigService)
+                .clock(clock)
+                .build();
+    }
+
+    private DefaultToolLoopSystem buildSystemWithTurnProgress() {
+        return DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .runtimeConfigService(runtimeConfigService)
+                .turnProgressService(turnProgressService)
+                .clock(clock)
+                .build();
+    }
+
+    private DefaultToolLoopSystem buildSystemWithRecovery(ToolFailureRecoveryService recoveryService) {
+        return DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .toolFailureRecoveryService(recoveryService)
+                .clock(clock)
+                .build();
+    }
+
+    private void stubRuntimeConfigDefaults() {
+        when(runtimeConfigService.getTurnMaxLlmCalls()).thenReturn(200);
+        when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(500);
+        when(runtimeConfigService.getTurnDeadline()).thenReturn(Duration.ofHours(1));
+    }
+
+    private ListAppender<ILoggingEvent> attachLogAppender() {
+        Logger logger = (Logger) LoggerFactory.getLogger(LlmCallPhase.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.setContext(logger.getLoggerContext());
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
     }
 
     // ==================== Final answer (no tool calls) ====================
@@ -161,6 +266,170 @@ class DefaultToolLoopSystemTest {
         assertEquals(1, result.llmCalls());
         assertEquals(0, result.toolExecutions());
         verify(historyWriter).appendFinalAssistantAnswer(any(), any(), any());
+    }
+
+    @Test
+    void shouldCopyTraceContextIntoLlmRequest() {
+        AgentContext context = buildContext();
+        context.setTraceContext(TraceContext.builder()
+                .traceId("trace-1")
+                .spanId("span-1")
+                .rootKind("INGRESS")
+                .build());
+        LlmResponse response = finalResponse("Hello!");
+
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
+
+        system.processTurn(context);
+
+        org.mockito.ArgumentCaptor<me.golemcore.bot.domain.model.LlmRequest> captor = org.mockito.ArgumentCaptor
+                .forClass(me.golemcore.bot.domain.model.LlmRequest.class);
+        verify(llmPort).chat(captor.capture());
+        assertEquals("trace-1", captor.getValue().getTraceId());
+        assertEquals("span-1", captor.getValue().getTraceSpanId());
+        assertEquals("INGRESS", captor.getValue().getTraceRootKind());
+    }
+
+    @Test
+    void shouldRecordLlmAndToolChildSpansWithSnapshots() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, "run-1");
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, "bundle-1");
+        TraceService traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
+        TraceContext rootTrace = traceService.startRootTrace(
+                context.getSession(),
+                TraceContext.builder()
+                        .traceId("trace-1")
+                        .spanId("root-span")
+                        .rootKind(TraceSpanKind.INGRESS.name())
+                        .build(),
+                "telegram.message",
+                TraceSpanKind.INGRESS,
+                Instant.now(clock),
+                Map.of("session.id", "sess-1"));
+        context.setTraceContext(rootTrace);
+
+        DefaultToolLoopSystem tracedSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .runtimeConfigService(runtimeConfigService)
+                .turnProgressService(turnProgressService)
+                .traceService(traceService)
+                .clock(clock)
+                .build();
+
+        stubRuntimeConfigDefaults();
+        when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.isPayloadSnapshotsEnabled()).thenReturn(true);
+        when(runtimeConfigService.isTraceLlmPayloadCaptureEnabled()).thenReturn(true);
+        when(runtimeConfigService.isTraceToolPayloadCaptureEnabled()).thenReturn(true);
+        when(runtimeConfigService.getSessionTraceBudgetMb()).thenReturn(8);
+        when(runtimeConfigService.getTraceMaxSnapshotSizeKb()).thenReturn(64);
+        when(runtimeConfigService.getTraceMaxSnapshotsPerSpan()).thenReturn(4);
+
+        Message.ToolCall toolCall = toolCall(TOOL_CALL_ID, TOOL_NAME);
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(toolCall))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+        when(toolExecutor.execute(any(), any())).thenReturn(new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME, ToolResult.success("ok"), "ok", false, null));
+
+        ToolLoopTurnResult result = tracedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        TraceRecord trace = context.getSession().getTraces().get(0);
+        long llmSpanCount = trace.getSpans().stream()
+                .filter(span -> "llm.chat".equals(span.getName()))
+                .count();
+        assertEquals(2L, llmSpanCount);
+        assertTrue(trace.getSpans().stream()
+                .anyMatch(span -> ("tool." + TOOL_NAME).equals(span.getName())));
+        assertTrue(trace.getSpans().stream()
+                .filter(span -> "llm.chat".equals(span.getName()))
+                .allMatch(span -> !span.getSnapshots().isEmpty()));
+        assertTrue(trace.getSpans().stream()
+                .filter(span -> ("tool." + TOOL_NAME).equals(span.getName()))
+                .allMatch(span -> !span.getSnapshots().isEmpty()));
+        TraceSpanRecord toolSpan = trace.getSpans().stream()
+                .filter(span -> ("tool." + TOOL_NAME).equals(span.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("run-1", toolSpan.getAttributes().get("selfevolving.run.id"));
+        assertEquals("bundle-1", toolSpan.getAttributes().get("selfevolving.artifact.bundle.id"));
+    }
+
+    @Test
+    void shouldRecordRequestContextEventAndAttributesOnLlmSpan() {
+        AgentContext context = buildContext();
+        context.setActiveSkill(Skill.builder().name("planner").build());
+        context.setModelTier("smart");
+        context.setAttribute("model.tier.source", "skill");
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, "run-1");
+        context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, "bundle-1");
+
+        TraceService traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
+        TraceContext rootTrace = traceService.startRootTrace(
+                context.getSession(),
+                TraceContext.builder()
+                        .traceId("trace-1")
+                        .spanId("root-span")
+                        .rootKind(TraceSpanKind.INGRESS.name())
+                        .build(),
+                "telegram.message",
+                TraceSpanKind.INGRESS,
+                Instant.now(clock),
+                Map.of("session.id", "sess-1"));
+        context.setTraceContext(rootTrace);
+
+        DefaultToolLoopSystem tracedSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .runtimeConfigService(runtimeConfigService)
+                .turnProgressService(turnProgressService)
+                .traceService(traceService)
+                .clock(clock)
+                .build();
+
+        stubRuntimeConfigDefaults();
+        when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+        when(modelSelectionService.resolveForTier("smart"))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-smart", "high"));
+
+        ToolLoopTurnResult result = tracedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        TraceRecord trace = context.getSession().getTraces().get(0);
+        TraceSpanRecord llmSpan = trace.getSpans().stream()
+                .filter(span -> "llm.chat".equals(span.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("planner", llmSpan.getAttributes().get("context.skill.name"));
+        assertEquals("smart", llmSpan.getAttributes().get("context.model.tier"));
+        assertEquals("gpt-5-smart", llmSpan.getAttributes().get("context.model.id"));
+        assertEquals("high", llmSpan.getAttributes().get("context.model.reasoning"));
+        assertEquals("skill", llmSpan.getAttributes().get("context.model.source"));
+        assertEquals("run-1", llmSpan.getAttributes().get("selfevolving.run.id"));
+        assertEquals("bundle-1", llmSpan.getAttributes().get("selfevolving.artifact.bundle.id"));
+        assertTrue(llmSpan.getEvents().stream()
+                .anyMatch(event -> "request.context".equals(event.getName())
+                        && "planner".equals(event.getAttributes().get("skill"))
+                        && "smart".equals(event.getAttributes().get("tier"))
+                        && "gpt-5-smart".equals(event.getAttributes().get("model_id"))
+                        && "run-1".equals(event.getAttributes().get("run_id"))
+                        && "bundle-1".equals(event.getAttributes().get("artifact_bundle_id"))));
     }
 
     @Test
@@ -214,6 +483,37 @@ class DefaultToolLoopSystemTest {
         assertTrue(llmError.startsWith("[" + LlmErrorClassifier.LANGCHAIN4J_TIMEOUT + "]"));
         assertFalse(context.getFailures().isEmpty());
         assertEquals(me.golemcore.bot.domain.model.FailureKind.EXCEPTION, context.getFailures().get(0).kind());
+    }
+
+    @Test
+    void shouldLogTurnLevelRetriesForTransientLlmFailures() {
+        AgentContext context = buildContext();
+        DefaultToolLoopSystem retrySystem = buildSystemWithRuntimeConfig();
+        stubRuntimeConfigDefaults();
+        when(runtimeConfigService.isTurnAutoRetryEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTurnAutoRetryMaxAttempts()).thenReturn(2);
+        when(runtimeConfigService.getTurnAutoRetryBaseDelayMs()).thenReturn(1L);
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.failedFuture(new TimeoutException("request timed out")))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse("Recovered")));
+
+        ListAppender<ILoggingEvent> appender = attachLogAppender();
+        try {
+            ToolLoopTurnResult result = retrySystem.processTurn(context);
+
+            assertTrue(result.finalAnswerReady());
+            assertEquals(2, result.llmCalls());
+            List<String> messages = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .toList();
+            assertTrue(messages.stream().anyMatch(message -> message.contains(
+                    "Transient LLM failure, scheduling retry (code=llm.langchain4j.timeout, retry=1/2")));
+            assertTrue(messages.stream().anyMatch(message -> message.contains(
+                    "LLM retry succeeded (code=llm.langchain4j.timeout, retry=1/2, llmCall=2, model=gpt-4o)")));
+        } finally {
+            ((Logger) LoggerFactory.getLogger(LlmCallPhase.class)).detachAppender(appender);
+            appender.stop();
+        }
     }
 
     @Test
@@ -305,6 +605,56 @@ class DefaultToolLoopSystemTest {
         assertTrue(result.finalAnswerReady());
         assertEquals(2, result.llmCalls());
         assertEquals(1, result.toolExecutions());
+    }
+
+    @Test
+    void shouldPublishIntentAndFlushProgressThroughTurnProgressService() {
+        AgentContext context = buildContext();
+        DefaultToolLoopSystem progressSystem = buildSystemWithTurnProgress();
+        stubRuntimeConfigDefaults();
+        Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(tc))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+        when(toolExecutor.execute(any(), any())).thenReturn(new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME, ToolResult.success("ok"), "ok", false, null));
+
+        ToolLoopTurnResult result = progressSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        verify(turnProgressService).maybePublishIntent(eq(context), any(LlmResponse.class));
+        verify(turnProgressService).recordToolExecution(eq(context), eq(tc), any(ToolExecutionOutcome.class), eq(0L));
+        verify(turnProgressService).flushBufferedTools(context, "final_answer");
+        verify(turnProgressService).clearProgress(context);
+    }
+
+    @Test
+    void shouldPublishProgressNoticeWhenToolAttachmentFallbackWasApplied() {
+        AgentContext context = buildContext();
+        DefaultToolLoopSystem progressSystem = buildSystemWithTurnProgress();
+        stubRuntimeConfigDefaults();
+
+        LlmResponse response = LlmResponse.builder()
+                .content("Recovered")
+                .providerMetadata(Map.of(
+                        LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_APPLIED, true,
+                        LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_REASON,
+                        LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_REASON_OVERSIZE_INVALID_JSON))
+                .build();
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
+
+        ToolLoopTurnResult result = progressSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        verify(turnProgressService).publishSummary(
+                eq(context),
+                eq("Request was too large for inline tool images, so I retried without them."),
+                eq(Map.of(
+                        "kind", "tool_attachment_fallback",
+                        "reason", LlmProviderMetadataKeys.TOOL_ATTACHMENT_FALLBACK_REASON_OVERSIZE_INVALID_JSON)));
+        verify(turnProgressService).flushBufferedTools(context, "final_answer");
+        verify(turnProgressService).clearProgress(context);
     }
 
     @Test
@@ -421,6 +771,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldStopOnToolPolicyDenied() {
         settings.setStopOnToolPolicyDenied(true);
+        system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
 
@@ -441,6 +792,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldStopOnToolFailureWhenEnabled() {
         settings.setStopOnToolFailure(true);
+        system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
 
@@ -491,6 +843,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldNotStopOnConfirmationDeniedWhenDisabled() {
         settings.setStopOnConfirmationDenied(false);
+        system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
 
@@ -512,11 +865,206 @@ class DefaultToolLoopSystemTest {
         assertEquals(2, result.llmCalls());
     }
 
-    // ==================== Max limits ====================
+    @Test
+    void shouldStopOnRepeatedToolFailureWithNormalizedFingerprint() {
+        AgentContext context = buildContext();
+        Message.ToolCall firstCall = toolCall(TOOL_CALL_ID, TOOL_NAME);
+        Message.ToolCall secondCall = toolCall("tc-2", TOOL_NAME);
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(firstCall))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(secondCall))));
+
+        ToolExecutionOutcome firstOutcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, TOOL_NAME,
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, " Timeout\n"),
+                " Timeout\n", false, null);
+        ToolExecutionOutcome secondOutcome = new ToolExecutionOutcome(
+                "tc-2", TOOL_NAME,
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "timeout"),
+                "timeout", false, null);
+        when(toolExecutor.execute(any(), any()))
+                .thenReturn(firstOutcome)
+                .thenReturn(secondOutcome);
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(2, result.llmCalls());
+        assertEquals(2, result.toolExecutions());
+        assertFalse(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED)));
+        assertTrue(context.getFailures().stream()
+                .anyMatch(failure -> failure.message().contains("Repeated tool failure: " + TOOL_NAME)));
+
+        LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        assertNotNull(llmResponse);
+        assertTrue(llmResponse.getContent().contains("repeated tool failure (" + TOOL_NAME + ")"));
+    }
+
+    @Test
+    void shouldInjectRecoveryHintForRepeatedRecoverableShellFailure() {
+        AgentContext context = buildContext();
+        Message.ToolCall firstCall = toolCall(TOOL_CALL_ID, "shell");
+        firstCall.setArguments(Map.of("command", "cat missing.txt"));
+        Message.ToolCall secondCall = toolCall("tc-2", "shell");
+        secondCall.setArguments(Map.of("command", "cat missing.txt"));
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(firstCall))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(secondCall))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse("Recovered after hint")));
+
+        ToolExecutionOutcome firstOutcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, "shell",
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
+                "No such file or directory", false, null);
+        ToolExecutionOutcome secondOutcome = new ToolExecutionOutcome(
+                "tc-2", "shell",
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
+                "No such file or directory", false, null);
+        when(toolExecutor.execute(any(), any()))
+                .thenReturn(firstOutcome)
+                .thenReturn(secondOutcome);
+
+        ToolFailureRecoveryService recoveryService = new ToolFailureRecoveryService();
+        DefaultToolLoopSystem recoverySystem = buildSystemWithRecovery(recoveryService);
+
+        ToolLoopTurnResult result = recoverySystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(3, result.llmCalls());
+        verify(historyWriter).appendInternalRecoveryHint(eq(context), any());
+    }
+
+    @Test
+    void shouldStopWhenRecoverableShellFailureExhaustsRecoveryBudget() {
+        AgentContext context = buildContext();
+        Message.ToolCall firstCall = toolCall(TOOL_CALL_ID, "shell");
+        firstCall.setArguments(Map.of("command", "cat missing.txt"));
+        Message.ToolCall secondCall = toolCall("tc-2", "shell");
+        secondCall.setArguments(Map.of("command", "cat missing.txt"));
+        Message.ToolCall thirdCall = toolCall("tc-3", "shell");
+        thirdCall.setArguments(Map.of("command", "cat missing.txt"));
+        Message.ToolCall fourthCall = toolCall("tc-4", "shell");
+        fourthCall.setArguments(Map.of("command", "cat missing.txt"));
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(firstCall))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(secondCall))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(thirdCall))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(fourthCall))));
+
+        ToolExecutionOutcome failureOne = new ToolExecutionOutcome(
+                TOOL_CALL_ID, "shell",
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
+                "No such file or directory", false, null);
+        ToolExecutionOutcome failureTwo = new ToolExecutionOutcome(
+                "tc-2", "shell",
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
+                "No such file or directory", false, null);
+        ToolExecutionOutcome failureThree = new ToolExecutionOutcome(
+                "tc-3", "shell",
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
+                "No such file or directory", false, null);
+        ToolExecutionOutcome failureFour = new ToolExecutionOutcome(
+                "tc-4", "shell",
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
+                "No such file or directory", false, null);
+        when(toolExecutor.execute(any(), any()))
+                .thenReturn(failureOne)
+                .thenReturn(failureTwo)
+                .thenReturn(failureThree)
+                .thenReturn(failureFour);
+
+        ToolFailureRecoveryService recoveryService = new ToolFailureRecoveryService();
+        DefaultToolLoopSystem recoverySystem = buildSystemWithRecovery(recoveryService);
+
+        ToolLoopTurnResult result = recoverySystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(4, result.llmCalls());
+        verify(historyWriter, times(2)).appendInternalRecoveryHint(eq(context), any());
+        LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        assertNotNull(llmResponse);
+        assertTrue(llmResponse.getContent().contains("repeated tool failure (shell)"));
+    }
+
+    @Test
+    void shouldNotTreatChangedShellCommandAsRepeatedFailure() {
+        AgentContext context = buildContext();
+        Message.ToolCall firstCall = toolCall(TOOL_CALL_ID, "shell");
+        firstCall.setArguments(Map.of("command", "cat missing.txt"));
+        Message.ToolCall secondCall = toolCall("tc-2", "shell");
+        secondCall.setArguments(Map.of("command", "find . -name missing.txt"));
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(firstCall))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(secondCall))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse("Recovered")));
+
+        ToolExecutionOutcome firstOutcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, "shell",
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
+                "No such file or directory", false, null);
+        ToolExecutionOutcome secondOutcome = new ToolExecutionOutcome(
+                "tc-2", "shell",
+                ToolResult.success("./missing.txt"),
+                "./missing.txt", false, null);
+        when(toolExecutor.execute(any(), any()))
+                .thenReturn(firstOutcome)
+                .thenReturn(secondOutcome);
+
+        ToolFailureRecoveryService recoveryService = new ToolFailureRecoveryService();
+        DefaultToolLoopSystem recoverySystem = buildSystemWithRecovery(recoveryService);
+
+        ToolLoopTurnResult result = recoverySystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(3, result.llmCalls());
+        verify(historyWriter, never()).appendInternalRecoveryHint(eq(context), any());
+    }
+
+    @Test
+    void shouldStopImmediatelyForFatalShellFailure() {
+        AgentContext context = buildContext();
+        Message.ToolCall firstCall = toolCall(TOOL_CALL_ID, "shell");
+        firstCall.setArguments(Map.of("command", "dangerous"));
+        Message.ToolCall secondCall = toolCall("tc-2", "shell");
+        secondCall.setArguments(Map.of("command", "dangerous"));
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(firstCall))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(secondCall))));
+
+        ToolExecutionOutcome firstOutcome = new ToolExecutionOutcome(
+                TOOL_CALL_ID, "shell",
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "Command injection detected"),
+                "Command injection detected", false, null);
+        ToolExecutionOutcome secondOutcome = new ToolExecutionOutcome(
+                "tc-2", "shell",
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "Command injection detected"),
+                "Command injection detected", false, null);
+        when(toolExecutor.execute(any(), any()))
+                .thenReturn(firstOutcome)
+                .thenReturn(secondOutcome);
+
+        ToolFailureRecoveryService recoveryService = new ToolFailureRecoveryService();
+        DefaultToolLoopSystem recoverySystem = buildSystemWithRecovery(recoveryService);
+
+        ToolLoopTurnResult result = recoverySystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(2, result.llmCalls());
+        verify(historyWriter, never()).appendInternalRecoveryHint(eq(context), any());
+        LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
+        assertNotNull(llmResponse);
+        assertTrue(llmResponse.getContent().contains("repeated tool failure (shell)"));
+    }
 
     @Test
     void shouldStopWhenMaxLlmCallsReached() {
         turnSettings.setMaxLlmCalls(2);
+        system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
 
@@ -536,6 +1084,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldStopWhenMaxToolExecutionsReached() {
         turnSettings.setMaxToolExecutions(1);
+        system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc1 = toolCall(TOOL_CALL_ID, TOOL_NAME);
         Message.ToolCall tc2 = toolCall("tc-2", TOOL_NAME);
@@ -556,8 +1105,14 @@ class DefaultToolLoopSystemTest {
 
     @Test
     void shouldUseDefaultsWhenSettingsAreNull() {
-        DefaultToolLoopSystem nullSettingsSystem = new DefaultToolLoopSystem(
-                llmPort, toolExecutor, historyWriter, viewBuilder, null, modelSelectionService, planService, clock);
+        DefaultToolLoopSystem nullSettingsSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .modelSelectionService(modelSelectionService)
+                .clock(clock)
+                .build();
 
         AgentContext context = buildContext();
         LlmResponse response = finalResponse(CONTENT_HELLO);
@@ -572,8 +1127,14 @@ class DefaultToolLoopSystemTest {
 
     @Test
     void shouldUseNullModelWhenModelSelectionServiceIsNull() {
-        DefaultToolLoopSystem nullRouterSystem = new DefaultToolLoopSystem(
-                llmPort, toolExecutor, historyWriter, viewBuilder, settings, null, planService, clock);
+        DefaultToolLoopSystem nullRouterSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .clock(clock)
+                .build();
 
         AgentContext context = buildContext();
         LlmResponse response = finalResponse(CONTENT_HELLO);
@@ -623,15 +1184,17 @@ class DefaultToolLoopSystemTest {
     }
 
     @Test
-    void shouldFallbackToBalancedForUnknownTier() {
+    void shouldFailWhenExplicitTierIsUnknown() {
         AgentContext context = buildContext();
         context.setModelTier("nonexistent");
-        LlmResponse response = finalResponse("Balanced answer");
-        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(response));
+        when(modelSelectionService.resolveForTier("nonexistent"))
+                .thenThrow(new IllegalArgumentException("Unknown model tier: nonexistent"));
 
         ToolLoopTurnResult result = system.processTurn(context);
 
-        assertTrue(result.finalAnswerReady());
+        assertFalse(result.finalAnswerReady());
+        assertNotNull(context.getAttribute(ContextAttributes.LLM_ERROR));
+        verify(llmPort, never()).chat(any());
     }
 
     // ==================== Null outcome from tool executor ====================
@@ -768,6 +1331,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldSkipDuplicateSyntheticResultsInStopTurn() {
         turnSettings.setMaxLlmCalls(1);
+        system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc1 = toolCall(TOOL_CALL_ID, TOOL_NAME);
         Message.ToolCall tc2 = toolCall("tc-2", TOOL_NAME);
@@ -793,6 +1357,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldReplaceLlmResponseWithCleanResponseOnStop() {
         turnSettings.setMaxLlmCalls(1);
+        system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
 
@@ -817,6 +1382,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldSetToolLoopLimitReachedWhenMaxLlmCallsExhausted() {
         turnSettings.setMaxLlmCalls(1);
+        system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
 
@@ -837,6 +1403,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldSetLimitReasonWhenMaxLlmCallsExhausted() {
         turnSettings.setMaxLlmCalls(1);
+        system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
 
@@ -856,6 +1423,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldSetLimitReasonWhenMaxToolExecutionsExhausted() {
         turnSettings.setMaxToolExecutions(1);
+        system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
 
@@ -875,6 +1443,7 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldNotSetToolLoopLimitReachedOnConfirmationDenied() {
         settings.setStopOnConfirmationDenied(true);
+        system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
 
@@ -892,6 +1461,21 @@ class DefaultToolLoopSystemTest {
         Boolean limitReached = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED);
         assertFalse(Boolean.TRUE.equals(limitReached),
                 "TOOL_LOOP_LIMIT_REACHED should NOT be set for confirmation denied stop");
+    }
+
+    // ==================== interrupt pre-check ====================
+
+    @Test
+    void shouldStopImmediatelyWhenInterruptFlagSetBeforeLlmCall() {
+        AgentContext context = buildContext();
+        context.getSession().setMetadata(new HashMap<>());
+        context.getSession().getMetadata().put(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
+
+        ToolLoopTurnResult result = system.processTurn(context);
+
+        assertNotNull(result);
+        assertTrue(result.finalAnswerReady());
+        verify(llmPort, never()).chat(any());
     }
 
     // ==================== Conversation view diagnostics ====================

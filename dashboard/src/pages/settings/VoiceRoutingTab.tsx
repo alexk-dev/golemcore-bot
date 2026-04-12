@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
-import type { VoiceConfig } from '../../api/settings';
+import type { VoiceConfig } from '../../api/settingsTypes';
 import { useUpdateVoice } from '../../hooks/useSettings';
 import { usePluginSettingsCatalog, useVoiceProviders } from '../../hooks/usePlugins';
 
@@ -19,8 +19,13 @@ interface ProviderOption {
   routeKey: string | null;
 }
 
+interface ProviderSettingsRoute {
+  id: string;
+  label: string;
+  routeKey: string;
+}
+
 const DEFAULT_TTS_PROVIDER = 'golemcore/elevenlabs';
-const DEFAULT_STT_PROVIDER = 'golemcore/elevenlabs';
 const LEGACY_ELEVENLABS_PROVIDER = 'elevenlabs';
 const LEGACY_WHISPER_PROVIDER = 'whisper';
 const CANONICAL_WHISPER_PROVIDER = 'golemcore/whisper';
@@ -38,13 +43,13 @@ function humanizeProviderId(providerId: string): string {
     .join(' ');
 }
 
-function normalizeProviderId(value: string | null | undefined, fallback: string): string {
+function normalizeProviderId(value: string | null | undefined): string | null {
   if (value == null || value.trim().length === 0) {
-    return fallback;
+    return null;
   }
   const normalized = value.trim().toLowerCase();
   if (normalized === LEGACY_ELEVENLABS_PROVIDER) {
-    return DEFAULT_STT_PROVIDER;
+    return DEFAULT_TTS_PROVIDER;
   }
   if (normalized === LEGACY_WHISPER_PROVIDER) {
     return CANONICAL_WHISPER_PROVIDER;
@@ -54,18 +59,124 @@ function normalizeProviderId(value: string | null | undefined, fallback: string)
 
 function buildProviderOptions(
   providers: Record<string, string> | undefined,
-  fallback: string,
   routeByPluginId: Map<string, string>,
 ): ProviderOption[] {
-  const ids = new Set<string>(Object.keys(providers ?? {}));
-  ids.add(fallback);
-  return Array.from(ids)
+  return Object.keys(providers ?? {})
     .sort((left, right) => humanizeProviderId(left).localeCompare(humanizeProviderId(right)))
     .map((id) => ({
       id,
       label: humanizeProviderId(id),
       routeKey: routeByPluginId.get(id) ?? null,
     }));
+}
+
+function resolveProviderSelection(
+  value: string | null | undefined,
+  options: ProviderOption[],
+): string | null {
+  const normalized = normalizeProviderId(value);
+  if (normalized != null && options.some((option) => option.id === normalized)) {
+    return normalized;
+  }
+  return options[0]?.id ?? null;
+}
+
+function buildFormState(
+  config: VoiceConfig,
+  sttOptions: ProviderOption[],
+  ttsOptions: ProviderOption[],
+): VoiceConfig {
+  return {
+    ...config,
+    sttProvider: resolveProviderSelection(config.sttProvider, sttOptions),
+    ttsProvider: resolveProviderSelection(config.ttsProvider, ttsOptions),
+  };
+}
+
+function providerLabel(options: ProviderOption[], providerId: string | null | undefined): string {
+  return options.find((option) => option.id === providerId)?.label ?? 'None';
+}
+
+function buildProviderSettingsRoutes(
+  sttOptions: ProviderOption[],
+  ttsOptions: ProviderOption[],
+): ProviderSettingsRoute[] {
+  const entries = new Map<string, ProviderSettingsRoute>();
+  [...sttOptions, ...ttsOptions].forEach((option) => {
+    if (option.routeKey != null) {
+      entries.set(option.id, {
+        id: option.id,
+        label: option.label,
+        routeKey: option.routeKey,
+      });
+    }
+  });
+  return Array.from(entries.values());
+}
+
+interface ProviderSelectFieldProps {
+  label: ReactElement | string;
+  value: string | null | undefined;
+  disabled: boolean;
+  emptyLabel: string;
+  options: ProviderOption[];
+  onChange: (value: string | null) => void;
+}
+
+function ProviderSelectField({
+  label,
+  value,
+  disabled,
+  emptyLabel,
+  options,
+  onChange,
+}: ProviderSelectFieldProps): ReactElement {
+  return (
+    <Form.Group>
+      <Form.Label className="small fw-medium">{label}</Form.Label>
+      <Form.Select
+        size="sm"
+        value={value ?? ''}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value || null)}
+      >
+        {options.length === 0 && <option value="">{emptyLabel}</option>}
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>{option.label}</option>
+        ))}
+      </Form.Select>
+    </Form.Group>
+  );
+}
+
+function ProviderSettingsLinks({
+  providers,
+  onNavigate,
+}: {
+  providers: ProviderSettingsRoute[];
+  onNavigate: (routeKey: string) => void;
+}): ReactElement | null {
+  if (providers.length === 0) {
+    return null;
+  }
+
+  return (
+    <Row className="g-2 mt-1 voice-provider-links">
+      {providers.map((provider) => (
+        <Col xs={12} sm="auto" key={provider.id}>
+          <Button
+            type="button"
+            size="sm"
+            className="voice-route-shortcut"
+            variant="secondary"
+            onClick={() => onNavigate(provider.routeKey)}
+          >
+            Configure {provider.label}
+          </Button>
+        </Col>
+      ))}
+    </Row>
+  );
 }
 
 export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): ReactElement {
@@ -75,57 +186,35 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
   const { data: pluginCatalog = [] } = usePluginSettingsCatalog();
   const routeByPluginId = useMemo(() => new Map(pluginCatalog.map((item) => [item.pluginId, item.routeKey])), [pluginCatalog]);
   const sttOptions = useMemo(
-    () => buildProviderOptions(providers?.stt, normalizeProviderId(config.sttProvider, DEFAULT_STT_PROVIDER), routeByPluginId),
-    [providers?.stt, config.sttProvider, routeByPluginId],
+    () => buildProviderOptions(providers?.stt, routeByPluginId),
+    [providers?.stt, routeByPluginId],
   );
   const ttsOptions = useMemo(
-    () => buildProviderOptions(providers?.tts, normalizeProviderId(config.ttsProvider, DEFAULT_TTS_PROVIDER), routeByPluginId),
-    [providers?.tts, config.ttsProvider, routeByPluginId],
+    () => buildProviderOptions(providers?.tts, routeByPluginId),
+    [providers?.tts, routeByPluginId],
   );
 
-  const [form, setForm] = useState<VoiceConfig>({
-    ...config,
-    sttProvider: normalizeProviderId(config.sttProvider, DEFAULT_STT_PROVIDER),
-    ttsProvider: normalizeProviderId(config.ttsProvider, DEFAULT_TTS_PROVIDER),
-  });
+  const initialForm = useMemo(() => buildFormState(config, sttOptions, ttsOptions), [config, sttOptions, ttsOptions]);
+  const [form, setForm] = useState<VoiceConfig>(initialForm);
 
+  // Keep the local routing form aligned with backend config refreshes.
   useEffect(() => {
-    setForm({
-      ...config,
-      sttProvider: normalizeProviderId(config.sttProvider, DEFAULT_STT_PROVIDER),
-      ttsProvider: normalizeProviderId(config.ttsProvider, DEFAULT_TTS_PROVIDER),
-    });
-  }, [config]);
+    setForm(initialForm);
+  }, [initialForm]);
 
-  const isDirty = useMemo(() => hasDiff(form, {
-    ...config,
-    sttProvider: normalizeProviderId(config.sttProvider, DEFAULT_STT_PROVIDER),
-    ttsProvider: normalizeProviderId(config.ttsProvider, DEFAULT_TTS_PROVIDER),
-  }), [form, config]);
+  const isDirty = useMemo(() => hasDiff(form, initialForm), [form, initialForm]);
 
-  const selectedProviderRoutes = useMemo(() => {
-    const entries = new Map<string, { id: string; label: string; routeKey: string }>();
-    const sttProvider = form.sttProvider ?? DEFAULT_STT_PROVIDER;
-    const ttsProvider = form.ttsProvider ?? DEFAULT_TTS_PROVIDER;
-    [sttProvider, ttsProvider].forEach((providerId) => {
-      const routeKey = routeByPluginId.get(providerId);
-      if (routeKey != null) {
-        entries.set(providerId, {
-          id: providerId,
-          label: humanizeProviderId(providerId),
-          routeKey,
-        });
-      }
-    });
-    return Array.from(entries.values());
-  }, [form.sttProvider, form.ttsProvider, routeByPluginId]);
+  const providerSettingsRoutes = useMemo(
+    () => buildProviderSettingsRoutes(sttOptions, ttsOptions),
+    [sttOptions, ttsOptions],
+  );
 
   const handleSave = async (): Promise<void> => {
     await updateVoice.mutateAsync({
       ...config,
       ...form,
-      sttProvider: normalizeProviderId(form.sttProvider, DEFAULT_STT_PROVIDER),
-      ttsProvider: normalizeProviderId(form.ttsProvider, DEFAULT_TTS_PROVIDER),
+      sttProvider: normalizeProviderId(form.sttProvider),
+      ttsProvider: normalizeProviderId(form.ttsProvider),
     });
     toast.success('Voice routing saved');
   };
@@ -138,8 +227,8 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
           Choose the active STT/TTS providers from the plugins currently loaded by the runtime.
         </Form.Text>
         <div className="d-flex align-items-center gap-2 mb-3 voice-status-badges">
-          <Badge bg="primary">STT: {humanizeProviderId(normalizeProviderId(form.sttProvider, DEFAULT_STT_PROVIDER))}</Badge>
-          <Badge bg="primary">TTS: {humanizeProviderId(normalizeProviderId(form.ttsProvider, DEFAULT_TTS_PROVIDER))}</Badge>
+          <Badge bg="primary">STT: {providerLabel(sttOptions, form.sttProvider)}</Badge>
+          <Badge bg="primary">TTS: {providerLabel(ttsOptions, form.ttsProvider)}</Badge>
         </div>
 
         <Form.Check
@@ -152,62 +241,35 @@ export default function VoiceRoutingTab({ config }: VoiceRoutingTabProps): React
 
         <Row className="g-3">
           <Col md={6}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                STT Provider <HelpTip text="Provider used for speech-to-text transcription" />
-              </Form.Label>
-              <Form.Select
-                size="sm"
-                value={normalizeProviderId(form.sttProvider, DEFAULT_STT_PROVIDER)}
-                disabled={sttOptions.length === 0}
-                onChange={(event) => setForm((prev) => ({ ...prev, sttProvider: event.target.value }))}
-              >
-                {sttOptions.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </Form.Select>
-            </Form.Group>
+            <ProviderSelectField
+              label={<>STT Provider <HelpTip text="Provider used for speech-to-text transcription" /></>}
+              value={form.sttProvider}
+              disabled={sttOptions.length === 0}
+              emptyLabel="No STT providers loaded"
+              options={sttOptions}
+              onChange={(sttProvider) => setForm((prev) => ({ ...prev, sttProvider }))}
+            />
           </Col>
           <Col md={6}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                TTS Provider <HelpTip text="Provider used for text-to-speech synthesis" />
-              </Form.Label>
-              <Form.Select
-                size="sm"
-                value={normalizeProviderId(form.ttsProvider, DEFAULT_TTS_PROVIDER)}
-                disabled={ttsOptions.length === 0}
-                onChange={(event) => setForm((prev) => ({ ...prev, ttsProvider: event.target.value }))}
-              >
-                {ttsOptions.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </Form.Select>
-            </Form.Group>
+            <ProviderSelectField
+              label={<>TTS Provider <HelpTip text="Provider used for text-to-speech synthesis" /></>}
+              value={form.ttsProvider}
+              disabled={ttsOptions.length === 0}
+              emptyLabel="No TTS providers loaded"
+              options={ttsOptions}
+              onChange={(ttsProvider) => setForm((prev) => ({ ...prev, ttsProvider }))}
+            />
           </Col>
         </Row>
 
         <Form.Text className="text-muted d-block mt-3">
-          Provider-specific credentials and endpoint configuration now live in plugin pages. Configure the provider first if it needs additional secrets or URLs.
+          Pick the voice providers you want to use. Need to connect an account or tweak a provider? Open its settings below.
         </Form.Text>
 
-        {selectedProviderRoutes.length > 0 && (
-          <Row className="g-2 mt-1 voice-provider-links">
-            {selectedProviderRoutes.map((provider) => (
-              <Col xs={12} sm="auto" key={provider.id}>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="voice-route-shortcut"
-                  variant="secondary"
-                  onClick={() => navigate(`/settings/${provider.routeKey}`)}
-                >
-                  Open {provider.label}
-                </Button>
-              </Col>
-            ))}
-          </Row>
-        )}
+        <ProviderSettingsLinks
+          providers={providerSettingsRoutes}
+          onNavigate={(routeKey) => navigate(`/settings/${routeKey}`)}
+        />
 
         <SettingsSaveBar className="mt-3">
           <Button

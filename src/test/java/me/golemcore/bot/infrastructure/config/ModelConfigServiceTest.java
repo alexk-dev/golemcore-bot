@@ -1,6 +1,7 @@
 package me.golemcore.bot.infrastructure.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,9 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -51,6 +54,8 @@ class ModelConfigServiceTest {
         when(storagePort.exists(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(false));
         when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(null));
         service = new ModelConfigService(storagePort);
         service.init();
@@ -163,7 +168,7 @@ class ModelConfigServiceTest {
     @Test
     void prefixMatchWorks() {
         // "gpt-5.1-preview" should match "gpt-5.1" prefix
-        ModelConfigService.ModelSettings settings = service.getModelSettings(MODEL_GPT_5_1 + "-preview");
+        ModelCatalogEntry settings = service.getModelSettings(MODEL_GPT_5_1 + "-preview");
         assertEquals(PROVIDER_OPENAI, settings.getProvider());
         assertTrue(service.isReasoningRequired(MODEL_GPT_5_1 + "-preview"));
     }
@@ -177,23 +182,22 @@ class ModelConfigServiceTest {
     @Test
     void shouldMatchO3MiniByPrefix() {
         // "gpt-5.2-codex-2026" should match "gpt-5.2-codex"
-        ModelConfigService.ModelSettings settings = service.getModelSettings("gpt-5.2-codex-2026");
+        ModelCatalogEntry settings = service.getModelSettings("gpt-5.2-codex-2026");
         assertEquals(PROVIDER_OPENAI, settings.getProvider());
         assertTrue(service.isReasoningRequired("gpt-5.2-codex-2026"));
     }
 
-    // ===== Default fallback =====
+    // ===== Unknown model rejection =====
 
     @Test
-    void unknownModelReturnDefaults() {
-        ModelConfigService.ModelSettings settings = service.getModelSettings("totally-unknown-model");
-        assertNotNull(settings);
-        assertEquals(PROVIDER_OPENAI, settings.getProvider()); // default provider
+    void unknownModelThrowsInsteadOfFallingBackToDefaults() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getModelSettings("totally-unknown-model"));
     }
 
     @Test
     void nullModelReturnDefaults() {
-        ModelConfigService.ModelSettings settings = service.getModelSettings(null);
+        ModelCatalogEntry settings = service.getModelSettings(null);
         assertNotNull(settings);
     }
 
@@ -207,8 +211,9 @@ class ModelConfigServiceTest {
     }
 
     @Test
-    void unknownModelGetsDefaultMaxInputTokens() {
-        assertEquals(128000, service.getMaxInputTokens("unknown-model"));
+    void unknownModelThrowsOnMaxInputTokens() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getMaxInputTokens("unknown-model"));
     }
 
     // ===== getAllModels =====
@@ -222,8 +227,22 @@ class ModelConfigServiceTest {
     }
 
     @Test
+    void shouldRollbackStrictModelSaveWhenPersistenceFails() {
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("disk full")));
+
+        ModelConfigService.ModelSettings settings = standardModel("xmesh", "GPT-5.2", true, 32000);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.saveModelStrict("xmesh/gpt-5.2", settings));
+
+        assertTrue(error.getMessage().contains("Failed to save models config"));
+        assertFalse(service.getConfig().getModels().containsKey("xmesh/gpt-5.2"));
+    }
+
+    @Test
     void shouldReturnAllKnownModels() {
-        Map<String, ModelConfigService.ModelSettings> models = service.getAllModels();
+        Map<String, ModelCatalogEntry> models = service.getAllModels();
         assertNotNull(models);
         assertFalse(models.isEmpty());
         assertTrue(models.containsKey(MODEL_GPT_5_1));
@@ -241,7 +260,7 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldReturnCorrectAnthropicHaikuSettings() {
-        ModelConfigService.ModelSettings settings = service.getModelSettings(MODEL_CLAUDE_3_5_HAIKU);
+        ModelCatalogEntry settings = service.getModelSettings(MODEL_CLAUDE_3_5_HAIKU);
         assertEquals(PROVIDER_ANTHROPIC, settings.getProvider());
         assertTrue(settings.isSupportsTemperature());
     }
@@ -252,6 +271,154 @@ class ModelConfigServiceTest {
     void shouldSurviveReload() {
         assertDoesNotThrow(() -> service.reload());
         assertNotNull(service.getAllModels());
+    }
+
+    @Test
+    void shouldRenameModelWhenPreviousIdDiffers() {
+        ModelConfigService.ModelSettings settings = standardModel("openrouter", "Qwen Model", true, 128000);
+        service.getConfig().getModels().put("qwen/model-name:version", settings);
+
+        service.saveModel("openrouter/qwen/model-name:version", "qwen/model-name:version", settings);
+
+        assertFalse(service.getAllModels().containsKey("qwen/model-name:version"));
+        ModelCatalogEntry renamed = service.getAllModels().get("openrouter/qwen/model-name:version");
+        assertNotNull(renamed);
+        assertEquals(settings.getProvider(), renamed.getProvider());
+        assertEquals(settings.getDisplayName(), renamed.getDisplayName());
+    }
+
+    @Test
+    void shouldKeepInMemoryCatalogUnchangedWhenReplacingSnapshotFailsToPersist() {
+        Map<String, ModelCatalogEntry> beforeModels = Map.copyOf(service.getAllModels());
+        ModelConfigService.ModelSettings beforeDefaults = service.getConfig().getDefaults();
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("disk full")));
+
+        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog catalogSnapshot = me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog
+                .builder()
+                .models(Map.of("managed/gpt-5.1",
+                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                                .provider("openai")
+                                .displayName("Managed GPT")
+                                .supportsTemperature(true)
+                                .supportsVision(true)
+                                .maxInputTokens(128000)
+                                .build()))
+                .build();
+
+        assertThrows(IllegalStateException.class, () -> service.replaceCatalogSnapshot(catalogSnapshot));
+        assertEquals(beforeModels, service.getAllModels());
+        assertEquals(beforeDefaults, service.getConfig().getDefaults());
+    }
+
+    @Test
+    void shouldCreateCatalogSnapshotFromModelConfig() {
+        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog snapshot = service.getCatalogSnapshot();
+
+        assertNotNull(snapshot);
+        assertTrue(snapshot.getModels().containsKey(MODEL_GPT_5_1));
+        assertTrue(snapshot.getModels().containsKey(MODEL_CLAUDE_SONNET_4));
+        assertNotNull(snapshot.getDefaults());
+        assertEquals(PROVIDER_OPENAI, snapshot.getDefaults().getProvider());
+        assertEquals(PROVIDER_OPENAI, snapshot.getModels().get(MODEL_GPT_5_1).getProvider());
+        assertEquals("GPT-5.1", snapshot.getModels().get(MODEL_GPT_5_1).getDisplayName());
+        assertFalse(snapshot.getModels().get(MODEL_GPT_5_1).getSupportsTemperature());
+        assertNotNull(snapshot.getModels().get(MODEL_GPT_5_1).getReasoning());
+        assertEquals("none", snapshot.getModels().get(MODEL_GPT_5_1).getReasoning().getDefaultLevel());
+        assertEquals(400000,
+                snapshot.getModels().get(MODEL_GPT_5_1).getReasoning().getLevels().get("xhigh").getMaxInputTokens());
+        assertNull(snapshot.getModels().get(MODEL_CLAUDE_SONNET_4).getReasoning());
+    }
+
+    @Test
+    void shouldReplaceCatalogSnapshotUsingExplicitDefaults() {
+        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog snapshot = me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog
+                .builder()
+                .models(Map.of(
+                        "managed/gpt-5.1",
+                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                                .provider(PROVIDER_OPENAI)
+                                .displayName("Managed GPT")
+                                .supportsTemperature(false)
+                                .supportsVision(true)
+                                .maxInputTokens(256000)
+                                .reasoning(
+                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningConfig
+                                                .builder()
+                                                .defaultLevel("medium")
+                                                .levels(Map.of(
+                                                        "medium",
+                                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningLevelConfig
+                                                                .builder()
+                                                                .maxInputTokens(128000)
+                                                                .build()))
+                                                .build())
+                                .build()))
+                .defaults(me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                        .provider(PROVIDER_CUSTOM)
+                        .displayName("Managed Defaults")
+                        .supportsTemperature(false)
+                        .supportsVision(false)
+                        .maxInputTokens(64000)
+                        .build())
+                .build();
+
+        service.replaceCatalogSnapshot(snapshot);
+
+        ModelCatalogEntry managedSettings = service.getAllModels().get("managed/gpt-5.1");
+        assertNotNull(managedSettings);
+        assertEquals(PROVIDER_OPENAI, managedSettings.getProvider());
+        assertEquals("Managed GPT", managedSettings.getDisplayName());
+        assertFalse(managedSettings.isSupportsTemperature());
+        assertTrue(managedSettings.isSupportsVision());
+        assertEquals(256000, managedSettings.getMaxInputTokens());
+        assertEquals("medium", managedSettings.getReasoning().getDefaultLevel());
+        assertEquals(128000, managedSettings.getReasoning().getLevels().get("medium").getMaxInputTokens());
+        assertEquals(PROVIDER_CUSTOM, service.getConfig().getDefaults().getProvider());
+        assertEquals("Managed Defaults", service.getConfig().getDefaults().getDisplayName());
+        assertFalse(service.getConfig().getDefaults().isSupportsVision());
+        assertFalse(service.getConfig().getDefaults().isSupportsTemperature());
+        assertEquals(64000, service.getConfig().getDefaults().getMaxInputTokens());
+    }
+
+    @Test
+    void shouldReplaceCatalogSnapshotUsingDefaultModelFallbackAndValueDefaults() {
+        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog snapshot = me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog
+                .builder()
+                .models(Map.of(
+                        "managed/gpt-5.1",
+                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                                .displayName("Managed GPT")
+                                .reasoning(
+                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningConfig
+                                                .builder()
+                                                .defaultLevel("low")
+                                                .levels(Map.of(
+                                                        "low",
+                                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningLevelConfig
+                                                                .builder()
+                                                                .build()))
+                                                .build())
+                                .build()))
+                .defaultModel("managed/gpt-5.1")
+                .build();
+
+        service.replaceCatalogSnapshot(snapshot);
+
+        ModelCatalogEntry managedSettings = service.getAllModels().get("managed/gpt-5.1");
+        assertNotNull(managedSettings);
+        assertEquals(PROVIDER_OPENAI, managedSettings.getProvider());
+        assertTrue(managedSettings.isSupportsVision());
+        assertTrue(managedSettings.isSupportsTemperature());
+        assertEquals(128000, managedSettings.getMaxInputTokens());
+        assertEquals("low", managedSettings.getReasoning().getDefaultLevel());
+        assertEquals(128000, managedSettings.getReasoning().getLevels().get("low").getMaxInputTokens());
+        assertEquals(PROVIDER_OPENAI, service.getConfig().getDefaults().getProvider());
+        assertEquals("Managed GPT", service.getConfig().getDefaults().getDisplayName());
+        assertTrue(service.getConfig().getDefaults().isSupportsVision());
+        assertTrue(service.getConfig().getDefaults().isSupportsTemperature());
+        assertEquals(128000, service.getConfig().getDefaults().getMaxInputTokens());
+        assertNotSame(managedSettings, service.getConfig().getDefaults());
     }
 
     // ===== ModelSettings constructors =====
@@ -441,17 +608,15 @@ class ModelConfigServiceTest {
     // ===== getModelSettings edge cases =====
 
     @Test
-    void shouldReturnDefaultsForUnknownProviderPrefix() {
-        ModelConfigService.ModelSettings settings = service.getModelSettings("unknown-provider/unknown-model");
-        assertNotNull(settings);
-        // Falls back to defaults
-        assertEquals(PROVIDER_OPENAI, settings.getProvider());
+    void shouldThrowForUnknownProviderPrefix() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getModelSettings("unknown-provider/unknown-model"));
     }
 
     @Test
     void shouldReturnExactMatchOverPrefixMatch() {
         // "gpt-5-chat-latest" should return exact match
-        ModelConfigService.ModelSettings settings = service.getModelSettings(MODEL_GPT_5_CHAT_LATEST);
+        ModelCatalogEntry settings = service.getModelSettings(MODEL_GPT_5_CHAT_LATEST);
         assertEquals(PROVIDER_OPENAI, settings.getProvider());
         assertNull(settings.getReasoning());
         assertFalse(service.isReasoningRequired(MODEL_GPT_5_CHAT_LATEST));
@@ -459,10 +624,11 @@ class ModelConfigServiceTest {
     }
 
     @Test
-    void shouldHandleModelNameWithMultipleSlashes() {
-        // "provider/sub/model-name" → strips to "sub/model-name"
-        ModelConfigService.ModelSettings settings = service.getModelSettings("provider/sub/model-name");
-        assertNotNull(settings);
+    void shouldThrowForModelNameWithMultipleSlashesWhenNotInCatalog() {
+        // "provider/sub/model-name" → strips to "sub/model-name" → not in catalog →
+        // throws
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getModelSettings("provider/sub/model-name"));
     }
 
     // ===== Convenience methods =====
@@ -647,9 +813,9 @@ class ModelConfigServiceTest {
     }
 
     @Test
-    void shouldReturnNullDefaultReasoningLevelForUnknownModel() {
-        String level = service.getDefaultReasoningLevel("totally-unknown");
-        assertNull(level);
+    void shouldThrowForDefaultReasoningLevelOfUnknownModel() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getDefaultReasoningLevel("totally-unknown"));
     }
 
     // ===== getAvailableReasoningLevels =====
@@ -691,17 +857,16 @@ class ModelConfigServiceTest {
     }
 
     @Test
-    void shouldReturnEmptyLevelsForUnknownModel() {
-        List<String> levels = service.getAvailableReasoningLevels("unknown-model");
-        assertNotNull(levels);
-        assertTrue(levels.isEmpty());
+    void shouldThrowForReasoningLevelsOfUnknownModel() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.getAvailableReasoningLevels("unknown-model"));
     }
 
     // ===== getModelsForProviders =====
 
     @Test
     void shouldFilterModelsByOpenaiProvider() {
-        Map<String, ModelConfigService.ModelSettings> openaiModels = service
+        Map<String, ModelCatalogEntry> openaiModels = service
                 .getModelsForProviders(List.of(PROVIDER_OPENAI));
         assertNotNull(openaiModels);
         assertFalse(openaiModels.isEmpty());
@@ -718,7 +883,7 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldFilterModelsByAnthropicProvider() {
-        Map<String, ModelConfigService.ModelSettings> anthropicModels = service
+        Map<String, ModelCatalogEntry> anthropicModels = service
                 .getModelsForProviders(List.of(PROVIDER_ANTHROPIC));
         assertNotNull(anthropicModels);
         assertFalse(anthropicModels.isEmpty());
@@ -734,23 +899,23 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldFilterModelsByMultipleProviders() {
-        Map<String, ModelConfigService.ModelSettings> combined = service
+        Map<String, ModelCatalogEntry> combined = service
                 .getModelsForProviders(List.of(PROVIDER_OPENAI, PROVIDER_ANTHROPIC));
         assertNotNull(combined);
         // Should include both openai and anthropic models
         assertTrue(combined.containsKey(MODEL_GPT_5_1));
         assertTrue(combined.containsKey(MODEL_CLAUDE_SONNET_4));
         // Combined result should be larger than either individual provider filter
-        Map<String, ModelConfigService.ModelSettings> openaiOnly = service
+        Map<String, ModelCatalogEntry> openaiOnly = service
                 .getModelsForProviders(List.of(PROVIDER_OPENAI));
-        Map<String, ModelConfigService.ModelSettings> anthropicOnly = service
+        Map<String, ModelCatalogEntry> anthropicOnly = service
                 .getModelsForProviders(List.of(PROVIDER_ANTHROPIC));
         assertEquals(openaiOnly.size() + anthropicOnly.size(), combined.size());
     }
 
     @Test
     void shouldReturnEmptyMapForUnknownProvider() {
-        Map<String, ModelConfigService.ModelSettings> models = service
+        Map<String, ModelCatalogEntry> models = service
                 .getModelsForProviders(List.of("unknown-provider"));
         assertNotNull(models);
         assertTrue(models.isEmpty());
@@ -758,7 +923,7 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldReturnEmptyMapForEmptyProviderList() {
-        Map<String, ModelConfigService.ModelSettings> models = service.getModelsForProviders(Collections.emptyList());
+        Map<String, ModelCatalogEntry> models = service.getModelsForProviders(Collections.emptyList());
         assertNotNull(models);
         assertTrue(models.isEmpty());
     }
@@ -767,7 +932,7 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldReturnCorrectModelMapFromService() {
-        Map<String, ModelConfigService.ModelSettings> models = service.getAllModels();
+        Map<String, ModelCatalogEntry> models = service.getAllModels();
         assertNotNull(models);
         assertFalse(models.isEmpty());
         // Verify fixture models are present
@@ -776,10 +941,10 @@ class ModelConfigServiceTest {
         assertTrue(models.containsKey(MODEL_CLAUDE_SONNET_4));
 
         // Verify settings are populated correctly
-        ModelConfigService.ModelSettings gpt51Settings = models.get(MODEL_GPT_5_1);
+        ModelCatalogEntry gpt51Settings = models.get(MODEL_GPT_5_1);
         assertEquals(PROVIDER_OPENAI, gpt51Settings.getProvider());
         assertNotNull(gpt51Settings.getReasoning());
-        ModelConfigService.ModelSettings claudeSettings = models.get(MODEL_CLAUDE_SONNET_4);
+        ModelCatalogEntry claudeSettings = models.get(MODEL_CLAUDE_SONNET_4);
         assertEquals(PROVIDER_ANTHROPIC, claudeSettings.getProvider());
         assertNull(claudeSettings.getReasoning());
     }
@@ -809,13 +974,15 @@ class ModelConfigServiceTest {
         assertTrue(service.getAllModels().containsKey(MODEL_CUSTOM));
         assertEquals(PROVIDER_CUSTOM, service.getProvider(MODEL_CUSTOM));
 
-        // Reload should replace with freshly loaded config
+        // Reload should replace with freshly loaded config (empty when no workspace
+        // file)
         service.reload();
 
-        // After reload, the custom model should be gone and config should be non-empty
-        Map<String, ModelConfigService.ModelSettings> models = service.getAllModels();
+        // After reload, the custom model should be gone — no classpath fallback, so
+        // empty catalog
+        Map<String, ModelCatalogEntry> models = service.getAllModels();
         assertFalse(models.containsKey(MODEL_CUSTOM));
-        assertFalse(models.isEmpty());
+        assertTrue(models.isEmpty());
     }
 
     // ===== getMaxInputTokens with custom config via @TempDir =====
@@ -875,9 +1042,9 @@ class ModelConfigServiceTest {
         assertTrue(levels.contains("low"));
         assertTrue(levels.contains("high"));
 
-        // Unknown model falls back to defaults.maxInputTokens = 100000
-        assertEquals(100000, service.getMaxInputTokens("unknown-model"));
-        assertEquals(100000, service.getMaxInputTokens("unknown-model", "medium"));
+        // Unknown model throws instead of falling back to defaults
+        assertThrows(IllegalArgumentException.class, () -> service.getMaxInputTokens("unknown-model"));
+        assertThrows(IllegalArgumentException.class, () -> service.getMaxInputTokens("unknown-model", "medium"));
     }
 
     // ===== getMaxInputTokens edge case: reasoning config with null levels =====

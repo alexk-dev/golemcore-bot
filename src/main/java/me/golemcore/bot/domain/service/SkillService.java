@@ -18,25 +18,27 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.component.SkillComponent;
-import me.golemcore.bot.domain.model.Skill;
-import me.golemcore.bot.domain.model.SkillVariable;
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.port.outbound.StoragePort;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
-import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.McpConfig;
+import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillDocument;
+import me.golemcore.bot.domain.model.SkillVariable;
+import me.golemcore.bot.port.outbound.SkillSettingsPort;
+import me.golemcore.bot.port.outbound.StoragePort;
+import org.springframework.stereotype.Service;
 
 /**
  * Service for loading and managing skills from SKILL.md files with YAML
@@ -51,29 +53,18 @@ import me.golemcore.bot.domain.model.McpConfig;
 @Slf4j
 public class SkillService implements SkillComponent {
 
-    private final StoragePort storagePort;
-    private final BotProperties properties;
-    private final SkillVariableResolver variableResolver;
-    private final RuntimeConfigService runtimeConfigService;
-
     private static final String DEFAULT_SKILLS_DIR = "skills";
     private static final String SUPPRESS_UNCHECKED = "unchecked";
     private static final String UNKNOWN = "unknown";
     private static final int MIN_PATH_PARTS_FOR_SKILL_NAME = 2;
-    private static final Pattern FRONTMATTER_PATTERN = Pattern.compile(
-            "^---\\s*\\n(.*?)\\n---\\s*\\n(.*)$", Pattern.DOTALL);
+
+    private final StoragePort storagePort;
+    private final SkillSettingsPort settingsPort;
+    private final SkillVariableResolver variableResolver;
+    private final RuntimeConfigService runtimeConfigService;
+    private final SkillDocumentService skillDocumentService;
 
     private final Map<String, Skill> skillRegistry = new ConcurrentHashMap<>();
-    private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
-    private static final List<String> FRONTMATTER_KEY_ORDER = List.of(
-            "name",
-            "description",
-            "model_tier",
-            "requires",
-            "vars",
-            "mcp",
-            "next_skill",
-            "conditional_next_skills");
 
     @PostConstruct
     public void init() {
@@ -127,12 +118,12 @@ public class SkillService implements SkillComponent {
             return "";
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("Available skills:\n");
+        StringBuilder summary = new StringBuilder();
+        summary.append("Available skills:\n");
         for (Skill skill : available) {
-            sb.append(skill.toSummary()).append("\n");
+            summary.append(skill.toSummary()).append("\n");
         }
-        return sb.toString();
+        return summary.toString();
     }
 
     @Override
@@ -145,15 +136,28 @@ public class SkillService implements SkillComponent {
     }
 
     @Override
+    public boolean registerDynamicSkill(Skill skill) {
+        if (skill == null || skill.getName() == null) {
+            return false;
+        }
+        Skill existing = skillRegistry.putIfAbsent(skill.getName(), skill);
+        if (existing == null) {
+            log.info("Registered dynamic skill: {}", skill.getName());
+            return true;
+        }
+        log.debug("Dynamic skill '{}' already exists, skipping registration", skill.getName());
+        return false;
+    }
+
+    @Override
     public void reload() {
         if (!runtimeConfigService.isSkillsEnabled()) {
             skillRegistry.clear();
             log.info("Skills are disabled at runtime, registry cleared");
             return;
         }
-        // Copy-on-write: load into temp map, then swap atomically
-        Map<String, Skill> newRegistry = new ConcurrentHashMap<>();
 
+        Map<String, Skill> newRegistry = new ConcurrentHashMap<>();
         try {
             List<String> keys = storagePort.listObjects(getSkillsDirectory(), "").join();
             for (String key : keys) {
@@ -161,13 +165,11 @@ public class SkillService implements SkillComponent {
                     loadSkillInto(key, newRegistry);
                 }
             }
-
-            // Atomic swap: clear and copy
             skillRegistry.clear();
             skillRegistry.putAll(newRegistry);
             log.info("Loaded {} skills", skillRegistry.size());
-        } catch (Exception e) {
-            log.warn("Failed to load skills from storage", e);
+        } catch (Exception ex) {
+            log.warn("Failed to load skills from storage", ex);
         }
     }
 
@@ -181,40 +183,31 @@ public class SkillService implements SkillComponent {
             Skill skill = parseSkill(content, key);
             target.put(skill.getName(), skill);
             log.debug("Loaded skill: {}", skill.getName());
-        } catch (Exception e) {
-            log.warn("Failed to load skill: {}", key, e);
+        } catch (Exception ex) {
+            log.warn("Failed to load skill: {}", key, ex);
         }
     }
 
     private Skill parseSkill(String content, String path) {
-        Matcher matcher = FRONTMATTER_PATTERN.matcher(content);
+        SkillDocument document = skillDocumentService.parseNormalizedDocument(content);
 
         String name = extractNameFromPath(path);
         String description = "";
-        String body = content;
-        Map<String, Object> metadata = new LinkedHashMap<>();
+        String body = document.body();
+        Map<String, Object> metadata = new LinkedHashMap<>(document.metadata());
 
-        if (matcher.matches()) {
-            String frontmatter = matcher.group(1);
-            body = matcher.group(2);
-
-            try {
-                @SuppressWarnings(SUPPRESS_UNCHECKED)
-                Map<String, Object> yaml = yamlMapper.readValue(frontmatter, Map.class);
-
-                name = (String) yaml.getOrDefault("name", name);
-                description = (String) yaml.getOrDefault("description", "");
-                metadata = new LinkedHashMap<>(yaml);
-
-            } catch (IOException | RuntimeException e) {
-                log.warn("Failed to parse skill frontmatter: {}", path, e);
-            }
+        Object metadataName = metadata.get("name");
+        if (metadataName instanceof String metadataNameString && !metadataNameString.isBlank()) {
+            name = metadataNameString;
         }
 
-        // Check requirements
+        Object metadataDescription = metadata.get("description");
+        if (metadataDescription instanceof String metadataDescriptionString) {
+            description = metadataDescriptionString;
+        }
+
         boolean available = checkRequirements(metadata);
 
-        // Parse and resolve variables
         List<SkillVariable> variableDefinitions = List.of();
         Map<String, String> resolvedVariables = Map.of();
 
@@ -236,21 +229,17 @@ public class SkillService implements SkillComponent {
             }
         }
 
-        // Parse MCP configuration
         McpConfig mcpConfig = parseMcpConfig(metadata, resolvedVariables);
-
-        // Parse pipeline configuration
         String nextSkill = (String) metadata.get("next_skill");
         Map<String, String> conditionalNextSkills = parseConditionalNextSkills(metadata);
-
-        // Parse model tier
         String modelTier = (String) metadata.get("model_tier");
+        String reflectionTier = (String) metadata.get("reflection_tier");
         Skill.SkillRequirements requirements = parseRequirements(metadata);
 
         return Skill.builder()
                 .name(name)
                 .description(description)
-                .content(body.trim())
+                .content(body)
                 .location(java.nio.file.Path.of(path))
                 .metadata(metadata)
                 .requirements(requirements)
@@ -259,13 +248,13 @@ public class SkillService implements SkillComponent {
                 .resolvedVariables(new HashMap<>(resolvedVariables))
                 .mcpConfig(mcpConfig)
                 .modelTier(modelTier)
+                .reflectionTier(reflectionTier)
                 .nextSkill(nextSkill)
                 .conditionalNextSkills(conditionalNextSkills)
                 .build();
     }
 
     private String extractNameFromPath(String path) {
-        // Extract skill name from path like "skills/summarize/SKILL.md"
         String[] parts = path.split("/");
         if (parts.length >= MIN_PATH_PARTS_FOR_SKILL_NAME) {
             return parts[parts.length - 2];
@@ -275,13 +264,13 @@ public class SkillService implements SkillComponent {
 
     @SuppressWarnings(SUPPRESS_UNCHECKED)
     private Map<String, String> parseConditionalNextSkills(Map<String, Object> metadata) {
-        Object cnsObj = metadata.get("conditional_next_skills");
-        if (!(cnsObj instanceof Map)) {
+        Object conditionalNextSkillsObject = metadata.get("conditional_next_skills");
+        if (!(conditionalNextSkillsObject instanceof Map)) {
             return new HashMap<>();
         }
-        Map<String, Object> cnsMap = (Map<String, Object>) cnsObj;
+        Map<String, Object> conditionalNextSkillsMap = (Map<String, Object>) conditionalNextSkillsObject;
         Map<String, String> result = new HashMap<>();
-        for (Map.Entry<String, Object> entry : cnsMap.entrySet()) {
+        for (Map.Entry<String, Object> entry : conditionalNextSkillsMap.entrySet()) {
             if (entry.getValue() != null) {
                 result.put(entry.getKey(), entry.getValue().toString());
             }
@@ -291,22 +280,21 @@ public class SkillService implements SkillComponent {
 
     @SuppressWarnings(SUPPRESS_UNCHECKED)
     private McpConfig parseMcpConfig(Map<String, Object> metadata, Map<String, String> resolvedVariables) {
-        Object mcpObj = metadata.get("mcp");
-        if (!(mcpObj instanceof Map)) {
+        Object mcpObject = metadata.get("mcp");
+        if (!(mcpObject instanceof Map)) {
             return null;
         }
 
-        Map<String, Object> mcpMap = (Map<String, Object>) mcpObj;
+        Map<String, Object> mcpMap = (Map<String, Object>) mcpObject;
         String command = (String) mcpMap.get("command");
         if (command == null || command.isBlank()) {
             return null;
         }
 
-        // Parse env and resolve ${VAR} references
         Map<String, String> env = new HashMap<>();
-        Object envObj = mcpMap.get("env");
-        if (envObj instanceof Map) {
-            Map<String, Object> envMap = (Map<String, Object>) envObj;
+        Object envObject = mcpMap.get("env");
+        if (envObject instanceof Map) {
+            Map<String, Object> envMap = (Map<String, Object>) envObject;
             for (Map.Entry<String, Object> entry : envMap.entrySet()) {
                 String value = entry.getValue() != null ? entry.getValue().toString() : "";
                 value = resolveEnvPlaceholders(value, resolvedVariables);
@@ -315,15 +303,15 @@ public class SkillService implements SkillComponent {
         }
 
         int startupTimeout = 30;
-        Object startupObj = mcpMap.get("startup_timeout");
-        if (startupObj instanceof Number) {
-            startupTimeout = ((Number) startupObj).intValue();
+        Object startupTimeoutObject = mcpMap.get("startup_timeout");
+        if (startupTimeoutObject instanceof Number) {
+            startupTimeout = ((Number) startupTimeoutObject).intValue();
         }
 
         int idleTimeout = 5;
-        Object idleObj = mcpMap.get("idle_timeout");
-        if (idleObj instanceof Number) {
-            idleTimeout = ((Number) idleObj).intValue();
+        Object idleTimeoutObject = mcpMap.get("idle_timeout");
+        if (idleTimeoutObject instanceof Number) {
+            idleTimeout = ((Number) idleTimeoutObject).intValue();
         }
 
         log.debug("Parsed MCP config: command='{}', env keys={}", command, env.keySet());
@@ -336,68 +324,34 @@ public class SkillService implements SkillComponent {
                 .build();
     }
 
-    public String renderSkillDocument(Map<String, Object> metadata, String body) {
-        String normalizedBody = body != null ? body : "";
-        Map<String, Object> orderedMetadata = orderMetadata(metadata);
-        if (orderedMetadata.isEmpty()) {
-            return normalizedBody;
-        }
-        try {
-            String yaml = yamlMapper.writeValueAsString(orderedMetadata).stripTrailing();
-            return "---\n" + yaml + "\n---\n" + normalizedBody;
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to serialize skill metadata", e);
-        }
-    }
-
-    private Map<String, Object> orderMetadata(Map<String, Object> metadata) {
-        if (metadata == null || metadata.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, Object> ordered = new LinkedHashMap<>();
-        for (String key : FRONTMATTER_KEY_ORDER) {
-            if (metadata.containsKey(key)) {
-                ordered.put(key, metadata.get(key));
-            }
-        }
-        for (Map.Entry<String, Object> entry : metadata.entrySet()) {
-            if (!ordered.containsKey(entry.getKey())) {
-                ordered.put(entry.getKey(), entry.getValue());
-            }
-        }
-        return ordered;
-    }
-
     private String resolveEnvPlaceholders(String value, Map<String, String> resolvedVariables) {
         if (value == null || !value.contains("${")) {
             return value;
         }
 
-        Matcher m = Pattern.compile("\\$\\{([^}]+)}").matcher(value);
+        Matcher matcher = Pattern.compile("\\$\\{([^}]+)}").matcher(value);
         StringBuilder result = new StringBuilder();
-        while (m.find()) {
-            String varName = m.group(1);
-            // Try resolved skill variables first, then system env
-            String replacement = resolvedVariables.getOrDefault(varName, System.getenv(varName));
-            m.appendReplacement(result,
+        while (matcher.find()) {
+            String variableName = matcher.group(1);
+            String replacement = resolvedVariables.getOrDefault(variableName, System.getenv(variableName));
+            matcher.appendReplacement(result,
                     Matcher.quoteReplacement(replacement != null ? replacement : ""));
         }
-        m.appendTail(result);
+        matcher.appendTail(result);
         return result.toString();
     }
 
     @SuppressWarnings(SUPPRESS_UNCHECKED)
     private boolean checkRequirements(Map<String, Object> metadata) {
-        Object reqObj = metadata.get("requires");
-        if (reqObj == null) {
+        Object requirementsObject = metadata.get("requires");
+        if (requirementsObject == null) {
             return true;
         }
 
-        if (reqObj instanceof Map) {
-            Map<String, Object> requires = (Map<String, Object>) reqObj;
+        if (requirementsObject instanceof Map) {
+            Map<String, Object> requirements = (Map<String, Object>) requirementsObject;
 
-            // Check env vars
-            Object envVars = requires.get("env");
+            Object envVars = requirements.get("env");
             if (envVars instanceof List) {
                 for (Object envVar : (List<?>) envVars) {
                     if (System.getenv(envVar.toString()) == null) {
@@ -407,11 +361,9 @@ public class SkillService implements SkillComponent {
                 }
             }
 
-            // Check binaries (simplified check)
-            Object binaries = requires.get("binary");
+            Object binaries = requirements.get("binary");
             if (binaries instanceof List) {
                 for (Object binary : (List<?>) binaries) {
-                    // Could add actual binary check here
                     log.debug("Skill requires binary: {}", binary);
                 }
             }
@@ -422,14 +374,14 @@ public class SkillService implements SkillComponent {
 
     @SuppressWarnings(SUPPRESS_UNCHECKED)
     private Skill.SkillRequirements parseRequirements(Map<String, Object> metadata) {
-        Object reqObj = metadata.get("requires");
-        if (!(reqObj instanceof Map<?, ?> reqMap)) {
+        Object requirementsObject = metadata.get("requires");
+        if (!(requirementsObject instanceof Map<?, ?> requirementsMap)) {
             return null;
         }
 
-        List<String> envVars = toStringList(((Map<String, Object>) reqMap).get("env"));
-        List<String> binaries = toStringList(((Map<String, Object>) reqMap).get("binary"));
-        List<String> skills = toStringList(((Map<String, Object>) reqMap).get("skills"));
+        List<String> envVars = toStringList(((Map<String, Object>) requirementsMap).get("env"));
+        List<String> binaries = toStringList(((Map<String, Object>) requirementsMap).get("binary"));
+        List<String> skills = toStringList(((Map<String, Object>) requirementsMap).get("skills"));
 
         if (envVars.isEmpty() && binaries.isEmpty() && skills.isEmpty()) {
             return null;
@@ -453,7 +405,7 @@ public class SkillService implements SkillComponent {
     }
 
     private String getSkillsDirectory() {
-        String configured = properties.getSkills().getDirectory();
+        String configured = settingsPort.skills().directory();
         if (configured == null || configured.isBlank()) {
             return DEFAULT_SKILLS_DIR;
         }

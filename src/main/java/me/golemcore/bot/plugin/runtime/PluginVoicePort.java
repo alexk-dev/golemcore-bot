@@ -24,7 +24,7 @@ import java.util.concurrent.CompletionException;
 @Slf4j
 public class PluginVoicePort implements VoicePort {
 
-    private static final String DEFAULT_ELEVENLABS_PROVIDER = "golemcore/elevenlabs";
+    private static final String CANONICAL_ELEVENLABS_PROVIDER = "golemcore/elevenlabs";
     private static final String LEGACY_ELEVENLABS_PROVIDER = "elevenlabs";
     private static final String LEGACY_WHISPER_PROVIDER = "whisper";
     private static final String DEFAULT_WHISPER_PROVIDER = "golemcore/whisper";
@@ -36,7 +36,10 @@ public class PluginVoicePort implements VoicePort {
 
     @Override
     public CompletableFuture<TranscriptionResult> transcribe(byte[] audioData, AudioFormat format) {
-        String providerId = normalizeProviderId(runtimeConfigService.getSttProvider(), true);
+        String providerId = resolveSttProviderId();
+        if (providerId == null) {
+            throw new IllegalStateException("No STT provider loaded");
+        }
         SttProvider provider = sttProviderRegistry.find(providerId)
                 .orElseThrow(() -> new IllegalStateException("No STT provider loaded for " + providerId));
         if (!provider.isAvailable()) {
@@ -53,7 +56,10 @@ public class PluginVoicePort implements VoicePort {
 
     @Override
     public CompletableFuture<byte[]> synthesize(String text, VoiceConfig config) {
-        String providerId = normalizeProviderId(runtimeConfigService.getTtsProvider(), false);
+        String providerId = resolveTtsProviderId();
+        if (providerId == null) {
+            throw new IllegalStateException("No TTS provider loaded");
+        }
         TtsProvider provider = ttsProviderRegistry.find(providerId)
                 .orElseThrow(() -> new IllegalStateException("No TTS provider loaded for " + providerId));
         if (!provider.isAvailable()) {
@@ -73,24 +79,42 @@ public class PluginVoicePort implements VoicePort {
         if (!runtimeConfigService.isVoiceEnabled()) {
             return false;
         }
-        String sttProviderId = normalizeProviderId(runtimeConfigService.getSttProvider(), true);
-        String ttsProviderId = normalizeProviderId(runtimeConfigService.getTtsProvider(), false);
-        return sttProviderRegistry.find(sttProviderId).map(SttProvider::isAvailable).orElse(false)
-                || ttsProviderRegistry.find(ttsProviderId).map(TtsProvider::isAvailable).orElse(false);
+        String sttProviderId = resolveSttProviderId();
+        String ttsProviderId = resolveTtsProviderId();
+        return (sttProviderId != null
+                && sttProviderRegistry.find(sttProviderId).map(SttProvider::isAvailable).orElse(false))
+                || (ttsProviderId != null
+                        && ttsProviderRegistry.find(ttsProviderId).map(TtsProvider::isAvailable).orElse(false));
     }
 
-    private String normalizeProviderId(String rawProviderId, boolean stt) {
+    private String normalizeProviderId(String rawProviderId) {
         if (rawProviderId == null || rawProviderId.isBlank()) {
-            return DEFAULT_ELEVENLABS_PROVIDER;
+            return null;
         }
         String normalized = rawProviderId.trim().toLowerCase(Locale.ROOT);
         if (LEGACY_ELEVENLABS_PROVIDER.equals(normalized)) {
-            return DEFAULT_ELEVENLABS_PROVIDER;
+            return CANONICAL_ELEVENLABS_PROVIDER;
         }
-        if (stt && LEGACY_WHISPER_PROVIDER.equals(normalized)) {
+        if (LEGACY_WHISPER_PROVIDER.equals(normalized)) {
             return DEFAULT_WHISPER_PROVIDER;
         }
         return normalized;
+    }
+
+    private String resolveSttProviderId() {
+        String configuredProviderId = normalizeProviderId(runtimeConfigService.getSttProvider());
+        if (configuredProviderId != null) {
+            return configuredProviderId;
+        }
+        return sttProviderRegistry.listProviderIds().keySet().stream().findFirst().orElse(null);
+    }
+
+    private String resolveTtsProviderId() {
+        String configuredProviderId = normalizeProviderId(runtimeConfigService.getTtsProvider());
+        if (configuredProviderId != null) {
+            return configuredProviderId;
+        }
+        return ttsProviderRegistry.listProviderIds().keySet().stream().findFirst().orElse(null);
     }
 
     private <S, T> CompletableFuture<T> adaptProviderFuture(

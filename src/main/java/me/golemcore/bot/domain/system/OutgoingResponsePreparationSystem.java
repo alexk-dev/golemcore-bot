@@ -28,6 +28,7 @@ import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.TurnLimitReason;
+import me.golemcore.bot.domain.service.InternalTurnService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -60,6 +61,7 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
+    private final InternalTurnService internalTurnService;
 
     @Override
     public String getName() {
@@ -101,9 +103,17 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         // Error path: convert LLM_ERROR into a user-facing OutgoingResponse.
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         if (llmError != null) {
+            if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED))) {
+                return context;
+            }
             String reasonCode = resolveLlmErrorCode(context, llmError);
             context.setAttribute(ContextAttributes.LLM_ERROR_CODE, reasonCode);
             context.setAttribute(ContextAttributes.LLM_ERROR, LlmErrorClassifier.withCode(reasonCode, llmError));
+            if (shouldScheduleInternalRetry(context, reasonCode)
+                    && internalTurnService.scheduleAutoContinueRetry(context, reasonCode)) {
+                context.setAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED, true);
+                return context;
+            }
             String errorMessage = preferencesService.getMessage("system.error.llm");
             setOutgoingResponse(context, OutgoingResponse.textOnly(errorMessage));
             return context;
@@ -215,6 +225,19 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         return LlmErrorClassifier.classifyFromDiagnostic(llmError);
     }
 
+    private boolean shouldScheduleInternalRetry(AgentContext context, String reasonCode) {
+        if (context == null) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INPUT_INTERNAL))) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.AUTO_MODE))) {
+            return false;
+        }
+        return LlmErrorClassifier.isTransientCode(reasonCode);
+    }
+
     private void setOutgoingResponse(AgentContext context, OutgoingResponse outgoing) {
         // Attach turn metadata hints for web channel context panel.
         Map<String, Object> hints = buildHints(context);
@@ -243,6 +266,14 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         String reasoning = context.getAttribute(ContextAttributes.LLM_REASONING);
         if (reasoning != null && !"none".equals(reasoning)) {
             hints.put("reasoning", reasoning);
+        }
+
+        String activeSkillName = context.getAttribute(ContextAttributes.ACTIVE_SKILL_NAME);
+        if (activeSkillName == null && context.getActiveSkill() != null) {
+            activeSkillName = context.getActiveSkill().getName();
+        }
+        if (activeSkillName != null && !activeSkillName.isBlank()) {
+            hints.put("skill", activeSkillName);
         }
 
         String tier = context.getModelTier();
@@ -315,7 +346,7 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         }
         for (int i = context.getMessages().size() - 1; i >= 0; i--) {
             Message msg = context.getMessages().get(i);
-            if (msg.isUserMessage()) {
+            if (msg.isUserMessage() && !msg.isInternalMessage()) {
                 return msg.hasVoice();
             }
         }

@@ -1,13 +1,22 @@
-import { useEffect, useState, type ReactElement } from 'react';
+import { useCallback, type ReactElement } from 'react';
 import { Alert, Button, Card, Spinner } from 'react-bootstrap';
 import toast from 'react-hot-toast';
-import type { SystemUpdateActionResponse, SystemUpdateStatusResponse } from '../../api/system';
+import type {
+  SystemUpdateActionResponse,
+  SystemUpdateConfigResponse,
+  SystemUpdateStatusResponse,
+} from '../../api/system';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAutoReload } from '../../hooks/useUpdateAutoReload';
-import { useCheckSystemUpdate, useSystemUpdateStatus, useUpdateSystemNow } from '../../hooks/useSystem';
+import {
+  useCheckSystemUpdate,
+  useSystemUpdateConfig,
+  useSystemUpdateStatus,
+  useUpdateSystemConfig,
+  useUpdateSystemNow,
+} from '../../hooks/useSystem';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import {
-  UPDATE_BUSY_STATES,
   getPrimaryUpdateVersion,
   getUpdateActionLabel,
   getUpdateStateDescription,
@@ -15,8 +24,15 @@ import {
   hasPendingUpdate,
 } from '../../utils/systemUpdateUi';
 import { UpdateWorkflowPanel } from './UpdateWorkflowPanel';
+import { UpdateSettingsCard } from './UpdateSettingsCard';
+import {
+  resolveExpectedUpdateVersion,
+  useUpdateActionAvailability,
+  useUpdateAutoReloadLifecycle,
+  useUpdateConfigForm,
+} from './UpdatesTabHooks';
+import type { UpdateSettingsFormState } from './updateSettingsUtils';
 
-const LIVE_STATUS_POLL_MS = 1500;
 
 interface UpdatesErrorCardProps {
   onRetry: () => void;
@@ -24,15 +40,35 @@ interface UpdatesErrorCardProps {
 
 interface UpdatesBodyProps {
   status: SystemUpdateStatusResponse;
+  config: SystemUpdateConfigResponse | null;
+  configForm: UpdateSettingsFormState | null;
   canCheck: boolean;
   canUpdate: boolean;
   isBusy: boolean;
   isCheckPending: boolean;
   isUpdatePending: boolean;
+  isConfigLoading: boolean;
+  isConfigSaving: boolean;
   isAutoReloadArmed: boolean;
   autoReloadState: ReturnType<typeof useUpdateAutoReload>;
   onCheck: () => void;
   onUpdateNow: () => void;
+  onConfigRetry: () => void;
+  onConfigChange: (updater: (current: UpdateSettingsFormState) => UpdateSettingsFormState) => void;
+  onConfigSave: () => void;
+}
+
+function getIdleHint(status: SystemUpdateStatusResponse): string | null {
+  if (!status.enabled) {
+    return 'Updates are disabled by backend configuration.';
+  }
+  if (status.state === 'IDLE' && !hasPendingUpdate(status)) {
+    return 'No update is queued. Run a check to look for a newer compatible release.';
+  }
+  if (status.state === 'FAILED' && hasPendingUpdate(status)) {
+    return 'A target version is still available. Review the error and retry when ready.';
+  }
+  return null;
 }
 
 function UpdatesLoadingCard(): ReactElement {
@@ -62,87 +98,94 @@ function UpdatesErrorCard({ onRetry }: UpdatesErrorCardProps): ReactElement {
   );
 }
 
-function getIdleHint(status: SystemUpdateStatusResponse): string | null {
-  if (!status.enabled) {
-    return 'Updates are disabled by backend configuration.';
-  }
-  if (status.state === 'IDLE' && !hasPendingUpdate(status)) {
-    return 'No update is queued. Run a check to look for a newer compatible release.';
-  }
-  if (status.state === 'FAILED' && hasPendingUpdate(status)) {
-    return 'A target version is still available. Review the error and retry when ready.';
-  }
-  return null;
-}
-
 function UpdatesBody({
   status,
+  config,
+  configForm,
   canCheck,
   canUpdate,
   isBusy,
   isCheckPending,
   isUpdatePending,
+  isConfigLoading,
+  isConfigSaving,
   isAutoReloadArmed,
   autoReloadState,
   onCheck,
   onUpdateNow,
+  onConfigRetry,
+  onConfigChange,
+  onConfigSave,
 }: UpdatesBodyProps): ReactElement {
   const pendingVersion = getPrimaryUpdateVersion(status);
   const idleHint = getIdleHint(status);
   const workflow = getUpdateWorkflowPresentation(status);
 
   return (
-    <Card className="settings-card updates-card">
-      <Card.Body>
-        <SettingsCardTitle title="Updates" tip="Track every update stage and restart automatically when the new runtime is ready" />
+    <>
+      <Card className="settings-card updates-card">
+        <Card.Body>
+          <SettingsCardTitle title="Updates" tip="Track every update stage and restart automatically when the new runtime is ready" />
 
-        <UpdateWorkflowPanel
-          status={status}
-          isAutoReloadActive={isAutoReloadArmed}
-          hasSeenDowntime={autoReloadState.hasSeenDowntime}
-          lastProbeError={autoReloadState.lastProbeError}
-        />
+          <UpdateWorkflowPanel
+            status={status}
+            isAutoReloadActive={isAutoReloadArmed}
+            hasSeenDowntime={autoReloadState.hasSeenDowntime}
+            lastProbeError={autoReloadState.lastProbeError}
+          />
 
-        <div className="updates-actions">
-          <Button type="button" size="sm" variant="secondary" onClick={onCheck} disabled={!canCheck}>
-            {isCheckPending ? 'Checking...' : 'Check for updates'}
-          </Button>
-          <Button type="button" size="sm" variant="primary" onClick={onUpdateNow} disabled={!canUpdate}>
-            {isUpdatePending || isBusy ? 'Updating...' : getUpdateActionLabel(status)}
-          </Button>
-        </div>
+          <div className="updates-actions">
+            <Button type="button" size="sm" variant="secondary" onClick={onCheck} disabled={!canCheck}>
+              {isCheckPending ? 'Checking...' : 'Check for updates'}
+            </Button>
+            <Button type="button" size="sm" variant="primary" onClick={onUpdateNow} disabled={!canUpdate}>
+              {isUpdatePending || isBusy ? 'Updating...' : getUpdateActionLabel(status)}
+            </Button>
+          </div>
 
-        <div className="small text-body-secondary updates-footnote">
-          {pendingVersion == null
-            ? 'Applying an update restarts the backend and refreshes this page automatically.'
-            : `Target version: ${pendingVersion}. Applying the update restarts the backend and refreshes this page automatically.`}
-        </div>
+          <div className="small text-body-secondary updates-footnote">
+            {pendingVersion == null
+              ? 'Applying an update restarts the backend and refreshes this page automatically.'
+              : `Target version: ${pendingVersion}. Applying the update restarts the backend and refreshes this page automatically.`}
+          </div>
 
-        {idleHint != null && (
-          <Alert variant="secondary" className="mb-3 small">
-            {idleHint}
-          </Alert>
-        )}
+          {idleHint != null && (
+            <Alert variant="secondary" className="mb-3 small">
+              {idleHint}
+            </Alert>
+          )}
 
-        {status.lastError != null && status.lastError.trim().length > 0 && (
-          <Alert variant="danger" className="mb-0 small">
-            {status.lastError}
-          </Alert>
-        )}
+          {status.lastError != null && status.lastError.trim().length > 0 && (
+            <Alert variant="danger" className="mb-0 small">
+              {status.lastError}
+            </Alert>
+          )}
 
-        {status.lastError == null && idleHint == null && status.state === 'FAILED' && (
-          <Alert variant="danger" className="mb-0 small">
-            {getUpdateStateDescription(status.state)}
-          </Alert>
-        )}
+          {status.lastError == null && idleHint == null && status.state === 'FAILED' && (
+            <Alert variant="danger" className="mb-0 small">
+              {getUpdateStateDescription(status.state)}
+            </Alert>
+          )}
 
-        {status.lastError == null && idleHint == null && status.state === 'IDLE' && !hasPendingUpdate(status) && (
-          <Alert variant="secondary" className="mb-0 small">
-            {workflow.description}
-          </Alert>
-        )}
-      </Card.Body>
-    </Card>
+          {status.lastError == null && idleHint == null && status.state === 'IDLE' && !hasPendingUpdate(status) && (
+            <Alert variant="secondary" className="mb-0 small">
+              {workflow.description}
+            </Alert>
+          )}
+        </Card.Body>
+      </Card>
+
+      <UpdateSettingsCard
+        status={status}
+        config={config}
+        form={configForm}
+        isLoading={isConfigLoading}
+        isSaving={isConfigSaving}
+        onRetry={onConfigRetry}
+        onChange={onConfigChange}
+        onSave={onConfigSave}
+      />
+    </>
   );
 }
 
@@ -162,50 +205,40 @@ async function runUpdateAction(
 
 export function UpdatesTab(): ReactElement {
   const statusQuery = useSystemUpdateStatus();
+  const configQuery = useSystemUpdateConfig();
   const checkMutation = useCheckSystemUpdate();
   const updateNowMutation = useUpdateSystemNow();
+  const updateConfigMutation = useUpdateSystemConfig();
   const status = statusQuery.data ?? null;
-  const [isAutoReloadArmed, setIsAutoReloadArmed] = useState<boolean>(false);
+  const config = configQuery.data ?? null;
+  const [configForm, setConfigForm, currentPayload] = useUpdateConfigForm(config);
+  const refetchStatus = useCallback((): void => { void statusQuery.refetch(); }, [statusQuery]);
+  const [isAutoReloadArmed, setIsAutoReloadArmed] = useUpdateAutoReloadLifecycle({
+    status,
+    isUpdatePending: updateNowMutation.isPending,
+    refetchStatus,
+  });
 
   const autoReloadState = useUpdateAutoReload({
     currentVersion: status?.current?.version ?? null,
-    expectedVersion: status == null ? null : getPrimaryUpdateVersion(status),
+    expectedVersion: resolveExpectedUpdateVersion(status),
     isEnabled: isAutoReloadArmed,
   });
 
-  useEffect(() => {
-    // Poll update status aggressively while a check/update flow is active so the progress UI stays responsive.
-    if (status == null) {
-      return undefined;
-    }
+  const { isBusy, canCheck, canUpdate } = useUpdateActionAvailability(
+    status,
+    checkMutation.isPending,
+    updateNowMutation.isPending,
+  );
 
-    const shouldLivePoll = isAutoReloadArmed || updateNowMutation.isPending || UPDATE_BUSY_STATES.has(status.state);
-    if (!shouldLivePoll) {
-      return undefined;
-    }
+  const handleConfigRetry = useCallback((): void => {
+    void configQuery.refetch();
+  }, [configQuery]);
 
-    const intervalId = window.setInterval(() => {
-      void statusQuery.refetch();
-    }, LIVE_STATUS_POLL_MS);
+  const handleConfigChange = useCallback((updater: (current: UpdateSettingsFormState) => UpdateSettingsFormState): void => {
+    setConfigForm((current) => (current == null ? current : updater(current)));
+  }, [setConfigForm]);
 
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [isAutoReloadArmed, status, statusQuery, updateNowMutation.isPending]);
-
-  useEffect(() => {
-    // Stop waiting for auto-reload once the update flow ends without an in-flight restart to observe.
-    if (!isAutoReloadArmed || status == null) {
-      return;
-    }
-    if (status.state === 'FAILED') {
-      setIsAutoReloadArmed(false);
-      return;
-    }
-    if (status.state === 'IDLE' && !hasPendingUpdate(status)) {
-      setIsAutoReloadArmed(false);
-    }
-  }, [isAutoReloadArmed, status]);
 
   if (statusQuery.isLoading) {
     return <UpdatesLoadingCard />;
@@ -214,9 +247,7 @@ export function UpdatesTab(): ReactElement {
     return <UpdatesErrorCard onRetry={() => { void statusQuery.refetch(); }} />;
   }
 
-  const isBusy = checkMutation.isPending || updateNowMutation.isPending || UPDATE_BUSY_STATES.has(status.state);
-  const canCheck = status.enabled && !isBusy;
-  const canUpdate = status.enabled && !isBusy && hasPendingUpdate(status);
+
 
   const handleCheck = (): void => {
     void runUpdateAction(async () => {
@@ -237,18 +268,42 @@ export function UpdatesTab(): ReactElement {
     });
   };
 
+  const handleConfigSave = (): void => {
+    if (currentPayload == null) {
+      toast.error('Update settings are incomplete.');
+      return;
+    }
+
+    void (async () => {
+      try {
+        await updateConfigMutation.mutateAsync(currentPayload);
+        await Promise.all([statusQuery.refetch(), configQuery.refetch()]);
+        toast.success('Auto update settings saved.');
+      } catch (error: unknown) {
+        toast.error(`Save failed: ${extractErrorMessage(error)}`);
+      }
+    })();
+  };
+
   return (
     <UpdatesBody
       status={status}
+      config={config}
+      configForm={configForm}
       canCheck={canCheck}
       canUpdate={canUpdate}
       isBusy={isBusy}
       isCheckPending={checkMutation.isPending}
       isUpdatePending={updateNowMutation.isPending}
+      isConfigLoading={configQuery.isLoading}
+      isConfigSaving={updateConfigMutation.isPending}
       isAutoReloadArmed={isAutoReloadArmed}
       autoReloadState={autoReloadState}
       onCheck={handleCheck}
       onUpdateNow={handleUpdateNow}
+      onConfigRetry={handleConfigRetry}
+      onConfigChange={handleConfigChange}
+      onConfigSave={handleConfigSave}
     />
   );
 }

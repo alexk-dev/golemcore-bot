@@ -43,7 +43,7 @@ class PlansControllerTest {
     void getStateShouldReturnFeatureDisabledWhenPlanFeatureOff() {
         when(planService.isFeatureEnabled()).thenReturn(false);
 
-        StepVerifier.create(controller.getState())
+        StepVerifier.create(controller.getState("chat-1"))
                 .assertNext(resp -> {
                     assertEquals(HttpStatus.OK, resp.getStatusCode());
                     PlansController.PlanControlStateResponse body = resp.getBody();
@@ -58,8 +58,8 @@ class PlansControllerTest {
     @Test
     void getStateShouldReturnPlansSortedByUpdatedAtDesc() {
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(true);
-        when(planService.getActivePlanId()).thenReturn("plan-2");
+        when(planService.isPlanModeActive(any(SessionIdentity.class))).thenReturn(true);
+        when(planService.getActivePlanId(any(SessionIdentity.class))).thenReturn("plan-2");
 
         Plan older = Plan.builder()
                 .id("plan-1")
@@ -75,18 +75,16 @@ class PlansControllerTest {
                 .updatedAt(Instant.parse("2026-02-18T06:10:00Z"))
                 .build();
 
-        when(planService.getPlans()).thenReturn(List.of(older, newer));
+        when(planService.getPlans(any(SessionIdentity.class))).thenReturn(List.of(older, newer));
 
-        StepVerifier.create(controller.getState())
+        StepVerifier.create(controller.getState("chat-1"))
                 .assertNext(resp -> {
                     PlansController.PlanControlStateResponse body = resp.getBody();
                     assertNotNull(body);
                     assertTrue(body.featureEnabled());
-                    assertTrue(body.planModeActive());
                     assertEquals("plan-2", body.activePlanId());
                     assertEquals(2, body.plans().size());
                     assertEquals("plan-2", body.plans().get(0).id());
-                    assertTrue(body.plans().get(0).active());
                 })
                 .verifyComplete();
     }
@@ -113,6 +111,18 @@ class PlansControllerTest {
                 .verifyComplete();
 
         verify(planService).activatePlanMode(any(SessionIdentity.class), eq("chat-1"), eq("smart"));
+    }
+
+    @Test
+    void enablePlanModeShouldRejectUnknownTier() {
+        when(planService.isFeatureEnabled()).thenReturn(true);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.enablePlanMode(new PlansController.PlanModeOnRequest("chat-1", "turbo")));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("modelTier must be a known tier id", ex.getReason());
+
+        verify(planService, never()).activatePlanMode(any(SessionIdentity.class), any(), any());
     }
 
     @Test

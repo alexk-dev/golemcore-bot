@@ -13,7 +13,7 @@ The bot does not simply "wake up every N minutes" and pick arbitrary work. Inste
 1. You enable auto mode.
 2. You create goals and tasks.
 3. You attach cron schedules to a goal or a task.
-4. `AutoModeScheduler` evaluates due schedules and injects a synthetic auto message into the normal agent loop.
+4. `AutoModeScheduler` evaluates due schedules and submits a synthetic auto message through the shared per-session run coordinator.
 
 ```text
 Goal / Task
@@ -26,6 +26,12 @@ AutoModeScheduler
     |
     +-- due schedule? no  -> skip
     +-- due schedule? yes -> build synthetic [AUTO] message
+    |
+    v
+SessionRunCoordinator
+    |
+    +-- same-session run active? yes -> queue behind current turn
+    +-- same-session run active? no  -> start immediately
     |
     v
 AgentLoop
@@ -88,6 +94,12 @@ Important behavior:
 ## How Execution Works
 
 `AutoModeScheduler` runs a background daemon thread and checks due schedules.
+
+Scheduled auto messages no longer bypass normal turn orchestration. They are submitted to `SessionRunCoordinator`, which means:
+
+- auto runs and human inbounds share the same per-session queue
+- a long-running auto turn no longer races a same-session user message by entering `AgentLoop` directly
+- scheduler code can still await completion of the submitted run and apply `taskTimeLimitMinutes`
 
 ### GOAL schedule
 
@@ -264,7 +276,7 @@ Field notes:
 
 ## Pipeline Integration
 
-Auto messages enter the normal agent loop with extra metadata:
+Auto messages enter the normal agent loop through `SessionRunCoordinator`, with extra metadata:
 
 - `auto.mode = true`
 - `auto.run.kind`
@@ -275,7 +287,6 @@ Important pipeline effects:
 
 | Order | System | Auto mode behavior |
 |-------|--------|--------------------|
-| 15 | `SkillRoutingSystem` | Skips skill routing for auto messages |
 | 20 | `ContextBuildingSystem` | Injects goals, tasks, diary and sets tier from `autoMode.modelTier` |
 | 25 | `DynamicTierSystem` | Can still upgrade to `coding` if work becomes code-heavy |
 | 30 | `ToolLoopExecutionSystem` | Executes normally, including retries/runtime events |

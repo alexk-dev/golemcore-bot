@@ -1,0 +1,2 @@
+# No remaining application-layer IO/serialization debt is allowed here.
+# Add entries only with explicit architecture review.

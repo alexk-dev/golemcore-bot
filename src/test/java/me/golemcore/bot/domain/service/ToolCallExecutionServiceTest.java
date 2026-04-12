@@ -5,13 +5,12 @@ import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,7 +48,6 @@ class ToolCallExecutionServiceTest {
     private ToolConfirmationPolicy confirmationPolicy;
     private ConfirmationPort confirmationPort;
     private BotProperties properties;
-    private ChannelPort channelPort;
     private ToolArtifactService toolArtifactService;
     private ToolCallExecutionService service;
 
@@ -60,12 +58,10 @@ class ToolCallExecutionServiceTest {
         confirmationPort = mock(ConfirmationPort.class);
         properties = new BotProperties();
         properties.getAutoCompact().setMaxToolResultChars(MAX_TOOL_RESULT_CHARS);
-        channelPort = mock(ChannelPort.class);
         toolArtifactService = mock(ToolArtifactService.class);
 
         when(toolComponent.getToolName()).thenReturn(TOOL_NAME);
         when(toolComponent.isEnabled()).thenReturn(true);
-        when(channelPort.getChannelType()).thenReturn(CHANNEL_TYPE);
         when(confirmationPort.isAvailable()).thenReturn(false);
         when(confirmationPolicy.requiresConfirmation(any())).thenReturn(false);
         when(confirmationPolicy.isEnabled()).thenReturn(true);
@@ -84,13 +80,13 @@ class ToolCallExecutionServiceTest {
                                     + safeFilename)
                             .build();
                 });
+        when(toolArtifactService.buildThumbnailBase64(anyString())).thenReturn("thumb-base64");
 
         service = new ToolCallExecutionService(
                 List.of(toolComponent),
                 confirmationPolicy,
                 confirmationPort,
-                properties,
-                new ChannelRegistry(List.of(channelPort)),
+                me.golemcore.bot.support.TestPorts.settings(properties),
                 toolArtifactService);
     }
 
@@ -289,6 +285,45 @@ class ToolCallExecutionServiceTest {
         assertTrue(result.toolResult().isSuccess());
     }
 
+    @Test
+    void shouldExecuteContextScopedToolWithoutGlobalRegistration() {
+        ToolComponent scopedTool = mock(ToolComponent.class);
+        when(scopedTool.getToolName()).thenReturn("scoped_tool");
+        when(scopedTool.isEnabled()).thenReturn(true);
+        when(scopedTool.execute(any())).thenReturn(CompletableFuture.completedFuture(ToolResult.success("scoped ok")));
+
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS, Map.of("scoped_tool", scopedTool));
+
+        ToolCallExecutionResult result = service.execute(context, buildToolCall("scoped_tool", Map.of("q", "1")));
+
+        assertNotNull(result);
+        assertTrue(result.toolResult().isSuccess());
+        assertEquals("scoped ok", result.toolMessageContent());
+        verify(scopedTool).execute(Map.of("q", "1"));
+    }
+
+    @Test
+    void shouldPreferContextScopedToolOverGlobalToolWithSameName() {
+        ToolComponent scopedTool = mock(ToolComponent.class);
+        when(scopedTool.getToolName()).thenReturn(TOOL_NAME);
+        when(scopedTool.isEnabled()).thenReturn(true);
+        when(scopedTool.execute(any())).thenReturn(CompletableFuture.completedFuture(ToolResult.success("scoped ok")));
+        when(toolComponent.execute(any()))
+                .thenReturn(CompletableFuture.completedFuture(ToolResult.success("global ok")));
+
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS, Map.of(TOOL_NAME, scopedTool));
+
+        ToolCallExecutionResult result = service.execute(context, buildToolCall(TOOL_NAME, Map.of("q", "1")));
+
+        assertNotNull(result);
+        assertTrue(result.toolResult().isSuccess());
+        assertEquals("scoped ok", result.toolMessageContent());
+        verify(scopedTool).execute(Map.of("q", "1"));
+        verify(toolComponent, never()).execute(any());
+    }
+
     // ==================== extractAttachment: screenshot base64
     // ====================
 
@@ -315,6 +350,9 @@ class ToolCallExecutionServiceTest {
         assertEquals("screenshot.png", attachment.getFilename());
         assertEquals("image/png", attachment.getMimeType());
         assertEquals(pngBytes.length, attachment.getData().length);
+        assertEquals("thumb-base64", attachment.getThumbnailBase64());
+        Map<?, ?> sanitizedData = (Map<?, ?>) result.toolResult().getData();
+        assertEquals("thumb-base64", sanitizedData.get("internal_file_thumbnail_base64"));
     }
 
     @Test
@@ -348,6 +386,7 @@ class ToolCallExecutionServiceTest {
         assertTrue(!sanitizedData.containsKey("attachment"));
         assertEquals("/api/files/download?path=.golemcore%2Ftool-artifacts%2Fsession%2Ftest%2Freport.pdf",
                 sanitizedData.get("internal_file_url"));
+        assertNull(sanitizedData.get("internal_file_thumbnail_base64"));
     }
 
     @Test
@@ -397,6 +436,9 @@ class ToolCallExecutionServiceTest {
 
         assertNotNull(result.extractedAttachment());
         assertEquals(Attachment.Type.IMAGE, result.extractedAttachment().getType());
+        assertEquals("thumb-base64", result.extractedAttachment().getThumbnailBase64());
+        Map<?, ?> sanitizedData = (Map<?, ?>) result.toolResult().getData();
+        assertEquals("thumb-base64", sanitizedData.get("internal_file_thumbnail_base64"));
     }
 
     // ==================== extractAttachment: invalid base64 ====================
@@ -559,64 +601,27 @@ class ToolCallExecutionServiceTest {
         assertEquals(ToolFailureKind.CONFIRMATION_DENIED, toolResult.getFailureKind());
     }
 
-    // ==================== notification ====================
+    // ==================== progress notifications are loop-owned
+    // ====================
 
     @Test
-    void shouldNotifyToolExecution() {
+    void shouldNotSendChannelNotificationWhenConfirmationPolicyDisabled() {
         AgentContext context = buildContext();
         Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
         when(confirmationPolicy.isEnabled()).thenReturn(false);
-        when(confirmationPolicy.isNotableAction(any())).thenReturn(true);
-        when(confirmationPolicy.describeAction(any())).thenReturn("Run command: ls -la");
-        when(channelPort.sendMessage(anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-        ToolResult successResult = ToolResult.success("ok");
-        when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(successResult));
-
-        ToolCallExecutionResult result = service.execute(context, toolCall);
-
-        assertNotNull(result);
-        assertTrue(result.toolResult().isSuccess());
-        verify(channelPort).sendMessage(eq(CHAT_ID), anyString());
-    }
-
-    @Test
-    void shouldNotNotifyWhenConfirmationPolicyEnabled() {
-        AgentContext context = buildContext();
-        Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
-        when(confirmationPolicy.isEnabled()).thenReturn(true);
         when(confirmationPolicy.isNotableAction(any())).thenReturn(true);
         ToolResult successResult = ToolResult.success("ok");
         when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(successResult));
 
         service.execute(context, toolCall);
-
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
     }
 
     @Test
-    void shouldNotNotifyWhenActionNotNotable() {
-        AgentContext context = buildContext();
-        Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
-        when(confirmationPolicy.isEnabled()).thenReturn(false);
-        when(confirmationPolicy.isNotableAction(any())).thenReturn(false);
-        ToolResult successResult = ToolResult.success("ok");
-        when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(successResult));
-
-        service.execute(context, toolCall);
-
-        verify(channelPort, never()).sendMessage(anyString(), anyString());
-    }
-
-    @Test
-    void shouldNotCrashWhenNotificationFails() {
+    void shouldExecuteNormallyWithoutToolLevelNotifications() {
         AgentContext context = buildContext();
         Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
         when(confirmationPolicy.isEnabled()).thenReturn(false);
         when(confirmationPolicy.isNotableAction(any())).thenReturn(true);
-        when(confirmationPolicy.describeAction(any())).thenReturn("action");
-        when(channelPort.sendMessage(anyString(), anyString()))
-                .thenThrow(new RuntimeException("Channel error"));
         ToolResult successResult = ToolResult.success("ok");
         when(toolComponent.execute(any())).thenReturn(CompletableFuture.completedFuture(successResult));
 
@@ -677,6 +682,24 @@ class ToolCallExecutionServiceTest {
         assertEquals(ToolFailureKind.EXECUTION_FAILED, toolResult.getFailureKind());
         assertTrue(toolResult.getError().contains("IllegalStateException"));
         assertTrue(!toolResult.getError().contains("null"));
+    }
+
+    // ==================== interrupt propagation ====================
+
+    @Test
+    void shouldPreserveInterruptFlagWhenToolGetThrowsInterruptedException() {
+        AgentContext context = buildContext();
+        Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
+        CompletableFuture<ToolResult> neverCompletes = new CompletableFuture<>();
+        when(toolComponent.execute(any())).thenReturn(neverCompletes);
+
+        Thread.currentThread().interrupt();
+        ToolCallExecutionResult result = service.execute(context, toolCall);
+
+        assertTrue(Thread.interrupted(), "Interrupt flag must be preserved after InterruptedException");
+        assertNotNull(result);
+        assertEquals(ToolFailureKind.EXECUTION_FAILED, result.toolResult().getFailureKind());
+        assertTrue(result.toolResult().getError().contains("interrupted"));
     }
 
     // ==================== AgentContextHolder lifecycle ====================

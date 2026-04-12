@@ -32,6 +32,7 @@
             <Class name="~me\.golemcore\.bot\.domain\.system\..*" />
             <Class name="me.golemcore.bot.domain.service.PlanExecutionService" />
             <Class name="me.golemcore.bot.domain.service.RuntimeConfigService" />
+            <Class name="me.golemcore.bot.adapter.outbound.embedding.OpenAiCompatibleEmbeddingClient" />
         </Or>
     </Match>
     <!--
@@ -74,6 +75,28 @@
             <Class name="~me\.golemcore\.bot\.adapter\..*" />
             <Class name="~me\.golemcore\.bot\.domain\.system\..*" />
         </Or>
+    </Match>
+    <!--
+        Hive join/reconnect intentionally persist failure state before bubbling the
+        same runtime exception to the web layer, so HTTP callers fail fast while
+        the stored Hive status reflects the failed attempt.
+    -->
+    <Match>
+        <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
+        <Class name="me.golemcore.bot.domain.service.HiveConnectionService" />
+        <Or>
+            <Method name="join" />
+            <Method name="reconnect" />
+        </Or>
+    </Match>
+    <!--
+        Strict model saves rollback the in-memory catalog and rethrow the same
+        persistence failure so admin callers can report partial import errors.
+    -->
+    <Match>
+        <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
+        <Class name="me.golemcore.bot.infrastructure.config.ModelConfigService" />
+        <Method name="saveModelStrict" />
     </Match>
     <!--
         Methods that declare 'throws Exception' due to framework callback interfaces
@@ -120,4 +143,14 @@
         <Bug pattern="DM_EXIT" />
         <Class name="me.golemcore.bot.domain.service.JvmExitService" />
     </Match>
+    <!--
+        DefaultToolLoopSystem.planService is reserved for future use by the
+        Builder API. The field is stored for forward compatibility.
+    -->
+    <Match>
+        <Bug pattern="URF_UNREAD_FIELD" />
+        <Class name="me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem" />
+        <Field name="planService" />
+    </Match>
+
 </FindBugsFilter>

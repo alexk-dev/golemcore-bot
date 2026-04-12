@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -94,6 +96,22 @@ class DefaultHistoryWriterTest {
         assertEquals(1, context.getMessages().size());
     }
 
+    @Test
+    void shouldPersistProviderMetadataOnAssistantToolCalls() {
+        AgentContext context = buildContext(true);
+        LlmResponse response = LlmResponse.builder()
+                .content("thinking...")
+                .providerMetadata(Map.of("thinking_signature", "sig-123"))
+                .build();
+
+        writer.appendAssistantToolCalls(context, response, List.of(
+                Message.ToolCall.builder().id(TC_ID).name("test").build()));
+
+        Message msg = context.getMessages().get(0);
+        assertEquals("sig-123", msg.getMetadata().get("thinking_signature"));
+        assertEquals("sig-123", context.getSession().getMessages().get(0).getMetadata().get("thinking_signature"));
+    }
+
     // ==================== appendToolResult ====================
 
     @Test
@@ -125,7 +143,56 @@ class DefaultHistoryWriterTest {
         assertEquals(1, context.getMessages().size());
     }
 
+    @Test
+    void shouldPersistToolImageAttachmentMetadataOnToolResult() {
+        AgentContext context = buildContext(true);
+        ToolResult toolResult = ToolResult.builder()
+                .success(true)
+                .output("Saved screenshot")
+                .data(Map.of(
+                        "internal_file_kind", "image",
+                        "internal_file_path", ".golemcore/tool-artifacts/session/tool/capture.png",
+                        "internal_file_url", "/api/files/download?path=capture",
+                        "internal_file_thumbnail_base64", "thumb-base64",
+                        "internal_file_name", "capture.png",
+                        "internal_file_mime_type", "image/png"))
+                .build();
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                TC_ID, "pinchtab_screenshot", toolResult, "Saved screenshot", false, null);
+
+        writer.appendToolResult(context, outcome);
+
+        Message message = context.getMessages().get(0);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> attachments = (List<Map<String, Object>>) message.getMetadata()
+                .get("toolAttachments");
+        assertNotNull(attachments);
+        assertEquals(1, attachments.size());
+        assertEquals("image", attachments.get(0).get("type"));
+        assertEquals(".golemcore/tool-artifacts/session/tool/capture.png", attachments.get(0).get("internalFilePath"));
+        assertEquals("/api/files/download?path=capture", attachments.get(0).get("url"));
+        assertEquals("thumb-base64", attachments.get(0).get("thumbnailBase64"));
+        assertEquals("capture.png", attachments.get(0).get("name"));
+        assertEquals("image/png", attachments.get(0).get("mimeType"));
+    }
+
     // ==================== appendFinalAssistantAnswer ====================
+
+    @Test
+    void shouldAppendInternalRecoveryHint() {
+        AgentContext context = buildContext(true);
+
+        writer.appendInternalRecoveryHint(context, "Shell recovery note");
+
+        assertEquals(1, context.getMessages().size());
+        Message message = context.getMessages().get(0);
+        assertEquals("user", message.getRole());
+        assertEquals("Shell recovery note", message.getContent());
+        assertEquals(Boolean.TRUE, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
+        assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_TOOL_RECOVERY,
+                message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
+        assertEquals(1, context.getSession().getMessages().size());
+    }
 
     @Test
     void shouldAppendFinalAnswerWithLlmResponse() {
@@ -180,6 +247,21 @@ class DefaultHistoryWriterTest {
     }
 
     @Test
+    void shouldPersistActiveSkillMetadataWhenAvailable() {
+        AgentContext context = buildContext(true);
+        context.setActiveSkill(Skill.builder()
+                .name("golemcore/superpowers/superpowers-systematic-debugging")
+                .build());
+
+        writer.appendFinalAssistantAnswer(context, null, "Final text");
+
+        Message message = context.getMessages().get(0);
+        assertEquals(
+                "golemcore/superpowers/superpowers-systematic-debugging",
+                message.getMetadata().get(ContextAttributes.ACTIVE_SKILL_NAME));
+    }
+
+    @Test
     void shouldSkipReasoningMetadataWhenDisabled() {
         AgentContext context = buildContext(true);
         context.setAttribute(ContextAttributes.LLM_REASONING, "none");
@@ -188,6 +270,35 @@ class DefaultHistoryWriterTest {
 
         Message message = context.getMessages().get(0);
         assertFalse(message.getMetadata().containsKey("reasoning"));
+    }
+
+    @Test
+    void shouldCarryTurnAttachmentsIntoFinalAssistantAnswer() {
+        AgentContext context = buildContext(true);
+        ToolResult toolResult = ToolResult.builder()
+                .success(true)
+                .output("Saved screenshot")
+                .data(Map.of(
+                        "internal_file_kind", "image",
+                        "internal_file_path", ".golemcore/tool-artifacts/session/tool/capture.png",
+                        "internal_file_url", "/api/files/download?path=capture",
+                        "internal_file_thumbnail_base64", "thumb-base64",
+                        "internal_file_name", "capture.png",
+                        "internal_file_mime_type", "image/png"))
+                .build();
+        writer.appendToolResult(context, new ToolExecutionOutcome(
+                TC_ID, "pinchtab_screenshot", toolResult, "Saved screenshot", false, null));
+
+        writer.appendFinalAssistantAnswer(context, null, "Here is the screenshot");
+
+        Message message = context.getMessages().get(1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> attachments = (List<Map<String, Object>>) message.getMetadata().get("attachments");
+        assertNotNull(attachments);
+        assertEquals(1, attachments.size());
+        assertEquals("/api/files/download?path=capture", attachments.get(0).get("url"));
+        assertEquals("thumb-base64", attachments.get(0).get("thumbnailBase64"));
+        assertEquals("capture.png", attachments.get(0).get("name"));
     }
 
     @Test

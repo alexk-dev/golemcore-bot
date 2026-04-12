@@ -11,6 +11,7 @@ import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import type { PluginSettingsAction } from '../../api/plugins';
 import { useExecutePluginSettingsAction, usePluginSettingsSection, useSavePluginSettingsSection } from '../../hooks/usePlugins';
+import { useTelemetry } from '../../lib/telemetry/TelemetryContext';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import {
   PluginActionConfirmModal,
@@ -30,6 +31,7 @@ function hasDiff(current: PluginFormState, initial: PluginFormState): boolean {
 }
 
 export default function PluginSettingsPanel({ routeKey }: PluginSettingsPanelProps): ReactElement {
+  const telemetry = useTelemetry();
   const { data: section, isLoading } = usePluginSettingsSection(routeKey);
   const saveSection = useSavePluginSettingsSection(routeKey);
   const executeAction = useExecutePluginSettingsAction(routeKey);
@@ -42,6 +44,10 @@ export default function PluginSettingsPanel({ routeKey }: PluginSettingsPanelPro
     setForm(section?.values ?? {});
     setRevealedSecrets({});
   }, [section]);
+
+  useEffect(() => {
+    telemetry.recordKeyedCounter('plugin_settings_open_count_by_route', routeKey);
+  }, [routeKey, telemetry]);
 
   const isDirty = useMemo(() => hasDiff(form, section?.values ?? {}), [form, section]);
   const hasFields = (section?.fields?.length ?? 0) > 0;
@@ -56,6 +62,7 @@ export default function PluginSettingsPanel({ routeKey }: PluginSettingsPanelPro
   };
 
   const executeRequestedAction = async (request: PluginActionRequest): Promise<void> => {
+    telemetry.recordKeyedCounter('plugin_action_count_by_route', routeKey);
     try {
       const result = await executeAction.mutateAsync({
         actionId: request.action.actionId,

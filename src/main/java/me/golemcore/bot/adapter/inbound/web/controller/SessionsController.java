@@ -1,41 +1,38 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import java.security.Principal;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionMessagesPageDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
-import me.golemcore.bot.domain.model.AgentSession;
-import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.service.ActiveSessionPointerService;
-import me.golemcore.bot.domain.service.AutoRunContextSupport;
-import me.golemcore.bot.domain.service.ConversationKeyValidator;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
-import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.domain.service.TelemetrySupport;
-import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceDto;
+import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
+import me.golemcore.bot.adapter.inbound.web.mapper.SessionWebDtoMapper;
+import me.golemcore.bot.adapter.shared.dto.SessionTraceExportPayload;
+import me.golemcore.bot.domain.view.ActiveSessionSelectionView;
+import me.golemcore.bot.domain.service.SessionInspectionService;
+import me.golemcore.bot.domain.service.SessionSelectionService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
-
-import java.security.Principal;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
 
 /**
  * Session browser and management endpoints.
@@ -43,161 +40,67 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/sessions")
 @RequiredArgsConstructor
-@Slf4j
 public class SessionsController {
 
-    private static final String ROLE_ASSISTANT = "assistant";
-    private static final String DEFAULT_MODEL_TIER = "balanced";
-    private static final String CHANNEL_WEB = "web";
-    private static final String CHANNEL_TELEGRAM = "telegram";
-    private static final int MAX_RECENT_LIMIT = 20;
-    private static final int MAX_PAGE_LIMIT = 100;
-    private static final int TITLE_MAX_LEN = 64;
-    private static final int PREVIEW_MAX_LEN = 160;
-    private static final int START_WITH_INDEX = 0;
-    private static final String POINTER_SOURCE = "pointer";
-    private static final String DEFAULT_SOURCE = "default";
-    private static final String REPAIRED_SOURCE = "repaired";
-    private static final String DEFAULT_SESSION_TITLE = "New session";
-
-    private final SessionPort sessionPort;
-    private final ActiveSessionPointerService pointerService;
+    private final SessionInspectionService sessionInspectionService;
+    private final SessionSelectionService sessionSelectionService;
+    private final SessionWebDtoMapper sessionWebDtoMapper;
 
     @GetMapping
     public Mono<ResponseEntity<List<SessionSummaryDto>>> listSessions(
             @RequestParam(required = false) String channel) {
-        List<AgentSession> sessions = StringValueSupport.isBlank(channel)
-                ? sessionPort.listAll()
-                : sessionPort.listByChannelType(channel.trim());
-        List<SessionSummaryDto> dtos = sessions.stream()
-                .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> toSummary(session, false))
-                .toList();
-        return Mono.just(ResponseEntity.ok(dtos));
+        return execute(() -> ResponseEntity.ok(
+                sessionWebDtoMapper.toSummaryDtos(sessionInspectionService.listSessions(channel))));
     }
 
     @GetMapping("/resolve")
     public Mono<ResponseEntity<SessionSummaryDto>> resolveSession(
-            @RequestParam(defaultValue = CHANNEL_WEB) String channel,
+            @RequestParam(defaultValue = "web") String channel,
             @RequestParam String conversationKey) {
-        String normalizedChannel = defaultIfBlank(channel, CHANNEL_WEB);
-        if (StringValueSupport.isBlank(conversationKey)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "conversationKey is required");
-        }
-
-        String normalizedConversationKey = conversationKey.trim();
-        Optional<AgentSession> match = sessionPort.listByChannelType(normalizedChannel).stream()
-                .filter(session -> matchesConversationKey(session, normalizedConversationKey))
-                .findFirst();
-        if (match.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
-        }
-        return Mono.just(ResponseEntity.ok(toSummary(match.get(), false)));
+        return execute(() -> ResponseEntity.ok(sessionWebDtoMapper.toSummaryDto(
+                sessionInspectionService.resolveSession(channel, conversationKey))));
     }
 
     @GetMapping("/recent")
     public Mono<ResponseEntity<List<SessionSummaryDto>>> listRecentSessions(
-            @RequestParam(defaultValue = CHANNEL_WEB) String channel,
+            @RequestParam(defaultValue = "web") String channel,
             @RequestParam(defaultValue = "5") int limit,
             @RequestParam(required = false) String clientInstanceId,
             @RequestParam(required = false) String transportChatId,
             Principal principal) {
-        String pointerKey = resolvePointerKey(channel, clientInstanceId, transportChatId, principal);
-        Optional<String> activeConversation = pointerService.getActiveConversationKey(pointerKey);
-        int normalizedLimit = Math.max(1, Math.min(limit, MAX_RECENT_LIMIT));
-
-        List<SessionSummaryDto> dtos = listRecentSessionsByOwner(channel, transportChatId).stream()
-                .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> toSummary(session, isActiveSession(session, activeConversation.orElse(null))))
-                .limit(normalizedLimit)
-                .toList();
-
-        return Mono.just(ResponseEntity.ok(dtos));
+        return execute(() -> ResponseEntity.ok(sessionWebDtoMapper.toSummaryDtos(
+                sessionSelectionService.listRecentSessions(
+                        channel,
+                        clientInstanceId,
+                        transportChatId,
+                        principalName(principal),
+                        limit))));
     }
 
     @GetMapping("/active")
     public Mono<ResponseEntity<ActiveSessionResponse>> getActiveSession(
-            @RequestParam(defaultValue = CHANNEL_WEB) String channel,
+            @RequestParam(defaultValue = "web") String channel,
             @RequestParam(required = false) String clientInstanceId,
             @RequestParam(required = false) String transportChatId,
             Principal principal) {
-        String pointerKey = resolvePointerKey(channel, clientInstanceId, transportChatId, principal);
-        Optional<String> activeConversation = pointerService.getActiveConversationKey(pointerKey);
-
-        if (activeConversation.isPresent()) {
-            String currentConversation = activeConversation.get();
-            if (isConversationResolvable(channel, transportChatId, currentConversation)) {
-                return Mono.just(ResponseEntity.ok(toActiveResponse(
-                        channel,
-                        clientInstanceId,
-                        transportChatId,
-                        currentConversation,
-                        POINTER_SOURCE)));
-            }
-
-            log.info(
-                    "[SessionMetrics] metric=sessions.active.pointer.stale.count channel={} transportHash={} staleConversation={}",
-                    channel,
-                    TelemetrySupport.shortHash(resolveTelemetryTransport(channel, clientInstanceId, transportChatId)),
-                    currentConversation);
-            String repairedConversation = resolveOrCreateConversationKey(channel, transportChatId, currentConversation);
-            pointerService.setActiveConversationKey(pointerKey, repairedConversation);
-            if (CHANNEL_TELEGRAM.equals(channel)) {
-                ensureTelegramSessionBinding(transportChatId, repairedConversation);
-            }
-            return Mono.just(ResponseEntity.ok(toActiveResponse(
-                    channel,
-                    clientInstanceId,
-                    transportChatId,
-                    repairedConversation,
-                    REPAIRED_SOURCE)));
-        }
-
-        log.info("[SessionMetrics] metric=sessions.active.pointer.miss.count channel={} transportHash={}", channel,
-                TelemetrySupport.shortHash(resolveTelemetryTransport(channel, clientInstanceId, transportChatId)));
-        String fallbackConversation = resolveOrCreateConversationKey(channel, transportChatId, null);
-        pointerService.setActiveConversationKey(pointerKey, fallbackConversation);
-        if (CHANNEL_TELEGRAM.equals(channel)) {
-            ensureTelegramSessionBinding(transportChatId, fallbackConversation);
-        }
-
-        return Mono.just(ResponseEntity.ok(toActiveResponse(
+        return execute(() -> ResponseEntity.ok(toActiveResponse(sessionSelectionService.getActiveSession(
                 channel,
                 clientInstanceId,
                 transportChatId,
-                fallbackConversation,
-                DEFAULT_SOURCE)));
+                principalName(principal)))));
     }
 
     @PostMapping("/active")
     public Mono<ResponseEntity<ActiveSessionResponse>> setActiveSession(
             @RequestBody ActiveSessionRequest request,
             Principal principal) {
-        if (request == null || StringValueSupport.isBlank(request.getConversationKey())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "conversationKey is required");
-        }
-        String channel = defaultIfBlank(request.getChannelType(), CHANNEL_WEB);
-        String conversationKey = normalizeConversationKeyForActivationOrThrow(channel, request.getConversationKey());
-
-        String pointerKey = resolvePointerKey(channel, request.getClientInstanceId(), request.getTransportChatId(),
-                principal);
-        pointerService.setActiveConversationKey(pointerKey, conversationKey);
-        log.info("[SessionMetrics] metric=sessions.switch.count channel={} transportHash={} conversationKey={}",
-                channel,
-                TelemetrySupport.shortHash(resolveTelemetryTransport(
-                        channel,
-                        request.getClientInstanceId(),
-                        request.getTransportChatId())),
-                conversationKey);
-        if (CHANNEL_TELEGRAM.equals(channel)) {
-            ensureTelegramSessionBinding(request.getTransportChatId(), conversationKey);
-        }
-        return Mono.just(ResponseEntity.ok(toActiveResponse(
-                channel,
-                request.getClientInstanceId(),
-                request.getTransportChatId(),
-                conversationKey,
-                POINTER_SOURCE)));
+        ActiveSessionRequest normalizedRequest = request != null ? request : ActiveSessionRequest.builder().build();
+        return execute(() -> ResponseEntity.ok(toActiveResponse(sessionSelectionService.setActiveSession(
+                normalizedRequest.getChannelType(),
+                normalizedRequest.getClientInstanceId(),
+                normalizedRequest.getTransportChatId(),
+                principalName(principal),
+                normalizedRequest.getConversationKey()))));
     }
 
     @PostMapping
@@ -205,43 +108,19 @@ public class SessionsController {
             @RequestBody(required = false) CreateSessionRequest request,
             Principal principal) {
         CreateSessionRequest normalizedRequest = request != null ? request : CreateSessionRequest.builder().build();
-        String channel = defaultIfBlank(normalizedRequest.getChannelType(), CHANNEL_WEB);
-        if (!CHANNEL_WEB.equals(channel)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only web channel session creation is supported");
-        }
-
-        String conversationKey = StringValueSupport.isBlank(normalizedRequest.getConversationKey())
-                ? generateConversationKey()
-                : normalizeConversationKeyForCreation(normalizedRequest.getConversationKey());
-
-        AgentSession session = sessionPort.getOrCreate(channel, conversationKey);
-        sessionPort.save(session);
-        log.info("[SessionMetrics] metric=sessions.create.count channel={} transportHash={} conversationKey={}",
-                channel,
-                TelemetrySupport
-                        .shortHash(resolveTelemetryTransport(channel, normalizedRequest.getClientInstanceId(), null)),
-                conversationKey);
-
-        boolean shouldActivate = normalizedRequest.getActivate() == null || normalizedRequest.getActivate();
-        if (shouldActivate) {
-            String pointerKey = resolvePointerKey(
-                    channel,
-                    normalizedRequest.getClientInstanceId(),
-                    null,
-                    principal);
-            pointerService.setActiveConversationKey(pointerKey, conversationKey);
-        }
-
-        return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toSummary(session, shouldActivate)));
+        return execute(() -> ResponseEntity.status(HttpStatus.CREATED)
+                .body(sessionWebDtoMapper.toSummaryDto(sessionSelectionService.createSession(
+                        normalizedRequest.getChannelType(),
+                        normalizedRequest.getClientInstanceId(),
+                        principalName(principal),
+                        normalizedRequest.getConversationKey(),
+                        normalizedRequest.getActivate()))));
     }
 
     @GetMapping("/{id}")
     public Mono<ResponseEntity<SessionDetailDto>> getSession(@PathVariable String id) {
-        Optional<AgentSession> session = sessionPort.get(id);
-        if (session.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
-        }
-        return Mono.just(ResponseEntity.ok(toDetail(session.get())));
+        return execute(() -> ResponseEntity.ok(
+                sessionWebDtoMapper.toDetailDto(sessionInspectionService.getSessionDetail(id))));
     }
 
     @GetMapping("/{id}/messages")
@@ -249,494 +128,112 @@ public class SessionsController {
             @PathVariable String id,
             @RequestParam(defaultValue = "50") int limit,
             @RequestParam(required = false) String beforeMessageId) {
-        Optional<AgentSession> session = sessionPort.get(id);
-        if (session.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
-        }
+        return execute(() -> ResponseEntity.ok(
+                sessionWebDtoMapper.toMessagesPageDto(
+                        sessionInspectionService.getSessionMessages(id, limit, beforeMessageId))));
+    }
 
-        int normalizedLimit = Math.max(1, Math.min(limit, MAX_PAGE_LIMIT));
-        List<Message> visibleMessages = getVisibleMessages(session.get());
-        int endExclusive = resolvePageEndExclusive(visibleMessages, beforeMessageId);
-        int startInclusive = Math.max(START_WITH_INDEX, endExclusive - normalizedLimit);
-        List<SessionDetailDto.MessageDto> page = visibleMessages.subList(startInclusive, endExclusive).stream()
-                .map(this::toMessageDto)
-                .toList();
-        String oldestMessageId = page.isEmpty() ? null : page.get(START_WITH_INDEX).getId();
+    @GetMapping("/{id}/trace/summary")
+    public Mono<ResponseEntity<SessionTraceSummaryDto>> getSessionTraceSummary(@PathVariable String id) {
+        return execute(() -> ResponseEntity.ok(
+                sessionWebDtoMapper.toTraceSummaryDto(sessionInspectionService.getSessionTraceSummary(id))));
+    }
 
-        return Mono.just(ResponseEntity.ok(SessionMessagesPageDto.builder()
-                .sessionId(id)
-                .messages(page)
-                .hasMore(startInclusive > START_WITH_INDEX)
-                .oldestMessageId(oldestMessageId)
-                .build()));
+    @GetMapping("/{id}/trace")
+    public Mono<ResponseEntity<SessionTraceDto>> getSessionTrace(@PathVariable String id) {
+        return execute(() -> ResponseEntity.ok(
+                sessionWebDtoMapper.toTraceDto(sessionInspectionService.getSessionTrace(id))));
+    }
+
+    @GetMapping("/{id}/trace/export")
+    public Mono<ResponseEntity<SessionTraceExportPayload>> exportSessionTrace(@PathVariable String id) {
+        return execute(() -> {
+            String fileName = "session-trace-" + sanitizeExportName(id) + ".json";
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                    .body(sessionWebDtoMapper.toTraceExportPayload(sessionInspectionService.getSessionTraceExport(id)));
+        });
+    }
+
+    @GetMapping("/{id}/trace/snapshots/{snapshotId}/payload")
+    public Mono<ResponseEntity<String>> exportSessionTraceSnapshotPayload(
+            @PathVariable String id,
+            @PathVariable String snapshotId) {
+        return execute(() -> {
+            SessionInspectionService.SnapshotPayloadExport payload = sessionInspectionService
+                    .exportSessionTraceSnapshotPayload(id, snapshotId);
+            String fileName = "session-trace-" + sanitizeExportName(id) + "-snapshot-"
+                    + sanitizeExportName(snapshotId) + payload.fileExtension();
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(payload.contentType()))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                    .body(payload.payloadText());
+        });
     }
 
     @DeleteMapping("/{id}")
     public Mono<ResponseEntity<Void>> deleteSession(@PathVariable String id) {
-        Optional<AgentSession> deletedSession = sessionPort.get(id);
-        sessionPort.delete(id);
-        repairPointersAfterDelete(id, deletedSession.orElse(null));
-        return Mono.just(ResponseEntity.noContent().build());
+        return execute(() -> {
+            sessionInspectionService.deleteSession(id);
+            return ResponseEntity.noContent().build();
+        });
     }
 
     @PostMapping("/{id}/compact")
     public Mono<ResponseEntity<Map<String, Object>>> compactSession(
             @PathVariable String id, @RequestParam(defaultValue = "20") int keepLast) {
-        int removed = sessionPort.compactMessages(id, keepLast);
-        return Mono.just(ResponseEntity.ok(Map.of("removed", removed)));
+        return execute(
+                () -> ResponseEntity.ok(Map.of("removed", sessionInspectionService.compactSession(id, keepLast))));
     }
 
     @PostMapping("/{id}/clear")
     public Mono<ResponseEntity<Void>> clearSession(@PathVariable String id) {
-        sessionPort.clearMessages(id);
-        return Mono.just(ResponseEntity.noContent().build());
+        return execute(() -> {
+            sessionInspectionService.clearSession(id);
+            return ResponseEntity.noContent().build();
+        });
     }
 
-    private SessionSummaryDto toSummary(AgentSession session, boolean active) {
-        String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
-        String transportChatId = SessionIdentitySupport.resolveTransportChatId(session);
-        String preview = buildPreview(session);
-        String title = buildTitle(session, conversationKey);
-        return SessionSummaryDto.builder()
-                .id(session.getId())
-                .channelType(session.getChannelType())
-                .chatId(session.getChatId())
-                .conversationKey(conversationKey)
-                .transportChatId(transportChatId)
-                .messageCount(session.getMessages() != null ? session.getMessages().size() : 0)
-                .state(session.getState() != null ? session.getState().name() : "ACTIVE")
-                .createdAt(session.getCreatedAt() != null ? session.getCreatedAt().toString() : null)
-                .updatedAt(session.getUpdatedAt() != null ? session.getUpdatedAt().toString() : null)
-                .title(title)
-                .preview(preview)
-                .active(active)
-                .build();
-    }
-
-    private SessionDetailDto toDetail(AgentSession session) {
-        String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
-        String transportChatId = SessionIdentitySupport.resolveTransportChatId(session);
-        List<SessionDetailDto.MessageDto> messages = List.of();
-        if (session.getMessages() != null) {
-            messages = session.getMessages().stream()
-                    .map(this::toMessageDto)
-                    .toList();
-        }
-        return SessionDetailDto.builder()
-                .id(session.getId())
-                .channelType(session.getChannelType())
-                .chatId(session.getChatId())
-                .conversationKey(conversationKey)
-                .transportChatId(transportChatId)
-                .state(session.getState() != null ? session.getState().name() : "ACTIVE")
-                .createdAt(session.getCreatedAt() != null ? session.getCreatedAt().toString() : null)
-                .updatedAt(session.getUpdatedAt() != null ? session.getUpdatedAt().toString() : null)
-                .messages(messages)
-                .build();
-    }
-
-    private SessionDetailDto.MessageDto toMessageDto(Message msg) {
-        String model = null;
-        String modelTier = null;
-        String reasoning = null;
-        String clientMessageId = null;
-        boolean autoMode = false;
-        String autoRunId = null;
-        String autoScheduleId = null;
-        String autoGoalId = null;
-        String autoTaskId = null;
-        if (msg.getMetadata() != null) {
-            Object modelValue = msg.getMetadata().get("model");
-            if (modelValue instanceof String) {
-                model = (String) modelValue;
-            }
-            Object tierValue = msg.getMetadata().get("modelTier");
-            if (tierValue instanceof String) {
-                modelTier = (String) tierValue;
-            }
-            Object reasoningValue = msg.getMetadata().get("reasoning");
-            if (reasoningValue instanceof String) {
-                reasoning = (String) reasoningValue;
-            }
-            Object clientMessageIdValue = msg.getMetadata().get("clientMessageId");
-            if (clientMessageIdValue instanceof String) {
-                clientMessageId = (String) clientMessageIdValue;
-            }
-            autoMode = AutoRunContextSupport.isAutoMetadata(msg.getMetadata());
-            autoRunId = AutoRunContextSupport.readMetadataString(msg.getMetadata(), ContextAttributes.AUTO_RUN_ID);
-            autoScheduleId = AutoRunContextSupport.readMetadataString(
-                    msg.getMetadata(), ContextAttributes.AUTO_SCHEDULE_ID);
-            autoGoalId = AutoRunContextSupport.readMetadataString(msg.getMetadata(), ContextAttributes.AUTO_GOAL_ID);
-            autoTaskId = AutoRunContextSupport.readMetadataString(msg.getMetadata(), ContextAttributes.AUTO_TASK_ID);
-        }
-        if (ROLE_ASSISTANT.equals(msg.getRole()) && (modelTier == null || modelTier.isBlank())) {
-            modelTier = DEFAULT_MODEL_TIER;
-        }
-
-        return SessionDetailDto.MessageDto.builder()
-                .id(msg.getId())
-                .role(msg.getRole())
-                .content(resolveMessageContent(msg))
-                .timestamp(msg.getTimestamp() != null ? msg.getTimestamp().toString() : null)
-                .hasToolCalls(msg.hasToolCalls())
-                .hasVoice(msg.hasVoice())
-                .model(model)
-                .modelTier(modelTier)
-                .reasoning(reasoning)
-                .clientMessageId(clientMessageId)
-                .autoMode(autoMode)
-                .autoRunId(autoRunId)
-                .autoScheduleId(autoScheduleId)
-                .autoGoalId(autoGoalId)
-                .autoTaskId(autoTaskId)
-                .build();
-    }
-
-    private ActiveSessionResponse toActiveResponse(
-            String channel,
-            String clientInstanceId,
-            String transportChatId,
-            String conversationKey,
-            String source) {
-        String effectiveTransportChatId = transportChatId;
-        if (CHANNEL_WEB.equals(channel)) {
-            effectiveTransportChatId = clientInstanceId;
-        }
+    private ActiveSessionResponse toActiveResponse(ActiveSessionSelectionView view) {
         return ActiveSessionResponse.builder()
-                .channelType(channel)
-                .clientInstanceId(clientInstanceId)
-                .transportChatId(effectiveTransportChatId)
-                .conversationKey(conversationKey)
-                .sessionId(channel + ":" + conversationKey)
-                .source(source)
+                .channelType(view.getChannelType())
+                .clientInstanceId(view.getClientInstanceId())
+                .transportChatId(view.getTransportChatId())
+                .conversationKey(view.getConversationKey())
+                .sessionId(view.getSessionId())
+                .source(view.getSource())
                 .build();
     }
 
-    private boolean matchesConversationKey(AgentSession session, String conversationKey) {
-        if (session == null || StringValueSupport.isBlank(conversationKey)) {
-            return false;
-        }
-        String resolvedConversationKey = SessionIdentitySupport.resolveConversationKey(session);
-        return conversationKey.equals(resolvedConversationKey) || conversationKey.equals(session.getChatId());
+    private String principalName(Principal principal) {
+        return principal != null ? principal.getName() : null;
     }
 
-    private List<Message> getVisibleMessages(AgentSession session) {
-        if (session == null || session.getMessages() == null) {
-            return List.of();
-        }
-        return session.getMessages().stream()
-                .filter(message -> message != null
-                        && ("user".equals(message.getRole()) || ROLE_ASSISTANT.equals(message.getRole()))
-                        && isVisibleMessage(message))
-                .toList();
+    private String sanitizeExportName(String id) {
+        return id.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
-    private int resolvePageEndExclusive(List<Message> messages, String beforeMessageId) {
-        if (messages == null || messages.isEmpty()) {
-            return START_WITH_INDEX;
-        }
-        if (StringValueSupport.isBlank(beforeMessageId)) {
-            return messages.size();
-        }
-        String normalizedBeforeMessageId = beforeMessageId.trim();
-        for (int index = START_WITH_INDEX; index < messages.size(); index++) {
-            Message message = messages.get(index);
-            if (message != null && normalizedBeforeMessageId.equals(message.getId())) {
-                return index;
-            }
-        }
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "beforeMessageId not found");
-    }
-
-    private boolean isVisibleMessage(Message message) {
-        return hasVisibleContent(message.getContent()) || resolveAttachmentCount(message) > START_WITH_INDEX;
-    }
-
-    private boolean hasVisibleContent(String content) {
-        return content != null && !content.trim().isEmpty();
-    }
-
-    private String resolveMessageContent(Message message) {
-        if (message == null) {
-            return null;
-        }
-        if (hasVisibleContent(message.getContent())) {
-            return message.getContent();
-        }
-
-        int attachmentCount = resolveAttachmentCount(message);
-        if (attachmentCount <= START_WITH_INDEX) {
-            return message.getContent();
-        }
-
-        return attachmentCount == 1
-                ? "[1 image attachment]"
-                : "[" + attachmentCount + " image attachments]";
-    }
-
-    private int resolveAttachmentCount(Message message) {
-        if (message == null || message.getMetadata() == null) {
-            return START_WITH_INDEX;
-        }
-        Object attachmentsValue = message.getMetadata().get("attachments");
-        if (!(attachmentsValue instanceof List<?> attachments)) {
-            return START_WITH_INDEX;
-        }
-        return attachments.size();
-    }
-
-    private String resolvePointerKey(
-            String channel,
-            String clientInstanceId,
-            String transportChatId,
-            Principal principal) {
-        if (CHANNEL_WEB.equals(channel)) {
-            String username = resolvePrincipalName(principal);
-            if (StringValueSupport.isBlank(clientInstanceId)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "clientInstanceId is required for web");
-            }
-            return pointerService.buildWebPointerKey(username, clientInstanceId);
-        }
-        if (CHANNEL_TELEGRAM.equals(channel)) {
-            if (StringValueSupport.isBlank(transportChatId)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "transportChatId is required for telegram");
-            }
-            return pointerService.buildTelegramPointerKey(transportChatId);
-        }
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported channel: " + channel);
-    }
-
-    private String resolvePrincipalName(Principal principal) {
-        if (principal == null || StringValueSupport.isBlank(principal.getName())) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
-        }
-        return principal.getName();
-    }
-
-    private boolean isActiveSession(AgentSession session, String activeConversation) {
-        if (StringValueSupport.isBlank(activeConversation)) {
-            return false;
-        }
-        return activeConversation.equals(SessionIdentitySupport.resolveConversationKey(session));
-    }
-
-    private String generateConversationKey() {
-        return UUID.randomUUID().toString();
-    }
-
-    private String resolveOrCreateConversationKey(String channel, String transportChatId,
-            String preferredConversation) {
-        if (!StringValueSupport.isBlank(preferredConversation)
-                && isConversationResolvable(channel, transportChatId, preferredConversation)) {
-            return preferredConversation;
-        }
-
-        String fallbackConversation = findLatestConversationKey(channel, transportChatId, preferredConversation)
-                .orElseGet(this::generateConversationKey);
-
-        if (!isConversationResolvable(channel, transportChatId, fallbackConversation)) {
-            ensureSessionExists(channel, transportChatId, fallbackConversation);
-        }
-        return fallbackConversation;
-    }
-
-    private Optional<String> findLatestConversationKey(String channel, String transportChatId,
-            String excludedConversation) {
-        return listRecentSessionsByOwner(channel, transportChatId).stream()
-                .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(SessionIdentitySupport::resolveConversationKey)
-                .filter(value -> !StringValueSupport.isBlank(value) && !value.equals(excludedConversation))
-                .findFirst();
-    }
-
-    private boolean isConversationResolvable(String channel, String transportChatId, String conversationKey) {
-        if (StringValueSupport.isBlank(channel) || StringValueSupport.isBlank(conversationKey)) {
-            return false;
-        }
-
-        Optional<AgentSession> session = sessionPort.get(channel + ":" + conversationKey);
-        if (session.isEmpty()) {
-            return false;
-        }
-
-        if (!CHANNEL_TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
-            return true;
-        }
-        return transportChatId.equals(SessionIdentitySupport.resolveTransportChatId(session.get()));
-    }
-
-    private void ensureSessionExists(String channel, String transportChatId, String conversationKey) {
-        AgentSession session = sessionPort.getOrCreate(channel, conversationKey);
-        if (CHANNEL_TELEGRAM.equals(channel)) {
-            SessionIdentitySupport.bindTransportAndConversation(session, transportChatId, conversationKey);
-        }
-        sessionPort.save(session);
-    }
-
-    private List<AgentSession> listRecentSessionsByOwner(String channel, String transportChatId) {
-        if (!CHANNEL_TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
-            return sessionPort.listByChannelType(channel);
-        }
-        return sessionPort.listByChannelTypeAndTransportChatId(channel, transportChatId);
-    }
-
-    private void ensureTelegramSessionBinding(String transportChatId, String conversationKey) {
-        if (StringValueSupport.isBlank(transportChatId) || StringValueSupport.isBlank(conversationKey)) {
-            return;
-        }
-        AgentSession session = sessionPort.getOrCreate(CHANNEL_TELEGRAM, conversationKey);
-        SessionIdentitySupport.bindTransportAndConversation(session, transportChatId, conversationKey);
-        sessionPort.save(session);
-    }
-
-    private void repairPointersAfterDelete(String deletedSessionId, AgentSession deletedSession) {
-        String channel = deletedSession != null ? deletedSession.getChannelType()
-                : resolveDeletedChannel(deletedSessionId);
-        String deletedConversation = deletedSession != null
-                ? SessionIdentitySupport.resolveConversationKey(deletedSession)
-                : resolveDeletedConversation(deletedSessionId);
-
-        if (StringValueSupport.isBlank(channel) || StringValueSupport.isBlank(deletedConversation)) {
-            return;
-        }
-
-        Map<String, String> pointers = pointerService.getPointersSnapshot();
-        if (pointers.isEmpty()) {
-            return;
-        }
-
-        for (Map.Entry<String, String> entry : pointers.entrySet()) {
-            String pointerKey = entry.getKey();
-            String pointerConversation = entry.getValue();
-            if (!deletedConversation.equals(pointerConversation) || !isPointerForChannel(pointerKey, channel)) {
-                continue;
-            }
-
-            String pointerTransportChatId = CHANNEL_TELEGRAM.equals(channel)
-                    ? extractTelegramTransportChatId(pointerKey)
-                    : null;
-            String replacement = resolveOrCreateConversationKey(channel, pointerTransportChatId, null);
-            pointerService.setActiveConversationKey(pointerKey, replacement);
-        }
-    }
-
-    private boolean isPointerForChannel(String pointerKey, String channel) {
-        if (StringValueSupport.isBlank(pointerKey) || StringValueSupport.isBlank(channel)) {
-            return false;
-        }
-        return pointerKey.startsWith(channel + "|");
-    }
-
-    private String extractTelegramTransportChatId(String pointerKey) {
-        if (StringValueSupport.isBlank(pointerKey)) {
-            return null;
-        }
-        String prefix = CHANNEL_TELEGRAM + "|";
-        if (!pointerKey.startsWith(prefix) || pointerKey.length() <= prefix.length()) {
-            return null;
-        }
-        return pointerKey.substring(prefix.length());
-    }
-
-    private String resolveDeletedChannel(String sessionId) {
-        if (StringValueSupport.isBlank(sessionId)) {
-            return null;
-        }
-        int separator = sessionId.indexOf(':');
-        if (separator <= 0) {
-            return null;
-        }
-        return sessionId.substring(0, separator);
-    }
-
-    private String resolveDeletedConversation(String sessionId) {
-        if (StringValueSupport.isBlank(sessionId)) {
-            return null;
-        }
-        int separator = sessionId.indexOf(':');
-        if (separator < 0 || separator + 1 >= sessionId.length()) {
-            return null;
-        }
-        return sessionId.substring(separator + 1);
-    }
-
-    private String buildTitle(AgentSession session, String conversationKey) {
-        if (session == null || session.getMessages() == null || session.getMessages().isEmpty()) {
-            return DEFAULT_SESSION_TITLE;
-        }
-
-        for (Message message : session.getMessages()) {
-            if (message == null || !"user".equals(message.getRole())) {
-                continue;
-            }
-            String content = message.getContent();
-            if (!StringValueSupport.isBlank(content)) {
-                return truncate(content.trim(), TITLE_MAX_LEN);
-            }
-        }
-
-        if (!StringValueSupport.isBlank(conversationKey)) {
-            return "Session " + truncate(conversationKey, 12);
-        }
-        return DEFAULT_SESSION_TITLE;
-    }
-
-    private String buildPreview(AgentSession session) {
-        if (session == null || session.getMessages() == null || session.getMessages().isEmpty()) {
-            return null;
-        }
-
-        String preview = null;
-        for (int index = START_WITH_INDEX; index < session.getMessages().size(); index++) {
-            Message message = session.getMessages().get(index);
-            if (message == null || StringValueSupport.isBlank(message.getContent())) {
-                continue;
-            }
-            preview = truncate(message.getContent().trim(), PREVIEW_MAX_LEN);
-        }
-
-        return preview;
-    }
-
-    private String normalizeConversationKeyForCreation(String value) {
+    private <T> Mono<ResponseEntity<T>> execute(Supplier<ResponseEntity<T>> supplier) {
         try {
-            return ConversationKeyValidator.normalizeStrictOrThrow(value);
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+            return Mono.just(supplier.get());
+        } catch (RuntimeException exception) {
+            throw translateException(exception);
         }
     }
 
-    private String normalizeConversationKeyForActivationOrThrow(String channel, String value) {
-        try {
-            return ConversationKeyValidator.normalizeForActivationOrThrow(
-                    value,
-                    candidate -> sessionPort.get(channel + ":" + candidate).isPresent());
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+    private ResponseStatusException translateException(RuntimeException exception) {
+        if (exception instanceof ResponseStatusException responseStatusException) {
+            return responseStatusException;
         }
-    }
-
-    private String defaultIfBlank(String value, String defaultValue) {
-        if (StringValueSupport.isBlank(value)) {
-            return defaultValue;
+        if (exception instanceof IllegalArgumentException) {
+            return new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
-        return value.trim();
-    }
-
-    private String truncate(String value, int maxLength) {
-        if (value == null || value.length() <= maxLength) {
-            return value;
+        if (exception instanceof NoSuchElementException) {
+            return new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }
-        if (maxLength <= 3) {
-            return value.substring(0, maxLength);
+        if (exception instanceof SecurityException) {
+            return new ResponseStatusException(HttpStatus.UNAUTHORIZED, exception.getMessage(), exception);
         }
-        return value.substring(0, maxLength - 3) + "...";
-    }
-
-    private String resolveTelemetryTransport(String channel, String clientInstanceId, String transportChatId) {
-        if (CHANNEL_TELEGRAM.equals(channel)) {
-            return transportChatId;
-        }
-        return clientInstanceId;
+        return new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, exception.getMessage(), exception);
     }
 }

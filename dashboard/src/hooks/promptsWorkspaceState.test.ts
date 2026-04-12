@@ -73,6 +73,41 @@ describe('promptsWorkspaceState', () => {
     });
   });
 
+  it('clears preview state when the draft changes', () => {
+    const baseState = {
+      ...promptsWorkspaceReducer(INITIAL_PROMPTS_WORKSPACE_STATE, {
+        type: 'selectPrompt',
+        section: createSection(),
+      }),
+      preview: 'Rendered preview',
+      previewError: 'Old preview error',
+    };
+
+    expect(promptsWorkspaceReducer(baseState, {
+      type: 'updateDraft',
+      draft: {
+        name: 'custom',
+        description: 'Updated section',
+        order: 100,
+        enabled: true,
+        deletable: true,
+        content: 'Updated body',
+      },
+    })).toEqual({
+      ...baseState,
+      draft: {
+        name: 'custom',
+        description: 'Updated section',
+        order: 100,
+        enabled: true,
+        deletable: true,
+        content: 'Updated body',
+      },
+      preview: '',
+      previewError: null,
+    });
+  });
+
   it('clears the editor only when clearEditor is dispatched', () => {
     const populatedState = promptsWorkspaceReducer(INITIAL_PROMPTS_WORKSPACE_STATE, {
       type: 'selectPrompt',

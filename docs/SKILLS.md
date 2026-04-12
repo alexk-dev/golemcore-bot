@@ -203,7 +203,7 @@ The `model_tier` field sets the preferred model tier when this skill is active. 
 
 ### Requirements
 
-Declare what the skill needs to function. If any requirement is unmet, the skill is marked as **unavailable** and won't be selected by routing.
+Declare what the skill needs to function. If any requirement is unmet, the skill is marked as **unavailable** and cannot be activated by `skill_transition` or skill pipelines.
 
 ```yaml
 requires:
@@ -340,7 +340,7 @@ mcp:
 
 ### MCP Lifecycle
 
-1. User message arrives, routing selects this skill
+1. User message arrives and the LLM activates this skill
 2. `ContextBuildingSystem` detects `skill.hasMcp() == true`
 3. `McpClientManager.getOrStartClient(skill)` starts the MCP server process
 4. MCP handshake: `initialize` → `tools/list`
@@ -386,6 +386,8 @@ Always confirm destructive actions (closing issues, deleting branches) before ex
 ## Skill Pipelines
 
 Pipelines allow skills to **chain together** — when one skill completes, it automatically transitions to the next. This enables multi-step workflows where each step has its own specialized prompt and tools.
+
+A skill is considered **pipeline-enabled** when it declares either `next_skill` or `conditional_next_skills` in its frontmatter.
 
 ### Automatic Transitions (`next_skill`)
 
@@ -529,7 +531,10 @@ Skills can chain to the next skill automatically via `next_skill` or conditional
 
 ### No Active Skill
 
-When no skill is active, the bot runs with the base system prompt and includes a summary of all available skills (name + description) so the LLM can decide when to transition.
+When no skill is active, the bot runs with the base system prompt and includes a summary of all available skills (name + description). If one of those skills clearly matches the user's task, the LLM should call `skill_transition` before doing the work.
+
+Once activated, the current skill is kept in session state and restored on later turns until another transition replaces it or the session is reset.
+
 ---
 
 ## Progressive Loading

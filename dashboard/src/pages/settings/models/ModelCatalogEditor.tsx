@@ -5,7 +5,14 @@ import { Alert } from '../../../components/ui/alert';
 import { Card, CardContent } from '../../../components/ui/card';
 import { Skeleton } from '../../../components/ui/skeleton';
 import { extractErrorMessage } from '../../../utils/extractErrorMessage';
-import { useDeleteModel, useModelsConfig, useReloadModels, useSaveModel } from '../../../hooks/useModels';
+import {
+  useDeleteModel,
+  useModelsConfig,
+  useReloadModels,
+  useResolveModelRegistry,
+  useSaveModel,
+} from '../../../hooks/useModels';
+import { useTelemetry } from '../../../lib/telemetry/TelemetryContext';
 import { AvailableModelInsertModal } from './AvailableModelInsertModal';
 import { ModelCatalogForm } from './ModelCatalogForm';
 import { ModelCatalogSidebar } from './ModelCatalogSidebar';
@@ -13,8 +20,10 @@ import type { ProviderProfileSummary } from './modelCatalogProviderProfiles';
 import {
   createDraftFromSuggestion,
   createEmptyModelDraft,
+  findExistingModelId,
   getGroupedCatalogModels,
   isModelDraftDirty,
+  resolvePersistedModelId,
   toModelDraft,
   toModelSettings,
   validateModelDraft,
@@ -121,6 +130,7 @@ function ModelCatalogEditorBody({
 }
 
 export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps): ReactElement {
+  const telemetry = useTelemetry();
   const {
     data: modelsConfig,
     isLoading: modelsLoading,
@@ -130,6 +140,7 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
   const saveModel = useSaveModel();
   const deleteModel = useDeleteModel();
   const reloadModels = useReloadModels();
+  const resolveModelRegistry = useResolveModelRegistry();
   const [selectedProviderName, setSelectedProviderName] = useState('');
   const [selectedModelId, setSelectedModelId] = useState(NEW_MODEL_SELECTION);
   const [draft, setDraft] = useState(createEmptyModelDraft(''));
@@ -166,10 +177,15 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
       return;
     }
 
-    const targetId = draft.id.trim();
+    const targetId = resolvePersistedModelId(draft, modelsConfig?.models ?? {}, isExisting ? selectedModelId : null);
     try {
-      await saveModel.mutateAsync({ id: targetId, settings: toModelSettings(draft) });
+      await saveModel.mutateAsync({
+        id: targetId,
+        previousId: isExisting ? selectedModelId : null,
+        settings: toModelSettings(draft),
+      });
       await refetchModelsConfig();
+      telemetry.recordCounter('model_catalog_edit_count');
       startTransition(() => {
         setSelectedModelId(targetId);
       });
@@ -201,6 +217,7 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
     try {
       await reloadModels.mutateAsync();
       await refetchModelsConfig();
+      telemetry.recordCounter('model_reload_count');
       toast.success('Model catalog reloaded');
     } catch (error) {
       toast.error(extractErrorMessage(error));
@@ -226,32 +243,42 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
     });
   }
 
-  function handleSuggestionSelect(suggestion: DiscoveredProviderModel): void {
-    const nextDraft = createDraftFromSuggestion(suggestion, modelsConfig);
-    const existingModel = modelsConfig?.models[nextDraft.id];
-    startTransition(() => {
-      setSelectedProviderName(suggestion.provider);
-      setSelectedModelId(existingModel != null ? nextDraft.id : NEW_MODEL_SELECTION);
-      setDraft(nextDraft);
-      setIsInsertModalOpen(false);
-    });
+  async function handleSuggestionSelect(suggestion: DiscoveredProviderModel): Promise<void> {
+    try {
+      const resolvedRegistry = suggestion.defaultSettings != null
+        ? { defaultSettings: suggestion.defaultSettings, configSource: 'provider' as const, cacheStatus: 'remote-hit' as const }
+        : await resolveModelRegistry.mutateAsync({
+          provider: suggestion.provider,
+          modelId: suggestion.id,
+        });
+      const nextDraft = createDraftFromSuggestion(
+        suggestion,
+        modelsConfig,
+        resolvedRegistry.defaultSettings,
+      );
+      const existingModelId = findExistingModelId(modelsConfig?.models ?? {}, nextDraft);
+      startTransition(() => {
+        setSelectedProviderName(suggestion.provider);
+        setSelectedModelId(existingModelId ?? NEW_MODEL_SELECTION);
+        setDraft(nextDraft);
+        setIsInsertModalOpen(false);
+      });
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    }
   }
 
   function handleSelectProvider(providerName: string): void {
     const selectedSettings = isExisting ? modelsConfig?.models[selectedModelId] : null;
     startTransition(() => {
       setSelectedProviderName(providerName);
-      if (selectedSettings?.provider === providerName) {
-        return;
-      }
-      setSelectedModelId(NEW_MODEL_SELECTION);
-      setDraft(createEmptyModelDraft(providerName));
+      setSelectedModelId(selectedSettings?.provider === providerName && isExisting ? selectedModelId : NEW_MODEL_SELECTION);
+      setDraft(
+        selectedSettings?.provider === providerName && isExisting
+          ? toModelDraft(selectedModelId, selectedSettings)
+          : createEmptyModelDraft(providerName)
+      );
     });
-  }
-
-  function handleDraftChange(nextDraft: typeof draft): void {
-    setSelectedProviderName(nextDraft.provider.trim());
-    setDraft(nextDraft);
   }
 
   if (modelsLoading) {
@@ -284,7 +311,7 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
         onReload={() => { void handleReload(); }}
         onSelectProvider={handleSelectProvider}
         onSelectModel={handleSelectModel}
-        onDraftChange={handleDraftChange}
+        onDraftChange={setDraft}
         onSave={() => { void handleSave(); }}
         onDelete={() => { void handleDelete(); }}
       />
@@ -293,6 +320,7 @@ export function ModelCatalogEditor({ providerProfiles }: ModelCatalogEditorProps
         <AvailableModelInsertModal
           providerProfiles={providerProfiles}
           providerName={selectedProviderName}
+          isSelectingSuggestion={resolveModelRegistry.isPending}
           onHide={() => setIsInsertModalOpen(false)}
           onSelectSuggestion={handleSuggestionSelect}
         />

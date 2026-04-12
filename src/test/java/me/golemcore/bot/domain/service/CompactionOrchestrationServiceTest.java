@@ -238,6 +238,82 @@ class CompactionOrchestrationServiceTest {
     }
 
     @Test
+    void shouldCompactWhenSessionHistoryListIsImmutable() {
+        Message m1 = user("u1");
+        Message m2 = assistant("a1");
+        Message m3 = user("u2");
+        AgentSession session = AgentSession.builder()
+                .id("s-immutable")
+                .messages(List.of(m1, m2, m3))
+                .metadata(new LinkedHashMap<>())
+                .build();
+        when(sessionPort.get("s-immutable")).thenReturn(Optional.of(session));
+
+        when(runtimeConfigService.isCompactionPreserveTurnBoundariesEnabled()).thenReturn(true);
+        when(runtimeConfigService.getCompactionDetailsMaxItemsPerCategory()).thenReturn(10);
+        when(runtimeConfigService.isCompactionDetailsEnabled()).thenReturn(false);
+
+        CompactionPreparation preparation = CompactionPreparation.builder()
+                .sessionId("s-immutable")
+                .reason(CompactionReason.MANUAL_COMMAND)
+                .messagesToCompact(List.of(m1))
+                .messagesToKeep(List.of(m2, m3))
+                .splitTurnDetected(false)
+                .build();
+        when(preparationService.prepare("s-immutable", session.getMessages(), 2, CompactionReason.MANUAL_COMMAND, true))
+                .thenReturn(preparation);
+
+        when(compactionService.summarize(List.of(m1))).thenReturn("sum");
+        Message summaryMessage = Message.builder()
+                .role("system")
+                .content("[Conversation summary]\nsum")
+                .metadata(new LinkedHashMap<>())
+                .build();
+        when(compactionService.createSummaryMessage("sum")).thenReturn(summaryMessage);
+
+        CompactionDetails details = CompactionDetails.builder()
+                .schemaVersion(1)
+                .reason(CompactionReason.MANUAL_COMMAND)
+                .summarizedCount(1)
+                .keptCount(2)
+                .usedLlmSummary(true)
+                .summaryLength(3)
+                .toolCount(0)
+                .readFilesCount(0)
+                .modifiedFilesCount(0)
+                .durationMs(0)
+                .toolNames(List.of())
+                .readFiles(List.of())
+                .modifiedFiles(List.of())
+                .fileChanges(List.of())
+                .splitTurnDetected(false)
+                .fallbackUsed(false)
+                .build();
+        when(detailsExtractor.extract(
+                eq(CompactionReason.MANUAL_COMMAND),
+                eq(List.of(m1)),
+                eq(1),
+                eq(2),
+                eq(true),
+                eq(3),
+                eq(false),
+                eq(false),
+                eq(0L),
+                eq(10)))
+                .thenReturn(details);
+
+        CompactionResult result = service.compact("s-immutable", CompactionReason.MANUAL_COMMAND, 2);
+
+        assertEquals(1, result.removed());
+        assertTrue(result.usedSummary());
+        assertEquals(3, session.getMessages().size());
+        assertEquals("system", session.getMessages().getFirst().getRole());
+        assertEquals("assistant", session.getMessages().get(1).getRole());
+        assertEquals("user", session.getMessages().get(2).getRole());
+        verify(sessionPort).save(session);
+    }
+
+    @Test
     void shouldFallbackWhenSummaryBlankAndSkipSummaryMetadata() {
         Message m1 = user("u1");
         Message m2 = assistant("a1");

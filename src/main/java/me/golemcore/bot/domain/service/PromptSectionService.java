@@ -18,26 +18,31 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.PromptSection;
-import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.io.IOException;
 import java.time.DateTimeException;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.PromptSection;
+import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.port.outbound.PromptSettingsPort;
+import org.springframework.stereotype.Service;
 
 /**
  * Service for loading, caching, and rendering modular file-based system prompt
@@ -85,6 +90,7 @@ public class PromptSectionService {
             4. When you have tools available, use them proactively. Do not ask for permission unless the action is destructive.
             5. Be thorough but avoid unnecessary verbosity. Match depth to question complexity.
             6. Reference memory context when relevant to the conversation.
+            7. When an available skill clearly matches the user's task, activate it with `skill_transition` before doing the work.
             """;
 
     private static final String DEFAULT_VOICE_CONTENT = """
@@ -113,8 +119,29 @@ public class PromptSectionService {
             You are NOT a "text-only assistant". You CAN produce audio.
             """;
 
+    private static final String DEFAULT_WAITING_AND_FOLLOWUPS_CONTENT = """
+                    ---
+                    description: Waiting and follow-up behavior
+                    order: 25
+                    ---
+                    ## Waiting And Follow-Ups
+
+                    When a result will not be available during the current normal response flow, do not ask the user to come back manually.
+                    Instead, use delayed follow-ups so you can return later on your own.
+
+                    For delayed follow-ups:
+                    1. Explain what you are waiting for.
+                    2. Schedule the next check or reminder explicitly.
+                    3. Confirm the next local check time for the user.
+                    4. If the result is still not ready later, schedule the next delayed check with reasonable spacing.
+                    5. Avoid stale follow-ups when the user has already continued the conversation.
+
+                    Do not ask the user to come back manually when a delayed follow-up is the better workflow.
+                    Confirm the next local check time whenever you schedule a delayed follow-up.
+            """;
+
     private final StoragePort storagePort;
-    private final BotProperties properties;
+    private final PromptSettingsPort settingsPort;
     private final RuntimeConfigService runtimeConfigService;
     private final SkillTemplateEngine templateEngine;
 
@@ -130,7 +157,7 @@ public class PromptSectionService {
     }
 
     public boolean isEnabled() {
-        return properties.getPrompts().isEnabled();
+        return settingsPort.prompts().enabled();
     }
 
     /**
@@ -215,7 +242,7 @@ public class PromptSectionService {
         Map<String, String> vars = new HashMap<>();
 
         // Bot name from config
-        vars.put("BOT_NAME", properties.getPrompts().getBotName());
+        vars.put("BOT_NAME", settingsPort.prompts().botName());
 
         // Date/time in user's timezone
         String timezone = prefs != null && prefs.getTimezone() != null ? prefs.getTimezone() : "UTC";
@@ -237,10 +264,7 @@ public class PromptSectionService {
         vars.put("USER_TIMEZONE", timezone);
 
         // Custom vars from config
-        Map<String, String> customVars = properties.getPrompts().getCustomVars();
-        if (customVars != null) {
-            vars.putAll(customVars);
-        }
+        vars.putAll(settingsPort.prompts().customVars());
 
         return vars;
     }
@@ -251,6 +275,7 @@ public class PromptSectionService {
     void ensureDefaults() {
         ensureDefault("IDENTITY.md", DEFAULT_IDENTITY_CONTENT);
         ensureDefault("RULES.md", DEFAULT_RULES_CONTENT);
+        ensureDefault("WAITING_AND_FOLLOWUPS.md", DEFAULT_WAITING_AND_FOLLOWUPS_CONTENT);
         if (runtimeConfigService.isVoiceEnabled()) {
             ensureDefault("VOICE.md", DEFAULT_VOICE_CONTENT);
         }

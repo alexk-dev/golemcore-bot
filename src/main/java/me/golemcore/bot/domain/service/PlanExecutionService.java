@@ -24,8 +24,7 @@ import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanExecutionCompletedEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import org.springframework.context.ApplicationEventPublisher;
+import me.golemcore.bot.port.outbound.PlanExecutionNotificationPort;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
@@ -49,16 +48,16 @@ public class PlanExecutionService {
 
     private final PlanService planService;
     private final Map<String, ToolComponent> toolRegistry;
-    private final ApplicationEventPublisher eventPublisher;
-    private final BotProperties properties;
+    private final PlanExecutionNotificationPort planExecutionNotificationPort;
+    private final RuntimeConfigService runtimeConfigService;
 
     public PlanExecutionService(PlanService planService,
             List<ToolComponent> toolComponents,
-            ApplicationEventPublisher eventPublisher,
-            BotProperties properties) {
+            PlanExecutionNotificationPort planExecutionNotificationPort,
+            RuntimeConfigService runtimeConfigService) {
         this.planService = planService;
-        this.eventPublisher = eventPublisher;
-        this.properties = properties;
+        this.planExecutionNotificationPort = planExecutionNotificationPort;
+        this.runtimeConfigService = runtimeConfigService;
 
         this.toolRegistry = new ConcurrentHashMap<>();
         for (ToolComponent tool : toolComponents) {
@@ -101,7 +100,7 @@ public class PlanExecutionService {
         planService.markPlanExecuting(planId);
         log.info("[PlanExec] Starting execution of plan '{}' ({} steps)", planId, plan.getSteps().size());
 
-        boolean stopOnFailure = properties.getPlan().isStopOnFailure();
+        boolean stopOnFailure = runtimeConfigService.isPlanStopOnFailure();
         boolean hasFailure = false;
 
         List<PlanStep> sortedSteps = plan.getSteps().stream()
@@ -181,7 +180,7 @@ public class PlanExecutionService {
         }
 
         String summary = buildExecutionSummary(plan);
-        eventPublisher.publishEvent(new PlanExecutionCompletedEvent(plan.getId(), deliveryChatId, summary));
+        planExecutionNotificationPort.publish(new PlanExecutionCompletedEvent(plan.getId(), deliveryChatId, summary));
     }
 
     String buildExecutionSummary(Plan plan) {

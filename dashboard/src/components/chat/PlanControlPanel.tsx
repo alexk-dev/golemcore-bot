@@ -1,5 +1,7 @@
-import { Badge, Button, Spinner } from 'react-bootstrap';
+import { useEffect, useState } from 'react';
+import { Badge, Button, Form, Spinner } from 'react-bootstrap';
 import type { PlanControlState, PlanSummary } from '../../api/plans';
+import { getExplicitModelTierOptions, getModelTierMeta } from '../../lib/modelTiers';
 import {
   useApprovePlan,
   useCancelPlan,
@@ -25,7 +27,9 @@ interface PlanControlBodyProps {
   isLoading: boolean;
   isError: boolean;
   actionPending: boolean;
-  onEnable: () => void;
+  selectedTier: string;
+  onSelectedTierChange: (tier: string) => void;
+  onEnable: (tier: string | null) => void;
   onDone: () => void;
   onDisable: () => void;
   onApprove: (planId: string) => void;
@@ -36,7 +40,9 @@ interface PlanControlBodyProps {
 interface PlanModeActionsProps {
   planModeActive: boolean;
   actionPending: boolean;
-  onEnable: () => void;
+  selectedTier: string;
+  onSelectedTierChange: (tier: string) => void;
+  onEnable: (tier: string | null) => void;
   onDone: () => void;
   onDisable: () => void;
 }
@@ -109,6 +115,8 @@ function PlanControlBody({
   isLoading,
   isError,
   actionPending,
+  selectedTier,
+  onSelectedTierChange,
   onEnable,
   onDone,
   onDisable,
@@ -130,7 +138,7 @@ function PlanControlBody({
   }
 
   if (data?.featureEnabled !== true) {
-    return <div className="text-body-secondary small">Plan mode is disabled in runtime config.</div>;
+    return <div className="text-body-secondary small">Plan mode is disabled in settings.</div>;
   }
 
   return (
@@ -147,6 +155,8 @@ function PlanControlBody({
       <PlanModeActions
         planModeActive={data.planModeActive}
         actionPending={actionPending}
+        selectedTier={selectedTier}
+        onSelectedTierChange={onSelectedTierChange}
         onEnable={onEnable}
         onDone={onDone}
         onDisable={onDisable}
@@ -166,14 +176,36 @@ function PlanControlBody({
 function PlanModeActions({
   planModeActive,
   actionPending,
+  selectedTier,
+  onSelectedTierChange,
   onEnable,
   onDone,
   onDisable,
 }: PlanModeActionsProps) {
   if (!planModeActive) {
     return (
-      <div className="d-flex flex-wrap gap-2 mb-3">
-        <Button type="button" size="sm" variant="primary" disabled={actionPending} onClick={onEnable}>
+      <div className="d-flex flex-column gap-2 mb-3">
+        <Form.Group>
+          <Form.Label className="small text-body-secondary mb-1">Plan tier override</Form.Label>
+          <Form.Select
+            size="sm"
+            value={selectedTier}
+            disabled={actionPending}
+            onChange={(event) => onSelectedTierChange(event.target.value)}
+          >
+            <option value="">Default routing</option>
+            {getExplicitModelTierOptions().map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </Form.Select>
+        </Form.Group>
+        <Button
+          type="button"
+          size="sm"
+          variant="primary"
+          disabled={actionPending}
+          onClick={() => onEnable(selectedTier.length > 0 ? selectedTier : null)}
+        >
           Plan ON
         </Button>
       </div>
@@ -219,6 +251,11 @@ function PlansList({ plans, actionPending, onApprove, onCancel, onResume }: Plan
             {plan.completedStepCount}/{plan.stepCount} steps
             {plan.failedStepCount > 0 ? `, failed: ${plan.failedStepCount}` : ''}
           </div>
+          {plan.modelTier != null && plan.modelTier.length > 0 && (
+            <div className="text-body-secondary small mt-1">
+              tier {getModelTierMeta(plan.modelTier)?.label ?? plan.modelTier}
+            </div>
+          )}
 
           <PlanItemActions
             plan={plan}
@@ -273,6 +310,11 @@ function PlanItemActions({
 
 export default function PlanControlPanel({ chatSessionId }: Props) {
   const { data, isLoading, isError, refetch } = usePlanControlState(chatSessionId, true);
+  const [selectedTier, setSelectedTier] = useState('');
+
+  useEffect(() => {
+    setSelectedTier('');
+  }, [chatSessionId]);
 
   const enableMutation = useEnablePlanMode();
   const disableMutation = useDisablePlanMode();
@@ -304,8 +346,10 @@ export default function PlanControlPanel({ chatSessionId }: Props) {
         isLoading={isLoading}
         isError={isError}
         actionPending={actionPending}
-        onEnable={() => {
-          enableMutation.mutate({ sessionId: chatSessionId });
+        selectedTier={selectedTier}
+        onSelectedTierChange={setSelectedTier}
+        onEnable={(modelTier) => {
+          enableMutation.mutate({ sessionId: chatSessionId, modelTier });
         }}
         onDone={() => {
           doneMutation.mutate(chatSessionId);

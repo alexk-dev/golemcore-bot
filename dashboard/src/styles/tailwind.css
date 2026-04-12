@@ -210,6 +210,15 @@
 }
 
 @layer components {
+  .input-with-leading-icon {
+    @apply relative;
+  }
+
+  .input-with-leading-icon > input,
+  .input-with-leading-icon > textarea {
+    @apply pl-11;
+  }
+
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-xl border border-transparent px-4 py-2 text-sm font-semibold transition-all duration-200 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50;
     min-height: 2.5rem;

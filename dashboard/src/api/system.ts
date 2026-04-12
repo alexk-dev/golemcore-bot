@@ -61,6 +61,15 @@ export interface SystemUpdateVersionInfo {
 export interface SystemUpdateStatusResponse {
   state: string;
   enabled: boolean;
+  autoEnabled?: boolean;
+  maintenanceWindowEnabled?: boolean;
+  maintenanceWindowStartUtc?: string | null;
+  maintenanceWindowEndUtc?: string | null;
+  serverTimezone?: string | null;
+  windowOpen?: boolean;
+  busy?: boolean;
+  blockedReason?: string | null;
+  nextEligibleAt?: string | null;
   current: SystemUpdateVersionInfo | null;
   target: SystemUpdateVersionInfo | null;
   staged: SystemUpdateVersionInfo | null;
@@ -76,6 +85,14 @@ export interface SystemUpdateActionResponse {
   success: boolean;
   message: string;
   version?: string | null;
+}
+
+export interface SystemUpdateConfigResponse {
+  autoEnabled: boolean;
+  checkIntervalMinutes: number;
+  maintenanceWindowEnabled: boolean;
+  maintenanceWindowStartUtc: string;
+  maintenanceWindowEndUtc: string;
 }
 
 export async function getSystemHealth(): Promise<SystemHealthResponse> {
@@ -98,6 +115,11 @@ export async function getSystemUpdateStatus(): Promise<SystemUpdateStatusRespons
   return data;
 }
 
+export async function getSystemUpdateConfig(): Promise<SystemUpdateConfigResponse> {
+  const { data } = await client.get<SystemUpdateConfigResponse>('/system/update/config');
+  return data;
+}
+
 export async function checkSystemUpdate(): Promise<SystemUpdateActionResponse> {
   const { data } = await client.post<SystemUpdateActionResponse>('/system/update/check');
   return data;
@@ -105,6 +127,13 @@ export async function checkSystemUpdate(): Promise<SystemUpdateActionResponse> {
 
 export async function updateSystemNow(): Promise<SystemUpdateActionResponse> {
   const { data } = await client.post<SystemUpdateActionResponse>('/system/update/update-now');
+  return data;
+}
+
+export async function updateSystemUpdateConfig(
+  payload: SystemUpdateConfigResponse,
+): Promise<SystemUpdateConfigResponse> {
+  const { data } = await client.put<SystemUpdateConfigResponse>('/system/update/config', payload);
   return data;
 }
 

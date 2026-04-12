@@ -2,6 +2,11 @@ package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import me.golemcore.bot.domain.memory.orchestrator.MemoryLifecycleOrchestrator;
+import me.golemcore.bot.domain.memory.persistence.MemoryNormalizationService;
+import me.golemcore.bot.domain.memory.persistence.MemoryPersistenceOrchestrator;
+import me.golemcore.bot.domain.memory.persistence.MemoryPromotionOrchestrator;
+import me.golemcore.bot.domain.memory.persistence.TurnMemoryExtractionOrchestrator;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.TurnMemoryEvent;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -51,12 +56,23 @@ class MemoryWriteServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
         BotProperties properties = new BotProperties();
 
-        service = new MemoryWriteService(
+        MemoryNormalizationService memoryNormalizationService = new MemoryNormalizationService(runtimeConfigService);
+        MemoryPersistenceOrchestrator memoryPersistenceOrchestrator = new MemoryPersistenceOrchestrator(
                 storagePort,
-                properties,
+                me.golemcore.bot.support.TestPorts.settings(properties),
                 runtimeConfigService,
-                memoryPromotionService,
+                memoryNormalizationService,
                 objectMapper);
+        MemoryPromotionOrchestrator memoryPromotionOrchestrator = new MemoryPromotionOrchestrator(
+                memoryPromotionService,
+                memoryPersistenceOrchestrator);
+        MemoryLifecycleOrchestrator memoryLifecycleOrchestrator = new MemoryLifecycleOrchestrator(
+                runtimeConfigService,
+                new TurnMemoryExtractionOrchestrator(runtimeConfigService, memoryNormalizationService),
+                memoryNormalizationService,
+                memoryPersistenceOrchestrator,
+                memoryPromotionOrchestrator);
+        service = new MemoryWriteService(memoryLifecycleOrchestrator);
 
         when(runtimeConfigService.isMemoryEnabled()).thenReturn(true);
         when(runtimeConfigService.isMemoryCodeAwareExtractionEnabled()).thenReturn(false);

@@ -1,6 +1,5 @@
 package me.golemcore.bot.domain.system;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -11,7 +10,23 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.SessionIdentity;
+import me.golemcore.bot.domain.context.ContextAssembler;
+import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.PromptComposer;
+import me.golemcore.bot.domain.context.layer.AutoModeLayer;
+import me.golemcore.bot.domain.context.layer.HiveLayer;
+import me.golemcore.bot.domain.context.layer.IdentityLayer;
+import me.golemcore.bot.domain.context.layer.MemoryLayer;
+import me.golemcore.bot.domain.context.layer.PlanModeLayer;
+import me.golemcore.bot.domain.context.layer.RagLayer;
+import me.golemcore.bot.domain.context.layer.SkillLayer;
+import me.golemcore.bot.domain.context.layer.TierAwarenessLayer;
+import me.golemcore.bot.domain.context.layer.ToolLayer;
+import me.golemcore.bot.domain.context.layer.WorkspaceInstructionsLayer;
+import me.golemcore.bot.domain.context.resolution.SkillResolver;
+import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
@@ -27,15 +42,15 @@ import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopTurnResult;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
+import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
+import me.golemcore.bot.port.outbound.PlanStorePort;
 import me.golemcore.bot.port.outbound.RagPort;
-import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.tools.PlanGetTool;
 import me.golemcore.bot.tools.PlanSetContentTool;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -70,17 +85,17 @@ class PlanWorkLifecycleBddTest {
     @Test
     void shouldPersistCanonicalMarkdownAndKeepPlanWorkActiveUntilPlanDone() {
         // GIVEN: a real PlanService with mocked storage
-        StoragePort storagePort = mock(StoragePort.class);
-        when(storagePort.getText(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
-        when(storagePort.putText(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        PlanStorePort planStorePort = mock(PlanStorePort.class);
+        when(planStorePort.loadPlans()).thenReturn(new ArrayList<>());
 
-        BotProperties properties = new BotProperties();
-        properties.getPlan().setEnabled(true);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isPlanEnabled()).thenReturn(true);
+        when(runtimeConfigService.getPlanMaxPlans()).thenReturn(5);
+        when(runtimeConfigService.getPlanMaxStepsPerPlan()).thenReturn(50);
 
         PlanService planService = new PlanService(
-                storagePort,
-                new ObjectMapper().findAndRegisterModules(),
-                properties,
+                planStorePort,
+                runtimeConfigService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         // /plan on (activate plan work + create empty plan)
@@ -92,7 +107,7 @@ class PlanWorkLifecycleBddTest {
         assertTrue(planService.isPlanModeActive(sessionIdentity));
 
         // And a minimal context builder to verify tool advertisement
-        ContextBuildingSystem contextBuildingSystem = buildContextBuildingSystem(planService, properties);
+        ContextBuildingSystem contextBuildingSystem = buildContextBuildingSystem(planService);
 
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().chatId(CHAT_ID).channelType("telegram").messages(new ArrayList<>())
@@ -129,16 +144,17 @@ class PlanWorkLifecycleBddTest {
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)),
-                new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
-                new BotProperties.TurnProperties(),
-                new BotProperties.ToolLoopProperties(),
-                modelSelectionService,
-                planService,
-                Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)))
+                .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(new BotProperties.TurnProperties()))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(new BotProperties.ToolLoopProperties()))
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .clock(Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneOffset.UTC))
+                .build();
 
         // WHEN: ToolLoop processes the turn
         ToolLoopTurnResult turnResult = toolLoop.processTurn(context);
@@ -161,8 +177,9 @@ class PlanWorkLifecycleBddTest {
         verify(toolExecutor, never()).execute(any(), any());
 
         // WHEN: PlanFinalizationSystem runs
-        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
-        PlanFinalizationSystem planFinalizationSystem = new PlanFinalizationSystem(planService, publisher);
+        PlanReadyNotificationPort planReadyNotificationPort = mock(PlanReadyNotificationPort.class);
+        PlanFinalizationSystem planFinalizationSystem = new PlanFinalizationSystem(planService,
+                planReadyNotificationPort);
         assertTrue(planFinalizationSystem.shouldProcess(context));
         planFinalizationSystem.process(context);
 
@@ -189,7 +206,7 @@ class PlanWorkLifecycleBddTest {
         assertEquals(Plan.PlanStatus.READY, plan.get().getStatus());
     }
 
-    private static ContextBuildingSystem buildContextBuildingSystem(PlanService planService, BotProperties properties) {
+    private static ContextBuildingSystem buildContextBuildingSystem(PlanService planService) {
         SkillTemplateEngine templateEngine = mock(SkillTemplateEngine.class);
         PromptSectionService promptSectionService = mock(PromptSectionService.class);
         UserPreferencesService userPreferencesService = mock(UserPreferencesService.class);
@@ -202,26 +219,36 @@ class PlanWorkLifecycleBddTest {
         McpPort mcpPort = mock(McpPort.class);
         RagPort ragPort = mock(RagPort.class);
         AutoModeService autoModeService = mock(AutoModeService.class);
+        DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(any()))
+                .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-balanced", "medium"));
         WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
         when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
         PlanSetContentTool planSetContentTool = new PlanSetContentTool(planService);
         PlanGetTool planGetTool = new PlanGetTool(planService);
         when(toolCallExecutionService.listTools()).thenReturn(List.of(planSetContentTool, planGetTool));
 
-        return new ContextBuildingSystem(
-                memoryComponent,
-                skillComponent,
-                templateEngine,
-                mcpPort,
-                toolCallExecutionService,
-                ragPort,
-                properties,
-                autoModeService,
-                planService,
-                promptSectionService,
-                runtimeConfigService,
-                userPreferencesService,
-                workspaceInstructionService);
+        SkillResolver skillResolver = new SkillResolver(skillComponent);
+        TierResolver tierResolver = new TierResolver(
+                userPreferencesService, modelSelectionService, runtimeConfigService, skillComponent);
+
+        List<ContextLayer> layers = List.of(
+                new IdentityLayer(promptSectionService, userPreferencesService),
+                new WorkspaceInstructionsLayer(workspaceInstructionService),
+                new MemoryLayer(memoryComponent, runtimeConfigService),
+                new RagLayer(ragPort),
+                new SkillLayer(skillComponent, templateEngine),
+                new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService),
+                new TierAwarenessLayer(userPreferencesService),
+                new AutoModeLayer(autoModeService),
+                new PlanModeLayer(planService),
+                new HiveLayer());
+
+        ContextAssembler contextAssembler = new ContextAssembler(
+                skillResolver, tierResolver, layers, new PromptComposer());
+
+        return new ContextBuildingSystem(contextAssembler, null, null, null);
     }
 }

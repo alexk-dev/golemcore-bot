@@ -1,270 +1,49 @@
 import { type ReactElement, useMemo, useState } from 'react';
-import { Badge, Button, Card, Col, Form, InputGroup, Row, Table } from 'react-bootstrap';
+import { Badge, Button, Card, InputGroup, Table } from 'react-bootstrap';
 import toast from 'react-hot-toast';
-import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import ConfirmModal from '../../components/common/ConfirmModal';
+import { ProviderNameCombobox } from '../../components/common/ProviderNameCombobox';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
-import { useAddLlmProvider, useUpdateLlmProvider, useRemoveLlmProvider } from '../../hooks/useSettings';
-import type { ApiType, LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settings';
+import type { HiveStatusResponse } from '../../api/hive';
+import type {
+  LlmConfig,
+  LlmProviderConfig,
+  LlmProviderImportResult,
+  LlmProviderTestResult,
+  ModelRouterConfig,
+} from '../../api/settingsTypes';
+import {
+  useAddLlmProviderAndImport,
+  useRemoveLlmProvider,
+  useTestLlmProvider,
+  useUpdateLlmProvider,
+} from '../../hooks/useSettings';
+import { listConfiguredModelSpecs } from '../../lib/modelRouter';
+import { extractErrorMessage } from '../../utils/extractErrorMessage';
+import { HiveManagedPolicyNotice } from './HiveManagedPolicyNotice';
+import { LlmProviderEditorCard } from './LlmProviderEditorCard';
+import { ProviderModelImportResultModal } from './ProviderModelImportResultModal';
+import { ProviderModelTestResultModal } from './ProviderModelTestResultModal';
+import { getHiveManagedPolicyDetails } from './hiveManagedPolicySupport';
+import {
+  API_TYPE_DETAILS,
+  buildDefaultProviderConfig,
+  KNOWN_PROVIDERS,
+  normalizeApiType,
+  PROVIDER_NAME_PATTERN,
+} from './llmProvidersSupport';
 
-const KNOWN_BASE_URLS: Record<string, string> = {
-  openai: 'https://api.openai.com/v1',
-  openrouter: 'https://openrouter.ai/api/v1',
-  anthropic: 'https://api.anthropic.com',
-  google: 'https://generativelanguage.googleapis.com/v1beta/openai',
-  kimi: 'https://api.moonshot.ai/v1',
-  groq: 'https://api.groq.com/openai/v1',
-  together: 'https://api.together.xyz/v1',
-  fireworks: 'https://api.fireworks.ai/inference/v1',
-  deepseek: 'https://api.deepseek.com/v1',
-  mistral: 'https://api.mistral.ai/v1',
-  xai: 'https://api.x.ai/v1',
-  perplexity: 'https://api.perplexity.ai',
-  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
-  qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-  cerebras: 'https://api.cerebras.ai/v1',
-  deepinfra: 'https://api.deepinfra.com/v1/openai',
-};
-
-const KNOWN_PROVIDERS: string[] = Object.keys(KNOWN_BASE_URLS);
-const PROVIDER_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
-
-const KNOWN_API_TYPES: Record<string, ApiType> = {
-  anthropic: 'anthropic',
-  google: 'gemini',
-};
-
-const API_TYPE_OPTIONS: ApiType[] = ['openai', 'anthropic', 'gemini'];
-const API_TYPE_DETAILS: Record<ApiType, { label: string; help: string; badgeBg: string; badgeText: string }> = {
-  openai: {
-    label: 'OpenAI',
-    help: 'OpenAI-compatible protocol for OpenAI, OpenRouter, Groq, DeepSeek, and similar endpoints.',
-    badgeBg: 'info-subtle',
-    badgeText: 'info',
-  },
-  anthropic: {
-    label: 'Anthropic',
-    help: 'Native Anthropic Claude protocol. Use for direct Anthropic providers.',
-    badgeBg: 'warning-subtle',
-    badgeText: 'warning',
-  },
-  gemini: {
-    label: 'Gemini',
-    help: 'Native Google Gemini protocol. Use this for direct Gemini providers.',
-    badgeBg: 'success-subtle',
-    badgeText: 'success',
-  },
-};
-
-function toNullableString(value: string): string | null {
-  return value.length > 0 ? value : null;
-}
-
-function toNullableInt(value: string): number | null {
-  const parsed = parseInt(value, 10);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function normalizeApiType(value: unknown): ApiType {
-  if (typeof value !== 'string') {
-    return 'openai';
-  }
-  const normalized = value.trim().toLowerCase();
-  if (API_TYPE_OPTIONS.includes(normalized as ApiType)) {
-    return normalized as ApiType;
-  }
-  return 'openai';
-}
-
-function getDefaultApiTypeForProvider(name: string): ApiType {
-  return KNOWN_API_TYPES[name] ?? 'openai';
-}
-
-function getSuggestedBaseUrl(name: string, apiType: ApiType): string | null {
-  if (apiType === 'gemini') {
-    return null;
-  }
-
-  const providerBaseUrl = KNOWN_BASE_URLS[name];
-  if (providerBaseUrl != null && getDefaultApiTypeForProvider(name) === apiType) {
-    return providerBaseUrl;
-  }
-
-  return apiType === 'anthropic' ? KNOWN_BASE_URLS.anthropic : KNOWN_BASE_URLS.openai;
-}
-
-function buildDefaultProviderConfig(name: string): LlmProviderConfig {
-  const defaultApiType = getDefaultApiTypeForProvider(name);
-  return {
-    apiKey: null,
-    apiKeyPresent: false,
-    baseUrl: getSuggestedBaseUrl(name, defaultApiType),
-    requestTimeoutSeconds: 300,
-    apiType: defaultApiType,
-  };
-}
-
-interface ProviderEditorProps {
-  name: string;
-  form: LlmProviderConfig;
-  isNew: boolean;
-  showKey: boolean;
-  isSaving: boolean;
-  recommendedApiType: ApiType | null;
-  onFormChange: (form: LlmProviderConfig) => void;
-  onToggleShowKey: () => void;
-  onSave: () => void;
-  onCancel: () => void;
-}
-
-function ProviderEditor({
-  name, form, isNew, showKey, isSaving, recommendedApiType,
-  onFormChange, onToggleShowKey, onSave, onCancel,
-}: ProviderEditorProps): ReactElement {
-  const apiType = normalizeApiType(form.apiType);
-  const hasBaseUrl = (form.baseUrl ?? '').trim().length > 0;
-  const suggestedBaseUrl = getSuggestedBaseUrl(name, apiType);
-  const shouldShowUseDefaultBaseUrl = suggestedBaseUrl != null && form.baseUrl !== suggestedBaseUrl;
-  const shouldShowClearBaseUrl = apiType === 'gemini' && hasBaseUrl;
-
-  return (
-    <Card className="mb-3 border provider-editor-card">
-      <Card.Body className="p-3">
-        <h6 className="text-capitalize mb-3">{isNew ? `New provider: ${name}` : name}</h6>
-        <Row className="g-2">
-          <Col md={12}>
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-medium d-flex align-items-center gap-2">
-                <span>API Key</span>
-                {!isNew && form.apiKeyPresent === true && (
-                  <Badge bg="success-subtle" text="success">Configured</Badge>
-                )}
-                {(form.apiKey?.length ?? 0) > 0 && (
-                  <Badge bg="info-subtle" text="info">Will update on save</Badge>
-                )}
-              </Form.Label>
-              <InputGroup size="sm">
-                <Form.Control
-                  name={`llm-api-key-${name}`}
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-lpignore="true"
-                  placeholder={form.apiKeyPresent === true ? 'Secret is configured (hidden)' : 'Enter API key'}
-                  type={showKey ? 'text' : 'password'}
-                  value={form.apiKey ?? ''}
-                  onChange={(e) => onFormChange({ ...form, apiKey: toNullableString(e.target.value) })}
-                />
-                <Button type="button" variant="secondary" aria-pressed={showKey} onClick={onToggleShowKey}>
-                  {showKey ? 'Hide' : 'Show'}
-                </Button>
-              </InputGroup>
-            </Form.Group>
-          </Col>
-          <Col md={6}>
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-medium">Base URL</Form.Label>
-              <InputGroup size="sm">
-                <Form.Control
-                  type="url"
-                  value={form.baseUrl ?? ''}
-                  onChange={(e) => onFormChange({ ...form, baseUrl: toNullableString(e.target.value) })}
-                  placeholder="https://api.example.com/v1"
-                />
-                {shouldShowUseDefaultBaseUrl && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => onFormChange({ ...form, baseUrl: suggestedBaseUrl })}
-                  >
-                    Use default
-                  </Button>
-                )}
-                {shouldShowClearBaseUrl && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => onFormChange({ ...form, baseUrl: null })}
-                  >
-                    Clear
-                  </Button>
-                )}
-              </InputGroup>
-              <Form.Text className="text-body-secondary">
-                {apiType === 'gemini'
-                  ? 'Gemini uses the native Google endpoint, so Base URL is usually left empty.'
-                  : suggestedBaseUrl != null
-                    ? `Recommended endpoint: ${suggestedBaseUrl}`
-                    : 'Leave empty to use the provider default endpoint.'}
-              </Form.Text>
-            </Form.Group>
-          </Col>
-          <Col md={3}>
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-medium">API Type</Form.Label>
-              <Form.Select
-                size="sm"
-                value={apiType}
-                onChange={(e) => onFormChange({ ...form, apiType: normalizeApiType(e.target.value) })}
-              >
-                {API_TYPE_OPTIONS.map((type) => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </Form.Select>
-              <Form.Text className="text-body-secondary d-block">
-                {API_TYPE_DETAILS[apiType].help}
-              </Form.Text>
-              {recommendedApiType != null && (
-                <Form.Text
-                  className={`d-block ${recommendedApiType === apiType ? 'text-success' : 'text-warning'}`}
-                >
-                  {recommendedApiType === apiType
-                    ? `Matches recommended protocol for "${name}".`
-                    : `Recommended for "${name}": ${recommendedApiType}.`}
-                </Form.Text>
-              )}
-            </Form.Group>
-          </Col>
-          <Col md={3}>
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-medium">Timeout (s)</Form.Label>
-              <Form.Control
-                size="sm"
-                type="number"
-                min={1}
-                max={3600}
-                value={form.requestTimeoutSeconds ?? 300}
-                onChange={(e) => onFormChange({
-                  ...form,
-                  requestTimeoutSeconds: toNullableInt(e.target.value) ?? 300,
-                })}
-              />
-            </Form.Group>
-          </Col>
-        </Row>
-        <div className="d-flex gap-2 mt-2">
-          <Button type="button" variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
-            {isSaving ? 'Saving...' : 'Save'}
-          </Button>
-          <Button type="button" variant="secondary" size="sm" onClick={onCancel} disabled={isSaving}>
-            Cancel
-          </Button>
-        </div>
-      </Card.Body>
-    </Card>
-  );
-}
-
-interface LlmProvidersTabProps {
+export interface LlmProvidersTabProps {
   config: LlmConfig;
   modelRouter: ModelRouterConfig;
+  hiveStatus?: HiveStatusResponse | null;
 }
 
-export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTabProps): ReactElement {
-  const addProvider = useAddLlmProvider();
+export default function LlmProvidersTab({ config, modelRouter, hiveStatus }: LlmProvidersTabProps): ReactElement {
+  const addProviderAndImport = useAddLlmProviderAndImport();
   const updateProvider = useUpdateLlmProvider();
   const removeProvider = useRemoveLlmProvider();
+  const testProvider = useTestLlmProvider();
 
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<LlmProviderConfig | null>(null);
@@ -272,12 +51,12 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
   const [showKey, setShowKey] = useState(false);
   const [newProviderName, setNewProviderName] = useState('');
   const [deleteProvider, setDeleteProvider] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<LlmProviderImportResult | null>(null);
+  const [testResult, setTestResult] = useState<LlmProviderTestResult | null>(null);
+  const [importableModels, setImportableModels] = useState<string[]>([]);
+  const [selectedImportModels, setSelectedImportModels] = useState<string[]>([]);
 
   const providerNames = Object.keys(config.providers ?? {});
-  const recommendedApiTypeForEditing = editingName != null && KNOWN_BASE_URLS[editingName] != null
-    ? getDefaultApiTypeForProvider(editingName)
-    : null;
-
   const knownSuggestions = useMemo(() => {
     const combined = [...KNOWN_PROVIDERS, ...providerNames];
     return Array.from(new Set(combined)).sort();
@@ -285,14 +64,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
 
   const usedProviders = useMemo(() => {
     const used = new Set<string>();
-    const models = [
-      modelRouter.routingModel,
-      modelRouter.balancedModel,
-      modelRouter.smartModel,
-      modelRouter.codingModel,
-      modelRouter.deepModel,
-    ].filter(Boolean) as string[];
-    models.forEach((modelName) => {
+    listConfiguredModelSpecs(modelRouter).forEach((modelName) => {
       const idx = modelName.indexOf('/');
       if (idx > 0) {
         used.add(modelName.substring(0, idx));
@@ -301,7 +73,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
     return used;
   }, [modelRouter]);
 
-  const isSaving = addProvider.isPending || updateProvider.isPending;
+  const isSaving = addProviderAndImport.isPending || updateProvider.isPending;
+  const managedPolicy = getHiveManagedPolicyDetails(hiveStatus);
   const normalizedNewProviderName = newProviderName.trim().toLowerCase();
   const isProviderNameInvalid = normalizedNewProviderName.length > 0 && !PROVIDER_NAME_PATTERN.test(normalizedNewProviderName);
   const providerAlreadyExists = normalizedNewProviderName.length > 0
@@ -329,6 +102,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
     setEditForm(buildDefaultProviderConfig(name));
     setIsNewProvider(true);
     setShowKey(false);
+    setImportableModels([]);
+    setSelectedImportModels([]);
     setNewProviderName('');
   };
 
@@ -338,9 +113,11 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
       return;
     }
     setEditingName(name);
-    setEditForm({ ...provider, apiKey: null, apiType: normalizeApiType(provider.apiType) });
+    setEditForm({ ...provider, apiKey: null, apiType: normalizeApiType(provider.apiType), legacyApi: provider.legacyApi ?? null });
     setIsNewProvider(false);
     setShowKey(false);
+    setImportableModels([]);
+    setSelectedImportModels([]);
   };
 
   const handleCancelEdit = (): void => {
@@ -348,6 +125,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
     setEditForm(null);
     setIsNewProvider(false);
     setShowKey(false);
+    setImportableModels([]);
+    setSelectedImportModels([]);
   };
 
   const handleSave = async (): Promise<void> => {
@@ -356,16 +135,73 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
     }
     try {
       if (isNewProvider) {
-        await addProvider.mutateAsync({ name: editingName, config: editForm });
+        const result = await addProviderAndImport.mutateAsync({
+          name: editingName,
+          config: editForm,
+          selectedModelIds: selectedImportModels,
+        });
+        setImportResult(result);
         toast.success(`Provider "${editingName}" added`);
       } else {
         await updateProvider.mutateAsync({ name: editingName, config: editForm });
         toast.success(`Provider "${editingName}" updated`);
       }
       handleCancelEdit();
-    } catch (err) {
-      toast.error(`Failed to save: ${extractErrorMessage(err)}`);
+    } catch (error) {
+      toast.error(`Failed to save: ${extractErrorMessage(error)}`);
     }
+  };
+
+  const handleTestDraft = async (): Promise<void> => {
+    if (editingName == null || editForm == null) {
+      return;
+    }
+    try {
+      const result = await testProvider.mutateAsync({
+        mode: 'draft',
+        providerName: editingName,
+        config: editForm,
+      });
+      setTestResult(result);
+      if (isNewProvider && result.success) {
+        const models = Array.from(new Set(result.models));
+        setImportableModels(models);
+        setSelectedImportModels(models);
+      }
+      if (isNewProvider && !result.success) {
+        setImportableModels([]);
+        setSelectedImportModels([]);
+      }
+    } catch (error) {
+      toast.error(`Provider test failed: ${extractErrorMessage(error)}`);
+    }
+  };
+
+  const handleTestSaved = async (): Promise<void> => {
+    if (editingName == null || isNewProvider) {
+      return;
+    }
+    try {
+      const result = await testProvider.mutateAsync({
+        mode: 'saved',
+        providerName: editingName,
+      });
+      setTestResult(result);
+    } catch (error) {
+      toast.error(`Provider test failed: ${extractErrorMessage(error)}`);
+    }
+  };
+
+  const handleToggleImportModel = (modelId: string): void => {
+    setSelectedImportModels((current) => {
+      const next = new Set(current);
+      if (next.has(modelId)) {
+        next.delete(modelId);
+      } else {
+        next.add(modelId);
+      }
+      return importableModels.filter((model) => next.has(model));
+    });
   };
 
   const handleConfirmDelete = async (): Promise<void> => {
@@ -378,8 +214,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
       if (editingName === deleteProvider) {
         handleCancelEdit();
       }
-    } catch (err) {
-      toast.error(`Failed to remove: ${extractErrorMessage(err)}`);
+    } catch (error) {
+      toast.error(`Failed to remove: ${extractErrorMessage(error)}`);
     } finally {
       setDeleteProvider(null);
     }
@@ -393,126 +229,135 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
           Manage provider credentials and API protocol. API type controls which wire protocol is used for each provider.
         </div>
 
-        <InputGroup className="mb-3" size="sm">
-          <Form.Control
-            placeholder="Provider name (e.g. openai)"
-            list="known-llm-providers"
-            value={newProviderName}
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            aria-invalid={isProviderNameInvalid || providerAlreadyExists}
-            onChange={(e) => setNewProviderName(e.target.value.toLowerCase())}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                if (canStartAdd) {
-                  handleStartAdd();
-                }
-              }
-            }}
-          />
-          <Button type="button" variant="primary" onClick={handleStartAdd} disabled={!canStartAdd}>Add Provider</Button>
-        </InputGroup>
-        <div className={`small mb-3 ${isProviderNameInvalid || providerAlreadyExists ? 'text-danger' : 'text-body-secondary'}`}>
-          {isProviderNameInvalid
-            ? 'Name format: [a-z0-9][a-z0-9_-]*'
-            : providerAlreadyExists
-              ? 'Provider already exists.'
-              : 'Use lowercase provider IDs, for example: openai, anthropic, deepseek. API type is set in the editor.'}
-        </div>
-        <datalist id="known-llm-providers">
-          {knownSuggestions.map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
+        {managedPolicy ? (
+          <HiveManagedPolicyNotice policy={managedPolicy} sectionLabel="LLM Providers" className="mb-3" />
+        ) : null}
 
-        {providerNames.length > 0 ? (
-          <Table size="sm" hover responsive className="mb-3 dashboard-table responsive-table providers-table">
-            <thead>
-              <tr>
-                <th scope="col">Provider</th>
-                <th scope="col">API Type</th>
-                <th scope="col">Base URL</th>
-                <th scope="col">Status</th>
-                <th scope="col" className="text-end">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {providerNames.map((name) => {
-                const provider = config.providers[name];
-                const isReady = provider?.apiKeyPresent === true;
-                const apiType = normalizeApiType(provider?.apiType);
-                return (
-                  <tr key={name}>
-                    <td data-label="Provider" className="text-capitalize fw-medium">{name}</td>
-                    <td data-label="API Type" className="small text-body-secondary">
-                      <Badge bg={API_TYPE_DETAILS[apiType].badgeBg} text={API_TYPE_DETAILS[apiType].badgeText}>
-                        {API_TYPE_DETAILS[apiType].label}
-                      </Badge>
-                    </td>
-                    <td data-label="Base URL" className="small text-body-secondary provider-url-cell">
-                      {provider?.baseUrl ?? <em>default</em>}
-                    </td>
-                    <td data-label="Status">
-                      {isReady ? (
-                        <Badge bg="success">Ready</Badge>
-                      ) : (
-                        <Badge bg="secondary">Setup needed</Badge>
-                      )}
-                    </td>
-                    <td data-label="Actions" className="text-end text-nowrap">
-                      <div className="d-flex flex-wrap gap-1 providers-actions">
-                        <Button type="button"
-                          size="sm"
-                          variant="secondary"
-                          className="provider-action-btn"
-                          disabled={isSaving}
-                          onClick={() => {
-                            if (editingName === name && !isNewProvider) {
-                              handleCancelEdit();
-                            } else {
-                              handleStartEdit(name);
-                            }
-                          }}
-                        >
-                          {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
-                        </Button>
-                        <Button type="button"
-                          size="sm"
-                          variant="danger"
-                          className="provider-action-btn"
-                          disabled={usedProviders.has(name) || removeProvider.isPending}
-                          title={usedProviders.has(name) ? 'In use by model router' : removeProvider.isPending ? 'Deletion in progress' : 'Remove provider'}
-                          onClick={() => setDeleteProvider(name)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
-        ) : (
-          <p className="text-body-secondary small mb-3">No providers configured. Add one above to get started.</p>
-        )}
+        <fieldset disabled={managedPolicy != null} className="border-0 m-0 p-0">
+          <InputGroup className="mb-3" size="sm">
+            <div className="flex-grow-1">
+              <ProviderNameCombobox
+                value={newProviderName}
+                suggestions={knownSuggestions}
+                placeholder="Provider name (e.g. openai)"
+                disabled={managedPolicy != null || editingName != null || isSaving}
+                hasError={isProviderNameInvalid || providerAlreadyExists}
+                onValueChange={(value) => setNewProviderName(value.toLowerCase())}
+                onSubmit={handleStartAdd}
+              />
+            </div>
+            <Button type="button" variant="primary" onClick={handleStartAdd} disabled={managedPolicy != null || !canStartAdd}>
+              Add Provider
+            </Button>
+          </InputGroup>
+          <div className={`small mb-3 ${isProviderNameInvalid || providerAlreadyExists ? 'text-danger' : 'text-body-secondary'}`}>
+            {isProviderNameInvalid
+              ? 'Name format: [a-z0-9][a-z0-9_-]*'
+              : providerAlreadyExists
+                ? 'Provider already exists.'
+                : 'Use lowercase provider IDs, for example: openai, anthropic, deepseek. You can also enter a custom provider ID not present in the suggestion list.'}
+          </div>
 
-        {editingName != null && editForm != null && (
-          <ProviderEditor
-            name={editingName}
-            form={editForm}
-            isNew={isNewProvider}
-            showKey={showKey}
-            isSaving={isSaving}
-            recommendedApiType={recommendedApiTypeForEditing}
-            onFormChange={setEditForm}
-            onToggleShowKey={() => setShowKey(!showKey)}
-            onSave={() => { void handleSave(); }}
-            onCancel={handleCancelEdit}
-          />
-        )}
+          {providerNames.length > 0 ? (
+            <Table size="sm" hover responsive className="mb-3 dashboard-table responsive-table providers-table">
+              <thead>
+                <tr>
+                  <th scope="col">Provider</th>
+                  <th scope="col">API Type</th>
+                  <th scope="col">Base URL</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" className="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {providerNames.map((name) => {
+                  const provider = config.providers[name];
+                  const isReady = provider?.apiKeyPresent === true;
+                  const apiType = normalizeApiType(provider?.apiType);
+                  return (
+                    <tr key={name}>
+                      <td data-label="Provider" className="text-capitalize fw-medium">{name}</td>
+                      <td data-label="API Type" className="small text-body-secondary">
+                        <Badge bg={API_TYPE_DETAILS[apiType].badgeBg} text={API_TYPE_DETAILS[apiType].badgeText}>
+                          {API_TYPE_DETAILS[apiType].label}
+                        </Badge>
+                      </td>
+                      <td data-label="Base URL" className="small text-body-secondary provider-url-cell">
+                        {provider?.baseUrl ?? <em>default</em>}
+                      </td>
+                      <td data-label="Status">
+                        {isReady ? (
+                          <Badge bg="success">Ready</Badge>
+                        ) : (
+                          <Badge bg="secondary">Setup needed</Badge>
+                        )}
+                      </td>
+                      <td data-label="Actions" className="text-end text-nowrap">
+                        <div className="d-flex flex-wrap gap-1 providers-actions">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className="provider-action-btn"
+                            disabled={managedPolicy != null || isSaving}
+                            onClick={() => {
+                              if (editingName === name && !isNewProvider) {
+                                handleCancelEdit();
+                              } else {
+                                handleStartEdit(name);
+                              }
+                            }}
+                          >
+                            {editingName === name && !isNewProvider ? 'Close' : 'Edit'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="danger"
+                            className="provider-action-btn"
+                            disabled={managedPolicy != null || usedProviders.has(name) || removeProvider.isPending}
+                            title={usedProviders.has(name) ? 'In use by model router' : removeProvider.isPending ? 'Deletion in progress' : 'Remove provider'}
+                            onClick={() => setDeleteProvider(name)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          ) : (
+            <p className="text-body-secondary small mb-3">No providers configured. Add one above to get started.</p>
+          )}
+
+          {editingName != null && editForm != null && (
+            <LlmProviderEditorCard
+              name={editingName}
+              form={editForm}
+              isNew={isNewProvider}
+              showKey={showKey}
+              isSaving={isSaving}
+              isTesting={testProvider.isPending}
+              importableModels={importableModels}
+              selectedImportModels={selectedImportModels}
+              onFormChange={setEditForm}
+              onToggleShowKey={() => setShowKey(!showKey)}
+              onToggleImportModel={handleToggleImportModel}
+              onSelectAllImportModels={() => setSelectedImportModels(importableModels)}
+              onClearImportModels={() => setSelectedImportModels([])}
+              onInvertImportModels={() => {
+                const selectedSet = new Set(selectedImportModels);
+                setSelectedImportModels(importableModels.filter((model) => !selectedSet.has(model)));
+              }}
+              onSave={() => { void handleSave(); }}
+              onCancel={handleCancelEdit}
+              onTestDraft={() => { void handleTestDraft(); }}
+              onTestSaved={() => { void handleTestSaved(); }}
+            />
+          )}
+        </fieldset>
       </Card.Body>
 
       <ConfirmModal
@@ -524,6 +369,16 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
         isProcessing={removeProvider.isPending}
         onConfirm={() => { void handleConfirmDelete(); }}
         onCancel={() => setDeleteProvider(null)}
+      />
+      <ProviderModelImportResultModal
+        show={importResult != null}
+        result={importResult}
+        onHide={() => setImportResult(null)}
+      />
+      <ProviderModelTestResultModal
+        show={testResult != null}
+        result={testResult}
+        onHide={() => setTestResult(null)}
       />
     </Card>
   );

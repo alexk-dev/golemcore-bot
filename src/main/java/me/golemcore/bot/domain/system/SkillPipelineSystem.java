@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -85,6 +86,7 @@ public class SkillPipelineSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
+        carryTacticGuidance(context);
         Skill activeSkill = context.getActiveSkill();
         String nextSkillName = activeSkill.getNextSkill();
 
@@ -130,5 +132,12 @@ public class SkillPipelineSystem implements AgentSystem {
         context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
 
         return context;
+    }
+
+    private void carryTacticGuidance(AgentContext context) {
+        Object selection = context.getAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_SELECTION);
+        if (selection instanceof TacticSearchResult tacticSearchResult) {
+            context.setAttribute(ContextAttributes.SELF_EVOLVING_TACTIC_GUIDANCE, tacticSearchResult);
+        }
     }
 }

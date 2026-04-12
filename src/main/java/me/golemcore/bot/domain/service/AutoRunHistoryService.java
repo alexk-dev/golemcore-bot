@@ -26,8 +26,6 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class AutoRunHistoryService {
 
-    private static final String DEFAULT_MODEL_TIER = "balanced";
-
     private final SessionPort sessionPort;
     private final ScheduleService scheduleService;
     private final AutoModeService autoModeService;
@@ -171,7 +169,9 @@ public class AutoRunHistoryService {
             boolean hasToolCalls,
             boolean hasVoice,
             String model,
-            String modelTier) {
+            String modelTier,
+            String skill,
+            String status) {
     }
 
     private static final class RunAggregate {
@@ -248,16 +248,11 @@ public class AutoRunHistoryService {
                 lastActivityAt = timestamp;
             }
 
-            String model = null;
-            String modelTier = null;
             Map<String, Object> metadata = message.getMetadata();
-            if (metadata != null) {
-                model = AutoRunContextSupport.readMetadataString(metadata, "model");
-                modelTier = AutoRunContextSupport.readMetadataString(metadata, "modelTier");
-            }
-            if ("assistant".equals(message.getRole()) && StringValueSupport.isBlank(modelTier)) {
-                modelTier = DEFAULT_MODEL_TIER;
-            }
+            String model = resolveModel(metadata, message.getRole());
+            String modelTier = resolveModelTier(metadata, message.getRole());
+            String skill = resolveSkill(metadata, message.getRole());
+            String status = resolveRunStatus(metadata);
 
             messages.add(new RunMessage(
                     message.getId(),
@@ -267,7 +262,9 @@ public class AutoRunHistoryService {
                     message.hasToolCalls(),
                     message.hasVoice(),
                     model,
-                    modelTier));
+                    modelTier,
+                    skill,
+                    status));
         }
 
         private Instant sortInstant() {
@@ -320,6 +317,14 @@ public class AutoRunHistoryService {
         }
 
         private String resolveStatus() {
+            String explicit = messages.stream()
+                    .map(RunMessage::status)
+                    .filter(value -> value != null && !value.isBlank())
+                    .reduce((first, second) -> second)
+                    .orElse(null);
+            if (explicit != null) {
+                return explicit;
+            }
             boolean hasAssistant = messages.stream().anyMatch(message -> "assistant".equals(message.role()));
             if (hasAssistant) {
                 return "COMPLETED";
@@ -329,6 +334,39 @@ public class AutoRunHistoryService {
                 return "TOOL_OUTPUT";
             }
             return "STARTED";
+        }
+
+        private static String resolveModel(Map<String, Object> metadata, String role) {
+            if (!shouldExposeTurnMetadata(role) || metadata == null) {
+                return null;
+            }
+            return AutoRunContextSupport.readMetadataString(metadata, "model");
+        }
+
+        private static String resolveModelTier(Map<String, Object> metadata, String role) {
+            if (!shouldExposeTurnMetadata(role) || metadata == null) {
+                return null;
+            }
+            return AutoRunContextSupport.readMetadataString(metadata, "modelTier");
+        }
+
+        private static String resolveSkill(Map<String, Object> metadata, String role) {
+            if (!shouldExposeTurnMetadata(role) || metadata == null) {
+                return null;
+            }
+            String activeSkill = AutoRunContextSupport.readMetadataString(metadata,
+                    ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
+            if (!StringValueSupport.isBlank(activeSkill)) {
+                return activeSkill;
+            }
+            return AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.ACTIVE_SKILL_NAME);
+        }
+
+        private static String resolveRunStatus(Map<String, Object> metadata) {
+            if (metadata == null) {
+                return null;
+            }
+            return AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_RUN_STATUS);
         }
 
         private static String resolveScheduleTargetLabel(
@@ -361,6 +399,10 @@ public class AutoRunHistoryService {
                 return true;
             }
             return candidate.isAfter(current);
+        }
+
+        private static boolean shouldExposeTurnMetadata(String role) {
+            return "assistant".equals(role) || "tool".equals(role);
         }
     }
 }

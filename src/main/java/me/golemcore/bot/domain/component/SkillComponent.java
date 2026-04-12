@@ -82,4 +82,17 @@ public interface SkillComponent extends Component {
      * are created or modified at runtime.
      */
     void reload();
+
+    /**
+     * Registers a dynamically-created skill (e.g., materialized from MCP catalog).
+     * Does not overwrite existing skills with the same name.
+     *
+     * @param skill
+     *            the skill to register
+     * @return true if the skill was registered, false if a skill with the same name
+     *         already exists
+     */
+    default boolean registerDynamicSkill(Skill skill) {
+        return false;
+    }
 }

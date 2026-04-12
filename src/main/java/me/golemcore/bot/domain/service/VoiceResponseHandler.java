@@ -18,8 +18,7 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.AudioFormat;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.VoicePort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Unified voice response handler. Synthesizes text via {@link VoicePort} and
- * sends via {@link ChannelPort}. Falls back to text on any failure.
+ * sends via {@link ChannelDeliveryPort}. Falls back to text on any failure.
  *
  * <p>
  * Returns {@code true} if voice was successfully sent, {@code false} if caller
@@ -42,7 +41,6 @@ import java.util.concurrent.TimeUnit;
 public class VoiceResponseHandler {
 
     private final VoicePort voicePort;
-    private final RuntimeConfigService runtimeConfigService;
 
     /**
      * Result of a voice send attempt.
@@ -62,17 +60,13 @@ public class VoiceResponseHandler {
      *            text to synthesize
      * @return result indicating success, failure, or quota exceeded
      */
-    public VoiceSendResult trySendVoice(ChannelPort channel, String chatId, String text) {
+    public VoiceSendResult trySendVoice(ChannelDeliveryPort channel, String chatId, String text) {
         if (!voicePort.isAvailable()) {
             log.debug("[Voice] Not available, skipping synthesis");
             return VoiceSendResult.FAILED;
         }
         try {
-            VoicePort.VoiceConfig config = new VoicePort.VoiceConfig(
-                    runtimeConfigService.getVoiceId(),
-                    runtimeConfigService.getTtsModelId(),
-                    runtimeConfigService.getVoiceSpeed(),
-                    AudioFormat.MP3);
+            VoicePort.VoiceConfig config = VoicePort.VoiceConfig.defaultConfig();
             byte[] audioData = voicePort.synthesize(text, config).get(60, TimeUnit.SECONDS);
             channel.sendVoice(chatId, audioData).get(30, TimeUnit.SECONDS);
             log.info("[Voice] Sent: {} chars → {} bytes audio, chatId={}", text.length(), audioData.length, chatId);
@@ -105,7 +99,7 @@ public class VoiceResponseHandler {
      *            text to synthesize / send as fallback
      * @return result indicating success, failure, or quota exceeded
      */
-    public VoiceSendResult sendVoiceWithFallback(ChannelPort channel, String chatId, String text) {
+    public VoiceSendResult sendVoiceWithFallback(ChannelDeliveryPort channel, String chatId, String text) {
         VoiceSendResult voiceResult = trySendVoice(channel, chatId, text);
         if (voiceResult == VoiceSendResult.SUCCESS) {
             return VoiceSendResult.SUCCESS;

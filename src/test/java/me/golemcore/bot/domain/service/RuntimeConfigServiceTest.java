@@ -2,8 +2,10 @@ package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import me.golemcore.bot.adapter.outbound.config.StorageRuntimeConfigPersistenceAdapter;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
+import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService;
 
 @SuppressWarnings("PMD.TooManyMethods") // Comprehensive test coverage for critical config service
 class RuntimeConfigServiceTest {
@@ -58,7 +61,10 @@ class RuntimeConfigServiceTest {
                     return CompletableFuture.completedFuture(persistedSections.get(fileName));
                 });
 
-        service = new RuntimeConfigService(storagePort);
+        service = new RuntimeConfigService(
+                new StorageRuntimeConfigPersistenceAdapter(storagePort),
+                new SelfEvolvingBootstrapOverrideService(
+                        me.golemcore.bot.support.TestPorts.settings(new BotProperties())));
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
     }
@@ -70,12 +76,94 @@ class RuntimeConfigServiceTest {
         RuntimeConfig config = service.getRuntimeConfig();
 
         assertNotNull(config);
+        assertNotNull(config.getModelRegistry());
         assertNotNull(config.getTelegram());
         assertNotNull(config.getModelRouter());
         assertNotNull(config.getLlm());
         assertNotNull(config.getTools());
         assertNotNull(config.getTools().getShellEnvironmentVariables());
         assertTrue(config.getTools().getShellEnvironmentVariables().isEmpty());
+        assertNotNull(config.getTracing());
+        assertTrue(config.getTracing().getEnabled());
+        assertFalse(config.getTracing().getPayloadSnapshotsEnabled());
+        assertEquals(128, config.getTracing().getSessionTraceBudgetMb());
+    }
+
+    @Test
+    void shouldDefaultTelemetryToTrueForFreshInstall() {
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getTelemetry());
+        assertTrue(Boolean.TRUE.equals(config.getTelemetry().getEnabled()));
+    }
+
+    @Test
+    void shouldDefaultTelemetryToFalseForUpgradeWithoutTelemetrySection() throws Exception {
+        RuntimeConfig.UsageConfig usage = RuntimeConfig.UsageConfig.builder()
+                .enabled(true)
+                .build();
+        persistedSections.put("usage.json", objectMapper.writeValueAsString(usage));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getTelemetry());
+        assertFalse(Boolean.TRUE.equals(config.getTelemetry().getEnabled()));
+    }
+
+    @Test
+    void shouldPreserveIndependentTacticsToggleWithinSelfEvolvingConfig() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getSelfEvolving().setEnabled(true);
+        config.getSelfEvolving().getTactics().setEnabled(false);
+
+        service.updateRuntimeConfig(config);
+
+        assertTrue(config.getSelfEvolving().getEnabled());
+        assertFalse(config.getSelfEvolving().getTactics().getEnabled());
+    }
+
+    @Test
+    void shouldLoadModelRegistryConfigFromStorage() throws Exception {
+        RuntimeConfig.ModelRegistryConfig modelRegistry = RuntimeConfig.ModelRegistryConfig.builder()
+                .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                .branch("develop")
+                .build();
+        persistedSections.put("model-registry.json", objectMapper.writeValueAsString(modelRegistry));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getModelRegistry());
+        assertEquals("https://github.com/alexk-dev/golemcore-models", config.getModelRegistry().getRepositoryUrl());
+        assertEquals("develop", config.getModelRegistry().getBranch());
+    }
+
+    @Test
+    void shouldPersistModelRegistrySection() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setModelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                .branch("main")
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        assertTrue(persistedSections.containsKey("model-registry.json"));
+        Map<?, ?> persistedModelRegistry = readPersistedJsonMap("model-registry.json");
+        assertEquals("https://github.com/alexk-dev/golemcore-models", persistedModelRegistry.get("repositoryUrl"));
+        assertEquals("main", persistedModelRegistry.get("branch"));
+    }
+
+    @Test
+    void shouldNormalizeBlankModelRegistryBranchToMain() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setModelRegistry(RuntimeConfig.ModelRegistryConfig.builder()
+                .repositoryUrl("https://github.com/alexk-dev/golemcore-models")
+                .branch("  ")
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        assertEquals("main", config.getModelRegistry().getBranch());
     }
 
     @Test
@@ -92,13 +180,151 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldNormalizeModelRouterToCanonicalTierBindingsInFixedOrder() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        service.updateRuntimeConfig(config);
+
+        Map<?, ?> persistedModelRouter = readPersistedJsonMap("model-router.json");
+        assertTrue(persistedModelRouter.containsKey("routing"));
+        assertTrue(persistedModelRouter.containsKey("tiers"));
+
+        Map<?, ?> tiers = castMap(persistedModelRouter.get("tiers"));
+        assertEquals(List.of(
+                "balanced",
+                "smart",
+                "deep",
+                "coding",
+                "special1",
+                "special2",
+                "special3",
+                "special4",
+                "special5"), List.copyOf(tiers.keySet()));
+
+        Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
+        assertPersistedModelMissing(routing);
+        assertEquals("none", routing.get("reasoning"));
+        assertPersistedModelMissing(castMap(tiers.get("balanced")));
+        assertPersistedModelMissing(castMap(tiers.get("smart")));
+        assertPersistedModelMissing(castMap(tiers.get("deep")));
+        assertPersistedModelMissing(castMap(tiers.get("coding")));
+    }
+
+    @Test
+    void shouldMigrateLegacyFlatModelRouterSectionToCanonicalTierBindings() throws Exception {
+        Map<String, Object> legacyModelRouter = new LinkedHashMap<>();
+        legacyModelRouter.put("routingModel", "openai/gpt-5.2-codex");
+        legacyModelRouter.put("routingModelReasoning", "none");
+        legacyModelRouter.put("balancedModel", "legacy/balanced");
+        legacyModelRouter.put("balancedModelReasoning", "low");
+        legacyModelRouter.put("smartModel", "legacy/smart");
+        legacyModelRouter.put("smartModelReasoning", "medium");
+        legacyModelRouter.put("deepModel", "legacy/deep");
+        legacyModelRouter.put("deepModelReasoning", "high");
+        legacyModelRouter.put("codingModel", "legacy/coding");
+        legacyModelRouter.put("codingModelReasoning", "xhigh");
+        legacyModelRouter.put("dynamicTierEnabled", true);
+        persistedSections.put("model-router.json", objectMapper.writeValueAsString(legacyModelRouter));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+        service.updateRuntimeConfig(config);
+
+        Map<?, ?> persistedModelRouter = readPersistedJsonMap("model-router.json");
+        Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
+        Map<?, ?> tiers = castMap(persistedModelRouter.get("tiers"));
+
+        assertPersistedModelId(routing, "openai/gpt-5.2-codex");
+        assertPersistedModelId(castMap(tiers.get("balanced")), "legacy/balanced");
+        assertEquals("low", castMap(tiers.get("balanced")).get("reasoning"));
+        assertPersistedModelId(castMap(tiers.get("smart")), "legacy/smart");
+        assertEquals("medium", castMap(tiers.get("smart")).get("reasoning"));
+        assertPersistedModelId(castMap(tiers.get("deep")), "legacy/deep");
+        assertEquals("high", castMap(tiers.get("deep")).get("reasoning"));
+        assertPersistedModelId(castMap(tiers.get("coding")), "legacy/coding");
+        assertEquals("xhigh", castMap(tiers.get("coding")).get("reasoning"));
+    }
+
+    @Test
+    void shouldPreserveCanonicalModelRouterBindingsWhenPersisting() throws Exception {
+        Map<String, Object> canonicalRouter = new LinkedHashMap<>();
+        canonicalRouter.put("temperature", 0.4d);
+        canonicalRouter.put("dynamicTierEnabled", false);
+        canonicalRouter.put("routing", Map.of("model", "router/model", "reasoning", "none"));
+        Map<String, Object> tiers = new LinkedHashMap<>();
+        tiers.put("balanced", Map.of("model", "model/balanced", "reasoning", "low"));
+        tiers.put("smart", Map.of("model", "model/smart", "reasoning", "medium"));
+        tiers.put("deep", Map.of("model", "model/deep", "reasoning", "high"));
+        tiers.put("coding", Map.of("model", "model/coding", "reasoning", "xhigh"));
+        tiers.put("special1", Map.of("model", "model/special1", "reasoning", "none"));
+        tiers.put("special2", Map.of("model", "model/special2", "reasoning", "none"));
+        tiers.put("special3", Map.of("model", "model/special3", "reasoning", "none"));
+        tiers.put("special4", Map.of("model", "model/special4", "reasoning", "none"));
+        tiers.put("special5", Map.of("model", "model/special5", "reasoning", "none"));
+        canonicalRouter.put("tiers", tiers);
+        persistedSections.put("model-router.json", objectMapper.writeValueAsString(canonicalRouter));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+        service.updateRuntimeConfig(config);
+
+        Map<?, ?> persistedModelRouter = readPersistedJsonMap("model-router.json");
+        Map<?, ?> persistedTiers = castMap(persistedModelRouter.get("tiers"));
+        assertEquals(List.copyOf(tiers.keySet()), List.copyOf(persistedTiers.keySet()));
+        assertPersistedModelId(castMap(persistedModelRouter.get("routing")), "router/model");
+        assertPersistedModelId(castMap(persistedTiers.get("special5")), "model/special5");
+        assertEquals("none", castMap(persistedTiers.get("special5")).get("reasoning"));
+    }
+
+    @Test
+    void shouldLoadStructuredModelRouterReferenceAndExposeCanonicalModelSpec() throws Exception {
+        Map<String, Object> structuredRouter = new LinkedHashMap<>();
+        structuredRouter.put("routing", Map.of(
+                "model", Map.of(
+                        "provider", "openrouter",
+                        "id", "qwen/model-name:version"),
+                "reasoning", "none"));
+        persistedSections.put("model-router.json", objectMapper.writeValueAsString(structuredRouter));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertEquals("openrouter/qwen/model-name:version", config.getModelRouter().getRouting().getModel());
+
+        service.updateRuntimeConfig(config);
+
+        Map<?, ?> persistedModelRouter = readPersistedJsonMap("model-router.json");
+        Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
+        Map<?, ?> model = castMap(routing.get("model"));
+        assertEquals("openrouter", model.get("provider"));
+        assertEquals("qwen/model-name:version", model.get("id"));
+    }
+
+    @Test
+    void shouldMigrateLegacyStringModelRouterReferenceToStructuredStorage() throws Exception {
+        Map<String, Object> legacyRouter = new LinkedHashMap<>();
+        legacyRouter.put("routing", Map.of(
+                "model", "openrouter/qwen/model-name:version",
+                "reasoning", "none"));
+        persistedSections.put("model-router.json", objectMapper.writeValueAsString(legacyRouter));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertEquals("openrouter/qwen/model-name:version", config.getModelRouter().getRouting().getModel());
+
+        service.updateRuntimeConfig(config);
+
+        Map<?, ?> persistedModelRouter = readPersistedJsonMap("model-router.json");
+        Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
+        Map<?, ?> model = castMap(routing.get("model"));
+        assertEquals("openrouter/qwen/model-name:version", model.get("id"));
+        assertFalse(model.containsKey("provider"));
+    }
+
+    @Test
     void shouldCacheConfigAfterFirstLoad() {
         RuntimeConfig first = service.getRuntimeConfig();
         RuntimeConfig second = service.getRuntimeConfig();
 
         assertEquals(first, second);
-        // First call loads all 14 sections, second call returns cached
-        verify(storagePort, atLeast(14)).getText(anyString(), anyString());
+        verify(storagePort, atLeast(RuntimeConfig.ConfigSection.values().length)).getText(anyString(), anyString());
     }
 
     @Test
@@ -129,12 +355,13 @@ class RuntimeConfigServiceTest {
     // ==================== Default Values ====================
 
     @Test
-    void shouldReturnDefaultModelWhenNotConfigured() {
-        assertEquals("openai/gpt-5.1", service.getBalancedModel());
-        assertEquals("openai/gpt-5.1", service.getSmartModel());
-        assertEquals("openai/gpt-5.2", service.getCodingModel());
-        assertEquals("openai/gpt-5.2", service.getDeepModel());
-        assertEquals("openai/gpt-5.2-codex", service.getRoutingModel());
+    void shouldReturnEmptyModelDefaultsWhenNotConfigured() {
+        assertNull(service.getBalancedModel());
+        assertNull(service.getSmartModel());
+        assertNull(service.getCodingModel());
+        assertNull(service.getDeepModel());
+        assertNull(service.getRoutingModel());
+        assertTrue(service.getConfiguredLlmProviders().isEmpty());
     }
 
     @Test
@@ -161,6 +388,82 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldReturnDefaultTracingSettingsWhenTracingConfigMissing() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setTracing(null);
+        setCachedConfig(config);
+
+        assertTrue(service.isTracingEnabled());
+        assertFalse(service.isPayloadSnapshotsEnabled());
+        assertEquals(128, service.getSessionTraceBudgetMb());
+        assertEquals(256, service.getTraceMaxSnapshotSizeKb());
+        assertEquals(10, service.getTraceMaxSnapshotsPerSpan());
+        assertEquals(100, service.getTraceMaxTracesPerSession());
+        assertFalse(service.isTraceInboundPayloadCaptureEnabled());
+        assertFalse(service.isTraceOutboundPayloadCaptureEnabled());
+        assertFalse(service.isTraceToolPayloadCaptureEnabled());
+        assertFalse(service.isTraceLlmPayloadCaptureEnabled());
+    }
+
+    @Test
+    void shouldReturnDefaultTracingSettingsWhenTracingFieldsAreNull() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TracingConfig tracing = RuntimeConfig.TracingConfig.builder().build();
+        tracing.setEnabled(null);
+        tracing.setPayloadSnapshotsEnabled(null);
+        tracing.setSessionTraceBudgetMb(null);
+        tracing.setMaxSnapshotSizeKb(null);
+        tracing.setMaxSnapshotsPerSpan(null);
+        tracing.setMaxTracesPerSession(null);
+        tracing.setCaptureInboundPayloads(null);
+        tracing.setCaptureOutboundPayloads(null);
+        tracing.setCaptureToolPayloads(null);
+        tracing.setCaptureLlmPayloads(null);
+        config.setTracing(tracing);
+        setCachedConfig(config);
+
+        assertTrue(service.isTracingEnabled());
+        assertFalse(service.isPayloadSnapshotsEnabled());
+        assertEquals(128, service.getSessionTraceBudgetMb());
+        assertEquals(256, service.getTraceMaxSnapshotSizeKb());
+        assertEquals(10, service.getTraceMaxSnapshotsPerSpan());
+        assertEquals(100, service.getTraceMaxTracesPerSession());
+        assertFalse(service.isTraceInboundPayloadCaptureEnabled());
+        assertFalse(service.isTraceOutboundPayloadCaptureEnabled());
+        assertFalse(service.isTraceToolPayloadCaptureEnabled());
+        assertFalse(service.isTraceLlmPayloadCaptureEnabled());
+    }
+
+    @Test
+    void shouldReturnConfiguredTracingSettings() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TracingConfig tracing = RuntimeConfig.TracingConfig.builder().build();
+        tracing.setEnabled(false);
+        tracing.setPayloadSnapshotsEnabled(true);
+        tracing.setSessionTraceBudgetMb(64);
+        tracing.setMaxSnapshotSizeKb(512);
+        tracing.setMaxSnapshotsPerSpan(4);
+        tracing.setMaxTracesPerSession(3);
+        tracing.setCaptureInboundPayloads(true);
+        tracing.setCaptureOutboundPayloads(true);
+        tracing.setCaptureToolPayloads(true);
+        tracing.setCaptureLlmPayloads(true);
+        config.setTracing(tracing);
+        setCachedConfig(config);
+
+        assertFalse(service.isTracingEnabled());
+        assertTrue(service.isPayloadSnapshotsEnabled());
+        assertEquals(64, service.getSessionTraceBudgetMb());
+        assertEquals(512, service.getTraceMaxSnapshotSizeKb());
+        assertEquals(4, service.getTraceMaxSnapshotsPerSpan());
+        assertEquals(3, service.getTraceMaxTracesPerSession());
+        assertTrue(service.isTraceInboundPayloadCaptureEnabled());
+        assertTrue(service.isTraceOutboundPayloadCaptureEnabled());
+        assertTrue(service.isTraceToolPayloadCaptureEnabled());
+        assertTrue(service.isTraceLlmPayloadCaptureEnabled());
+    }
+
+    @Test
     void shouldReturnDefaultSecuritySettings() {
         assertTrue(service.isSanitizeInputEnabled());
         assertTrue(service.isPromptInjectionDetectionEnabled());
@@ -181,6 +484,89 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldReturnDefaultUpdateSettings() {
+        assertTrue(service.isAutoUpdateEnabled());
+        assertEquals(60, service.getUpdateCheckIntervalMinutes());
+        assertFalse(service.isUpdateMaintenanceWindowEnabled());
+        assertEquals("00:00", service.getUpdateMaintenanceWindowStartUtc());
+        assertEquals("00:00", service.getUpdateMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldReturnConfiguredUpdateSettings() throws Exception {
+        RuntimeConfig.UpdateConfig update = RuntimeConfig.UpdateConfig.builder()
+                .autoEnabled(false)
+                .checkIntervalMinutes(180)
+                .maintenanceWindowEnabled(true)
+                .maintenanceWindowStartUtc("01:15")
+                .maintenanceWindowEndUtc("03:45")
+                .build();
+        persistedSections.put("update.json", objectMapper.writeValueAsString(update));
+
+        assertFalse(service.isAutoUpdateEnabled());
+        assertEquals(180, service.getUpdateCheckIntervalMinutes());
+        assertTrue(service.isUpdateMaintenanceWindowEnabled());
+        assertEquals("01:15", service.getUpdateMaintenanceWindowStartUtc());
+        assertEquals("03:45", service.getUpdateMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldReturnDefaultUpdateSettingsWhenStoredSectionIsNull() {
+        persistedSections.put("update.json", "null");
+
+        assertTrue(service.isAutoUpdateEnabled());
+        assertEquals(60, service.getUpdateCheckIntervalMinutes());
+        assertFalse(service.isUpdateMaintenanceWindowEnabled());
+        assertEquals("00:00", service.getUpdateMaintenanceWindowStartUtc());
+        assertEquals("00:00", service.getUpdateMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldNormalizeInvalidUpdateSettings() throws Exception {
+        RuntimeConfig.UpdateConfig update = RuntimeConfig.UpdateConfig.builder()
+                .autoEnabled(null)
+                .checkIntervalMinutes(0)
+                .maintenanceWindowEnabled(null)
+                .maintenanceWindowStartUtc("25:99")
+                .maintenanceWindowEndUtc("")
+                .build();
+        persistedSections.put("update.json", objectMapper.writeValueAsString(update));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getUpdate());
+        assertTrue(config.getUpdate().getAutoEnabled());
+        assertEquals(60, config.getUpdate().getCheckIntervalMinutes());
+        assertFalse(config.getUpdate().getMaintenanceWindowEnabled());
+        assertEquals("00:00", config.getUpdate().getMaintenanceWindowStartUtc());
+        assertEquals("00:00", config.getUpdate().getMaintenanceWindowEndUtc());
+    }
+
+    @Test
+    void shouldExposeUpdateConfigSectionMetadata() {
+        assertTrue(RuntimeConfig.ConfigSection.isValidSection("update"));
+        assertEquals(RuntimeConfig.ConfigSection.UPDATE,
+                RuntimeConfig.ConfigSection.fromFileId("update").orElseThrow());
+        assertEquals("update.json", RuntimeConfig.ConfigSection.UPDATE.getFileName());
+    }
+
+    @Test
+    void shouldInitializeUpdateDefaultsWhenNullDuringRuntimeConfigUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setUpdate(null);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertNotNull(updated.getUpdate());
+        assertTrue(updated.getUpdate().getAutoEnabled());
+        assertEquals(60, updated.getUpdate().getCheckIntervalMinutes());
+        assertFalse(updated.getUpdate().getMaintenanceWindowEnabled());
+        assertEquals("00:00", updated.getUpdate().getMaintenanceWindowStartUtc());
+        assertEquals("00:00", updated.getUpdate().getMaintenanceWindowEndUtc());
+    }
+
+    @Test
     void shouldDisableRateLimitByDefault() {
         assertFalse(service.isRateLimitEnabled());
     }
@@ -190,6 +576,8 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isCompactionEnabled());
         assertEquals(50000, service.getCompactionMaxContextTokens());
         assertEquals(20, service.getCompactionKeepLastMessages());
+        assertEquals("model_ratio", service.getCompactionTriggerMode());
+        assertEquals(0.95d, service.getCompactionModelThresholdRatio(), 0.0001d);
         assertTrue(service.isCompactionPreserveTurnBoundariesEnabled());
         assertTrue(service.isCompactionDetailsEnabled());
         assertEquals(50, service.getCompactionDetailsMaxItemsPerCategory());
@@ -200,6 +588,8 @@ class RuntimeConfigServiceTest {
     void shouldReturnConfiguredAdvancedCompactionSettings() throws Exception {
         RuntimeConfig.CompactionConfig compaction = RuntimeConfig.CompactionConfig.builder()
                 .enabled(true)
+                .triggerMode("token_threshold")
+                .modelThresholdRatio(0.9d)
                 .maxContextTokens(12345)
                 .keepLastMessages(7)
                 .preserveTurnBoundaries(false)
@@ -209,6 +599,8 @@ class RuntimeConfigServiceTest {
                 .build();
         persistedSections.put("compaction.json", objectMapper.writeValueAsString(compaction));
 
+        assertEquals("token_threshold", service.getCompactionTriggerMode());
+        assertEquals(0.9d, service.getCompactionModelThresholdRatio(), 0.0001d);
         assertFalse(service.isCompactionPreserveTurnBoundariesEnabled());
         assertFalse(service.isCompactionDetailsEnabled());
         assertEquals(12, service.getCompactionDetailsMaxItemsPerCategory());
@@ -222,6 +614,8 @@ class RuntimeConfigServiceTest {
         RuntimeConfig config = service.getRuntimeConfig();
 
         assertNotNull(config.getCompaction());
+        assertEquals("model_ratio", config.getCompaction().getTriggerMode());
+        assertEquals(0.95d, config.getCompaction().getModelThresholdRatio(), 0.0001d);
         assertTrue(config.getCompaction().getPreserveTurnBoundaries());
         assertTrue(config.getCompaction().getDetailsEnabled());
         assertEquals(50, config.getCompaction().getDetailsMaxItemsPerCategory());
@@ -232,6 +626,8 @@ class RuntimeConfigServiceTest {
     void shouldInitializeCompactionAdvancedDefaultsWhenNullDuringRuntimeConfigUpdate() {
         RuntimeConfig newConfig = RuntimeConfig.builder().build();
         newConfig.setCompaction(new RuntimeConfig.CompactionConfig());
+        newConfig.getCompaction().setTriggerMode(null);
+        newConfig.getCompaction().setModelThresholdRatio(null);
         newConfig.getCompaction().setPreserveTurnBoundaries(null);
         newConfig.getCompaction().setDetailsEnabled(null);
         newConfig.getCompaction().setDetailsMaxItemsPerCategory(null);
@@ -240,10 +636,41 @@ class RuntimeConfigServiceTest {
         service.updateRuntimeConfig(newConfig);
 
         RuntimeConfig updated = service.getRuntimeConfig();
+        assertEquals("model_ratio", updated.getCompaction().getTriggerMode());
+        assertEquals(0.95d, updated.getCompaction().getModelThresholdRatio(), 0.0001d);
         assertTrue(updated.getCompaction().getPreserveTurnBoundaries());
         assertTrue(updated.getCompaction().getDetailsEnabled());
         assertEquals(50, updated.getCompaction().getDetailsMaxItemsPerCategory());
         assertEquals(15000, updated.getCompaction().getSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldNormalizeInvalidStoredCompactionTriggerSettings() throws Exception {
+        RuntimeConfig.CompactionConfig compaction = RuntimeConfig.CompactionConfig.builder()
+                .triggerMode("not-a-real-mode")
+                .modelThresholdRatio(0.0d)
+                .build();
+        persistedSections.put("compaction.json", objectMapper.writeValueAsString(compaction));
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertEquals("model_ratio", config.getCompaction().getTriggerMode());
+        assertEquals(0.95d, config.getCompaction().getModelThresholdRatio(), 0.0001d);
+    }
+
+    @Test
+    void shouldNormalizeMixedCaseCompactionTriggerModeDuringUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        newConfig.setCompaction(RuntimeConfig.CompactionConfig.builder()
+                .triggerMode(" Token_Threshold ")
+                .modelThresholdRatio(0.8d)
+                .build());
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertEquals("token_threshold", updated.getCompaction().getTriggerMode());
+        assertEquals(0.8d, updated.getCompaction().getModelThresholdRatio(), 0.0001d);
     }
 
     @Test
@@ -256,9 +683,9 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
-    void shouldReturnDefaultVoiceProvidersWhenNotConfigured() {
-        assertEquals("golemcore/elevenlabs", service.getSttProvider());
-        assertEquals("golemcore/elevenlabs", service.getTtsProvider());
+    void shouldReturnUnsetVoiceProvidersWhenNotConfigured() {
+        assertNull(service.getSttProvider());
+        assertNull(service.getTtsProvider());
         assertEquals("", service.getWhisperSttUrl());
         assertEquals("", service.getWhisperSttApiKey());
         assertFalse(service.isWhisperSttConfigured());
@@ -286,6 +713,102 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isTurnQueueSteeringEnabled());
         assertEquals("one-at-a-time", service.getTurnQueueSteeringMode());
         assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
+        assertTrue(service.isTurnProgressUpdatesEnabled());
+        assertTrue(service.isTurnProgressIntentEnabled());
+        assertEquals(8, service.getTurnProgressBatchSize());
+        assertEquals(java.time.Duration.ofSeconds(10), service.getTurnProgressMaxSilence());
+        assertEquals(8000, service.getTurnProgressSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldReturnDefaultDelayedActionSettingsWhenCachedSectionMissing() throws Exception {
+        RuntimeConfig config = RuntimeConfig.builder().build();
+        config.setDelayedActions(null);
+        setCachedConfig(config);
+
+        assertTrue(service.isDelayedActionsEnabled());
+        assertEquals(1, service.getDelayedActionsTickSeconds());
+        assertEquals(50, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(java.time.Duration.ofDays(30), service.getDelayedActionsMaxDelay());
+        assertEquals(4, service.getDelayedActionsDefaultMaxAttempts());
+        assertEquals(java.time.Duration.ofMinutes(2), service.getDelayedActionsLeaseDuration());
+        assertEquals(java.time.Duration.ofDays(7), service.getDelayedActionsRetentionAfterCompletion());
+        assertTrue(service.isDelayedActionsRunLaterEnabled());
+    }
+
+    @Test
+    void shouldReturnConfiguredDelayedActionSettings() throws Exception {
+        RuntimeConfig.DelayedActionsConfig delayedActions = RuntimeConfig.DelayedActionsConfig.builder()
+                .enabled(false)
+                .tickSeconds(9)
+                .maxPendingPerSession(12)
+                .maxDelay("PT6H")
+                .defaultMaxAttempts(7)
+                .leaseDuration("PT5M")
+                .retentionAfterCompletion("P10D")
+                .allowRunLater(false)
+                .build();
+        persistedSections.put("delayed-actions.json", objectMapper.writeValueAsString(delayedActions));
+
+        assertFalse(service.isDelayedActionsEnabled());
+        assertEquals(9, service.getDelayedActionsTickSeconds());
+        assertEquals(12, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(java.time.Duration.ofHours(6), service.getDelayedActionsMaxDelay());
+        assertEquals(7, service.getDelayedActionsDefaultMaxAttempts());
+        assertEquals(java.time.Duration.ofMinutes(5), service.getDelayedActionsLeaseDuration());
+        assertEquals(java.time.Duration.ofDays(10), service.getDelayedActionsRetentionAfterCompletion());
+        assertFalse(service.isDelayedActionsRunLaterEnabled());
+    }
+
+    @Test
+    void shouldFallbackInvalidDelayedActionSettingsToDefaults() throws Exception {
+        RuntimeConfig.DelayedActionsConfig delayedActions = RuntimeConfig.DelayedActionsConfig.builder()
+                .enabled(true)
+                .tickSeconds(0)
+                .maxPendingPerSession(-1)
+                .maxDelay("not-a-duration")
+                .defaultMaxAttempts(0)
+                .leaseDuration("nope")
+                .retentionAfterCompletion("bad")
+                .allowRunLater(null)
+                .build();
+        persistedSections.put("delayed-actions.json", objectMapper.writeValueAsString(delayedActions));
+
+        assertTrue(service.isDelayedActionsEnabled());
+        assertEquals(1, service.getDelayedActionsTickSeconds());
+        assertEquals(50, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(java.time.Duration.ofDays(30), service.getDelayedActionsMaxDelay());
+        assertEquals(4, service.getDelayedActionsDefaultMaxAttempts());
+        assertEquals(java.time.Duration.ofMinutes(2), service.getDelayedActionsLeaseDuration());
+        assertEquals(java.time.Duration.ofDays(7), service.getDelayedActionsRetentionAfterCompletion());
+        assertTrue(service.isDelayedActionsRunLaterEnabled());
+    }
+
+    @Test
+    void shouldNormalizeInvalidDelayedActionSettingsDuringRuntimeConfigUpdate() {
+        RuntimeConfig newConfig = RuntimeConfig.builder().build();
+        RuntimeConfig.DelayedActionsConfig delayedActions = new RuntimeConfig.DelayedActionsConfig();
+        delayedActions.setEnabled(null);
+        delayedActions.setTickSeconds(0);
+        delayedActions.setMaxPendingPerSession(0);
+        delayedActions.setMaxDelay("not-a-duration");
+        delayedActions.setDefaultMaxAttempts(0);
+        delayedActions.setLeaseDuration("bad");
+        delayedActions.setRetentionAfterCompletion("bad");
+        delayedActions.setAllowRunLater(null);
+        newConfig.setDelayedActions(delayedActions);
+
+        service.updateRuntimeConfig(newConfig);
+
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertTrue(updated.getDelayedActions().getEnabled());
+        assertEquals(1, updated.getDelayedActions().getTickSeconds());
+        assertEquals(50, updated.getDelayedActions().getMaxPendingPerSession());
+        assertEquals("PT720H", updated.getDelayedActions().getMaxDelay());
+        assertEquals(4, updated.getDelayedActions().getDefaultMaxAttempts());
+        assertEquals("PT2M", updated.getDelayedActions().getLeaseDuration());
+        assertEquals("PT168H", updated.getDelayedActions().getRetentionAfterCompletion());
+        assertTrue(updated.getDelayedActions().getAllowRunLater());
     }
 
     @Test
@@ -297,6 +820,11 @@ class RuntimeConfigServiceTest {
                 .queueSteeringEnabled(false)
                 .queueSteeringMode("all")
                 .queueFollowUpMode("single")
+                .progressUpdatesEnabled(false)
+                .progressIntentEnabled(false)
+                .progressBatchSize(6)
+                .progressMaxSilenceSeconds(25)
+                .progressSummaryTimeoutMs(12000)
                 .build();
         persistedSections.put("turn.json", objectMapper.writeValueAsString(turn));
 
@@ -306,6 +834,11 @@ class RuntimeConfigServiceTest {
         assertFalse(service.isTurnQueueSteeringEnabled());
         assertEquals("all", service.getTurnQueueSteeringMode());
         assertEquals("one-at-a-time", service.getTurnQueueFollowUpMode());
+        assertFalse(service.isTurnProgressUpdatesEnabled());
+        assertFalse(service.isTurnProgressIntentEnabled());
+        assertEquals(6, service.getTurnProgressBatchSize());
+        assertEquals(java.time.Duration.ofSeconds(25), service.getTurnProgressMaxSilence());
+        assertEquals(12000, service.getTurnProgressSummaryTimeoutMs());
     }
 
     @Test
@@ -321,6 +854,11 @@ class RuntimeConfigServiceTest {
         assertTrue(config.getTurn().getQueueSteeringEnabled());
         assertEquals("one-at-a-time", config.getTurn().getQueueSteeringMode());
         assertEquals("one-at-a-time", config.getTurn().getQueueFollowUpMode());
+        assertTrue(config.getTurn().getProgressUpdatesEnabled());
+        assertTrue(config.getTurn().getProgressIntentEnabled());
+        assertEquals(8, config.getTurn().getProgressBatchSize());
+        assertEquals(10, config.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(8000, config.getTurn().getProgressSummaryTimeoutMs());
     }
 
     @Test
@@ -338,6 +876,27 @@ class RuntimeConfigServiceTest {
         assertTrue(updated.getTurn().getQueueSteeringEnabled());
         assertEquals("one-at-a-time", updated.getTurn().getQueueSteeringMode());
         assertEquals("one-at-a-time", updated.getTurn().getQueueFollowUpMode());
+        assertTrue(updated.getTurn().getProgressUpdatesEnabled());
+        assertTrue(updated.getTurn().getProgressIntentEnabled());
+        assertEquals(8, updated.getTurn().getProgressBatchSize());
+        assertEquals(10, updated.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(8000, updated.getTurn().getProgressSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldNormalizeInvalidTurnProgressSettingsToDefaults() throws Exception {
+        RuntimeConfig.TurnConfig turn = RuntimeConfig.TurnConfig.builder()
+                .progressBatchSize(0)
+                .progressMaxSilenceSeconds(-1)
+                .progressSummaryTimeoutMs(100)
+                .build();
+        persistedSections.put("turn.json", objectMapper.writeValueAsString(turn));
+
+        RuntimeConfig runtimeConfig = service.getRuntimeConfig();
+
+        assertEquals(8, runtimeConfig.getTurn().getProgressBatchSize());
+        assertEquals(10, runtimeConfig.getTurn().getProgressMaxSilenceSeconds());
+        assertEquals(8000, runtimeConfig.getTurn().getProgressSummaryTimeoutMs());
     }
 
     @Test
@@ -376,6 +935,8 @@ class RuntimeConfigServiceTest {
         assertEquals(6, service.getMemorySemanticTopK());
         assertEquals(4, service.getMemoryProceduralTopK());
         assertEquals(21, service.getMemoryRetrievalLookbackDays());
+        assertTrue(service.isMemoryRerankingEnabled());
+        assertEquals("balanced", service.getMemoryRerankingProfile());
     }
 
     @Test
@@ -612,7 +1173,8 @@ class RuntimeConfigServiceTest {
 
         service.updateRuntimeConfig(newConfig);
 
-        verify(storagePort, times(14)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, times(RuntimeConfig.ConfigSection.values().length))
+                .putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
 
         RuntimeConfig updated = service.getRuntimeConfig();
         assertEquals("custom/model", updated.getModelRouter().getBalancedModel());
@@ -682,6 +1244,21 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldNormalizeMissingMemoryRerankingConfigToDefaults() throws Exception {
+        persistedSections.put(
+                "memory.json",
+                "{\"version\":2,\"enabled\":true,\"reranking\":{\"enabled\":null,\"profile\":\"  \"}}");
+
+        RuntimeConfig config = service.getRuntimeConfig();
+
+        assertNotNull(config.getMemory().getReranking());
+        assertTrue(config.getMemory().getReranking().getEnabled());
+        assertEquals("balanced", config.getMemory().getReranking().getProfile());
+        assertTrue(service.isMemoryRerankingEnabled());
+        assertEquals("balanced", service.getMemoryRerankingProfile());
+    }
+
+    @Test
     void shouldForceMemoryVersionTwoWhenUpdatingRuntimeConfig() {
         RuntimeConfig newConfig = RuntimeConfig.builder().build();
         newConfig.getMemory().setVersion(1);
@@ -705,7 +1282,8 @@ class RuntimeConfigServiceTest {
         assertEquals(20, code.getCode().length());
         assertFalse(code.isUsed());
         assertNotNull(code.getCreatedAt());
-        verify(storagePort, atLeast(14)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+        verify(storagePort, atLeast(RuntimeConfig.ConfigSection.values().length))
+                .putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
     }
 
     @Test
@@ -923,6 +1501,45 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isUsageEnabled());
     }
 
+    @Test
+    void shouldReturnDefaultPlanSettings() {
+        assertFalse(service.isPlanEnabled());
+        assertEquals(5, service.getPlanMaxPlans());
+        assertEquals(50, service.getPlanMaxStepsPerPlan());
+        assertTrue(service.isPlanStopOnFailure());
+    }
+
+    @Test
+    void shouldReturnConfiguredPlanSettings() throws Exception {
+        RuntimeConfig.PlanConfig plan = RuntimeConfig.PlanConfig.builder()
+                .enabled(true)
+                .maxPlans(8)
+                .maxStepsPerPlan(120)
+                .stopOnFailure(false)
+                .build();
+        persistedSections.put("plan.json", objectMapper.writeValueAsString(plan));
+
+        assertTrue(service.isPlanEnabled());
+        assertEquals(8, service.getPlanMaxPlans());
+        assertEquals(120, service.getPlanMaxStepsPerPlan());
+        assertFalse(service.isPlanStopOnFailure());
+    }
+
+    @Test
+    void shouldReturnConfiguredHiveSettings() throws Exception {
+        RuntimeConfig.HiveConfig hive = RuntimeConfig.HiveConfig.builder()
+                .enabled(true)
+                .serverUrl("https://hive.example.com")
+                .autoConnect(true)
+                .managedByProperties(true)
+                .build();
+        persistedSections.put("hive.json", objectMapper.writeValueAsString(hive));
+
+        assertTrue(service.getHiveConfig().getEnabled());
+        assertEquals("https://hive.example.com", service.getHiveConfig().getServerUrl());
+        assertTrue(service.isHiveManagedByProperties());
+    }
+
     // ==================== Section Validation ====================
 
     @Test
@@ -941,6 +1558,7 @@ class RuntimeConfigServiceTest {
         assertTrue(RuntimeConfigService.isValidConfigSection("skills"));
         assertTrue(RuntimeConfigService.isValidConfigSection("usage"));
         assertTrue(RuntimeConfigService.isValidConfigSection("mcp"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("plan"));
     }
 
     @Test
@@ -957,6 +1575,7 @@ class RuntimeConfigServiceTest {
         assertTrue(RuntimeConfigService.isValidConfigSection("TELEGRAM"));
         assertTrue(RuntimeConfigService.isValidConfigSection("Model-Router"));
         assertTrue(RuntimeConfigService.isValidConfigSection("AUTO-MODE"));
+        assertTrue(RuntimeConfigService.isValidConfigSection("PLAN"));
     }
 
     // ==================== ConfigSection Enum ====================
@@ -966,6 +1585,8 @@ class RuntimeConfigServiceTest {
         assertEquals("telegram.json", RuntimeConfig.ConfigSection.TELEGRAM.getFileName());
         assertEquals("model-router.json", RuntimeConfig.ConfigSection.MODEL_ROUTER.getFileName());
         assertEquals("auto-mode.json", RuntimeConfig.ConfigSection.AUTO_MODE.getFileName());
+        assertEquals("plan.json", RuntimeConfig.ConfigSection.PLAN.getFileName());
+        assertEquals("hive.json", RuntimeConfig.ConfigSection.HIVE.getFileName());
     }
 
     @Test
@@ -975,6 +1596,10 @@ class RuntimeConfigServiceTest {
         assertTrue(RuntimeConfig.ConfigSection.fromFileId("model-router").isPresent());
         assertEquals(RuntimeConfig.ConfigSection.MODEL_ROUTER,
                 RuntimeConfig.ConfigSection.fromFileId("model-router").get());
+        assertTrue(RuntimeConfig.ConfigSection.fromFileId("plan").isPresent());
+        assertEquals(RuntimeConfig.ConfigSection.PLAN, RuntimeConfig.ConfigSection.fromFileId("plan").get());
+        assertTrue(RuntimeConfig.ConfigSection.fromFileId("hive").isPresent());
+        assertEquals(RuntimeConfig.ConfigSection.HIVE, RuntimeConfig.ConfigSection.fromFileId("hive").get());
     }
 
     @Test
@@ -1005,6 +1630,13 @@ class RuntimeConfigServiceTest {
                 .build();
         persistedSections.put("voice.json", objectMapper.writeValueAsString(voice));
 
+        RuntimeConfig.HiveConfig hive = RuntimeConfig.HiveConfig.builder()
+                .enabled(true)
+                .serverUrl("https://hive.example.com")
+                .managedByProperties(true)
+                .build();
+        persistedSections.put("hive.json", objectMapper.writeValueAsString(hive));
+
         RuntimeConfig config = service.getRuntimeConfig();
 
         // Verify each section loaded correctly
@@ -1012,6 +1644,9 @@ class RuntimeConfigServiceTest {
         assertEquals("custom/balanced", config.getModelRouter().getBalancedModel());
         assertTrue(config.getVoice().getEnabled());
         assertEquals("custom-voice", config.getVoice().getVoiceId());
+        assertTrue(config.getHive().getEnabled());
+        assertEquals("https://hive.example.com", config.getHive().getServerUrl());
+        assertTrue(config.getHive().getManagedByProperties());
     }
 
     @Test
@@ -1027,5 +1662,212 @@ class RuntimeConfigServiceTest {
         assertTrue(persistedSections.containsKey("model-router.json"));
         assertTrue(persistedSections.containsKey("llm.json"));
         assertTrue(persistedSections.containsKey("tools.json"));
+        assertTrue(persistedSections.containsKey("tracing.json"));
+        assertTrue(persistedSections.containsKey("plan.json"));
+        assertTrue(persistedSections.containsKey("hive.json"));
+    }
+
+    // ==================== MCP Catalog CRUD ====================
+
+    @Test
+    void shouldReturnEmptyCatalogWhenMcpConfigIsNull() {
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertNotNull(catalog);
+        assertTrue(catalog.isEmpty());
+    }
+
+    @Test
+    void shouldReturnEmptyCatalogWhenCatalogListIsNull() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.McpConfig mcp = new RuntimeConfig.McpConfig();
+        mcp.setCatalog(null);
+        config.setMcp(mcp);
+        setCachedConfig(config);
+
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertNotNull(catalog);
+        assertTrue(catalog.isEmpty());
+    }
+
+    @Test
+    void shouldAddMcpCatalogEntry() {
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .description("GitHub API")
+                .command("npx github-mcp")
+                .enabled(true)
+                .build();
+
+        service.addMcpCatalogEntry(entry);
+
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertEquals(1, catalog.size());
+        assertEquals("github", catalog.get(0).getName());
+        assertEquals("npx github-mcp", catalog.get(0).getCommand());
+        verify(storagePort, atLeast(1)).putTextAtomic(anyString(), anyString(), anyString(), anyBoolean());
+    }
+
+    @Test
+    void shouldAddMcpCatalogEntryWhenMcpConfigIsNull() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setMcp(null);
+
+        RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
+                .name("slack")
+                .command("npx slack-mcp")
+                .build();
+
+        service.addMcpCatalogEntry(entry);
+
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertEquals(1, catalog.size());
+        assertEquals("slack", catalog.get(0).getName());
+    }
+
+    @Test
+    void shouldAddMultipleMcpCatalogEntries() {
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("github").command("npx github").build());
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("slack").command("npx slack").build());
+
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertEquals(2, catalog.size());
+    }
+
+    @Test
+    void shouldUpdateExistingMcpCatalogEntry() {
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("github").command("npx old-github").build());
+
+        RuntimeConfig.McpCatalogEntry updated = RuntimeConfig.McpCatalogEntry.builder()
+                .name("github")
+                .command("npx new-github")
+                .description("Updated GitHub")
+                .build();
+
+        boolean result = service.updateMcpCatalogEntry("github", updated);
+
+        assertTrue(result);
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertEquals(1, catalog.size());
+        assertEquals("npx new-github", catalog.get(0).getCommand());
+        assertEquals("github", catalog.get(0).getName());
+    }
+
+    @Test
+    void shouldPreserveOriginalNameOnUpdate() {
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("github").command("npx github").build());
+
+        RuntimeConfig.McpCatalogEntry updated = RuntimeConfig.McpCatalogEntry.builder()
+                .name("different-name")
+                .command("npx updated")
+                .build();
+
+        boolean result = service.updateMcpCatalogEntry("github", updated);
+
+        assertTrue(result);
+        assertEquals("github", service.getMcpCatalog().get(0).getName());
+    }
+
+    @Test
+    void shouldReturnFalseWhenUpdatingNonexistentEntry() {
+        boolean result = service.updateMcpCatalogEntry("nonexistent",
+                RuntimeConfig.McpCatalogEntry.builder().name("nonexistent").command("npx test").build());
+        assertFalse(result);
+    }
+
+    @Test
+    void shouldRemoveMcpCatalogEntry() {
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("github").command("npx github").build());
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("slack").command("npx slack").build());
+
+        boolean result = service.removeMcpCatalogEntry("github");
+
+        assertTrue(result);
+        List<RuntimeConfig.McpCatalogEntry> catalog = service.getMcpCatalog();
+        assertEquals(1, catalog.size());
+        assertEquals("slack", catalog.get(0).getName());
+    }
+
+    @Test
+    void shouldReturnFalseWhenRemovingNonexistentEntry() {
+        boolean result = service.removeMcpCatalogEntry("nonexistent");
+        assertFalse(result);
+    }
+
+    @Test
+    void shouldNotCallUpdateWhenRemoveFindsNoMatch() {
+        // Trigger initial load to establish baseline
+        service.getRuntimeConfig();
+        int sectionCountBefore = persistedSections.size();
+
+        boolean result = service.removeMcpCatalogEntry("nonexistent");
+
+        assertFalse(result);
+        // No additional persistence should happen when nothing was removed
+        assertEquals(sectionCountBefore, persistedSections.size());
+    }
+
+    @Test
+    void shouldEnsureMcpConfigCreatesNewConfigWhenNull() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setMcp(null);
+
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("test").command("npx test").build());
+
+        assertNotNull(config.getMcp());
+        assertNotNull(config.getMcp().getCatalog());
+        assertEquals(1, config.getMcp().getCatalog().size());
+    }
+
+    @Test
+    void shouldEnsureMcpCatalogCreatesNewListWhenNull() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.McpConfig mcp = new RuntimeConfig.McpConfig();
+        mcp.setCatalog(null);
+        config.setMcp(mcp);
+        setCachedConfig(config);
+
+        service.addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry.builder()
+                .name("test").command("npx test").build());
+
+        assertNotNull(mcp.getCatalog());
+        assertEquals(1, mcp.getCatalog().size());
+    }
+
+    @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })
+    private void setCachedConfig(RuntimeConfig config) throws Exception {
+        java.lang.reflect.Field field = RuntimeConfigService.class.getDeclaredField("configRef");
+        field.setAccessible(true);
+        java.util.concurrent.atomic.AtomicReference<RuntimeConfig> ref = (java.util.concurrent.atomic.AtomicReference<RuntimeConfig>) field
+                .get(service);
+        ref.set(config);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<?, ?> readPersistedJsonMap(String fileName) throws Exception {
+        return objectMapper.readValue(persistedSections.get(fileName), Map.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<?, ?> castMap(Object value) {
+        assertNotNull(value);
+        assertTrue(value instanceof Map<?, ?>);
+        return (Map<?, ?>) value;
+    }
+
+    private void assertPersistedModelId(Map<?, ?> binding, String expectedId) {
+        Map<?, ?> model = castMap(binding.get("model"));
+        assertEquals(expectedId, model.get("id"));
+        assertFalse(model.containsKey("provider"));
+    }
+
+    private void assertPersistedModelMissing(Map<?, ?> binding) {
+        assertTrue(!binding.containsKey("model") || binding.get("model") == null);
     }
 }

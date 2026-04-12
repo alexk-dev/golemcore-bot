@@ -1,0 +1,676 @@
+package me.golemcore.bot.domain.selfevolving.tactic;
+
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Objects;
+import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
+import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaStatus;
+import me.golemcore.bot.port.outbound.OllamaProcessPort;
+import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Coordinates startup and lifecycle observation of a managed local Ollama
+ * runtime.
+ */
+public class ManagedLocalOllamaSupervisor {
+
+    private static final Logger log = LoggerFactory.getLogger(ManagedLocalOllamaSupervisor.class);
+    private static final String MISSING_BINARY_ERROR = "Ollama binary is missing";
+    private static final String EXTERNAL_LOST_ERROR = "External Ollama runtime is no longer reachable";
+
+    private final Clock clock;
+    private final OllamaRuntimeProbePort runtimeProbePort;
+    private final OllamaProcessPort processPort;
+    private String endpoint;
+    private final String version;
+    private String selectedModel;
+    private Duration startupWindow;
+    private Duration initialRestartBackoff;
+    private String minimumSupportedVersion;
+
+    private ManagedLocalOllamaStatus status;
+
+    public ManagedLocalOllamaSupervisor(Clock clock,
+            OllamaRuntimeProbePort runtimeProbePort,
+            OllamaProcessPort processPort) {
+        this(clock, runtimeProbePort, processPort, null, null, null);
+    }
+
+    public ManagedLocalOllamaSupervisor(Clock clock,
+            OllamaRuntimeProbePort runtimeProbePort,
+            OllamaProcessPort processPort,
+            String endpoint,
+            String version,
+            String selectedModel) {
+        this(clock, runtimeProbePort, processPort, endpoint, version, selectedModel, Duration.ofSeconds(5),
+                Duration.ofSeconds(1), "0.19.0");
+    }
+
+    public ManagedLocalOllamaSupervisor(Clock clock,
+            OllamaRuntimeProbePort runtimeProbePort,
+            OllamaProcessPort processPort,
+            String endpoint,
+            String version,
+            String selectedModel,
+            Duration startupWindow,
+            Duration initialRestartBackoff,
+            String minimumSupportedVersion) {
+        this.clock = clock;
+        this.runtimeProbePort = runtimeProbePort;
+        this.processPort = processPort;
+        this.endpoint = endpoint;
+        this.version = version;
+        this.selectedModel = selectedModel;
+        this.startupWindow = startupWindow != null ? startupWindow : Duration.ofSeconds(5);
+        this.initialRestartBackoff = initialRestartBackoff != null ? initialRestartBackoff : Duration.ofSeconds(1);
+        this.minimumSupportedVersion = minimumSupportedVersion != null && !minimumSupportedVersion.isBlank()
+                ? minimumSupportedVersion
+                : "0.19.0";
+        this.status = buildStatus(
+                ManagedLocalOllamaState.DISABLED,
+                false,
+                null,
+                0,
+                null,
+                null,
+                null,
+                version,
+                clock.instant());
+    }
+
+    public ManagedLocalOllamaStatus startupCheck(boolean localEmbeddingsActive) {
+        Instant now = getClock().instant();
+        Instant startupDeadline = now.plus(startupWindow);
+        if (!localEmbeddingsActive) {
+            return embeddingsDisabled();
+        }
+
+        if (status.getCurrentState() == ManagedLocalOllamaState.STOPPING) {
+            return status;
+        }
+        if (status.getCurrentState() == ManagedLocalOllamaState.DEGRADED_CRASHED
+                && Boolean.TRUE.equals(status.getOwned())) {
+            return attemptScheduledRetry();
+        }
+        if (status.getCurrentState() == ManagedLocalOllamaState.DEGRADED_EXTERNAL_LOST
+                && !Boolean.TRUE.equals(status.getOwned())) {
+            if (isRuntimeReachableWithin(startupDeadline)) {
+                log.info("external ollama detected at {}", endpoint);
+                return updateStatus(buildReadyStatusWithin(now, false, safeRestartAttempts(), startupDeadline));
+            }
+            return status;
+        }
+        if (status.getCurrentState() == ManagedLocalOllamaState.DEGRADED_OUTDATED
+                && !Boolean.TRUE.equals(status.getOwned())) {
+            if (isRuntimeReachableWithin(startupDeadline)) {
+                log.info("external ollama detected at {}", endpoint);
+                return updateStatus(buildReadyStatusWithin(now, false, safeRestartAttempts(), startupDeadline));
+            }
+            log.warn("external ollama lost at {}", endpoint);
+            return updateStatus(buildStatus(
+                    ManagedLocalOllamaState.DEGRADED_EXTERNAL_LOST,
+                    false,
+                    EXTERNAL_LOST_ERROR,
+                    0,
+                    null,
+                    null,
+                    false,
+                    status.getVersion(),
+                    now));
+        }
+        if (status.getCurrentState() == ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF) {
+            return attemptScheduledRetry();
+        }
+        if (status.getCurrentState() == ManagedLocalOllamaState.DEGRADED_START_TIMEOUT
+                && Boolean.TRUE.equals(status.getOwned())) {
+            if (isRuntimeReachableWithin(startupDeadline)) {
+                return updateStatus(buildReadyStatusWithin(now, true, safeRestartAttempts(), startupDeadline));
+            }
+            return status;
+        }
+
+        if (isRuntimeReachableWithin(startupDeadline)) {
+            boolean owned = Boolean.TRUE.equals(status.getOwned());
+            if (!owned) {
+                log.info("external ollama detected at {}", endpoint);
+            }
+            return updateStatus(buildReadyStatusWithin(now, owned, safeRestartAttempts(), startupDeadline));
+        }
+        if (Boolean.TRUE.equals(status.getOwned())
+                && (status.getCurrentState() == ManagedLocalOllamaState.OWNED_READY
+                        || status.getCurrentState() == ManagedLocalOllamaState.OWNED_STARTING
+                        || status.getCurrentState() == ManagedLocalOllamaState.DEGRADED_START_TIMEOUT
+                        || status.getCurrentState() == ManagedLocalOllamaState.DEGRADED_OUTDATED)) {
+            if (processPort.isOwnedProcessAlive()) {
+                return status;
+            }
+            return pollOwnedProcess();
+        }
+
+        if (!processPort.isBinaryAvailable()) {
+            log.warn("ollama binary not found for managed local runtime at {}", endpoint);
+            return updateStatus(buildStatus(
+                    ManagedLocalOllamaState.DEGRADED_MISSING_BINARY,
+                    false,
+                    MISSING_BINARY_ERROR,
+                    safeRestartAttempts(),
+                    null,
+                    null,
+                    false,
+                    status.getVersion(),
+                    now));
+        }
+
+        log.info("starting managed ollama at {}", endpoint);
+        updateStatus(buildStatus(
+                ManagedLocalOllamaState.OWNED_STARTING,
+                true,
+                null,
+                0,
+                null,
+                null,
+                false,
+                status.getVersion(),
+                now));
+        try {
+            processPort.startServe(endpoint);
+            return updateStatus(waitForStartupResult(startupDeadline, 0));
+        } catch (RuntimeException exception) {
+            String lastError = "Managed Ollama start failed: " + exception.getMessage();
+            log.warn("managed ollama start failed: {}", exception.getMessage());
+            return updateStatus(scheduleRestartBackoff(lastError, 1, now));
+        }
+    }
+
+    public ManagedLocalOllamaStatus startupCheck() {
+        return startupCheck(true);
+    }
+
+    public ManagedLocalOllamaStatus observeReadiness() {
+        Instant now = getClock().instant();
+        ManagedLocalOllamaState state = status.getCurrentState();
+        if (state == ManagedLocalOllamaState.DISABLED || state == ManagedLocalOllamaState.STOPPING) {
+            return status;
+        }
+
+        if (runtimeProbePort.isRuntimeReachable(endpoint)) {
+            return updateStatus(buildReadyStatus(now, Boolean.TRUE.equals(status.getOwned())));
+        }
+
+        if (state == ManagedLocalOllamaState.DEGRADED_START_TIMEOUT) {
+            return status;
+        }
+
+        return status;
+    }
+
+    public ManagedLocalOllamaStatus embeddingsDisabled() {
+        if (Boolean.TRUE.equals(status.getOwned()) && processPort.isOwnedProcessAlive()) {
+            processPort.stopOwnedProcess();
+        }
+        Instant now = getClock().instant();
+        return updateStatus(buildStatus(
+                ManagedLocalOllamaState.DISABLED,
+                false,
+                status.getLastError(),
+                safeRestartAttempts(),
+                null,
+                null,
+                null,
+                status.getVersion(),
+                now));
+    }
+
+    public ManagedLocalOllamaStatus pollOwnedProcess() {
+        if (!Boolean.TRUE.equals(status.getOwned())) {
+            return status;
+        }
+        ManagedLocalOllamaState state = status.getCurrentState();
+        if (state == ManagedLocalOllamaState.DISABLED
+                || state == ManagedLocalOllamaState.STOPPING
+                || state == ManagedLocalOllamaState.DEGRADED_CRASHED
+                || state == ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF) {
+            return status;
+        }
+        if (processPort.isOwnedProcessAlive()) {
+            if (state == ManagedLocalOllamaState.OWNED_READY
+                    || state == ManagedLocalOllamaState.OWNED_STARTING
+                    || state == ManagedLocalOllamaState.DEGRADED_START_TIMEOUT
+                    || state == ManagedLocalOllamaState.DEGRADED_OUTDATED) {
+                return observeReadiness();
+            }
+            return status;
+        }
+
+        Instant now = getClock().instant();
+        Integer exitCode = processPort.getOwnedProcessExitCode();
+        String lastError = exitCode != null
+                ? "Managed Ollama exited with code " + exitCode
+                : "Managed Ollama exited unexpectedly";
+        log.warn("managed ollama crashed: {}", lastError);
+        return updateStatus(scheduleCrash(lastError, safeRestartAttempts() + 1, now));
+    }
+
+    public ManagedLocalOllamaStatus pollExternalRuntime() {
+        if (Boolean.TRUE.equals(status.getOwned())) {
+            return status;
+        }
+        ManagedLocalOllamaState state = status.getCurrentState();
+        if (state != ManagedLocalOllamaState.EXTERNAL_READY
+                && state != ManagedLocalOllamaState.DEGRADED_OUTDATED) {
+            return status;
+        }
+        if (runtimeProbePort.isRuntimeReachable(endpoint)) {
+            return updateStatus(buildReadyStatus(getClock().instant(), false));
+        }
+        log.warn("external ollama lost at {}", endpoint);
+        return updateStatus(buildStatus(
+                ManagedLocalOllamaState.DEGRADED_EXTERNAL_LOST,
+                false,
+                EXTERNAL_LOST_ERROR,
+                0,
+                null,
+                null,
+                false,
+                status.getVersion(),
+                getClock().instant()));
+    }
+
+    public ManagedLocalOllamaStatus attemptScheduledRetry() {
+        if (status.getCurrentState() == ManagedLocalOllamaState.DEGRADED_CRASHED) {
+            if (status.getNextRetryAt() == null) {
+                return status;
+            }
+            updateStatus(status.toBuilder()
+                    .currentState(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF)
+                    .updatedAt(getClock().instant())
+                    .build());
+        }
+
+        if (status.getCurrentState() != ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF
+                || !Boolean.TRUE.equals(status.getOwned())
+                || status.getNextRetryAt() == null) {
+            return status;
+        }
+
+        Instant now = getClock().instant();
+        if (now.isBefore(status.getNextRetryAt())) {
+            return status;
+        }
+
+        int currentAttempts = safeRestartAttempts();
+        try {
+            log.info("managed ollama restart requested");
+            updateStatus(buildStatus(
+                    ManagedLocalOllamaState.OWNED_STARTING,
+                    true,
+                    null,
+                    currentAttempts,
+                    null,
+                    null,
+                    false,
+                    status.getVersion(),
+                    now));
+            processPort.startServe(endpoint);
+            ManagedLocalOllamaStatus startupResult = waitForStartupResult(now.plus(startupWindow), currentAttempts);
+            if (startupResult.getCurrentState() == ManagedLocalOllamaState.DEGRADED_START_TIMEOUT) {
+                return updateStatus(
+                        scheduleRestartBackoff(startTimeoutError(), currentAttempts + 1, getClock().instant()));
+            }
+            log.info("managed ollama restart succeeded");
+            return updateStatus(startupResult);
+        } catch (RuntimeException exception) {
+            String lastError = "Managed Ollama restart failed: " + exception.getMessage();
+            log.warn("managed ollama restart failed: {}", exception.getMessage());
+            return updateStatus(scheduleRestartBackoff(lastError, currentAttempts + 1, now));
+        }
+    }
+
+    public ManagedLocalOllamaStatus stop() {
+        Instant now = getClock().instant();
+        if (status.getCurrentState() == ManagedLocalOllamaState.STOPPING) {
+            return status;
+        }
+        if (!Boolean.TRUE.equals(status.getOwned())) {
+            return status;
+        }
+        log.info("stopping managed ollama at {}", endpoint);
+        if (processPort.isOwnedProcessAlive()) {
+            processPort.stopOwnedProcess();
+        }
+        return updateStatus(buildStatus(
+                ManagedLocalOllamaState.STOPPING,
+                true,
+                status.getLastError(),
+                safeRestartAttempts(),
+                status.getNextRetryAt(),
+                status.getNextRetryTime(),
+                status.getModelPresent(),
+                status.getVersion(),
+                now));
+    }
+
+    public ManagedLocalOllamaStatus currentStatus() {
+        return status;
+    }
+
+    public ManagedLocalOllamaStatus refreshConfiguration(
+            String endpoint,
+            String selectedModel,
+            Duration startupWindow,
+            Duration initialRestartBackoff,
+            String minimumSupportedVersion) {
+        String resolvedEndpoint = endpoint;
+        String resolvedSelectedModel = selectedModel;
+        Duration resolvedStartupWindow = startupWindow != null ? startupWindow : Duration.ofSeconds(5);
+        Duration resolvedInitialRestartBackoff = initialRestartBackoff != null ? initialRestartBackoff
+                : Duration.ofSeconds(1);
+        String resolvedMinimumSupportedVersion = minimumSupportedVersion != null && !minimumSupportedVersion.isBlank()
+                ? minimumSupportedVersion
+                : "0.19.0";
+
+        boolean endpointChanged = !Objects.equals(this.endpoint, resolvedEndpoint);
+        boolean selectedModelChanged = !Objects.equals(this.selectedModel, resolvedSelectedModel);
+
+        this.endpoint = resolvedEndpoint;
+        this.selectedModel = resolvedSelectedModel;
+        this.startupWindow = resolvedStartupWindow;
+        this.initialRestartBackoff = resolvedInitialRestartBackoff;
+        this.minimumSupportedVersion = resolvedMinimumSupportedVersion;
+
+        if (!endpointChanged && !selectedModelChanged) {
+            return status;
+        }
+
+        if (endpointChanged && Boolean.TRUE.equals(status.getOwned()) && processPort.isOwnedProcessAlive()) {
+            processPort.stopOwnedProcess();
+        }
+
+        ManagedLocalOllamaState nextState = endpointChanged ? ManagedLocalOllamaState.DISABLED
+                : status.getCurrentState();
+        Boolean owned = endpointChanged ? Boolean.FALSE : status.getOwned();
+        Boolean modelPresent = endpointChanged || selectedModelChanged ? null : status.getModelPresent();
+        Instant now = getClock().instant();
+        return updateStatus(buildStatus(
+                nextState,
+                owned,
+                status.getLastError(),
+                safeRestartAttempts(),
+                endpointChanged ? null : status.getNextRetryAt(),
+                endpointChanged ? null : status.getNextRetryTime(),
+                modelPresent,
+                status.getVersion(),
+                now));
+    }
+
+    protected Clock getClock() {
+        return clock;
+    }
+
+    protected void pauseBeforeRetry(Duration delay) {
+        if (delay == null || delay.isNegative() || delay.isZero()) {
+            return;
+        }
+        try {
+            Thread.sleep(delay.toMillis());
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private ManagedLocalOllamaStatus waitForStartupResult(Instant deadline, int restartAttempts) {
+        while (getClock().instant().isBefore(deadline)) {
+            if (isRuntimeReachableWithin(deadline)) {
+                return buildReadyStatusWithin(getClock().instant(), true, restartAttempts, deadline);
+            }
+            Duration retryDelay = nextProbeDelay(deadline);
+            if (retryDelay == null) {
+                break;
+            }
+            pauseBeforeRetry(retryDelay);
+        }
+
+        if (isRuntimeReachableWithin(deadline)) {
+            return buildReadyStatusWithin(getClock().instant(), true, restartAttempts, deadline);
+        }
+
+        log.warn("managed ollama start timed out after {} seconds", startupWindow.toSeconds());
+        return buildStatus(
+                ManagedLocalOllamaState.DEGRADED_START_TIMEOUT,
+                true,
+                startTimeoutError(),
+                restartAttempts,
+                null,
+                null,
+                false,
+                status.getVersion(),
+                getClock().instant());
+    }
+
+    private ManagedLocalOllamaStatus buildReadyStatus(Instant now, boolean owned, int restartAttempts) {
+        return buildReadyStatusWithin(now, owned, restartAttempts, now.plus(startupWindow));
+    }
+
+    private ManagedLocalOllamaStatus buildReadyStatus(Instant now, boolean owned) {
+        return buildReadyStatus(now, owned, safeRestartAttempts());
+    }
+
+    private ManagedLocalOllamaStatus buildReadyStatusWithin(Instant now,
+            boolean owned,
+            int restartAttempts,
+            Instant deadline) {
+        Duration remaining = remainingUntil(deadline);
+        Boolean modelPresent = status.getModelPresent();
+        String resolvedVersion = status.getVersion();
+        Duration modelTimeout = remaining;
+        if (modelTimeout != null && selectedModel != null) {
+            modelPresent = runtimeProbePort.hasModel(endpoint, selectedModel, modelTimeout);
+        }
+        Duration versionTimeout = remainingUntil(deadline);
+        if (versionTimeout != null) {
+            resolvedVersion = resolveVersionWithin(versionTimeout);
+        }
+        if (isOutdatedVersion(resolvedVersion)) {
+            log.warn("ollama version {} is outdated; minimum supported {}", resolvedVersion, minimumSupportedVersion);
+            return buildStatus(
+                    ManagedLocalOllamaState.DEGRADED_OUTDATED,
+                    owned,
+                    "Ollama runtime version " + resolvedVersion + " is older than minimum supported "
+                            + minimumSupportedVersion,
+                    restartAttempts,
+                    null,
+                    null,
+                    modelPresent,
+                    resolvedVersion,
+                    now);
+        }
+        if (owned) {
+            log.info("managed ollama ready at {}", endpoint);
+        }
+        return buildStatus(
+                owned ? ManagedLocalOllamaState.OWNED_READY : ManagedLocalOllamaState.EXTERNAL_READY,
+                owned,
+                null,
+                restartAttempts,
+                null,
+                null,
+                modelPresent,
+                resolvedVersion,
+                now);
+    }
+
+    private ManagedLocalOllamaStatus scheduleCrash(String lastError, int restartAttempts, Instant now) {
+        Duration delay = calculateRestartBackoff(restartAttempts);
+        Instant nextRetryAt = now.plus(delay);
+        log.warn("managed ollama restart scheduled in {}s", delay.toSeconds());
+        return buildStatus(
+                ManagedLocalOllamaState.DEGRADED_CRASHED,
+                true,
+                lastError,
+                restartAttempts,
+                nextRetryAt,
+                nextRetryAt.toString(),
+                false,
+                status.getVersion(),
+                now);
+    }
+
+    private ManagedLocalOllamaStatus scheduleRestartBackoff(String lastError, int restartAttempts, Instant now) {
+        Duration delay = calculateRestartBackoff(restartAttempts);
+        Instant nextRetryAt = now.plus(delay);
+        log.warn("managed ollama restart scheduled in {}s", delay.toSeconds());
+        return buildStatus(
+                ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF,
+                true,
+                lastError,
+                restartAttempts,
+                nextRetryAt,
+                nextRetryAt.toString(),
+                false,
+                status.getVersion(),
+                now);
+    }
+
+    private Duration calculateRestartBackoff(int restartAttempts) {
+        int exponent = Math.max(0, restartAttempts - 1);
+        long multiplier = 1L << Math.min(exponent, 10);
+        return initialRestartBackoff.multipliedBy(multiplier);
+    }
+
+    private ManagedLocalOllamaStatus buildStatus(ManagedLocalOllamaState currentState,
+            Boolean owned,
+            String lastError,
+            Integer restartAttempts,
+            Instant nextRetryAt,
+            String nextRetryTime,
+            Boolean modelPresent,
+            String resolvedVersion,
+            Instant updatedAt) {
+        return ManagedLocalOllamaStatus.builder()
+                .currentState(currentState)
+                .owned(owned)
+                .endpoint(endpoint)
+                .version(resolvedVersion)
+                .selectedModel(selectedModel)
+                .modelPresent(modelPresent)
+                .lastError(lastError)
+                .restartAttempts(restartAttempts)
+                .nextRetryAt(nextRetryAt)
+                .nextRetryTime(nextRetryTime)
+                .updatedAt(updatedAt)
+                .build();
+    }
+
+    private ManagedLocalOllamaStatus updateStatus(ManagedLocalOllamaStatus status) {
+        this.status = status;
+        return this.status;
+    }
+
+    private Integer safeRestartAttempts() {
+        return status.getRestartAttempts() != null ? status.getRestartAttempts() : 0;
+    }
+
+    private String resolveVersionWithin(Duration timeout) {
+        if (version != null) {
+            return version;
+        }
+        if (timeout == null) {
+            return null;
+        }
+        try {
+            return runtimeProbePort.getRuntimeVersion(endpoint, timeout);
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private boolean isOutdatedVersion(String currentVersion) {
+        if (currentVersion == null) {
+            return false;
+        }
+        return compareVersions(currentVersion, minimumSupportedVersion) < 0;
+    }
+
+    private String startTimeoutError() {
+        return "Ollama did not become healthy within " + startupWindow.toSeconds() + " seconds";
+    }
+
+    private int compareVersions(String left, String right) {
+        int[] leftParts = parseVersion(left);
+        int[] rightParts = parseVersion(right);
+        for (int index = 0; index < 3; index++) {
+            if (leftParts[index] != rightParts[index]) {
+                return Integer.compare(leftParts[index], rightParts[index]);
+            }
+        }
+        return 0;
+    }
+
+    private int[] parseVersion(String value) {
+        String normalized = value.startsWith("v") ? value.substring(1) : value;
+        String[] tokens = normalized.split("[^0-9]+");
+        int[] parts = new int[] { 0, 0, 0 };
+        int partIndex = 0;
+        for (String token : tokens) {
+            if (token.isBlank()) {
+                continue;
+            }
+            parts[partIndex] = Integer.parseInt(token);
+            partIndex++;
+            if (partIndex == parts.length) {
+                break;
+            }
+        }
+        return parts;
+    }
+
+    private boolean isRuntimeReachableWithin(Instant deadline) {
+        Duration remaining = remainingUntil(deadline);
+        if (remaining == null) {
+            return false;
+        }
+        return runtimeProbePort.isRuntimeReachable(endpoint, remaining);
+    }
+
+    private Duration remainingUntil(Instant deadline) {
+        Instant now = getClock().instant();
+        if (deadline == null || !now.isBefore(deadline)) {
+            return null;
+        }
+        Duration remaining = Duration.between(now, deadline);
+        if (remaining.isNegative() || remaining.isZero()) {
+            return null;
+        }
+        return remaining;
+    }
+
+    private Duration nextProbeDelay(Instant deadline) {
+        Duration remaining = remainingUntil(deadline);
+        if (remaining == null) {
+            return null;
+        }
+        Duration probeInterval = Duration.ofSeconds(1);
+        return remaining.compareTo(probeInterval) < 0 ? remaining : probeInterval;
+    }
+}

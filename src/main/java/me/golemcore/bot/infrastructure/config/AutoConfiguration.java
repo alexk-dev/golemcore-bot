@@ -18,11 +18,19 @@ package me.golemcore.bot.infrastructure.config;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService;
+import me.golemcore.bot.adapter.outbound.embedding.OllamaRuntimeProbeAdapter;
+import me.golemcore.bot.domain.selfevolving.tactic.ManagedLocalOllamaSupervisor;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.selfevolving.SelfEvolvingTacticSearchStatusProjectionService;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.infrastructure.lifecycle.ManagedLocalOllamaLifecycleBridge;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.plugin.runtime.PluginManager;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
+import me.golemcore.bot.port.outbound.OllamaProcessPort;
+import me.golemcore.bot.port.outbound.OllamaRuntimeApiPort;
+import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,12 +39,14 @@ import org.springframework.boot.info.BuildProperties;
 import org.springframework.boot.info.GitProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
+import java.time.Duration;
 import java.time.Clock;
 
 /**
@@ -76,12 +86,84 @@ public class AutoConfiguration {
     }
 
     @Bean
+    public static WebClient webClient() {
+        return WebClient.builder()
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(256 * 1024))
+                .build();
+    }
+
+    @Bean
     public static ObjectMapper objectMapper() {
         ObjectMapper mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
         return mapper;
+    }
+
+    @Bean
+    public OllamaProcessPort ollamaProcessPort() {
+        return new me.golemcore.bot.adapter.outbound.embedding.OllamaProcessAdapter();
+    }
+
+    @Bean
+    public OllamaRuntimeApiPort ollamaRuntimeApiPort(okhttp3.OkHttpClient okHttpClient,
+            ObjectMapper objectMapper) {
+        return new OllamaRuntimeProbeAdapter(okHttpClient, objectMapper);
+    }
+
+    @Bean
+    public static ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor(Clock clock,
+            RuntimeConfigService runtimeConfigService,
+            OllamaRuntimeProbePort runtimeProbePort,
+            OllamaProcessPort processPort) {
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
+        RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics();
+        if (tacticsConfig == null) {
+            tacticsConfig = new RuntimeConfig.SelfEvolvingTacticsConfig();
+        }
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = tacticsConfig.getSearch();
+        if (searchConfig == null) {
+            searchConfig = new RuntimeConfig.SelfEvolvingTacticSearchConfig();
+        }
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = searchConfig.getEmbeddings();
+        if (embeddingsConfig == null) {
+            embeddingsConfig = new RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig();
+        }
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = embeddingsConfig.getLocal();
+        if (localConfig == null) {
+            localConfig = new RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig();
+        }
+        String endpoint = resolveOllamaBaseUrl(embeddingsConfig.getBaseUrl());
+        String selectedModel = trimToNull(embeddingsConfig.getModel());
+        return new ManagedLocalOllamaSupervisor(
+                clock,
+                runtimeProbePort,
+                processPort,
+                endpoint,
+                null,
+                selectedModel,
+                Duration.ofSeconds(5),
+                Duration.ofMillis(localConfig.getInitialRestartBackoffMs()),
+                localConfig.getMinimumRuntimeVersion());
+    }
+
+    @Bean
+    public ManagedLocalOllamaLifecycleBridge managedLocalOllamaLifecycleBridge(
+            RuntimeConfigService runtimeConfigService,
+            ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor) {
+        return new ManagedLocalOllamaLifecycleBridge(runtimeConfigService, managedLocalOllamaSupervisor);
+    }
+
+    @Bean
+    public static SelfEvolvingTacticSearchStatusProjectionService selfEvolvingTacticSearchStatusProjectionService(
+            RuntimeConfigService runtimeConfigService,
+            ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor,
+            Clock clock) {
+        return new SelfEvolvingTacticSearchStatusProjectionService(
+                runtimeConfigService,
+                managedLocalOllamaSupervisor,
+                clock);
     }
 
     @PostConstruct
@@ -118,5 +200,18 @@ public class AutoConfiguration {
     private boolean isChannelEnabled(String channelType) {
         BotProperties.ChannelProperties channelProps = properties.getChannels().get(channelType);
         return channelProps != null && channelProps.isEnabled();
+    }
+
+    private static String resolveOllamaBaseUrl(String configuredBaseUrl) {
+        String baseUrl = trimToNull(configuredBaseUrl);
+        return baseUrl != null ? baseUrl : "http://127.0.0.1:11434";
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

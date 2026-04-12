@@ -3,7 +3,6 @@ import type { PromptSection } from '../../api/prompts';
 import {
   arePromptDraftsEqual,
   buildPromptReorderRequests,
-  buildPromptMetrics,
   DEFAULT_PROMPT_ORDER,
   findPriorityConflictName,
   getNextPromptOrder,
@@ -99,20 +98,6 @@ describe('promptFormUtils', () => {
 
     expect(findPriorityConflictName(toPromptDraft(sections[0]), sections)).toBeNull();
     expect(findPriorityConflictName({ ...toPromptDraft(sections[2]), order: 20 }, sections)).toBe('rules');
-  });
-
-  it('builds prompt metrics for sidebar summaries', () => {
-    const sections = [
-      createSection({ name: 'identity', enabled: true, deletable: false }),
-      createSection({ name: 'rules', enabled: true, deletable: false }),
-      createSection({ name: 'custom', enabled: false, deletable: true }),
-    ];
-
-    expect(buildPromptMetrics(sections)).toEqual({
-      total: 3,
-      enabled: 2,
-      protected: 2,
-    });
   });
 
   it('reorders prompt sections and normalizes priority spacing', () => {

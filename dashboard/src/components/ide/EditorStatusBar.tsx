@@ -42,11 +42,11 @@ export function EditorStatusBar({
   updatedAt,
 }: EditorStatusBarProps): ReactElement {
   return (
-    <div className="ide-statusbar flex min-h-[2.5rem] items-center justify-between gap-3 border-b border-border/80 px-4 py-2 text-xs text-muted-foreground">
-      <div className="min-w-0 truncate pr-2" title={activePath ?? ''}>
+    <div className="ide-statusbar flex min-h-[2.5rem] flex-col gap-2 border-b border-border/80 px-4 py-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0 max-w-full truncate pr-2" title={activePath ?? ''}>
         {activePath ?? 'No file selected'}
       </div>
-      <div className="flex items-center gap-3 whitespace-nowrap">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 sm:justify-end">
         <span className="rounded-full border border-border/80 bg-background/80 px-2 py-1 font-medium text-foreground" title={language}>
           {language.toUpperCase()}
         </span>

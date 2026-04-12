@@ -39,9 +39,11 @@ class DashboardFileServiceTest {
         BotProperties botProperties = new BotProperties();
         botProperties.getTools().getFilesystem().setWorkspace(workspaceRoot.toString());
 
-        WorkspacePathService workspacePathService = new WorkspacePathService(botProperties);
+        WorkspacePathService workspacePathService = new WorkspacePathService(
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                new LocalTestWorkspaceFilePort());
         workspacePathService.init();
-        dashboardFileService = new DashboardFileService(workspacePathService);
+        dashboardFileService = new DashboardFileService(workspacePathService, new LocalTestWorkspaceFilePort());
     }
 
     @Test

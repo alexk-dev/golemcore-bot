@@ -1,5 +1,12 @@
 import type { TurnMetadata } from './contextPanelStore';
-import type { AssistantHint, ChatMessage, ChatRuntimeSessionState } from '../components/chat/chatRuntimeTypes';
+import type {
+  AssistantHint,
+  ChatMessage,
+  ChatMessageAttachment,
+  ChatRuntimeSessionState,
+  LiveProgressUpdate,
+} from '../components/chat/chatRuntimeTypes';
+import { areAttachmentsEqual, isDuplicateAssistantDraft } from './chatRuntimeStoreUtilsComparators';
 
 const EMPTY_TURN_METADATA: TurnMetadata = {
   model: null,
@@ -31,6 +38,7 @@ export function createEmptySessionState(): ChatRuntimeSessionState {
     oldestLoadedMessageId: null,
     typing: false,
     running: false,
+    progress: null,
     turnMetadata: createEmptyTurnMetadata(),
   };
 }
@@ -100,35 +108,43 @@ export function mergeInitialHistory(existingMessages: ChatMessage[], historyMess
     return historyMessages;
   }
 
-  const merged = [...historyMessages];
   const lastPersistedAssistant = [...historyMessages].reverse().find((message) => message.role === 'assistant') ?? null;
-  for (const message of existingMessages) {
-    if (message.persisted) {
-      continue;
-    }
-    if (
-      message.role === 'assistant'
-      && message.content === lastPersistedAssistant?.content
-      && message.model === lastPersistedAssistant?.model
-      && message.tier === lastPersistedAssistant?.tier
-      && message.reasoning === lastPersistedAssistant?.reasoning
-    ) {
-      continue;
-    }
-    merged.push(message);
-  }
-  return dedupeMessages(merged);
+  const draftMessages = existingMessages.filter((message) => (
+    !message.persisted && !isDuplicateAssistantDraft(message, lastPersistedAssistant)
+  ));
+  return dedupeMessages([...historyMessages, ...draftMessages]);
+}
+
+
+
+interface AssistantMetadataUpdate {
+  model: string | null | undefined;
+  tier: string | null | undefined;
+  skill: string | null | undefined;
+  reasoning: string | null | undefined;
+  attachments: ChatMessageAttachment[];
+}
+
+function hasAssistantMetadataChanged(message: ChatMessage, update: AssistantMetadataUpdate): boolean {
+  return update.model !== message.model
+    || update.tier !== message.tier
+    || update.skill !== message.skill
+    || update.reasoning !== message.reasoning
+    || !areAttachmentsEqual(update.attachments, message.attachments);
 }
 
 function updateAssistantMessage(
   message: ChatMessage,
   text: string,
   hint: AssistantHint | null,
+  attachments: ChatMessageAttachment[],
   isFinal: boolean,
 ): ChatMessage {
   const nextModel = hint?.model ?? message.model;
   const nextTier = hint?.tier ?? message.tier;
+  const nextSkill = hint?.skill ?? message.skill;
   const nextReasoning = hint?.reasoning ?? message.reasoning;
+  const nextAttachments = attachments.length > 0 ? attachments : message.attachments;
 
   if (!isFinal) {
     return {
@@ -136,19 +152,29 @@ function updateAssistantMessage(
       content: `${message.content}${text}`,
       model: nextModel,
       tier: nextTier,
+      skill: nextSkill,
       reasoning: nextReasoning,
+      attachments: nextAttachments,
     };
   }
 
   if (text.length === 0 || text === message.content) {
-    if (nextModel === message.model && nextTier === message.tier && nextReasoning === message.reasoning) {
+    if (!hasAssistantMetadataChanged(message, {
+      model: nextModel,
+      tier: nextTier,
+      skill: nextSkill,
+      reasoning: nextReasoning,
+      attachments: nextAttachments,
+    })) {
       return message;
     }
     return {
       ...message,
       model: nextModel,
       tier: nextTier,
+      skill: nextSkill,
       reasoning: nextReasoning,
+      attachments: nextAttachments,
     };
   }
 
@@ -157,7 +183,9 @@ function updateAssistantMessage(
     content: text.length >= message.content.length ? text : message.content,
     model: nextModel,
     tier: nextTier,
+    skill: nextSkill,
     reasoning: nextReasoning,
+    attachments: nextAttachments,
   };
 }
 
@@ -166,6 +194,7 @@ function createAssistantMessage(
   messageIndex: number,
   text: string,
   hint: AssistantHint | null,
+  attachments: ChatMessageAttachment[],
 ): ChatMessage {
   return {
     id: `${sessionId}:assistant:${messageIndex + 1}:${Date.now()}`,
@@ -173,33 +202,57 @@ function createAssistantMessage(
     content: text,
     model: hint?.model ?? null,
     tier: hint?.tier ?? null,
+    skill: hint?.skill ?? null,
     reasoning: hint?.reasoning ?? null,
+    attachments,
     persisted: false,
   };
 }
 
 export function applyAssistantTextUpdate(
   current: ChatRuntimeSessionState,
-  sessionId: string,
-  text: string,
-  hint: AssistantHint | null,
-  isFinal: boolean,
-): Pick<ChatRuntimeSessionState, 'messages' | 'running' | 'turnMetadata' | 'typing'> {
+  update: {
+    sessionId: string;
+    text: string;
+    hint: AssistantHint | null;
+    attachments: ChatMessageAttachment[];
+    isFinal: boolean;
+  },
+): Pick<ChatRuntimeSessionState, 'messages' | 'running' | 'turnMetadata' | 'typing' | 'progress'> {
+  const {
+    sessionId,
+    text,
+    hint,
+    attachments,
+    isFinal,
+  } = update;
   const nextMessages = [...current.messages];
   const lastMessage = nextMessages.length > 0 ? nextMessages[nextMessages.length - 1] : null;
   const safeText = text ?? '';
   const nextTurnMetadata = hint != null ? patchTurnMetadata(current.turnMetadata, hint) : current.turnMetadata;
 
   if (lastMessage?.role === 'assistant' && !lastMessage.persisted) {
-    nextMessages[nextMessages.length - 1] = updateAssistantMessage(lastMessage, safeText, hint, isFinal);
-  } else if (safeText.length > 0) {
-    nextMessages.push(createAssistantMessage(sessionId, nextMessages.length, safeText, hint));
+    nextMessages[nextMessages.length - 1] = updateAssistantMessage(lastMessage, safeText, hint, attachments, isFinal);
+  } else if (safeText.length > 0 || attachments.length > 0) {
+    nextMessages.push(createAssistantMessage(sessionId, nextMessages.length, safeText, hint, attachments));
   }
 
   return {
     messages: nextMessages,
     typing: false,
     running: !isFinal,
+    progress: isFinal ? null : current.progress,
     turnMetadata: nextTurnMetadata,
+  };
+}
+
+export function applyLiveProgressUpdate(
+  current: ChatRuntimeSessionState,
+  progress: LiveProgressUpdate | null,
+): Pick<ChatRuntimeSessionState, 'progress' | 'running' | 'typing'> {
+  return {
+    progress,
+    running: progress != null ? true : current.running,
+    typing: false,
   };
 }

@@ -53,8 +53,28 @@ public final class AutoRunContextSupport {
         copyStringAttribute(context, metadata, ContextAttributes.AUTO_SCHEDULE_ID);
         copyStringAttribute(context, metadata, ContextAttributes.AUTO_GOAL_ID);
         copyStringAttribute(context, metadata, ContextAttributes.AUTO_TASK_ID);
+        copyStringAttribute(context, metadata, ContextAttributes.ACTIVE_SKILL_NAME);
+        copyStringAttribute(context, metadata, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
+        copyStringAttribute(context, metadata, ContextAttributes.AUTO_REFLECTION_TIER);
         copyStringAttribute(context, metadata, ContextAttributes.CONVERSATION_KEY);
         copyStringAttribute(context, metadata, ContextAttributes.TRANSPORT_CHAT_ID);
+        copyStringAttribute(context, metadata, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
+
+        Boolean reflectionActive = context.getAttribute(ContextAttributes.AUTO_REFLECTION_ACTIVE);
+        if (Boolean.TRUE.equals(reflectionActive)) {
+            metadata.put(ContextAttributes.AUTO_REFLECTION_ACTIVE, true);
+        }
+
+        Boolean reflectionTierPriority = context.getAttribute(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY);
+        if (reflectionTierPriority != null) {
+            metadata.put(ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, reflectionTierPriority);
+        }
+
+        copyStringAttribute(context, metadata, ContextAttributes.AUTO_RUN_STATUS);
+        copyStringAttribute(context, metadata, ContextAttributes.AUTO_RUN_FINISH_REASON);
+        copyStringAttribute(context, metadata, ContextAttributes.AUTO_RUN_FAILURE_SUMMARY);
+        copyStringAttribute(context, metadata, ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT);
+        copyStringAttribute(context, metadata, ContextAttributes.AUTO_RUN_ASSISTANT_TEXT);
         return metadata;
     }
 

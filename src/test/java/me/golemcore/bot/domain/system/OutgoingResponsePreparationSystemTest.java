@@ -24,7 +24,9 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
+import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.TurnLimitReason;
+import me.golemcore.bot.domain.service.InternalTurnService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -35,8 +37,18 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class OutgoingResponsePreparationSystemTest {
 
@@ -49,6 +61,7 @@ class OutgoingResponsePreparationSystemTest {
     private UserPreferencesService preferencesService;
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
+    private InternalTurnService internalTurnService;
     private OutgoingResponsePreparationSystem system;
 
     @BeforeEach
@@ -56,20 +69,17 @@ class OutgoingResponsePreparationSystemTest {
         preferencesService = mock(UserPreferencesService.class);
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        internalTurnService = mock(InternalTurnService.class);
         when(modelSelectionService.resolveMaxInputTokens(anyString())).thenReturn(128000);
         system = new OutgoingResponsePreparationSystem(preferencesService, modelSelectionService,
-                runtimeConfigService);
+                runtimeConfigService, internalTurnService);
     }
-
-    // ── identity ──
 
     @Test
     void shouldReturnCorrectNameAndOrder() {
         assertEquals("OutgoingResponsePreparationSystem", system.getName());
         assertEquals(58, system.getOrder());
     }
-
-    // ── shouldProcess ──
 
     @Test
     void shouldNotProcessWhenOutgoingResponseAlreadyPresent() {
@@ -130,8 +140,6 @@ class OutgoingResponsePreparationSystemTest {
         assertFalse(system.shouldProcess(context));
     }
 
-    // ── process: defensive guard ──
-
     @Test
     void shouldReturnContextUnchangedWhenProcessCalledWithExistingOutgoingResponse() {
         AgentContext context = buildContext();
@@ -142,8 +150,6 @@ class OutgoingResponsePreparationSystemTest {
 
         assertSame(existing, result.getAttribute(ContextAttributes.OUTGOING_RESPONSE));
     }
-
-    // ── process: LLM error path ──
 
     @Test
     void shouldConvertLlmErrorToOutgoingResponse() {
@@ -205,7 +211,53 @@ class OutgoingResponsePreparationSystemTest {
         assertEquals(ERROR_MESSAGE, outgoing.getText());
     }
 
-    // ── process: LLM response → text ──
+    @Test
+    void shouldScheduleInternalRetryForTransientLlmError() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR,
+                LlmErrorClassifier.withCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, "rate limited"));
+        when(internalTurnService.scheduleAutoContinueRetry(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT))
+                .thenReturn(true);
+
+        AgentContext result = system.process(context);
+
+        assertNull(result.getAttribute(ContextAttributes.OUTGOING_RESPONSE));
+        assertEquals(true, result.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED));
+        verify(internalTurnService).scheduleAutoContinueRetry(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT);
+        verify(preferencesService, never()).getMessage("system.error.llm");
+    }
+
+    @Test
+    void shouldNotScheduleInternalRetryForAutoMode() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR,
+                LlmErrorClassifier.withCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, "rate limited"));
+        context.setAttribute(ContextAttributes.AUTO_MODE, true);
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(ERROR_MESSAGE, outgoing.getText());
+        verify(internalTurnService, never()).scheduleAutoContinueRetry(any(), anyString());
+    }
+
+    @Test
+    void shouldNotScheduleInternalRetryForInternalInboundMessage() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR,
+                LlmErrorClassifier.withCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, "rate limited"));
+        context.setAttribute(ContextAttributes.TURN_INPUT_INTERNAL, true);
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(ERROR_MESSAGE, outgoing.getText());
+        verify(internalTurnService, never()).scheduleAutoContinueRetry(any(), anyString());
+    }
 
     @Test
     void shouldConvertLlmResponseToTextResponse() {
@@ -219,6 +271,22 @@ class OutgoingResponsePreparationSystemTest {
         assertNotNull(outgoing);
         assertEquals("Hello there", outgoing.getText());
         assertFalse(outgoing.isVoiceRequested());
+    }
+
+    @Test
+    void shouldIncludeSkillHintWhenSkillWasUsed() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("Hello there").build());
+        context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, "golemcore/superpowers/superpowers-code-reviewer");
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(
+                "golemcore/superpowers/superpowers-code-reviewer",
+                outgoing.getHints().get("skill"));
     }
 
     @Test
@@ -328,8 +396,6 @@ class OutgoingResponsePreparationSystemTest {
         assertNull(result.getAttribute(ContextAttributes.LLM_ERROR));
     }
 
-    // ── process: voice prefix detection ──
-
     @Test
     void shouldDetectVoicePrefixAndBuildVoiceResponse() {
         AgentContext context = buildContext();
@@ -411,8 +477,6 @@ class OutgoingResponsePreparationSystemTest {
         assertEquals("Spoken text", outgoing.getVoiceText());
     }
 
-    // ── process: explicit voiceRequested / voiceText (no prefix) ──
-
     @Test
     void shouldBuildVoiceResponseWhenVoiceRequestedAttributeSet() {
         AgentContext context = buildContext();
@@ -488,8 +552,6 @@ class OutgoingResponsePreparationSystemTest {
         assertTrue(outgoing.isVoiceRequested());
         assertEquals("voice content", outgoing.getVoiceText());
     }
-
-    // ── process: auto-voice ──
 
     @Test
     void shouldAutoVoiceRespondWhenIncomingVoice() {
@@ -670,7 +732,33 @@ class OutgoingResponsePreparationSystemTest {
                 "Should check last user message, not earlier voice message");
     }
 
-    // ── process: FINAL_ANSWER_READY with tool calls ──
+    @Test
+    void shouldIgnoreInternalUserMessagesWhenDetectingAutoVoice() {
+        when(runtimeConfigService.isTelegramRespondWithVoiceEnabled()).thenReturn(true);
+
+        AgentContext context = buildContextWithMessages(List.of(
+                Message.builder()
+                        .role(ROLE_USER)
+                        .content("visible user message")
+                        .voiceData(new byte[] { 1, 2, 3 })
+                        .timestamp(Instant.now())
+                        .build(),
+                Message.builder()
+                        .role(ROLE_USER)
+                        .content("internal retry")
+                        .metadata(java.util.Map.of(ContextAttributes.MESSAGE_INTERNAL, true))
+                        .timestamp(Instant.now())
+                        .build()));
+
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(REPLY_TEXT).build());
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertTrue(outgoing.isVoiceRequested());
+    }
 
     @Test
     void shouldCreateResponseWhenFinalAnswerReadyEvenWithToolCalls() {
@@ -689,8 +777,6 @@ class OutgoingResponsePreparationSystemTest {
         assertNotNull(outgoing, "Should create OutgoingResponse when FINAL_ANSWER_READY is set");
         assertEquals("Tool loop stopped: reached max internal LLM calls (2).", outgoing.getText());
     }
-
-    // ── process: tool loop limit i18n override ──
 
     @Test
     void shouldUseSpecificMessageWhenToolLoopStopsByMaxLlmCalls() {
@@ -806,8 +892,6 @@ class OutgoingResponsePreparationSystemTest {
                 "Should not create OutgoingResponse when tool calls present and FINAL_ANSWER_READY not set");
     }
 
-    // ── process: edge case — no attributes at all ──
-
     @Test
     void shouldDoNothingWhenNoAttributesSet() {
         AgentContext context = buildContext();
@@ -817,7 +901,23 @@ class OutgoingResponsePreparationSystemTest {
         assertNull(result.getAttribute(ContextAttributes.OUTGOING_RESPONSE));
     }
 
-    // ── helpers ──
+    @Test
+    void shouldIncludeSkillHintFromActiveSkillWhenAttributeMissing() {
+        AgentContext context = buildContext();
+        context.setActiveSkill(Skill.builder()
+                .name("golemcore/superpowers/superpowers-code-reviewer")
+                .build());
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content("Hello there").build());
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(
+                "golemcore/superpowers/superpowers-code-reviewer",
+                outgoing.getHints().get("skill"));
+    }
 
     private AgentContext buildContext() {
         return AgentContext.builder()

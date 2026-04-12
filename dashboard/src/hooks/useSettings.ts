@@ -1,29 +1,18 @@
 import { type UseMutationResult, type UseQueryResult, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  type ModelRouterConfig,
-  type LlmConfig,
-  type LlmProviderConfig,
-  type ToolsConfig,
-  type VoiceConfig,
-  type MemoryConfig,
-  type MemoryPreset,
-  type SkillsConfig,
-  type TurnConfig,
-  type UsageConfig,
-  type McpConfig,
-  type AutoModeConfig,
-  type RateLimitConfig,
-  type SecurityConfig,
-  type CompactionConfig,
   getSettings,
   updatePreferences,
   getModels,
   getRuntimeConfig,
+  updateRuntimeConfig,
   updateModelRouterConfig,
   updateLlmConfig,
   addLlmProvider,
+  addLlmProviderAndImport,
   updateLlmProvider,
   removeLlmProvider,
+  testDraftLlmProvider,
+  testSavedLlmProvider,
   updateToolsConfig,
   updateVoiceConfig,
   updateMemoryConfig,
@@ -31,10 +20,42 @@ import {
   updateSkillsConfig,
   updateTurnConfig,
   updateUsageConfig,
+  updateTelemetryConfig,
   updateMcpConfig,
+  addMcpCatalogEntry,
+  updateMcpCatalogEntry,
+  removeMcpCatalogEntry,
+  updateHiveConfig,
+  updatePlanConfig,
   updateAutoConfig,
+  updateTracingConfig,
   updateAdvancedConfig,
 } from '../api/settings';
+import type {
+  ModelRouterConfig,
+  LlmConfig,
+  LlmProviderConfig,
+  LlmProviderImportResult,
+  LlmProviderTestResult,
+  ToolsConfig,
+  VoiceConfig,
+  RuntimeConfig,
+  MemoryConfig,
+  MemoryPreset,
+  SkillsConfig,
+  TurnConfig,
+  UsageConfig,
+  TelemetryConfig,
+  McpConfig,
+  McpCatalogEntry,
+  HiveConfig,
+  PlanConfig,
+  AutoModeConfig,
+  TracingConfig,
+  RateLimitConfig,
+  SecurityConfig,
+  CompactionConfig,
+} from '../api/settingsTypes';
 
 export function useSettings(): UseQueryResult<Awaited<ReturnType<typeof getSettings>>, unknown> {
   return useQuery({ queryKey: ['settings'], queryFn: getSettings });
@@ -56,6 +77,14 @@ export function useUpdatePreferences(): UseMutationResult<Awaited<ReturnType<typ
 
 export function useRuntimeConfig(): UseQueryResult<Awaited<ReturnType<typeof getRuntimeConfig>>, unknown> {
   return useQuery({ queryKey: ['runtime-config'], queryFn: getRuntimeConfig });
+}
+
+export function useUpdateRuntimeConfig(): UseMutationResult<Awaited<ReturnType<typeof updateRuntimeConfig>>, unknown, RuntimeConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: RuntimeConfig) => updateRuntimeConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
 }
 
 export function useUpdateModelRouter(): UseMutationResult<Awaited<ReturnType<typeof updateModelRouterConfig>>, unknown, ModelRouterConfig> {
@@ -82,6 +111,23 @@ export function useAddLlmProvider(): UseMutationResult<Awaited<ReturnType<typeof
   });
 }
 
+export function useAddLlmProviderAndImport(): UseMutationResult<
+  LlmProviderImportResult,
+  unknown,
+  { name: string; config: LlmProviderConfig; selectedModelIds: string[] }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, config, selectedModelIds }: { name: string; config: LlmProviderConfig; selectedModelIds: string[] }) =>
+      addLlmProviderAndImport(name, config, selectedModelIds),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+      qc.invalidateQueries({ queryKey: ['models-config'] }),
+      qc.invalidateQueries({ queryKey: ['models-available'] }),
+    ]),
+  });
+}
+
 export function useUpdateLlmProvider(): UseMutationResult<Awaited<ReturnType<typeof updateLlmProvider>>, unknown, { name: string; config: LlmProviderConfig }> {
   const qc = useQueryClient();
   return useMutation({
@@ -95,6 +141,21 @@ export function useRemoveLlmProvider(): UseMutationResult<Awaited<ReturnType<typ
   return useMutation({
     mutationFn: (name: string) => removeLlmProvider(name),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useTestLlmProvider(): UseMutationResult<
+  LlmProviderTestResult,
+  unknown,
+  | { mode: 'saved'; providerName: string }
+  | { mode: 'draft'; providerName: string; config: LlmProviderConfig }
+> {
+  return useMutation({
+    mutationFn: (request) => (
+      request.mode === 'saved'
+        ? testSavedLlmProvider(request.providerName)
+        : testDraftLlmProvider(request.providerName, request.config)
+    ),
   });
 }
 
@@ -153,6 +214,14 @@ export function useUpdateUsage(): UseMutationResult<Awaited<ReturnType<typeof up
   });
 }
 
+export function useUpdateTelemetry(): UseMutationResult<Awaited<ReturnType<typeof updateTelemetryConfig>>, unknown, TelemetryConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: TelemetryConfig) => updateTelemetryConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
 export function useUpdateMcp(): UseMutationResult<Awaited<ReturnType<typeof updateMcpConfig>>, unknown, McpConfig> {
   const qc = useQueryClient();
   return useMutation({
@@ -161,10 +230,58 @@ export function useUpdateMcp(): UseMutationResult<Awaited<ReturnType<typeof upda
   });
 }
 
+export function useAddMcpCatalogEntry(): UseMutationResult<Awaited<ReturnType<typeof addMcpCatalogEntry>>, unknown, McpCatalogEntry> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (entry: McpCatalogEntry) => addMcpCatalogEntry(entry),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateMcpCatalogEntry(): UseMutationResult<Awaited<ReturnType<typeof updateMcpCatalogEntry>>, unknown, { name: string; entry: McpCatalogEntry }> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, entry }: { name: string; entry: McpCatalogEntry }) => updateMcpCatalogEntry(name, entry),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useRemoveMcpCatalogEntry(): UseMutationResult<Awaited<ReturnType<typeof removeMcpCatalogEntry>>, unknown, string> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => removeMcpCatalogEntry(name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateHive(): UseMutationResult<Awaited<ReturnType<typeof updateHiveConfig>>, unknown, HiveConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: HiveConfig) => updateHiveConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdatePlan(): UseMutationResult<Awaited<ReturnType<typeof updatePlanConfig>>, unknown, PlanConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: PlanConfig) => updatePlanConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
 export function useUpdateAuto(): UseMutationResult<Awaited<ReturnType<typeof updateAutoConfig>>, unknown, AutoModeConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: AutoModeConfig) => updateAutoConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateTracing(): UseMutationResult<Awaited<ReturnType<typeof updateTracingConfig>>, unknown, TracingConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: TracingConfig) => updateTracingConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

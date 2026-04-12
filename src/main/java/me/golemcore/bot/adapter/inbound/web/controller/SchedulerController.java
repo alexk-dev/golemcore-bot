@@ -1,12 +1,8 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
-import me.golemcore.bot.domain.model.AutoTask;
-import me.golemcore.bot.domain.model.Goal;
-import me.golemcore.bot.domain.model.ScheduleEntry;
-import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.ScheduleService;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import java.time.Instant;
+import java.util.List;
+import me.golemcore.bot.application.scheduler.SchedulerFacade;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,62 +16,29 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-
-/**
- * Scheduler management endpoints for dashboard UI.
- */
 @RestController
 @RequestMapping("/api/scheduler")
-@RequiredArgsConstructor
 public class SchedulerController {
 
-    private static final String FEATURE_DISABLED = "Auto mode feature is disabled";
-    private static final Set<Integer> WEEKDAY_SET = Set.of(1, 2, 3, 4, 5, 6, 7);
+    private final SchedulerFacade schedulerFacade;
 
-    private final AutoModeService autoModeService;
-    private final ScheduleService scheduleService;
+    public SchedulerController(SchedulerFacade schedulerFacade) {
+        this.schedulerFacade = schedulerFacade;
+    }
 
     @GetMapping
     public Mono<ResponseEntity<SchedulerStateResponse>> getState() {
-        return Mono.just(ResponseEntity.ok(buildSchedulerStateResponse()));
+        SchedulerFacade.SchedulerStateView state = schedulerFacade.getState();
+        return Mono.just(ResponseEntity.ok(toSchedulerStateResponse(state)));
     }
 
     @PostMapping("/schedules")
     public Mono<ResponseEntity<ScheduleDto>> createSchedule(@RequestBody CreateScheduleRequest request) {
-        requireFeatureEnabled();
-        if (request == null) {
-            throw badRequest("Request body is required");
-        }
-
         try {
-            ScheduleEntry.ScheduleType targetType = parseTargetType(request.targetType());
-            String targetId = validateTargetId(request.targetId(), targetType);
-            int maxExecutions = normalizeMaxExecutions(request.maxExecutions());
-            ScheduleMode mode = parseMode(request.mode(), request.cronExpression());
-            String cronExpression = buildRequestedCronExpression(
-                    request.frequency(),
-                    request.days(),
-                    request.time(),
-                    mode,
-                    request.cronExpression());
-
-            ScheduleEntry entry = Boolean.TRUE.equals(request.clearContextBeforeRun())
-                    ? scheduleService.createSchedule(targetType, targetId, cronExpression, maxExecutions, true)
-                    : scheduleService.createSchedule(targetType, targetId, cronExpression, maxExecutions);
-            String targetLabel = resolveTargetLabel(entry, autoModeService.getGoals());
-            return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toScheduleDto(entry, targetLabel)));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            throw badRequest(e.getMessage());
+            SchedulerFacade.ScheduleView created = schedulerFacade.createSchedule(toCreateScheduleCommand(request));
+            return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toScheduleDto(created)));
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            throw badRequest(exception.getMessage());
         }
     }
 
@@ -83,409 +46,151 @@ public class SchedulerController {
     public Mono<ResponseEntity<ScheduleDto>> updateSchedule(
             @PathVariable String scheduleId,
             @RequestBody UpdateScheduleRequest request) {
-        requireFeatureEnabled();
-        if (request == null) {
-            throw badRequest("Request body is required");
-        }
-
         try {
-            String normalizedScheduleId = requireId(scheduleId, "scheduleId");
-            ScheduleEntry.ScheduleType targetType = parseTargetType(request.targetType());
-            String targetId = validateTargetId(request.targetId(), targetType);
-            int maxExecutions = normalizeMaxExecutions(request.maxExecutions());
-            ScheduleMode mode = parseMode(request.mode(), request.cronExpression());
-            String cronExpression = buildRequestedCronExpression(
-                    request.frequency(),
-                    request.days(),
-                    request.time(),
-                    mode,
-                    request.cronExpression());
-
-            ScheduleEntry entry = request.clearContextBeforeRun() != null
-                    ? scheduleService.updateSchedule(
-                            normalizedScheduleId,
-                            targetType,
-                            targetId,
-                            cronExpression,
-                            maxExecutions,
-                            normalizeEnabled(request.enabled()),
-                            request.clearContextBeforeRun())
-                    : scheduleService.updateSchedule(
-                            normalizedScheduleId,
-                            targetType,
-                            targetId,
-                            cronExpression,
-                            maxExecutions,
-                            normalizeEnabled(request.enabled()));
-            String targetLabel = resolveTargetLabel(entry, autoModeService.getGoals());
-            return Mono.just(ResponseEntity.ok(toScheduleDto(entry, targetLabel)));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            throw badRequest(e.getMessage());
+            SchedulerFacade.ScheduleView updated = schedulerFacade.updateSchedule(
+                    scheduleId,
+                    toUpdateScheduleCommand(request));
+            return Mono.just(ResponseEntity.ok(toScheduleDto(updated)));
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            throw badRequest(exception.getMessage());
         }
     }
 
     @DeleteMapping("/schedules/{scheduleId}")
     public Mono<ResponseEntity<DeleteScheduleResponse>> deleteSchedule(@PathVariable String scheduleId) {
-        requireFeatureEnabled();
-
         try {
-            String normalizedScheduleId = requireId(scheduleId, "scheduleId");
-            scheduleService.deleteSchedule(normalizedScheduleId);
-            return Mono.just(ResponseEntity.ok(new DeleteScheduleResponse(normalizedScheduleId)));
-        } catch (IllegalArgumentException e) {
-            throw badRequest(e.getMessage());
+            schedulerFacade.deleteSchedule(scheduleId);
+            return Mono.just(ResponseEntity.ok(new DeleteScheduleResponse(scheduleId)));
+        } catch (IllegalArgumentException exception) {
+            throw badRequest(exception.getMessage());
         }
     }
 
-    private SchedulerStateResponse buildSchedulerStateResponse() {
-        List<Goal> allGoals = autoModeService.getGoals();
-        Map<String, Goal> goalById = new HashMap<>();
-        Map<String, String> taskTitleById = new HashMap<>();
-
-        for (Goal goal : allGoals) {
-            goalById.put(goal.getId(), goal);
-        }
-
-        List<GoalDto> goals = allGoals.stream()
-                .filter(goal -> !autoModeService.isInboxGoal(goal))
-                .sorted(Comparator.comparing(Goal::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
-                .map(goal -> toGoalDto(goal, goalById, taskTitleById))
-                .toList();
-
-        List<TaskDto> standaloneTasks = allGoals.stream()
-                .filter(autoModeService::isInboxGoal)
-                .flatMap(goal -> goal.getTasks().stream())
-                .sorted(Comparator.comparingInt(AutoTask::getOrder))
-                .map(task -> {
-                    taskTitleById.put(task.getId(), task.getTitle());
-                    return toTaskDto(task, true);
-                })
-                .toList();
-
-        List<ScheduleDto> schedules = scheduleService.getSchedules().stream()
-                .sorted(Comparator
-                        .comparing(ScheduleEntry::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
-                        .reversed())
-                .map(entry -> toScheduleDto(entry, goalById, taskTitleById))
-                .toList();
-
+    private SchedulerStateResponse toSchedulerStateResponse(SchedulerFacade.SchedulerStateView state) {
         return new SchedulerStateResponse(
-                autoModeService.isFeatureEnabled(),
-                autoModeService.isAutoModeEnabled(),
-                goals,
-                standaloneTasks,
-                schedules);
+                state.featureEnabled(),
+                state.autoModeEnabled(),
+                state.goals().stream().map(this::toGoalDto).toList(),
+                state.standaloneTasks().stream().map(this::toTaskDto).toList(),
+                state.schedules().stream().map(this::toScheduleDto).toList(),
+                state.reportChannelOptions().stream().map(this::toReportChannelOptionDto).toList());
     }
 
-    private void requireFeatureEnabled() {
-        if (!autoModeService.isFeatureEnabled()) {
-            throw badRequest(FEATURE_DISABLED);
-        }
-    }
-
-    private static GoalDto toGoalDto(Goal goal, Map<String, Goal> goalById, Map<String, String> taskTitleById) {
-        goalById.put(goal.getId(), goal);
-
-        List<TaskDto> tasks = goal.getTasks().stream()
-                .sorted(Comparator.comparingInt(AutoTask::getOrder))
-                .map(task -> {
-                    taskTitleById.put(task.getId(), task.getTitle());
-                    return toTaskDto(task, false);
-                })
-                .toList();
-
+    private GoalDto toGoalDto(SchedulerFacade.GoalView goal) {
         return new GoalDto(
-                goal.getId(),
-                goal.getTitle(),
-                goal.getDescription(),
-                goal.getPrompt(),
-                goal.getStatus().name(),
-                goal.getCompletedTaskCount(),
-                goal.getTasks().size(),
-                tasks);
+                goal.id(),
+                goal.title(),
+                goal.description(),
+                goal.prompt(),
+                goal.status(),
+                goal.completedTasks(),
+                goal.totalTasks(),
+                goal.tasks().stream().map(this::toTaskDto).toList());
     }
 
-    private static TaskDto toTaskDto(AutoTask task, boolean standalone) {
-        String goalId = standalone ? null : task.getGoalId();
+    private TaskDto toTaskDto(SchedulerFacade.TaskView task) {
         return new TaskDto(
-                task.getId(),
-                goalId,
-                task.getTitle(),
-                task.getDescription(),
-                task.getPrompt(),
-                task.getStatus().name(),
-                task.getOrder(),
-                standalone);
+                task.id(),
+                task.goalId(),
+                task.title(),
+                task.description(),
+                task.prompt(),
+                task.status(),
+                task.order(),
+                task.standalone());
     }
 
-    private static ScheduleDto toScheduleDto(
-            ScheduleEntry entry,
-            Map<String, Goal> goalById,
-            Map<String, String> taskTitleById) {
-        String targetLabel = resolveTargetLabel(entry, goalById, taskTitleById);
-        return toScheduleDto(entry, targetLabel);
-    }
-
-    private static ScheduleDto toScheduleDto(ScheduleEntry entry, String targetLabel) {
+    private ScheduleDto toScheduleDto(SchedulerFacade.ScheduleView entry) {
         return new ScheduleDto(
-                entry.getId(),
-                entry.getType().name(),
-                entry.getTargetId(),
-                targetLabel,
-                entry.getCronExpression(),
-                entry.isEnabled(),
-                entry.isClearContextBeforeRun(),
-                entry.getMaxExecutions(),
-                entry.getExecutionCount(),
-                entry.getCreatedAt(),
-                entry.getUpdatedAt(),
-                entry.getLastExecutedAt(),
-                entry.getNextExecutionAt());
+                entry.id(),
+                entry.type(),
+                entry.targetId(),
+                entry.targetLabel(),
+                entry.cronExpression(),
+                entry.enabled(),
+                entry.clearContextBeforeRun(),
+                toScheduleReportDto(entry.report()),
+                entry.maxExecutions(),
+                entry.executionCount(),
+                entry.createdAt(),
+                entry.updatedAt(),
+                entry.lastExecutedAt(),
+                entry.nextExecutionAt());
     }
 
-    private static String resolveTargetLabel(
-            ScheduleEntry entry,
-            Map<String, Goal> goalById,
-            Map<String, String> taskTitleById) {
-        if (entry.getType() == ScheduleEntry.ScheduleType.GOAL) {
-            Goal goal = goalById.get(entry.getTargetId());
-            return goal != null ? goal.getTitle() : entry.getTargetId();
+    private ScheduleReportDto toScheduleReportDto(SchedulerFacade.ScheduleReportView report) {
+        if (report == null) {
+            return null;
         }
-        String taskTitle = taskTitleById.get(entry.getTargetId());
-        return taskTitle != null ? taskTitle : entry.getTargetId();
+        return new ScheduleReportDto(
+                report.channelType(),
+                report.chatId(),
+                report.webhookUrl(),
+                report.webhookBearerToken());
     }
 
-    private String resolveTargetLabel(ScheduleEntry entry, List<Goal> goals) {
-        if (entry.getType() == ScheduleEntry.ScheduleType.GOAL) {
-            Optional<Goal> goal = goals.stream()
-                    .filter(item -> item.getId().equals(entry.getTargetId()))
-                    .findFirst();
-            return goal.map(Goal::getTitle).orElse(entry.getTargetId());
-        }
-
-        return goals.stream()
-                .flatMap(goal -> goal.getTasks().stream())
-                .filter(task -> task.getId().equals(entry.getTargetId()))
-                .map(AutoTask::getTitle)
-                .findFirst()
-                .orElse(entry.getTargetId());
+    private ScheduleReportChannelOptionDto toReportChannelOptionDto(
+            SchedulerFacade.ScheduleReportChannelOptionView option) {
+        return new ScheduleReportChannelOptionDto(option.type(), option.label(), option.suggestedChatId());
     }
 
-    private String validateTargetId(String targetId, ScheduleEntry.ScheduleType type) {
-        String normalizedTargetId = requireId(targetId, "targetId");
-
-        if (type == ScheduleEntry.ScheduleType.GOAL) {
-            if (autoModeService.getGoal(normalizedTargetId).isEmpty()) {
-                throw badRequest("Goal not found: " + normalizedTargetId);
-            }
-        } else if (autoModeService.findGoalForTask(normalizedTargetId).isEmpty()) {
-            throw badRequest("Task not found: " + normalizedTargetId);
+    private SchedulerFacade.CreateScheduleCommand toCreateScheduleCommand(CreateScheduleRequest request) {
+        if (request == null) {
+            return null;
         }
-
-        return normalizedTargetId;
+        return new SchedulerFacade.CreateScheduleCommand(
+                request.targetType(),
+                request.targetId(),
+                request.frequency(),
+                request.days(),
+                request.time(),
+                request.maxExecutions(),
+                request.mode(),
+                request.cronExpression(),
+                request.clearContextBeforeRun(),
+                toScheduleReportRequest(request.report()));
     }
 
-    private static ScheduleEntry.ScheduleType parseTargetType(String value) {
-        if (StringValueSupport.isBlank(value)) {
-            throw badRequest("targetType is required");
+    private SchedulerFacade.UpdateScheduleCommand toUpdateScheduleCommand(UpdateScheduleRequest request) {
+        if (request == null) {
+            return null;
         }
-
-        String normalized = value.trim().toUpperCase(Locale.ROOT);
-        if ("GOAL".equals(normalized)) {
-            return ScheduleEntry.ScheduleType.GOAL;
-        }
-        if ("TASK".equals(normalized)) {
-            return ScheduleEntry.ScheduleType.TASK;
-        }
-        throw badRequest("Unsupported targetType: " + value);
+        return new SchedulerFacade.UpdateScheduleCommand(
+                request.targetType(),
+                request.targetId(),
+                request.frequency(),
+                request.days(),
+                request.time(),
+                request.maxExecutions(),
+                request.mode(),
+                request.cronExpression(),
+                request.enabled(),
+                request.clearContextBeforeRun(),
+                toScheduleReportPatchRequest(request.report()));
     }
 
-    private static Frequency parseFrequency(String value) {
-        if (StringValueSupport.isBlank(value)) {
-            throw badRequest("frequency is required");
+    private SchedulerFacade.ScheduleReportRequest toScheduleReportRequest(ScheduleReportRequest report) {
+        if (report == null) {
+            return null;
         }
-
-        String normalized = value.trim().toLowerCase(Locale.ROOT);
-        return switch (normalized) {
-        case "daily" -> Frequency.DAILY;
-        case "weekdays" -> Frequency.WEEKDAYS;
-        case "weekly" -> Frequency.WEEKLY;
-        case "custom" -> Frequency.CUSTOM;
-        default -> throw badRequest("Unsupported frequency: " + value);
-        };
+        return new SchedulerFacade.ScheduleReportRequest(
+                report.channelType(),
+                report.chatId(),
+                report.webhookUrl(),
+                report.webhookBearerToken());
     }
 
-    private static ScheduleMode parseMode(String value, String cronExpression) {
-        if (!StringValueSupport.isBlank(value)) {
-            String normalized = value.trim().toLowerCase(Locale.ROOT);
-            if ("simple".equals(normalized)) {
-                return ScheduleMode.SIMPLE;
-            }
-            if ("advanced".equals(normalized)) {
-                return ScheduleMode.ADVANCED;
-            }
-            throw badRequest("Unsupported mode: " + value);
+    private SchedulerFacade.ScheduleReportPatchRequest toScheduleReportPatchRequest(ScheduleReportPatchRequest report) {
+        if (report == null) {
+            return null;
         }
-
-        if (!StringValueSupport.isBlank(cronExpression)) {
-            return ScheduleMode.ADVANCED;
-        }
-        return ScheduleMode.SIMPLE;
-    }
-
-    private static String buildRequestedCronExpression(
-            String frequencyValue,
-            List<Integer> daysValue,
-            String timeValue,
-            ScheduleMode mode,
-            String cronExpressionValue) {
-        if (mode == ScheduleMode.ADVANCED) {
-            if (StringValueSupport.isBlank(cronExpressionValue)) {
-                throw badRequest("cronExpression is required for advanced mode");
-            }
-            return cronExpressionValue.trim();
-        }
-
-        Frequency frequency = parseFrequency(frequencyValue);
-        Set<Integer> days = normalizeDays(daysValue, frequency);
-        TimeValue time = parseTimeValue(timeValue);
-        return buildCronExpression(frequency, days, time);
-    }
-
-    private static Set<Integer> normalizeDays(List<Integer> requestedDays, Frequency frequency) {
-        if (frequency == Frequency.DAILY || frequency == Frequency.WEEKDAYS) {
-            return Set.of();
-        }
-
-        if (requestedDays == null || requestedDays.isEmpty()) {
-            throw badRequest("At least one weekday is required for weekly/custom frequency");
-        }
-
-        Set<Integer> normalizedDays = new HashSet<>();
-        for (Integer day : requestedDays) {
-            if (day == null || !WEEKDAY_SET.contains(day)) {
-                throw badRequest("Weekday must be between 1 and 7");
-            }
-            normalizedDays.add(day);
-        }
-
-        if (normalizedDays.isEmpty()) {
-            throw badRequest("At least one weekday is required for weekly/custom frequency");
-        }
-
-        return normalizedDays;
-    }
-
-    private static TimeValue parseTimeValue(String value) {
-        if (StringValueSupport.isBlank(value)) {
-            throw badRequest("time is required");
-        }
-
-        String normalized = value.trim();
-        if (normalized.matches("\\d{4}")) {
-            int hour = Integer.parseInt(normalized.substring(0, 2));
-            int minute = Integer.parseInt(normalized.substring(2, 4));
-            return toTimeValue(hour, minute);
-        }
-
-        String[] parts = normalized.split(":");
-        if (parts.length != 2) {
-            throw badRequest("Invalid time format. Use HH:mm or HHmm");
-        }
-
-        try {
-            int hour = Integer.parseInt(parts[0]);
-            int minute = Integer.parseInt(parts[1]);
-            return toTimeValue(hour, minute);
-        } catch (NumberFormatException e) {
-            throw badRequest("Invalid time format. Use HH:mm or HHmm");
-        }
-    }
-
-    private static TimeValue toTimeValue(int hour, int minute) {
-        boolean validHour = hour >= 0 && hour <= 23;
-        boolean validMinute = minute >= 0 && minute <= 59;
-        if (!validHour || !validMinute) {
-            throw badRequest("Invalid time value. Hour must be 0..23 and minute 0..59");
-        }
-        return new TimeValue(hour, minute);
-    }
-
-    private static int normalizeMaxExecutions(Integer value) {
-        if (value == null) {
-            return -1;
-        }
-
-        if (value < 0) {
-            throw badRequest("maxExecutions must be >= 0");
-        }
-
-        if (value == 0) {
-            return -1;
-        }
-
-        return value;
-    }
-
-    private static boolean normalizeEnabled(Boolean value) {
-        if (value == null) {
-            return true;
-        }
-        return value;
-    }
-
-    private static String buildCronExpression(Frequency frequency, Set<Integer> days, TimeValue timeValue) {
-        if (frequency == Frequency.DAILY) {
-            return String.format(Locale.ROOT, "0 %d %d * * *", timeValue.minute(), timeValue.hour());
-        }
-
-        if (frequency == Frequency.WEEKDAYS) {
-            return String.format(Locale.ROOT, "0 %d %d * * MON-FRI", timeValue.minute(), timeValue.hour());
-        }
-
-        List<Integer> sortedDays = new ArrayList<>(days);
-        sortedDays.sort(Integer::compareTo);
-        String joinedDays = sortedDays.stream()
-                .map(SchedulerController::weekdayToCron)
-                .reduce((left, right) -> left + "," + right)
-                .orElse("MON");
-
-        return String.format(Locale.ROOT, "0 %d %d * * %s", timeValue.minute(), timeValue.hour(), joinedDays);
-    }
-
-    private static String weekdayToCron(int weekday) {
-        return switch (weekday) {
-        case 1 -> "MON";
-        case 2 -> "TUE";
-        case 3 -> "WED";
-        case 4 -> "THU";
-        case 5 -> "FRI";
-        case 6 -> "SAT";
-        case 7 -> "SUN";
-        default -> throw badRequest("Weekday must be between 1 and 7");
-        };
-    }
-
-    private static String requireId(String value, String fieldName) {
-        if (StringValueSupport.isBlank(value)) {
-            throw badRequest(fieldName + " is required");
-        }
-        return value.trim();
+        return new SchedulerFacade.ScheduleReportPatchRequest(
+                report.operation(),
+                toScheduleReportRequest(report.config()));
     }
 
     private static ResponseStatusException badRequest(String reason) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, reason);
-    }
-
-    private enum Frequency {
-        DAILY, WEEKDAYS, WEEKLY, CUSTOM
-    }
-
-    private enum ScheduleMode {
-        SIMPLE, ADVANCED
-    }
-
-    private record TimeValue(int hour, int minute) {
     }
 
     public record CreateScheduleRequest(
@@ -497,7 +202,8 @@ public class SchedulerController {
             Integer maxExecutions,
             String mode,
             String cronExpression,
-            Boolean clearContextBeforeRun) {
+            Boolean clearContextBeforeRun,
+            ScheduleReportRequest report) {
 
         public CreateScheduleRequest(
                 String targetType,
@@ -506,7 +212,8 @@ public class SchedulerController {
                 List<Integer> days,
                 String time,
                 Integer maxExecutions) {
-            this(targetType, targetId, frequency, days, time, maxExecutions, null, null, null);
+            this(targetType, targetId, frequency, days, time, maxExecutions,
+                    null, null, null, null);
         }
 
         public CreateScheduleRequest(
@@ -518,7 +225,21 @@ public class SchedulerController {
                 Integer maxExecutions,
                 String mode,
                 String cronExpression) {
-            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, null);
+            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, null, null);
+        }
+
+        public CreateScheduleRequest(
+                String targetType,
+                String targetId,
+                String frequency,
+                List<Integer> days,
+                String time,
+                Integer maxExecutions,
+                String mode,
+                String cronExpression,
+                Boolean clearContextBeforeRun) {
+            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression,
+                    clearContextBeforeRun, null);
         }
     }
 
@@ -532,7 +253,8 @@ public class SchedulerController {
             String mode,
             String cronExpression,
             Boolean enabled,
-            Boolean clearContextBeforeRun) {
+            Boolean clearContextBeforeRun,
+            ScheduleReportPatchRequest report) {
 
         public UpdateScheduleRequest(
                 String targetType,
@@ -544,7 +266,23 @@ public class SchedulerController {
                 String mode,
                 String cronExpression,
                 Boolean enabled) {
-            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, enabled, null);
+            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, enabled, null,
+                    null);
+        }
+
+        public UpdateScheduleRequest(
+                String targetType,
+                String targetId,
+                String frequency,
+                List<Integer> days,
+                String time,
+                Integer maxExecutions,
+                String mode,
+                String cronExpression,
+                Boolean enabled,
+                Boolean clearContextBeforeRun) {
+            this(targetType, targetId, frequency, days, time, maxExecutions, mode, cronExpression, enabled,
+                    clearContextBeforeRun, null);
         }
     }
 
@@ -553,7 +291,8 @@ public class SchedulerController {
             boolean autoModeEnabled,
             List<GoalDto> goals,
             List<TaskDto> standaloneTasks,
-            List<ScheduleDto> schedules) {
+            List<ScheduleDto> schedules,
+            List<ScheduleReportChannelOptionDto> reportChannelOptions) {
     }
 
     public record GoalDto(
@@ -586,12 +325,38 @@ public class SchedulerController {
             String cronExpression,
             boolean enabled,
             boolean clearContextBeforeRun,
+            ScheduleReportDto report,
             int maxExecutions,
             int executionCount,
             Instant createdAt,
             Instant updatedAt,
             Instant lastExecutedAt,
             Instant nextExecutionAt) {
+    }
+
+    public record ScheduleReportDto(
+            String channelType,
+            String chatId,
+            String webhookUrl,
+            String webhookBearerToken) {
+    }
+
+    public record ScheduleReportRequest(
+            String channelType,
+            String chatId,
+            String webhookUrl,
+            String webhookBearerToken) {
+    }
+
+    public record ScheduleReportPatchRequest(
+            String operation,
+            ScheduleReportRequest config) {
+    }
+
+    public record ScheduleReportChannelOptionDto(
+            String type,
+            String label,
+            String suggestedChatId) {
     }
 
     public record DeleteScheduleResponse(String scheduleId) {

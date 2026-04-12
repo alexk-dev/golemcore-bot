@@ -5,11 +5,10 @@ import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanExecutionCompletedEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.PlanExecutionNotificationPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -46,8 +45,8 @@ class PlanExecutionServiceTest {
     private PlanService planService;
     private ToolComponent filesystemTool;
     private ToolComponent shellTool;
-    private ApplicationEventPublisher eventPublisher;
-    private BotProperties properties;
+    private PlanExecutionNotificationPort planExecutionNotificationPort;
+    private RuntimeConfigService runtimeConfigService;
     private PlanExecutionService service;
 
     @BeforeEach
@@ -62,16 +61,16 @@ class PlanExecutionServiceTest {
         when(shellTool.getToolName()).thenReturn(TOOL_SHELL);
         when(shellTool.isEnabled()).thenReturn(true);
 
-        eventPublisher = mock(ApplicationEventPublisher.class);
+        planExecutionNotificationPort = mock(PlanExecutionNotificationPort.class);
 
-        properties = new BotProperties();
-        properties.getPlan().setStopOnFailure(true);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isPlanStopOnFailure()).thenReturn(true);
 
         service = new PlanExecutionService(
                 planService,
                 List.of(filesystemTool, shellTool),
-                eventPublisher,
-                properties);
+                planExecutionNotificationPort,
+                runtimeConfigService);
     }
 
     @Test
@@ -115,7 +114,7 @@ class PlanExecutionServiceTest {
 
     @Test
     void shouldContinueOnFailureWhenNotStopOnFailure() throws Exception {
-        properties.getPlan().setStopOnFailure(false);
+        when(runtimeConfigService.isPlanStopOnFailure()).thenReturn(false);
 
         Plan plan = buildPlan(Plan.PlanStatus.APPROVED, List.of(
                 buildStep("s1", TOOL_FILESYSTEM, 0, PlanStep.StepStatus.PENDING),
@@ -218,7 +217,7 @@ class PlanExecutionServiceTest {
 
         ArgumentCaptor<PlanExecutionCompletedEvent> captor = ArgumentCaptor
                 .forClass(PlanExecutionCompletedEvent.class);
-        verify(eventPublisher).publishEvent(captor.capture());
+        verify(planExecutionNotificationPort).publish(captor.capture());
 
         PlanExecutionCompletedEvent event = captor.getValue();
         assertEquals(PLAN_ID, event.planId());
@@ -244,7 +243,7 @@ class PlanExecutionServiceTest {
 
         service.executePlan(PLAN_ID).get(5, TimeUnit.SECONDS);
 
-        verify(eventPublisher, never()).publishEvent(any(PlanExecutionCompletedEvent.class));
+        verify(planExecutionNotificationPort, never()).publish(any(PlanExecutionCompletedEvent.class));
     }
 
     @Test
@@ -465,7 +464,7 @@ class PlanExecutionServiceTest {
 
     @Test
     void shouldCompleteWithHasFailureWhenStopOnFailureDisabled() throws Exception {
-        properties.getPlan().setStopOnFailure(false);
+        when(runtimeConfigService.isPlanStopOnFailure()).thenReturn(false);
 
         Plan plan = buildPlan(Plan.PlanStatus.APPROVED, List.of(
                 buildStep("s1", TOOL_FILESYSTEM, 0, PlanStep.StepStatus.PENDING)));

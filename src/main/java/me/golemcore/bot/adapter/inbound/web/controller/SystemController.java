@@ -3,10 +3,12 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import me.golemcore.bot.adapter.inbound.web.dto.LogsPageResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.SystemHealthResponse;
 import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.beans.factory.ObjectProvider;
@@ -41,6 +43,7 @@ public class SystemController {
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
     private final DashboardLogService dashboardLogService;
+    private final LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
 
     public SystemController(ChannelRegistry channelRegistry,
             BotProperties botProperties,
@@ -49,7 +52,8 @@ public class SystemController {
             RagPort ragPort,
             ObjectProvider<BuildProperties> buildPropertiesProvider,
             ObjectProvider<GitProperties> gitPropertiesProvider,
-            DashboardLogService dashboardLogService) {
+            DashboardLogService dashboardLogService,
+            LocalEmbeddingBootstrapService localEmbeddingBootstrapService) {
         this.channelRegistry = channelRegistry;
         this.botProperties = botProperties;
         this.runtimeConfigService = runtimeConfigService;
@@ -58,6 +62,7 @@ public class SystemController {
         this.buildPropertiesProvider = buildPropertiesProvider;
         this.gitPropertiesProvider = gitPropertiesProvider;
         this.dashboardLogService = dashboardLogService;
+        this.localEmbeddingBootstrapService = localEmbeddingBootstrapService;
     }
 
     @GetMapping("/health")
@@ -83,6 +88,7 @@ public class SystemController {
                 .buildTime(buildProps != null && buildProps.getTime() != null ? buildProps.getTime().toString() : null)
                 .uptimeMs(uptimeMs)
                 .channels(channels)
+                .selfEvolvingEmbeddings(buildSelfEvolvingEmbeddingsStatus())
                 .build();
         return Mono.just(ResponseEntity.ok(response));
     }
@@ -94,7 +100,7 @@ public class SystemController {
         config.put("maxIterations", runtimeConfigService.getTurnMaxLlmCalls());
         config.put("voiceEnabled", runtimeConfigService.isVoiceEnabled());
         config.put("ragEnabled", ragPort.isAvailable());
-        config.put("planEnabled", botProperties.getPlan().isEnabled());
+        config.put("planEnabled", runtimeConfigService.isPlanEnabled());
         config.put("autoModeEnabled", runtimeConfigService.isAutoModeEnabled());
         config.put("dashboardEnabled", botProperties.getDashboard().isEnabled());
         return Mono.just(ResponseEntity.ok(config));
@@ -162,6 +168,35 @@ public class SystemController {
             return storagePort.listObjects(directory, "").join().size();
         } catch (RuntimeException e) { // NOSONAR - diagnostics endpoint should degrade gracefully
             return -1;
+        }
+    }
+
+    private SystemHealthResponse.SelfEvolvingEmbeddingsStatus buildSelfEvolvingEmbeddingsStatus() {
+        if (localEmbeddingBootstrapService == null) {
+            return null;
+        }
+        try {
+            TacticSearchStatus status = localEmbeddingBootstrapService.probeStatus();
+            return SystemHealthResponse.SelfEvolvingEmbeddingsStatus.builder()
+                    .mode(status.getMode())
+                    .reason(status.getReason())
+                    .degraded(Boolean.TRUE.equals(status.getDegraded()))
+                    .runtimeState(status.getRuntimeState())
+                    .owned(Boolean.TRUE.equals(status.getOwned()))
+                    .runtimeInstalled(Boolean.TRUE.equals(status.getRuntimeInstalled()))
+                    .runtimeHealthy(Boolean.TRUE.equals(status.getRuntimeHealthy()))
+                    .runtimeVersion(status.getRuntimeVersion())
+                    .model(status.getModel())
+                    .modelAvailable(Boolean.TRUE.equals(status.getModelAvailable()))
+                    .restartAttempts(status.getRestartAttempts())
+                    .nextRetryTime(status.getNextRetryTime())
+                    .build();
+        } catch (RuntimeException exception) {
+            return SystemHealthResponse.SelfEvolvingEmbeddingsStatus.builder()
+                    .mode("bm25")
+                    .reason(exception.getMessage())
+                    .degraded(true)
+                    .build();
         }
     }
 }

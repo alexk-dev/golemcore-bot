@@ -80,16 +80,17 @@ class ToolLoopPlanModeSetContentToolTest {
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)),
-                new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
-                new BotProperties.TurnProperties(),
-                new BotProperties.ToolLoopProperties(),
-                modelSelectionService,
-                planService,
-                Clock.fixed(FAR_FUTURE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)))
+                .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(new BotProperties.TurnProperties()))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(new BotProperties.ToolLoopProperties()))
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .clock(Clock.fixed(FAR_FUTURE, ZoneOffset.UTC))
+                .build();
 
         // WHEN
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);

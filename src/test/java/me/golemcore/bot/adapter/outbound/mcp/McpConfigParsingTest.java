@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.outbound.mcp;
 import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SkillDocumentService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.domain.service.SkillVariableResolver;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -10,7 +11,8 @@ import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.*;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -34,7 +36,9 @@ class McpConfigParsingTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isSkillsEnabled()).thenReturn(true);
         when(runtimeConfigService.isSkillsProgressiveLoadingEnabled()).thenReturn(true);
-        skillService = new SkillService(storagePort, properties, variableResolver, runtimeConfigService);
+        skillService = new SkillService(storagePort, me.golemcore.bot.support.TestPorts.settings(properties),
+                variableResolver, runtimeConfigService,
+                new SkillDocumentService());
 
         // Mock empty listings for reload
         when(storagePort.listObjects(anyString(), anyString()))

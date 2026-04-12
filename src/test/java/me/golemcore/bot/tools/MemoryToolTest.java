@@ -37,6 +37,7 @@ class MemoryToolTest {
         when(runtimeConfigService.getMemorySoftPromptBudgetTokens()).thenReturn(1800);
         when(runtimeConfigService.getMemoryMaxPromptBudgetTokens()).thenReturn(3500);
         when(runtimeConfigService.getMemoryPromotionMinConfidence()).thenReturn(0.75);
+        when(runtimeConfigService.isMemoryToolExpansionEnabled()).thenReturn(true);
         tool = new MemoryTool(memoryComponent, runtimeConfigService);
     }
 
@@ -153,6 +154,72 @@ class MemoryToolTest {
 
         assertTrue(result.isSuccess());
         assertEquals("No memory items found.", result.getOutput());
+    }
+
+    @Test
+    void shouldReadMemoryItemByIdentity() {
+        MemoryItem item = MemoryItem.builder()
+                .id("m-read")
+                .fingerprint("fp-read")
+                .layer(MemoryItem.Layer.SEMANTIC)
+                .type(MemoryItem.Type.PROJECT_FACT)
+                .title("Pipeline")
+                .content("Build pipeline uses Maven verify and strict checks.")
+                .references(List.of("pom.xml"))
+                .build();
+        when(memoryComponent.queryItems(any(MemoryQuery.class))).thenReturn(List.of(item));
+
+        ToolResult result = tool.execute(Map.of(
+                "operation", "memory_read",
+                "id", "m-read"))
+                .join();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("Pipeline"));
+        assertTrue(result.getOutput().contains("Maven verify"));
+        verify(memoryComponent).queryItems(argThatQuery(query -> Integer.valueOf(1).equals(query.getEpisodicTopK())
+                && Integer.valueOf(1).equals(query.getSemanticTopK())
+                && Integer.valueOf(1).equals(query.getProceduralTopK())));
+    }
+
+    @Test
+    void shouldExpandSemanticFactsSection() {
+        MemoryItem item = MemoryItem.builder()
+                .id("m-semantic")
+                .layer(MemoryItem.Layer.SEMANTIC)
+                .type(MemoryItem.Type.DECISION)
+                .title("Build policy")
+                .content("Use strict verification before completion.")
+                .build();
+        when(memoryComponent.queryItems(any(MemoryQuery.class))).thenReturn(List.of(item));
+
+        ToolResult result = tool.execute(Map.of(
+                "operation", "memory_expand_section",
+                "section", "semantic_facts",
+                "query", "build pipeline",
+                "limit", 3))
+                .join();
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("semantic_facts"));
+        verify(memoryComponent).queryItems(argThatQuery(query -> "build pipeline".equals(query.getQueryText())
+                && Integer.valueOf(0).equals(query.getWorkingTopK())
+                && Integer.valueOf(0).equals(query.getEpisodicTopK())
+                && Integer.valueOf(3).equals(query.getSemanticTopK())
+                && Integer.valueOf(0).equals(query.getProceduralTopK())));
+    }
+
+    @Test
+    void shouldRejectSectionExpansionWhenToolExpansionDisabled() {
+        when(runtimeConfigService.isMemoryToolExpansionEnabled()).thenReturn(false);
+
+        ToolResult result = tool.execute(Map.of(
+                "operation", "memory_expand_section",
+                "section", "semantic_facts"))
+                .join();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("disabled"));
     }
 
     @Test

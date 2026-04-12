@@ -6,33 +6,8 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/field';
-import type { PromptMetrics } from './promptFormUtils';
-
-export interface PromptCatalogSummaryProps {
-  metrics: PromptMetrics;
-}
-
-export function PromptCatalogSummary({ metrics }: PromptCatalogSummaryProps): ReactElement {
-  return (
-    <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
-      <div className="rounded-2xl border border-border/80 bg-card/80 px-4 py-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Total</div>
-        <div className="mt-2 text-2xl font-semibold text-foreground">{metrics.total}</div>
-      </div>
-      <div className="rounded-2xl border border-border/80 bg-card/80 px-4 py-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Enabled</div>
-        <div className="mt-2 text-2xl font-semibold text-foreground">{metrics.enabled}</div>
-      </div>
-      <div className="rounded-2xl border border-border/80 bg-card/80 px-4 py-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Protected</div>
-        <div className="mt-2 text-2xl font-semibold text-foreground">{metrics.protected}</div>
-      </div>
-    </div>
-  );
-}
 
 export interface PromptCreateCardProps {
-  sectionCount: number;
   newPromptName: string;
   isCreating: boolean;
   hasExistingPrompt: boolean;
@@ -43,7 +18,6 @@ export interface PromptCreateCardProps {
 }
 
 export function PromptCreateCard({
-  sectionCount,
   newPromptName,
   isCreating,
   hasExistingPrompt,
@@ -54,12 +28,9 @@ export function PromptCreateCard({
 }: PromptCreateCardProps): ReactElement {
   return (
     <div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-foreground">New Prompt</div>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">Use lowercase names with hyphens.</p>
-        </div>
-        <Badge variant="info">{sectionCount}</Badge>
+      <div>
+        <div className="text-sm font-semibold text-foreground">New Prompt</div>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">Use lowercase names with hyphens.</p>
       </div>
 
       <div className="mt-4 flex gap-2">

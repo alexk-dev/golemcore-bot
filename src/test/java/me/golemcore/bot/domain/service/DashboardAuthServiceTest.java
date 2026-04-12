@@ -1,9 +1,12 @@
 package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
+import me.golemcore.bot.adapter.outbound.dashboard.BCryptPasswordHashAdapter;
+import me.golemcore.bot.adapter.outbound.dashboard.StorageDashboardCredentialsAdapter;
 import me.golemcore.bot.domain.model.AdminCredentials;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.DashboardAuthSettingsPort;
+import me.golemcore.bot.port.outbound.DashboardTokenPort;
+import me.golemcore.bot.port.outbound.PasswordHashPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,18 +34,15 @@ class DashboardAuthServiceTest {
 
     private DashboardAuthService authService;
     private StoragePort storagePort;
-    private BotProperties botProperties;
-    private JwtTokenProvider jwtTokenProvider;
+    private DashboardAuthSettingsPort settingsPort;
+    private DashboardTokenPort tokenPort;
+    private PasswordHashPort passwordHashPort;
 
     @BeforeEach
     void setUp() {
         storagePort = mock(StoragePort.class);
-        botProperties = new BotProperties();
-        botProperties.getDashboard().setEnabled(true);
-        botProperties.getDashboard().setJwtSecret("test-secret-key-that-is-long-enough-for-hmac-sha256-algorithm");
-
-        jwtTokenProvider = new JwtTokenProvider(botProperties);
-        jwtTokenProvider.init();
+        settingsPort = mock(DashboardAuthSettingsPort.class);
+        tokenPort = mock(DashboardTokenPort.class);
 
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.findAndRegisterModules();
@@ -52,8 +52,25 @@ class DashboardAuthServiceTest {
                 .thenReturn(CompletableFuture.completedFuture(false));
         when(storagePort.putText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
+        when(settingsPort.isDashboardEnabled()).thenReturn(true);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(null);
+        when(tokenPort.generateAccessToken(anyString()))
+                .thenAnswer(invocation -> "access-" + invocation.getArgument(0, String.class));
+        when(tokenPort.generateRefreshToken(anyString()))
+                .thenAnswer(invocation -> "refresh-" + invocation.getArgument(0, String.class));
+        when(tokenPort.validateToken(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0, String.class).startsWith("refresh-"));
+        when(tokenPort.isRefreshToken(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0, String.class).startsWith("refresh-"));
+        when(tokenPort.getUsernameFromToken(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0, String.class).replaceFirst("^refresh-", ""));
+        passwordHashPort = new BCryptPasswordHashAdapter();
 
-        authService = new DashboardAuthService(storagePort, botProperties, jwtTokenProvider, objectMapper);
+        authService = new DashboardAuthService(
+                new StorageDashboardCredentialsAdapter(storagePort, objectMapper),
+                settingsPort,
+                tokenPort,
+                passwordHashPort);
     }
 
     @Test
@@ -68,7 +85,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldUseConfiguredPlaintextPassword() {
-        botProperties.getDashboard().setAdminPassword(PASSWORD);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
 
         authService.init();
 
@@ -96,7 +113,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldAuthenticateWithCorrectPassword() {
-        botProperties.getDashboard().setAdminPassword(PASSWORD);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
         authService.init();
 
         DashboardAuthService.TokenPair tokens = authService.authenticate(PASSWORD, null);
@@ -107,7 +124,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectWrongPassword() {
-        botProperties.getDashboard().setAdminPassword(PASSWORD);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
         authService.init();
 
         DashboardAuthService.TokenPair tokens = authService.authenticate("wrong-password", null);
@@ -151,7 +168,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldChangePassword() {
-        botProperties.getDashboard().setAdminPassword(OLD_PASSWORD);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(OLD_PASSWORD);
         authService.init();
 
         boolean changed = authService.changePassword(OLD_PASSWORD, NEW_PASSWORD);
@@ -168,7 +185,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectPasswordChangeWithWrongOldPassword() {
-        botProperties.getDashboard().setAdminPassword(OLD_PASSWORD);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(OLD_PASSWORD);
         authService.init();
 
         boolean changed = authService.changePassword("wrong-old-password", "new-password");
@@ -177,7 +194,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldDisableMfaWithCorrectPassword() {
-        botProperties.getDashboard().setAdminPassword(PASSWORD);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
         authService.init();
 
         // Manually enable MFA
@@ -192,7 +209,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectMfaDisableWithWrongPassword() {
-        botProperties.getDashboard().setAdminPassword(PASSWORD);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
         authService.init();
 
         boolean disabled = authService.disableMfa("wrong-password");
@@ -201,7 +218,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRefreshAccessToken() {
-        botProperties.getDashboard().setAdminPassword(PASSWORD);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
         authService.init();
 
         DashboardAuthService.TokenPair original = authService.authenticate(PASSWORD, null);
@@ -222,7 +239,7 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldRejectAccessTokenAsRefreshToken() {
-        botProperties.getDashboard().setAdminPassword(PASSWORD);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
         authService.init();
 
         DashboardAuthService.TokenPair tokens = authService.authenticate(PASSWORD, null);
@@ -235,14 +252,14 @@ class DashboardAuthServiceTest {
 
     @Test
     void shouldSkipInitWhenDashboardDisabled() {
-        botProperties.getDashboard().setEnabled(false);
+        when(settingsPort.isDashboardEnabled()).thenReturn(false);
         authService.init();
         assertNull(authService.getCredentials());
     }
 
     @Test
     void shouldRejectMfaWhenMfaEnabledButNoCodeProvided() {
-        botProperties.getDashboard().setAdminPassword(PASSWORD);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
         authService.init();
 
         // Enable MFA manually

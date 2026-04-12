@@ -3,13 +3,18 @@ package me.golemcore.bot.adapter.inbound.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ProgressUpdate;
+import me.golemcore.bot.domain.model.ProgressUpdateType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -143,6 +148,21 @@ class WebChannelAdapterTest {
     }
 
     @Test
+    void shouldSupportProactiveMessagesOnlyForActiveSessionsWhileRunning() {
+        WebSocketSession activeSession = mock(WebSocketSession.class);
+        when(activeSession.isOpen()).thenReturn(true);
+        when(activeSession.close()).thenReturn(Mono.empty());
+        adapter.start();
+        adapter.registerSession("chat-active", activeSession);
+
+        assertTrue(adapter.supportsProactiveMessage("chat-active"));
+        assertFalse(adapter.supportsProactiveMessage("chat-missing"));
+
+        adapter.stop();
+        assertFalse(adapter.supportsProactiveMessage("chat-active"));
+    }
+
+    @Test
     void shouldShowTypingToActiveSession() {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(true);
@@ -152,6 +172,32 @@ class WebChannelAdapterTest {
 
         adapter.registerSession("chat-1", session);
         adapter.showTyping("chat-1");
+    }
+
+    @Test
+    void shouldSendProgressUpdateToActiveSession() throws Exception {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-progress", session);
+        adapter.sendProgressUpdate("chat-progress", new ProgressUpdate(
+                ProgressUpdateType.SUMMARY,
+                "Grouped the recent tool calls into one update.",
+                Map.of("toolCount", 8)))
+                .join();
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(session).textMessage(payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = objectMapper.readValue(payloadCaptor.getValue(), Map.class);
+        assertEquals("system_event", payload.get("type"));
+        assertEquals("progress_update", payload.get("eventType"));
+        assertEquals("summary", payload.get("progressType"));
+        assertEquals("Grouped the recent tool calls into one update.", payload.get("text"));
     }
 
     @Test
@@ -170,6 +216,111 @@ class WebChannelAdapterTest {
         CompletableFuture<Void> result = adapter.sendMessage(message);
         assertNotNull(result);
         result.join();
+    }
+
+    @Test
+    void shouldIncludeAssistantHintsWhenSendingCompletedMessage() throws Exception {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-3", session);
+        Message message = Message.builder()
+                .chatId("chat-3")
+                .content("final answer")
+                .metadata(new LinkedHashMap<>(Map.of(
+                        "model", "gemini-3.1-flash-lite-preview",
+                        "modelTier", "smart",
+                        "reasoning", "medium")))
+                .build();
+
+        adapter.sendMessage(message).join();
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(session).textMessage(payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = objectMapper.readValue(payloadCaptor.getValue(), Map.class);
+        assertEquals("assistant_done", payload.get("type"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> hint = (Map<String, Object>) payload.get("hint");
+        assertNotNull(hint);
+        assertEquals("gemini-3.1-flash-lite-preview", hint.get("model"));
+        assertEquals("smart", hint.get("tier"));
+        assertEquals("medium", hint.get("reasoning"));
+    }
+
+    @Test
+    void shouldIncludeAssistantAttachmentsWhenSendingCompletedMessage() throws Exception {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-attachments", session);
+        Message message = Message.builder()
+                .chatId("chat-attachments")
+                .content("Here is the screenshot")
+                .metadata(new LinkedHashMap<>(Map.of(
+                        "attachments", java.util.List.of(Map.of(
+                                "type", "image",
+                                "name", "capture.png",
+                                "mimeType", "image/png",
+                                "url", "/api/files/download?path=capture",
+                                "internalFilePath", ".golemcore/tool-artifacts/session/tool/capture.png",
+                                "thumbnailBase64", "thumb-base64")))))
+                .build();
+
+        adapter.sendMessage(message).join();
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(session).textMessage(payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = objectMapper.readValue(payloadCaptor.getValue(), Map.class);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> attachments = (java.util.List<Map<String, Object>>) payload
+                .get("attachments");
+        assertNotNull(attachments);
+        assertEquals(1, attachments.size());
+        assertEquals("capture.png", attachments.get(0).get("name"));
+        assertEquals("/api/files/download?path=capture", attachments.get(0).get("url"));
+        assertEquals(".golemcore/tool-artifacts/session/tool/capture.png", attachments.get(0).get("internalFilePath"));
+        assertEquals("thumb-base64", attachments.get(0).get("thumbnailBase64"));
+    }
+
+    @Test
+    void shouldOmitAssistantHintsWhenMetadataHasNoUsableValues() throws Exception {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+        when(session.send(any())).thenReturn(Mono.empty());
+        when(session.textMessage(any(String.class)))
+                .thenReturn(mock(org.springframework.web.reactive.socket.WebSocketMessage.class));
+
+        adapter.registerSession("chat-4", session);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("model", "   ");
+        metadata.put("modelTier", 42);
+        metadata.put("reasoning", "");
+
+        Message message = Message.builder()
+                .chatId("chat-4")
+                .content("final answer")
+                .metadata(metadata)
+                .build();
+
+        adapter.sendMessage(message).join();
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(session).textMessage(payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = objectMapper.readValue(payloadCaptor.getValue(), Map.class);
+        assertEquals("assistant_done", payload.get("type"));
+        assertFalse(payload.containsKey("hint"));
     }
 
     @Test
@@ -236,5 +387,22 @@ class WebChannelAdapterTest {
         adapter.sendMessage("chat-a", "after-disconnect").join();
         adapter.sendMessage("chat-b", "after-disconnect").join();
         verify(session, times(2)).send(any());
+    }
+
+    @Test
+    void shouldReportOnlyOpenSessionsAsActive() {
+        assertFalse(adapter.hasActiveSession(null));
+        assertFalse(adapter.hasActiveSession(" "));
+        assertFalse(adapter.hasActiveSession("chat-missing"));
+
+        WebSocketSession closedSession = mock(WebSocketSession.class);
+        when(closedSession.isOpen()).thenReturn(false);
+        adapter.registerSession("chat-closed", closedSession);
+        assertFalse(adapter.hasActiveSession("chat-closed"));
+
+        WebSocketSession openSession = mock(WebSocketSession.class);
+        when(openSession.isOpen()).thenReturn(true);
+        adapter.registerSession("chat-open", openSession);
+        assertTrue(adapter.hasActiveSession("chat-open"));
     }
 }

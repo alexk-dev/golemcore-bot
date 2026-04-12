@@ -2,8 +2,8 @@ import { type DragEvent, type KeyboardEvent, type ReactElement, useEffect, useSt
 import type { PromptSection } from '../../api/prompts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/field';
-import { buildPromptMetrics, isPromptNameValid, normalizePromptName } from './promptFormUtils';
-import { PromptCatalogList, PromptCatalogSummary, PromptCreateCard } from './PromptsSidebarParts';
+import { isPromptNameValid, normalizePromptName } from './promptFormUtils';
+import { PromptCatalogList, PromptCreateCard } from './PromptsSidebarParts';
 
 export interface PromptsSidebarProps {
   sections: PromptSection[];
@@ -58,7 +58,6 @@ export function PromptsSidebar({
   const [draggingName, setDraggingName] = useState<string | null>(null);
   const [dropTargetName, setDropTargetName] = useState<string | null>(null);
 
-  const metrics = buildPromptMetrics(sections);
   const normalizedSearch = searchValue.trim().toLowerCase();
   const normalizedNewPromptName = normalizePromptName(newPromptName);
   const hasExistingPrompt = sections.some((section) => section.name === normalizedNewPromptName);
@@ -170,7 +169,6 @@ export function PromptsSidebar({
           </div>
 
           <PromptCreateCard
-            sectionCount={sections.length}
             newPromptName={newPromptName}
             isCreating={isCreating}
             hasExistingPrompt={hasExistingPrompt}
@@ -181,8 +179,6 @@ export function PromptsSidebar({
             }}
             onKeyDown={handleCreateKeyDown}
           />
-
-          <PromptCatalogSummary metrics={metrics} />
 
           <p className="text-sm leading-6 text-muted-foreground">{reorderHint}</p>
         </CardContent>

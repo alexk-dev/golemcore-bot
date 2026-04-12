@@ -1,28 +1,40 @@
 package me.golemcore.bot.domain.service;
 
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,6 +44,21 @@ class SessionRunCoordinatorTest {
     private static final String CHAT_ID = "1";
 
     @Test
+    void shouldRejectNullInboundOnEnqueue() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            assertThrows(NullPointerException.class, () -> coordinator.enqueue(null));
+        }
+    }
+
+    @Test
     void shouldPauseAfterStopAndResumeOnNextInboundFlushingQueuedMessages() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
@@ -39,7 +66,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             AgentSession session = AgentSession.builder()
@@ -96,7 +123,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
             AgentSession session = AgentSession.builder()
                     .id("s-idle")
@@ -115,6 +142,265 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
+    void shouldExposeActiveOrQueuedWork() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            AgentSession session = AgentSession.builder()
+                    .id("s-busy")
+                    .channelType(CHANNEL_TYPE)
+                    .chatId(CHAT_ID)
+                    .messages(new ArrayList<>())
+                    .build();
+            when(sessionPort.getOrCreate(CHANNEL_TYPE, CHAT_ID)).thenReturn(session);
+
+            Message first = user("first");
+            Message second = user("second");
+
+            Gate gate = new Gate();
+            org.mockito.Mockito.doAnswer(invocation -> {
+                gate.await();
+                return null;
+            }).when(agentLoop).processMessage(first);
+
+            assertFalse(coordinator.hasActiveOrQueuedWork());
+
+            coordinator.enqueue(first);
+            gate.awaitStarted();
+            assertTrue(coordinator.hasActiveOrQueuedWork());
+
+            coordinator.enqueue(second);
+            assertTrue(coordinator.hasActiveOrQueuedWork());
+
+            gate.release();
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS));
+
+            assertFalse(coordinator.hasActiveOrQueuedWork());
+        }
+    }
+
+    @Test
+    void shouldPublishHiveCancellationFallbackWhenInterruptedOutsideGracefulTurnHandling() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = new RuntimeEventService(
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        HiveEventPublishPort hiveEventPublishPort = mock(HiveEventPublishPort.class);
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, hiveEventPublishPort);
+
+            AgentSession session = AgentSession.builder()
+                    .id("hive:thread-1")
+                    .channelType("hive")
+                    .chatId("thread-1")
+                    .messages(new ArrayList<>())
+                    .metadata(new LinkedHashMap<>())
+                    .build();
+            when(sessionPort.getOrCreate("hive", "thread-1")).thenReturn(session);
+            org.mockito.Mockito.doNothing().when(sessionPort).save(any(AgentSession.class));
+
+            CountDownLatch started = new CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                started.countDown();
+                CountDownLatch blocked = new CountDownLatch(1);
+                blocked.await();
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            Message inbound = hiveMessage("Inspect the workspace");
+            coordinator.enqueue(inbound);
+            assertTrue(started.await(1, TimeUnit.SECONDS), "Hive run should have started");
+
+            coordinator.requestStop("hive", "thread-1");
+
+            verify(hiveEventPublishPort, timeout(1000)).publishRuntimeEvents(
+                    argThat(SessionRunCoordinatorTest::isUserInterruptFinishEvent),
+                    argThat(metadata -> "thread-1".equals(metadata.get(ContextAttributes.HIVE_THREAD_ID))
+                            && "card-1".equals(metadata.get(ContextAttributes.HIVE_CARD_ID))
+                            && "cmd-1".equals(metadata.get(ContextAttributes.HIVE_COMMAND_ID))
+                            && "run-1".equals(metadata.get(ContextAttributes.HIVE_RUN_ID))
+                            && "golem-1".equals(metadata.get(ContextAttributes.HIVE_GOLEM_ID))));
+            assertFalse(Boolean.TRUE.equals(session.getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED)));
+        }
+    }
+
+    @Test
+    void shouldCancelOnlyMatchingQueuedHiveRun() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        HiveEventPublishPort hiveEventPublishPort = mock(HiveEventPublishPort.class);
+
+        RuntimeEvent cancelledEvent = RuntimeEvent.builder()
+                .type(RuntimeEventType.TURN_FINISHED)
+                .timestamp(Instant.parse("2026-03-18T00:00:00Z"))
+                .sessionId("hive:thread-1")
+                .channelType("hive")
+                .chatId("thread-1")
+                .payload(Map.of("reason", "user_interrupt"))
+                .build();
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, hiveEventPublishPort);
+
+            AgentSession session = AgentSession.builder()
+                    .id("hive:thread-1")
+                    .channelType("hive")
+                    .chatId("thread-1")
+                    .messages(new ArrayList<>())
+                    .metadata(new LinkedHashMap<>())
+                    .build();
+            when(sessionPort.getOrCreate("hive", "thread-1")).thenReturn(session);
+            org.mockito.Mockito.doNothing().when(sessionPort).save(any(AgentSession.class));
+            when(runtimeEventService.emitForSession(any(AgentSession.class), any(RuntimeEventType.class),
+                    any(Map.class)))
+                    .thenReturn(cancelledEvent);
+
+            Gate gateA = new Gate();
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("Inspect run-1".equals(inbound.getContent())) {
+                    gateA.await();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            Message firstInbound = hiveMessage("Inspect run-1", "cmd-1", "run-1");
+            Message secondInbound = hiveMessage("Inspect run-2", "cmd-2", "run-2");
+
+            coordinator.enqueue(firstInbound);
+            gateA.awaitStarted();
+            coordinator.enqueue(secondInbound);
+
+            coordinator.requestStop("hive", "thread-1", "run-2", "cmd-2");
+            gateA.release();
+
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS), "Coordinator should terminate cleanly");
+
+            verify(agentLoop, times(1)).processMessage(firstInbound);
+            verify(agentLoop, never()).processMessage(secondInbound);
+            verify(hiveEventPublishPort, timeout(1000)).publishRuntimeEvents(
+                    argThat(SessionRunCoordinatorTest::isUserInterruptFinishEvent),
+                    argThat(metadata -> "thread-1".equals(metadata.get(ContextAttributes.HIVE_THREAD_ID))
+                            && "card-1".equals(metadata.get(ContextAttributes.HIVE_CARD_ID))
+                            && "cmd-2".equals(metadata.get(ContextAttributes.HIVE_COMMAND_ID))
+                            && "run-2".equals(metadata.get(ContextAttributes.HIVE_RUN_ID))
+                            && "golem-1".equals(metadata.get(ContextAttributes.HIVE_GOLEM_ID))));
+        }
+    }
+
+    @Test
+    void shouldContinueWithQueuedHiveCommandAfterCancellingActiveRun() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        HiveEventPublishPort hiveEventPublishPort = mock(HiveEventPublishPort.class);
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, hiveEventPublishPort);
+
+            AgentSession session = AgentSession.builder()
+                    .id("hive:thread-1")
+                    .channelType("hive")
+                    .chatId("thread-1")
+                    .messages(new ArrayList<>())
+                    .metadata(new LinkedHashMap<>())
+                    .build();
+            when(sessionPort.getOrCreate("hive", "thread-1")).thenReturn(session);
+            org.mockito.Mockito.doNothing().when(sessionPort).save(any(AgentSession.class));
+
+            Gate gateA = new Gate();
+            CountDownLatch secondProcessed = new CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("Inspect run-1".equals(inbound.getContent())) {
+                    gateA.await();
+                    return null;
+                }
+                if ("Inspect run-2".equals(inbound.getContent())) {
+                    secondProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            Message firstInbound = hiveMessage("Inspect run-1", "cmd-1", "run-1");
+            Message secondInbound = hiveMessage("Inspect run-2", "cmd-2", "run-2");
+
+            coordinator.enqueue(firstInbound);
+            gateA.awaitStarted();
+            coordinator.enqueue(secondInbound);
+
+            coordinator.requestStop("hive", "thread-1", "run-1", "cmd-1");
+            gateA.release();
+
+            assertTrue(secondProcessed.await(2, TimeUnit.SECONDS), "Queued hive command should continue automatically");
+            verify(agentLoop, times(1)).processMessage(firstInbound);
+            verify(agentLoop, times(1)).processMessage(secondInbound);
+        }
+    }
+
+    @Test
+    void shouldSuppressFallbackPublishFailureWhenHiveSessionIsGone() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = new RuntimeEventService(
+                Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        HiveEventPublishPort hiveEventPublishPort = mock(HiveEventPublishPort.class);
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, hiveEventPublishPort);
+
+            AgentSession session = AgentSession.builder()
+                    .id("hive:thread-1")
+                    .channelType("hive")
+                    .chatId("thread-1")
+                    .messages(new ArrayList<>())
+                    .metadata(new LinkedHashMap<>())
+                    .build();
+            when(sessionPort.getOrCreate("hive", "thread-1")).thenReturn(session);
+            org.mockito.Mockito.doNothing().when(sessionPort).save(any(AgentSession.class));
+
+            CountDownLatch started = new CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                started.countDown();
+                CountDownLatch blocked = new CountDownLatch(1);
+                blocked.await();
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+            doThrow(new IllegalStateException("Hive session is not available"))
+                    .when(hiveEventPublishPort)
+                    .publishRuntimeEvents(any(List.class), any(Map.class));
+
+            CompletableFuture<Void> completion = coordinator.submit(hiveMessage("Inspect the workspace"));
+            assertTrue(started.await(1, TimeUnit.SECONDS), "Hive run should have started");
+
+            coordinator.requestStop("hive", "thread-1", "run-1", "cmd-1");
+
+            ExecutionException failure = assertThrows(ExecutionException.class, () -> completion.get(2,
+                    TimeUnit.SECONDS));
+            assertFalse("Hive session is not available".equals(failure.getCause().getMessage()));
+            verify(hiveEventPublishPort, timeout(1000)).publishRuntimeEvents(any(List.class), any(Map.class));
+        }
+    }
+
+    @Test
     void shouldProcessQueuedMessageAfterRunCompletes() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
@@ -122,7 +408,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -160,6 +446,50 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
+    void shouldCompleteSubmittedRunAfterQueuedSessionWorkFinishes() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            Message a = user("A");
+            Message auto = auto("AUTO");
+
+            Gate gateA = new Gate();
+            CountDownLatch autoProcessed = new CountDownLatch(1);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                }
+                if ("AUTO".equals(inbound.getContent())) {
+                    autoProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+
+            CompletableFuture<Void> completion = coordinator.submit(auto);
+            assertFalse(completion.isDone());
+
+            gateA.release();
+
+            completion.get(2, TimeUnit.SECONDS);
+            assertTrue(autoProcessed.await(2, TimeUnit.SECONDS));
+
+            verify(agentLoop, times(1)).processMessage(a);
+            verify(agentLoop, times(1)).processMessage(auto);
+        }
+    }
+
+    @Test
     void shouldPrioritizeSteeringMessageBeforeFollowUp() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
@@ -167,7 +497,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "all", "all");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -215,7 +545,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "all");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -266,7 +596,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -319,7 +649,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "all", "all");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -378,7 +708,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
@@ -437,7 +767,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "all", "all");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             AgentSession session = AgentSession.builder()
@@ -518,11 +848,11 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             Message a = user("A");
-            org.mockito.Mockito.doThrow(new RuntimeException("boom"))
+            doThrow(new RuntimeException("boom"))
                     .when(agentLoop).processMessage(a);
 
             coordinator.enqueue(a);
@@ -536,6 +866,61 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
+    void shouldFailSubmittedRunWhenFlushedAfterStop() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            AgentSession session = AgentSession.builder()
+                    .id("s-submit-stop")
+                    .channelType(CHANNEL_TYPE)
+                    .chatId(CHAT_ID)
+                    .messages(new ArrayList<>())
+                    .build();
+            when(sessionPort.getOrCreate(CHANNEL_TYPE, CHAT_ID)).thenReturn(session);
+
+            Message a = user("A");
+            Message auto = auto("AUTO");
+            Message resume = user("RESUME");
+
+            Gate gateA = new Gate();
+            CountDownLatch resumeProcessed = new CountDownLatch(1);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                }
+                if ("RESUME".equals(inbound.getContent())) {
+                    resumeProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+
+            CompletableFuture<Void> completion = coordinator.submit(auto);
+
+            coordinator.requestStop(CHANNEL_TYPE, CHAT_ID);
+            coordinator.enqueue(resume);
+            gateA.release();
+
+            assertTrue(resumeProcessed.await(2, TimeUnit.SECONDS));
+
+            ExecutionException exception = assertThrows(ExecutionException.class,
+                    () -> completion.get(2, TimeUnit.SECONDS));
+            assertTrue(exception.getCause() instanceof IllegalStateException);
+            assertEquals("Skipped after stop request", exception.getCause().getMessage());
+        }
+    }
+
+    @Test
     void shouldEvictRunnerWhenSessionBecomesIdle() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
@@ -543,7 +928,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             CountDownLatch processed = new CountDownLatch(1);
@@ -567,7 +952,7 @@ class SessionRunCoordinatorTest {
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "all");
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService);
 
             AgentSession session = AgentSession.builder()
@@ -609,6 +994,214 @@ class SessionRunCoordinatorTest {
         }
     }
 
+    @Test
+    void shouldKeepOnlyLatestInternalRetryMessageAcrossQueuedFollowUps() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "all");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            Message a = user("A");
+            Message retryOne = internalRetry("retry-1");
+            Message followUp = user("follow-up");
+            Message retryTwo = internalRetry("retry-2");
+
+            Gate gateA = new Gate();
+            List<String> processedAfterA = new ArrayList<>();
+            CountDownLatch queuedProcessed = new CountDownLatch(2);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                } else {
+                    synchronized (processedAfterA) {
+                        processedAfterA.add(inbound.getContent());
+                    }
+                    queuedProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+            coordinator.enqueue(retryOne);
+            coordinator.enqueue(followUp);
+            coordinator.enqueue(retryTwo);
+            gateA.release();
+
+            assertTrue(queuedProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> processedSnapshot;
+            synchronized (processedAfterA) {
+                processedSnapshot = new ArrayList<>(processedAfterA);
+            }
+            assertEquals(List.of("retry-2", "follow-up"), processedSnapshot);
+        }
+    }
+
+    @Test
+    void shouldKeepOnlyLatestInternalRetryMessage() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            Message a = user("A");
+            Message retryOne = internalRetry("retry-1");
+            Message retryTwo = internalRetry("retry-2");
+
+            Gate gateA = new Gate();
+            List<String> processedAfterA = new ArrayList<>();
+            CountDownLatch secondRunProcessed = new CountDownLatch(1);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                } else {
+                    synchronized (processedAfterA) {
+                        processedAfterA.add(inbound.getContent());
+                    }
+                    secondRunProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+            coordinator.enqueue(retryOne);
+            coordinator.enqueue(retryTwo);
+            gateA.release();
+
+            assertTrue(secondRunProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> processedSnapshot;
+            synchronized (processedAfterA) {
+                processedSnapshot = new ArrayList<>(processedAfterA);
+            }
+            assertEquals(List.of("retry-2"), processedSnapshot);
+        }
+    }
+
+    @Test
+    void shouldPreserveInternalRetryWhenLatestFollowUpReplacesOlderFollowUp() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
+
+            Message a = user("A");
+            Message retry = internalRetry("retry");
+            Message followUpOne = user("follow-up-1");
+            Message followUpTwo = user("follow-up-2");
+
+            Gate gateA = new Gate();
+            List<String> processedAfterA = new ArrayList<>();
+            CountDownLatch queuedProcessed = new CountDownLatch(2);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                } else {
+                    synchronized (processedAfterA) {
+                        processedAfterA.add(inbound.getContent());
+                    }
+                    queuedProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+            coordinator.enqueue(retry);
+            coordinator.enqueue(followUpOne);
+            coordinator.enqueue(followUpTwo);
+            gateA.release();
+
+            assertTrue(queuedProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> processedSnapshot;
+            synchronized (processedAfterA) {
+                processedSnapshot = new ArrayList<>(processedAfterA);
+            }
+            assertEquals(List.of("retry", "follow-up-2"), processedSnapshot);
+        }
+    }
+
+    @Test
+    void shouldPreserveInternalRetryWhenFollowUpQueueLimitIsReached() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "all");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
+
+            Message a = user("A");
+            Message retry = internalRetry("retry");
+
+            Gate gateA = new Gate();
+            List<String> processedAfterA = new ArrayList<>();
+            CountDownLatch queuedProcessed = new CountDownLatch(2);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                } else {
+                    synchronized (processedAfterA) {
+                        processedAfterA.add(inbound.getContent());
+                    }
+                    queuedProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+            coordinator.enqueue(retry);
+            for (int i = 1; i <= 101; i++) {
+                coordinator.enqueue(user("follow-up-" + i));
+            }
+            gateA.release();
+
+            assertTrue(queuedProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> processedSnapshot;
+            synchronized (processedAfterA) {
+                processedSnapshot = new ArrayList<>(processedAfterA);
+            }
+            assertEquals(2, processedSnapshot.size());
+            assertEquals("retry", processedSnapshot.get(0));
+            List<String> mergedFollowUps = List.of(processedSnapshot.get(1).split("\\n\\n"));
+            assertFalse(mergedFollowUps.contains("follow-up-1"));
+            assertFalse(mergedFollowUps.contains("follow-up-2"));
+            assertEquals("follow-up-3", mergedFollowUps.get(0));
+            assertTrue(mergedFollowUps.contains("follow-up-50"));
+            assertEquals("follow-up-101", mergedFollowUps.get(mergedFollowUps.size() - 1));
+        }
+    }
+
     private static RuntimeConfigService runtimeConfigService(boolean steeringEnabled, String steeringMode,
             String followUpMode) {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
@@ -616,6 +1209,16 @@ class SessionRunCoordinatorTest {
         when(runtimeConfigService.getTurnQueueSteeringMode()).thenReturn(steeringMode);
         when(runtimeConfigService.getTurnQueueFollowUpMode()).thenReturn(followUpMode);
         return runtimeConfigService;
+    }
+
+    private static SessionRunCoordinator newCoordinator(
+            SessionPort sessionPort,
+            AgentLoop agentLoop,
+            ExecutorService executor,
+            RuntimeEventService runtimeEventService,
+            RuntimeConfigService runtimeConfigService) {
+        return new SessionRunCoordinator(sessionPort, agentLoop, executor, runtimeEventService,
+                runtimeConfigService, null, mock(HiveEventPublishPort.class));
     }
 
     private static Message steering(String content) {
@@ -634,6 +1237,59 @@ class SessionRunCoordinatorTest {
 
     private static Message userAt(String content, Instant timestamp) {
         return user(content, null, timestamp);
+    }
+
+    private static Message auto(String content) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.AUTO_MODE, true);
+        metadata.put(ContextAttributes.AUTO_RUN_ID, "run-" + content);
+        return Message.builder()
+                .role("user")
+                .content(content)
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
+                .senderId("auto")
+                .timestamp(Instant.EPOCH)
+                .metadata(metadata)
+                .build();
+    }
+
+    private static Message internalRetry(String content) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
+        return Message.builder()
+                .role("user")
+                .content(content)
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
+                .senderId("internal")
+                .timestamp(Instant.EPOCH)
+                .metadata(metadata)
+                .build();
+    }
+
+    private static Message hiveMessage(String content) {
+        return hiveMessage(content, "cmd-1", "run-1");
+    }
+
+    private static Message hiveMessage(String content, String commandId, String runId) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.HIVE_THREAD_ID, "thread-1");
+        metadata.put(ContextAttributes.HIVE_CARD_ID, "card-1");
+        metadata.put(ContextAttributes.HIVE_COMMAND_ID, commandId);
+        metadata.put(ContextAttributes.HIVE_RUN_ID, runId);
+        metadata.put(ContextAttributes.HIVE_GOLEM_ID, "golem-1");
+        return Message.builder()
+                .role("user")
+                .content(content)
+                .channelType("hive")
+                .chatId("thread-1")
+                .senderId("hive")
+                .timestamp(Instant.EPOCH)
+                .metadata(metadata)
+                .build();
     }
 
     private static Message user(String content, Map<String, Object> metadata, Instant timestamp) {
@@ -659,6 +1315,17 @@ class SessionRunCoordinatorTest {
             Thread.sleep(10);
         }
         return coordinator.runnerCount() == expected;
+    }
+
+    private static boolean isUserInterruptFinishEvent(List<RuntimeEvent> events) {
+        if (events == null || events.size() != 1) {
+            return false;
+        }
+        RuntimeEvent event = events.get(0);
+        return event != null
+                && event.type() == RuntimeEventType.TURN_FINISHED
+                && event.payload() != null
+                && "user_interrupt".equals(event.payload().get("reason"));
     }
 
     private static final class Gate {

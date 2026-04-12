@@ -1,0 +1,289 @@
+package me.golemcore.bot.domain.selfevolving.benchmark;
+
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.LlmRequest;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.selfevolving.RunRecord;
+import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionService;
+import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class LlmJudgeServiceTest {
+
+    private LlmPort llmPort;
+    private JudgeTierResolver judgeTierResolver;
+    private JudgeTraceDigestService judgeTraceDigestService;
+    private RuntimeConfigService runtimeConfigService;
+    private SessionService sessionService;
+    private TraceService traceService;
+    private TraceSnapshotCodecPort traceSnapshotCodecPort;
+    private LlmJudgeService llmJudgeService;
+
+    @BeforeEach
+    void setUp() {
+        llmPort = mock(LlmPort.class);
+        judgeTierResolver = mock(JudgeTierResolver.class);
+        judgeTraceDigestService = new JudgeTraceDigestService();
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        sessionService = mock(SessionService.class);
+        traceService = mock(TraceService.class);
+        traceSnapshotCodecPort = new FakeTraceSnapshotCodecPort();
+        RuntimeConfig.SelfEvolvingJudgeConfig judgeConfig = RuntimeConfig.SelfEvolvingJudgeConfig.builder()
+                .enabled(true)
+                .requireEvidenceAnchors(true)
+                .uncertaintyThreshold(0.5)
+                .build();
+        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = RuntimeConfig.SelfEvolvingConfig.builder()
+                .judge(judgeConfig)
+                .build();
+        when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(selfEvolvingConfig);
+        when(sessionService.getOrCreate(anyString(), anyString())).thenReturn(
+                AgentSession.builder()
+                        .id("judge:test-session")
+                        .channelType("judge")
+                        .chatId("test")
+                        .traces(new ArrayList<>())
+                        .build());
+        when(traceService.startRootTrace(any(), anyString(), any(), any(), any())).thenReturn(
+                TraceContext.builder()
+                        .traceId("judge-trace-1")
+                        .spanId("judge-span-1")
+                        .build());
+        when(traceService.startSpan(any(), any(), anyString(), any(), any(), any())).thenReturn(
+                TraceContext.builder()
+                        .traceId("judge-trace-1")
+                        .spanId("llm-span-1")
+                        .build());
+        llmJudgeService = new LlmJudgeService(llmPort, judgeTierResolver, judgeTraceDigestService,
+                runtimeConfigService, sessionService, traceService, traceSnapshotCodecPort);
+    }
+
+    @Test
+    void shouldRejectJudgeVerdictWithoutEvidenceRefs() {
+        RunVerdict verdictWithoutEvidence = RunVerdict.builder()
+                .outcomeStatus("COMPLETED")
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> llmJudgeService.validate(verdictWithoutEvidence));
+    }
+
+    @Test
+    void shouldNormalizeJudgeEnumsToCanonicalVerdictContracts() {
+        when(llmPort.isAvailable()).thenReturn(true);
+        when(judgeTierResolver.resolveSelection("primary"))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider/judge-standard", "medium"));
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                        .content("""
+                                {"outcomeStatus":"COMPLETED","outcomeSummary":"Task completed","confidence":0.91,
+                                "promotionRecommendation":"observe",
+                                "evidenceRefs":[{"traceId":"trace-1","spanId":"span-outcome"}]}
+                                """)
+                        .build()))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                        .content("""
+                                {"processStatus":"EFFICIENT","processSummary":"Clean process","confidence":0.95,
+                                "processFindings":[],
+                                "evidenceRefs":[{"traceId":"trace-1","spanId":"span-process"}]}
+                                """)
+                        .build()));
+
+        RunVerdict verdict = llmJudgeService.judge(
+                RunRecord.builder().id("run-1").traceId("trace-1").status("COMPLETED").build(),
+                TraceRecord.builder().traceId("trace-1").build(),
+                RunVerdict.builder()
+                        .runId("run-1")
+                        .outcomeStatus("COMPLETED")
+                        .processStatus("CLEAN")
+                        .promotionRecommendation("approve_gated")
+                        .evidenceRefs(List.of(VerdictEvidenceRef.builder().traceId("trace-1").spanId("seed").build()))
+                        .build(),
+                "What is the weather?",
+                "The weather is sunny today.");
+
+        assertEquals("COMPLETED", verdict.getOutcomeStatus());
+        assertEquals("CLEAN", verdict.getProcessStatus());
+        assertEquals("approve_gated", verdict.getPromotionRecommendation());
+        verify(llmPort, times(2)).chat(any());
+    }
+
+    @Test
+    void shouldEscalateToTiebreakerWhenPrimaryVerdictIsUncertain() {
+        when(llmPort.isAvailable()).thenReturn(true);
+        when(judgeTierResolver.resolveSelection("primary"))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider/judge-standard", "medium"));
+        when(judgeTierResolver.resolveSelection("tiebreaker"))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider/judge-premium", "high"));
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                        .content("""
+                                {"outcomeStatus":"COMPLETED","outcomeSummary":"Task completed","confidence":0.2,
+                                "promotionRecommendation":"approve_gated",
+                                "evidenceRefs":[{"traceId":"trace-1","spanId":"span-outcome"}]}
+                                """)
+                        .build()))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                        .content("""
+                                {"processStatus":"ISSUES_FOUND","processSummary":"Minor issues","confidence":0.4,
+                                "processFindings":["tool_churn"],
+                                "evidenceRefs":[{"traceId":"trace-1","spanId":"span-process"}]}
+                                """)
+                        .build()))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                        .content("""
+                                {"outcomeStatus":"COMPLETED","processStatus":"ISSUES_FOUND",
+                                "outcomeSummary":"Task completed after arbitration",
+                                "processSummary":"Minor issues confirmed","confidence":0.92,
+                                "promotionRecommendation":"shadow",
+                                "processFindings":["tool_churn"],
+                                "evidenceRefs":[{"traceId":"trace-1","spanId":"span-final"}]}
+                                """)
+                        .build()));
+
+        RunVerdict verdict = llmJudgeService.judge(
+                RunRecord.builder().id("run-1").traceId("trace-1").status("COMPLETED").build(),
+                TraceRecord.builder().traceId("trace-1").build(),
+                RunVerdict.builder()
+                        .runId("run-1")
+                        .outcomeStatus("COMPLETED")
+                        .evidenceRefs(List.of(VerdictEvidenceRef.builder().traceId("trace-1").spanId("seed").build()))
+                        .build(),
+                "What is the weather?",
+                "The weather is sunny today.");
+
+        assertEquals(0.92, verdict.getConfidence());
+        assertEquals("approve_gated", verdict.getPromotionRecommendation());
+        assertEquals("COMPLETED", verdict.getOutcomeStatus());
+        assertEquals("ISSUES_FOUND", verdict.getProcessStatus());
+        assertTrue(verdict.getEvidenceRefs().stream().anyMatch(ref -> "span-final".equals(ref.getSpanId())));
+
+        ArgumentCaptor<LlmRequest> requestCaptor = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(llmPort, times(3)).chat(requestCaptor.capture());
+        List<LlmRequest> requests = requestCaptor.getAllValues();
+        assertEquals("provider/judge-standard", requests.get(0).getModel());
+        assertEquals("provider/judge-standard", requests.get(1).getModel());
+        assertEquals("provider/judge-premium", requests.get(2).getModel());
+    }
+
+    @Test
+    void shouldFinishJudgeRootTraceWithErrorWhenVerdictValidationFails() {
+        TraceContext outcomeRoot = TraceContext.builder()
+                .traceId("judge-trace-outcome")
+                .spanId("judge-root-outcome")
+                .build();
+        TraceContext processRoot = TraceContext.builder()
+                .traceId("judge-trace-process")
+                .spanId("judge-root-process")
+                .build();
+        TraceContext outcomeLlm = TraceContext.builder()
+                .traceId("judge-trace-outcome")
+                .spanId("llm-span-outcome")
+                .build();
+        TraceContext processLlm = TraceContext.builder()
+                .traceId("judge-trace-process")
+                .spanId("llm-span-process")
+                .build();
+        when(traceService.startRootTrace(any(), anyString(), any(), any(), any()))
+                .thenReturn(outcomeRoot)
+                .thenReturn(processRoot);
+        when(traceService.startSpan(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(outcomeLlm)
+                .thenReturn(processLlm);
+        when(llmPort.isAvailable()).thenReturn(true);
+        when(judgeTierResolver.resolveSelection("primary"))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider/judge-standard", "medium"));
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                        .content("""
+                                {"outcomeStatus":"COMPLETED","confidence":0.9}
+                                """)
+                        .build()))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                        .content("""
+                                {"processStatus":"ISSUES_FOUND","confidence":0.9}
+                                """)
+                        .build()));
+        RunVerdict deterministicVerdict = RunVerdict.builder()
+                .runId("run-1")
+                .outcomeStatus("FAILED")
+                .processStatus("ISSUES_FOUND")
+                .promotionRecommendation("reject")
+                .evidenceRefs(List.of(VerdictEvidenceRef.builder().traceId("trace-1").spanId("seed").build()))
+                .build();
+
+        RunVerdict verdict = llmJudgeService.judge(
+                RunRecord.builder().id("run-1").traceId("trace-1").status("FAILED").build(),
+                TraceRecord.builder().traceId("trace-1").build(),
+                deterministicVerdict,
+                "Broken request",
+                "Broken response");
+
+        assertEquals("FAILED", verdict.getOutcomeStatus());
+        assertEquals("reject", verdict.getPromotionRecommendation());
+        verify(traceService).finishSpan(any(),
+                argThat(context -> context != null && "judge-root-outcome".equals(context.getSpanId())),
+                org.mockito.Mockito.eq(me.golemcore.bot.domain.model.trace.TraceStatusCode.ERROR),
+                contains("evidence"),
+                any());
+        verify(traceService).finishSpan(any(),
+                argThat(context -> context != null && "judge-root-process".equals(context.getSpanId())),
+                org.mockito.Mockito.eq(me.golemcore.bot.domain.model.trace.TraceStatusCode.ERROR),
+                contains("evidence"),
+                any());
+        verify(traceService, never()).finishSpan(any(),
+                argThat(context -> context != null
+                        && ("judge-root-outcome".equals(context.getSpanId())
+                                || "judge-root-process".equals(context.getSpanId()))),
+                org.mockito.Mockito.eq(me.golemcore.bot.domain.model.trace.TraceStatusCode.OK),
+                any(),
+                any());
+    }
+
+    @Test
+    void shouldFallbackToDeterministicVerdictWhenLlmJudgeIsUnavailable() {
+        RunVerdict deterministicVerdict = RunVerdict.builder()
+                .runId("run-1")
+                .outcomeStatus("FAILED")
+                .processStatus("ISSUES_FOUND")
+                .evidenceRefs(List.of(VerdictEvidenceRef.builder().traceId("trace-1").spanId("seed").build()))
+                .build();
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        RunVerdict verdict = llmJudgeService.judge(
+                RunRecord.builder().id("run-1").traceId("trace-1").status("FAILED").build(),
+                TraceRecord.builder().traceId("trace-1").build(),
+                deterministicVerdict,
+                null, null);
+
+        assertEquals("FAILED", verdict.getOutcomeStatus());
+        assertEquals("ISSUES_FOUND", verdict.getProcessStatus());
+    }
+}

@@ -1,4 +1,4 @@
-import client from './client';
+import client, { type TelemetryRequestConfig } from './client';
 
 export interface ModelSettings {
   provider: string;
@@ -32,6 +32,18 @@ export interface DiscoveredProviderModel {
   id: string;
   displayName: string;
   ownedBy: string | null;
+  defaultSettings: ModelSettings | null;
+}
+
+export interface ResolveModelRegistryRequest {
+  provider: string;
+  modelId: string;
+}
+
+export interface ResolveModelRegistryResponse {
+  defaultSettings: ModelSettings | null;
+  configSource: 'provider' | 'shared' | null;
+  cacheStatus: 'fresh-hit' | 'stale-hit' | 'remote-hit' | 'miss';
 }
 
 export async function getModelsConfig(): Promise<ModelsConfig> {
@@ -54,12 +66,36 @@ export async function discoverProviderModels(provider: string): Promise<Discover
   return data;
 }
 
-export async function saveModel(id: string, settings: ModelSettings): Promise<void> {
-  await client.post(`/models/${id}`, settings);
+export async function resolveModelRegistryDefaults(
+  request: ResolveModelRegistryRequest,
+): Promise<ResolveModelRegistryResponse> {
+  const { data } = await client.post<ResolveModelRegistryResponse>('/models/registry/resolve', request);
+  return data;
+}
+
+export async function saveModel(id: string, settings: ModelSettings, previousId: string | null = null): Promise<void> {
+  const telemetryConfig: TelemetryRequestConfig = {
+    _telemetry: {
+      counterKey: 'settings_save_count_by_section',
+      value: 'model-catalog',
+    },
+  };
+  await client.post('/models', { id, previousId, settings }, telemetryConfig);
 }
 
 export async function deleteModel(id: string): Promise<void> {
-  await client.delete(`/models/${id}`);
+  await client.delete('/models', { params: { id } });
+}
+
+export interface TestModelResponse {
+  success: boolean;
+  reply: string | null;
+  error: string | null;
+}
+
+export async function testModel(model: string): Promise<TestModelResponse> {
+  const { data } = await client.post<TestModelResponse>('/models/test', { model });
+  return data;
 }
 
 export async function reloadModels(): Promise<void> {

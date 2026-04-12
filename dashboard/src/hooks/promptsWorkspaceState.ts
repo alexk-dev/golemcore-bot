@@ -61,6 +61,8 @@ export function promptsWorkspaceReducer(
     return {
       ...state,
       draft: action.draft,
+      preview: '',
+      previewError: null,
     };
   }
 

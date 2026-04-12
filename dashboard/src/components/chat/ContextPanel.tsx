@@ -1,13 +1,7 @@
 import { Badge, Form, ProgressBar } from 'react-bootstrap';
+import { getExplicitModelTierOptions, getModelTierMeta } from '../../lib/modelTiers';
 import { useContextPanelStore, type FileChangeStat } from '../../store/contextPanelStore';
 import PlanControlPanel from './PlanControlPanel';
-
-const TIER_COLORS: Record<string, string> = {
-  balanced: 'secondary',
-  smart: 'primary',
-  coding: 'success',
-  deep: 'warning',
-};
 
 function formatNumber(n: number | null): string {
   if (n == null) {return '--';}
@@ -117,6 +111,7 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
 
   const activeGoals = goals.filter((g) => g.status === 'ACTIVE');
   const fileChanges = normalizeFileChanges(turnMetadata.fileChanges);
+  const resolvedTierMeta = getModelTierMeta(turnMetadata.tier ?? tier);
 
   return (
     <div className="context-panel">
@@ -135,8 +130,8 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
           </span>
         </div>
         <div className="d-flex align-items-center gap-2 mt-1">
-          <Badge bg={TIER_COLORS[turnMetadata.tier ?? tier] ?? 'secondary'}>
-            {(turnMetadata.tier ?? tier).toUpperCase()}
+          <Badge bg={resolvedTierMeta?.badgeBg ?? 'secondary'}>
+            {resolvedTierMeta?.label ?? (turnMetadata.tier ?? tier).toUpperCase()}
           </Badge>
           {turnMetadata.latencyMs != null && (
             <small className="text-body-secondary">{turnMetadata.latencyMs}ms</small>
@@ -183,10 +178,9 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
           value={tier}
           onChange={(e) => onTierChange(e.target.value)}
         >
-          <option value="balanced">Balanced</option>
-          <option value="smart">Smart</option>
-          <option value="coding">Coding</option>
-          <option value="deep">Deep</option>
+          {getExplicitModelTierOptions().map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
         </Form.Select>
         <Form.Check
           type="switch"

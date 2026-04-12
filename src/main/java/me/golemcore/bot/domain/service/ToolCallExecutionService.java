@@ -1,29 +1,29 @@
 package me.golemcore.bot.domain.service;
 
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.component.ToolComponent;
-import me.golemcore.bot.domain.loop.AgentContextHolder;
-import me.golemcore.bot.domain.model.AgentContext;
-import me.golemcore.bot.domain.model.Attachment;
-import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.model.ToolArtifact;
-import me.golemcore.bot.domain.model.ToolFailureKind;
-import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
-import me.golemcore.bot.port.outbound.ConfirmationPort;
-import org.springframework.stereotype.Component;
-
 import java.util.Base64;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.loop.AgentContextHolder;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolArtifact;
+import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.port.outbound.ConfirmationPort;
+import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
+import org.springframework.stereotype.Component;
 
 /**
  * Pure tool-call execution service: executes tools + confirmation gating +
@@ -42,15 +42,13 @@ public class ToolCallExecutionService {
     private final Map<String, ToolComponent> toolRegistry;
     private final ToolConfirmationPolicy confirmationPolicy;
     private final ConfirmationPort confirmationPort;
-    private final BotProperties properties;
-    private final ChannelRegistry channelRegistry;
+    private final ToolRuntimeSettingsPort settingsPort;
     private final ToolArtifactService toolArtifactService;
 
     public ToolCallExecutionService(List<ToolComponent> toolComponents,
             ToolConfirmationPolicy confirmationPolicy,
             ConfirmationPort confirmationPort,
-            BotProperties properties,
-            ChannelRegistry channelRegistry,
+            ToolRuntimeSettingsPort settingsPort,
             ToolArtifactService toolArtifactService) {
         this.toolRegistry = new ConcurrentHashMap<>();
         for (ToolComponent tool : toolComponents) {
@@ -58,8 +56,7 @@ public class ToolCallExecutionService {
         }
         this.confirmationPolicy = confirmationPolicy;
         this.confirmationPort = confirmationPort;
-        this.properties = properties;
-        this.channelRegistry = channelRegistry;
+        this.settingsPort = settingsPort;
         this.toolArtifactService = toolArtifactService;
     }
 
@@ -74,11 +71,9 @@ public class ToolCallExecutionService {
                     context.addToolResult(toolCall.getId(), denied);
                     return new ToolCallExecutionResult(toolCall.getId(), toolCall.getName(), denied, content, null);
                 }
-            } else if (!confirmationPolicy.isEnabled() && confirmationPolicy.isNotableAction(toolCall)) {
-                notifyToolExecution(context, toolCall);
             }
 
-            ToolResult rawResult = executeToolCall(toolCall);
+            ToolResult rawResult = executeToolCall(context, toolCall);
             Attachment attachment = extractAttachment(context, rawResult, toolCall.getName());
             ToolResult result = enrichToolResult(context, rawResult, toolCall.getName(), attachment);
             context.addToolResult(toolCall.getId(), result);
@@ -133,12 +128,12 @@ public class ToolCallExecutionService {
         }
     }
 
-    private ToolResult executeToolCall(Message.ToolCall toolCall) {
+    private ToolResult executeToolCall(AgentContext context, Message.ToolCall toolCall) {
         String toolName = sanitizeToolName(toolCall.getName());
-        ToolComponent tool = toolRegistry.get(toolName);
+        ToolComponent tool = resolveTool(context, toolName);
 
         if (tool == null) {
-            String available = String.join(", ", toolRegistry.keySet());
+            String available = String.join(", ", resolveAvailableToolNames(context));
             return ToolResult.failure(ToolFailureKind.POLICY_DENIED,
                     "Unknown tool: " + toolName + ". Available tools: " + available);
         }
@@ -150,11 +145,46 @@ public class ToolCallExecutionService {
         try {
             CompletableFuture<ToolResult> future = tool.execute(toolCall.getArguments());
             return future.get(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.info("[Tools] Tool execution interrupted: {}", toolCall.getName());
+            return ToolResult.failure(ToolFailureKind.EXECUTION_FAILED,
+                    "Tool execution interrupted");
         } catch (Exception e) {
             log.error("Tool execution failed: {}", toolCall.getName(), e);
             return ToolResult.failure(ToolFailureKind.EXECUTION_FAILED,
                     "Tool execution failed: " + safeCauseMessage(e));
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private ToolComponent resolveTool(AgentContext context, String toolName) {
+        if (context != null) {
+            Object scopedTools = context.getAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS);
+            if (scopedTools instanceof Map<?, ?> map) {
+                Object candidate = map.get(toolName);
+                if (candidate instanceof ToolComponent tool) {
+                    return tool;
+                }
+            }
+        }
+        return toolRegistry.get(toolName);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> resolveAvailableToolNames(AgentContext context) {
+        Set<String> names = new TreeSet<>(toolRegistry.keySet());
+        if (context != null) {
+            Object scopedTools = context.getAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS);
+            if (scopedTools instanceof Map<?, ?> map) {
+                for (Object key : map.keySet()) {
+                    if (key instanceof String name && !name.isBlank()) {
+                        names.add(name);
+                    }
+                }
+            }
+        }
+        return List.copyOf(names);
     }
 
     private static String safeCauseMessage(Throwable error) {
@@ -207,28 +237,6 @@ public class ToolCallExecutionService {
         return "Error: " + result.getError();
     }
 
-    private void notifyToolExecution(AgentContext context, Message.ToolCall toolCall) {
-        String description = confirmationPolicy.describeAction(toolCall);
-        String content = "Executing tool: " + toolCall.getName() + "\n" + description;
-
-        try {
-            String chatId = SessionIdentitySupport.resolveTransportChatId(context.getSession());
-            ChannelPort channel = getChannelPort(context.getSession().getChannelType());
-            if (channel != null) {
-                channel.sendMessage(chatId, content);
-            }
-        } catch (Exception e) {
-            log.warn("[Tools] Notification failed", e);
-        }
-    }
-
-    private ChannelPort getChannelPort(String channelType) {
-        if (channelType == null) {
-            return null;
-        }
-        return channelRegistry.get(channelType).orElse(null);
-    }
-
     /**
      * Truncate tool result content that exceeds the configured max length.
      */
@@ -236,7 +244,7 @@ public class ToolCallExecutionService {
         if (content == null) {
             return null;
         }
-        int maxChars = properties.getAutoCompact().getMaxToolResultChars();
+        int maxChars = settingsPort.toolExecution().maxToolResultChars();
         if (maxChars <= 0 || content.length() <= maxChars) {
             return content;
         }
@@ -333,6 +341,13 @@ public class ToolCallExecutionService {
 
         String output = result.getOutput();
         if (storedFile != null) {
+            attachment.setDownloadUrl(storedFile.getDownloadUrl());
+            attachment.setInternalFilePath(storedFile.getPath());
+            attachment.setFilename(storedFile.getFilename());
+            attachment.setMimeType(storedFile.getMimeType());
+            if (attachment.getType() == Attachment.Type.IMAGE) {
+                attachment.setThumbnailBase64(toolArtifactService.buildThumbnailBase64(storedFile.getPath()));
+            }
             if (dataMap == null) {
                 dataMap = new LinkedHashMap<>();
             }
@@ -343,6 +358,9 @@ public class ToolCallExecutionService {
             dataMap.put("internal_file_size", storedFile.getSize());
             if (attachment.getType() != null) {
                 dataMap.put("internal_file_kind", attachment.getType().name().toLowerCase(Locale.ROOT));
+            }
+            if (attachment.getThumbnailBase64() != null && !attachment.getThumbnailBase64().isBlank()) {
+                dataMap.put("internal_file_thumbnail_base64", attachment.getThumbnailBase64());
             }
             output = appendInternalFileLink(output, storedFile);
             mutated = true;

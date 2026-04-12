@@ -18,8 +18,11 @@
 
 package me.golemcore.bot.adapter.inbound.webhook;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jayway.jsonpath.DocumentContext;
+import com.jayway.jsonpath.InvalidPathException;
+import com.jayway.jsonpath.JsonPath;
+import com.jayway.jsonpath.PathNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -28,11 +31,12 @@ import java.util.regex.Pattern;
 
 /**
  * Transforms arbitrary JSON payloads into message strings using templates with
- * {@code {field.path}} placeholders.
+ * {@code {json.path}} placeholders.
  *
  * <p>
  * Example template: {@code "Push to {repository.name} by {pusher.name}"}
- * applied to a GitHub push event extracts nested JSON values via dot-notation.
+ * applied to a GitHub push event extracts nested JSON values via JSONPath-style
+ * traversal from the payload root.
  */
 @Component
 @Slf4j
@@ -44,7 +48,7 @@ public class WebhookPayloadTransformer {
 
     /**
      * Applies the template to the raw JSON payload, resolving all
-     * {@code {field.path}} placeholders.
+     * {@code {json.path}} placeholders.
      *
      * @param template
      *            message template with placeholders
@@ -58,9 +62,10 @@ public class WebhookPayloadTransformer {
             return new String(rawBody, java.nio.charset.StandardCharsets.UTF_8);
         }
 
-        JsonNode root;
+        DocumentContext context;
         try {
-            root = objectMapper.readTree(rawBody);
+            Object jsonDocument = objectMapper.readValue(rawBody, Object.class);
+            context = JsonPath.parse(jsonDocument);
         } catch (Exception e) {
             log.warn("[Webhook] Failed to parse JSON payload for template resolution: {}", e.getMessage());
             return template;
@@ -70,25 +75,87 @@ public class WebhookPayloadTransformer {
         StringBuilder result = new StringBuilder();
         while (matcher.find()) {
             String path = matcher.group(1);
-            String value = resolveJsonPath(root, path);
+            String value = resolveJsonPath(context, path);
             matcher.appendReplacement(result, Matcher.quoteReplacement(value));
         }
         matcher.appendTail(result);
         return result.toString();
     }
 
-    private String resolveJsonPath(JsonNode root, String path) {
-        String[] segments = path.split("\\.");
-        JsonNode current = root;
-        for (String segment : segments) {
-            if (current == null || current.isMissingNode()) {
-                return "<missing>";
-            }
-            current = current.get(segment);
-        }
-        if (current == null || current.isMissingNode()) {
+    private String resolveJsonPath(DocumentContext context, String path) {
+        if (path == null || path.isBlank()) {
             return "<missing>";
         }
-        return current.isTextual() ? current.asText() : current.toString();
+        String normalizedPath = normalizeJsonPath(path);
+        try {
+            Object resolved = context.read(normalizedPath);
+            if (resolved == null) {
+                return "null";
+            }
+            if (resolved instanceof String stringValue) {
+                return stringValue;
+            }
+            return objectMapper.writeValueAsString(resolved);
+        } catch (PathNotFoundException e) {
+            return "<missing>";
+        } catch (InvalidPathException e) {
+            log.debug("[Webhook] Invalid JSONPath '{}': {}", normalizedPath, e.getMessage());
+            return "<missing>";
+        } catch (Exception e) {
+            log.warn("[Webhook] Failed to render JSONPath '{}': {}", normalizedPath, e.getMessage());
+            return "<missing>";
+        }
+    }
+
+    private String normalizeJsonPath(String path) {
+        if (path == null || path.isBlank()) {
+            return "$";
+        }
+        String trimmed = path.trim();
+        if (trimmed.startsWith("$")) {
+            return trimmed;
+        }
+        return "$" + buildBracketPath(trimmed);
+    }
+
+    private String buildBracketPath(String path) {
+        StringBuilder result = new StringBuilder();
+        StringBuilder segment = new StringBuilder();
+        int bracketDepth = 0;
+        for (int i = 0; i < path.length(); i++) {
+            char ch = path.charAt(i);
+            if (ch == '.' && bracketDepth == 0) {
+                appendSegment(result, segment.toString());
+                segment.setLength(0);
+                continue;
+            }
+            if (ch == '[') {
+                bracketDepth++;
+            } else if (ch == ']') {
+                bracketDepth = Math.max(0, bracketDepth - 1);
+            }
+            segment.append(ch);
+        }
+        appendSegment(result, segment.toString());
+        return result.toString();
+    }
+
+    private void appendSegment(StringBuilder result, String rawSegment) {
+        if (rawSegment == null || rawSegment.isBlank()) {
+            return;
+        }
+        String segment = rawSegment.trim();
+        if (segment.startsWith("[")) {
+            result.append(segment);
+            return;
+        }
+        int bracketIndex = segment.indexOf('[');
+        String fieldName = bracketIndex >= 0 ? segment.substring(0, bracketIndex) : segment;
+        String suffix = bracketIndex >= 0 ? segment.substring(bracketIndex) : "";
+        result.append("['").append(escapeFieldName(fieldName)).append("']").append(suffix);
+    }
+
+    private String escapeFieldName(String fieldName) {
+        return fieldName.replace("\\", "\\\\").replace("'", "\\'");
     }
 }

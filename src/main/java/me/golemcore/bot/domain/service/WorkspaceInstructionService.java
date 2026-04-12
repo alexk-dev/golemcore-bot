@@ -18,25 +18,20 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.port.outbound.WorkspaceFilePort;
+import me.golemcore.bot.port.outbound.WorkspaceSettingsPort;
+import org.springframework.stereotype.Service;
 
 /**
  * Collects workspace instructions from AGENTS.md and CLAUDE.md files.
@@ -61,7 +56,8 @@ public class WorkspaceInstructionService {
     private static final int MAX_TOTAL_CONTEXT_CHARS = 160_000;
     private static final long CACHE_TTL_MS = 5_000L;
 
-    private final BotProperties properties;
+    private final WorkspaceSettingsPort settingsPort;
+    private final WorkspaceFilePort workspaceFilePort;
 
     private volatile long cacheTimestampMs;
     private volatile String cachedContext = "";
@@ -117,13 +113,13 @@ public class WorkspaceInstructionService {
     private List<Path> resolveWorkspaceRoots() {
         Set<Path> roots = new LinkedHashSet<>();
 
-        Path shellRoot = resolveConfiguredPath(properties.getTools().getShell().getWorkspace());
-        if (shellRoot != null && Files.isDirectory(shellRoot)) {
+        Path shellRoot = resolveConfiguredPath(settingsPort.workspace().shellWorkspace());
+        if (shellRoot != null && workspaceFilePort.isDirectory(shellRoot)) {
             roots.add(shellRoot);
         }
 
-        Path filesystemRoot = resolveConfiguredPath(properties.getTools().getFilesystem().getWorkspace());
-        if (filesystemRoot != null && Files.isDirectory(filesystemRoot)) {
+        Path filesystemRoot = resolveConfiguredPath(settingsPort.workspace().filesystemWorkspace());
+        if (filesystemRoot != null && workspaceFilePort.isDirectory(filesystemRoot)) {
             roots.add(filesystemRoot);
         }
 
@@ -145,46 +141,56 @@ public class WorkspaceInstructionService {
 
     private void scanRoot(Path root, List<InstructionFile> collected) {
         try {
-            Files.walkFileTree(root, Set.of(), MAX_SCAN_DEPTH, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                    Path name = dir.getFileName();
-                    if (name != null && isIgnoredDirectory(name.toString())) {
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-                    return FileVisitResult.CONTINUE;
+            for (Path candidate : workspaceFilePort.walk(root)) {
+                if (candidate.equals(root)) {
+                    continue;
+                }
+                Path relative = root.relativize(candidate);
+                if (relative.getNameCount() > MAX_SCAN_DEPTH) {
+                    continue;
+                }
+                if (hasIgnoredDirectorySegment(relative)) {
+                    continue;
+                }
+                if (!workspaceFilePort.isRegularFile(candidate)) {
+                    continue;
+                }
+                Path fileNamePath = candidate.getFileName();
+                if (fileNamePath == null) {
+                    continue;
+                }
+                String fileName = fileNamePath.toString();
+                if (!isInstructionFile(fileName)) {
+                    continue;
+                }
+                if (collected.size() >= MAX_INSTRUCTION_FILES) {
+                    break;
                 }
 
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    if (collected.size() >= MAX_INSTRUCTION_FILES) {
-                        return FileVisitResult.TERMINATE;
-                    }
-
-                    Path fileNamePath = file.getFileName();
-                    if (fileNamePath == null) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    String fileName = fileNamePath.toString();
-                    if (!isInstructionFile(fileName)) {
-                        return FileVisitResult.CONTINUE;
-                    }
-
-                    String content = readInstructionContent(file);
-                    if (content == null || content.isBlank()) {
-                        return FileVisitResult.CONTINUE;
-                    }
-
-                    Path relative = root.relativize(file);
-                    Path relativeParent = relative.getParent();
-                    int directoryDepth = relativeParent != null ? relativeParent.getNameCount() : 0;
-                    collected.add(new InstructionFile(root, relative, fileName, directoryDepth, content));
-                    return FileVisitResult.CONTINUE;
+                String content = readInstructionContent(candidate);
+                if (content == null || content.isBlank()) {
+                    continue;
                 }
-            });
+
+                Path relativeParent = relative.getParent();
+                int directoryDepth = relativeParent != null ? relativeParent.getNameCount() : 0;
+                collected.add(new InstructionFile(root, relative, fileName, directoryDepth, content));
+            }
         } catch (IOException e) {
             log.debug("[WorkspaceInstructions] Failed to scan {}: {}", root, e.getMessage());
         }
+    }
+
+    private boolean hasIgnoredDirectorySegment(Path relativePath) {
+        for (Path segment : relativePath) {
+            if (segment == null) {
+                continue;
+            }
+            if (isIgnoredDirectory(segment.toString())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isIgnoredDirectory(String directoryName) {
@@ -202,7 +208,7 @@ public class WorkspaceInstructionService {
 
     private String readInstructionContent(Path file) {
         try {
-            String content = Files.readString(file, StandardCharsets.UTF_8);
+            String content = workspaceFilePort.readString(file);
             if (content.length() > MAX_SINGLE_FILE_CHARS) {
                 return content.substring(0, MAX_SINGLE_FILE_CHARS) + "\n[TRUNCATED]";
             }

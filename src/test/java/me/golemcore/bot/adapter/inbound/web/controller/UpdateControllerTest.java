@@ -1,10 +1,11 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import me.golemcore.bot.application.update.UpdateService;
+import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UpdateActionResult;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.domain.model.UpdateVersionInfo;
-import me.golemcore.bot.domain.service.UpdateService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -13,7 +14,9 @@ import reactor.test.StepVerifier;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -86,5 +89,48 @@ class UpdateControllerTest {
                 .verifyComplete();
 
         verify(updateService).updateNow();
+    }
+
+    @Test
+    void shouldReturnUpdateConfig() {
+        RuntimeConfig.UpdateConfig config = RuntimeConfig.UpdateConfig.builder()
+                .autoEnabled(true)
+                .checkIntervalMinutes(60)
+                .maintenanceWindowEnabled(true)
+                .maintenanceWindowStartUtc("01:00")
+                .maintenanceWindowEndUtc("03:00")
+                .build();
+        when(updateService.getConfig()).thenReturn(config);
+
+        StepVerifier.create(controller.getConfig())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertTrue(response.getBody().getMaintenanceWindowEnabled());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldUpdateUpdateConfig() {
+        RuntimeConfig.UpdateConfig request = RuntimeConfig.UpdateConfig.builder()
+                .autoEnabled(false)
+                .checkIntervalMinutes(180)
+                .maintenanceWindowEnabled(false)
+                .maintenanceWindowStartUtc("00:00")
+                .maintenanceWindowEndUtc("00:00")
+                .build();
+        when(updateService.updateConfig(request)).thenReturn(request);
+
+        StepVerifier.create(controller.updateConfig(request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertFalse(response.getBody().getAutoEnabled());
+                    assertEquals(180, response.getBody().getCheckIntervalMinutes());
+                })
+                .verifyComplete();
+
+        verify(updateService).updateConfig(request);
     }
 }

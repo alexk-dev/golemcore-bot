@@ -14,9 +14,10 @@ import { ChatConversation } from './ChatConversation';
 import { ChatToolbar } from './ChatToolbar';
 import type { OutboundChatPayload } from './chatInputTypes';
 import { useChatSessionHistory } from './useChatSessionHistory';
+import { useTelemetry } from '../../lib/telemetry/TelemetryContext';
+import { normalizeExplicitModelTier } from '../../lib/modelTiers';
 
 const GOALS_POLL_INTERVAL = 30000;
-const SUPPORTED_TIERS = ['balanced', 'smart', 'coding', 'deep'] as const;
 const EMPTY_TURN_METADATA = {
   model: null,
   tier: null,
@@ -40,16 +41,8 @@ function getLocalCommand(text: string): 'new' | 'reset' | null {
   return null;
 }
 
-function isSupportedTier(value: string): value is (typeof SUPPORTED_TIERS)[number] {
-  return SUPPORTED_TIERS.some((tier) => tier === value);
-}
-
 function normalizeTier(value: string | null | undefined): string {
-  if (value == null) {
-    return 'balanced';
-  }
-  const normalized = value.toLowerCase();
-  return isSupportedTier(normalized) ? normalized : 'balanced';
+  return normalizeExplicitModelTier(value);
 }
 
 export default function ChatWindow(): ReactElement {
@@ -74,6 +67,7 @@ export default function ChatWindow(): ReactElement {
     setGoals,
   } = useContextPanelStore();
   const { sessionState, loadEarlierMessages, reloadHistory } = useChatSessionHistory(chatSessionId);
+  const telemetry = useTelemetry();
   const [tier, setTier] = useState('balanced');
   const [tierForce, setTierForce] = useState(false);
 
@@ -190,13 +184,16 @@ export default function ChatWindow(): ReactElement {
       attachments: payload.attachments,
     };
 
+    telemetry.recordCounter('chat_send_count');
     appendOptimisticUserMessage(chatSessionId, {
       id: messageId,
       role: 'user',
       content: trimmed.length > 0 ? trimmed : fallback,
       model: null,
       tier: null,
+      skill: null,
       reasoning: null,
+      attachments: [],
       clientStatus: 'pending',
       outbound: outboundPayload,
       clientMessageId: messageId,
@@ -209,7 +206,7 @@ export default function ChatWindow(): ReactElement {
     if (localCommand === 'reset' && sent) {
       resetSession(chatSessionId);
     }
-  }, [appendOptimisticUserMessage, chatSessionId, clientInstanceId, resetSession, sendMessage, startNewConversation]);
+  }, [appendOptimisticUserMessage, chatSessionId, clientInstanceId, resetSession, sendMessage, startNewConversation, telemetry]);
 
   const handleRetry = useCallback((messageId: string): void => {
     const outbound = retryUserMessage(chatSessionId, messageId);
@@ -256,17 +253,19 @@ export default function ChatWindow(): ReactElement {
   const handleTierChange = useCallback((newTier: string): void => {
     const normalizedTier = normalizeTier(newTier);
     hasLocalPreferenceChangesRef.current = true;
+    telemetry.recordKeyedCounter('tier_select_count_by_tier', normalizedTier);
     setTier(normalizedTier);
     setTurnMetadata(EMPTY_TURN_METADATA);
     enqueuePreferencesUpdate({ modelTier: normalizedTier });
-  }, [enqueuePreferencesUpdate, setTurnMetadata]);
+  }, [enqueuePreferencesUpdate, setTurnMetadata, telemetry]);
 
   const handleForceChange = useCallback((force: boolean): void => {
     hasLocalPreferenceChangesRef.current = true;
+    telemetry.recordCounter('tier_force_toggle_count');
     setTierForce(force);
     setTurnMetadata(EMPTY_TURN_METADATA);
     enqueuePreferencesUpdate({ tierForce: force });
-  }, [enqueuePreferencesUpdate, setTurnMetadata]);
+  }, [enqueuePreferencesUpdate, setTurnMetadata, telemetry]);
 
   const handleToggleContext = useCallback((): void => {
     if (window.innerWidth > 992) {
@@ -297,6 +296,7 @@ export default function ChatWindow(): ReactElement {
           hasMoreHistory={sessionState.hasMoreHistory}
           messages={messages}
           typing={sessionState.typing}
+          progress={sessionState.progress}
           modelsConfig={modelsConfig}
           onScroll={handleScroll}
           onRetryHistory={reloadHistory}

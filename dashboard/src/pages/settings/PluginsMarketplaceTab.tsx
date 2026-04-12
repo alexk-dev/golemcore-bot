@@ -1,4 +1,4 @@
-import { type ReactElement, useDeferredValue, useState } from 'react';
+import { type ReactElement, useDeferredValue, useEffect, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -24,6 +24,7 @@ import {
   useUninstallPluginFromMarketplace,
 } from '../../hooks/usePlugins';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
+import { useTelemetry } from '../../lib/telemetry/TelemetryContext';
 import { PluginMarketplaceCard } from './PluginMarketplaceCard';
 import {
   matchesFilter,
@@ -196,6 +197,7 @@ function PluginMarketplaceContent({
 
 export default function PluginsMarketplaceTab(): ReactElement {
   const navigate = useNavigate();
+  const telemetry = useTelemetry();
   const marketplaceQuery = usePluginMarketplace();
   const installMutation = useInstallPluginFromMarketplace();
   const uninstallMutation = useUninstallPluginFromMarketplace();
@@ -203,6 +205,12 @@ export default function PluginsMarketplaceTab(): ReactElement {
   const [filter, setFilter] = useState<MarketplaceFilter>('all');
   const [pluginToUninstall, setPluginToUninstall] = useState<PluginMarketplaceItem | null>(null);
   const deferredSearch = useDeferredValue(searchQuery.trim().toLowerCase());
+
+  useEffect(() => {
+    telemetry.recordCounter('plugin_marketplace_open_count');
+  // Intentionally record one marketplace open per mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (marketplaceQuery.isLoading) {
     return (
@@ -240,6 +248,7 @@ export default function PluginsMarketplaceTab(): ReactElement {
   const updatesCount = catalog.items.filter((item) => item.updateAvailable).length;
 
   const handleInstall = async (item: PluginMarketplaceItem): Promise<void> => {
+    telemetry.recordCounter('plugin_install_intent_count');
     try {
       const result = await installMutation.mutateAsync({ pluginId: item.id, version: item.version });
       toast.success(result.message);
@@ -276,7 +285,10 @@ export default function PluginsMarketplaceTab(): ReactElement {
       onSearchChange={setSearchQuery}
       onFilterChange={setFilter}
       onInstall={(plugin) => { void handleInstall(plugin); }}
-      onRequestUninstall={setPluginToUninstall}
+      onRequestUninstall={(plugin) => {
+        telemetry.recordCounter('plugin_uninstall_intent_count');
+        setPluginToUninstall(plugin);
+      }}
       onOpenSettings={(routeKey) => navigate(`/settings/${routeKey}`)}
       onConfirmUninstall={() => { void handleConfirmUninstall(); }}
       onCancelUninstall={() => setPluginToUninstall(null)}

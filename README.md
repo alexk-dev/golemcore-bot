@@ -1,49 +1,46 @@
 # GolemCore Bot
 
-> **Autonomous agent + framework** on Java — skill-driven behavior, MCP tool servers, tiered multi-LLM routing, and sandboxed tool execution.
+> AI-native runtime for the GolemCore ecosystem — build, run, extend, and inspect channel-connected agents with skills, plugins, MCP, memory, and Hive.
 
 [![CI](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml)
-[![Java](https://img.shields.io/badge/Java-25+-orange.svg)](https://www.oracle.com/java/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-success.svg)](https://github.com/alexk-dev/golemcore-bot/actions)
 
 ---
 
-## What it is (agent *and* framework)
+## What it is
+
+GolemCore Bot is the runtime layer for the GolemCore ecosystem.
+
+Use it to run channel-connected agents, extend them with skills, plugins, and MCP servers, and operate them with memory, delayed follow-ups, trace inspection, and Hive-connected control flows.
 
 Use it in two ways:
 
-1. **As an autonomous agent** — run it and talk to it (CLI / Telegram). Enable Auto Mode to execute goals/tasks on a schedule.
-2. **As a framework** — build your own agents by composing skills + tools + MCP integrations + routing/tier rules.
+1. **Run agents** — chat in the dashboard, Telegram, or webhook-driven flows, then inspect execution, memory, and trace output.
+2. **Extend the runtime** — add skills, install plugins, connect MCP servers, configure routing tiers, and attach Hive-based control and inspection.
 
-### What makes it useful
+## Why it is different
 
-- **Skills as files** — Markdown `SKILL.md` with YAML frontmatter, variables, pipelines, and progressive loading.
-- **MCP (Model Context Protocol)** — attach external tool servers via stdio (GitHub, Slack, custom tooling, LSP bridges, etc.).
-- **Tiered multi-LLM routing** — configure separate models for different workloads (`balanced/smart/coding/deep`).
-- **Tooling + sandbox** — built-in tools like filesystem/shell/browser/search/email with safety rails (confirmation for destructive actions).
-- **Autonomy primitives** — Auto Mode (goals/tasks/diary) + memory and optional RAG.
-
-If you want the deep-dive: start with **[Skills](docs/SKILLS.md)** and **[Model Routing](docs/MODEL_ROUTING.md)**.
+- **Plugin-native runtime** — plugins can contribute tools, channels, voice providers, and RAG ingestion instead of living outside the agent runtime.
+- **MCP-ready by design** — skills can launch MCP servers, and the runtime now includes MCP catalog and discovery flows.
+- **Built for long-running work** — delayed follow-ups, progressive memory orchestration, and recovery paths help agents continue past a single turn.
+- **Hive-connected control surface** — connect agents to Hive for control commands, lifecycle signals, inspection, and host-level coordination.
+- **Inspectable execution** — traces, waterfall views, and exported snapshots make agent behavior easier to debug and operate.
 
 ---
 
-## ⚡ Quick start (Docker, ~5–10 min)
+## Quick start
 
-### Prerequisites
+### What you need
 
-- Docker (recommended) **or** Java 25+ / Maven 3.x
-- At least one LLM API key (OpenAI or Anthropic)
+- Docker
+- At least one LLM provider API key
 
-### Docker (recommended)
+### Run the published image
 
 ```bash
-# Pull published image
 docker pull ghcr.io/alexk-dev/golemcore-bot:latest
-# Optional: pin a specific version tag instead of latest, e.g. :0.10.0
 
-# Run (persist workspace + sandbox)
 docker run -d \
   --name golemcore-bot \
   --shm-size=256m \
@@ -58,22 +55,24 @@ docker run -d \
 
 docker logs -f golemcore-bot
 
-# Open dashboard
-# http://localhost:8080/dashboard
+# Open http://localhost:8080/dashboard
 # On first start, check logs for the temporary admin password.
-# Optional: preset dashboard password via BOT_DASHBOARD_ADMIN_PASSWORD.
-# Configure LLM provider API keys and API type in Settings (stored in preferences/runtime-config.json).
 ```
+
+Open `http://localhost:8080/dashboard`, sign in with the temporary admin password from the logs, then configure your LLM providers in Settings.
 
 Why the extra Docker flags?
 - `--shm-size=256m` and `--cap-add=SYS_ADMIN` are needed for the **Browser tool** (Playwright/Chromium) in containers.
   See **[Configuration → Browser Tool](docs/CONFIGURATION.md#browser-tool)**.
 
-### Telegram (optional)
+### Optional next steps
 
-Enable Telegram from the dashboard (Settings → Telegram). The token and allowlist are stored in `preferences/runtime-config.json`.
+- Enable Telegram in Settings for channel-based chat.
+- Install plugins for browser, search, mail, weather, voice, or RAG-backed workflows.
+- Connect MCP-backed skills and tool servers.
+- Join Hive for control-plane coordination and inspection.
 
-More options (Compose, production, systemd): **[Deployment](docs/DEPLOYMENT.md)**.
+Need a local build, Compose setup, or production deployment path? See **[Quick Start](docs/QUICKSTART.md)** and **[Deployment](docs/DEPLOYMENT.md)**.
 
 ---
 
@@ -136,27 +135,30 @@ while also letting the bot start cleanly from a native local bundle.
 
 ---
 
-## Minimal configuration (README keeps only the essentials)
+## First-run setup
 
-### Required
+1. Open the dashboard.
+2. Add at least one LLM provider key in Settings.
+3. Verify the storage and sandbox volumes are mounted so sessions, skills, and runtime config persist.
+4. Optionally enable Telegram, install plugins, connect MCP-backed skills, or join Hive.
 
-- Configure at least one LLM provider API key and API type in `preferences/runtime-config.json` (recommended: use the dashboard).
-- In Docker, set `STORAGE_PATH` to a mounted volume so configuration and sessions persist.
-
-Full reference (runtime config fields, storage layout, browser/sandbox notes): **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
+For runtime config details, storage layout, and browser or sandbox notes, see **[Configuration](docs/CONFIGURATION.md)**.
 
 ---
 
-## Documentation (recommended path)
+## Documentation
 
 1. **[Quick Start](docs/QUICKSTART.md)**
-2. **[Skills](docs/SKILLS.md)** (SKILL.md format, variables, pipelines, MCP)
-3. **[Model Routing](docs/MODEL_ROUTING.md)** (tiers)
-4. **[Auto Mode](docs/AUTO_MODE.md)**
-5. **[Memory](docs/MEMORY.md)** + **[RAG](docs/RAG.md)**
-6. **[Webhooks](docs/WEBHOOKS.md)** (HTTP triggers, custom mappings, callbacks)
-7. **[Deployment](docs/DEPLOYMENT.md)**
-8. **[Dashboard](docs/DASHBOARD.md)**
+2. **[Skills](docs/SKILLS.md)**
+3. **[Tools](docs/TOOLS.md)**
+4. **[MCP Integration](docs/MCP.md)**
+5. **[Model Routing](docs/MODEL_ROUTING.md)**
+6. **[Memory](docs/MEMORY.md)** + **[RAG](docs/RAG.md)**
+7. **[Auto Mode](docs/AUTO_MODE.md)** + **[Delayed Actions Design](docs/DELAYED_ACTIONS.md)**
+8. **[Hive Integration](docs/HIVE_INTEGRATION.md)**
+9. **[Webhooks](docs/WEBHOOKS.md)**
+10. **[Deployment](docs/DEPLOYMENT.md)**
+11. **[Dashboard](docs/DASHBOARD.md)**
 
 ---
 

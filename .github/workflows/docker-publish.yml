@@ -13,7 +13,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  PLUGIN_API_REPO_REF: 5901f7b3926cdc6970b86d2f42241ed2ad82340c
+  PLUGIN_API_REPO_REF: 67cd0d10a997f494dcaf4686438e5c6bcfc8ac65
 
 jobs:
   test:
@@ -52,12 +52,61 @@ jobs:
       - name: Build and run tests
         run: ./mvnw clean verify -DskipGitHooks=true
 
-      - name: Upload coverage to Codecov
+      - name: Check Codecov token availability
         if: always() && matrix.arch == 'amd64'
-        uses: codecov/codecov-action@v5
+        id: codecov-token
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [[ -n "${CODECOV_TOKEN}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Upload coverage to Codecov
+        if: always() && matrix.arch == 'amd64' && steps.codecov-token.outputs.available == 'true'
+        uses: codecov/codecov-action@v6
         with:
           files: ./target/site/jacoco/jacoco.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+          handle_no_reports_found: true
+
+      - name: Skip Codecov upload (missing CODECOV_TOKEN)
+        if: always() && matrix.arch == 'amd64' && steps.codecov-token.outputs.available != 'true'
+        run: echo "Skipping Codecov upload because CODECOV_TOKEN is unavailable for this event."
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Checkout plugin APIs
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+
+      - name: Run integration test suite
+        run: >
+          ./mvnw -B -ntp test
+          -Dtest=DashboardSecurityIntegrationTest,RuntimeSettingsHttpIntegrationTest,HiveSdlcDefaultSettingsIntegrationTest
+          -DskipGitHooks=true
 
   code-quality:
     name: Code Quality
@@ -98,10 +147,10 @@ jobs:
         run: ./mvnw formatter:validate -DskipGitHooks=true
 
       - name: Run PMD
-        run: ./mvnw pmd:check -DskipGitHooks=true
+        run: ./mvnw -P strict pmd:check -DskipGitHooks=true
 
       - name: Run SpotBugs
-        run: ./mvnw compile spotbugs:check -DskipGitHooks=true
+        run: ./mvnw -P strict compile spotbugs:check -DskipGitHooks=true
 
       - name: Upload PMD report
         if: always()
@@ -120,7 +169,7 @@ jobs:
   sonar:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, integration-tests]
 
     steps:
       - name: Check Sonar token availability
@@ -176,7 +225,7 @@ jobs:
   build-app-images:
     name: App (${{ matrix.arch }})
     runs-on: ubuntu-latest
-    needs: [test, code-quality]
+    needs: [test, integration-tests, code-quality]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     permissions:
@@ -215,17 +264,17 @@ jobs:
           APP_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           ARCH="${{ matrix.arch }}"
 
-          echo "app-image=${APP_IMAGE}" >> $GITHUB_OUTPUT
           echo "sha-arch-tag=${SHORT_SHA}-${ARCH}" >> $GITHUB_OUTPUT
+          echo "app-image=${APP_IMAGE}:${SHORT_SHA}-${ARCH}" >> $GITHUB_OUTPUT
 
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION="${{ github.ref_name }}"
             VERSION="${VERSION#v}"
-            echo "jib-tags=${SHORT_SHA}-${ARCH},latest-${ARCH},${VERSION}-${ARCH}" >> $GITHUB_OUTPUT
+            echo "jib-tags=latest-${ARCH},${VERSION}-${ARCH}" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "jib-tags=${SHORT_SHA}-${ARCH},latest-${ARCH}" >> $GITHUB_OUTPUT
+            echo "jib-tags=latest-${ARCH}" >> $GITHUB_OUTPUT
           else
-            echo "jib-tags=${SHORT_SHA}-${ARCH},dev-latest-${ARCH}" >> $GITHUB_OUTPUT
+            echo "jib-tags=dev-latest-${ARCH}" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push app image (${{ matrix.arch }})
@@ -253,7 +302,7 @@ jobs:
 
     steps:
       - name: Log in to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -293,6 +342,49 @@ jobs:
               "${IMAGE}:dev-latest-amd64" \
               "${IMAGE}:dev-latest-arm64"
             docker manifest push "${IMAGE}:dev-latest"
+          fi
+
+      - name: Verify published manifest tags
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          verify_manifest() {
+            local reference="$1"
+            local raw
+
+            raw="$(docker buildx imagetools inspect "${reference}" --raw)"
+
+            if ! grep -Eq '"mediaType"[[:space:]]*:[[:space:]]*"(application/vnd.docker.distribution.manifest.list.v2\+json|application/vnd.oci.image.index.v1\+json)"' <<< "${raw}"; then
+              echo "Expected a multi-arch manifest list for ${reference}, but found:"
+              echo "${raw}"
+              exit 1
+            fi
+
+            if ! grep -Eq '"architecture"[[:space:]]*:[[:space:]]*"amd64"' <<< "${raw}"; then
+              echo "Missing linux/amd64 entry in ${reference}"
+              echo "${raw}"
+              exit 1
+            fi
+
+            if ! grep -Eq '"architecture"[[:space:]]*:[[:space:]]*"arm64"' <<< "${raw}"; then
+              echo "Missing linux/arm64 entry in ${reference}"
+              echo "${raw}"
+              exit 1
+            fi
+          }
+
+          verify_manifest "${IMAGE}:${SHORT_SHA}"
+
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+            verify_manifest "${IMAGE}:${VERSION}"
+            verify_manifest "${IMAGE}:latest"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            verify_manifest "${IMAGE}:latest"
+          else
+            verify_manifest "${IMAGE}:dev-latest"
           fi
 
       - name: Job Summary

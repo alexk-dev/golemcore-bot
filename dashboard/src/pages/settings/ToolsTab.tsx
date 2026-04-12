@@ -5,7 +5,7 @@ import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { useUpdateTools } from '../../hooks/useSettings';
-import type { ToolsConfig } from '../../api/settings';
+import type { ToolsConfig } from '../../api/settingsTypes';
 import { ShellEnvironmentVariablesCard } from './ShellEnvironmentVariablesCard';
 
 type ToolsMode = 'filesystem' | 'shell' | 'automation' | 'goals';

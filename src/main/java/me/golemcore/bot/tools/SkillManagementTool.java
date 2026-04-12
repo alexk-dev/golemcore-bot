@@ -18,15 +18,17 @@
 
 package me.golemcore.bot.tools;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.application.skills.SkillMarketplaceService;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SkillDocumentService;
 import me.golemcore.bot.port.outbound.StoragePort;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -42,36 +44,9 @@ import java.util.stream.Collectors;
  * <p>
  * Allows the LLM to dynamically create new skills on behalf of the user. Skills
  * are stored as SKILL.md files with YAML frontmatter in the skills workspace.
- *
- * <p>
- * Operations:
- * <ul>
- * <li>create_skill - Create a new skill with name, description, and content
- * <li>list_skills - List all available skills
- * <li>get_skill - Get skill content by name
- * <li>delete_skill - Delete a skill by name
- * </ul>
- *
- * <p>
- * Validation:
- * <ul>
- * <li>Name: lowercase alphanumeric with hyphens, max 50 chars (e.g.,
- * "greeting", "code-review")
- * <li>Description: max 200 chars
- * <li>Content: max 50K chars
- * </ul>
- *
- * <p>
- * After create/delete, calls
- * {@link me.golemcore.bot.domain.component.SkillComponent#reload()} to refresh
- * the skill registry.
- *
- * <p>
- * Configuration: {@code bot.tools.skill-management.enabled}
- *
- * @see me.golemcore.bot.domain.service.SkillService
  */
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class SkillManagementTool implements ToolComponent {
 
@@ -93,19 +68,11 @@ public class SkillManagementTool implements ToolComponent {
     private static final int MAX_DESCRIPTION_LENGTH = 200;
     private static final int MAX_CONTENT_LENGTH = 50_000;
 
+    private final RuntimeConfigService runtimeConfigService;
     private final StoragePort storagePort;
     private final SkillComponent skillComponent;
-    private final RuntimeConfigService runtimeConfigService;
     private final SkillMarketplaceService skillMarketplaceService;
-
-    public SkillManagementTool(RuntimeConfigService runtimeConfigService, StoragePort storagePort,
-            SkillComponent skillComponent, SkillMarketplaceService skillMarketplaceService) {
-        this.runtimeConfigService = runtimeConfigService;
-        this.storagePort = storagePort;
-        this.skillComponent = skillComponent;
-        this.skillMarketplaceService = skillMarketplaceService;
-        log.info("SkillManagementTool initialized");
-    }
+    private final SkillDocumentService skillDocumentService;
 
     @Override
     public boolean isEnabled() {
@@ -166,9 +133,9 @@ public class SkillManagementTool implements ToolComponent {
                 case OP_DELETE_SKILL -> deleteSkill(parameters);
                 default -> ToolResult.failure("Unknown operation: " + operation);
                 };
-            } catch (Exception e) {
-                log.error("[SkillManagement] Error: {}", e.getMessage(), e);
-                return ToolResult.failure("Error: " + e.getMessage());
+            } catch (Exception ex) {
+                log.error("[SkillManagement] Error: {}", ex.getMessage(), ex);
+                return ToolResult.failure("Error: " + ex.getMessage());
             }
         });
     }
@@ -178,7 +145,6 @@ public class SkillManagementTool implements ToolComponent {
         String description = (String) parameters.get(PARAM_DESCRIPTION);
         String content = (String) parameters.get(PARAM_CONTENT);
 
-        // Validate required fields
         if (name == null || name.isBlank()) {
             return ToolResult.failure("Missing required parameter: name");
         }
@@ -189,43 +155,43 @@ public class SkillManagementTool implements ToolComponent {
             return ToolResult.failure("Missing required parameter: content");
         }
 
-        // Validate name format
-        if (!NAME_PATTERN.matcher(name).matches()) {
+        String normalizedName = name.trim();
+        String normalizedDescription = description.trim();
+
+        if (!NAME_PATTERN.matcher(normalizedName).matches()) {
             return ToolResult
                     .failure("Invalid skill name: must be lowercase alphanumeric with hyphens (e.g. 'my-skill')");
         }
-        if (name.length() > MAX_NAME_LENGTH) {
+        if (normalizedName.length() > MAX_NAME_LENGTH) {
             return ToolResult.failure("Skill name too long (max " + MAX_NAME_LENGTH + " characters)");
         }
-        if (description.length() > MAX_DESCRIPTION_LENGTH) {
+        if (normalizedDescription.length() > MAX_DESCRIPTION_LENGTH) {
             return ToolResult.failure("Description too long (max " + MAX_DESCRIPTION_LENGTH + " characters)");
         }
         if (content.length() > MAX_CONTENT_LENGTH) {
             return ToolResult.failure("Content too long (max " + MAX_CONTENT_LENGTH + " characters)");
         }
 
-        // Check if skill already exists — prevent accidental overwrite
-        Optional<Skill> existing = skillComponent.findByName(name);
+        Optional<Skill> existing = skillComponent.findByName(normalizedName);
         if (existing.isPresent()) {
-            return ToolResult
-                    .failure("Skill '" + name + "' already exists. Delete it first or choose a different name.");
+            return ToolResult.failure(
+                    "Skill '" + normalizedName + "' already exists. Delete it first or choose a different name.");
         }
 
-        // Format as SKILL.md with YAML frontmatter
-        String skillMd = formatSkillMd(name, description, content);
+        String skillDocument = skillDocumentService.normalizeAndRender(content,
+                Map.of("name", normalizedName, "description", normalizedDescription));
 
-        // Write to storage
-        String path = name + "/SKILL.md";
+        String path = normalizedName + "/SKILL.md";
         try {
-            storagePort.putText(SKILLS_DIR, path, skillMd).join();
+            storagePort.putText(SKILLS_DIR, path, skillDocument).join();
             skillComponent.reload();
-            log.info("[SkillManagement] Created skill: {}", name);
-            return ToolResult.success("Skill '" + name + "' created successfully.", Map.of(
-                    PARAM_NAME, name,
+            log.info("[SkillManagement] Created skill: {}", normalizedName);
+            return ToolResult.success("Skill '" + normalizedName + "' created successfully.", Map.of(
+                    PARAM_NAME, normalizedName,
                     "path", SKILLS_DIR + "/" + path));
-        } catch (Exception e) {
-            log.error("[SkillManagement] Failed to create skill: {}", name, e);
-            return ToolResult.failure("Failed to create skill: " + e.getMessage());
+        } catch (Exception ex) {
+            log.error("[SkillManagement] Failed to create skill: {}", normalizedName, ex);
+            return ToolResult.failure("Failed to create skill: " + ex.getMessage());
         }
     }
 
@@ -237,7 +203,7 @@ public class SkillManagementTool implements ToolComponent {
         }
 
         String list = skills.stream()
-                .map(s -> String.format("- %s: %s", s.getName(), s.getDescription()))
+                .map(skill -> String.format("- %s: %s", skill.getName(), skill.getDescription()))
                 .collect(Collectors.joining("\n"));
 
         return ToolResult.success("Available skills (" + skills.size() + "):\n" + list, Map.of(
@@ -246,71 +212,45 @@ public class SkillManagementTool implements ToolComponent {
     }
 
     private ToolResult getSkill(Map<String, Object> parameters) {
-        String name = (String) parameters.get(PARAM_NAME);
-        if (name == null || name.isBlank()) {
-            return ToolResult.failure("Missing required parameter: name");
-        }
-
-        Optional<Skill> skill = skillComponent.findByName(name);
-        if (skill.isEmpty()) {
-            return ToolResult.failure("Skill not found: " + name);
-        }
-
-        Skill s = skill.get();
-        String output = String.format("Skill: %s%nDescription: %s%nAvailable: %s%n%n%s",
-                s.getName(), s.getDescription(), s.isAvailable(), s.getContent());
-
-        return ToolResult.success(output, Map.of(
-                PARAM_NAME, s.getName(),
-                PARAM_DESCRIPTION, s.getDescription(),
-                "available", s.isAvailable()));
+        return requireSkillByName(parameters).map(resolvedSkill -> {
+            String output = String.format("Skill: %s%nDescription: %s%nAvailable: %s%n%n%s",
+                    resolvedSkill.getName(), resolvedSkill.getDescription(), resolvedSkill.isAvailable(),
+                    resolvedSkill.getContent());
+            return ToolResult.success(output, Map.of(
+                    PARAM_NAME, resolvedSkill.getName(),
+                    PARAM_DESCRIPTION, resolvedSkill.getDescription(),
+                    "available", resolvedSkill.isAvailable()));
+        }).orElseGet(() -> lookupFailure(parameters));
     }
 
     private ToolResult deleteSkill(Map<String, Object> parameters) {
+        return requireSkillByName(parameters).map(skill -> {
+            try {
+                skillMarketplaceService.deleteManagedSkill(skill);
+                skillComponent.reload();
+                log.info("[SkillManagement] Deleted skill: {}", skill.getName());
+                return ToolResult.success("Skill '" + skill.getName() + "' deleted successfully.");
+            } catch (Exception ex) {
+                log.error("[SkillManagement] Failed to delete skill: {}", skill.getName(), ex);
+                return ToolResult.failure("Failed to delete skill: " + ex.getMessage());
+            }
+        }).orElseGet(() -> lookupFailure(parameters));
+    }
+
+    private Optional<Skill> requireSkillByName(Map<String, Object> parameters) {
+        String name = (String) parameters.get(PARAM_NAME);
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        return skillComponent.findByName(name);
+    }
+
+    private ToolResult lookupFailure(Map<String, Object> parameters) {
         String name = (String) parameters.get(PARAM_NAME);
         if (name == null || name.isBlank()) {
             return ToolResult.failure("Missing required parameter: name");
         }
-
-        // Check if skill exists
-        Optional<Skill> existing = skillComponent.findByName(name);
-        if (existing.isEmpty()) {
-            return ToolResult.failure("Skill not found: " + name);
-        }
-
-        // Delete from storage
-        try {
-            skillMarketplaceService.deleteManagedSkill(existing.get());
-            skillComponent.reload();
-            log.info("[SkillManagement] Deleted skill: {}", name);
-            return ToolResult.success("Skill '" + name + "' deleted successfully.");
-        } catch (Exception e) {
-            log.error("[SkillManagement] Failed to delete skill: {}", name, e);
-            return ToolResult.failure("Failed to delete skill: " + e.getMessage());
-        }
+        return ToolResult.failure("Skill not found: " + name);
     }
 
-    static String formatSkillMd(String name, String description, String content) {
-        // YAML-escape values to prevent injection via newlines or special chars
-        String safeName = escapeYamlValue(name);
-        String safeDescription = escapeYamlValue(description);
-        return "---\n" +
-                "name: " + safeName + "\n" +
-                "description: " + safeDescription + "\n" +
-                "---\n\n" +
-                content + "\n";
-    }
-
-    private static String escapeYamlValue(String value) {
-        if (value == null)
-            return "\"\"";
-        // Quote if value contains YAML-special characters or newlines
-        if (value.contains("\n") || value.contains(":") || value.contains("#")
-                || value.contains("\"") || value.contains("'")
-                || value.startsWith("{") || value.startsWith("[")
-                || value.startsWith("---")) {
-            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"";
-        }
-        return value;
-    }
 }

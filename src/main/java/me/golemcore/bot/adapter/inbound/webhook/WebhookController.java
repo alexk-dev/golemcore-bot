@@ -23,8 +23,13 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.service.TraceContextSupport;
+import me.golemcore.bot.domain.service.TraceNamingSupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.security.InputSanitizer;
 import lombok.RequiredArgsConstructor;
@@ -124,7 +129,7 @@ public class WebhookController {
             String sanitizedText = inputSanitizer.sanitize(request.getText());
             String safeText = wrapExternal(sanitizedText);
 
-            Message message = buildMessage(chatId, safeText, request.getMetadata());
+            Message message = buildMessage(chatId, safeText, request.getMetadata(), TraceNamingSupport.WEBHOOK_WAKE);
             eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
             log.info("[Webhook] Wake event accepted for chatId={}", chatId);
@@ -172,6 +177,12 @@ public class WebhookController {
             int timeout = request.getTimeoutSeconds() > 0
                     ? request.getTimeoutSeconds()
                     : config.getDefaultTimeoutSeconds();
+            String modelTier;
+            try {
+                modelTier = normalizeOptionalModelTier(request.getModel(), "'model'");
+            } catch (IllegalArgumentException e) {
+                return badRequest(e.getMessage());
+            }
 
             String sanitizedMessage = inputSanitizer.sanitize(request.getMessage());
             String safeMessage = wrapExternal(sanitizedMessage);
@@ -180,13 +191,13 @@ public class WebhookController {
                     request.getMetadata() != null ? request.getMetadata() : Map.of());
             metadata.put("webhook.runId", runId);
             metadata.put("webhook.timeoutSeconds", timeout);
-            if (request.getModel() != null) {
-                metadata.put("webhook.modelTier", request.getModel());
+            if (modelTier != null) {
+                metadata.put("webhook.modelTier", modelTier);
             }
             if (request.isDeliver()) {
-                metadata.put("webhook.deliver", true);
-                metadata.put("webhook.deliver.channel", request.getChannel());
-                metadata.put("webhook.deliver.to", request.getTo());
+                metadata.put(ContextAttributes.WEBHOOK_DELIVER, true);
+                metadata.put(ContextAttributes.WEBHOOK_DELIVER_CHANNEL, request.getChannel());
+                metadata.put(ContextAttributes.WEBHOOK_DELIVER_TO, request.getTo());
             }
 
             String deliveryId = null;
@@ -200,12 +211,12 @@ public class WebhookController {
                         runId,
                         chatId,
                         request.getCallbackUrl(),
-                        request.getModel());
+                        modelTier);
             }
 
-            channelAdapter.registerPendingRun(chatId, runId, request.getCallbackUrl(), request.getModel(), deliveryId);
+            channelAdapter.registerPendingRun(chatId, runId, request.getCallbackUrl(), modelTier, deliveryId);
 
-            Message message = buildMessage(chatId, safeMessage, metadata);
+            Message message = buildMessage(chatId, safeMessage, metadata, TraceNamingSupport.WEBHOOK_AGENT);
             eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
             log.info("[Webhook] Agent run accepted: runId={}, chatId={}, name={}",
@@ -255,7 +266,11 @@ public class WebhookController {
             String safeText = wrapExternal(sanitizedText);
 
             if (ACTION_AGENT.equals(mapping.getAction())) {
-                return dispatchAsAgent(mapping, safeText, config);
+                try {
+                    return dispatchAsAgent(mapping, safeText, config);
+                } catch (IllegalArgumentException e) {
+                    return badRequest(e.getMessage());
+                }
             }
 
             return dispatchAsWake(mapping, safeText);
@@ -268,7 +283,7 @@ public class WebhookController {
         String chatId = "hook:" + mapping.getName();
 
         Map<String, Object> metadata = Map.of("webhook.mapping", mapping.getName());
-        Message message = buildMessage(chatId, text, metadata);
+        Message message = buildMessage(chatId, text, metadata, TraceNamingSupport.WEBHOOK_WAKE);
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
         log.info("[Webhook] Custom wake accepted: mapping={}, chatId={}", mapping.getName(), chatId);
@@ -280,23 +295,24 @@ public class WebhookController {
 
         String runId = UUID.randomUUID().toString();
         String chatId = "hook:" + mapping.getName() + ":" + UUID.randomUUID();
+        String modelTier = normalizeOptionalModelTier(mapping.getModel(), "Webhook mapping model");
 
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("webhook.runId", runId);
         metadata.put("webhook.mapping", mapping.getName());
         metadata.put("webhook.timeoutSeconds", config.getDefaultTimeoutSeconds());
-        if (mapping.getModel() != null) {
-            metadata.put("webhook.modelTier", mapping.getModel());
+        if (modelTier != null) {
+            metadata.put("webhook.modelTier", modelTier);
         }
         if (mapping.isDeliver()) {
-            metadata.put("webhook.deliver", true);
-            metadata.put("webhook.deliver.channel", mapping.getChannel());
-            metadata.put("webhook.deliver.to", mapping.getTo());
+            metadata.put(ContextAttributes.WEBHOOK_DELIVER, true);
+            metadata.put(ContextAttributes.WEBHOOK_DELIVER_CHANNEL, mapping.getChannel());
+            metadata.put(ContextAttributes.WEBHOOK_DELIVER_TO, mapping.getTo());
         }
 
-        channelAdapter.registerPendingRun(chatId, runId, null, mapping.getModel(), null);
+        channelAdapter.registerPendingRun(chatId, runId, null, modelTier, null);
 
-        Message message = buildMessage(chatId, text, metadata);
+        Message message = buildMessage(chatId, text, metadata, TraceNamingSupport.WEBHOOK_AGENT);
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
         log.info("[Webhook] Custom agent accepted: mapping={}, runId={}, chatId={}",
@@ -305,7 +321,11 @@ public class WebhookController {
                 .body(WebhookResponse.accepted(runId, chatId));
     }
 
-    private Message buildMessage(String chatId, String content, Map<String, Object> metadata) {
+    private Message buildMessage(String chatId, String content, Map<String, Object> metadata, String traceName) {
+        Map<String, Object> tracedMetadata = TraceContextSupport.ensureRootMetadata(
+                metadata,
+                TraceSpanKind.INGRESS,
+                traceName);
         return Message.builder()
                 .id(UUID.randomUUID().toString())
                 .channelType(CHANNEL_TYPE)
@@ -313,9 +333,20 @@ public class WebhookController {
                 .senderId("webhook")
                 .role("user")
                 .content(content)
-                .metadata(metadata)
+                .metadata(tracedMetadata)
                 .timestamp(Instant.now())
                 .build();
+    }
+
+    private String normalizeOptionalModelTier(String modelTier, String fieldName) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(modelTier);
+        if (normalizedTier == null) {
+            return null;
+        }
+        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
+            throw new IllegalArgumentException(fieldName + " must be a known tier id");
+        }
+        return normalizedTier;
     }
 
     private <T> T parseBody(byte[] body, Class<T> type) {

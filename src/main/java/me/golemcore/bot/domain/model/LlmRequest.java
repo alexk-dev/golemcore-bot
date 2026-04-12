@@ -53,7 +53,19 @@ public class LlmRequest {
     @Builder.Default
     private boolean stream = false;
 
+    /**
+     * Internal adapter hint: do not inline binary tool attachment data into the
+     * request. Text placeholders may still be preserved.
+     */
+    @Builder.Default
+    private boolean disableToolAttachmentHydration = false;
+
     private String sessionId;
+    private String traceId;
+    private String traceSpanId;
+    private String traceParentSpanId;
+    private String traceRootKind;
+    private String modelTier;
 
     /**
      * Reasoning effort for OpenAI o-series models (o1, o3, gpt-5.1, etc.) Values:

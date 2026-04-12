@@ -26,13 +26,16 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
+import me.golemcore.bot.domain.model.catalog.ModelReasoningLevel;
+import me.golemcore.bot.domain.model.catalog.ModelReasoningProfile;
+import me.golemcore.bot.port.outbound.ModelConfigPort;
+import me.golemcore.bot.port.outbound.ModelCatalogAdminPort;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -44,15 +47,15 @@ import java.util.stream.Collectors;
  * Service for loading and managing model configurations from workspace storage.
  *
  * <p>
- * On first run, copies bundled {@code classpath:models.json} to workspace
- * ({@code models/models.json} via StoragePort). Subsequent loads read from
- * workspace, allowing UI edits to persist.
+ * Models are populated via discovery (provider APIs) and UI edits. On first run
+ * the catalog is empty until the user adds models through discovery or manual
+ * configuration.
  *
  * @since 1.0
  */
 @Service
 @Slf4j
-public class ModelConfigService {
+public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPort {
 
     private static final String MODELS_DIR = "models";
     private static final String CONFIG_FILE = "models.json";
@@ -73,7 +76,6 @@ public class ModelConfigService {
 
     private void loadConfig() {
         try {
-            // Try workspace first
             Boolean exists = storagePort.exists(MODELS_DIR, CONFIG_FILE).join();
             if (Boolean.TRUE.equals(exists)) {
                 String json = storagePort.getText(MODELS_DIR, CONFIG_FILE).join();
@@ -87,28 +89,7 @@ public class ModelConfigService {
             log.warn("[ModelConfig] Failed to load from workspace: {}", e.getMessage());
         }
 
-        // Fall back to classpath and copy to workspace
-        loadFromClasspathAndCopy();
-    }
-
-    private void loadFromClasspathAndCopy() {
-        try {
-            ClassPathResource resource = new ClassPathResource(CONFIG_FILE);
-            if (resource.exists()) {
-                try (InputStream is = resource.getInputStream()) {
-                    String json = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                    config = objectMapper.readValue(json, ModelsConfig.class);
-                    log.info("[ModelConfig] Loaded from classpath: {} models", config.getModels().size());
-                    // Copy to workspace for future edits
-                    saveConfig();
-                    return;
-                }
-            }
-        } catch (IOException e) {
-            log.warn("[ModelConfig] Failed to load from classpath: {}", e.getMessage());
-        }
-
-        log.warn("[ModelConfig] No models.json found, using empty config");
+        log.info("[ModelConfig] No models.json in workspace, starting with empty catalog");
         config = new ModelsConfig();
     }
 
@@ -130,12 +111,18 @@ public class ModelConfigService {
      * Save the full models config to workspace.
      */
     public void saveConfig() {
+        persistConfig(config);
+    }
+
+    private void persistConfig(ModelsConfig candidateConfig) {
         try {
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(config);
-            storagePort.putText(MODELS_DIR, CONFIG_FILE, json).join();
-            log.info("[ModelConfig] Saved to workspace: {} models", config.getModels().size());
+            ModelsConfig snapshot = copyConfig(candidateConfig);
+            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(snapshot);
+            storagePort.putTextAtomic(MODELS_DIR, CONFIG_FILE, json, true).join();
+            config = snapshot;
+            log.info("[ModelConfig] Saved to workspace: {} models", snapshot.getModels().size());
         } catch (Exception e) {
-            log.error("[ModelConfig] Failed to save: {}", e.getMessage());
+            throw new IllegalStateException("Failed to save models config", e);
         }
     }
 
@@ -143,17 +130,56 @@ public class ModelConfigService {
      * Add or update a single model definition.
      */
     public void saveModel(String id, ModelSettings settings) {
-        config.getModels().put(id, settings);
-        saveConfig();
+        saveModel(id, null, settings);
+    }
+
+    /**
+     * Add or update a single model definition, optionally migrating it from a
+     * previous id.
+     */
+    public void saveModel(String id, String previousId, ModelSettings settings) {
+        ModelsConfig nextConfig = copyConfig(config);
+        if (previousId != null && !previousId.isBlank() && !previousId.trim().equals(id)) {
+            nextConfig.getModels().remove(previousId.trim());
+        }
+        nextConfig.getModels().put(id, settings);
+        persistConfig(nextConfig);
+    }
+
+    public void saveModelStrict(String id, ModelSettings settings) {
+        saveModelStrict(id, null, settings);
+    }
+
+    public void saveModelStrict(String id, String previousId, ModelSettings settings) {
+        saveModel(id, previousId, settings);
+    }
+
+    public boolean hasModel(String id) {
+        return config.getModels().containsKey(id);
+    }
+
+    public ModelSettings copyModelSettings(ModelSettings source) {
+        ModelSettings copy = new ModelSettings();
+        if (source == null) {
+            return copy;
+        }
+        copy.setProvider(source.getProvider());
+        copy.setDisplayName(source.getDisplayName());
+        copy.setSupportsVision(source.isSupportsVision());
+        copy.setSupportsTemperature(source.isSupportsTemperature());
+        copy.setMaxInputTokens(source.getMaxInputTokens());
+        copy.setReasoning(copyReasoningConfig(source.getReasoning()));
+        return copy;
     }
 
     /**
      * Delete a model definition.
      */
     public boolean deleteModel(String id) {
-        ModelSettings removed = config.getModels().remove(id);
+        ModelsConfig nextConfig = copyConfig(config);
+        ModelSettings removed = nextConfig.getModels().remove(id);
         if (removed != null) {
-            saveConfig();
+            persistConfig(nextConfig);
             return true;
         }
         return false;
@@ -163,15 +189,61 @@ public class ModelConfigService {
      * Replace the entire models config.
      */
     public void replaceConfig(ModelsConfig newConfig) {
-        this.config = newConfig;
-        saveConfig();
+        persistConfig(copyConfig(newConfig));
+    }
+
+    @Override
+    public HivePolicyModelCatalog getCatalogSnapshot() {
+        Map<String, HivePolicyModelCatalog.HivePolicyModelConfig> models = new LinkedHashMap<>();
+        for (Map.Entry<String, ModelSettings> entry : config.getModels().entrySet()) {
+            models.put(entry.getKey(), toPolicyModelConfig(entry.getValue()));
+        }
+        HivePolicyModelCatalog.HivePolicyModelConfig defaults = config.getDefaults() != null
+                ? toPolicyModelConfig(config.getDefaults())
+                : null;
+        return HivePolicyModelCatalog.builder()
+                .models(models)
+                .defaults(defaults)
+                .build();
+    }
+
+    @Override
+    public void replaceCatalogSnapshot(HivePolicyModelCatalog catalogSnapshot) {
+        ModelsConfig newConfig = new ModelsConfig();
+        if (catalogSnapshot != null && catalogSnapshot.getModels() != null) {
+            for (Map.Entry<String, HivePolicyModelCatalog.HivePolicyModelConfig> entry : catalogSnapshot.getModels()
+                    .entrySet()) {
+                newConfig.getModels().put(entry.getKey(), toModelSettings(entry.getValue()));
+            }
+        }
+        if (catalogSnapshot != null && catalogSnapshot.getDefaults() != null) {
+            newConfig.setDefaults(toModelSettings(catalogSnapshot.getDefaults()));
+        } else if (catalogSnapshot != null && catalogSnapshot.getDefaultModel() != null
+                && newConfig.getModels().containsKey(catalogSnapshot.getDefaultModel())) {
+            newConfig.setDefaults(
+                    toDefaultSettings(newConfig.getModels().get(catalogSnapshot.getDefaultModel())));
+        }
+        replaceConfig(newConfig);
+    }
+
+    private ModelsConfig copyConfig(ModelsConfig source) {
+        if (source == null) {
+            return new ModelsConfig();
+        }
+        return objectMapper.convertValue(source, ModelsConfig.class);
     }
 
     /**
-     * Get settings for a model. Tries exact match first, then prefix match, then
-     * defaults.
+     * Get settings for a model. Tries exact match first, then stripped-prefix exact
+     * match, then prefix match. Throws if the model is not found in the catalog —
+     * no silent fallback to defaults.
      */
-    public ModelSettings getModelSettings(String modelName) {
+    @Override
+    public ModelCatalogEntry getModelSettings(String modelName) {
+        return toCatalogEntry(resolveModelSettings(modelName));
+    }
+
+    private ModelSettings resolveModelSettings(String modelName) {
         if (modelName == null) {
             return config.getDefaults();
         }
@@ -196,29 +268,34 @@ public class ModelConfigService {
                 .filter(entry -> name.startsWith(entry.getKey()))
                 .max(java.util.Comparator.comparingInt(e -> e.getKey().length()))
                 .map(Map.Entry::getValue)
-                .orElse(config.getDefaults());
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Model '" + modelName
+                                + "' is not in the catalog — add it via discovery or manual configuration"));
     }
 
     /**
      * Get all model configurations.
      */
-    public Map<String, ModelSettings> getAllModels() {
-        return config.getModels();
+    @Override
+    public Map<String, ModelCatalogEntry> getAllModels() {
+        return toCatalogEntries(config.getModels());
     }
 
     /**
      * Get provider for a model.
      */
+    @Override
     public String getProvider(String modelName) {
-        return getModelSettings(modelName).getProvider();
+        return resolveModelSettings(modelName).getProvider();
     }
 
     /**
      * Check if model requires reasoning parameter (has reasoning levels
      * configured).
      */
+    @Override
     public boolean isReasoningRequired(String modelName) {
-        ModelSettings settings = getModelSettings(modelName);
+        ModelSettings settings = resolveModelSettings(modelName);
         return settings.getReasoning() != null
                 && settings.getReasoning().getLevels() != null
                 && !settings.getReasoning().getLevels().isEmpty();
@@ -227,23 +304,26 @@ public class ModelConfigService {
     /**
      * Check if model supports temperature.
      */
+    @Override
     public boolean supportsTemperature(String modelName) {
-        return getModelSettings(modelName).isSupportsTemperature();
+        return resolveModelSettings(modelName).isSupportsTemperature();
     }
 
     /**
      * Check if model supports vision/image inputs.
      */
+    @Override
     public boolean supportsVision(String modelName) {
-        return getModelSettings(modelName).isSupportsVision();
+        return resolveModelSettings(modelName).isSupportsVision();
     }
 
     /**
      * Get maximum input tokens for a model. For reasoning models, returns the
      * maximum across all reasoning levels as a safe fallback.
      */
+    @Override
     public int getMaxInputTokens(String modelName) {
-        ModelSettings settings = getModelSettings(modelName);
+        ModelSettings settings = resolveModelSettings(modelName);
         if (settings.getReasoning() != null && settings.getReasoning().getLevels() != null
                 && !settings.getReasoning().getLevels().isEmpty()) {
             return settings.getReasoning().getLevels().values().stream()
@@ -258,11 +338,12 @@ public class ModelConfigService {
      * Get maximum input tokens for a model at a specific reasoning level. Falls
      * back to model-level maxInputTokens if the level is not found.
      */
+    @Override
     public int getMaxInputTokens(String modelName, String reasoningLevel) {
         if (reasoningLevel == null) {
             return getMaxInputTokens(modelName);
         }
-        ModelSettings settings = getModelSettings(modelName);
+        ModelSettings settings = resolveModelSettings(modelName);
         if (settings.getReasoning() != null && settings.getReasoning().getLevels() != null) {
             ReasoningLevelConfig levelConfig = settings.getReasoning().getLevels().get(reasoningLevel);
             if (levelConfig != null) {
@@ -276,7 +357,7 @@ public class ModelConfigService {
      * Get the default reasoning level for a model.
      */
     public String getDefaultReasoningLevel(String modelName) {
-        ModelSettings settings = getModelSettings(modelName);
+        ModelSettings settings = resolveModelSettings(modelName);
         if (settings.getReasoning() != null) {
             return settings.getReasoning().getDefaultLevel();
         }
@@ -286,6 +367,7 @@ public class ModelConfigService {
     /**
      * Get the lowest available reasoning level for a model.
      */
+    @Override
     public String getLowestReasoningLevel(String modelName) {
         List<String> available = getAvailableReasoningLevels(modelName);
         if (available.isEmpty()) {
@@ -305,8 +387,9 @@ public class ModelConfigService {
     /**
      * Get available reasoning levels for a model.
      */
+    @Override
     public List<String> getAvailableReasoningLevels(String modelName) {
-        ModelSettings settings = getModelSettings(modelName);
+        ModelSettings settings = resolveModelSettings(modelName);
         if (settings.getReasoning() != null && settings.getReasoning().getLevels() != null) {
             return List.copyOf(settings.getReasoning().getLevels().keySet());
         }
@@ -316,10 +399,44 @@ public class ModelConfigService {
     /**
      * Get models filtered by provider names.
      */
-    public Map<String, ModelSettings> getModelsForProviders(List<String> providers) {
+    @Override
+    public Map<String, ModelCatalogEntry> getModelsForProviders(List<String> providers) {
         return config.getModels().entrySet().stream()
                 .filter(entry -> providers.contains(entry.getValue().getProvider()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, LinkedHashMap::new));
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> toCatalogEntry(entry.getValue()), (a, b) -> a,
+                        LinkedHashMap::new));
+    }
+
+    private Map<String, ModelCatalogEntry> toCatalogEntries(Map<String, ModelSettings> models) {
+        return models.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> toCatalogEntry(entry.getValue()), (a, b) -> a,
+                        LinkedHashMap::new));
+    }
+
+    private ModelCatalogEntry toCatalogEntry(ModelSettings settings) {
+        if (settings == null) {
+            return null;
+        }
+        return new ModelCatalogEntry(
+                settings.getProvider(),
+                settings.getDisplayName(),
+                settings.isSupportsVision(),
+                settings.isSupportsTemperature(),
+                settings.getMaxInputTokens(),
+                toReasoningProfile(settings.getReasoning()));
+    }
+
+    private ModelReasoningProfile toReasoningProfile(ReasoningConfig reasoning) {
+        if (reasoning == null) {
+            return null;
+        }
+        Map<String, ModelReasoningLevel> levels = reasoning.getLevels() == null
+                ? Map.of()
+                : reasoning.getLevels().entrySet().stream()
+                        .collect(Collectors.toMap(Map.Entry::getKey,
+                                entry -> new ModelReasoningLevel(entry.getValue().getMaxInputTokens()),
+                                (a, b) -> a, LinkedHashMap::new));
+        return new ModelReasoningProfile(reasoning.getDefaultLevel(), levels);
     }
 
     @Data
@@ -359,5 +476,93 @@ public class ModelConfigService {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ReasoningLevelConfig {
         private int maxInputTokens = 128000;
+    }
+
+    private HivePolicyModelCatalog.HivePolicyModelConfig toPolicyModelConfig(ModelSettings settings) {
+        if (settings == null) {
+            return null;
+        }
+        HivePolicyModelCatalog.HivePolicyReasoningConfig reasoning = null;
+        if (settings.getReasoning() != null) {
+            Map<String, HivePolicyModelCatalog.HivePolicyReasoningLevelConfig> levels = new LinkedHashMap<>();
+            if (settings.getReasoning().getLevels() != null) {
+                for (Map.Entry<String, ReasoningLevelConfig> entry : settings.getReasoning().getLevels().entrySet()) {
+                    levels.put(entry.getKey(), HivePolicyModelCatalog.HivePolicyReasoningLevelConfig.builder()
+                            .maxInputTokens(entry.getValue() != null ? entry.getValue().getMaxInputTokens() : null)
+                            .build());
+                }
+            }
+            reasoning = HivePolicyModelCatalog.HivePolicyReasoningConfig.builder()
+                    .defaultLevel(settings.getReasoning().getDefaultLevel())
+                    .levels(levels)
+                    .build();
+        }
+        return HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                .provider(settings.getProvider())
+                .displayName(settings.getDisplayName())
+                .supportsVision(settings.isSupportsVision())
+                .supportsTemperature(settings.isSupportsTemperature())
+                .maxInputTokens(settings.getMaxInputTokens())
+                .reasoning(reasoning)
+                .build();
+    }
+
+    private ModelSettings toModelSettings(HivePolicyModelCatalog.HivePolicyModelConfig source) {
+        ModelSettings settings = new ModelSettings();
+        if (source == null) {
+            return settings;
+        }
+        settings.setProvider(source.getProvider() != null ? source.getProvider() : PROVIDER_OPENAI);
+        settings.setDisplayName(source.getDisplayName());
+        settings.setSupportsVision(source.getSupportsVision() == null || source.getSupportsVision());
+        settings.setSupportsTemperature(source.getSupportsTemperature() == null || source.getSupportsTemperature());
+        settings.setMaxInputTokens(source.getMaxInputTokens() != null ? source.getMaxInputTokens() : 128000);
+        if (source.getReasoning() != null) {
+            ReasoningConfig reasoning = new ReasoningConfig();
+            reasoning.setDefaultLevel(source.getReasoning().getDefaultLevel());
+            if (source.getReasoning().getLevels() != null) {
+                for (Map.Entry<String, HivePolicyModelCatalog.HivePolicyReasoningLevelConfig> entry : source
+                        .getReasoning().getLevels().entrySet()) {
+                    Integer maxInputTokens = entry.getValue() != null ? entry.getValue().getMaxInputTokens() : null;
+                    reasoning.getLevels().put(entry.getKey(),
+                            new ReasoningLevelConfig(maxInputTokens != null ? maxInputTokens : 128000));
+                }
+            }
+            settings.setReasoning(reasoning);
+        }
+        return settings;
+    }
+
+    private ModelSettings toDefaultSettings(ModelSettings source) {
+        ModelSettings defaults = new ModelSettings();
+        if (source == null) {
+            return defaults;
+        }
+        defaults.setProvider(source.getProvider());
+        defaults.setDisplayName(source.getDisplayName());
+        defaults.setSupportsVision(source.isSupportsVision());
+        defaults.setSupportsTemperature(source.isSupportsTemperature());
+        defaults.setMaxInputTokens(source.getMaxInputTokens());
+        defaults.setReasoning(source.getReasoning());
+        return defaults;
+    }
+
+    private ReasoningConfig copyReasoningConfig(ReasoningConfig source) {
+        if (source == null) {
+            return null;
+        }
+        ReasoningConfig copy = new ReasoningConfig();
+        copy.setDefaultLevel(source.getDefaultLevel());
+        Map<String, ReasoningLevelConfig> copiedLevels = new LinkedHashMap<>();
+        if (source.getLevels() != null) {
+            for (Map.Entry<String, ReasoningLevelConfig> entry : source.getLevels().entrySet()) {
+                ReasoningLevelConfig levelConfig = entry.getValue();
+                copiedLevels.put(entry.getKey(), levelConfig == null
+                        ? new ReasoningLevelConfig()
+                        : new ReasoningLevelConfig(levelConfig.getMaxInputTokens()));
+            }
+        }
+        copy.setLevels(copiedLevels);
+        return copy;
     }
 }

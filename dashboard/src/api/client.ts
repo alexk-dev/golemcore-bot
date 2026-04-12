@@ -1,7 +1,18 @@
-import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import axios, { type AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios';
+import { recordTelemetryCounter, recordTelemetryKeyedCounter } from '../lib/telemetry/telemetryBridge';
 import { useAuthStore } from '../store/authStore';
 
+interface TelemetryConfigMeta {
+  counterKey: string;
+  value?: string | null;
+}
+
+export interface TelemetryRequestConfig extends AxiosRequestConfig {
+  _telemetry?: TelemetryConfigMeta;
+}
+
 interface RetryRequestConfig extends InternalAxiosRequestConfig {
+  _telemetry?: TelemetryConfigMeta;
   _retry?: boolean;
 }
 
@@ -25,7 +36,17 @@ client.interceptors.request.use((config) => {
 
 // On 401, try refresh once
 client.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    const telemetry = (res.config as TelemetryRequestConfig)._telemetry;
+    if (telemetry != null) {
+      if (telemetry.value != null && telemetry.value.length > 0) {
+        recordTelemetryKeyedCounter(telemetry.counterKey, telemetry.value);
+      } else {
+        recordTelemetryCounter(telemetry.counterKey);
+      }
+    }
+    return res;
+  },
   async (error: AxiosError) => {
     const original = error.config as RetryRequestConfig | undefined;
     if (error.response?.status === 401 && original != null && original._retry !== true) {

@@ -1,6 +1,7 @@
 import { type ChangeEvent, type ReactElement, useState } from 'react';
 import { Button, Card, Form } from 'react-bootstrap';
 import type { CreateGoalRequest, CreateTaskRequest, Goal } from '../../api/goals';
+import { getExplicitModelTierOptions } from '../../lib/modelTiers';
 
 type AutomationCreateMode = 'goal' | 'task';
 
@@ -10,6 +11,8 @@ interface AutomationCreateFormState {
   title: string;
   description: string;
   prompt: string;
+  reflectionModelTier: string;
+  reflectionTierPriority: boolean;
 }
 
 interface SchedulerAutomationCreateCardProps {
@@ -27,6 +30,8 @@ function buildInitialFormState(goals: Goal[]): AutomationCreateFormState {
     title: '',
     description: '',
     prompt: '',
+    reflectionModelTier: '',
+    reflectionTierPriority: false,
   };
 }
 
@@ -77,6 +82,8 @@ export function SchedulerAutomationCreateCard({
         title: form.title.trim(),
         description: normalizeOptionalValue(form.description),
         prompt: normalizeOptionalValue(form.prompt),
+        reflectionModelTier: normalizeOptionalValue(form.reflectionModelTier),
+        reflectionTierPriority: form.reflectionTierPriority,
       });
       setForm(buildInitialFormState(goals));
       return;
@@ -87,6 +94,8 @@ export function SchedulerAutomationCreateCard({
       title: form.title.trim(),
       description: normalizeOptionalValue(form.description),
       prompt: normalizeOptionalValue(form.prompt),
+      reflectionModelTier: normalizeOptionalValue(form.reflectionModelTier),
+      reflectionTierPriority: form.reflectionTierPriority,
       status: null,
     });
     setForm((current) => ({
@@ -94,6 +103,8 @@ export function SchedulerAutomationCreateCard({
       title: '',
       description: '',
       prompt: '',
+      reflectionModelTier: '',
+      reflectionTierPriority: false,
     }));
   };
 
@@ -179,6 +190,35 @@ export function SchedulerAutomationCreateCard({
             Leave empty to fall back to the title during execution.
           </Form.Text>
         </Form.Group>
+
+        <Form.Group className="mb-3">
+          <Form.Label>Reflection tier</Form.Label>
+          <Form.Select
+            size="sm"
+            value={form.reflectionModelTier}
+            onChange={handleFieldChange('reflectionModelTier')}
+            disabled={!featureEnabled}
+          >
+            <option value="">Use default reflection model</option>
+            {getExplicitModelTierOptions().map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </Form.Select>
+          <Form.Text className="text-body-secondary">
+            Optional tier override when reflection is triggered for this goal or task.
+          </Form.Text>
+        </Form.Group>
+
+        <Form.Check
+          type="switch"
+          className="mb-3"
+          label="Reflection tier has priority"
+          checked={form.reflectionTierPriority}
+          disabled={!featureEnabled || form.reflectionModelTier.length === 0}
+          onChange={(event) =>
+            setForm((current) => ({ ...current, reflectionTierPriority: event.target.checked }))
+          }
+        />
 
         <Button type="button" size="sm" variant="primary" disabled={submitDisabled} onClick={() => { void handleSubmit(); }}>
           {busy ? 'Saving...' : form.mode === 'goal' ? 'Create goal' : 'Create task'}

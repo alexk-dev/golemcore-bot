@@ -8,6 +8,7 @@ import type {
   UpdateGoalRequest,
   UpdateTaskRequest,
 } from '../../api/goals';
+import { getExplicitModelTierOptions } from '../../lib/modelTiers';
 
 export type AutomationEditorItem =
   | { kind: 'goal'; value: Goal }
@@ -17,6 +18,8 @@ interface AutomationEditorFormState {
   title: string;
   description: string;
   prompt: string;
+  reflectionModelTier: string;
+  reflectionTierPriority: boolean;
   status: string;
 }
 
@@ -35,6 +38,8 @@ function buildInitialFormState(item: AutomationEditorItem | null): AutomationEdi
       title: '',
       description: '',
       prompt: '',
+      reflectionModelTier: '',
+      reflectionTierPriority: false,
       status: 'ACTIVE',
     };
   }
@@ -43,6 +48,8 @@ function buildInitialFormState(item: AutomationEditorItem | null): AutomationEdi
     title: item.value.title,
     description: item.value.description ?? '',
     prompt: item.value.prompt ?? '',
+    reflectionModelTier: item.value.reflectionModelTier ?? '',
+    reflectionTierPriority: item.value.reflectionTierPriority,
     status: item.value.status,
   };
 }
@@ -110,6 +117,8 @@ export function SchedulerAutomationEditModal({
         title: form.title.trim(),
         description: normalizeOptionalValue(form.description),
         prompt: normalizeOptionalValue(form.prompt),
+        reflectionModelTier: normalizeOptionalValue(form.reflectionModelTier),
+        reflectionTierPriority: form.reflectionTierPriority,
         status: form.status,
       });
       onHide();
@@ -121,6 +130,8 @@ export function SchedulerAutomationEditModal({
         title: form.title.trim(),
         description: normalizeOptionalValue(form.description),
         prompt: normalizeOptionalValue(form.prompt),
+        reflectionModelTier: normalizeOptionalValue(form.reflectionModelTier),
+        reflectionTierPriority: form.reflectionTierPriority,
         status: form.status,
       });
       onHide();
@@ -166,6 +177,31 @@ export function SchedulerAutomationEditModal({
             onChange={handleFieldChange('prompt')}
           />
         </Form.Group>
+
+        <Form.Group className="mb-3">
+          <Form.Label>Reflection tier</Form.Label>
+          <Form.Select
+            size="sm"
+            value={form.reflectionModelTier}
+            onChange={handleFieldChange('reflectionModelTier')}
+          >
+            <option value="">Use default reflection model</option>
+            {getExplicitModelTierOptions().map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </Form.Select>
+        </Form.Group>
+
+        <Form.Check
+          type="switch"
+          className="mb-3"
+          label="Reflection tier has priority"
+          checked={form.reflectionTierPriority}
+          disabled={form.reflectionModelTier.length === 0}
+          onChange={(event) =>
+            setForm((current) => ({ ...current, reflectionTierPriority: event.target.checked }))
+          }
+        />
 
         <Form.Group className="mb-0">
           <Form.Label>Status</Form.Label>

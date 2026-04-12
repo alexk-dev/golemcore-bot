@@ -32,6 +32,7 @@ class PluginChannelPortAdapterTest {
         when(delegate.sendMessage("42", "hello", Map.of("parseMode", "markdown"))).thenReturn(completed);
         when(delegate.sendMessage(any(me.golemcore.plugin.api.extension.model.Message.class))).thenReturn(completed);
         when(delegate.sendVoice(org.mockito.ArgumentMatchers.eq("42"), any(byte[].class))).thenReturn(completed);
+        when(delegate.isVoiceResponseEnabled()).thenReturn(true);
         when(delegate.isAuthorized("user-1")).thenReturn(true);
         when(delegate.sendPhoto(org.mockito.ArgumentMatchers.eq("42"), any(byte[].class),
                 org.mockito.ArgumentMatchers.eq("photo.png"), org.mockito.ArgumentMatchers.eq("caption")))
@@ -55,6 +56,7 @@ class PluginChannelPortAdapterTest {
                 .build();
         adapter.sendMessage(message).join();
         adapter.sendVoice("42", new byte[] { 1, 2, 3 }).join();
+        assertTrue(adapter.isVoiceResponseEnabled());
         assertTrue(adapter.isAuthorized("user-1"));
         adapter.sendPhoto("42", new byte[] { 7, 8 }, "photo.png", "caption").join();
         adapter.sendDocument("42", new byte[] { 9 }, "report.pdf", "doc").join();

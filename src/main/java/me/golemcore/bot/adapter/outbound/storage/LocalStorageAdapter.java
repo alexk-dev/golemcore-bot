@@ -76,10 +76,10 @@ public class LocalStorageAdapter implements StoragePort {
     @PostConstruct
     public void init() {
         String basePathStr = properties.getStorage().getLocal().getBasePath();
-        this.basePath = Paths.get(basePathStr.replace("${user.home}", System.getProperty("user.home")))
-                .toAbsolutePath().normalize();
+        String resolvedBasePath = basePathStr.replace("${user.home}", System.getProperty("user.home"));
 
         try {
+            this.basePath = Paths.get(resolvedBasePath).toAbsolutePath().normalize();
             Files.createDirectories(basePath);
 
             // Pre-create all known subdirectories
@@ -88,8 +88,10 @@ public class LocalStorageAdapter implements StoragePort {
             }
 
             log.info("Local storage initialized at: {}", basePath);
-        } catch (IOException e) {
-            log.error("Failed to create storage directory", e);
+        } catch (IOException | RuntimeException e) { // NOSONAR - fail fast on invalid storage config
+            String failedPath = basePath != null ? basePath.toString() : resolvedBasePath;
+            log.error("Failed to initialize storage directory: {}", failedPath, e);
+            throw new IllegalStateException("Failed to initialize storage directory: " + failedPath, e);
         }
     }
 

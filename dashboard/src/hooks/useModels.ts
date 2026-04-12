@@ -1,12 +1,16 @@
 import { type UseMutationResult, type UseQueryResult, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   type ModelSettings,
+  type ResolveModelRegistryRequest,
+  type TestModelResponse,
   discoverProviderModels,
   getModelsConfig,
   getAvailableModels,
+  resolveModelRegistryDefaults,
   saveModel,
   deleteModel,
   reloadModels,
+  testModel,
 } from '../api/models';
 
 export function useModelsConfig(): UseQueryResult<Awaited<ReturnType<typeof getModelsConfig>>, unknown> {
@@ -28,14 +32,30 @@ export function useDiscoveredProviderModels(
   });
 }
 
-export function useSaveModel(): UseMutationResult<Awaited<ReturnType<typeof saveModel>>, unknown, { id: string; settings: ModelSettings }> {
+export function useSaveModel(): UseMutationResult<
+  Awaited<ReturnType<typeof saveModel>>,
+  unknown,
+  { id: string; previousId: string | null; settings: ModelSettings }
+> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, settings }: { id: string; settings: ModelSettings }) => saveModel(id, settings),
+    mutationFn: (
+      { id, previousId, settings }: { id: string; previousId: string | null; settings: ModelSettings },
+    ) => saveModel(id, settings, previousId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['models-config'] });
       void qc.invalidateQueries({ queryKey: ['models-available'] });
     },
+  });
+}
+
+export function useResolveModelRegistry(): UseMutationResult<
+  Awaited<ReturnType<typeof resolveModelRegistryDefaults>>,
+  unknown,
+  ResolveModelRegistryRequest
+> {
+  return useMutation({
+    mutationFn: (request: ResolveModelRegistryRequest) => resolveModelRegistryDefaults(request),
   });
 }
 
@@ -47,6 +67,12 @@ export function useDeleteModel(): UseMutationResult<Awaited<ReturnType<typeof de
       void qc.invalidateQueries({ queryKey: ['models-config'] });
       void qc.invalidateQueries({ queryKey: ['models-available'] });
     },
+  });
+}
+
+export function useTestModel(): UseMutationResult<TestModelResponse, unknown, string> {
+  return useMutation({
+    mutationFn: (model: string) => testModel(model),
   });
 }
 

@@ -9,13 +9,20 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceRecord;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TraceBudgetService;
+import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.VoiceResponseHandler.VoiceSendResult;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -25,6 +32,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static me.golemcore.bot.support.ChannelRuntimeTestSupport.responseRoutingSystem;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -48,6 +56,8 @@ class ResponseRoutingSystemTest {
     private ChannelPort channelPort;
     private UserPreferencesService preferencesService;
     private VoiceResponseHandler voiceHandler;
+    private RuntimeConfigService runtimeConfigService;
+    private TraceService traceService;
 
     @BeforeEach
     void setUp() {
@@ -69,7 +79,14 @@ class ResponseRoutingSystemTest {
         voiceHandler = mock(VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
-        system = new ResponseRoutingSystem(new ChannelRegistry(List.of(channelPort)), preferencesService, voiceHandler);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
+        system = responseRoutingSystem(
+                List.of(channelPort),
+                preferencesService,
+                voiceHandler,
+                runtimeConfigService,
+                traceService);
     }
 
     private AgentContext createContext() {
@@ -111,6 +128,39 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
+    void shouldRecordOutboundSpanWithSnapshot() {
+        AgentContext context = createContext();
+        TraceContext traceContext = traceService.startRootTrace(
+                context.getSession(),
+                TraceContext.builder()
+                        .traceId("trace-1")
+                        .spanId("root-span")
+                        .rootKind(TraceSpanKind.INGRESS.name())
+                        .build(),
+                "telegram.message",
+                TraceSpanKind.INGRESS,
+                Instant.now(),
+                Map.of("session.id", SESSION_ID));
+        context.setTraceContext(traceContext);
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
+
+        when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.isPayloadSnapshotsEnabled()).thenReturn(true);
+        when(runtimeConfigService.isTraceOutboundPayloadCaptureEnabled()).thenReturn(true);
+        when(runtimeConfigService.getSessionTraceBudgetMb()).thenReturn(8);
+        when(runtimeConfigService.getTraceMaxSnapshotSizeKb()).thenReturn(64);
+        when(runtimeConfigService.getTraceMaxSnapshotsPerSpan()).thenReturn(4);
+
+        system.process(context);
+
+        TraceRecord trace = context.getSession().getTraces().get(0);
+        assertTrue(trace.getSpans().stream().anyMatch(span -> "response.route".equals(span.getName())));
+        assertTrue(trace.getSpans().stream()
+                .filter(span -> "response.route".equals(span.getName()))
+                .allMatch(span -> !span.getSnapshots().isEmpty()));
+    }
+
+    @Test
     void shouldSendOutgoingResponseTextToTransportChatIdFromMetadata() {
         AgentContext context = createContext("conversation-42", "transport-777");
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
@@ -118,6 +168,49 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(channelPort).sendMessage(eq("transport-777"), eq(CONTENT_RESPONSE), any());
+    }
+
+    @Test
+    void shouldPropagateHiveRoutingHints() {
+        ChannelPort hiveChannel = mock(ChannelPort.class);
+        when(hiveChannel.getChannelType()).thenReturn("hive");
+        when(hiveChannel.sendMessage(anyString(), anyString(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        ResponseRoutingSystem hiveSystem = responseRoutingSystem(
+                List.of(hiveChannel),
+                preferencesService,
+                voiceHandler);
+
+        AgentSession session = AgentSession.builder()
+                .id("hive:thread-1")
+                .chatId("thread-1")
+                .channelType("hive")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.HIVE_THREAD_ID, "thread-1");
+        context.setAttribute(ContextAttributes.HIVE_CARD_ID, "card-1");
+        context.setAttribute(ContextAttributes.HIVE_COMMAND_ID, "cmd-1");
+        context.setAttribute(ContextAttributes.HIVE_RUN_ID, "run-1");
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("Hive reply")
+                .hints(Map.of("model", "gpt-5"))
+                .build());
+
+        hiveSystem.process(context);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> hintsCaptor = ArgumentCaptor.forClass((Class) Map.class);
+        verify(hiveChannel).sendMessage(eq("thread-1"), eq("Hive reply"), hintsCaptor.capture());
+        assertEquals("thread-1", hintsCaptor.getValue().get(ContextAttributes.HIVE_THREAD_ID));
+        assertEquals("card-1", hintsCaptor.getValue().get(ContextAttributes.HIVE_CARD_ID));
+        assertEquals("cmd-1", hintsCaptor.getValue().get(ContextAttributes.HIVE_COMMAND_ID));
+        assertEquals("run-1", hintsCaptor.getValue().get(ContextAttributes.HIVE_RUN_ID));
+        assertEquals("gpt-5", hintsCaptor.getValue().get("model"));
     }
 
     @Test
@@ -160,6 +253,69 @@ class ResponseRoutingSystemTest {
         system.process(context);
 
         verify(channelPort).sendDocument(eq("transport-5"), eq(new byte[] { 7, 8, 9 }), eq("edge.pdf"), eq("Edge"));
+    }
+
+    @Test
+    void shouldSendWebAssistantMessageWithAllAttachmentsInOnePayload() {
+        ChannelPort webChannel = mock(ChannelPort.class);
+        when(webChannel.getChannelType()).thenReturn("web");
+        when(webChannel.sendMessage(any(Message.class))).thenReturn(CompletableFuture.completedFuture(null));
+
+        ResponseRoutingSystem webSystem = responseRoutingSystem(
+                List.of(webChannel),
+                preferencesService,
+                voiceHandler);
+
+        AgentSession session = AgentSession.builder()
+                .id(SESSION_ID)
+                .chatId("web-chat")
+                .channelType("web")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+
+        Attachment first = Attachment.builder()
+                .type(Attachment.Type.IMAGE)
+                .data(new byte[] { 1, 2, 3 })
+                .filename("first.png")
+                .mimeType("image/png")
+                .downloadUrl("/api/files/download?path=first")
+                .internalFilePath(".golemcore/tool-artifacts/first")
+                .thumbnailBase64("thumb-first")
+                .build();
+        Attachment second = Attachment.builder()
+                .type(Attachment.Type.DOCUMENT)
+                .data(new byte[] { 4, 5, 6 })
+                .filename("report.pdf")
+                .mimeType("application/pdf")
+                .downloadUrl("/api/files/download?path=report")
+                .internalFilePath(".golemcore/tool-artifacts/report")
+                .build();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("Done")
+                .attachment(first)
+                .attachment(second)
+                .hints(Map.of("model", "gemini-3.1-pro", "tier", "smart"))
+                .build());
+
+        webSystem.process(context);
+
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(webChannel).sendMessage(messageCaptor.capture());
+        verify(webChannel, never()).sendPhoto(anyString(), any(byte[].class), anyString(), any());
+        verify(webChannel, never()).sendDocument(anyString(), any(byte[].class), anyString(), any());
+        Message delivered = messageCaptor.getValue();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> attachments = (List<Map<String, Object>>) delivered.getMetadata().get("attachments");
+        assertEquals(2, attachments.size());
+        assertEquals("first.png", attachments.get(0).get("name"));
+        assertEquals(".golemcore/tool-artifacts/first", attachments.get(0).get("internalFilePath"));
+        assertEquals("thumb-first", attachments.get(0).get("thumbnailBase64"));
+        assertEquals("report.pdf", attachments.get(1).get("name"));
+        assertEquals("smart", delivered.getMetadata().get("modelTier"));
     }
 
     @Test
@@ -318,6 +474,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void sendsVoiceWhenOutgoingResponseHasVoiceRequested() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
@@ -334,6 +491,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void sendsVoiceWithCustomVoiceText() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
@@ -349,7 +507,23 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
+    void telegramVoiceDisabledSkipsExplicitVoiceAndSendsTextOnly() {
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.builder()
+                .text("Full response with details")
+                .voiceRequested(true)
+                .voiceText("Short spoken version")
+                .build());
+
+        system.process(context);
+
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Full response with details"), any());
+        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
+    }
+
+    @Test
     void voiceOnlyOutgoingResponseSendsVoice() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
@@ -364,7 +538,72 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
+    void telegramVoiceDisabledFallsBackToTextForVoiceOnlyOutgoingResponse() {
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                OutgoingResponse.voiceOnly("Hello from OutgoingResponse"));
+
+        system.process(context);
+
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello from OutgoingResponse"), any());
+        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
+    }
+
+    @Test
+    void telegramVoiceDisabledFallbackFailureRecordsRoutingError() {
+        when(channelPort.sendMessage(anyString(), anyString(), any()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("fallback failed")));
+
+        AgentContext context = createContext();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE,
+                OutgoingResponse.voiceOnly("Hello from OutgoingResponse"));
+
+        system.process(context);
+
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq("Hello from OutgoingResponse"), any());
+        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
+        RoutingOutcome outcome = context.getAttribute(ATTR_ROUTING_OUTCOME);
+        assertNotNull(outcome);
+        assertFalse(outcome.isSentText());
+        assertNotNull(outcome.getErrorMessage());
+    }
+
+    @Test
+    void nonTelegramChannelsAlwaysFallBackToTextForVoiceOnlyOutgoingResponse() {
+        ChannelPort hiveChannel = mock(ChannelPort.class);
+        when(hiveChannel.getChannelType()).thenReturn("hive");
+        when(hiveChannel.sendMessage(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
+        when(hiveChannel.sendMessage(anyString(), anyString(), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        ResponseRoutingSystem hiveSystem = responseRoutingSystem(
+                List.of(hiveChannel),
+                preferencesService,
+                voiceHandler,
+                runtimeConfigService,
+                traceService);
+
+        AgentSession session = AgentSession.builder()
+                .id("hive-session")
+                .chatId("hive-chat")
+                .channelType("hive")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.voiceOnly("Hello from hive"));
+
+        hiveSystem.process(context);
+
+        verify(hiveChannel).sendMessage(eq("hive-chat"), eq("Hello from hive"), any());
+        verify(voiceHandler, never()).trySendVoice(any(), anyString(), anyString());
+    }
+
+    @Test
     void voiceAndAttachmentsTogether() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
@@ -396,6 +635,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void voiceOnlyWithAttachments() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();
@@ -424,6 +664,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void voiceQuotaExceededSendsNotification() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
         when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
 
@@ -443,6 +684,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void voiceOnlyQuotaExceededSendsNotification() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.QUOTA_EXCEEDED);
         when(preferencesService.getMessage("voice.error.quota")).thenReturn(MSG_VOICE_QUOTA);
 
@@ -617,6 +859,7 @@ class ResponseRoutingSystemTest {
 
     @Test
     void shouldRecordRoutingOutcomeWithVoiceAndAttachments() {
+        when(channelPort.isVoiceResponseEnabled()).thenReturn(true);
         when(voiceHandler.trySendVoice(any(), anyString(), anyString())).thenReturn(VoiceSendResult.SUCCESS);
 
         AgentContext context = createContext();

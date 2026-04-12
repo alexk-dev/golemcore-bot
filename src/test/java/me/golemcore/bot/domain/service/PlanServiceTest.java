@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanStep;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.PlanStorePort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,7 +53,8 @@ class PlanServiceTest {
 
     private StoragePort storagePort;
     private ObjectMapper objectMapper;
-    private BotProperties properties;
+    private PlanStorePort planStorePort;
+    private RuntimeConfigService runtimeConfigService;
     private Clock clock;
     private PlanService service;
 
@@ -62,11 +63,36 @@ class PlanServiceTest {
         storagePort = mock(StoragePort.class);
         objectMapper = new ObjectMapper();
         objectMapper.findAndRegisterModules();
+        planStorePort = new PlanStorePort() {
+            @Override
+            public List<Plan> loadPlans() {
+                try {
+                    String json = storagePort.getText(AUTO_DIR, PLANS_FILE).join();
+                    if (json == null || json.isBlank()) {
+                        return new ArrayList<>();
+                    }
+                    return new ArrayList<>(objectMapper.readValue(json, new TypeReference<>() {
+                    }));
+                } catch (Exception exception) {
+                    throw new IllegalStateException("Failed to load plans", exception);
+                }
+            }
 
-        properties = new BotProperties();
-        properties.getPlan().setEnabled(true);
-        properties.getPlan().setMaxPlans(5);
-        properties.getPlan().setMaxStepsPerPlan(50);
+            @Override
+            public void savePlans(List<Plan> plans) {
+                try {
+                    String json = objectMapper.writeValueAsString(plans);
+                    storagePort.putText(AUTO_DIR, PLANS_FILE, json).join();
+                } catch (Exception exception) {
+                    throw new IllegalStateException("Failed to persist plans", exception);
+                }
+            }
+        };
+
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isPlanEnabled()).thenReturn(true);
+        when(runtimeConfigService.getPlanMaxPlans()).thenReturn(5);
+        when(runtimeConfigService.getPlanMaxStepsPerPlan()).thenReturn(50);
 
         clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
@@ -75,7 +101,7 @@ class PlanServiceTest {
         when(storagePort.getText(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        service = new PlanService(storagePort, objectMapper, properties, clock);
+        service = new PlanService(planStorePort, runtimeConfigService, clock);
     }
 
     // ==================== 1. shouldCreatePlanSuccessfully ====================
@@ -100,7 +126,7 @@ class PlanServiceTest {
         assertNotNull(plan.getSteps());
         assertTrue(plan.getSteps().isEmpty());
 
-        verify(storagePort).putText(eq(AUTO_DIR), eq(PLANS_FILE), anyString());
+        verify(storagePort, atLeastOnce()).putText(eq(AUTO_DIR), eq(PLANS_FILE), anyString());
     }
 
     // ==================== 2. shouldThrowWhenMaxPlansReached ====================
@@ -328,7 +354,7 @@ class PlanServiceTest {
         // Since activatePlanMode creates a new plan, let's reload and test differently
 
         // Reset and use a specific plan
-        service = new PlanService(storagePort, objectMapper, properties, clock);
+        service = new PlanService(planStorePort, runtimeConfigService, clock);
         when(storagePort.getText(AUTO_DIR, PLANS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(plansJson));
 
@@ -538,7 +564,7 @@ class PlanServiceTest {
         allPlans.addAll(service.getPlans());
         String plansJson = objectMapper.writeValueAsString(allPlans);
         // Reset the service to reload the cache
-        service = new PlanService(storagePort, objectMapper, properties, clock);
+        service = new PlanService(planStorePort, runtimeConfigService, clock);
         when(storagePort.getText(AUTO_DIR, PLANS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(plansJson));
 
@@ -1046,10 +1072,10 @@ class PlanServiceTest {
     @Test
     void shouldReturnFeatureEnabledFromProperties() {
         // Arrange & Act & Assert
-        properties.getPlan().setEnabled(true);
+        when(runtimeConfigService.isPlanEnabled()).thenReturn(true);
         assertTrue(service.isFeatureEnabled());
 
-        properties.getPlan().setEnabled(false);
+        when(runtimeConfigService.isPlanEnabled()).thenReturn(false);
         assertFalse(service.isFeatureEnabled());
     }
 

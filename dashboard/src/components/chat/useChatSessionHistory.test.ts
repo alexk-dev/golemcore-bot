@@ -13,6 +13,7 @@ function createSessionState(overrides: Partial<ChatRuntimeSessionState>): ChatRu
     oldestLoadedMessageId: null,
     typing: false,
     running: false,
+    progress: null,
     turnMetadata: {
       model: null,
       tier: null,
@@ -108,7 +109,9 @@ describe('useChatSessionHistory', () => {
         content: 'hello',
         model: null,
         tier: null,
+        skill: null,
         reasoning: null,
+        attachments: [],
         clientMessageId: 'client-1',
         persisted: false,
       }],

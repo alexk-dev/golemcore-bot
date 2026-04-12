@@ -1,5 +1,8 @@
 package me.golemcore.bot.adapter.inbound.command;
 
+import me.golemcore.bot.application.command.AutomationCommandService;
+import me.golemcore.bot.application.command.ModelSelectionCommandService;
+import me.golemcore.bot.application.command.PlanCommandService;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
@@ -15,17 +18,15 @@ import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UsageStats;
-import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
-import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
@@ -39,7 +40,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +57,7 @@ import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @SuppressWarnings({ "PMD.AvoidDuplicateLiterals", "unchecked" })
@@ -80,8 +81,6 @@ class CommandRouterTest {
     private static final String TOOL_FILESYSTEM = "filesystem";
     private static final String TOOL_SHELL = "shell";
     private static final String CMD_TIER = "tier";
-    private static final String TIER_BALANCED = "balanced";
-    private static final String TIER_CODING = "coding";
     private static final String TIER_SMART = "smart";
     private static final String SUB_STATUS = "status";
     private static final String SUB_OFF = "off";
@@ -95,10 +94,17 @@ class CommandRouterTest {
     private UserPreferencesService preferencesService;
     private CompactionOrchestrationService compactionService;
     private AutoModeService autoModeService;
-    private ModelSelectionService modelSelectionService;
+    private AutomationCommandService automationCommandService;
+    private AutomationCommandHandler automationCommandHandler;
+    private ModelSelectionCommandService modelSelectionCommandService;
+    private ModelSelectionCommandHandler modelSelectionCommandHandler;
     private PlanService planService;
     private PlanExecutionService planExecutionService;
+    private PlanCommandService planCommandService;
+    private PlanCommandHandler planCommandHandler;
+    private RuntimeConfigService runtimeConfigService;
     private ScheduleService scheduleService;
+    private DelayedActionPolicyService delayedActionPolicyService;
     private SessionRunCoordinator runCoordinator;
     private ApplicationEventPublisher eventPublisher;
     private ObjectProvider<BuildProperties> buildPropertiesProvider;
@@ -140,18 +146,35 @@ class CommandRouterTest {
         });
 
         autoModeService = mock(AutoModeService.class);
-        modelSelectionService = mock(ModelSelectionService.class);
+        modelSelectionCommandService = mock(ModelSelectionCommandService.class);
         planService = mock(PlanService.class);
         planExecutionService = mock(PlanExecutionService.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
         scheduleService = mock(ScheduleService.class);
-        runCoordinator = mock(SessionRunCoordinator.class);
+        delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
+        automationCommandService = new AutomationCommandService(
+                autoModeService,
+                runtimeConfigService,
+                scheduleService,
+                delayedActionPolicyService,
+                null);
+        automationCommandHandler = new AutomationCommandHandler(
+                automationCommandService,
+                preferencesService,
+                eventPublisher);
+        modelSelectionCommandHandler = new ModelSelectionCommandHandler(
+                modelSelectionCommandService,
+                preferencesService);
+        planCommandService = new PlanCommandService(planService, planExecutionService, runtimeConfigService);
+        planCommandHandler = new PlanCommandHandler(planCommandService, preferencesService);
+        runCoordinator = mock(SessionRunCoordinator.class);
 
         ToolComponent tool1 = mockTool(TOOL_FILESYSTEM, "File system operations", true);
         ToolComponent tool2 = mockTool(TOOL_SHELL, "Shell command execution", true);
         ToolComponent tool3 = mockTool("disabled-tool", "Disabled tool", false);
 
-        BotProperties properties = new BotProperties();
+        when(runtimeConfigService.getPlanMaxPlans()).thenReturn(5);
 
         buildPropertiesProvider = mock(ObjectProvider.class);
 
@@ -162,15 +185,11 @@ class CommandRouterTest {
                 usageTracker,
                 preferencesService,
                 compactionService,
-                autoModeService,
-                modelSelectionService,
-                planService,
-                planExecutionService,
-                scheduleService,
+                automationCommandHandler,
+                modelSelectionCommandHandler,
+                planCommandHandler,
+                delayedActionPolicyService,
                 runCoordinator,
-                eventPublisher,
-                properties,
-                mock(RuntimeConfigService.class),
                 buildPropertiesProvider);
     }
 
@@ -1073,87 +1092,55 @@ class CommandRouterTest {
     // ===== Tier commands =====
 
     @Test
-    void tierNoArgsShowsCurrentDefault() throws Exception {
-        when(preferencesService.getPreferences()).thenReturn(
-                UserPreferences.builder().build()); // modelTier=null, tierForce=false
+    void tierCommandRendersCurrentTierFromApplicationOutcome() throws Exception {
+        when(modelSelectionCommandService.handleTier(new ModelSelectionCommandService.ShowTierStatus())).thenReturn(
+                new ModelSelectionCommandService.CurrentTier("smart", true));
 
         CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.tier.current"));
-        assertTrue(result.output().contains(TIER_BALANCED));
-        assertTrue(result.output().contains("off"));
+        assertEquals("command.tier.current smart on", result.output());
+        verify(modelSelectionCommandService).handleTier(new ModelSelectionCommandService.ShowTierStatus());
     }
 
     @Test
-    void tierNoArgsShowsCurrentWithForce() throws Exception {
-        when(preferencesService.getPreferences()).thenReturn(
-                UserPreferences.builder().modelTier(TIER_SMART).tierForce(true).build());
-
-        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains(TIER_SMART));
-        assertTrue(result.output().contains("on"));
-    }
-
-    @Test
-    void tierSetsCodingTier() throws Exception {
-        UserPreferences prefs = UserPreferences.builder().build();
-        when(preferencesService.getPreferences()).thenReturn(prefs);
-
-        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_CODING), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.tier.set"));
-        assertTrue(result.output().contains(TIER_CODING));
-        assertEquals(TIER_CODING, prefs.getModelTier());
-        assertFalse(prefs.isTierForce());
-        verify(preferencesService).savePreferences(prefs);
-    }
-
-    @Test
-    void tierSetsWithForce() throws Exception {
-        UserPreferences prefs = UserPreferences.builder().build();
-        when(preferencesService.getPreferences()).thenReturn(prefs);
+    void tierCommandParsesForceFlagInAdapter() throws Exception {
+        when(modelSelectionCommandService
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, true)))
+                .thenReturn(new ModelSelectionCommandService.TierUpdated(TIER_SMART, true));
 
         CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_SMART, "force"), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.tier.set.force"));
-        assertTrue(result.output().contains(TIER_SMART));
-        assertEquals(TIER_SMART, prefs.getModelTier());
-        assertTrue(prefs.isTierForce());
-        verify(preferencesService).savePreferences(prefs);
+        assertEquals("command.tier.set.force smart", result.output());
+        verify(modelSelectionCommandService)
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, true));
     }
 
     @Test
-    void tierClearsForceWhenSettingWithoutForce() throws Exception {
-        UserPreferences prefs = UserPreferences.builder().modelTier(TIER_SMART).tierForce(true).build();
-        when(preferencesService.getPreferences()).thenReturn(prefs);
+    void tierCommandRendersNonForcedUpdate() throws Exception {
+        when(modelSelectionCommandService
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, false)))
+                .thenReturn(new ModelSelectionCommandService.TierUpdated(TIER_SMART, false));
 
-        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_BALANCED), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_SMART), CTX).get();
+
         assertTrue(result.success());
-        assertEquals(TIER_BALANCED, prefs.getModelTier());
-        assertFalse(prefs.isTierForce());
+        assertEquals("command.tier.set smart", result.output());
+        verify(modelSelectionCommandService)
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, false));
     }
 
     @Test
-    void tierRejectsInvalidTier() throws Exception {
-        when(preferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
+    void tierCommandRendersInvalidOutcomeFromApplicationService() throws Exception {
+        when(modelSelectionCommandService
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, false)))
+                .thenReturn(new ModelSelectionCommandService.InvalidTier());
 
-        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of("turbo"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_SMART), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.tier.invalid"));
-        verify(preferencesService, never()).savePreferences(any());
-    }
-
-    @Test
-    void tierAcceptsAllValidTiers() throws Exception {
-        for (String tier : List.of(TIER_BALANCED, TIER_SMART, TIER_CODING, "deep")) {
-            UserPreferences prefs = UserPreferences.builder().build();
-            when(preferencesService.getPreferences()).thenReturn(prefs);
-
-            CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(tier), CTX).get();
-            assertTrue(result.success());
-            assertEquals(tier, prefs.getModelTier());
-        }
+        assertEquals("command.tier.invalid", result.output());
     }
 
     // ===== formatTokens =====
@@ -1406,197 +1393,223 @@ class CommandRouterTest {
     private static final String CMD_MODEL = "model";
 
     @Test
-    void modelShowCommand() throws Exception {
-        when(preferencesService.getPreferences()).thenReturn(
-                UserPreferences.builder().tierOverrides(new HashMap<>()).build());
-        for (String tier : List.of(TIER_BALANCED, TIER_SMART, TIER_CODING, "deep")) {
-            when(modelSelectionService.resolveForTier(tier))
-                    .thenReturn(new ModelSelectionService.ModelSelection("some-model", "medium"));
-        }
-
-        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of(), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.show.title"));
-    }
-
-    @Test
-    void modelShowCommandWithOverride() throws Exception {
-        when(preferencesService.getPreferences()).thenReturn(
-                UserPreferences.builder()
-                        .tierOverrides(new HashMap<>(Map.of(TIER_CODING,
-                                new UserPreferences.TierOverride("openai/gpt-5.1", "high"))))
-                        .build());
-        for (String tier : List.of(TIER_BALANCED, TIER_SMART, TIER_CODING, "deep")) {
-            when(modelSelectionService.resolveForTier(tier))
-                    .thenReturn(new ModelSelectionService.ModelSelection("some-model", "medium"));
-        }
-
-        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of(), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.show.tier.override"));
-    }
-
-    @Test
-    void modelListCommand() throws Exception {
-        Map<String, List<ModelSelectionService.AvailableModel>> grouped = new LinkedHashMap<>();
-        grouped.put("openai", List.of(
-                new ModelSelectionService.AvailableModel("gpt-5.1", "openai", "GPT-5.1",
-                        true, List.of("low", "medium", "high"), true)));
-        when(modelSelectionService.getAvailableModelsGrouped()).thenReturn(grouped);
+    void modelListCommandDelegatesAndRendersCatalog() throws Exception {
+        when(modelSelectionCommandService.handleModel(new ModelSelectionCommandService.ListAvailableModels()))
+                .thenReturn(
+                        new ModelSelectionCommandService.AvailableModels(Map.of(
+                                "openai", List.of(new ModelSelectionCommandService.AvailableModelOption(
+                                        "gpt-5",
+                                        "GPT-5",
+                                        true,
+                                        List.of("low", "medium"))))));
 
         CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("list"), CTX).get();
+
         assertTrue(result.success());
         assertTrue(result.output().contains("command.model.list.title"));
-        assertTrue(result.output().contains("gpt-5.1"));
+        assertTrue(result.output().contains("gpt-5"));
+        assertTrue(result.output().contains("reasoning: low, medium"));
+        verify(modelSelectionCommandService).handleModel(new ModelSelectionCommandService.ListAvailableModels());
     }
 
     @Test
-    void modelListCommandEmpty() throws Exception {
-        when(modelSelectionService.getAvailableModelsGrouped()).thenReturn(Collections.emptyMap());
+    void modelShowCommandDelegatesAndRendersOverview() throws Exception {
+        when(modelSelectionCommandService.handleModel(new ModelSelectionCommandService.ShowModelSelection()))
+                .thenReturn(new ModelSelectionCommandService.ModelSelectionOverview(List.of(
+                        new ModelSelectionCommandService.TierSelection("balanced", null, null, false),
+                        new ModelSelectionCommandService.TierSelection("coding", "openai/gpt-5", "medium", true))));
+
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of(), CTX).get();
+
+        assertTrue(result.success());
+        assertTrue(result.output().contains("command.model.show.title"));
+        assertTrue(result.output().contains("command.model.show.tier.default balanced"));
+        assertTrue(result.output().contains("—"));
+        assertTrue(result.output().contains("command.model.show.tier.override coding openai/gpt-5 medium"));
+        verify(modelSelectionCommandService).handleModel(new ModelSelectionCommandService.ShowModelSelection());
+    }
+
+    @Test
+    void modelListCommandRendersEmptyCatalog() throws Exception {
+        when(modelSelectionCommandService.handleModel(new ModelSelectionCommandService.ListAvailableModels()))
+                .thenReturn(new ModelSelectionCommandService.AvailableModels(Map.of()));
 
         CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("list"), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("No models available"));
+        assertEquals("command.model.list.title\n\nNo models available.", result.output());
     }
 
     @Test
-    void modelInvalidTier() throws Exception {
-        CommandPort.CommandResult result = router.execute(CMD_MODEL,
-                List.of("unknown", "openai/gpt-5.1"), CTX).get();
+    void modelListCommandOmitsReasoningSuffixWhenModelHasNoReasoning() throws Exception {
+        when(modelSelectionCommandService.handleModel(new ModelSelectionCommandService.ListAvailableModels()))
+                .thenReturn(new ModelSelectionCommandService.AvailableModels(Map.of(
+                        "openai", List.of(new ModelSelectionCommandService.AvailableModelOption(
+                                "gpt-5-mini",
+                                "GPT-5 Mini",
+                                false,
+                                List.of())))));
+
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("list"), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.invalid.tier"));
+        assertTrue(result.output().contains("command.model.list.model gpt-5-mini GPT-5 Mini"));
+        assertFalse(result.output().contains("reasoning:"));
     }
 
     @Test
-    void modelTierNoSubcommand() throws Exception {
-        CommandPort.CommandResult result = router.execute(CMD_MODEL,
-                List.of(TIER_CODING), CTX).get();
+    void modelCommandRejectsInvalidTierInAdapter() throws Exception {
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("unknown", "broken"), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.usage"));
+        assertEquals("command.model.invalid.tier", result.output());
+        verifyNoInteractions(modelSelectionCommandService);
     }
 
     @Test
-    void modelSetCommand() throws Exception {
-        when(modelSelectionService.validateModel("openai/gpt-5.1"))
-                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
-        when(preferencesService.getPreferences()).thenReturn(
-                UserPreferences.builder().tierOverrides(new HashMap<>()).build());
-        when(modelSelectionService.getAvailableModels()).thenReturn(List.of(
-                new ModelSelectionService.AvailableModel("gpt-5.1", "openai", "GPT-5.1",
-                        true, List.of("low", "medium", "high"), true)));
+    void modelCommandShowsUsageWhenActionMissing() throws Exception {
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding"), CTX).get();
 
-        CommandPort.CommandResult result = router.execute(CMD_MODEL,
-                List.of(TIER_CODING, "openai/gpt-5.1"), CTX).get();
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.set"));
-        verify(preferencesService).savePreferences(any(UserPreferences.class));
+        assertEquals("command.model.usage", result.output());
+        verifyNoInteractions(modelSelectionCommandService);
     }
 
     @Test
-    void modelSetCommandInvalidModel() throws Exception {
-        when(modelSelectionService.validateModel("unknown/bad"))
-                .thenReturn(new ModelSelectionService.ValidationResult(false, "model.not.found"));
+    void modelReasoningCommandRequiresLevelInAdapter() throws Exception {
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "reasoning"), CTX).get();
 
-        CommandPort.CommandResult result = router.execute(CMD_MODEL,
-                List.of(TIER_CODING, "unknown/bad"), CTX).get();
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.invalid.model"));
+        assertEquals("command.model.usage", result.output());
+        verifyNoInteractions(modelSelectionCommandService);
     }
 
     @Test
-    void modelSetCommandProviderNotConfigured() throws Exception {
-        when(modelSelectionService.validateModel("google/gemini"))
-                .thenReturn(new ModelSelectionService.ValidationResult(false, "provider.not.configured"));
+    void modelResetCommandDelegatesAndRendersResetOutcome() throws Exception {
+        when(modelSelectionCommandService.handleModel(new ModelSelectionCommandService.ResetModelOverride("coding")))
+                .thenReturn(new ModelSelectionCommandService.ModelOverrideReset("coding"));
 
-        CommandPort.CommandResult result = router.execute(CMD_MODEL,
-                List.of(TIER_CODING, "google/gemini"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "reset"), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.invalid.provider"));
+        assertEquals("command.model.reset coding", result.output());
+        verify(modelSelectionCommandService).handleModel(new ModelSelectionCommandService.ResetModelOverride("coding"));
     }
 
     @Test
-    void modelResetCommand() throws Exception {
-        when(preferencesService.getPreferences()).thenReturn(
-                UserPreferences.builder()
-                        .tierOverrides(new HashMap<>(Map.of(TIER_CODING,
-                                new UserPreferences.TierOverride("openai/gpt-5.1", "medium"))))
-                        .build());
+    void modelReasoningCommandDelegatesAndRendersUpdate() throws Exception {
+        when(modelSelectionCommandService
+                .handleModel(new ModelSelectionCommandService.SetReasoningLevel("coding", "high")))
+                .thenReturn(new ModelSelectionCommandService.ModelReasoningSet("coding", "high"));
 
-        CommandPort.CommandResult result = router.execute(CMD_MODEL,
-                List.of(TIER_CODING, "reset"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "reasoning", "high"), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.reset"));
-        verify(preferencesService).savePreferences(any(UserPreferences.class));
+        assertEquals("command.model.set.reasoning coding high", result.output());
+        verify(modelSelectionCommandService)
+                .handleModel(new ModelSelectionCommandService.SetReasoningLevel("coding", "high"));
     }
 
     @Test
-    void modelSetReasoningCommand() throws Exception {
-        UserPreferences prefs = UserPreferences.builder()
-                .tierOverrides(new HashMap<>(Map.of(TIER_CODING,
-                        new UserPreferences.TierOverride("openai/gpt-5.1", "medium"))))
-                .build();
-        when(preferencesService.getPreferences()).thenReturn(prefs);
-        when(modelSelectionService.validateReasoning("openai/gpt-5.1", "high"))
-                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+    void modelCommandRendersSuccessfulOverrideWithDefaultReasoning() throws Exception {
+        when(modelSelectionCommandService.handleModel(
+                new ModelSelectionCommandService.SetModelOverride("coding", "openai/gpt-5"))).thenReturn(
+                        new ModelSelectionCommandService.ModelOverrideSet("coding", "openai/gpt-5", "medium"));
 
-        CommandPort.CommandResult result = router.execute(CMD_MODEL,
-                List.of(TIER_CODING, "reasoning", "high"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "openai/gpt-5"), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.set.reasoning"));
-        verify(preferencesService).savePreferences(prefs);
+        assertEquals("command.model.set coding openai/gpt-5 (reasoning: medium)", result.output());
     }
 
     @Test
-    void modelSetReasoningNoOverride() throws Exception {
-        when(preferencesService.getPreferences()).thenReturn(
-                UserPreferences.builder().tierOverrides(new HashMap<>()).build());
+    void modelCommandRendersSuccessfulOverrideWithoutDefaultReasoning() throws Exception {
+        when(modelSelectionCommandService.handleModel(
+                new ModelSelectionCommandService.SetModelOverride("coding", "openai/gpt-5-mini"))).thenReturn(
+                        new ModelSelectionCommandService.ModelOverrideSet("coding", "openai/gpt-5-mini", null));
 
-        CommandPort.CommandResult result = router.execute(CMD_MODEL,
-                List.of(TIER_CODING, "reasoning", "high"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "openai/gpt-5-mini"), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.no.override"));
+        assertEquals("command.model.set coding openai/gpt-5-mini", result.output());
     }
 
     @Test
-    void modelSetReasoningNoReasoningSupport() throws Exception {
-        UserPreferences prefs = UserPreferences.builder()
-                .tierOverrides(new HashMap<>(Map.of(TIER_CODING,
-                        new UserPreferences.TierOverride("openai/gpt-5.1", null))))
-                .build();
-        when(preferencesService.getPreferences()).thenReturn(prefs);
-        when(modelSelectionService.validateReasoning("openai/gpt-5.1", "high"))
-                .thenReturn(new ModelSelectionService.ValidationResult(false, "no.reasoning"));
+    void modelCommandRendersProviderMismatchFromApplicationOutcome() throws Exception {
+        when(modelSelectionCommandService.handleModel(
+                new ModelSelectionCommandService.SetModelOverride("coding", "anthropic/claude"))).thenReturn(
+                        new ModelSelectionCommandService.ProviderNotConfigured(
+                                "anthropic/claude",
+                                List.of("openai", "google")));
 
-        CommandPort.CommandResult result = router.execute(CMD_MODEL,
-                List.of(TIER_CODING, "reasoning", "high"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "anthropic/claude"), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.no.reasoning"));
+        assertEquals("command.model.invalid.provider anthropic/claude openai, google", result.output());
+        verify(modelSelectionCommandService).handleModel(
+                new ModelSelectionCommandService.SetModelOverride("coding", "anthropic/claude"));
     }
 
     @Test
-    void modelSetReasoningInvalidLevel() throws Exception {
-        UserPreferences prefs = UserPreferences.builder()
-                .tierOverrides(new HashMap<>(Map.of(TIER_CODING,
-                        new UserPreferences.TierOverride("openai/gpt-5.1", "medium"))))
-                .build();
-        when(preferencesService.getPreferences()).thenReturn(prefs);
-        when(modelSelectionService.validateReasoning("openai/gpt-5.1", "xhigh"))
-                .thenReturn(new ModelSelectionService.ValidationResult(false, "level.not.available"));
-        when(modelSelectionService.getAvailableModels()).thenReturn(List.of(
-                new ModelSelectionService.AvailableModel("gpt-5.1", "openai", "GPT-5.1",
-                        true, List.of("low", "medium", "high"), true)));
+    void modelCommandRendersInvalidTierFromApplicationOutcome() throws Exception {
+        when(modelSelectionCommandService.handleModel(
+                new ModelSelectionCommandService.SetModelOverride("coding", "openai/gpt-5"))).thenReturn(
+                        new ModelSelectionCommandService.InvalidModelTier());
 
-        CommandPort.CommandResult result = router.execute(CMD_MODEL,
-                List.of(TIER_CODING, "reasoning", "xhigh"), CTX).get();
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "openai/gpt-5"), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.invalid.reasoning"));
+        assertEquals("command.model.invalid.tier", result.output());
     }
 
     @Test
-    void modelReasoningMissingLevel() throws Exception {
-        CommandPort.CommandResult result = router.execute(CMD_MODEL,
-                List.of(TIER_CODING, "reasoning"), CTX).get();
+    void modelCommandRendersInvalidModelFromApplicationOutcome() throws Exception {
+        when(modelSelectionCommandService.handleModel(
+                new ModelSelectionCommandService.SetModelOverride("coding", "unknown/bad"))).thenReturn(
+                        new ModelSelectionCommandService.InvalidModel("unknown/bad"));
+
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "unknown/bad"), CTX).get();
+
         assertTrue(result.success());
-        assertTrue(result.output().contains("command.model.usage"));
+        assertEquals("command.model.invalid.model unknown/bad", result.output());
+    }
+
+    @Test
+    void modelCommandRendersMissingOverrideFromApplicationOutcome() throws Exception {
+        when(modelSelectionCommandService
+                .handleModel(new ModelSelectionCommandService.SetReasoningLevel("coding", "high")))
+                .thenReturn(new ModelSelectionCommandService.MissingModelOverride("coding"));
+
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "reasoning", "high"), CTX).get();
+
+        assertTrue(result.success());
+        assertEquals("command.model.no.override coding", result.output());
+    }
+
+    @Test
+    void modelCommandRendersMissingReasoningSupportFromApplicationOutcome() throws Exception {
+        when(modelSelectionCommandService
+                .handleModel(new ModelSelectionCommandService.SetReasoningLevel("coding", "high")))
+                .thenReturn(new ModelSelectionCommandService.MissingReasoningSupport("openai/gpt-5-mini"));
+
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "reasoning", "high"), CTX).get();
+
+        assertTrue(result.success());
+        assertEquals("command.model.no.reasoning openai/gpt-5-mini", result.output());
+    }
+
+    @Test
+    void modelCommandRendersInvalidReasoningLevelFromApplicationOutcome() throws Exception {
+        when(modelSelectionCommandService
+                .handleModel(new ModelSelectionCommandService.SetReasoningLevel("coding", "xhigh")))
+                .thenReturn(new ModelSelectionCommandService.InvalidReasoningLevel(
+                        "xhigh",
+                        List.of("low", "medium", "high")));
+
+        CommandPort.CommandResult result = router.execute(CMD_MODEL, List.of("coding", "reasoning", "xhigh"), CTX)
+                .get();
+
+        assertTrue(result.success());
+        assertEquals("command.model.invalid.reasoning xhigh low, medium, high", result.output());
     }
 }

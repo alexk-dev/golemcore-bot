@@ -28,15 +28,15 @@ import org.springframework.scheduling.annotation.EnableAsync;
  *
  * <p>
  * Java AI Bot is an extensible AI assistant framework built with Spring Boot
- * 3.4.2, supporting multiple LLM providers, intelligent skill routing, and
+ * 3.4.2, supporting multiple LLM providers, LLM-driven skill activation, and
  * powerful tool execution.
  *
  * <h2>Key Features</h2>
  * <ul>
  * <li><b>Multi-LLM Support</b> - OpenAI (GPT-4o, o1, gpt-5.x) and Anthropic
  * (Claude) via langchain4j</li>
- * <li><b>Skill Routing</b> - Hybrid semantic search + LLM classifier for
- * intelligent request routing</li>
+ * <li><b>Skill Activation</b> - Base prompt + explicit skill transitions for
+ * LLM-driven task selection</li>
  * <li><b>Tool Execution</b> - FileSystem, Shell, Browser, Weather, DateTime
  * tools with security sandboxing</li>
  * <li><b>MCP Client</b> - Model Context Protocol integration for external tool

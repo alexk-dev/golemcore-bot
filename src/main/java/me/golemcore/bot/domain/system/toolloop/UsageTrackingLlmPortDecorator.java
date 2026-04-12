@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
+import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -19,16 +20,19 @@ import java.util.concurrent.CompletableFuture;
  * Decorator around {@link LlmPort} that records token usage via
  * {@link UsageTrackingPort} after each chat completion call.
  */
-class UsageTrackingLlmPortDecorator implements LlmPort {
+public class UsageTrackingLlmPortDecorator implements LlmPort {
 
     private static final Logger log = LoggerFactory.getLogger(UsageTrackingLlmPortDecorator.class);
 
     private final LlmPort delegate;
     private final UsageTrackingPort usageTracker;
+    private final TelemetryRollupPort telemetryRollupStore;
 
-    UsageTrackingLlmPortDecorator(LlmPort delegate, UsageTrackingPort usageTracker) {
+    public UsageTrackingLlmPortDecorator(LlmPort delegate, UsageTrackingPort usageTracker,
+            TelemetryRollupPort telemetryRollupStore) {
         this.delegate = delegate;
         this.usageTracker = usageTracker;
+        this.telemetryRollupStore = telemetryRollupStore;
     }
 
     @Override
@@ -87,8 +91,24 @@ class UsageTrackingLlmPortDecorator implements LlmPort {
             usage.setProviderId(providerId);
 
             usageTracker.recordUsage(providerId, model, usage);
+            telemetryRollupStore.recordModelUsage(
+                    model,
+                    request.getModelTier(),
+                    usage.getInputTokens(),
+                    usage.getOutputTokens(),
+                    resolveTotalTokens(usage));
         } catch (Exception e) { // NOSONAR
             log.warn("[UsageTracking] Failed to record usage: {}", e.getMessage());
         }
+    }
+
+    private int resolveTotalTokens(LlmUsage usage) {
+        if (usage == null) {
+            return 0;
+        }
+        if (usage.getTotalTokens() > 0) {
+            return usage.getTotalTokens();
+        }
+        return Math.max(0, usage.getInputTokens()) + Math.max(0, usage.getOutputTokens());
     }
 }

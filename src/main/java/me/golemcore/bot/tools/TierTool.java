@@ -21,6 +21,7 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -31,17 +32,15 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 /**
  * Tool for switching the model tier during a conversation.
  *
  * <p>
- * The LLM calls this tool to switch to a different model tier (balanced, smart,
- * coding, deep) when it determines the task requires different capabilities.
- * Respects the user's tier force setting — if force is enabled, the tool
- * returns an error.
+ * The LLM calls this tool to switch to a different model tier when it
+ * determines the task requires different capabilities. Respects the user's tier
+ * force setting — if force is enabled, the tool returns an error.
  *
  * <p>
  * Uses {@link AgentContextHolder} to modify the current {@link AgentContext}.
@@ -54,8 +53,6 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 @Slf4j
 public class TierTool implements ToolComponent {
-
-    private static final Set<String> VALID_TIERS = Set.of("balanced", "smart", "coding", "deep");
 
     private final UserPreferencesService userPreferencesService;
     private final RuntimeConfigService runtimeConfigService;
@@ -71,13 +68,14 @@ public class TierTool implements ToolComponent {
                 .name("set_tier")
                 .description("Switch the model tier for the current conversation. "
                         + "Available tiers: balanced (general), smart (complex reasoning), "
-                        + "coding (programming), deep (PhD-level analysis).")
+                        + "deep (PhD-level analysis), coding (programming), "
+                        + "special1-special5 (explicit custom slots).")
                 .inputSchema(Map.of(
                         "type", "object",
                         "properties", Map.of(
                                 "tier", Map.of(
                                         "type", "string",
-                                        "enum", List.of("balanced", "smart", "coding", "deep"),
+                                        "enum", ModelTierCatalog.orderedExplicitTiers(),
                                         "description", "The model tier to switch to")),
                         "required", List.of("tier")))
                 .build();
@@ -85,15 +83,17 @@ public class TierTool implements ToolComponent {
 
     @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
-        String tier = (String) parameters.get("tier");
+        String tier = ModelTierCatalog.normalizeTierId((String) parameters.get("tier"));
 
         if (tier == null || tier.isBlank()) {
             return CompletableFuture.completedFuture(ToolResult.failure("tier is required"));
         }
 
-        if (!VALID_TIERS.contains(tier)) {
+        if (!ModelTierCatalog.isExplicitSelectableTier(tier)) {
             return CompletableFuture.completedFuture(
-                    ToolResult.failure("Invalid tier: " + tier + ". Valid tiers: balanced, smart, coding, deep"));
+                    ToolResult.failure(
+                            "Invalid tier: " + tier + ". Valid tiers: "
+                                    + ModelTierCatalog.explicitTierListForDisplay()));
         }
 
         if (userPreferencesService.getPreferences().isTierForce()) {

@@ -5,6 +5,8 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -19,9 +21,11 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.any;
@@ -150,6 +154,22 @@ class WebhookControllerTest {
         assertTrue(content.endsWith("[END EXTERNAL DATA]"));
     }
 
+    @Test
+    void wakeShouldAttachTraceMetadata() {
+        WakeRequest request = WakeRequest.builder().text("External event").build();
+
+        controller.wake(toJsonBytes(request), new HttpHeaders()).block();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("INGRESS", captor.getValue().message().getMetadata().get("trace.root.kind"));
+        assertEquals("webhook.wake", captor.getValue().message().getMetadata().get("trace.name"));
+        assertNotNull(captor.getValue().message().getMetadata().get("trace.id"));
+        assertNotNull(captor.getValue().message().getMetadata().get("trace.span.id"));
+        assertNull(captor.getValue().message().getMetadata().get("trace.parent.span.id"));
+    }
+
     // ==================== /agent ====================
 
     @Test
@@ -209,6 +229,81 @@ class WebhookControllerTest {
                 eq("https://example.com/callback"), eq("coding"));
         verify(channelAdapter).registerPendingRun(anyString(), anyString(),
                 eq("https://example.com/callback"), eq("coding"), eq("delivery-1"));
+    }
+
+    @Test
+    void agentShouldAttachTraceMetadata() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Summarize issues")
+                .name("Daily Digest")
+                .build();
+
+        controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("INGRESS", captor.getValue().message().getMetadata().get("trace.root.kind"));
+        assertEquals("webhook.agent", captor.getValue().message().getMetadata().get("trace.name"));
+        assertNotNull(captor.getValue().message().getMetadata().get("trace.id"));
+        assertNotNull(captor.getValue().message().getMetadata().get("trace.span.id"));
+        assertNull(captor.getValue().message().getMetadata().get("trace.parent.span.id"));
+    }
+
+    @Test
+    void agentShouldAttachDeliveryMetadataUsingCanonicalKeys() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Summarize issues")
+                .deliver(true)
+                .channel("telegram")
+                .to("tg-user-42")
+                .metadata(Map.of("source", "ci"))
+                .build();
+
+        controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+
+        Message message = captor.getValue().message();
+        assertEquals("ci", message.getMetadata().get("source"));
+        assertEquals(true, message.getMetadata().get(ContextAttributes.WEBHOOK_DELIVER));
+        assertEquals("telegram", message.getMetadata().get(ContextAttributes.WEBHOOK_DELIVER_CHANNEL));
+        assertEquals("tg-user-42", message.getMetadata().get(ContextAttributes.WEBHOOK_DELIVER_TO));
+    }
+
+    @Test
+    void agentShouldAcceptSpecialTier() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Test msg")
+                .callbackUrl("https://example.com/callback")
+                .model("special4")
+                .build();
+        when(deliveryTracker.registerPendingDelivery(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn("delivery-special");
+
+        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(),
+                eq("https://example.com/callback"), eq("special4"), eq("delivery-special"));
+    }
+
+    @Test
+    void agentShouldRejectUnknownTier() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Test msg")
+                .model("turbo")
+                .build();
+
+        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("'model' must be a known tier id", response.getBody().getErrorMessage());
+        verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), any(), any(), any());
     }
 
     @Test
@@ -324,6 +419,54 @@ class WebhookControllerTest {
         assertNotNull(response);
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
         assertNotNull(response.getBody().getRunId());
+    }
+
+    @Test
+    void customHookAgentActionShouldAttachDeliveryMetadataUsingCanonicalKeys() {
+        UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
+                .name("agent-hook")
+                .action("agent")
+                .messageTemplate("Process: {event}")
+                .deliver(true)
+                .channel("telegram")
+                .to("tg-user-42")
+                .build();
+        when(preferencesService.getPreferences()).thenReturn(buildPrefsWithMapping(mapping));
+        when(authenticator.authenticate(any(), any(), any())).thenReturn(true);
+        when(transformer.transform(any(), any())).thenReturn("Process: deploy");
+
+        byte[] body = "{\"event\":\"deploy\"}".getBytes();
+        controller.customHook("agent-hook", body, new HttpHeaders()).block();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+
+        Message message = captor.getValue().message();
+        assertEquals(true, message.getMetadata().get(ContextAttributes.WEBHOOK_DELIVER));
+        assertEquals("telegram", message.getMetadata().get(ContextAttributes.WEBHOOK_DELIVER_CHANNEL));
+        assertEquals("tg-user-42", message.getMetadata().get(ContextAttributes.WEBHOOK_DELIVER_TO));
+    }
+
+    @Test
+    void customHookAgentActionShouldRejectUnknownTier() {
+        UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
+                .name("agent-hook")
+                .action("agent")
+                .messageTemplate("Process: {event}")
+                .model("turbo")
+                .build();
+        when(preferencesService.getPreferences()).thenReturn(buildPrefsWithMapping(mapping));
+        when(authenticator.authenticate(any(), any(), any())).thenReturn(true);
+        when(transformer.transform(any(), any())).thenReturn("Process: deploy");
+
+        byte[] body = "{\"event\":\"deploy\"}".getBytes();
+        ResponseEntity<WebhookResponse> response = controller.customHook("agent-hook", body, new HttpHeaders())
+                .block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("Webhook mapping model must be a known tier id", response.getBody().getErrorMessage());
     }
 
     private UserPreferences buildEnabledPrefs() {

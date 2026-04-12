@@ -8,9 +8,9 @@ import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanReadyEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,14 +33,14 @@ class PlanFinalizationSystemTest {
     private static final String TOOL_FILESYSTEM = "filesystem";
 
     private PlanService planService;
-    private ApplicationEventPublisher eventPublisher;
+    private PlanReadyNotificationPort planReadyNotificationPort;
     private PlanFinalizationSystem system;
 
     @BeforeEach
     void setUp() {
         planService = mock(PlanService.class);
-        eventPublisher = mock(ApplicationEventPublisher.class);
-        system = new PlanFinalizationSystem(planService, eventPublisher);
+        planReadyNotificationPort = mock(PlanReadyNotificationPort.class);
+        system = new PlanFinalizationSystem(planService, planReadyNotificationPort);
     }
 
     @Test
@@ -128,7 +128,7 @@ class PlanFinalizationSystemTest {
         system.process(context);
 
         verify(planService).finalizePlan(eq(PLAN_ID), eq("# Plan"), any());
-        verify(eventPublisher).publishEvent(any(PlanReadyEvent.class));
+        verify(planReadyNotificationPort).publish(any(PlanReadyEvent.class));
     }
 
     @Test
@@ -159,7 +159,7 @@ class PlanFinalizationSystemTest {
         system.process(context);
 
         verify(planService).finalizePlan(any(), any(), any());
-        verify(eventPublisher).publishEvent(any(PlanReadyEvent.class));
+        verify(planReadyNotificationPort).publish(any(PlanReadyEvent.class));
 
         // Check that plan approval attribute was set
         String approvalNeeded = context.getAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED);
@@ -184,7 +184,7 @@ class PlanFinalizationSystemTest {
         system.process(context);
 
         verify(planService).deactivatePlanMode();
-        verify(eventPublisher, never()).publishEvent(any());
+        verify(planReadyNotificationPort, never()).publish(any());
     }
 
     @Test
@@ -264,7 +264,7 @@ class PlanFinalizationSystemTest {
         system.process(context);
 
         verify(planService).finalizePlan(eq(PLAN_ID), eq("# Revised plan"), any());
-        verify(eventPublisher).publishEvent(eq(new PlanReadyEvent("plan-456", CHAT_ID)));
+        verify(planReadyNotificationPort).publish(eq(new PlanReadyEvent("plan-456", CHAT_ID)));
         assertEquals("plan-456", context.getAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED));
     }
 

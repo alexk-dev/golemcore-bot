@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -94,6 +95,8 @@ public class GoalManagementTool implements ToolComponent {
     private static final String PARAM_TASKS = "tasks";
     private static final String PARAM_CONTENT = "content";
     private static final String PARAM_DIARY_TYPE = "diary_type";
+    private static final String PARAM_REFLECTION_MODEL_TIER = "reflection_model_tier";
+    private static final String PARAM_REFLECTION_TIER_PRIORITY = "reflection_tier_priority";
 
     private static final String ERR_MISSING_GOAL_ID = "Missing required parameter: goal_id";
 
@@ -151,6 +154,11 @@ public class GoalManagementTool implements ToolComponent {
         props.put(PARAM_STATUS, Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION,
                 "New status for task (PENDING, IN_PROGRESS, COMPLETED, FAILED, SKIPPED)"));
         props.put(PARAM_RESULT, Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION, "Completion notes for task"));
+        props.put(PARAM_REFLECTION_MODEL_TIER,
+                Map.of(SCHEMA_TYPE, SCHEMA_STRING, SCHEMA_DESCRIPTION, "Optional reflection/recovery tier override"));
+        props.put(PARAM_REFLECTION_TIER_PRIORITY,
+                Map.of(SCHEMA_TYPE, "boolean", SCHEMA_DESCRIPTION,
+                        "If true, reflection tier from goal/task overrides skill metadata"));
         props.put(PARAM_TASKS,
                 Map.of(SCHEMA_TYPE, SCHEMA_ARRAY, SCHEMA_DESCRIPTION,
                         "Array of {title, description} objects for plan_tasks",
@@ -203,18 +211,33 @@ public class GoalManagementTool implements ToolComponent {
     private ToolResult createGoal(Map<String, Object> params) {
         String title = (String) params.get(PARAM_TITLE);
         String description = (String) params.get(PARAM_DESCRIPTION);
+        String reflectionModelTier = normalizeOptionalReflectionModelTier(
+                (String) params.get(PARAM_REFLECTION_MODEL_TIER));
+        boolean reflectionTierPriority = Boolean.TRUE.equals(params.get(PARAM_REFLECTION_TIER_PRIORITY));
 
         if (title == null || title.isBlank()) {
             return ToolResult.failure("Missing required parameter: title");
         }
 
         try {
-            Goal goal = autoModeService.createGoal(title, description);
+            Goal goal = autoModeService.createGoal(title, description, null, reflectionModelTier,
+                    reflectionTierPriority);
             return ToolResult.success("Goal created: " + goal.getTitle() + " (id: " + goal.getId() + ")",
                     Map.of(PARAM_GOAL_ID, goal.getId(), PARAM_TITLE, goal.getTitle()));
         } catch (IllegalStateException e) {
             return ToolResult.failure(e.getMessage());
         }
+    }
+
+    private String normalizeOptionalReflectionModelTier(String reflectionModelTier) {
+        String normalizedTier = ModelTierCatalog.normalizeTierId(reflectionModelTier);
+        if (normalizedTier == null) {
+            return null;
+        }
+        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
+            throw new IllegalArgumentException("reflection_model_tier must be a known tier id");
+        }
+        return normalizedTier;
     }
 
     private ToolResult listGoals() {

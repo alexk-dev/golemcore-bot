@@ -4,6 +4,7 @@ import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Input } from '../../../components/ui/field';
+import { toEditorModelIdForProvider } from '../../../lib/providerModelIds';
 import { cn } from '../../../lib/utils';
 import type { ProviderProfileSummary } from './modelCatalogProviderProfiles';
 import type { CatalogModelItem, GroupedCatalogModels } from './modelCatalogTypes';
@@ -53,8 +54,10 @@ function filterItems(items: CatalogModelItem[], query: string): CatalogModelItem
   }
 
   return items.filter((item) => {
-    const displayName = item.settings.displayName ?? item.id;
+    const editorId = toEditorModelIdForProvider(item.id, item.settings.provider);
+    const displayName = item.settings.displayName ?? editorId;
     return item.id.toLowerCase().includes(normalizedQuery)
+      || editorId.toLowerCase().includes(normalizedQuery)
       || displayName.toLowerCase().includes(normalizedQuery);
   });
 }
@@ -158,6 +161,7 @@ function CatalogListState({
       <div className="space-y-2">
         {filteredItems.map((item) => {
           const isActive = item.id === selectedModelId;
+          const editorId = toEditorModelIdForProvider(item.id, item.settings.provider);
           return (
             <button
               key={item.id}
@@ -174,10 +178,10 @@ function CatalogListState({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-foreground">
-                    {item.settings.displayName ?? item.id}
+                    {item.settings.displayName ?? editorId}
                   </div>
                   <div className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                    {item.id}
+                    {editorId}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap justify-end gap-1">
@@ -300,13 +304,12 @@ export function ModelCatalogSidebar({
           />
         </div>
 
-        <div className="relative">
+        <div className="input-with-leading-icon">
           <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={15} />
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={searchPlaceholder}
-            className="pl-9"
             disabled={!hasSelectedProvider}
           />
         </div>

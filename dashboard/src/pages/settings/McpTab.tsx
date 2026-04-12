@@ -2,9 +2,10 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Form, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
-import { useUpdateMcp } from '../../hooks/useSettings';
-import type { McpConfig } from '../../api/settings';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
+import { useUpdateMcp } from '../../hooks/useSettings';
+import type { McpConfig } from '../../api/settingsTypes';
+import { McpCatalogSection } from './McpCatalogSection';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -22,8 +23,12 @@ interface McpTabProps {
 export default function McpTab({ config }: McpTabProps): ReactElement {
   const updateMcp = useUpdateMcp();
   const [form, setForm] = useState<McpConfig>({ ...config });
-  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const isDirty = useMemo(() => hasDiff(
+    { enabled: form.enabled, defaultStartupTimeout: form.defaultStartupTimeout, defaultIdleTimeout: form.defaultIdleTimeout },
+    { enabled: config.enabled, defaultStartupTimeout: config.defaultStartupTimeout, defaultIdleTimeout: config.defaultIdleTimeout },
+  ), [form, config]);
 
+  // Sync form when external config changes
   useEffect(() => {
     setForm({ ...config });
   }, [config]);
@@ -34,51 +39,55 @@ export default function McpTab({ config }: McpTabProps): ReactElement {
   };
 
   return (
-    <Card className="settings-card">
-      <Card.Body>
-        <SettingsCardTitle title="MCP (Model Context Protocol)" />
-        <Form.Check
-          type="switch"
-          label="Enable MCP"
-          checked={form.enabled ?? true}
-          onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
-          className="mb-3"
-        />
-        <Row className="g-3 mb-3">
-          <Col md={6}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">Default Startup Timeout (s)</Form.Label>
-              <Form.Control
-                size="sm"
-                type="number"
-                min={1}
-                max={300}
-                value={form.defaultStartupTimeout ?? 30}
-                onChange={(e) => setForm({ ...form, defaultStartupTimeout: toNullableInt(e.target.value) })}
-              />
-            </Form.Group>
-          </Col>
-          <Col md={6}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">Default Idle Timeout (min)</Form.Label>
-              <Form.Control
-                size="sm"
-                type="number"
-                min={1}
-                max={120}
-                value={form.defaultIdleTimeout ?? 5}
-                onChange={(e) => setForm({ ...form, defaultIdleTimeout: toNullableInt(e.target.value) })}
-              />
-            </Form.Group>
-          </Col>
-        </Row>
-        <SettingsSaveBar>
-          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMcp.isPending}>
-            {updateMcp.isPending ? 'Saving...' : 'Save'}
-          </Button>
-          <SaveStateHint isDirty={isDirty} />
-        </SettingsSaveBar>
-      </Card.Body>
-    </Card>
+    <>
+      <Card className="settings-card mb-3">
+        <Card.Body>
+          <SettingsCardTitle title="MCP Runtime Defaults" />
+          <Form.Check
+            type="switch"
+            label="Enable MCP"
+            checked={form.enabled ?? true}
+            onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+            className="mb-3"
+          />
+          <Row className="g-3 mb-3">
+            <Col md={6}>
+              <Form.Group>
+                <Form.Label className="small fw-medium">Default Startup Timeout (s)</Form.Label>
+                <Form.Control
+                  size="sm"
+                  type="number"
+                  min={1}
+                  max={300}
+                  value={form.defaultStartupTimeout ?? 30}
+                  onChange={(e) => setForm({ ...form, defaultStartupTimeout: toNullableInt(e.target.value) })}
+                />
+              </Form.Group>
+            </Col>
+            <Col md={6}>
+              <Form.Group>
+                <Form.Label className="small fw-medium">Default Idle Timeout (min)</Form.Label>
+                <Form.Control
+                  size="sm"
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={form.defaultIdleTimeout ?? 5}
+                  onChange={(e) => setForm({ ...form, defaultIdleTimeout: toNullableInt(e.target.value) })}
+                />
+              </Form.Group>
+            </Col>
+          </Row>
+          <SettingsSaveBar>
+            <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateMcp.isPending}>
+              {updateMcp.isPending ? 'Saving...' : 'Save'}
+            </Button>
+            <SaveStateHint isDirty={isDirty} />
+          </SettingsSaveBar>
+        </Card.Body>
+      </Card>
+
+      <McpCatalogSection catalog={config.catalog ?? []} />
+    </>
   );
 }

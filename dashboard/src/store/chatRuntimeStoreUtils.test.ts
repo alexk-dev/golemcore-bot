@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChatMessage, ChatRuntimeSessionState } from '../components/chat/chatRuntimeTypes';
 import {
   applyAssistantTextUpdate,
+  applyLiveProgressUpdate,
   createEmptySessionState,
   mergeInitialHistory,
 } from './chatRuntimeStoreUtils';
@@ -13,7 +14,9 @@ function createUserMessage(overrides: Partial<ChatMessage>): ChatMessage {
     content: 'hello',
     model: null,
     tier: null,
+    skill: null,
     reasoning: null,
+    attachments: [],
     persisted: false,
     ...overrides,
   };
@@ -44,25 +47,117 @@ describe('chatRuntimeStoreUtils', () => {
 
   it('accumulates assistant chunks into a single live assistant message and finalizes the text', () => {
     const initialState = buildSessionState({});
-    const chunkState = applyAssistantTextUpdate(initialState, 'chat-1', 'Hel', {
-      model: 'openai/o3-mini',
-      reasoning: 'high',
-      tier: 'smart',
-    }, false);
+    const chunkState = applyAssistantTextUpdate(initialState, {
+      sessionId: 'chat-1',
+      text: 'Hel',
+      hint: {
+        model: 'openai/o3-mini',
+        reasoning: 'high',
+        tier: 'smart',
+        skill: 'reviewer-skill',
+      },
+      attachments: [],
+      isFinal: false,
+    });
 
     expect(chunkState.messages).toHaveLength(1);
     expect(chunkState.messages[0].content).toBe('Hel');
+    expect(chunkState.messages[0].skill).toBe('reviewer-skill');
     expect(chunkState.running).toBe(true);
     expect(chunkState.turnMetadata.reasoning).toBe('high');
 
     const finalState = applyAssistantTextUpdate({
       ...initialState,
       ...chunkState,
-    }, 'chat-1', 'Hello', null, true);
+    }, {
+      sessionId: 'chat-1',
+      text: 'Hello',
+      hint: null,
+      attachments: [],
+      isFinal: true,
+    });
 
     expect(finalState.messages).toHaveLength(1);
     expect(finalState.messages[0].content).toBe('Hello');
+    expect(finalState.messages[0].model).toBe('openai/o3-mini');
+    expect(finalState.messages[0].tier).toBe('smart');
+    expect(finalState.messages[0].reasoning).toBe('high');
     expect(finalState.running).toBe(false);
     expect(finalState.typing).toBe(false);
+  });
+
+  it('creates a finalized assistant message with metadata when only assistant_done arrives', () => {
+    const initialState = buildSessionState({});
+
+    const finalState = applyAssistantTextUpdate(initialState, {
+      sessionId: 'chat-1',
+      text: 'Hello',
+      hint: {
+        model: 'gemini-3.1-flash-lite-preview',
+        tier: 'smart',
+        reasoning: 'medium',
+      },
+      attachments: [],
+      isFinal: true,
+    });
+
+    expect(finalState.messages).toHaveLength(1);
+    expect(finalState.messages[0].content).toBe('Hello');
+    expect(finalState.messages[0].model).toBe('gemini-3.1-flash-lite-preview');
+    expect(finalState.messages[0].tier).toBe('smart');
+    expect(finalState.messages[0].reasoning).toBe('medium');
+    expect(finalState.turnMetadata.model).toBe('gemini-3.1-flash-lite-preview');
+    expect(finalState.turnMetadata.tier).toBe('smart');
+    expect(finalState.turnMetadata.reasoning).toBe('medium');
+    expect(finalState.running).toBe(false);
+  });
+
+  it('stores live progress updates and clears them after the final assistant message', () => {
+    const initialState = buildSessionState({});
+    const withProgress = applyLiveProgressUpdate(initialState, {
+      type: 'summary',
+      text: 'Grouped the latest shell runs into a short update.',
+    });
+
+    expect(withProgress.progress?.text).toBe('Grouped the latest shell runs into a short update.');
+    expect(withProgress.running).toBe(true);
+
+    const finalState = applyAssistantTextUpdate({
+      ...initialState,
+      ...withProgress,
+    }, {
+      sessionId: 'chat-1',
+      text: 'Done',
+      hint: null,
+      attachments: [],
+      isFinal: true,
+    });
+
+    expect(finalState.progress).toBeNull();
+    expect(finalState.running).toBe(false);
+  });
+
+  it('creates an assistant message when the final reply contains only attachments', () => {
+    const initialState = buildSessionState({});
+
+    const finalState = applyAssistantTextUpdate(initialState, {
+      sessionId: 'chat-1',
+      text: '',
+      hint: null,
+      attachments: [{
+        type: 'image',
+        name: 'capture.png',
+        mimeType: 'image/png',
+        url: null,
+        internalFilePath: '.golemcore/tool-artifacts/capture.png',
+        thumbnailBase64: 'ZmFrZQ==',
+      }],
+      isFinal: true,
+    });
+
+    expect(finalState.messages).toHaveLength(1);
+    expect(finalState.messages[0].attachments).toHaveLength(1);
+    expect(finalState.messages[0].content).toBe('');
+    expect(finalState.running).toBe(false);
   });
 });

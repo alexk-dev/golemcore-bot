@@ -3,7 +3,7 @@ import { getActiveSession } from '../../api/sessions';
 import type { useChatRuntimeStore } from '../../store/chatRuntimeStore';
 import type { TurnMetadata } from '../../store/contextPanelStore';
 import { isLegacyCompatibleConversationKey, normalizeConversationKey } from '../../utils/conversationKey';
-import type { AssistantHint, SocketMessage } from './chatRuntimeTypes';
+import type { AssistantHint, LiveProgressUpdate, SocketMessage } from './chatRuntimeTypes';
 
 const RECONNECT_DELAY_MS = 3000;
 const TYPING_RESET_MS = 3000;
@@ -15,9 +15,16 @@ interface SocketMessageHandlerConfig {
   setRunning: (sessionId: string, running: boolean) => void;
   setTyping: (sessionId: string, typing: boolean) => void;
   clearTypingTimer: (sessionId: string) => void;
+  applyProgressUpdate: (sessionId: string, progress: LiveProgressUpdate | null) => void;
   applyTurnMetadataPatch: (sessionId: string, hint: AssistantHint) => void;
   setTurnMetadata: (meta: Partial<TurnMetadata>) => void;
-  applyAssistantText: (sessionId: string, text: string, hint: AssistantHint | null, isFinal: boolean) => void;
+  applyAssistantText: (
+    sessionId: string,
+    text: string,
+    hint: AssistantHint | null,
+    attachments: NonNullable<SocketMessage['attachments']>,
+    isFinal: boolean,
+  ) => void;
 }
 
 interface ChatSocketTransportConfig {
@@ -27,6 +34,7 @@ interface ChatSocketTransportConfig {
   clearReconnectTimer: () => void;
   clearAllTypingTimers: () => void;
   clearTransport: () => void;
+  markPendingMessagesAsFailed: () => void;
   registerTransport: ReturnType<typeof useChatRuntimeStore.getState>['registerTransport'];
   resetAllRuntime: () => void;
   setConnectionState: (state: ReturnType<typeof useChatRuntimeStore.getState>['connectionState']) => void;
@@ -40,6 +48,62 @@ function isSessionRuntimeEventFinished(runtimeEventType: string | undefined): bo
 
 function isSessionRuntimeEventStarted(runtimeEventType: string | undefined): boolean {
   return runtimeEventType === 'TURN_STARTED' || runtimeEventType === 'LLM_STARTED' || runtimeEventType === 'RETRY_STARTED';
+}
+
+
+function handleTypingEvent(sessionId: string, config: SocketMessageHandlerConfig): void {
+  config.markFirstPendingAsSent(sessionId);
+  config.setRunning(sessionId, true);
+  config.setTyping(sessionId, true);
+  config.clearTypingTimer(sessionId);
+  config.typingTimersRef.current.set(sessionId, setTimeout(() => {
+    config.setTyping(sessionId, false);
+  }, TYPING_RESET_MS));
+}
+
+function handleRuntimeEvent(sessionId: string, data: SocketMessage, config: SocketMessageHandlerConfig): void {
+  if (isSessionRuntimeEventStarted(data.runtimeEventType)) {
+    config.setRunning(sessionId, true);
+  }
+  if (isSessionRuntimeEventFinished(data.runtimeEventType)) {
+    config.clearTypingTimer(sessionId);
+    config.setTyping(sessionId, false);
+    config.setRunning(sessionId, false);
+  }
+}
+
+function handleProgressEvent(sessionId: string, data: SocketMessage, config: SocketMessageHandlerConfig): void {
+  config.clearTypingTimer(sessionId);
+  config.setTyping(sessionId, false);
+  if (data.progressType === 'clear') {
+    config.applyProgressUpdate(sessionId, null);
+    config.setRunning(sessionId, false);
+    return;
+  }
+  if (data.progressType === 'intent' || data.progressType === 'summary') {
+    config.applyProgressUpdate(sessionId, {
+      type: data.progressType,
+      text: data.text ?? '',
+      metadata: data.progressMetadata,
+    });
+    config.setRunning(sessionId, true);
+  }
+}
+
+function handleAssistantResponse(sessionId: string, data: SocketMessage, config: SocketMessageHandlerConfig): void {
+  config.clearTypingTimer(sessionId);
+  config.setTyping(sessionId, false);
+  config.markFirstPendingAsSent(sessionId);
+
+  const hint: AssistantHint | null = data.hint ?? null;
+  if (hint != null) {
+    config.applyTurnMetadataPatch(sessionId, hint);
+    if (sessionId === config.activeSessionIdRef.current) {
+      config.setTurnMetadata(hint);
+    }
+  }
+
+  config.applyAssistantText(sessionId, data.text ?? '', hint, data.attachments ?? [], data.type === 'assistant_done');
 }
 
 export function useBootstrapActiveSession(
@@ -90,6 +154,7 @@ export function useSocketMessageHandler({
   setRunning,
   setTyping,
   clearTypingTimer,
+  applyProgressUpdate,
   applyTurnMetadataPatch,
   setTurnMetadata,
   applyAssistantText,
@@ -100,49 +165,38 @@ export function useSocketMessageHandler({
       return;
     }
 
+    const config: SocketMessageHandlerConfig = {
+      activeSessionIdRef,
+      typingTimersRef,
+      markFirstPendingAsSent,
+      setRunning,
+      setTyping,
+      clearTypingTimer,
+      applyProgressUpdate,
+      applyTurnMetadataPatch,
+      setTurnMetadata,
+      applyAssistantText,
+    };
+
     if (data.type === 'system_event' && data.eventType === 'typing') {
-      markFirstPendingAsSent(sessionId);
-      setRunning(sessionId, true);
-      setTyping(sessionId, true);
-      clearTypingTimer(sessionId);
-      typingTimersRef.current.set(sessionId, setTimeout(() => {
-        setTyping(sessionId, false);
-      }, TYPING_RESET_MS));
+      handleTypingEvent(sessionId, config);
       return;
     }
-
     if (data.type === 'system_event' && data.eventType === 'runtime_event') {
-      if (isSessionRuntimeEventStarted(data.runtimeEventType)) {
-        setRunning(sessionId, true);
-      }
-      if (isSessionRuntimeEventFinished(data.runtimeEventType)) {
-        clearTypingTimer(sessionId);
-        setTyping(sessionId, false);
-        setRunning(sessionId, false);
-      }
+      handleRuntimeEvent(sessionId, data, config);
       return;
     }
-
-    if (data.type !== 'assistant_chunk' && data.type !== 'assistant_done') {
+    if (data.type === 'system_event' && data.eventType === 'progress_update') {
+      handleProgressEvent(sessionId, data, config);
       return;
     }
-
-    clearTypingTimer(sessionId);
-    setTyping(sessionId, false);
-    markFirstPendingAsSent(sessionId);
-
-    const hint: AssistantHint | null = data.hint ?? null;
-    if (hint != null) {
-      applyTurnMetadataPatch(sessionId, hint);
-      if (sessionId === activeSessionIdRef.current) {
-        setTurnMetadata(hint);
-      }
+    if (data.type === 'assistant_chunk' || data.type === 'assistant_done') {
+      handleAssistantResponse(sessionId, data, config);
     }
-
-    applyAssistantText(sessionId, data.text ?? '', hint, data.type === 'assistant_done');
   }, [
     activeSessionIdRef,
     applyAssistantText,
+    applyProgressUpdate,
     applyTurnMetadataPatch,
     clearTypingTimer,
     markFirstPendingAsSent,
@@ -170,6 +224,7 @@ export function useChatSocketTransport({
   clearReconnectTimer,
   clearAllTypingTimers,
   clearTransport,
+  markPendingMessagesAsFailed,
   registerTransport,
   resetAllRuntime,
   setConnectionState,
@@ -228,6 +283,7 @@ export function useChatSocketTransport({
           return;
         }
 
+        markPendingMessagesAsFailed();
         clearTransport();
         setConnectionState('reconnecting');
         clearReconnectTimer();
@@ -269,6 +325,7 @@ export function useChatSocketTransport({
     clearAllTypingTimers,
     clearReconnectTimer,
     clearTransport,
+    markPendingMessagesAsFailed,
     handleSocketMessage,
     registerTransport,
     reconnectTimerRef,

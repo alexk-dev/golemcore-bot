@@ -110,7 +110,13 @@ class ToolLoopPlanModeInterceptionTest {
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         when(toolExecutor.execute(any(), any())).thenAnswer(inv -> {
             Message.ToolCall tc = inv.getArgument(1);
-            return ToolExecutionOutcome.synthetic(tc, null, "OK");
+            return new ToolExecutionOutcome(
+                    tc.getId(),
+                    tc.getName(),
+                    me.golemcore.bot.domain.model.ToolResult.success("OK"),
+                    "OK",
+                    false,
+                    null);
         });
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
@@ -119,15 +125,16 @@ class ToolLoopPlanModeInterceptionTest {
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection("gpt-4o", null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
-                settings,
-                modelSelectionService,
-                planService,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
 
@@ -190,15 +197,16 @@ class ToolLoopPlanModeInterceptionTest {
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection("gpt-4o", null));
 
-        DefaultToolLoopSystem toolLoop = new DefaultToolLoopSystem(
-                llmPort,
-                toolExecutor,
-                historyWriter,
-                new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()),
-                settings,
-                modelSelectionService,
-                planService,
-                Clock.fixed(DEADLINE, ZoneOffset.UTC));
+        DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .planService(planService)
+                .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
+                .build();
 
         ToolLoopTurnResult result = toolLoop.processTurn(ctx);
 

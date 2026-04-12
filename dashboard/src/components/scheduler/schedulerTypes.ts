@@ -13,4 +13,8 @@ export interface ScheduleFormState {
   limitInput: string;
   enabled: boolean;
   clearContextBeforeRun: boolean;
+  reportChannelType: string;
+  reportChatId: string;
+  reportWebhookUrl: string;
+  reportWebhookSecret: string;
 }
