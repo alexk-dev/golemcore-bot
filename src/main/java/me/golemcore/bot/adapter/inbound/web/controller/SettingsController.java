@@ -533,7 +533,7 @@ public class SettingsController {
                     }
                 }
                 return target;
-            } catch (Exception exception) {
+            } catch (java.beans.IntrospectionException | ReflectiveOperationException exception) {
                 throw new IllegalStateException("Failed to map advanced config request", exception);
             }
         }

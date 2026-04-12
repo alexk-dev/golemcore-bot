@@ -191,6 +191,7 @@ class SessionInspectionServiceTest {
         assertEquals("conv-1", byChatAlias.getConversationKey());
     }
 
+    @Test
     void shouldPageMessagesWithAttachmentFallbackAndMetadataProjection() {
         Map<String, Object> attachmentOnlyMetadata = new LinkedHashMap<>();
         attachmentOnlyMetadata.put("attachments", List.of(

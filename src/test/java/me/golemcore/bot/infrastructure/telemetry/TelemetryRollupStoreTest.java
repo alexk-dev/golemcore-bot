@@ -82,10 +82,10 @@ class TelemetryRollupStoreTest {
     }
 
     private static final class MutableClock extends Clock {
-        private Instant instant;
+        private Instant currentInstant;
 
         private MutableClock(Instant instant) {
-            this.instant = instant;
+            this.currentInstant = instant;
         }
 
         @Override
@@ -100,11 +100,11 @@ class TelemetryRollupStoreTest {
 
         @Override
         public Instant instant() {
-            return instant;
+            return currentInstant;
         }
 
         void advanceSeconds(long seconds) {
-            instant = instant.plusSeconds(seconds);
+            currentInstant = currentInstant.plusSeconds(seconds);
         }
     }
 }

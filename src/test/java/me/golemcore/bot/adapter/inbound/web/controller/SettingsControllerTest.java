@@ -30,6 +30,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -47,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -2272,8 +2276,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldUpdateMcpCatalogEntry() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(true);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(true);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("github")
@@ -2287,8 +2291,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldReturnNotFoundWhenUpdatingNonexistentCatalogEntry() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(false);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(false);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("nonexistent")
@@ -2301,8 +2305,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldNormalizeNameOnUpdate() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(true);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(true);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("github")
@@ -2313,8 +2317,7 @@ class SettingsControllerTest {
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
 
-        verify(runtimeConfigService).updateMcpCatalogEntry(org.mockito.ArgumentMatchers.eq("github"),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class));
+        verify(runtimeConfigService).updateMcpCatalogEntry(eq("github"), any(RuntimeConfig.McpCatalogEntry.class));
     }
 
     @Test
@@ -2428,7 +2431,7 @@ class SettingsControllerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void shouldDelegateRuntimeDtoEndpointUpdates() throws Exception {
+    void shouldDelegateRuntimeDtoEndpointUpdates() throws Throwable {
         RuntimeSettingsFacade facade = mock(RuntimeSettingsFacade.class);
         SettingsController dtoController = new SettingsController(preferencesService, modelSelectionService, facade,
                 runtimeSettingsWebMapper);
@@ -2552,12 +2555,8 @@ class SettingsControllerTest {
                 .verifyComplete();
 
         Class<?> requestType = Class.forName(SettingsController.class.getName() + "$AdvancedConfigRequest");
-        var constructor = requestType.getDeclaredConstructor(
-                RuntimeSettingsWebDtos.RateLimitConfigDto.class,
-                RuntimeSettingsWebDtos.SecurityConfigDto.class,
-                RuntimeSettingsWebDtos.CompactionConfigDto.class);
-        constructor.setAccessible(true);
-        Object request = constructor.newInstance(
+        Object request = instantiateAdvancedConfigRequest(
+                requestType,
                 new RuntimeSettingsWebDtos.RateLimitConfigDto(),
                 new RuntimeSettingsWebDtos.SecurityConfigDto(),
                 new RuntimeSettingsWebDtos.CompactionConfigDto());
@@ -2572,18 +2571,14 @@ class SettingsControllerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void shouldDelegateAdvancedConfigUpdate() throws Exception {
+    void shouldDelegateAdvancedConfigUpdate() throws Throwable {
         RuntimeConfig current = RuntimeConfig.builder().build();
         RuntimeConfig apiView = RuntimeConfig.builder().build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
         Class<?> requestType = Class.forName(SettingsController.class.getName() + "$AdvancedConfigRequest");
-        var constructor = requestType.getDeclaredConstructor(
-                RuntimeConfig.RateLimitConfig.class,
-                RuntimeConfig.SecurityConfig.class,
-                RuntimeConfig.CompactionConfig.class);
-        constructor.setAccessible(true);
-        Object request = constructor.newInstance(
+        Object request = instantiateAdvancedConfigRequest(
+                requestType,
                 RuntimeConfig.RateLimitConfig.builder().build(),
                 RuntimeConfig.SecurityConfig.builder().build(),
                 RuntimeConfig.CompactionConfig.builder().build());
@@ -2616,5 +2611,14 @@ class SettingsControllerTest {
         when(provider.getAliases()).thenReturn(Set.of(alias));
         when(provider.isAvailable()).thenReturn(true);
         ttsProviderRegistry.replaceProviders(providerId, List.of(provider));
+    }
+
+    private Object instantiateAdvancedConfigRequest(Class<?> requestType, Object first, Object second, Object third)
+            throws Throwable {
+        MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(requestType, MethodHandles.lookup());
+        MethodHandle constructor = lookup.findConstructor(
+                requestType,
+                MethodType.methodType(void.class, first.getClass(), second.getClass(), third.getClass()));
+        return constructor.invoke(first, second, third);
     }
 }

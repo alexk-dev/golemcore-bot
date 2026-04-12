@@ -491,7 +491,7 @@ public class LocalEmbeddingBootstrapService {
             return ollamaRuntimeProbePort != null
                     && ollamaRuntimeProbePort.isRuntimeReachable(baseUrl,
                             Duration.ofSeconds(LOCAL_RUNTIME_PROBE_TIMEOUT_SECONDS));
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             return false;
         }
     }
@@ -501,7 +501,7 @@ public class LocalEmbeddingBootstrapService {
             return ollamaRuntimeProbePort != null
                     && ollamaRuntimeProbePort.hasModel(baseUrl, model,
                             Duration.ofSeconds(LOCAL_RUNTIME_PROBE_TIMEOUT_SECONDS));
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             return false;
         }
     }
@@ -510,7 +510,7 @@ public class LocalEmbeddingBootstrapService {
         try {
             return ollamaRuntimeModelPort != null
                     && ollamaRuntimeModelPort.pullModel(baseUrl, model, MODEL_PULL_TIMEOUT);
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             return false;
         }
     }

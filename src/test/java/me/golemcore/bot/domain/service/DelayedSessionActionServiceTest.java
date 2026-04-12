@@ -1,13 +1,12 @@
 package me.golemcore.bot.domain.service;
 
+import me.golemcore.bot.port.outbound.DelayedActionRegistryPort;
 import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
 import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedActionStatus;
 import me.golemcore.bot.domain.model.DelayedJobReadyEvent;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.port.outbound.DelayedActionRegistryPort;
-import me.golemcore.bot.port.outbound.DelayedActionRegistryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -259,12 +258,12 @@ class DelayedSessionActionServiceTest {
     void shouldStartWithEmptyRegistryWhenLoadFails() {
         DelayedActionRegistryPort failingRegistry = new DelayedActionRegistryPort() {
             @Override
-            public java.util.List<DelayedSessionAction> loadActions() {
+            public List<DelayedSessionAction> loadActions() {
                 throw new IllegalStateException("boom");
             }
 
             @Override
-            public void saveActions(java.util.List<DelayedSessionAction> actions) {
+            public void saveActions(List<DelayedSessionAction> actions) {
                 // no-op
             }
         };

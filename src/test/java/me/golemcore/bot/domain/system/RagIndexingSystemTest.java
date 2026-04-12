@@ -1,19 +1,30 @@
 package me.golemcore.bot.domain.system;
 
-import me.golemcore.bot.domain.model.*;
-import me.golemcore.bot.port.outbound.RagPort;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import java.util.concurrent.CompletableFuture;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FinishReason;
+import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.port.outbound.RagPort;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class RagIndexingSystemTest {
 

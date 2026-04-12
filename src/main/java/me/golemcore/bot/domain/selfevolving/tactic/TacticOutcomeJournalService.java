@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  */
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +29,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.io.IOException;
 import me.golemcore.bot.domain.service.StringValueSupport;
 
 /**
@@ -67,7 +70,10 @@ public class TacticOutcomeJournalService {
             String json = objectMapper.writeValueAsString(entries);
             storagePort.putTextAtomic(SELF_EVOLVING_DIR, JOURNAL_FILE, json, true).get();
             cache.set(new ArrayList<>(entries));
-        } catch (Exception exception) { // NOSONAR - journal write must not break the pipeline
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            log.debug("[TacticOutcomeJournal] Failed to record outcome: {}", exception.getMessage());
+        } catch (JsonProcessingException | ExecutionException exception) {
             log.debug("[TacticOutcomeJournal] Failed to record outcome: {}", exception.getMessage());
         }
     }
@@ -89,10 +95,14 @@ public class TacticOutcomeJournalService {
                 return new ArrayList<>();
             }
             List<TacticOutcomeEntry> entries = objectMapper.readValue(json,
-                    new TypeReference<List<TacticOutcomeEntry>>() {
+                    new TypeReference<>() {
                     });
             return entries != null ? new ArrayList<>(entries) : new ArrayList<>();
-        } catch (Exception exception) { // NOSONAR - storage read failure returns empty
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            log.debug("[TacticOutcomeJournal] Failed to load journal: {}", exception.getMessage());
+            return new ArrayList<>();
+        } catch (IOException | ExecutionException exception) {
             log.debug("[TacticOutcomeJournal] Failed to load journal: {}", exception.getMessage());
             return new ArrayList<>();
         }

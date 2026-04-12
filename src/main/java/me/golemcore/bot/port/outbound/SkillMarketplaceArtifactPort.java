@@ -1,7 +1,6 @@
 package me.golemcore.bot.port.outbound;
 
 import java.util.List;
-import java.util.Map;
 import me.golemcore.bot.port.outbound.SkillMarketplaceCatalogPort.MarketplaceArtifactData;
 import me.golemcore.bot.port.outbound.SkillMarketplaceCatalogPort.MarketplaceSourceRef;
 

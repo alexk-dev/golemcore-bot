@@ -19,7 +19,6 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  */
 
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticIndexDocument;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -38,7 +37,8 @@ public class TacticIndexRebuildService {
     private final TacticBm25IndexService bm25IndexService;
     private final TacticEmbeddingIndexService tacticEmbeddingIndexService;
     private final Clock clock;
-    private final AtomicReference<Snapshot> snapshot = new AtomicReference<>(new Snapshot(0, Instant.EPOCH, List.of()));
+    private final AtomicReference<Snapshot> rebuildSnapshot = new AtomicReference<>(
+            new Snapshot(0, Instant.EPOCH, List.of()));
 
     public TacticIndexRebuildService(
             TacticRecordService tacticRecordService,
@@ -78,7 +78,7 @@ public class TacticIndexRebuildService {
     }
 
     public Snapshot snapshot() {
-        return snapshot.get();
+        return rebuildSnapshot.get();
     }
 
     private void rebuild(String trigger) {
@@ -90,7 +90,7 @@ public class TacticIndexRebuildService {
             tacticEmbeddingIndexService.rebuildAll();
         }
         Snapshot previous = snapshot();
-        snapshot.set(new Snapshot(previous.rebuildCount() + 1, Instant.now(clock), documents));
+        rebuildSnapshot.set(new Snapshot(previous.rebuildCount() + 1, Instant.now(clock), documents));
     }
 
     public record Snapshot(int rebuildCount, Instant rebuiltAt, List<TacticIndexDocument> documents) {

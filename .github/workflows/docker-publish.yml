@@ -147,10 +147,10 @@ jobs:
         run: ./mvnw formatter:validate -DskipGitHooks=true
 
       - name: Run PMD
-        run: ./mvnw pmd:check -DskipGitHooks=true
+        run: ./mvnw -P strict pmd:check -DskipGitHooks=true
 
       - name: Run SpotBugs
-        run: ./mvnw compile spotbugs:check -DskipGitHooks=true
+        run: ./mvnw -P strict compile spotbugs:check -DskipGitHooks=true
 
       - name: Upload PMD report
         if: always()

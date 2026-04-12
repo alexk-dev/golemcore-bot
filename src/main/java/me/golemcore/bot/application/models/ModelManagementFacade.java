@@ -3,7 +3,9 @@ package me.golemcore.bot.application.models;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
@@ -87,7 +89,18 @@ public class ModelManagementFacade {
             String reply = response.getContent() != null ? response.getContent().trim() : "";
             log.info("[Models] Test response from {}: {}", normalizedModel, reply);
             return new TestModelResult(true, reply, null);
-        } catch (Exception exception) { // NOSONAR - user-facing diagnostic
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            String errorMessage = exception.getCause() != null ? exception.getCause().getMessage()
+                    : exception.getMessage();
+            log.warn("[Models] Test failed for {}: {}", normalizedModel, errorMessage);
+            return new TestModelResult(false, null, errorMessage);
+        } catch (ExecutionException | TimeoutException exception) {
+            String errorMessage = exception.getCause() != null ? exception.getCause().getMessage()
+                    : exception.getMessage();
+            log.warn("[Models] Test failed for {}: {}", normalizedModel, errorMessage);
+            return new TestModelResult(false, null, errorMessage);
+        } catch (RuntimeException exception) {
             String errorMessage = exception.getCause() != null ? exception.getCause().getMessage()
                     : exception.getMessage();
             log.warn("[Models] Test failed for {}: {}", normalizedModel, errorMessage);

@@ -1,9 +1,8 @@
 package me.golemcore.bot.domain.selfevolving.promotion;
 
+import me.golemcore.bot.port.outbound.selfevolving.PromotionWorkflowStatePort;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
-import me.golemcore.bot.port.outbound.selfevolving.PromotionWorkflowStatePort;
-import me.golemcore.bot.port.outbound.selfevolving.PromotionWorkflowStatePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

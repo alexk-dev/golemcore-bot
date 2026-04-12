@@ -103,7 +103,7 @@ public class TacticSearchService {
 
     private boolean isSearchEnabled() {
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
-        if (selfEvolvingConfig == null || !Boolean.TRUE.equals(selfEvolvingConfig.getEnabled())) {
+        if (!Boolean.TRUE.equals(selfEvolvingConfig.getEnabled())) {
             return false;
         }
         RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = selfEvolvingConfig.getTactics();
