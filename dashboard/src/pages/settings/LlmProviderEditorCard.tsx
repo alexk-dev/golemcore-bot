@@ -1,15 +1,16 @@
 import type { ReactElement } from 'react';
-import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
-import type { LlmProviderConfig } from '../../api/settings';
+import { Button, Card, Col, Form, Row } from 'react-bootstrap';
+import type { LlmProviderConfig } from '../../api/settingsTypes';
 import {
   API_TYPE_DETAILS,
   API_TYPE_OPTIONS,
   getDefaultApiTypeForProvider,
-  getSuggestedBaseUrl,
   normalizeApiType,
   toNullableInt,
-  toNullableString,
 } from './llmProvidersSupport';
+import { LlmProviderBaseUrlField } from './LlmProviderBaseUrlField';
+import { LlmProviderSecretField } from './LlmProviderSecretField';
+import { ProviderModelSelectionForm } from './ProviderModelSelectionForm';
 
 export interface LlmProviderEditorCardProps {
   name: string;
@@ -18,8 +19,14 @@ export interface LlmProviderEditorCardProps {
   showKey: boolean;
   isSaving: boolean;
   isTesting: boolean;
+  importableModels: string[];
+  selectedImportModels: string[];
   onFormChange: (form: LlmProviderConfig) => void;
   onToggleShowKey: () => void;
+  onToggleImportModel: (modelId: string) => void;
+  onSelectAllImportModels: () => void;
+  onClearImportModels: () => void;
+  onInvertImportModels: () => void;
   onSave: () => void;
   onCancel: () => void;
   onTestDraft: () => void;
@@ -33,8 +40,14 @@ export function LlmProviderEditorCard({
   showKey,
   isSaving,
   isTesting,
+  importableModels,
+  selectedImportModels,
   onFormChange,
   onToggleShowKey,
+  onToggleImportModel,
+  onSelectAllImportModels,
+  onClearImportModels,
+  onInvertImportModels,
   onSave,
   onCancel,
   onTestDraft,
@@ -42,10 +55,6 @@ export function LlmProviderEditorCard({
 }: LlmProviderEditorCardProps): ReactElement {
   const apiType = normalizeApiType(form.apiType);
   const recommendedApiType = getDefaultApiTypeForProvider(name);
-  const hasBaseUrl = (form.baseUrl ?? '').trim().length > 0;
-  const suggestedBaseUrl = getSuggestedBaseUrl(name, apiType);
-  const shouldShowUseDefaultBaseUrl = suggestedBaseUrl != null && form.baseUrl !== suggestedBaseUrl;
-  const shouldShowClearBaseUrl = apiType === 'gemini' && hasBaseUrl;
 
   return (
     <Card className="mb-3 border provider-editor-card">
@@ -53,72 +62,17 @@ export function LlmProviderEditorCard({
         <h6 className="text-capitalize mb-3">{isNew ? `New provider: ${name}` : name}</h6>
         <Row className="g-2">
           <Col md={12}>
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-medium d-flex align-items-center gap-2">
-                <span>API Key</span>
-                {!isNew && form.apiKeyPresent === true && (
-                  <Badge bg="success-subtle" text="success">Configured</Badge>
-                )}
-                {(form.apiKey?.length ?? 0) > 0 && (
-                  <Badge bg="info-subtle" text="info">Will update on save</Badge>
-                )}
-              </Form.Label>
-              <InputGroup size="sm">
-                <Form.Control
-                  name={`llm-api-key-${name}`}
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-lpignore="true"
-                  placeholder={form.apiKeyPresent === true ? 'Secret is configured (hidden)' : 'Enter API key'}
-                  type={showKey ? 'text' : 'password'}
-                  value={form.apiKey ?? ''}
-                  onChange={(event) => onFormChange({ ...form, apiKey: toNullableString(event.target.value) })}
-                />
-                <Button type="button" variant="secondary" aria-pressed={showKey} onClick={onToggleShowKey}>
-                  {showKey ? 'Hide' : 'Show'}
-                </Button>
-              </InputGroup>
-            </Form.Group>
+            <LlmProviderSecretField
+              name={name}
+              form={form}
+              isNew={isNew}
+              showKey={showKey}
+              onFormChange={onFormChange}
+              onToggleShowKey={onToggleShowKey}
+            />
           </Col>
           <Col md={6}>
-            <Form.Group className="mb-2">
-              <Form.Label className="small fw-medium">Base URL</Form.Label>
-              <InputGroup size="sm">
-                <Form.Control
-                  type="url"
-                  value={form.baseUrl ?? ''}
-                  onChange={(event) => onFormChange({ ...form, baseUrl: toNullableString(event.target.value) })}
-                  placeholder="https://api.example.com/v1"
-                />
-                {shouldShowUseDefaultBaseUrl && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => onFormChange({ ...form, baseUrl: suggestedBaseUrl })}
-                  >
-                    Use default
-                  </Button>
-                )}
-                {shouldShowClearBaseUrl && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => onFormChange({ ...form, baseUrl: null })}
-                  >
-                    Clear
-                  </Button>
-                )}
-              </InputGroup>
-              <Form.Text className="text-body-secondary">
-                {apiType === 'gemini'
-                  ? 'Gemini uses the native Google endpoint, so Base URL is usually left empty.'
-                  : suggestedBaseUrl != null
-                    ? `Recommended endpoint: ${suggestedBaseUrl}`
-                    : 'Leave empty to use the provider default endpoint.'}
-              </Form.Text>
-            </Form.Group>
+            <LlmProviderBaseUrlField name={name} form={form} onFormChange={onFormChange} />
           </Col>
           <Col md={3}>
             <Form.Group className="mb-2">
@@ -184,6 +138,14 @@ export function LlmProviderEditorCard({
             </Form.Group>
           </Col>
         </Row>
+        <ProviderModelSelectionForm
+          models={importableModels}
+          selectedModels={selectedImportModels}
+          onToggleModel={onToggleImportModel}
+          onSelectAll={onSelectAllImportModels}
+          onClearAll={onClearImportModels}
+          onInvert={onInvertImportModels}
+        />
         <div className="d-flex gap-2 mt-2">
           <Button type="button" variant="primary" size="sm" onClick={onSave} disabled={isSaving}>
             {isSaving ? 'Saving...' : 'Save'}

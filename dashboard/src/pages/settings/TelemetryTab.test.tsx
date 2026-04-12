@@ -4,7 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { TelemetryConfig } from '../../api/settings';
+import type { TelemetryConfig } from '../../api/settingsTypes';
 import TelemetryTab from './TelemetryTab';
 
 declare global {

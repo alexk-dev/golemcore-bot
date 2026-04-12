@@ -1,21 +1,37 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.AutoModeConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.CompactionConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.HiveConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.LlmConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.LlmProviderConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.McpCatalogEntryDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.McpConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.MemoryConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ModelRouterConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SecurityConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TelemetryConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ToolsConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TurnConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TracingConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.UsageConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.VoiceConfigDto;
+import me.golemcore.bot.adapter.inbound.web.mapper.RuntimeSettingsWebMapper;
+import me.golemcore.bot.application.models.ProviderModelImportService;
+import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
-import me.golemcore.bot.domain.service.ProviderModelImportService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
-import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -29,90 +45,33 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
+import java.util.NoSuchElementException;
 import java.util.function.Supplier;
-import java.util.regex.Pattern;
 
 /**
  * Settings and preferences management endpoints.
  */
 @RestController
 @RequestMapping("/api/settings")
-@Slf4j
 public class SettingsController {
-
-    private static final String TELEGRAM_AUTH_MODE_INVITE_ONLY = "invite_only";
-    private static final String STT_PROVIDER_ELEVENLABS = "golemcore/elevenlabs";
-    private static final String STT_PROVIDER_WHISPER = "golemcore/whisper";
-    private static final String LEGACY_STT_PROVIDER_ELEVENLABS = "elevenlabs";
-    private static final String LEGACY_STT_PROVIDER_WHISPER = "whisper";
-    private static final Set<String> VALID_API_TYPES = Set.of("openai", "anthropic", "gemini");
-    private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
-    private static final String COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
-    private static final Set<String> VALID_COMPACTION_TRIGGER_MODES = Set.of(
-            DEFAULT_COMPACTION_TRIGGER_MODE,
-            COMPACTION_TRIGGER_MODE_TOKEN_THRESHOLD);
-    private static final double DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO = 0.95d;
-    private static final int MEMORY_SOFT_BUDGET_MIN = 200;
-    private static final int MEMORY_SOFT_BUDGET_MAX = 10000;
-    private static final int MEMORY_MAX_BUDGET_MIN = 200;
-    private static final int MEMORY_MAX_BUDGET_MAX = 12000;
-    private static final int MEMORY_TOP_K_MIN = 0;
-    private static final int MEMORY_TOP_K_MAX = 30;
-    private static final int MEMORY_DECAY_DAYS_MIN = 1;
-    private static final int MEMORY_DECAY_DAYS_MAX = 3650;
-    private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN = 1;
-    private static final int MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX = 90;
-    private static final Set<String> VALID_MEMORY_DISCLOSURE_MODES = Set.of(
-            "index",
-            "summary",
-            "selective_detail",
-            "full_pack");
-    private static final Set<String> VALID_MEMORY_PROMPT_STYLES = Set.of("compact", "balanced", "rich");
-    private static final Set<String> VALID_MEMORY_RERANKING_PROFILES = Set.of("balanced", "aggressive");
-    private static final Set<String> VALID_MEMORY_DIAGNOSTICS_VERBOSITY = Set.of("off", "basic", "detailed");
-    private static final int TURN_PROGRESS_BATCH_SIZE_MIN = 1;
-    private static final int TURN_PROGRESS_BATCH_SIZE_MAX = 50;
-    private static final int TURN_PROGRESS_MAX_SILENCE_SECONDS_MIN = 1;
-    private static final int TURN_PROGRESS_MAX_SILENCE_SECONDS_MAX = 300;
-    private static final int TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MIN = 1000;
-    private static final int TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MAX = 60000;
-    private static final Pattern SHELL_ENV_VAR_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
-    private static final Set<String> RESERVED_SHELL_ENV_VAR_NAMES = Set.of("HOME", "PWD");
-    private static final int SHELL_ENV_VAR_NAME_MAX_LENGTH = 128;
-    private static final int SHELL_ENV_VAR_VALUE_MAX_LENGTH = 8192;
 
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
-    private final RuntimeConfigService runtimeConfigService;
-    private final MemoryPresetService memoryPresetService;
-    private final ProviderModelImportService providerModelImportService;
-    private final ProviderModelDiscoveryService providerModelDiscoveryService;
-    private final SttProviderRegistry sttProviderRegistry;
-    private final TtsProviderRegistry ttsProviderRegistry;
+    private final RuntimeSettingsFacade runtimeSettingsFacade;
+    private final RuntimeSettingsWebMapper runtimeSettingsWebMapper;
 
     public SettingsController(UserPreferencesService preferencesService,
             ModelSelectionService modelSelectionService,
-            RuntimeConfigService runtimeConfigService,
-            MemoryPresetService memoryPresetService,
-            ProviderModelImportService providerModelImportService,
-            ProviderModelDiscoveryService providerModelDiscoveryService,
-            SttProviderRegistry sttProviderRegistry,
-            TtsProviderRegistry ttsProviderRegistry) {
+            RuntimeSettingsFacade runtimeSettingsFacade,
+            RuntimeSettingsWebMapper runtimeSettingsWebMapper) {
         this.preferencesService = preferencesService;
         this.modelSelectionService = modelSelectionService;
-        this.runtimeConfigService = runtimeConfigService;
-        this.memoryPresetService = memoryPresetService;
-        this.providerModelImportService = providerModelImportService;
-        this.providerModelDiscoveryService = providerModelDiscoveryService;
-        this.sttProviderRegistry = sttProviderRegistry;
-        this.ttsProviderRegistry = ttsProviderRegistry;
+        this.runtimeSettingsFacade = runtimeSettingsFacade;
+        this.runtimeSettingsWebMapper = runtimeSettingsWebMapper;
     }
 
     @GetMapping
@@ -186,123 +145,68 @@ public class SettingsController {
         return getSettings();
     }
 
-    // ==================== Runtime Config ====================
-
     @GetMapping("/runtime")
-    public Mono<ResponseEntity<RuntimeConfig>> getRuntimeConfig() {
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> getRuntimeConfig() {
+        return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.getRuntimeConfigForApi())));
     }
 
     @PutMapping("/runtime")
-    public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(@RequestBody RuntimeConfig config) {
-        RuntimeConfig current = runtimeConfigService.getRuntimeConfig();
-        rejectManagedHiveMutation(current, config != null ? config.getHive() : null);
-        RuntimeConfig merged = mergeRuntimeConfigSections(current, config);
-        if (merged.getTelegram() == null) {
-            merged.setTelegram(new RuntimeConfig.TelegramConfig());
-        }
-        normalizeAndValidateTelegramConfig(merged.getTelegram());
-        mergeRuntimeSecrets(current, merged);
-        normalizeAndValidateShellEnvironmentVariables(merged.getTools());
-        validateLlmConfig(merged.getLlm(), merged.getModelRouter());
-        validateModelRouterConfig(merged.getModelRouter(), merged.getLlm());
-        if (merged.getAutoMode() != null) {
-            validateAndNormalizeAutoModeConfig(merged.getAutoMode());
-        }
-        if (merged.getTracing() != null) {
-            validateAndNormalizeTracingConfig(merged.getTracing());
-        }
-        if (merged.getMemory() != null) {
-            validateMemoryConfig(merged.getMemory());
-        }
-        validateCompactionConfig(merged.getCompaction());
-        validateVoiceConfig(merged.getVoice());
-        validateAndNormalizeModelRegistryConfig(merged.getModelRegistry());
-        validateHiveConfig(merged.getHive());
-        runtimeConfigService.updateRuntimeConfig(merged);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateRuntimeConfig(@RequestBody RuntimeConfigDto config) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateRuntimeConfig(runtimeSettingsWebMapper.toRuntimeConfig(config))));
     }
 
     @PutMapping("/runtime/models")
-    public Mono<ResponseEntity<RuntimeConfig>> updateModelRouterConfig(
-            @RequestBody RuntimeConfig.ModelRouterConfig modelRouterConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        validateModelRouterConfig(modelRouterConfig, config.getLlm());
-        config.setModelRouter(modelRouterConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateModelRouterConfig(
+            @RequestBody ModelRouterConfigDto modelRouterConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateModelRouterConfig(runtimeSettingsWebMapper.toModelRouterConfig(
+                        modelRouterConfig))));
     }
 
     @PutMapping("/runtime/llm")
-    public Mono<ResponseEntity<RuntimeConfig>> updateLlmConfig(
-            @RequestBody RuntimeConfig.LlmConfig llmConfig) {
-        log.info("[Settings] Updating LLM config with {} providers: {}",
-                llmConfig.getProviders() != null ? llmConfig.getProviders().size() : 0,
-                llmConfig.getProviders() != null ? llmConfig.getProviders().keySet() : "null");
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        mergeLlmSecrets(config.getLlm(), llmConfig);
-        validateLlmConfig(llmConfig, config.getModelRouter());
-        validateModelRouterConfig(config.getModelRouter(), llmConfig);
-        config.setLlm(llmConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        log.info("[Settings] LLM config updated successfully");
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateLlmConfig(@RequestBody LlmConfigDto llmConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateLlmConfig(runtimeSettingsWebMapper.toLlmConfig(llmConfig))));
     }
 
     @PostMapping("/runtime/llm/providers/{name}")
-    public Mono<ResponseEntity<RuntimeConfig>> addLlmProvider(
+    public Mono<ResponseEntity<RuntimeConfigDto>> addLlmProvider(
             @PathVariable String name,
-            @RequestBody RuntimeConfig.LlmProviderConfig providerConfig) {
-        String normalizedName = name.toLowerCase(Locale.ROOT);
-        if (!normalizedName.matches("[a-z0-9][a-z0-9_-]*")) {
-            throw new IllegalArgumentException("Provider name must match [a-z0-9][a-z0-9_-]*");
-        }
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        if (config.getLlm().getProviders().containsKey(normalizedName)) {
-            throw new IllegalArgumentException("Provider '" + normalizedName + "' already exists");
-        }
-        validateProviderConfig(normalizedName, providerConfig);
-        runtimeConfigService.addLlmProvider(normalizedName, providerConfig);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+            @RequestBody LlmProviderConfigDto providerConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.addLlmProvider(name,
+                        runtimeSettingsWebMapper.toLlmProviderConfig(providerConfig))));
     }
 
     @PostMapping("/runtime/llm/providers/{name}/import-models")
     public Mono<ResponseEntity<LlmProviderImportResponse>> addLlmProviderAndImportModels(
             @PathVariable String name,
-            @RequestBody RuntimeConfig.LlmProviderConfig providerConfig) {
-        String normalizedName = name.toLowerCase(Locale.ROOT);
-        if (!normalizedName.matches("[a-z0-9][a-z0-9_-]*")) {
-            throw new IllegalArgumentException("Provider name must match [a-z0-9][a-z0-9_-]*");
+            @RequestBody LlmProviderImportRequest request) {
+        if (request == null || request.config() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "config is required");
         }
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        if (config.getLlm().getProviders().containsKey(normalizedName)) {
-            throw new IllegalArgumentException("Provider '" + normalizedName + "' already exists");
-        }
-        validateProviderConfig(normalizedName, providerConfig);
-        runtimeConfigService.addLlmProvider(normalizedName, providerConfig);
-        ProviderModelImportService.ProviderImportResult importResult = providerModelImportService
-                .importMissingModels(normalizedName);
-        return Mono.just(ResponseEntity.ok(new LlmProviderImportResponse(
-                true,
-                normalizedName,
-                importResult.resolvedEndpoint(),
-                importResult.addedModels(),
-                importResult.skippedModels(),
-                importResult.errors())));
+        return Mono.just(ResponseEntity.ok(invokeRuntime(() -> {
+            ProviderModelImportService.ProviderImportResult importResult = runtimeSettingsFacade
+                    .addLlmProviderAndImportModels(name, request.config(), request.selectedModelIds());
+            return new LlmProviderImportResponse(
+                    true,
+                    name.trim().toLowerCase(Locale.ROOT),
+                    importResult.resolvedEndpoint(),
+                    importResult.addedModels(),
+                    importResult.skippedModels(),
+                    importResult.errors());
+        })));
     }
 
     @PutMapping("/runtime/llm/providers/{name}")
-    public Mono<ResponseEntity<RuntimeConfig>> updateLlmProvider(
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateLlmProvider(
             @PathVariable String name,
-            @RequestBody RuntimeConfig.LlmProviderConfig providerConfig) {
-        String normalizedName = name.toLowerCase(Locale.ROOT);
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        if (!config.getLlm().getProviders().containsKey(normalizedName)) {
-            throw new IllegalArgumentException("Provider '" + normalizedName + "' does not exist");
-        }
-        validateProviderConfig(normalizedName, providerConfig);
-        runtimeConfigService.updateLlmProvider(normalizedName, providerConfig);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+            @RequestBody LlmProviderConfigDto providerConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateLlmProvider(name,
+                        runtimeSettingsWebMapper.toLlmProviderConfig(providerConfig))));
     }
 
     @PostMapping("/runtime/llm/provider-tests")
@@ -310,1072 +214,324 @@ public class SettingsController {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
         }
-        String mode = requireValue(request.mode(), "mode").toLowerCase(Locale.ROOT);
-        String providerName = requireValue(request.providerName(), "providerName").toLowerCase(Locale.ROOT);
-
+        String mode = requireRequestValue(request.mode(), "mode").toLowerCase(Locale.ROOT);
+        String providerName = requireRequestValue(request.providerName(), "providerName");
         try {
-            ProviderModelDiscoveryService.DiscoveryResult discoveryResult;
+            RuntimeSettingsFacade.LlmProviderTestResult testResult;
             if ("saved".equals(mode)) {
-                discoveryResult = providerModelDiscoveryService.discoverModelsForProvider(providerName);
+                testResult = runtimeSettingsFacade.testSavedLlmProvider(providerName);
             } else if ("draft".equals(mode)) {
                 if (request.config() == null) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "config is required");
                 }
-                RuntimeConfig.LlmProviderConfig effectiveConfig = buildDraftProviderTestConfig(providerName,
-                        request.config());
-                validateProviderConfig(providerName, effectiveConfig);
-                discoveryResult = providerModelDiscoveryService.discoverModelsForConfig(providerName, effectiveConfig);
+                testResult = runtimeSettingsFacade.testDraftLlmProvider(providerName, request.config());
             } else {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "mode must be one of [saved, draft]");
             }
             return Mono.just(ResponseEntity.ok(new LlmProviderTestResponse(
-                    mode,
-                    providerName,
-                    discoveryResult.resolvedEndpoint(),
-                    discoveryResult.models().stream()
-                            .map(model -> providerName + "/" + model.id())
-                            .toList(),
-                    true,
-                    null)));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return Mono.just(ResponseEntity.ok(new LlmProviderTestResponse(
-                    mode,
-                    providerName,
-                    null,
-                    List.of(),
-                    false,
-                    e.getMessage())));
+                    testResult.mode(),
+                    testResult.providerName(),
+                    testResult.resolvedEndpoint(),
+                    testResult.models(),
+                    testResult.success(),
+                    testResult.error())));
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-    }
-
-    private RuntimeConfig.LlmProviderConfig buildDraftProviderTestConfig(String providerName,
-            RuntimeConfig.LlmProviderConfig draftConfig) {
-        RuntimeConfig.LlmProviderConfig savedProviderConfig = null;
-        RuntimeConfig runtimeConfig = runtimeConfigService.getRuntimeConfig();
-        if (runtimeConfig != null && runtimeConfig.getLlm() != null && runtimeConfig.getLlm().getProviders() != null) {
-            savedProviderConfig = runtimeConfig.getLlm().getProviders().get(providerName);
-        }
-
-        return RuntimeConfig.LlmProviderConfig.builder()
-                .apiKey(mergeSecret(savedProviderConfig != null ? savedProviderConfig.getApiKey() : null,
-                        draftConfig.getApiKey()))
-                .baseUrl(draftConfig.getBaseUrl())
-                .requestTimeoutSeconds(draftConfig.getRequestTimeoutSeconds())
-                .apiType(draftConfig.getApiType())
-                .legacyApi(draftConfig.getLegacyApi())
-                .build();
     }
 
     @DeleteMapping("/runtime/llm/providers/{name}")
     public Mono<ResponseEntity<Void>> removeLlmProvider(@PathVariable String name) {
-        String normalizedName = name.toLowerCase(Locale.ROOT);
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        Set<String> usedProviders = getProvidersUsedByModelRouter(config.getModelRouter());
-        if (usedProviders.contains(normalizedName)) {
-            throw new IllegalArgumentException(
-                    "Cannot remove provider '" + normalizedName + "' because it is used by model router tiers");
-        }
-        boolean removed = runtimeConfigService.removeLlmProvider(normalizedName);
-        if (!removed) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                    "Provider '" + normalizedName + "' not found");
-        }
-        return Mono.just(ResponseEntity.ok().build());
-    }
-
-    private void validateProviderConfig(String name, RuntimeConfig.LlmProviderConfig config) {
-        if (config == null) {
-            throw new IllegalArgumentException("Provider config is required");
-        }
-        Integer timeout = config.getRequestTimeoutSeconds();
-        if (timeout != null && (timeout < 1 || timeout > 3600)) {
-            throw new IllegalArgumentException(
-                    "llm.providers." + name + ".requestTimeoutSeconds must be between 1 and 3600");
-        }
-        String baseUrl = config.getBaseUrl();
-        if (baseUrl != null && !baseUrl.isBlank() && !isValidHttpUrl(baseUrl)) {
-            throw new IllegalArgumentException(
-                    "llm.providers." + name + ".baseUrl must be a valid http(s) URL");
-        }
-        String apiType = config.getApiType();
-        if (apiType != null && !apiType.isBlank() && !VALID_API_TYPES.contains(apiType.toLowerCase(Locale.ROOT))) {
-            throw new IllegalArgumentException(
-                    "llm.providers." + name + ".apiType must be one of " + VALID_API_TYPES);
-        }
+        return runtimeVoidResponse(() -> runtimeSettingsFacade.removeLlmProvider(name));
     }
 
     @PutMapping("/runtime/tools")
-    public Mono<ResponseEntity<RuntimeConfig>> updateToolsConfig(
-            @RequestBody RuntimeConfig.ToolsConfig toolsConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        normalizeAndValidateShellEnvironmentVariables(toolsConfig);
-        config.setTools(toolsConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateToolsConfig(@RequestBody ToolsConfigDto toolsConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateToolsConfig(runtimeSettingsWebMapper.toToolsConfig(toolsConfig))));
     }
 
     @GetMapping("/runtime/tools/shell/env")
-    public Mono<ResponseEntity<List<RuntimeConfig.ShellEnvironmentVariable>>> getShellEnvironmentVariables() {
-        RuntimeConfig.ToolsConfig toolsConfig = runtimeConfigService.getRuntimeConfigForApi().getTools();
-        List<RuntimeConfig.ShellEnvironmentVariable> variables = toolsConfig != null
-                && toolsConfig.getShellEnvironmentVariables() != null
-                        ? toolsConfig.getShellEnvironmentVariables()
-                        : List.of();
-        return Mono.just(ResponseEntity.ok(variables));
+    public Mono<ResponseEntity<List<ShellEnvironmentVariableDto>>> getShellEnvironmentVariables() {
+        return runtimeListResponse(() -> runtimeSettingsFacade.getShellEnvironmentVariables().stream()
+                .map(runtimeSettingsWebMapper::toShellEnvironmentVariableDto)
+                .toList());
     }
 
     @PostMapping("/runtime/tools/shell/env")
-    public Mono<ResponseEntity<RuntimeConfig>> createShellEnvironmentVariable(
-            @RequestBody RuntimeConfig.ShellEnvironmentVariable variable) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        RuntimeConfig.ToolsConfig toolsConfig = ensureToolsConfig(config);
-        List<RuntimeConfig.ShellEnvironmentVariable> variables = ensureShellEnvironmentVariables(toolsConfig);
-
-        RuntimeConfig.ShellEnvironmentVariable normalized = normalizeAndValidateShellEnvironmentVariable(variable);
-        if (containsShellEnvironmentVariableName(variables, normalized.getName())) {
-            throw new IllegalArgumentException(
-                    "tools.shellEnvironmentVariables contains duplicate name: " + normalized.getName());
-        }
-        variables.add(normalized);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> createShellEnvironmentVariable(
+            @RequestBody ShellEnvironmentVariableDto variable) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.createShellEnvironmentVariable(
+                        runtimeSettingsWebMapper.toShellEnvironmentVariable(variable))));
     }
 
     @PutMapping("/runtime/tools/shell/env/{name}")
-    public Mono<ResponseEntity<RuntimeConfig>> updateShellEnvironmentVariable(
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateShellEnvironmentVariable(
             @PathVariable String name,
-            @RequestBody RuntimeConfig.ShellEnvironmentVariable variable) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        RuntimeConfig.ToolsConfig toolsConfig = ensureToolsConfig(config);
-        List<RuntimeConfig.ShellEnvironmentVariable> variables = ensureShellEnvironmentVariables(toolsConfig);
-        String normalizedCurrentName = normalizeAndValidateShellEnvironmentVariableName(name);
-
-        int index = findShellEnvironmentVariableIndex(variables, normalizedCurrentName);
-        if (index < 0) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                    "Shell environment variable '" + normalizedCurrentName + "' not found");
-        }
-
-        RuntimeConfig.ShellEnvironmentVariable source = variable != null ? variable
-                : RuntimeConfig.ShellEnvironmentVariable.builder().build();
-        String updatedName = source.getName() == null || source.getName().isBlank()
-                ? normalizedCurrentName
-                : source.getName();
-        RuntimeConfig.ShellEnvironmentVariable normalizedUpdated = normalizeAndValidateShellEnvironmentVariable(
-                RuntimeConfig.ShellEnvironmentVariable.builder()
-                        .name(updatedName)
-                        .value(source.getValue())
-                        .build());
-
-        if (!normalizedCurrentName.equals(normalizedUpdated.getName())
-                && containsShellEnvironmentVariableName(variables, normalizedUpdated.getName())) {
-            throw new IllegalArgumentException(
-                    "tools.shellEnvironmentVariables contains duplicate name: " + normalizedUpdated.getName());
-        }
-
-        variables.set(index, normalizedUpdated);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+            @RequestBody ShellEnvironmentVariableDto variable) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateShellEnvironmentVariable(name,
+                        runtimeSettingsWebMapper.toShellEnvironmentVariable(variable))));
     }
 
     @DeleteMapping("/runtime/tools/shell/env/{name}")
-    public Mono<ResponseEntity<RuntimeConfig>> deleteShellEnvironmentVariable(@PathVariable String name) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        RuntimeConfig.ToolsConfig toolsConfig = ensureToolsConfig(config);
-        List<RuntimeConfig.ShellEnvironmentVariable> variables = ensureShellEnvironmentVariables(toolsConfig);
-        String normalizedName = normalizeAndValidateShellEnvironmentVariableName(name);
-
-        int index = findShellEnvironmentVariableIndex(variables, normalizedName);
-        if (index < 0) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                    "Shell environment variable '" + normalizedName + "' not found");
-        }
-
-        variables.remove(index);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> deleteShellEnvironmentVariable(@PathVariable String name) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.deleteShellEnvironmentVariable(name)));
     }
 
     @PutMapping("/runtime/voice")
-    public Mono<ResponseEntity<RuntimeConfig>> updateVoiceConfig(
-            @RequestBody RuntimeConfig.VoiceConfig voiceConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        voiceConfig.setApiKey(mergeSecret(config.getVoice().getApiKey(), voiceConfig.getApiKey()));
-        voiceConfig.setWhisperSttApiKey(
-                mergeSecret(config.getVoice().getWhisperSttApiKey(), voiceConfig.getWhisperSttApiKey()));
-        validateVoiceConfig(voiceConfig);
-        config.setVoice(voiceConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateVoiceConfig(@RequestBody VoiceConfigDto voiceConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateVoiceConfig(runtimeSettingsWebMapper.toVoiceConfig(voiceConfig))));
     }
 
     @PutMapping("/runtime/turn")
-    public Mono<ResponseEntity<RuntimeConfig>> updateTurnConfig(
-            @RequestBody RuntimeConfig.TurnConfig turnConfig) {
-        validateTurnConfig(turnConfig);
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        config.setTurn(turnConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateTurnConfig(@RequestBody TurnConfigDto turnConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateTurnConfig(runtimeSettingsWebMapper.toTurnConfig(turnConfig))));
     }
 
     @PutMapping("/runtime/memory")
-    public Mono<ResponseEntity<RuntimeConfig>> updateMemoryConfig(
-            @RequestBody RuntimeConfig.MemoryConfig memoryConfig) {
-        validateMemoryConfig(memoryConfig);
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        config.setMemory(memoryConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateMemoryConfig(
+            @RequestBody MemoryConfigDto memoryConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateMemoryConfig(runtimeSettingsWebMapper.toMemoryConfig(memoryConfig))));
     }
 
     @GetMapping("/runtime/memory/presets")
     public Mono<ResponseEntity<List<MemoryPreset>>> getMemoryPresets() {
-        return Mono.just(ResponseEntity.ok(memoryPresetService.getPresets()));
+        return runtimeListResponse(runtimeSettingsFacade::getMemoryPresets);
     }
 
     @PutMapping("/runtime/skills")
-    public Mono<ResponseEntity<RuntimeConfig>> updateSkillsConfig(
-            @RequestBody RuntimeConfig.SkillsConfig skillsConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        config.setSkills(skillsConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateSkillsConfig(
+            @RequestBody SkillsConfigDto skillsConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateSkillsConfig(runtimeSettingsWebMapper.toSkillsConfig(skillsConfig))));
     }
 
     @PutMapping("/runtime/usage")
-    public Mono<ResponseEntity<RuntimeConfig>> updateUsageConfig(
-            @RequestBody RuntimeConfig.UsageConfig usageConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        config.setUsage(usageConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateUsageConfig(@RequestBody UsageConfigDto usageConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateUsageConfig(runtimeSettingsWebMapper.toUsageConfig(usageConfig))));
     }
 
     @PutMapping("/runtime/telemetry")
-    public Mono<ResponseEntity<RuntimeConfig>> updateTelemetryConfig(
-            @RequestBody RuntimeConfig.TelemetryConfig telemetryConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        config.setTelemetry(telemetryConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateTelemetryConfig(
+            @RequestBody TelemetryConfigDto telemetryConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade
+                        .updateTelemetryConfig(runtimeSettingsWebMapper.toTelemetryConfig(telemetryConfig))));
     }
 
     @PutMapping("/runtime/mcp")
-    public Mono<ResponseEntity<RuntimeConfig>> updateMcpConfig(
-            @RequestBody RuntimeConfig.McpConfig mcpConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        // Preserve existing catalog when updating global MCP settings
-        RuntimeConfig.McpConfig existing = config.getMcp();
-        if (existing != null && mcpConfig.getCatalog() == null) {
-            mcpConfig.setCatalog(existing.getCatalog());
-        }
-        config.setMcp(mcpConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateMcpConfig(@RequestBody McpConfigDto mcpConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateMcpConfig(runtimeSettingsWebMapper.toMcpConfig(mcpConfig))));
     }
 
-    // ==================== MCP Catalog CRUD ====================
-
     @GetMapping("/runtime/mcp/catalog")
-    public Mono<ResponseEntity<List<RuntimeConfig.McpCatalogEntry>>> getMcpCatalog() {
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getMcpCatalog()));
+    public Mono<ResponseEntity<List<McpCatalogEntryDto>>> getMcpCatalog() {
+        return runtimeListResponse(() -> runtimeSettingsFacade.getMcpCatalog().stream()
+                .map(runtimeSettingsWebMapper::toMcpCatalogEntryDto)
+                .toList());
     }
 
     @PostMapping("/runtime/mcp/catalog")
-    public Mono<ResponseEntity<RuntimeConfig>> addMcpCatalogEntry(
-            @RequestBody RuntimeConfig.McpCatalogEntry entry) {
-        validateMcpCatalogEntry(entry);
-        String normalizedName = entry.getName().toLowerCase(Locale.ROOT).trim();
-        entry.setName(normalizedName);
-        List<RuntimeConfig.McpCatalogEntry> catalog = runtimeConfigService.getMcpCatalog();
-        boolean exists = catalog.stream().anyMatch(e -> normalizedName.equals(e.getName()));
-        if (exists) {
-            throw new IllegalArgumentException("MCP catalog entry '" + normalizedName + "' already exists");
-        }
-        runtimeConfigService.addMcpCatalogEntry(entry);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> addMcpCatalogEntry(@RequestBody McpCatalogEntryDto entry) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.addMcpCatalogEntry(runtimeSettingsWebMapper.toMcpCatalogEntry(entry))));
     }
 
     @PutMapping("/runtime/mcp/catalog/{name}")
-    public Mono<ResponseEntity<RuntimeConfig>> updateMcpCatalogEntry(
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateMcpCatalogEntry(
             @PathVariable String name,
-            @RequestBody RuntimeConfig.McpCatalogEntry entry) {
-        String normalizedName = name.toLowerCase(Locale.ROOT).trim();
-        validateMcpCatalogEntry(entry);
-        boolean updated = runtimeConfigService.updateMcpCatalogEntry(normalizedName, entry);
-        if (!updated) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                    "MCP catalog entry '" + normalizedName + "' not found");
-        }
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+            @RequestBody McpCatalogEntryDto entry) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateMcpCatalogEntry(name, runtimeSettingsWebMapper.toMcpCatalogEntry(entry))));
     }
 
     @DeleteMapping("/runtime/mcp/catalog/{name}")
     public Mono<ResponseEntity<Void>> removeMcpCatalogEntry(@PathVariable String name) {
-        String normalizedName = name.toLowerCase(Locale.ROOT).trim();
-        boolean removed = runtimeConfigService.removeMcpCatalogEntry(normalizedName);
-        if (!removed) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                    "MCP catalog entry '" + normalizedName + "' not found");
-        }
-        return Mono.just(ResponseEntity.ok().build());
-    }
-
-    private void validateMcpCatalogEntry(RuntimeConfig.McpCatalogEntry entry) {
-        if (entry == null) {
-            throw new IllegalArgumentException("MCP catalog entry is required");
-        }
-        if (entry.getName() == null || entry.getName().isBlank()) {
-            throw new IllegalArgumentException("MCP catalog entry name is required");
-        }
-        String name = entry.getName().toLowerCase(Locale.ROOT).trim();
-        if (!name.matches("[a-z0-9][a-z0-9_-]*")) {
-            throw new IllegalArgumentException("MCP catalog entry name must match [a-z0-9][a-z0-9_-]*");
-        }
-        if (entry.getCommand() == null || entry.getCommand().isBlank()) {
-            throw new IllegalArgumentException("MCP catalog entry command is required");
-        }
-        Integer startupTimeout = entry.getStartupTimeoutSeconds();
-        if (startupTimeout != null && (startupTimeout < 1 || startupTimeout > 300)) {
-            throw new IllegalArgumentException("startupTimeoutSeconds must be between 1 and 300");
-        }
-        Integer idleTimeout = entry.getIdleTimeoutMinutes();
-        if (idleTimeout != null && (idleTimeout < 1 || idleTimeout > 120)) {
-            throw new IllegalArgumentException("idleTimeoutMinutes must be between 1 and 120");
-        }
+        return runtimeVoidResponse(() -> runtimeSettingsFacade.removeMcpCatalogEntry(name));
     }
 
     @PutMapping("/runtime/hive")
-    public Mono<ResponseEntity<RuntimeConfig>> updateHiveConfig(
-            @RequestBody RuntimeConfig.HiveConfig hiveConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        rejectManagedHiveMutation(config, hiveConfig);
-        validateHiveConfig(hiveConfig);
-        config.setHive(hiveConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateHiveConfig(@RequestBody HiveConfigDto hiveConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateHiveConfig(runtimeSettingsWebMapper.toHiveConfig(hiveConfig))));
     }
 
     @PutMapping("/runtime/plan")
-    public Mono<ResponseEntity<RuntimeConfig>> updatePlanConfig(
-            @RequestBody RuntimeConfig.PlanConfig planConfig) {
-        validatePlanConfig(planConfig);
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        config.setPlan(planConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updatePlanConfig(@RequestBody PlanConfigDto planConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updatePlanConfig(runtimeSettingsWebMapper.toPlanConfig(planConfig))));
     }
 
     @PutMapping("/runtime/webhooks")
-    public Mono<ResponseEntity<Void>> updateWebhooksConfig(
-            @RequestBody UserPreferences.WebhookConfig webhookConfig) {
-        UserPreferences prefs = preferencesService.getPreferences();
-        mergeWebhookSecrets(prefs.getWebhooks(), webhookConfig);
-        validateWebhookConfig(webhookConfig);
-        prefs.setWebhooks(webhookConfig);
-        preferencesService.savePreferences(prefs);
-        return Mono.just(ResponseEntity.ok().build());
+    public Mono<ResponseEntity<Void>> updateWebhooksConfig(@RequestBody UserPreferences.WebhookConfig webhookConfig) {
+        return runtimeVoidResponse(() -> runtimeSettingsFacade.updateWebhooksConfig(webhookConfig));
     }
 
     @PutMapping("/runtime/auto")
-    public Mono<ResponseEntity<RuntimeConfig>> updateAutoConfig(
-            @RequestBody RuntimeConfig.AutoModeConfig autoConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        validateAndNormalizeAutoModeConfig(autoConfig);
-        config.setAutoMode(autoConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateAutoConfig(@RequestBody AutoModeConfigDto autoConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateAutoConfig(runtimeSettingsWebMapper.toAutoModeConfig(autoConfig))));
     }
 
     @PutMapping("/runtime/tracing")
-    public Mono<ResponseEntity<RuntimeConfig>> updateTracingConfig(
-            @RequestBody RuntimeConfig.TracingConfig tracingConfig) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        validateAndNormalizeTracingConfig(tracingConfig);
-        config.setTracing(tracingConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateTracingConfig(
+            @RequestBody TracingConfigDto tracingConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateTracingConfig(runtimeSettingsWebMapper.toTracingConfig(tracingConfig))));
     }
 
     @PutMapping("/runtime/advanced")
-    public Mono<ResponseEntity<RuntimeConfig>> updateAdvancedConfig(
-            @RequestBody AdvancedConfigRequest request) {
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        if (request.rateLimit() != null) {
-            config.setRateLimit(request.rateLimit());
-        }
-        if (request.security() != null) {
-            config.setSecurity(request.security());
-        }
-        if (request.compaction() != null) {
-            validateCompactionConfig(request.compaction());
-            config.setCompaction(request.compaction());
-        }
-        runtimeConfigService.updateRuntimeConfig(config);
-        return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfig()));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateAdvancedConfig(@RequestBody AdvancedConfigRequest request) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateAdvancedConfig(
+                        runtimeSettingsWebMapper.toRateLimitConfig(request.rateLimit()),
+                        runtimeSettingsWebMapper.toSecurityConfig(request.security()),
+                        runtimeSettingsWebMapper.toCompactionConfig(request.compaction()))));
     }
 
-    // ==================== DTOs ====================
-
-    private record ModelDto(String id, String displayName, boolean hasReasoning,
-            List<String> reasoningLevels, boolean supportsVision) {
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateRuntimeConfig(RuntimeConfig config) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateRuntimeConfig(config)));
     }
 
-    private record AdvancedConfigRequest(
-            RuntimeConfig.RateLimitConfig rateLimit,
-            RuntimeConfig.SecurityConfig security,
-            RuntimeConfig.CompactionConfig compaction) {
-    }
-
-    private void normalizeAndValidateTelegramConfig(RuntimeConfig.TelegramConfig telegramConfig) {
-        telegramConfig.setAuthMode(TELEGRAM_AUTH_MODE_INVITE_ONLY);
-
-        List<String> allowedUsers = telegramConfig.getAllowedUsers();
-        if (allowedUsers == null) {
-            telegramConfig.setAllowedUsers(new ArrayList<>());
-            return;
-        }
-
-        for (String userId : allowedUsers) {
-            if (userId == null || !userId.matches("\\d+")) {
-                throw new IllegalArgumentException("telegram.allowedUsers must contain numeric IDs only");
-            }
-        }
-
-        if (allowedUsers.size() > 1) {
-            throw new IllegalArgumentException("telegram.allowedUsers supports only one invited user");
-        }
-    }
-
-    private void validateLlmConfig(RuntimeConfig.LlmConfig llmConfig,
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateModelRouterConfig(
             RuntimeConfig.ModelRouterConfig modelRouterConfig) {
-        if (llmConfig == null) {
-            throw new IllegalArgumentException("llm config is required");
-        }
-
-        Map<String, RuntimeConfig.LlmProviderConfig> providers = llmConfig.getProviders();
-        if (providers == null) {
-            llmConfig.setProviders(new LinkedHashMap<>());
-            return;
-        }
-
-        Set<String> normalizedNames = new LinkedHashSet<>();
-        for (Map.Entry<String, RuntimeConfig.LlmProviderConfig> entry : providers.entrySet()) {
-            String providerName = entry.getKey();
-            RuntimeConfig.LlmProviderConfig providerConfig = entry.getValue();
-
-            if (providerName == null || providerName.isBlank()) {
-                throw new IllegalArgumentException("llm.providers keys must be non-empty");
-            }
-            if (!providerName.equals(providerName.trim())) {
-                throw new IllegalArgumentException("llm.providers keys must not have leading/trailing spaces");
-            }
-            if (!providerName.equals(providerName.toLowerCase(Locale.ROOT))) {
-                throw new IllegalArgumentException("llm.providers keys must be lowercase");
-            }
-            if (!providerName.matches("[a-z0-9][a-z0-9_-]*")) {
-                throw new IllegalArgumentException(
-                        "llm.providers keys must match [a-z0-9][a-z0-9_-]*");
-            }
-            if (!normalizedNames.add(providerName)) {
-                throw new IllegalArgumentException("llm.providers contains duplicate provider key: " + providerName);
-            }
-            if (providerConfig == null) {
-                throw new IllegalArgumentException("llm.providers." + providerName + " config is required");
-            }
-
-            Integer requestTimeoutSeconds = providerConfig.getRequestTimeoutSeconds();
-            if (requestTimeoutSeconds != null && (requestTimeoutSeconds < 1 || requestTimeoutSeconds > 3600)) {
-                throw new IllegalArgumentException(
-                        "llm.providers." + providerName + ".requestTimeoutSeconds must be between 1 and 3600");
-            }
-
-            String baseUrl = providerConfig.getBaseUrl();
-            if (baseUrl != null && !baseUrl.isBlank()) {
-                if (!isValidHttpUrl(baseUrl)) {
-                    throw new IllegalArgumentException(
-                            "llm.providers." + providerName + ".baseUrl must be a valid http(s) URL");
-                }
-            }
-
-            String apiType = providerConfig.getApiType();
-            if (apiType != null && !apiType.isBlank()
-                    && !VALID_API_TYPES.contains(apiType.toLowerCase(Locale.ROOT))) {
-                throw new IllegalArgumentException(
-                        "llm.providers." + providerName + ".apiType must be one of " + VALID_API_TYPES);
-            }
-        }
-
-        Set<String> providersUsedByModelRouter = getProvidersUsedByModelRouter(modelRouterConfig);
-        for (String usedProvider : providersUsedByModelRouter) {
-            if (!providers.containsKey(usedProvider)) {
-                throw new IllegalArgumentException(
-                        "Cannot remove provider '" + usedProvider + "' because it is used by model router tiers");
-            }
-        }
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateModelRouterConfig(modelRouterConfig)));
     }
 
-    private void validateModelRouterConfig(RuntimeConfig.ModelRouterConfig modelRouterConfig,
-            RuntimeConfig.LlmConfig llmConfig) {
-        if (modelRouterConfig == null) {
-            return;
-        }
-        List<String> configuredProviders = llmConfig != null && llmConfig.getProviders() != null
-                ? new ArrayList<>(llmConfig.getProviders().keySet())
-                : List.of();
-        validateModelRouterBinding(modelRouterConfig.getRouting(), "routing", configuredProviders);
-        if (modelRouterConfig.getTiers() == null) {
-            return;
-        }
-        for (Map.Entry<String, RuntimeConfig.TierBinding> entry : modelRouterConfig.getTiers().entrySet()) {
-            validateModelRouterBinding(entry.getValue(), entry.getKey(), configuredProviders);
-        }
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateLlmConfig(RuntimeConfig.LlmConfig llmConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateLlmConfig(llmConfig)));
     }
 
-    private void validateModelRouterBinding(RuntimeConfig.TierBinding binding, String tier,
-            List<String> configuredProviders) {
-        if (binding == null || binding.getModel() == null || binding.getModel().isBlank()) {
-            return;
-        }
-        ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(
-                binding.getModel(),
-                configuredProviders);
-        if (validation.valid()) {
-            return;
-        }
-        throw switch (validation.error()) {
-        case "model.not.found" -> new IllegalArgumentException(
-                "Model router tier '" + tier + "' points to unknown model '" + binding.getModel() + "'");
-        case "provider.not.configured" -> new IllegalArgumentException(
-                "Model router tier '" + tier + "' points to model '" + binding.getModel()
-                        + "' whose provider is not configured");
-        default -> new IllegalArgumentException(
-                "Model router tier '" + tier + "' is invalid: " + validation.error());
-        };
+    public Mono<ResponseEntity<RuntimeConfigDto>> addLlmProvider(String name,
+            RuntimeConfig.LlmProviderConfig providerConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.addLlmProvider(name, providerConfig)));
     }
 
-    private void validateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
-        if (turnConfig == null) {
-            throw new IllegalArgumentException("turn config is required");
-        }
-        if (turnConfig.getMaxLlmCalls() != null && turnConfig.getMaxLlmCalls() < 1) {
-            throw new IllegalArgumentException("turn.maxLlmCalls must be >= 1");
-        }
-        if (turnConfig.getMaxToolExecutions() != null && turnConfig.getMaxToolExecutions() < 1) {
-            throw new IllegalArgumentException("turn.maxToolExecutions must be >= 1");
-        }
-        if (turnConfig.getDeadline() != null && !turnConfig.getDeadline().isBlank()) {
-            try {
-                java.time.Duration deadline = java.time.Duration.parse(turnConfig.getDeadline().trim());
-                if (deadline.isZero() || deadline.isNegative()) {
-                    throw new IllegalArgumentException("turn.deadline must be a positive ISO-8601 duration");
-                }
-            } catch (java.time.format.DateTimeParseException e) {
-                throw new IllegalArgumentException("turn.deadline must be a valid ISO-8601 duration");
-            }
-        }
-        validateRange(turnConfig.getProgressBatchSize(), TURN_PROGRESS_BATCH_SIZE_MIN, TURN_PROGRESS_BATCH_SIZE_MAX,
-                "turn.progressBatchSize");
-        validateRange(turnConfig.getProgressMaxSilenceSeconds(),
-                TURN_PROGRESS_MAX_SILENCE_SECONDS_MIN,
-                TURN_PROGRESS_MAX_SILENCE_SECONDS_MAX,
-                "turn.progressMaxSilenceSeconds");
-        validateRange(turnConfig.getProgressSummaryTimeoutMs(),
-                TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MIN,
-                TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MAX,
-                "turn.progressSummaryTimeoutMs");
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateLlmProvider(String name,
+            RuntimeConfig.LlmProviderConfig providerConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateLlmProvider(name, providerConfig)));
     }
 
-    private void validateRange(Integer value, int min, int max, String fieldName) {
-        if (value == null) {
-            return;
-        }
-        if (value < min || value > max) {
-            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
-        }
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateToolsConfig(RuntimeConfig.ToolsConfig toolsConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateToolsConfig(toolsConfig)));
     }
 
-    private void validateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
-        if (memoryConfig == null) {
-            throw new IllegalArgumentException("memory config is required");
-        }
-        if (memoryConfig.getDisclosure() == null) {
-            memoryConfig.setDisclosure(RuntimeConfig.MemoryDisclosureConfig.builder().build());
-        }
-        if (memoryConfig.getReranking() == null) {
-            memoryConfig.setReranking(RuntimeConfig.MemoryRerankingConfig.builder().build());
-        }
-        if (memoryConfig.getDiagnostics() == null) {
-            memoryConfig.setDiagnostics(RuntimeConfig.MemoryDiagnosticsConfig.builder().build());
-        }
-
-        validateNullableInteger(memoryConfig.getSoftPromptBudgetTokens(), MEMORY_SOFT_BUDGET_MIN,
-                MEMORY_SOFT_BUDGET_MAX,
-                "memory.softPromptBudgetTokens");
-        validateNullableInteger(memoryConfig.getMaxPromptBudgetTokens(), MEMORY_MAX_BUDGET_MIN, MEMORY_MAX_BUDGET_MAX,
-                "memory.maxPromptBudgetTokens");
-        validateNullableInteger(memoryConfig.getWorkingTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
-                "memory.workingTopK");
-        validateNullableInteger(memoryConfig.getEpisodicTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
-                "memory.episodicTopK");
-        validateNullableInteger(memoryConfig.getSemanticTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
-                "memory.semanticTopK");
-        validateNullableInteger(memoryConfig.getProceduralTopK(), MEMORY_TOP_K_MIN, MEMORY_TOP_K_MAX,
-                "memory.proceduralTopK");
-        validateNullableDouble(memoryConfig.getPromotionMinConfidence(), 0.0, 1.0, "memory.promotionMinConfidence");
-        validateNullableInteger(memoryConfig.getDecayDays(), MEMORY_DECAY_DAYS_MIN, MEMORY_DECAY_DAYS_MAX,
-                "memory.decayDays");
-        validateNullableInteger(memoryConfig.getRetrievalLookbackDays(), MEMORY_RETRIEVAL_LOOKBACK_DAYS_MIN,
-                MEMORY_RETRIEVAL_LOOKBACK_DAYS_MAX, "memory.retrievalLookbackDays");
-
-        Integer softBudget = memoryConfig.getSoftPromptBudgetTokens();
-        Integer maxBudget = memoryConfig.getMaxPromptBudgetTokens();
-        if (softBudget != null && maxBudget != null && maxBudget < softBudget) {
-            throw new IllegalArgumentException(
-                    "memory.maxPromptBudgetTokens must be greater than or equal to memory.softPromptBudgetTokens");
-        }
-
-        normalizeAndValidateMemoryDisclosureConfig(memoryConfig.getDisclosure());
-        normalizeAndValidateMemoryRerankingConfig(memoryConfig.getReranking());
-        normalizeAndValidateMemoryDiagnosticsConfig(memoryConfig.getDiagnostics());
-    }
-
-    private void normalizeAndValidateMemoryDisclosureConfig(
-            RuntimeConfig.MemoryDisclosureConfig disclosureConfig) {
-        if (disclosureConfig == null) {
-            return;
-        }
-        disclosureConfig.setMode(normalizeAndValidateMemoryOption(
-                disclosureConfig.getMode(),
-                "summary",
-                VALID_MEMORY_DISCLOSURE_MODES,
-                "memory.disclosure.mode"));
-        disclosureConfig.setPromptStyle(normalizeAndValidateMemoryOption(
-                disclosureConfig.getPromptStyle(),
-                "balanced",
-                VALID_MEMORY_PROMPT_STYLES,
-                "memory.disclosure.promptStyle"));
-        validateNullableDouble(disclosureConfig.getDetailMinScore(), 0.0, 1.0, "memory.disclosure.detailMinScore");
-        if (disclosureConfig.getToolExpansionEnabled() == null) {
-            disclosureConfig.setToolExpansionEnabled(true);
-        }
-        if (disclosureConfig.getDisclosureHintsEnabled() == null) {
-            disclosureConfig.setDisclosureHintsEnabled(true);
-        }
-    }
-
-    private void normalizeAndValidateMemoryDiagnosticsConfig(
-            RuntimeConfig.MemoryDiagnosticsConfig diagnosticsConfig) {
-        if (diagnosticsConfig == null) {
-            return;
-        }
-        diagnosticsConfig.setVerbosity(normalizeAndValidateMemoryOption(
-                diagnosticsConfig.getVerbosity(),
-                "basic",
-                VALID_MEMORY_DIAGNOSTICS_VERBOSITY,
-                "memory.diagnostics.verbosity"));
-    }
-
-    private void normalizeAndValidateMemoryRerankingConfig(
-            RuntimeConfig.MemoryRerankingConfig rerankingConfig) {
-        if (rerankingConfig == null) {
-            return;
-        }
-        rerankingConfig.setProfile(normalizeAndValidateMemoryOption(
-                rerankingConfig.getProfile(),
-                "balanced",
-                VALID_MEMORY_RERANKING_PROFILES,
-                "memory.reranking.profile"));
-        if (rerankingConfig.getEnabled() == null) {
-            rerankingConfig.setEnabled(true);
-        }
-    }
-
-    private void validateCompactionConfig(RuntimeConfig.CompactionConfig compactionConfig) {
-        if (compactionConfig == null) {
-            return;
-        }
-
-        String triggerMode = compactionConfig.getTriggerMode();
-        if (triggerMode == null || triggerMode.isBlank()) {
-            compactionConfig.setTriggerMode(DEFAULT_COMPACTION_TRIGGER_MODE);
-        } else {
-            String normalized = triggerMode.trim().toLowerCase(Locale.ROOT);
-            if (!VALID_COMPACTION_TRIGGER_MODES.contains(normalized)) {
-                throw new IllegalArgumentException(
-                        "compaction.triggerMode must be one of " + VALID_COMPACTION_TRIGGER_MODES);
-            }
-            compactionConfig.setTriggerMode(normalized);
-        }
-
-        Double modelThresholdRatio = compactionConfig.getModelThresholdRatio();
-        if (modelThresholdRatio == null) {
-            compactionConfig.setModelThresholdRatio(DEFAULT_COMPACTION_MODEL_THRESHOLD_RATIO);
-        } else if (modelThresholdRatio <= 0.0d || modelThresholdRatio > 1.0d) {
-            throw new IllegalArgumentException("compaction.modelThresholdRatio must be between 0 and 1");
-        }
-
-        Integer maxContextTokens = compactionConfig.getMaxContextTokens();
-        if (maxContextTokens != null && maxContextTokens < 1) {
-            throw new IllegalArgumentException("compaction.maxContextTokens must be greater than 0");
-        }
-
-        Integer keepLastMessages = compactionConfig.getKeepLastMessages();
-        if (keepLastMessages != null && keepLastMessages < 1) {
-            throw new IllegalArgumentException("compaction.keepLastMessages must be greater than 0");
-        }
-    }
-
-    private void validateNullableInteger(Integer value, int min, int max, String fieldName) {
-        if (value == null) {
-            return;
-        }
-        if (value < min || value > max) {
-            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
-        }
-    }
-
-    private void validateNullableDouble(Double value, double min, double max, String fieldName) {
-        if (value == null) {
-            return;
-        }
-        if (value < min || value > max) {
-            throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
-        }
-    }
-
-    private String normalizeAndValidateMemoryOption(
-            String value,
-            String defaultValue,
-            Set<String> allowedValues,
-            String fieldName) {
-        String normalized = value == null || value.isBlank()
-                ? defaultValue
-                : value.trim().toLowerCase(Locale.ROOT);
-        if (!allowedValues.contains(normalized)) {
-            throw new IllegalArgumentException(fieldName + " must be one of " + allowedValues);
-        }
-        return normalized;
-    }
-
-    private void validateVoiceConfig(RuntimeConfig.VoiceConfig voiceConfig) {
-        if (voiceConfig == null) {
-            return;
-        }
-        boolean voiceEnabled = Boolean.TRUE.equals(voiceConfig.getEnabled());
-
-        String normalizedSttProvider = normalizeProvider(voiceConfig.getSttProvider());
-        if (normalizedSttProvider == null) {
-            normalizedSttProvider = firstLoadedSttProvider();
-        }
-        if (normalizedSttProvider == null && voiceEnabled) {
-            throw new IllegalArgumentException("voice.sttProvider must resolve to a loaded STT provider");
-        }
-        if (normalizedSttProvider != null && !isKnownSttProvider(normalizedSttProvider)) {
-            throw new IllegalArgumentException("voice.sttProvider must resolve to a loaded STT provider");
-        }
-        voiceConfig.setSttProvider(normalizedSttProvider);
-
-        String normalizedTtsProvider = normalizeProvider(voiceConfig.getTtsProvider());
-        if (normalizedTtsProvider == null) {
-            normalizedTtsProvider = firstLoadedTtsProvider();
-        }
-        if (normalizedTtsProvider == null && voiceEnabled) {
-            throw new IllegalArgumentException("voice.ttsProvider must resolve to a loaded TTS provider");
-        }
-        if (normalizedTtsProvider != null && !isKnownTtsProvider(normalizedTtsProvider)) {
-            throw new IllegalArgumentException("voice.ttsProvider must resolve to a loaded TTS provider");
-        }
-        voiceConfig.setTtsProvider(normalizedTtsProvider);
-
-        String whisperSttUrl = voiceConfig.getWhisperSttUrl();
-        if (whisperSttUrl != null && whisperSttUrl.isBlank()) {
-            voiceConfig.setWhisperSttUrl(null);
-        }
-    }
-
-    private void validatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
-        if (planConfig == null) {
-            throw new IllegalArgumentException("plan config is required");
-        }
-        validateNullableInteger(planConfig.getMaxPlans(), 1, 100, "plan.maxPlans");
-        validateNullableInteger(planConfig.getMaxStepsPerPlan(), 1, 1000, "plan.maxStepsPerPlan");
-    }
-
-    private void validateAndNormalizeAutoModeConfig(RuntimeConfig.AutoModeConfig autoConfig) {
-        if (autoConfig == null) {
-            throw new IllegalArgumentException("autoMode config is required");
-        }
-        autoConfig.setModelTier(normalizeOptionalSelectableTier(autoConfig.getModelTier(), "autoMode.modelTier"));
-        autoConfig.setReflectionModelTier(normalizeOptionalSelectableTier(autoConfig.getReflectionModelTier(),
-                "autoMode.reflectionModelTier"));
-    }
-
-    private void validateAndNormalizeTracingConfig(RuntimeConfig.TracingConfig tracingConfig) {
-        if (tracingConfig == null) {
-            throw new IllegalArgumentException("tracing config is required");
-        }
-        validateNullableInteger(tracingConfig.getSessionTraceBudgetMb(), 1, 1024, "tracing.sessionTraceBudgetMb");
-        validateNullableInteger(tracingConfig.getMaxSnapshotSizeKb(), 1, 10240, "tracing.maxSnapshotSizeKb");
-        validateNullableInteger(tracingConfig.getMaxSnapshotsPerSpan(), 1, 1000, "tracing.maxSnapshotsPerSpan");
-        validateNullableInteger(tracingConfig.getMaxTracesPerSession(), 1, 10000, "tracing.maxTracesPerSession");
-    }
-
-    private void validateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
-        if (hiveConfig == null) {
-            throw new IllegalArgumentException("hive config is required");
-        }
-        String serverUrl = hiveConfig.getServerUrl();
-        if (serverUrl != null && !serverUrl.isBlank() && !isValidHttpUrl(serverUrl)) {
-            throw new IllegalArgumentException("hive.serverUrl must be a valid http(s) URL");
-        }
-    }
-
-    private void validateAndNormalizeModelRegistryConfig(RuntimeConfig.ModelRegistryConfig modelRegistryConfig) {
-        if (modelRegistryConfig == null) {
-            return;
-        }
-        String repositoryUrl = modelRegistryConfig.getRepositoryUrl();
-        if (repositoryUrl != null) {
-            repositoryUrl = repositoryUrl.trim();
-        }
-        if (repositoryUrl == null || repositoryUrl.isBlank()) {
-            modelRegistryConfig.setRepositoryUrl(null);
-        } else {
-            if (!isValidHttpUrl(repositoryUrl)) {
-                throw new IllegalArgumentException("modelRegistry.repositoryUrl must be a valid http(s) URL");
-            }
-            modelRegistryConfig.setRepositoryUrl(repositoryUrl);
-        }
-
-        String branch = modelRegistryConfig.getBranch();
-        if (branch == null || branch.isBlank()) {
-            modelRegistryConfig.setBranch("main");
-        } else {
-            modelRegistryConfig.setBranch(branch.trim());
-        }
-    }
-
-    private void validateWebhookConfig(UserPreferences.WebhookConfig webhookConfig) {
-        if (webhookConfig == null || webhookConfig.getMappings() == null) {
-            return;
-        }
-        for (UserPreferences.HookMapping mapping : webhookConfig.getMappings()) {
-            if (mapping == null) {
-                continue;
-            }
-            mapping.setModel(normalizeOptionalSelectableTier(mapping.getModel(), "webhooks.mapping.model"));
-        }
-    }
-
-    private RuntimeConfig.ToolsConfig ensureToolsConfig(RuntimeConfig config) {
-        RuntimeConfig.ToolsConfig toolsConfig = config.getTools();
-        if (toolsConfig == null) {
-            toolsConfig = RuntimeConfig.ToolsConfig.builder().build();
-            config.setTools(toolsConfig);
-        }
-        return toolsConfig;
-    }
-
-    private RuntimeConfig mergeRuntimeConfigSections(RuntimeConfig current, RuntimeConfig incoming) {
-        RuntimeConfig baseline = current != null ? current : RuntimeConfig.builder().build();
-        RuntimeConfig patch = incoming != null ? incoming : RuntimeConfig.builder().build();
-        return RuntimeConfig.builder()
-                .telegram(mergeSection(patch.getTelegram(), baseline.getTelegram(), RuntimeConfig.TelegramConfig::new))
-                .modelRouter(mergeSection(patch.getModelRouter(), baseline.getModelRouter(),
-                        RuntimeConfig.ModelRouterConfig::new))
-                .llm(mergeSection(patch.getLlm(), baseline.getLlm(), RuntimeConfig.LlmConfig::new))
-                .tools(mergeSection(patch.getTools(), baseline.getTools(), RuntimeConfig.ToolsConfig::new))
-                .voice(mergeSection(patch.getVoice(), baseline.getVoice(), RuntimeConfig.VoiceConfig::new))
-                .autoMode(mergeSection(patch.getAutoMode(), baseline.getAutoMode(), RuntimeConfig.AutoModeConfig::new))
-                .tracing(mergeSection(patch.getTracing(), baseline.getTracing(), RuntimeConfig.TracingConfig::new))
-                .rateLimit(mergeSection(patch.getRateLimit(), baseline.getRateLimit(),
-                        RuntimeConfig.RateLimitConfig::new))
-                .security(mergeSection(patch.getSecurity(), baseline.getSecurity(), RuntimeConfig.SecurityConfig::new))
-                .compaction(mergeSection(patch.getCompaction(), baseline.getCompaction(),
-                        RuntimeConfig.CompactionConfig::new))
-                .turn(mergeSection(patch.getTurn(), baseline.getTurn(), RuntimeConfig.TurnConfig::new))
-                .memory(mergeSection(patch.getMemory(), baseline.getMemory(), RuntimeConfig.MemoryConfig::new))
-                .skills(mergeSection(patch.getSkills(), baseline.getSkills(), RuntimeConfig.SkillsConfig::new))
-                .modelRegistry(mergeSection(patch.getModelRegistry(), baseline.getModelRegistry(),
-                        RuntimeConfig.ModelRegistryConfig::new))
-                .usage(mergeSection(patch.getUsage(), baseline.getUsage(), RuntimeConfig.UsageConfig::new))
-                .telemetry(mergeSection(patch.getTelemetry(), baseline.getTelemetry(),
-                        RuntimeConfig.TelemetryConfig::new))
-                .mcp(mergeSection(patch.getMcp(), baseline.getMcp(), RuntimeConfig.McpConfig::new))
-                .plan(mergeSection(patch.getPlan(), baseline.getPlan(), RuntimeConfig.PlanConfig::new))
-                .delayedActions(mergeSection(patch.getDelayedActions(), baseline.getDelayedActions(),
-                        RuntimeConfig.DelayedActionsConfig::new))
-                .hive(mergeSection(patch.getHive(), baseline.getHive(), RuntimeConfig.HiveConfig::new))
-                .selfEvolving(mergeSelfEvolvingSection(patch.getSelfEvolving(), baseline.getSelfEvolving()))
-                .build();
-    }
-
-    private RuntimeConfig.SelfEvolvingConfig mergeSelfEvolvingSection(
-            RuntimeConfig.SelfEvolvingConfig patch,
-            RuntimeConfig.SelfEvolvingConfig baseline) {
-        if (patch == null) {
-            return baseline;
-        }
-        preserveSelfEvolvingEmbeddingsApiKey(patch, baseline);
-        return patch;
-    }
-
-    private void preserveSelfEvolvingEmbeddingsApiKey(
-            RuntimeConfig.SelfEvolvingConfig patch,
-            RuntimeConfig.SelfEvolvingConfig baseline) {
-        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig patchEmbeddings = extractEmbeddings(patch);
-        if (patchEmbeddings == null) {
-            return;
-        }
-        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig baselineEmbeddings = extractEmbeddings(baseline);
-        Secret baselineKey = baselineEmbeddings != null ? baselineEmbeddings.getApiKey() : null;
-        patchEmbeddings.setApiKey(mergeSecret(baselineKey, patchEmbeddings.getApiKey()));
-    }
-
-    private RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig extractEmbeddings(
-            RuntimeConfig.SelfEvolvingConfig config) {
-        if (config == null || config.getTactics() == null || config.getTactics().getSearch() == null) {
-            return null;
-        }
-        return config.getTactics().getSearch().getEmbeddings();
-    }
-
-    private <T> T mergeSection(T incoming, T current, Supplier<T> emptySupplier) {
-        if (incoming == null) {
-            return current;
-        }
-        if (current == null) {
-            return incoming;
-        }
-        return incoming.equals(emptySupplier.get()) ? current : incoming;
-    }
-
-    private List<RuntimeConfig.ShellEnvironmentVariable> ensureShellEnvironmentVariables(
-            RuntimeConfig.ToolsConfig toolsConfig) {
-        List<RuntimeConfig.ShellEnvironmentVariable> variables = toolsConfig.getShellEnvironmentVariables();
-        if (variables == null) {
-            variables = new ArrayList<>();
-            toolsConfig.setShellEnvironmentVariables(variables);
-        }
-        return variables;
-    }
-
-    private void normalizeAndValidateShellEnvironmentVariables(RuntimeConfig.ToolsConfig toolsConfig) {
-        if (toolsConfig == null) {
-            return;
-        }
-        List<RuntimeConfig.ShellEnvironmentVariable> variables = toolsConfig.getShellEnvironmentVariables();
-        if (variables == null || variables.isEmpty()) {
-            toolsConfig.setShellEnvironmentVariables(new ArrayList<>());
-            return;
-        }
-
-        List<RuntimeConfig.ShellEnvironmentVariable> normalized = new ArrayList<>(variables.size());
-        Set<String> names = new LinkedHashSet<>();
-        for (RuntimeConfig.ShellEnvironmentVariable variable : variables) {
-            RuntimeConfig.ShellEnvironmentVariable normalizedVariable = normalizeAndValidateShellEnvironmentVariable(
-                    variable);
-            if (!names.add(normalizedVariable.getName())) {
-                throw new IllegalArgumentException(
-                        "tools.shellEnvironmentVariables contains duplicate name: " + normalizedVariable.getName());
-            }
-            normalized.add(normalizedVariable);
-        }
-        toolsConfig.setShellEnvironmentVariables(normalized);
-    }
-
-    private RuntimeConfig.ShellEnvironmentVariable normalizeAndValidateShellEnvironmentVariable(
+    public Mono<ResponseEntity<RuntimeConfigDto>> createShellEnvironmentVariable(
             RuntimeConfig.ShellEnvironmentVariable variable) {
-        if (variable == null) {
-            throw new IllegalArgumentException("tools.shellEnvironmentVariables item is required");
-        }
-        String normalizedName = normalizeAndValidateShellEnvironmentVariableName(variable.getName());
-        String normalizedValue = normalizeAndValidateShellEnvironmentVariableValue(variable.getValue(), normalizedName);
-        return RuntimeConfig.ShellEnvironmentVariable.builder()
-                .name(normalizedName)
-                .value(normalizedValue)
-                .build();
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.createShellEnvironmentVariable(variable)));
     }
 
-    private String normalizeAndValidateShellEnvironmentVariableName(String value) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("tools.shellEnvironmentVariables.name is required");
-        }
-        String normalized = value.trim();
-        if (normalized.length() > SHELL_ENV_VAR_NAME_MAX_LENGTH) {
-            throw new IllegalArgumentException("tools.shellEnvironmentVariables.name must be at most "
-                    + SHELL_ENV_VAR_NAME_MAX_LENGTH + " characters");
-        }
-        if (!SHELL_ENV_VAR_NAME_PATTERN.matcher(normalized).matches()) {
-            throw new IllegalArgumentException(
-                    "tools.shellEnvironmentVariables.name must match [A-Za-z_][A-Za-z0-9_]*");
-        }
-        if (RESERVED_SHELL_ENV_VAR_NAMES.contains(normalized)) {
-            throw new IllegalArgumentException(
-                    "tools.shellEnvironmentVariables.name must not redefine reserved variable: " + normalized);
-        }
-        return normalized;
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateShellEnvironmentVariable(String name,
+            RuntimeConfig.ShellEnvironmentVariable variable) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateShellEnvironmentVariable(name, variable)));
     }
 
-    private String normalizeAndValidateShellEnvironmentVariableValue(String value, String normalizedName) {
-        String normalizedValue = value != null ? value : "";
-        if (normalizedValue.length() > SHELL_ENV_VAR_VALUE_MAX_LENGTH) {
-            throw new IllegalArgumentException("tools.shellEnvironmentVariables." + normalizedName
-                    + ".value must be at most " + SHELL_ENV_VAR_VALUE_MAX_LENGTH + " characters");
-        }
-        return normalizedValue;
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateVoiceConfig(RuntimeConfig.VoiceConfig voiceConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateVoiceConfig(voiceConfig)));
     }
 
-    private boolean containsShellEnvironmentVariableName(List<RuntimeConfig.ShellEnvironmentVariable> variables,
-            String name) {
-        return findShellEnvironmentVariableIndex(variables, name) >= 0;
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateTurnConfig(turnConfig)));
     }
 
-    private int findShellEnvironmentVariableIndex(List<RuntimeConfig.ShellEnvironmentVariable> variables, String name) {
-        for (int index = 0; index < variables.size(); index++) {
-            RuntimeConfig.ShellEnvironmentVariable variable = variables.get(index);
-            if (variable != null && name.equals(variable.getName())) {
-                return index;
-            }
-        }
-        return -1;
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateMemoryConfig(memoryConfig)));
     }
 
-    private Set<String> getProvidersUsedByModelRouter(RuntimeConfig.ModelRouterConfig modelRouterConfig) {
-        Set<String> usedProviders = new LinkedHashSet<>();
-        if (modelRouterConfig == null) {
-            return usedProviders;
-        }
-        RuntimeConfig.TierBinding routingBinding = modelRouterConfig.getRouting();
-        if (routingBinding != null) {
-            addProviderFromModel(usedProviders, routingBinding.getModel());
-        }
-        if (modelRouterConfig.getTiers() != null) {
-            for (RuntimeConfig.TierBinding tierBinding : modelRouterConfig.getTiers().values()) {
-                if (tierBinding != null) {
-                    addProviderFromModel(usedProviders, tierBinding.getModel());
-                }
-            }
-        }
-        return usedProviders;
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateSkillsConfig(RuntimeConfig.SkillsConfig skillsConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateSkillsConfig(skillsConfig)));
     }
 
-    private void addProviderFromModel(Set<String> usedProviders, String model) {
-        if (model == null || model.isBlank()) {
-            return;
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateUsageConfig(RuntimeConfig.UsageConfig usageConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateUsageConfig(usageConfig)));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateTelemetryConfig(RuntimeConfig.TelemetryConfig telemetryConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateTelemetryConfig(telemetryConfig)));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateMcpConfig(RuntimeConfig.McpConfig mcpConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateMcpConfig(mcpConfig)));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry entry) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.addMcpCatalogEntry(entry)));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateMcpCatalogEntry(String name,
+            RuntimeConfig.McpCatalogEntry entry) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateMcpCatalogEntry(name, entry)));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateHiveConfig(hiveConfig)));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updatePlanConfig(planConfig)));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateAutoConfig(RuntimeConfig.AutoModeConfig autoConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateAutoConfig(autoConfig)));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateTracingConfig(RuntimeConfig.TracingConfig tracingConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateTracingConfig(tracingConfig)));
+    }
+
+    private Mono<ResponseEntity<RuntimeConfigDto>> runtimeConfigResponse(Supplier<RuntimeConfigDto> supplier) {
+        return Mono.just(ResponseEntity.ok(invokeRuntime(supplier)));
+    }
+
+    private <T> Mono<ResponseEntity<List<T>>> runtimeListResponse(Supplier<List<T>> supplier) {
+        return Mono.just(ResponseEntity.ok(invokeRuntime(supplier)));
+    }
+
+    private Mono<ResponseEntity<Void>> runtimeVoidResponse(Runnable runnable) {
+        invokeRuntime(() -> {
+            runnable.run();
+            return null;
+        });
+        return Mono.just(ResponseEntity.ok().build());
+    }
+
+    private <T> T invokeRuntime(Supplier<T> supplier) {
+        try {
+            return supplier.get();
+        } catch (NoSuchElementException ex) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, ex.getMessage());
+        } catch (IllegalStateException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, ex.getMessage());
         }
-        String resolvedProvider = modelSelectionService.resolveProviderForModel(model);
-        if (resolvedProvider != null) {
-            usedProviders.add(resolvedProvider);
-            return;
-        }
-        int delimiterIndex = model.indexOf('/');
-        if (delimiterIndex <= 0) {
-            return;
-        }
-        usedProviders.add(model.substring(0, delimiterIndex));
     }
 
     private String normalizeOptionalSelectableTier(String tier, String fieldName) {
@@ -1397,150 +553,18 @@ public class SettingsController {
         return normalizedTier;
     }
 
-    private void mergeRuntimeSecrets(RuntimeConfig current, RuntimeConfig incoming) {
-        if (current == null || incoming == null) {
-            return;
-        }
-        if (incoming.getTelegram() != null && current.getTelegram() != null) {
-            incoming.getTelegram()
-                    .setToken(mergeSecret(current.getTelegram().getToken(), incoming.getTelegram().getToken()));
-        }
-        if (incoming.getVoice() != null && current.getVoice() != null) {
-            incoming.getVoice().setApiKey(mergeSecret(current.getVoice().getApiKey(), incoming.getVoice().getApiKey()));
-            incoming.getVoice().setWhisperSttApiKey(
-                    mergeSecret(current.getVoice().getWhisperSttApiKey(), incoming.getVoice().getWhisperSttApiKey()));
-        }
-        mergeLlmSecrets(current.getLlm(), incoming.getLlm());
+    private record ModelDto(String id, String displayName, boolean hasReasoning,
+            List<String> reasoningLevels, boolean supportsVision) {
     }
 
-    private void rejectManagedHiveMutation(RuntimeConfig current, RuntimeConfig.HiveConfig incomingHiveConfig) {
-        if (current == null || !runtimeConfigService.isHiveManagedByProperties()) {
-            return;
-        }
-        if (incomingHiveConfig == null) {
-            return;
-        }
-        RuntimeConfig.HiveConfig currentHiveConfig = current.getHive();
-        RuntimeConfig.HiveConfig normalizedCurrentHiveConfig = currentHiveConfig != null
-                ? currentHiveConfig
-                : RuntimeConfig.HiveConfig.builder().build();
-        if (!incomingHiveConfig.equals(normalizedCurrentHiveConfig)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Hive settings are managed by bot.hive.* and are read-only");
-        }
-    }
-
-    private void mergeLlmSecrets(RuntimeConfig.LlmConfig current, RuntimeConfig.LlmConfig incoming) {
-        if (current == null || incoming == null || incoming.getProviders() == null) {
-            return;
-        }
-        Map<String, RuntimeConfig.LlmProviderConfig> currentProviders = current.getProviders();
-        for (Map.Entry<String, RuntimeConfig.LlmProviderConfig> entry : incoming.getProviders().entrySet()) {
-            RuntimeConfig.LlmProviderConfig incomingProvider = entry.getValue();
-            RuntimeConfig.LlmProviderConfig currentProvider = currentProviders != null
-                    ? currentProviders.get(entry.getKey())
-                    : null;
-            if (incomingProvider != null && currentProvider != null) {
-                incomingProvider.setApiKey(mergeSecret(currentProvider.getApiKey(), incomingProvider.getApiKey()));
-            }
-        }
-    }
-
-    private void mergeWebhookSecrets(UserPreferences.WebhookConfig current, UserPreferences.WebhookConfig incoming) {
-        if (incoming == null) {
-            return;
-        }
-        if (current != null) {
-            incoming.setToken(mergeSecret(current.getToken(), incoming.getToken()));
-        }
-        if (incoming.getMappings() == null || incoming.getMappings().isEmpty() || current == null
-                || current.getMappings() == null) {
-            return;
-        }
-
-        Map<String, UserPreferences.HookMapping> currentByName = new LinkedHashMap<>();
-        for (UserPreferences.HookMapping mapping : current.getMappings()) {
-            if (mapping != null && mapping.getName() != null) {
-                currentByName.put(mapping.getName(), mapping);
-            }
-        }
-
-        for (UserPreferences.HookMapping mapping : incoming.getMappings()) {
-            if (mapping == null || mapping.getName() == null) {
-                continue;
-            }
-            UserPreferences.HookMapping existing = currentByName.get(mapping.getName());
-            if (existing != null) {
-                mapping.setHmacSecret(mergeSecret(existing.getHmacSecret(), mapping.getHmacSecret()));
-            }
-        }
-    }
-
-    private Secret mergeSecret(Secret current, Secret incoming) {
-        if (incoming == null) {
-            return current;
-        }
-        if (!Secret.hasValue(incoming)) {
-            Secret retained = current != null ? current : Secret.builder().build();
-            if (incoming.getEncrypted() != null) {
-                retained.setEncrypted(incoming.getEncrypted());
-            }
-            retained.setPresent(Secret.hasValue(retained));
-            return retained;
-        }
-        return Secret.builder()
-                .value(incoming.getValue())
-                .encrypted(Boolean.TRUE.equals(incoming.getEncrypted()))
-                .present(true)
-                .build();
-    }
-
-    private String normalizeProvider(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        String normalized = value.trim().toLowerCase(Locale.ROOT);
-        if (LEGACY_STT_PROVIDER_ELEVENLABS.equals(normalized)) {
-            return STT_PROVIDER_ELEVENLABS;
-        }
-        if (LEGACY_STT_PROVIDER_WHISPER.equals(normalized)) {
-            return STT_PROVIDER_WHISPER;
-        }
-        return normalized;
-    }
-
-    private boolean isKnownSttProvider(String providerId) {
-        return providerId != null && sttProviderRegistry.find(providerId).isPresent();
-    }
-
-    private boolean isKnownTtsProvider(String providerId) {
-        return providerId != null && ttsProviderRegistry.find(providerId).isPresent();
-    }
-
-    private String firstLoadedSttProvider() {
-        return sttProviderRegistry.listProviderIds().keySet().stream().findFirst().orElse(null);
-    }
-
-    private String firstLoadedTtsProvider() {
-        return ttsProviderRegistry.listProviderIds().keySet().stream().findFirst().orElse(null);
-    }
-
-    private boolean isValidHttpUrl(String value) {
-        try {
-            java.net.URI uri = new java.net.URI(value);
-            String scheme = uri.getScheme();
-            String host = uri.getHost();
-            return host != null && ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme));
-        } catch (java.net.URISyntaxException ignored) {
-            return false;
-        }
-    }
-
-    private String requireValue(String value, String fieldName) {
+    private String requireRequestValue(String value, String fieldName) {
         if (value == null || value.trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required");
         }
         return value.trim();
+    }
+
+    public record LlmProviderImportRequest(RuntimeConfig.LlmProviderConfig config, List<String> selectedModelIds) {
     }
 
     public record LlmProviderImportResponse(boolean providerSaved, String providerName, String resolvedEndpoint,
@@ -1554,4 +578,50 @@ public class SettingsController {
             List<String> models, boolean success, String error) {
     }
 
+    private record AdvancedConfigRequest(
+            RateLimitConfigDto rateLimit,
+            SecurityConfigDto security,
+            CompactionConfigDto compaction) {
+
+        private AdvancedConfigRequest(
+                RuntimeConfig.RateLimitConfig rateLimit,
+                RuntimeConfig.SecurityConfig security,
+                RuntimeConfig.CompactionConfig compaction) {
+            this(copy(rateLimit, new RateLimitConfigDto()),
+                    copy(security, new SecurityConfigDto()),
+                    copy(compaction, new CompactionConfigDto()));
+        }
+
+        private static <S, T> T copy(S source, T target) {
+            if (source == null) {
+                return null;
+            }
+            try {
+                java.beans.BeanInfo beanInfo = java.beans.Introspector.getBeanInfo(source.getClass(), Object.class);
+                for (java.beans.PropertyDescriptor descriptor : beanInfo.getPropertyDescriptors()) {
+                    java.lang.reflect.Method readMethod = descriptor.getReadMethod();
+                    java.lang.reflect.Method writeMethod = findWriteMethod(target.getClass(), descriptor.getName(),
+                            descriptor.getPropertyType());
+                    if (readMethod != null && writeMethod != null) {
+                        writeMethod.invoke(target, readMethod.invoke(source));
+                    }
+                }
+                return target;
+            } catch (java.beans.IntrospectionException | ReflectiveOperationException exception) {
+                throw new IllegalStateException("Failed to map advanced config request", exception);
+            }
+        }
+
+        private static java.lang.reflect.Method findWriteMethod(
+                Class<?> targetClass,
+                String propertyName,
+                Class<?> propertyType) {
+            try {
+                String setterName = "set" + Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1);
+                return targetClass.getMethod(setterName, propertyType);
+            } catch (NoSuchMethodException exception) {
+                return null;
+            }
+        }
+    }
 }

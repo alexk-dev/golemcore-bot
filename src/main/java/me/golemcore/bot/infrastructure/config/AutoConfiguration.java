@@ -27,7 +27,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.infrastructure.lifecycle.ManagedLocalOllamaLifecycleBridge;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.plugin.runtime.PluginManager;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.OllamaProcessPort;
 import me.golemcore.bot.port.outbound.OllamaRuntimeApiPort;
 import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
@@ -113,7 +113,8 @@ public class AutoConfiguration {
     }
 
     @Bean
-    public ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor(Clock clock,
+    public static ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor(Clock clock,
+            RuntimeConfigService runtimeConfigService,
             OllamaRuntimeProbePort runtimeProbePort,
             OllamaProcessPort processPort) {
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
@@ -155,7 +156,8 @@ public class AutoConfiguration {
     }
 
     @Bean
-    public SelfEvolvingTacticSearchStatusProjectionService selfEvolvingTacticSearchStatusProjectionService(
+    public static SelfEvolvingTacticSearchStatusProjectionService selfEvolvingTacticSearchStatusProjectionService(
+            RuntimeConfigService runtimeConfigService,
             ManagedLocalOllamaSupervisor managedLocalOllamaSupervisor,
             Clock clock) {
         return new SelfEvolvingTacticSearchStatusProjectionService(
@@ -200,12 +202,12 @@ public class AutoConfiguration {
         return channelProps != null && channelProps.isEnabled();
     }
 
-    private String resolveOllamaBaseUrl(String configuredBaseUrl) {
+    private static String resolveOllamaBaseUrl(String configuredBaseUrl) {
         String baseUrl = trimToNull(configuredBaseUrl);
         return baseUrl != null ? baseUrl : "http://127.0.0.1:11434";
     }
 
-    private String trimToNull(String value) {
+    private static String trimToNull(String value) {
         if (value == null) {
             return null;
         }

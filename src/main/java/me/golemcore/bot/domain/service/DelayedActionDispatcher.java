@@ -23,8 +23,8 @@ import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
+import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -40,18 +40,18 @@ import java.util.concurrent.CompletableFuture;
 public class DelayedActionDispatcher {
 
     private final SessionRunCoordinator sessionRunCoordinator;
-    private final ChannelRegistry channelRegistry;
+    private final ChannelRuntimePort channelRuntimePort;
     private final ToolArtifactService toolArtifactService;
     private final DelayedActionPolicyService policyService;
     private final Clock clock;
 
     public DelayedActionDispatcher(SessionRunCoordinator sessionRunCoordinator,
-            ChannelRegistry channelRegistry,
+            ChannelRuntimePort channelRuntimePort,
             ToolArtifactService toolArtifactService,
             DelayedActionPolicyService policyService,
             Clock clock) {
         this.sessionRunCoordinator = sessionRunCoordinator;
-        this.channelRegistry = channelRegistry;
+        this.channelRuntimePort = channelRuntimePort;
         this.toolArtifactService = toolArtifactService;
         this.policyService = policyService;
         this.clock = clock;
@@ -74,7 +74,7 @@ public class DelayedActionDispatcher {
                     action.getChannelType(),
                     "Proactive message delivery unavailable"));
         }
-        ChannelPort channel = channelRegistry.get(action.getChannelType()).orElse(null);
+        ChannelDeliveryPort channel = channelRuntimePort.findChannel(action.getChannelType()).orElse(null);
         if (channel == null) {
             return CompletableFuture
                     .completedFuture(DispatchResult.retryable("Channel not found: " + action.getChannelType()));
@@ -101,7 +101,7 @@ public class DelayedActionDispatcher {
         }
         String caption = payloadString(action, "message");
         String configuredFilename = payloadString(action, "artifactName");
-        ChannelPort channel = channelRegistry.get(action.getChannelType()).orElse(null);
+        ChannelDeliveryPort channel = channelRuntimePort.findChannel(action.getChannelType()).orElse(null);
         if (channel == null) {
             return CompletableFuture
                     .completedFuture(DispatchResult.retryable("Channel not found: " + action.getChannelType()));

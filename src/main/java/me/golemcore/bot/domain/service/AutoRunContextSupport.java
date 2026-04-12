@@ -58,6 +58,7 @@ public final class AutoRunContextSupport {
         copyStringAttribute(context, metadata, ContextAttributes.AUTO_REFLECTION_TIER);
         copyStringAttribute(context, metadata, ContextAttributes.CONVERSATION_KEY);
         copyStringAttribute(context, metadata, ContextAttributes.TRANSPORT_CHAT_ID);
+        copyStringAttribute(context, metadata, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
 
         Boolean reflectionActive = context.getAttribute(ContextAttributes.AUTO_REFLECTION_ACTIVE);
         if (Boolean.TRUE.equals(reflectionActive)) {

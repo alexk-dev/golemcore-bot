@@ -1,8 +1,8 @@
 package me.golemcore.bot.domain.service;
 
 import lombok.RequiredArgsConstructor;
-import me.golemcore.bot.auto.AutoModeScheduler;
 import me.golemcore.bot.domain.model.UpdateBlockedReason;
+import me.golemcore.bot.port.outbound.AutoExecutionStatusPort;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -10,10 +10,10 @@ import org.springframework.stereotype.Service;
 public class UpdateActivityGate {
 
     private final SessionRunCoordinator sessionRunCoordinator;
-    private final AutoModeScheduler autoModeScheduler;
+    private final AutoExecutionStatusPort autoExecutionStatusPort;
 
     public Result getStatus() {
-        if (autoModeScheduler.isExecuting()) {
+        if (autoExecutionStatusPort.isAutoJobExecuting()) {
             return Result.busy(UpdateBlockedReason.AUTO_JOB_RUNNING);
         }
         if (sessionRunCoordinator.hasActiveOrQueuedWork()) {

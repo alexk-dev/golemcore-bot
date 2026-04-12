@@ -2,11 +2,11 @@ package me.golemcore.bot.adapter.inbound.webhook;
 
 import me.golemcore.bot.adapter.inbound.web.security.DashboardSecurityConfig;
 import me.golemcore.bot.adapter.inbound.web.security.JwtAuthenticationFilter;
-import me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
 import me.golemcore.bot.security.InputSanitizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

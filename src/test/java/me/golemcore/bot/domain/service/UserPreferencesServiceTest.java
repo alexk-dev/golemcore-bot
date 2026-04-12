@@ -2,42 +2,39 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
-import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.UserPreferencesStorePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.CompletableFuture;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class UserPreferencesServiceTest {
 
-    private static final String PREFS_DIR = "preferences";
-    private static final String SETTINGS_FILE = "settings.json";
     private static final String LANG_EN = "en";
     private static final String LANG_RU = "ru";
     private static final String NOT_FOUND = "not found";
 
-    private StoragePort storagePort;
+    private UserPreferencesStorePort userPreferencesStorePort;
     private MessageService messageService;
     private UserPreferencesService service;
 
     @BeforeEach
     void setUp() {
-        storagePort = mock(StoragePort.class);
+        userPreferencesStorePort = mock(UserPreferencesStorePort.class);
         messageService = mock(MessageService.class);
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-        service = new UserPreferencesService(storagePort, messageService);
+        service = new UserPreferencesService(userPreferencesStorePort,
+                me.golemcore.bot.support.TestPorts.localization(messageService));
     }
 
     // ==================== getPreferences ====================
 
     @Test
     void getPreferencesCreatesDefaultWhenNoSaved() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenThrow(new IllegalStateException(NOT_FOUND));
 
         UserPreferences prefs = service.getPreferences();
 
@@ -48,8 +45,8 @@ class UserPreferencesServiceTest {
 
     @Test
     void getPreferencesDeserializesStoredJson() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.completedFuture("{\"language\":\"ru\"}"));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenReturn(Optional.of(UserPreferences.builder().language(LANG_RU).build()));
 
         UserPreferences prefs = service.getPreferences();
 
@@ -59,21 +56,21 @@ class UserPreferencesServiceTest {
 
     @Test
     void getPreferencesReturnsCachedAfterFirstLoad() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenThrow(new IllegalStateException(NOT_FOUND));
 
         UserPreferences first = service.getPreferences();
         UserPreferences second = service.getPreferences();
 
         assertSame(first, second);
         // Storage should only be queried once
-        verify(storagePort, times(1)).getText(PREFS_DIR, SETTINGS_FILE);
+        verify(userPreferencesStorePort, times(1)).loadPreferences();
     }
 
     @Test
     void getPreferencesHandlesBlankJson() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.completedFuture("   "));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenReturn(Optional.empty());
 
         UserPreferences prefs = service.getPreferences();
 
@@ -82,8 +79,8 @@ class UserPreferencesServiceTest {
 
     @Test
     void getPreferencesHandlesNullJson() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.completedFuture(null));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenReturn(Optional.empty());
 
         UserPreferences prefs = service.getPreferences();
 
@@ -92,8 +89,8 @@ class UserPreferencesServiceTest {
 
     @Test
     void getPreferencesHandlesMalformedJson() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.completedFuture("{invalid json"));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenThrow(new IllegalStateException("malformed"));
 
         UserPreferences prefs = service.getPreferences();
 
@@ -102,20 +99,20 @@ class UserPreferencesServiceTest {
 
     @Test
     void getPreferencesSavesDefaultOnCreation() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenThrow(new IllegalStateException(NOT_FOUND));
 
         service.getPreferences();
 
-        verify(storagePort).putText(eq(PREFS_DIR), eq(SETTINGS_FILE), anyString());
+        verify(userPreferencesStorePort).savePreferences(any(UserPreferences.class));
     }
 
     @Test
     void getPreferencesHandlesSaveFailureOnCreation() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk full")));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenThrow(new IllegalStateException(NOT_FOUND));
+        doThrow(new IllegalStateException("disk full"))
+                .when(userPreferencesStorePort).savePreferences(any(UserPreferences.class));
 
         UserPreferences prefs = service.getPreferences();
 
@@ -131,14 +128,14 @@ class UserPreferencesServiceTest {
 
         service.savePreferences(prefs);
 
-        verify(storagePort).putText(eq(PREFS_DIR), eq(SETTINGS_FILE), contains("\"language\":\"ru\""));
+        verify(userPreferencesStorePort).savePreferences(prefs);
         verify(messageService).setLanguage(LANG_RU);
     }
 
     @Test
     void savePreferencesThrowsOnStorageFailure() {
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk error")));
+        doThrow(new IllegalStateException("disk error"))
+                .when(userPreferencesStorePort).savePreferences(any(UserPreferences.class));
 
         UserPreferences prefs = UserPreferences.builder().language(LANG_EN).build();
 
@@ -150,17 +147,16 @@ class UserPreferencesServiceTest {
     @Test
     void savePreferencesRollsBackOnStorageFailure() {
         // First load creates default preferences with "en"
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.completedFuture("{\"language\":\"en\"}"));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenReturn(Optional.of(UserPreferences.builder().language(LANG_EN).build()));
 
         UserPreferences original = service.getPreferences();
         assertEquals(LANG_EN, original.getLanguage());
 
         // Now make storage fail for the next save
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk full")));
-
         UserPreferences newPrefs = UserPreferences.builder().language(LANG_RU).build();
+        doThrow(new IllegalStateException("disk full"))
+                .when(userPreferencesStorePort).savePreferences(newPrefs);
 
         // Attempt to save should throw
         assertThrows(IllegalStateException.class, () -> service.savePreferences(newPrefs));
@@ -173,8 +169,8 @@ class UserPreferencesServiceTest {
 
     @Test
     void savePreferencesUpdatesCachedValue() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenThrow(new IllegalStateException(NOT_FOUND));
 
         service.getPreferences(); // loads default "en"
 
@@ -188,16 +184,16 @@ class UserPreferencesServiceTest {
 
     @Test
     void getLanguageReturnsCurrentLanguage() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenThrow(new IllegalStateException(NOT_FOUND));
 
         assertEquals(LANG_EN, service.getLanguage());
     }
 
     @Test
     void setLanguageUpdatesAndSaves() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenThrow(new IllegalStateException(NOT_FOUND));
 
         service.setLanguage(LANG_RU);
 
@@ -209,8 +205,8 @@ class UserPreferencesServiceTest {
 
     @Test
     void getMessageDelegatesToMessageService() {
-        when(storagePort.getText(PREFS_DIR, SETTINGS_FILE))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(userPreferencesStorePort.loadPreferences())
+                .thenThrow(new IllegalStateException(NOT_FOUND));
         when(messageService.getMessage("key", LANG_EN, "arg1")).thenReturn("Hello arg1");
 
         String result = service.getMessage("key", "arg1");

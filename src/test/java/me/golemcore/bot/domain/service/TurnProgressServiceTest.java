@@ -9,8 +9,7 @@ import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.ProgressUpdateType;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,6 +25,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static me.golemcore.bot.support.ChannelRuntimeTestSupport.runtime;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -56,7 +56,7 @@ class TurnProgressServiceTest {
 
         service = new TurnProgressService(
                 runtimeConfigService,
-                new ChannelRegistry(List.of(channelPort)),
+                runtime(channelPort),
                 new ToolExecutionTraceExtractor(),
                 summaryService,
                 Clock.fixed(Instant.parse("2026-03-17T18:05:00Z"), ZoneOffset.UTC));
@@ -119,7 +119,7 @@ class TurnProgressServiceTest {
         when(hiveChannel.sendProgressUpdate(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
         TurnProgressService hiveService = new TurnProgressService(
                 runtimeConfigService,
-                new ChannelRegistry(List.of(hiveChannel)),
+                runtime(hiveChannel),
                 new ToolExecutionTraceExtractor(),
                 summaryService,
                 Clock.fixed(Instant.parse("2026-03-17T18:05:00Z"), ZoneOffset.UTC));

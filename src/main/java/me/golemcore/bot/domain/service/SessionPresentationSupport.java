@@ -1,9 +1,9 @@
 package me.golemcore.bot.domain.service;
 
 import java.util.List;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.view.SessionSummaryView;
 
 public final class SessionPresentationSupport {
 
@@ -16,10 +16,10 @@ public final class SessionPresentationSupport {
     private SessionPresentationSupport() {
     }
 
-    public static SessionSummaryDto toSummary(AgentSession session, boolean active) {
+    public static SessionSummaryView toSummary(AgentSession session, boolean active) {
         String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
         String transportChatId = SessionIdentitySupport.resolveTransportChatId(session);
-        return SessionSummaryDto.builder()
+        return SessionSummaryView.builder()
                 .id(session.getId())
                 .channelType(session.getChannelType())
                 .chatId(session.getChatId())
@@ -27,8 +27,8 @@ public final class SessionPresentationSupport {
                 .transportChatId(transportChatId)
                 .messageCount(getVisibleMessages(session).size())
                 .state(session.getState() != null ? session.getState().name() : "ACTIVE")
-                .createdAt(session.getCreatedAt() != null ? session.getCreatedAt().toString() : null)
-                .updatedAt(session.getUpdatedAt() != null ? session.getUpdatedAt().toString() : null)
+                .createdAt(session.getCreatedAt())
+                .updatedAt(session.getUpdatedAt())
                 .title(buildTitle(session, conversationKey))
                 .preview(buildPreview(session))
                 .active(active)

@@ -1,35 +1,35 @@
 package me.golemcore.bot.domain.service;
 
-import me.golemcore.bot.infrastructure.config.BotProperties;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Locale;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.port.outbound.WorkspaceFilePort;
+import me.golemcore.bot.port.outbound.WorkspaceSettingsPort;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class WorkspacePathService {
 
-    private final BotProperties botProperties;
+    private final WorkspaceSettingsPort settingsPort;
+    private final WorkspaceFilePort workspaceFilePort;
 
     private Path workspaceRoot;
 
     @PostConstruct
     public void init() {
-        String workspace = botProperties.getTools().getFilesystem().getWorkspace();
+        String workspace = settingsPort.workspace().filesystemWorkspace();
         this.workspaceRoot = Paths.get(workspace.replace("${user.home}", System.getProperty("user.home")))
                 .toAbsolutePath()
                 .normalize();
         try {
-            Files.createDirectories(workspaceRoot);
+            workspaceFilePort.createDirectories(workspaceRoot);
             log.info("[WorkspaceFiles] Workspace root: {}", workspaceRoot);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to initialize workspace root", e);
@@ -79,7 +79,7 @@ public class WorkspacePathService {
             return requestedMimeType;
         }
         try {
-            String detected = Files.probeContentType(path);
+            String detected = workspaceFilePort.probeContentType(path);
             if (detected != null && !detected.isBlank()) {
                 return detected;
             }
@@ -110,8 +110,8 @@ public class WorkspacePathService {
         }
 
         try {
-            Path realExistingPath = existingPath.toRealPath();
-            Path realWorkspacePath = workspaceRoot.toRealPath();
+            Path realExistingPath = workspaceFilePort.resolveRealPath(existingPath);
+            Path realWorkspacePath = workspaceFilePort.resolveRealPath(workspaceRoot);
             if (!realExistingPath.startsWith(realWorkspacePath)) {
                 throw new IllegalArgumentException("Path must be inside workspace");
             }
@@ -122,7 +122,7 @@ public class WorkspacePathService {
 
     private Path findExistingPath(Path path) {
         Path current = path;
-        while (current != null && !Files.exists(current)) {
+        while (current != null && !workspaceFilePort.exists(current)) {
             current = current.getParent();
         }
         return current;

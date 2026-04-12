@@ -68,7 +68,7 @@ class ToolLoopModelTierSelectionTest {
                 .historyWriter(historyWriter)
                 .viewBuilder(new DefaultConversationViewBuilder(
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
-                .settings(settings)
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .clock(Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC))
                 .build();

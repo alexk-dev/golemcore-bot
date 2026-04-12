@@ -27,7 +27,8 @@ class SkillServiceVariableTest {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isSkillsEnabled()).thenReturn(true);
         when(runtimeConfigService.isSkillsProgressiveLoadingEnabled()).thenReturn(true);
-        skillService = new SkillService(mockStorage, properties, variableResolver, runtimeConfigService,
+        skillService = new SkillService(mockStorage, me.golemcore.bot.support.TestPorts.settings(properties),
+                variableResolver, runtimeConfigService,
                 new SkillDocumentService());
 
         // Default: no files

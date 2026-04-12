@@ -1,13 +1,12 @@
 package me.golemcore.bot.domain.service;
 
-import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.port.outbound.InboundMessageDispatchPort;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -30,9 +29,9 @@ class InternalTurnServiceTest {
 
     @Test
     void shouldPublishInternalAutoContinueMessageWithRuntimeMetadata() {
-        ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
-        InternalTurnService service = new InternalTurnService(eventPublisher, clock);
+        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
         AgentSession session = AgentSession.builder()
                 .id("session-1")
@@ -50,13 +49,9 @@ class InternalTurnServiceTest {
         boolean scheduled = service.scheduleAutoContinueRetry(context, "llm-timeout");
 
         assertTrue(scheduled);
-        ArgumentCaptor<AgentLoop.InboundMessageEvent> eventCaptor = ArgumentCaptor
-                .forClass(AgentLoop.InboundMessageEvent.class);
-        verify(eventPublisher).publishEvent(eventCaptor.capture());
-
-        AgentLoop.InboundMessageEvent event = eventCaptor.getValue();
-        assertNotNull(event);
-        Message message = event.message();
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(inboundMessageDispatchPort).dispatch(messageCaptor.capture());
+        Message message = messageCaptor.getValue();
         assertNotNull(message);
         assertEquals("user", message.getRole());
         assertEquals(
@@ -82,9 +77,9 @@ class InternalTurnServiceTest {
 
     @Test
     void shouldSkipBlankContextAttributesWhenSchedulingInternalRetry() {
-        ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
-        InternalTurnService service = new InternalTurnService(eventPublisher, clock);
+        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
         AgentSession session = AgentSession.builder()
                 .id("session-1")
@@ -102,11 +97,9 @@ class InternalTurnServiceTest {
         boolean scheduled = service.scheduleAutoContinueRetry(context, "llm-timeout");
 
         assertTrue(scheduled);
-        ArgumentCaptor<AgentLoop.InboundMessageEvent> eventCaptor = ArgumentCaptor
-                .forClass(AgentLoop.InboundMessageEvent.class);
-        verify(eventPublisher).publishEvent(eventCaptor.capture());
-
-        Message message = eventCaptor.getValue().message();
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(inboundMessageDispatchPort).dispatch(messageCaptor.capture());
+        Message message = messageCaptor.getValue();
         assertNotNull(message);
         assertEquals(true, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
         assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE,
@@ -119,9 +112,9 @@ class InternalTurnServiceTest {
 
     @Test
     void shouldReturnFalseWhenContextOrSessionMissing() {
-        ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
-        InternalTurnService service = new InternalTurnService(eventPublisher, clock);
+        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
         assertFalse(service.scheduleAutoContinueRetry(null, "llm-timeout"));
 
@@ -130,14 +123,14 @@ class InternalTurnServiceTest {
                 .build();
         assertFalse(service.scheduleAutoContinueRetry(contextWithoutSession, "llm-timeout"));
 
-        verifyNoInteractions(eventPublisher);
+        verifyNoInteractions(inboundMessageDispatchPort);
     }
 
     @Test
     void shouldAttachTraceMetadataToInternalRetryMessage() {
-        ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
-        InternalTurnService service = new InternalTurnService(eventPublisher, clock);
+        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
         AgentSession session = AgentSession.builder()
                 .id("session-1")
@@ -152,11 +145,10 @@ class InternalTurnServiceTest {
 
         assertTrue(service.scheduleAutoContinueRetry(context, "llm-timeout"));
 
-        ArgumentCaptor<AgentLoop.InboundMessageEvent> eventCaptor = ArgumentCaptor
-                .forClass(AgentLoop.InboundMessageEvent.class);
-        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(inboundMessageDispatchPort).dispatch(messageCaptor.capture());
 
-        Map<String, Object> metadata = eventCaptor.getValue().message().getMetadata();
+        Map<String, Object> metadata = messageCaptor.getValue().getMetadata();
         assertNotNull(metadata.get("trace.id"));
         assertNotNull(metadata.get("trace.span.id"));
         assertEquals("INTERNAL", metadata.get("trace.root.kind"));

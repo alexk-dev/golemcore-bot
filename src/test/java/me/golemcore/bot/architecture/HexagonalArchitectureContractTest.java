@@ -1,12 +1,16 @@
 package me.golemcore.bot.architecture;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
-import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -17,182 +21,170 @@ class HexagonalArchitectureContractTest {
 
     private static final String ROOT_PACKAGE = "me.golemcore.bot";
     private static final String DOMAIN_PACKAGE = "me.golemcore.bot.domain";
+    private static final String APPLICATION_PACKAGE = "me.golemcore.bot.application";
     private static final String PORT_PACKAGE = "me.golemcore.bot.port";
-    private static final List<String> FORBIDDEN_PREFIXES = List.of(
+    private static final List<String> FORBIDDEN_PACKAGE_PREFIXES = List.of(
             "me.golemcore.bot.adapter.",
+            "me.golemcore.bot.auto.",
             "me.golemcore.bot.infrastructure.",
-            "me.golemcore.bot.plugin.");
-
-    private static final Set<String> KNOWN_DOMAIN_FORBIDDEN_DEPENDENCIES = dependencySet(
-            "me.golemcore.bot.domain.loop.AgentLoop -> me.golemcore.bot.plugin.runtime.ChannelRegistry",
-            "me.golemcore.bot.domain.memory.persistence.MemoryPersistenceOrchestrator -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.memory.persistence.MemoryPersistenceOrchestrator -> me.golemcore.bot.infrastructure.config.BotProperties$MemoryProperties",
-            "me.golemcore.bot.domain.memory.retrieval.MemoryCandidateCollector -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.memory.retrieval.MemoryCandidateCollector -> me.golemcore.bot.infrastructure.config.BotProperties$MemoryProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapTacticEmbeddingsLocalProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapTacticEmbeddingsProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapTacticSearchProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapTacticsProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingBootstrapToggleProperties",
-            "me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService -> me.golemcore.bot.infrastructure.config.BotProperties$SelfEvolvingProperties",
-            "me.golemcore.bot.domain.service.DashboardAuthService -> me.golemcore.bot.adapter.inbound.web.security.JwtTokenProvider",
-            "me.golemcore.bot.domain.service.DashboardAuthService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.DashboardAuthService -> me.golemcore.bot.infrastructure.config.BotProperties$DashboardProperties",
-            "me.golemcore.bot.domain.service.DelayedActionDispatcher -> me.golemcore.bot.plugin.runtime.ChannelRegistry",
-            "me.golemcore.bot.domain.service.DelayedActionPolicyService -> me.golemcore.bot.adapter.inbound.web.WebChannelAdapter",
-            "me.golemcore.bot.domain.service.DelayedActionPolicyService -> me.golemcore.bot.adapter.inbound.webhook.WebhookChannelAdapter",
-            "me.golemcore.bot.domain.service.DelayedActionPolicyService -> me.golemcore.bot.plugin.runtime.ChannelRegistry",
-            "me.golemcore.bot.domain.service.HiveBootstrapConfigSynchronizer -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.HiveBootstrapConfigSynchronizer -> me.golemcore.bot.infrastructure.config.BotProperties$HiveProperties",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveApiClient",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveApiClient$GolemAuthResponse",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveApiClient$HiveApiException",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveControlChannelClient",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveControlChannelStatus",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveEventOutboxService",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.adapter.outbound.hive.HiveEventOutboxService$OutboxSummary",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.infrastructure.config.BotProperties$HiveProperties",
-            "me.golemcore.bot.domain.service.HiveConnectionService -> me.golemcore.bot.plugin.runtime.ChannelRegistry",
-            "me.golemcore.bot.domain.service.ModelRegistryService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings",
-            "me.golemcore.bot.domain.service.ModelRegistryService$ResolveResult -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings",
-            "me.golemcore.bot.domain.service.ModelSelectionService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings",
-            "me.golemcore.bot.domain.service.PromptSectionService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.PromptSectionService -> me.golemcore.bot.infrastructure.config.BotProperties$PromptsProperties",
-            "me.golemcore.bot.domain.service.ProviderModelDiscoveryService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings",
-            "me.golemcore.bot.domain.service.ProviderModelDiscoveryService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ReasoningConfig",
-            "me.golemcore.bot.domain.service.ProviderModelDiscoveryService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ReasoningLevelConfig",
-            "me.golemcore.bot.domain.service.ProviderModelDiscoveryService$DiscoveredModel -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings",
-            "me.golemcore.bot.domain.service.ProviderModelImportService -> me.golemcore.bot.infrastructure.config.ModelConfigService",
-            "me.golemcore.bot.domain.service.ProviderModelImportService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings",
-            "me.golemcore.bot.domain.service.ProviderModelImportService -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelsConfig",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto$AttachmentDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto$AttachmentDto$AttachmentDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto$MessageDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto$MessageDto$MessageDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto$SessionDetailDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionMessagesPageDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionMessagesPageDto$SessionMessagesPageDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceDto$SessionTraceDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceDto$TraceDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceDto$TraceDto$TraceDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSnapshotDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSnapshotDto$SessionTraceSnapshotDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSpanDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSpanDto$EventDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSpanDto$EventDto$EventDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSpanDto$SessionTraceSpanDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceStorageStatsDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceStorageStatsDto$SessionTraceStorageStatsDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto$SessionTraceSummaryDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto$TraceSummaryDto",
-            "me.golemcore.bot.domain.service.SessionInspectionService -> me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto$TraceSummaryDto$TraceSummaryDtoBuilder",
-            "me.golemcore.bot.domain.service.SessionPresentationSupport -> me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto",
-            "me.golemcore.bot.domain.service.SessionPresentationSupport -> me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto$SessionSummaryDtoBuilder",
-            "me.golemcore.bot.domain.service.SkillMarketplaceService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.SkillMarketplaceService -> me.golemcore.bot.infrastructure.config.BotProperties$SkillsProperties",
-            "me.golemcore.bot.domain.service.SkillService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.SkillService -> me.golemcore.bot.infrastructure.config.BotProperties$SkillsProperties",
-            "me.golemcore.bot.domain.service.ToolCallExecutionService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.ToolCallExecutionService -> me.golemcore.bot.infrastructure.config.BotProperties$AutoCompactProperties",
-            "me.golemcore.bot.domain.service.TurnProgressService -> me.golemcore.bot.plugin.runtime.ChannelRegistry",
-            "me.golemcore.bot.domain.service.UpdateRuntimeCleanupService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.UpdateRuntimeCleanupService -> me.golemcore.bot.infrastructure.config.BotProperties$UpdateProperties",
-            "me.golemcore.bot.domain.service.UpdateService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.UpdateService -> me.golemcore.bot.infrastructure.config.BotProperties$UpdateProperties",
-            "me.golemcore.bot.domain.service.UserPreferencesService -> me.golemcore.bot.infrastructure.i18n.MessageService",
-            "me.golemcore.bot.domain.service.WorkspaceInstructionService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.WorkspaceInstructionService -> me.golemcore.bot.infrastructure.config.BotProperties$FileSystemToolProperties",
-            "me.golemcore.bot.domain.service.WorkspaceInstructionService -> me.golemcore.bot.infrastructure.config.BotProperties$ShellToolProperties",
-            "me.golemcore.bot.domain.service.WorkspaceInstructionService -> me.golemcore.bot.infrastructure.config.BotProperties$ToolsProperties",
-            "me.golemcore.bot.domain.service.WorkspacePathService -> me.golemcore.bot.infrastructure.config.BotProperties",
-            "me.golemcore.bot.domain.service.WorkspacePathService -> me.golemcore.bot.infrastructure.config.BotProperties$FileSystemToolProperties",
-            "me.golemcore.bot.domain.service.WorkspacePathService -> me.golemcore.bot.infrastructure.config.BotProperties$ToolsProperties",
-            "me.golemcore.bot.domain.system.ResponseRoutingSystem -> me.golemcore.bot.plugin.runtime.ChannelRegistry",
-            "me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem -> me.golemcore.bot.infrastructure.config.BotProperties$ToolLoopProperties",
-            "me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem -> me.golemcore.bot.infrastructure.config.BotProperties$TurnProperties",
-            "me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem$Builder -> me.golemcore.bot.infrastructure.config.BotProperties$ToolLoopProperties",
-            "me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem$Builder -> me.golemcore.bot.infrastructure.config.BotProperties$TurnProperties");
-
-    private static final Set<String> KNOWN_PORT_FORBIDDEN_DEPENDENCIES = dependencySet(
-            "me.golemcore.bot.port.outbound.HiveEventPublishPort -> me.golemcore.bot.adapter.inbound.web.dto.selfevolving.tactic.SelfEvolvingTacticDto",
-            "me.golemcore.bot.port.outbound.ModelConfigPort -> me.golemcore.bot.infrastructure.config.ModelConfigService$ModelSettings");
+            "me.golemcore.bot.launcher.",
+            "me.golemcore.bot.plugin.",
+            "me.golemcore.bot.proto.",
+            "me.golemcore.bot.ratelimit.",
+            "me.golemcore.bot.security.",
+            "me.golemcore.bot.tools.",
+            "me.golemcore.bot.usage.");
+    private static final String INBOUND_ADAPTER_PACKAGE = "me.golemcore.bot.adapter.inbound";
+    private static final String OUTBOUND_ADAPTER_PACKAGE = "me.golemcore.bot.adapter.outbound";
+    private static final Set<String> FORBIDDEN_RUNTIME_TYPES = Set.of(
+            "org.springframework.boot.SpringApplication",
+            "org.springframework.boot.context.event.ApplicationReadyEvent",
+            "org.springframework.boot.info.BuildProperties",
+            "org.springframework.context.ApplicationContext",
+            "org.springframework.context.ApplicationEventPublisher",
+            "org.springframework.context.event.EventListener",
+            "org.springframework.scheduling.support.CronExpression",
+            "org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder",
+            "org.springframework.stereotype.Component",
+            "org.springframework.stereotype.Service");
+    private static final Set<String> FORBIDDEN_DOMAIN_LOW_LEVEL_TYPES = Set.of(
+            "com.fasterxml.jackson.databind.JsonNode",
+            "com.fasterxml.jackson.databind.ObjectMapper",
+            "com.fasterxml.jackson.dataformat.yaml.YAMLFactory",
+            "java.net.http.HttpClient",
+            "java.net.http.HttpRequest",
+            "java.net.http.HttpResponse",
+            "java.nio.file.Files");
+    private static final Set<String> DOMAIN_FRAMEWORK_ALLOWLIST = loadAllowlist(
+            "architecture/domain-spring-stereotype-allowlist.txt");
+    private static final Set<String> DOMAIN_LOW_LEVEL_ALLOWLIST = loadAllowlist(
+            "architecture/domain-low-level-dependency-allowlist.txt");
+    private static final Set<String> APPLICATION_LOW_LEVEL_ALLOWLIST = loadAllowlist(
+            "architecture/application-low-level-dependency-allowlist.txt");
 
     @Test
-    void domain_should_not_depend_on_adapter_plugin_or_infrastructure_packages() {
-        assertForbiddenDependenciesMatchDebtLedger(DOMAIN_PACKAGE, KNOWN_DOMAIN_FORBIDDEN_DEPENDENCIES);
+    void domain_should_not_depend_on_adapter_plugin_infrastructure_or_proto_packages() {
+        assertNoForbiddenDependencies(DOMAIN_PACKAGE, this::dependsOnForbiddenPackagePrefix);
     }
 
     @Test
-    void port_should_not_depend_on_adapter_plugin_or_infrastructure_packages() {
-        assertForbiddenDependenciesMatchDebtLedger(PORT_PACKAGE, KNOWN_PORT_FORBIDDEN_DEPENDENCIES);
+    void application_should_not_depend_on_adapter_plugin_infrastructure_or_proto_packages() {
+        assertNoForbiddenDependencies(APPLICATION_PACKAGE, this::dependsOnForbiddenPackagePrefix);
     }
 
-    private void assertForbiddenDependenciesMatchDebtLedger(String packagePrefix, Set<String> expectedDependencies) {
-        JavaClasses importedClasses = new ClassFileImporter()
+    @Test
+    void port_should_not_depend_on_adapter_plugin_infrastructure_or_proto_packages() {
+        assertNoForbiddenDependencies(PORT_PACKAGE, this::dependsOnForbiddenPackagePrefix);
+    }
+
+    @Test
+    void domain_should_not_depend_on_forbidden_framework_runtime_types() {
+        assertNoForbiddenDependencies(DOMAIN_PACKAGE, this::dependsOnForbiddenRuntimeType, DOMAIN_FRAMEWORK_ALLOWLIST);
+    }
+
+    @Test
+    void application_should_not_depend_on_forbidden_framework_runtime_types() {
+        assertNoForbiddenDependencies(APPLICATION_PACKAGE, this::dependsOnForbiddenRuntimeType);
+    }
+
+    @Test
+    void port_should_not_depend_on_forbidden_framework_runtime_types() {
+        assertNoForbiddenDependencies(PORT_PACKAGE, this::dependsOnForbiddenRuntimeType);
+    }
+
+    @Test
+    void domain_should_not_depend_on_low_level_io_http_or_serialization_types() {
+        assertNoForbiddenDependencies(DOMAIN_PACKAGE, this::dependsOnForbiddenDomainLowLevelType,
+                DOMAIN_LOW_LEVEL_ALLOWLIST);
+    }
+
+    @Test
+    void application_should_not_depend_on_low_level_io_http_or_serialization_types() {
+        assertNoForbiddenDependencies(APPLICATION_PACKAGE, this::dependsOnForbiddenDomainLowLevelType,
+                APPLICATION_LOW_LEVEL_ALLOWLIST);
+    }
+
+    @Test
+    void inbound_adapters_should_not_depend_on_outbound_adapters() {
+        assertNoForbiddenDependencies(INBOUND_ADAPTER_PACKAGE,
+                dependency -> dependency.getTargetClass().getPackageName().startsWith(OUTBOUND_ADAPTER_PACKAGE));
+    }
+
+    @Test
+    void outbound_adapters_should_not_depend_on_inbound_adapters() {
+        assertNoForbiddenDependencies(OUTBOUND_ADAPTER_PACKAGE,
+                dependency -> dependency.getTargetClass().getPackageName().startsWith(INBOUND_ADAPTER_PACKAGE));
+    }
+
+    private void assertNoForbiddenDependencies(String packagePrefix,
+            java.util.function.Predicate<Dependency> predicate) {
+        assertNoForbiddenDependencies(packagePrefix, predicate, Set.of());
+    }
+
+    private void assertNoForbiddenDependencies(
+            String packagePrefix,
+            java.util.function.Predicate<Dependency> predicate,
+            Set<String> allowlistedOrigins) {
+        Collection<JavaClass> importedClasses = new ClassFileImporter()
                 .withImportOption(new ImportOption.DoNotIncludeTests())
                 .importPackages(ROOT_PACKAGE);
 
-        Set<String> actualDependencies = importedClasses.stream()
+        Set<String> violations = importedClasses.stream()
                 .filter(javaClass -> javaClass.getPackageName().startsWith(packagePrefix))
                 .flatMap(javaClass -> javaClass.getDirectDependenciesFromSelf().stream())
                 .filter(dependency -> dependency.getOriginClass().getPackageName().startsWith(packagePrefix))
-                .filter(dependency -> hasForbiddenPrefix(dependency.getTargetClass()))
+                .filter(predicate)
+                .filter(dependency -> !allowlistedOrigins.contains(dependency.getOriginClass().getFullName()))
                 .map(this::formatDependency)
                 .collect(Collectors.toCollection(TreeSet::new));
 
-        assertEquals(
-                new TreeSet<>(expectedDependencies),
-                actualDependencies,
-                () -> buildMismatchMessage(packagePrefix, actualDependencies));
+        assertTrue(violations.isEmpty(), () -> buildViolationMessage(packagePrefix, violations));
     }
 
-    private boolean hasForbiddenPrefix(JavaClass targetClass) {
-        String packageName = targetClass.getPackageName();
-        return FORBIDDEN_PREFIXES.stream().anyMatch(packageName::startsWith);
+    private boolean dependsOnForbiddenPackagePrefix(Dependency dependency) {
+        String packageName = dependency.getTargetClass().getPackageName();
+        return FORBIDDEN_PACKAGE_PREFIXES.stream().anyMatch(packageName::startsWith);
+    }
+
+    private boolean dependsOnForbiddenRuntimeType(Dependency dependency) {
+        JavaClass targetClass = dependency.getTargetClass();
+        return FORBIDDEN_RUNTIME_TYPES.contains(targetClass.getFullName());
+    }
+
+    private boolean dependsOnForbiddenDomainLowLevelType(Dependency dependency) {
+        JavaClass targetClass = dependency.getTargetClass();
+        return FORBIDDEN_DOMAIN_LOW_LEVEL_TYPES.contains(targetClass.getFullName());
+    }
+
+    private static Set<String> loadAllowlist(String resourcePath) {
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        if (classLoader == null) {
+            throw new IllegalStateException("Missing context class loader for architecture allowlist: "
+                    + resourcePath);
+        }
+        try (InputStream resourceStream = classLoader.getResourceAsStream(resourcePath)) {
+            if (resourceStream == null) {
+                throw new IllegalStateException("Missing architecture allowlist resource: " + resourcePath);
+            }
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceStream))) {
+                return reader.lines()
+                        .map(String::trim)
+                        .filter(line -> !line.isEmpty())
+                        .filter(line -> !line.startsWith("#"))
+                        .collect(Collectors.toUnmodifiableSet());
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to load architecture allowlist: " + resourcePath, exception);
+        }
     }
 
     private String formatDependency(Dependency dependency) {
         return dependency.getOriginClass().getFullName() + " -> " + dependency.getTargetClass().getFullName();
     }
 
-    private String buildMismatchMessage(String packagePrefix, Set<String> actualDependencies) {
-        Set<String> unexpectedDependencies = new TreeSet<>(actualDependencies);
-        unexpectedDependencies.removeAll(expectedDependenciesFor(packagePrefix));
-
-        Set<String> obsoleteDependencies = new TreeSet<>(expectedDependenciesFor(packagePrefix));
-        obsoleteDependencies.removeAll(actualDependencies);
-
-        return "Forbidden dependency ledger mismatch for " + packagePrefix + ".\n"
-                + formatSection("Unexpected new dependencies", unexpectedDependencies)
-                + formatSection("Obsolete ledger entries", obsoleteDependencies)
-                + "Update the code to remove new violations or refresh the debt ledger after refactoring.";
-    }
-
-    private Set<String> expectedDependenciesFor(String packagePrefix) {
-        if (DOMAIN_PACKAGE.equals(packagePrefix)) {
-            return KNOWN_DOMAIN_FORBIDDEN_DEPENDENCIES;
-        }
-        if (PORT_PACKAGE.equals(packagePrefix)) {
-            return KNOWN_PORT_FORBIDDEN_DEPENDENCIES;
-        }
-        throw new IllegalArgumentException("Unsupported package prefix: " + packagePrefix);
-    }
-
-    private String formatSection(String title, Set<String> dependencies) {
-        if (dependencies.isEmpty()) {
-            return title + ": none\n";
-        }
-        return title + ":\n" + String.join("\n", dependencies) + "\n";
-    }
-
-    private static Set<String> dependencySet(String... dependencies) {
-        return Set.copyOf(List.of(dependencies));
+    private String buildViolationMessage(String packagePrefix, Set<String> violations) {
+        return "Hexagonal architecture violations for " + packagePrefix + ":\n"
+                + String.join("\n", violations)
+                + "\nRemove the forbidden dependency or move the logic to an adapter/port boundary.";
     }
 }

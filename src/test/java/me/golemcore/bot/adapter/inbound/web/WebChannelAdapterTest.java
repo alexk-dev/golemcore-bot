@@ -148,6 +148,21 @@ class WebChannelAdapterTest {
     }
 
     @Test
+    void shouldSupportProactiveMessagesOnlyForActiveSessionsWhileRunning() {
+        WebSocketSession activeSession = mock(WebSocketSession.class);
+        when(activeSession.isOpen()).thenReturn(true);
+        when(activeSession.close()).thenReturn(Mono.empty());
+        adapter.start();
+        adapter.registerSession("chat-active", activeSession);
+
+        assertTrue(adapter.supportsProactiveMessage("chat-active"));
+        assertFalse(adapter.supportsProactiveMessage("chat-missing"));
+
+        adapter.stop();
+        assertFalse(adapter.supportsProactiveMessage("chat-active"));
+    }
+
+    @Test
     void shouldShowTypingToActiveSession() {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(true);

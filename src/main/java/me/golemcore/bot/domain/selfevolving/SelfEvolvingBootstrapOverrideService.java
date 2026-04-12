@@ -21,7 +21,7 @@ package me.golemcore.bot.domain.selfevolving;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.SelfEvolvingBootstrapSettingsPort;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -54,21 +54,18 @@ public class SelfEvolvingBootstrapOverrideService {
     private static final String PATH_TACTICS_SEARCH_PERSONALIZATION_ENABLED = "tactics.search.personalization.enabled";
     private static final String PATH_TACTICS_SEARCH_NEGATIVE_MEMORY_ENABLED = "tactics.search.negativeMemory.enabled";
 
-    private final BotProperties botProperties;
+    private final SelfEvolvingBootstrapSettingsPort settingsPort;
 
     public void apply(RuntimeConfig runtimeConfig) {
         if (runtimeConfig == null) {
             return;
         }
 
-        BotProperties.SelfEvolvingBootstrapProperties bootstrap = botProperties.getSelfEvolving().getBootstrap();
-        if (bootstrap == null) {
-            return;
-        }
-
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = ensureSelfEvolvingConfig(runtimeConfig);
+        SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings bootstrap = settingsPort
+                .selfEvolvingBootstrap();
         overrideEnabled(selfEvolvingConfig, bootstrap);
-        overrideTactics(selfEvolvingConfig, bootstrap.getTactics());
+        overrideTactics(selfEvolvingConfig, bootstrap.tactics());
     }
 
     public void restorePersistedValues(RuntimeConfig candidateConfig, RuntimeConfig persistedConfig) {
@@ -76,18 +73,15 @@ public class SelfEvolvingBootstrapOverrideService {
             return;
         }
 
-        BotProperties.SelfEvolvingBootstrapProperties bootstrap = botProperties.getSelfEvolving().getBootstrap();
-        if (bootstrap == null) {
-            return;
-        }
-
         RuntimeConfig.SelfEvolvingConfig candidate = ensureSelfEvolvingConfig(candidateConfig);
+        SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings bootstrap = settingsPort
+                .selfEvolvingBootstrap();
         RuntimeConfig.SelfEvolvingConfig persisted = persistedConfig != null
                 && persistedConfig.getSelfEvolving() != null
                         ? persistedConfig.getSelfEvolving()
                         : new RuntimeConfig.SelfEvolvingConfig();
         restoreEnabled(candidate, persisted, bootstrap);
-        restoreTactics(candidate, persisted, bootstrap.getTactics());
+        restoreTactics(candidate, persisted, bootstrap.tactics());
     }
 
     public boolean hasManagedOverrides() {
@@ -96,64 +90,62 @@ public class SelfEvolvingBootstrapOverrideService {
 
     public List<String> getOverriddenPaths() {
         List<String> overriddenPaths = new ArrayList<>();
-        BotProperties.SelfEvolvingBootstrapProperties bootstrap = botProperties.getSelfEvolving().getBootstrap();
-        if (bootstrap == null) {
-            return overriddenPaths;
-        }
+        SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings bootstrap = settingsPort
+                .selfEvolvingBootstrap();
 
-        addOverride(overriddenPaths, bootstrap.getEnabled() != null, PATH_ENABLED);
-        BotProperties.SelfEvolvingBootstrapTacticsProperties tactics = bootstrap.getTactics();
+        addOverride(overriddenPaths, bootstrap.enabled() != null, PATH_ENABLED);
+        SelfEvolvingBootstrapSettingsPort.TacticsSettings tactics = bootstrap.tactics();
         if (tactics == null) {
             return overriddenPaths;
         }
-        addOverride(overriddenPaths, tactics.getEnabled() != null, PATH_TACTICS_ENABLED);
+        addOverride(overriddenPaths, tactics.enabled() != null, PATH_TACTICS_ENABLED);
 
-        BotProperties.SelfEvolvingBootstrapTacticSearchProperties search = tactics.getSearch();
+        SelfEvolvingBootstrapSettingsPort.SearchSettings search = tactics.search();
         if (search == null) {
             return overriddenPaths;
         }
 
-        addOverride(overriddenPaths, isNonBlank(search.getMode()), PATH_TACTICS_SEARCH_MODE);
-        describeEmbeddingsOverrides(overriddenPaths, search.getEmbeddings());
-        describeToggleOverride(overriddenPaths, search.getPersonalization(),
+        addOverride(overriddenPaths, isNonBlank(search.mode()), PATH_TACTICS_SEARCH_MODE);
+        describeEmbeddingsOverrides(overriddenPaths, search.embeddings());
+        describeToggleOverride(overriddenPaths, search.personalization(),
                 PATH_TACTICS_SEARCH_PERSONALIZATION_ENABLED);
-        describeToggleOverride(overriddenPaths, search.getNegativeMemory(),
+        describeToggleOverride(overriddenPaths, search.negativeMemory(),
                 PATH_TACTICS_SEARCH_NEGATIVE_MEMORY_ENABLED);
         return overriddenPaths;
     }
 
     private void overrideEnabled(RuntimeConfig.SelfEvolvingConfig target,
-            BotProperties.SelfEvolvingBootstrapProperties source) {
-        if (source.getEnabled() != null) {
-            target.setEnabled(source.getEnabled());
+            SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings source) {
+        if (source.enabled() != null) {
+            target.setEnabled(source.enabled());
         }
         target.setTracePayloadOverride(true);
     }
 
     private void restoreEnabled(RuntimeConfig.SelfEvolvingConfig target,
             RuntimeConfig.SelfEvolvingConfig persisted,
-            BotProperties.SelfEvolvingBootstrapProperties source) {
-        if (source.getEnabled() != null) {
+            SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings source) {
+        if (source.enabled() != null) {
             target.setEnabled(persisted.getEnabled());
         }
         target.setTracePayloadOverride(persisted.getTracePayloadOverride());
     }
 
     private void overrideTactics(RuntimeConfig.SelfEvolvingConfig target,
-            BotProperties.SelfEvolvingBootstrapTacticsProperties source) {
+            SelfEvolvingBootstrapSettingsPort.TacticsSettings source) {
         if (source == null) {
             return;
         }
         RuntimeConfig.SelfEvolvingTacticsConfig tacticsConfig = ensureTacticsConfig(target);
-        if (source.getEnabled() != null) {
-            tacticsConfig.setEnabled(source.getEnabled());
+        if (source.enabled() != null) {
+            tacticsConfig.setEnabled(source.enabled());
         }
-        overrideSearch(tacticsConfig, source.getSearch());
+        overrideSearch(tacticsConfig, source.search());
     }
 
     private void restoreTactics(RuntimeConfig.SelfEvolvingConfig target,
             RuntimeConfig.SelfEvolvingConfig persisted,
-            BotProperties.SelfEvolvingBootstrapTacticsProperties source) {
+            SelfEvolvingBootstrapSettingsPort.TacticsSettings source) {
         if (source == null) {
             return;
         }
@@ -161,46 +153,46 @@ public class SelfEvolvingBootstrapOverrideService {
         RuntimeConfig.SelfEvolvingTacticsConfig persistedTactics = persisted.getTactics() != null
                 ? persisted.getTactics()
                 : new RuntimeConfig.SelfEvolvingTacticsConfig();
-        if (source.getEnabled() != null) {
+        if (source.enabled() != null) {
             candidateTactics.setEnabled(persistedTactics.getEnabled());
         }
-        restoreSearch(candidateTactics, persistedTactics, source.getSearch());
+        restoreSearch(candidateTactics, persistedTactics, source.search());
     }
 
     private void describeEmbeddingsOverrides(List<String> overriddenPaths,
-            BotProperties.SelfEvolvingBootstrapTacticEmbeddingsProperties embeddings) {
+            SelfEvolvingBootstrapSettingsPort.EmbeddingsSettings embeddings) {
         if (embeddings == null) {
             return;
         }
-        addOverride(overriddenPaths, isNonBlank(embeddings.getProvider()), PATH_TACTICS_SEARCH_EMBEDDINGS_PROVIDER);
-        addOverride(overriddenPaths, isNonBlank(embeddings.getBaseUrl()), PATH_TACTICS_SEARCH_EMBEDDINGS_BASE_URL);
-        addOverride(overriddenPaths, isNonBlank(embeddings.getApiKey()), PATH_TACTICS_SEARCH_EMBEDDINGS_API_KEY);
-        addOverride(overriddenPaths, isNonBlank(embeddings.getModel()), PATH_TACTICS_SEARCH_EMBEDDINGS_MODEL);
-        addOverride(overriddenPaths, embeddings.getDimensions() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_DIMENSIONS);
-        addOverride(overriddenPaths, embeddings.getBatchSize() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_BATCH_SIZE);
-        addOverride(overriddenPaths, embeddings.getTimeoutMs() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_TIMEOUT_MS);
-        BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties local = embeddings.getLocal();
+        addOverride(overriddenPaths, isNonBlank(embeddings.provider()), PATH_TACTICS_SEARCH_EMBEDDINGS_PROVIDER);
+        addOverride(overriddenPaths, isNonBlank(embeddings.baseUrl()), PATH_TACTICS_SEARCH_EMBEDDINGS_BASE_URL);
+        addOverride(overriddenPaths, isNonBlank(embeddings.apiKey()), PATH_TACTICS_SEARCH_EMBEDDINGS_API_KEY);
+        addOverride(overriddenPaths, isNonBlank(embeddings.model()), PATH_TACTICS_SEARCH_EMBEDDINGS_MODEL);
+        addOverride(overriddenPaths, embeddings.dimensions() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_DIMENSIONS);
+        addOverride(overriddenPaths, embeddings.batchSize() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_BATCH_SIZE);
+        addOverride(overriddenPaths, embeddings.timeoutMs() != null, PATH_TACTICS_SEARCH_EMBEDDINGS_TIMEOUT_MS);
+        SelfEvolvingBootstrapSettingsPort.LocalEmbeddingsSettings local = embeddings.local();
         if (local == null) {
             return;
         }
-        addOverride(overriddenPaths, local.getAutoInstall() != null,
+        addOverride(overriddenPaths, local.autoInstall() != null,
                 PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_AUTO_INSTALL);
-        addOverride(overriddenPaths, local.getPullOnStart() != null,
+        addOverride(overriddenPaths, local.pullOnStart() != null,
                 PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_PULL_ON_START);
-        addOverride(overriddenPaths, local.getRequireHealthyRuntime() != null,
+        addOverride(overriddenPaths, local.requireHealthyRuntime() != null,
                 PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_REQUIRE_HEALTHY_RUNTIME);
-        addOverride(overriddenPaths, local.getFailOpen() != null,
+        addOverride(overriddenPaths, local.failOpen() != null,
                 PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_FAIL_OPEN);
-        addOverride(overriddenPaths, local.getInitialRestartBackoffMs() != null,
+        addOverride(overriddenPaths, local.initialRestartBackoffMs() != null,
                 PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_INITIAL_RESTART_BACKOFF_MS);
-        addOverride(overriddenPaths, isNonBlank(local.getMinimumRuntimeVersion()),
+        addOverride(overriddenPaths, isNonBlank(local.minimumRuntimeVersion()),
                 PATH_TACTICS_SEARCH_EMBEDDINGS_LOCAL_MINIMUM_RUNTIME_VERSION);
     }
 
     private void describeToggleOverride(List<String> overriddenPaths,
-            BotProperties.SelfEvolvingBootstrapToggleProperties toggle,
+            SelfEvolvingBootstrapSettingsPort.ToggleSettings toggle,
             String path) {
-        addOverride(overriddenPaths, toggle != null && toggle.getEnabled() != null, path);
+        addOverride(overriddenPaths, toggle != null && toggle.enabled() != null, path);
     }
 
     private void addOverride(List<String> overriddenPaths, boolean overridden, String path) {
@@ -210,23 +202,23 @@ public class SelfEvolvingBootstrapOverrideService {
     }
 
     private void overrideSearch(RuntimeConfig.SelfEvolvingTacticsConfig target,
-            BotProperties.SelfEvolvingBootstrapTacticSearchProperties source) {
+            SelfEvolvingBootstrapSettingsPort.SearchSettings source) {
         if (source == null) {
             return;
         }
         RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = ensureSearchConfig(target);
-        if (source.getMode() != null && !source.getMode().isBlank()) {
-            searchConfig.setMode(source.getMode().trim());
+        if (source.mode() != null && !source.mode().isBlank()) {
+            searchConfig.setMode(source.mode().trim());
         }
-        overrideEmbeddings(searchConfig, source.getEmbeddings());
+        overrideEmbeddings(searchConfig, source.embeddings());
         ensureEmbeddingsConfig(searchConfig).setEnabled("hybrid".equalsIgnoreCase(searchConfig.getMode()));
-        overrideToggle(searchConfig.getPersonalization(), source.getPersonalization());
-        overrideToggle(searchConfig.getNegativeMemory(), source.getNegativeMemory());
+        overrideToggle(searchConfig.getPersonalization(), source.personalization());
+        overrideToggle(searchConfig.getNegativeMemory(), source.negativeMemory());
     }
 
     private void restoreSearch(RuntimeConfig.SelfEvolvingTacticsConfig target,
             RuntimeConfig.SelfEvolvingTacticsConfig persisted,
-            BotProperties.SelfEvolvingBootstrapTacticSearchProperties source) {
+            SelfEvolvingBootstrapSettingsPort.SearchSettings source) {
         if (source == null) {
             return;
         }
@@ -234,51 +226,51 @@ public class SelfEvolvingBootstrapOverrideService {
         RuntimeConfig.SelfEvolvingTacticSearchConfig persistedSearch = persisted.getSearch() != null
                 ? persisted.getSearch()
                 : new RuntimeConfig.SelfEvolvingTacticSearchConfig();
-        if (source.getMode() != null) {
+        if (source.mode() != null) {
             candidateSearch.setMode(persistedSearch.getMode());
         }
-        restoreEmbeddings(candidateSearch, persistedSearch, source.getEmbeddings());
+        restoreEmbeddings(candidateSearch, persistedSearch, source.embeddings());
         ensureEmbeddingsConfig(candidateSearch).setEnabled("hybrid".equalsIgnoreCase(candidateSearch.getMode()));
         restoreToggle(candidateSearch.getPersonalization(), persistedSearch.getPersonalization(),
-                source.getPersonalization());
+                source.personalization());
         restoreToggle(candidateSearch.getNegativeMemory(), persistedSearch.getNegativeMemory(),
-                source.getNegativeMemory());
+                source.negativeMemory());
     }
 
     private void overrideEmbeddings(RuntimeConfig.SelfEvolvingTacticSearchConfig target,
-            BotProperties.SelfEvolvingBootstrapTacticEmbeddingsProperties source) {
+            SelfEvolvingBootstrapSettingsPort.EmbeddingsSettings source) {
         if (source == null) {
             return;
         }
         RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddingsConfig = ensureEmbeddingsConfig(target);
-        if (isNonBlank(source.getProvider())) {
-            embeddingsConfig.setProvider(source.getProvider().trim());
+        if (isNonBlank(source.provider())) {
+            embeddingsConfig.setProvider(source.provider().trim());
         }
-        if (isNonBlank(source.getBaseUrl())) {
-            embeddingsConfig.setBaseUrl(source.getBaseUrl().trim());
+        if (isNonBlank(source.baseUrl())) {
+            embeddingsConfig.setBaseUrl(source.baseUrl().trim());
         }
-        if (isNonBlank(source.getApiKey())) {
-            embeddingsConfig.setApiKey(Secret.of(source.getApiKey().trim()));
+        if (isNonBlank(source.apiKey())) {
+            embeddingsConfig.setApiKey(Secret.of(source.apiKey().trim()));
         }
-        if (isNonBlank(source.getModel())) {
-            embeddingsConfig.setModel(source.getModel().trim());
+        if (isNonBlank(source.model())) {
+            embeddingsConfig.setModel(source.model().trim());
         }
-        if (source.getDimensions() != null) {
-            embeddingsConfig.setDimensions(source.getDimensions());
+        if (source.dimensions() != null) {
+            embeddingsConfig.setDimensions(source.dimensions());
         }
-        if (source.getBatchSize() != null) {
-            embeddingsConfig.setBatchSize(source.getBatchSize());
+        if (source.batchSize() != null) {
+            embeddingsConfig.setBatchSize(source.batchSize());
         }
-        if (source.getTimeoutMs() != null) {
-            embeddingsConfig.setTimeoutMs(source.getTimeoutMs());
+        if (source.timeoutMs() != null) {
+            embeddingsConfig.setTimeoutMs(source.timeoutMs());
         }
         embeddingsConfig.setAutoFallbackToBm25(true);
-        overrideEmbeddingsLocal(embeddingsConfig, source.getLocal());
+        overrideEmbeddingsLocal(embeddingsConfig, source.local());
     }
 
     private void restoreEmbeddings(RuntimeConfig.SelfEvolvingTacticSearchConfig target,
             RuntimeConfig.SelfEvolvingTacticSearchConfig persisted,
-            BotProperties.SelfEvolvingBootstrapTacticEmbeddingsProperties source) {
+            SelfEvolvingBootstrapSettingsPort.EmbeddingsSettings source) {
         if (source == null) {
             return;
         }
@@ -286,63 +278,63 @@ public class SelfEvolvingBootstrapOverrideService {
         RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig persistedEmbeddings = persisted.getEmbeddings() != null
                 ? persisted.getEmbeddings()
                 : new RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig();
-        if (source.getProvider() != null) {
+        if (source.provider() != null) {
             candidateEmbeddings.setProvider(persistedEmbeddings.getProvider());
         }
-        if (source.getBaseUrl() != null) {
+        if (source.baseUrl() != null) {
             candidateEmbeddings.setBaseUrl(persistedEmbeddings.getBaseUrl());
         }
-        if (source.getApiKey() != null) {
+        if (source.apiKey() != null) {
             candidateEmbeddings.setApiKey(persistedEmbeddings.getApiKey());
         }
-        if (source.getModel() != null) {
+        if (source.model() != null) {
             candidateEmbeddings.setModel(persistedEmbeddings.getModel());
         }
-        if (source.getDimensions() != null) {
+        if (source.dimensions() != null) {
             candidateEmbeddings.setDimensions(persistedEmbeddings.getDimensions());
         }
-        if (source.getBatchSize() != null) {
+        if (source.batchSize() != null) {
             candidateEmbeddings.setBatchSize(persistedEmbeddings.getBatchSize());
         }
-        if (source.getTimeoutMs() != null) {
+        if (source.timeoutMs() != null) {
             candidateEmbeddings.setTimeoutMs(persistedEmbeddings.getTimeoutMs());
         }
         candidateEmbeddings.setAutoFallbackToBm25(persistedEmbeddings.getAutoFallbackToBm25());
-        restoreEmbeddingsLocal(candidateEmbeddings, persistedEmbeddings, source.getLocal());
+        restoreEmbeddingsLocal(candidateEmbeddings, persistedEmbeddings, source.local());
     }
 
     private void overrideEmbeddingsLocal(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig target,
-            BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties source) {
+            SelfEvolvingBootstrapSettingsPort.LocalEmbeddingsSettings source) {
         if (source == null) {
             return;
         }
         RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = ensureEmbeddingsLocalConfig(target);
-        if (source.getAutoInstall() != null) {
-            localConfig.setAutoInstall(source.getAutoInstall());
+        if (source.autoInstall() != null) {
+            localConfig.setAutoInstall(source.autoInstall());
         }
-        if (source.getPullOnStart() != null) {
-            localConfig.setPullOnStart(source.getPullOnStart());
+        if (source.pullOnStart() != null) {
+            localConfig.setPullOnStart(source.pullOnStart());
         }
-        if (source.getRequireHealthyRuntime() != null) {
-            localConfig.setRequireHealthyRuntime(source.getRequireHealthyRuntime());
+        if (source.requireHealthyRuntime() != null) {
+            localConfig.setRequireHealthyRuntime(source.requireHealthyRuntime());
         }
-        if (source.getFailOpen() != null) {
-            localConfig.setFailOpen(source.getFailOpen());
+        if (source.failOpen() != null) {
+            localConfig.setFailOpen(source.failOpen());
         }
-        if (source.getStartupTimeoutMs() != null) {
-            localConfig.setStartupTimeoutMs(source.getStartupTimeoutMs());
+        if (source.startupTimeoutMs() != null) {
+            localConfig.setStartupTimeoutMs(source.startupTimeoutMs());
         }
-        if (source.getInitialRestartBackoffMs() != null) {
-            localConfig.setInitialRestartBackoffMs(source.getInitialRestartBackoffMs());
+        if (source.initialRestartBackoffMs() != null) {
+            localConfig.setInitialRestartBackoffMs(source.initialRestartBackoffMs());
         }
-        if (isNonBlank(source.getMinimumRuntimeVersion())) {
-            localConfig.setMinimumRuntimeVersion(source.getMinimumRuntimeVersion().trim());
+        if (isNonBlank(source.minimumRuntimeVersion())) {
+            localConfig.setMinimumRuntimeVersion(source.minimumRuntimeVersion().trim());
         }
     }
 
     private void restoreEmbeddingsLocal(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig target,
             RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig persisted,
-            BotProperties.SelfEvolvingBootstrapTacticEmbeddingsLocalProperties source) {
+            SelfEvolvingBootstrapSettingsPort.LocalEmbeddingsSettings source) {
         if (source == null) {
             return;
         }
@@ -350,46 +342,46 @@ public class SelfEvolvingBootstrapOverrideService {
         RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig persistedLocal = persisted.getLocal() != null
                 ? persisted.getLocal()
                 : new RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig();
-        if (source.getAutoInstall() != null) {
+        if (source.autoInstall() != null) {
             candidateLocal.setAutoInstall(persistedLocal.getAutoInstall());
         }
-        if (source.getPullOnStart() != null) {
+        if (source.pullOnStart() != null) {
             candidateLocal.setPullOnStart(persistedLocal.getPullOnStart());
         }
-        if (source.getRequireHealthyRuntime() != null) {
+        if (source.requireHealthyRuntime() != null) {
             candidateLocal.setRequireHealthyRuntime(persistedLocal.getRequireHealthyRuntime());
         }
-        if (source.getFailOpen() != null) {
+        if (source.failOpen() != null) {
             candidateLocal.setFailOpen(persistedLocal.getFailOpen());
         }
-        if (source.getStartupTimeoutMs() != null) {
+        if (source.startupTimeoutMs() != null) {
             candidateLocal.setStartupTimeoutMs(persistedLocal.getStartupTimeoutMs());
         }
-        if (source.getInitialRestartBackoffMs() != null) {
+        if (source.initialRestartBackoffMs() != null) {
             candidateLocal.setInitialRestartBackoffMs(persistedLocal.getInitialRestartBackoffMs());
         }
-        if (source.getMinimumRuntimeVersion() != null) {
+        if (source.minimumRuntimeVersion() != null) {
             candidateLocal.setMinimumRuntimeVersion(persistedLocal.getMinimumRuntimeVersion());
         }
     }
 
     private void overrideToggle(RuntimeConfig.SelfEvolvingToggleConfig target,
-            BotProperties.SelfEvolvingBootstrapToggleProperties source) {
+            SelfEvolvingBootstrapSettingsPort.ToggleSettings source) {
         if (target == null || source == null) {
             return;
         }
-        if (source.getEnabled() != null) {
-            target.setEnabled(source.getEnabled());
+        if (source.enabled() != null) {
+            target.setEnabled(source.enabled());
         }
     }
 
     private void restoreToggle(RuntimeConfig.SelfEvolvingToggleConfig target,
             RuntimeConfig.SelfEvolvingToggleConfig persisted,
-            BotProperties.SelfEvolvingBootstrapToggleProperties source) {
+            SelfEvolvingBootstrapSettingsPort.ToggleSettings source) {
         if (target == null || source == null) {
             return;
         }
-        if (source.getEnabled() != null) {
+        if (source.enabled() != null) {
             target.setEnabled(persisted != null ? persisted.getEnabled() : null);
         }
     }

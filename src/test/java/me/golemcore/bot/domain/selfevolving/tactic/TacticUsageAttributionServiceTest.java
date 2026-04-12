@@ -4,7 +4,6 @@ import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -21,7 +20,7 @@ class TacticUsageAttributionServiceTest {
                 .appliedTacticIds(List.of("tactic-b", "tactic-c", "unknown"))
                 .build();
 
-        LinkedHashSet<String> attributed = service.resolveAttributedTacticIds(
+        Set<String> attributed = service.resolveAttributedTacticIds(
                 run,
                 Map.of("bundle-1", List.of("tactic-a", "tactic-b", "tactic-a")),
                 Set.of("tactic-a", "tactic-b", "tactic-c"));

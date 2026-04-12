@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.service;
 
+import me.golemcore.bot.adapter.outbound.config.StoragePluginConfigurationStoreAdapter;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,7 +51,7 @@ class PluginConfigurationServiceTest {
                     return CompletableFuture.completedFuture(null);
                 });
 
-        service = new PluginConfigurationService(storagePort);
+        service = new PluginConfigurationService(new StoragePluginConfigurationStoreAdapter(storagePort));
     }
 
     @Test
@@ -117,6 +118,28 @@ class PluginConfigurationServiceTest {
 
         assertEquals(Boolean.TRUE, config.get("enabled"));
         assertEquals(2, castMap(config.get("nested")).get("count"));
+    }
+
+    @Test
+    void shouldWrapPluginConfigReadFailures() {
+        when(storagePort.getText("preferences", "plugins/golemcore/browser.json"))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("read failed")));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> service.getPluginConfig("golemcore/browser"));
+
+        assertEquals("Failed to read plugin config for golemcore/browser", exception.getMessage());
+    }
+
+    @Test
+    void shouldWrapPluginConfigWriteFailures() {
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("write failed")));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> service.savePluginConfig("golemcore/browser", Map.of("enabled", true)));
+
+        assertEquals("Failed to write plugin config for golemcore/browser", exception.getMessage());
     }
 
     @Test

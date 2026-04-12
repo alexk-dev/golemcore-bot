@@ -24,7 +24,8 @@ import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
+import me.golemcore.bot.port.outbound.AutoExecutionStatusPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -48,7 +49,7 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 @Component
 @Slf4j
-public class AutoModeScheduler {
+public class AutoModeScheduler implements AutoExecutionStatusPort {
 
     private static final int FIXED_TICK_INTERVAL_SECONDS = 1;
 
@@ -148,6 +149,11 @@ public class AutoModeScheduler {
 
     public boolean isExecuting() {
         return executing.get();
+    }
+
+    @Override
+    public boolean isAutoJobExecuting() {
+        return isExecuting();
     }
 
     @EventListener

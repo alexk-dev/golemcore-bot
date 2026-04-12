@@ -7,10 +7,10 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -51,7 +51,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
@@ -62,6 +61,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@SuppressWarnings("PMD.UnusedPrivateMethod")
 class Langchain4jAdapterTest {
 
     private static final String CONVERT_ARGS_TO_JSON = "convertArgsToJson";
@@ -212,10 +212,10 @@ class Langchain4jAdapterTest {
         when(runtimeConfigService.hasLlmProviderApiKey(OPENAI)).thenReturn(true);
         when(runtimeConfigService.hasLlmProviderApiKey("anthropic")).thenReturn(false);
 
-        ModelConfigService.ModelSettings openaiSettings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry openaiSettings = new ModelCatalogEntry();
         openaiSettings.setProvider(OPENAI);
         openaiSettings.setSupportsTemperature(true);
-        ModelConfigService.ModelSettings anthropicSettings = new ModelConfigService.ModelSettings();
+        ModelCatalogEntry anthropicSettings = new ModelCatalogEntry();
         anthropicSettings.setProvider("anthropic");
         anthropicSettings.setSupportsTemperature(true);
 

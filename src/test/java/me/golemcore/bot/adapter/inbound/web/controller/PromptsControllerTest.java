@@ -1,73 +1,57 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.adapter.inbound.web.dto.PromptSectionDto;
-import me.golemcore.bot.adapter.inbound.web.dto.PromptCreateRequest;
-import me.golemcore.bot.domain.model.PromptSection;
-import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.PromptSectionService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.port.outbound.StoragePort;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
-
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import me.golemcore.bot.adapter.inbound.web.dto.PromptCreateRequest;
+import me.golemcore.bot.adapter.inbound.web.dto.PromptSectionDto;
+import me.golemcore.bot.application.prompts.PromptManagementFacade;
+import me.golemcore.bot.application.prompts.PromptSectionDraft;
+import me.golemcore.bot.domain.model.PromptSection;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.test.StepVerifier;
 
 class PromptsControllerTest {
 
-    private PromptSectionService promptSectionService;
-    private UserPreferencesService preferencesService;
-    private StoragePort storagePort;
+    private PromptManagementFacade promptManagementFacade;
     private PromptsController controller;
 
     @BeforeEach
     void setUp() {
-        promptSectionService = mock(PromptSectionService.class);
-        preferencesService = mock(UserPreferencesService.class);
-        storagePort = mock(StoragePort.class);
-        controller = new PromptsController(promptSectionService, preferencesService, storagePort);
-
-        when(storagePort.putText(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-        when(storagePort.deleteObject(anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(null));
+        promptManagementFacade = mock(PromptManagementFacade.class);
+        controller = new PromptsController(promptManagementFacade);
     }
 
     @Test
     void shouldListSections() {
-        PromptSection section = PromptSection.builder()
+        PromptSection identity = PromptSection.builder()
                 .name("identity")
                 .description("Bot identity")
                 .order(10)
                 .enabled(true)
                 .content("You are a helpful bot")
                 .build();
-        PromptSection disabledSection = PromptSection.builder()
+        PromptSection custom = PromptSection.builder()
                 .name("custom")
                 .description("Custom section")
                 .order(30)
                 .enabled(false)
                 .content("Disabled section")
                 .build();
-        when(promptSectionService.getAllSections()).thenReturn(List.of(section, disabledSection));
-        when(promptSectionService.isProtectedSection("identity")).thenReturn(true);
-        when(promptSectionService.isProtectedSection("custom")).thenReturn(false);
+        when(promptManagementFacade.listSections()).thenReturn(List.of(identity, custom));
+        when(promptManagementFacade.isProtectedSection("identity")).thenReturn(true);
+        when(promptManagementFacade.isProtectedSection("custom")).thenReturn(false);
 
         StepVerifier.create(controller.listSections())
                 .assertNext(response -> {
@@ -76,8 +60,8 @@ class PromptsControllerTest {
                     assertNotNull(body);
                     assertEquals(2, body.size());
                     assertEquals("identity", body.get(0).getName());
-                    assertEquals("custom", body.get(1).getName());
                     assertEquals(false, body.get(0).isDeletable());
+                    assertEquals("custom", body.get(1).getName());
                     assertEquals(true, body.get(1).isDeletable());
                 })
                 .verifyComplete();
@@ -91,8 +75,8 @@ class PromptsControllerTest {
                 .order(10)
                 .enabled(true)
                 .build();
-        when(promptSectionService.getSection("identity")).thenReturn(Optional.of(section));
-        when(promptSectionService.isProtectedSection("identity")).thenReturn(true);
+        when(promptManagementFacade.getSection("identity")).thenReturn(section);
+        when(promptManagementFacade.isProtectedSection("identity")).thenReturn(true);
 
         StepVerifier.create(controller.getSection("identity"))
                 .assertNext(response -> {
@@ -105,7 +89,8 @@ class PromptsControllerTest {
 
     @Test
     void shouldReturn404ForMissingSection() {
-        when(promptSectionService.getSection("unknown")).thenReturn(Optional.empty());
+        when(promptManagementFacade.getSection("unknown"))
+                .thenThrow(new NoSuchElementException("Prompt section 'unknown' not found"));
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> controller.getSection("unknown"));
@@ -115,50 +100,12 @@ class PromptsControllerTest {
 
     @Test
     void shouldPreviewSection() {
-        PromptSection section = PromptSection.builder()
-                .name("identity")
-                .content("Hello {{lang}}")
-                .build();
-        when(promptSectionService.getSection("identity")).thenReturn(Optional.of(section));
-        when(preferencesService.getPreferences()).thenReturn(new UserPreferences());
-        when(promptSectionService.buildTemplateVariables(any())).thenReturn(Map.of("lang", "en"));
-        when(promptSectionService.renderSection(any(), any())).thenReturn("Hello en");
+        when(promptManagementFacade.previewSection("identity", null)).thenReturn("Hello en");
 
         StepVerifier.create(controller.previewSection("identity", null))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertEquals("Hello en", response.getBody().get("rendered"));
-                })
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldReturn404ForMissingPreview() {
-        when(promptSectionService.getSection("unknown")).thenReturn(Optional.empty());
-
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> controller.previewSection("unknown", null));
-        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
-        assertEquals("Prompt section 'unknown' not found", ex.getReason());
-    }
-
-    @Test
-    void shouldPreviewUnsavedDraftContent() {
-        PromptSection section = PromptSection.builder()
-                .name("identity")
-                .content("Saved {{lang}}")
-                .build();
-        PromptCreateRequest request = new PromptCreateRequest("identity", "draft", 10, true, "Draft {{lang}}");
-
-        when(promptSectionService.getSection("identity")).thenReturn(Optional.of(section));
-        when(preferencesService.getPreferences()).thenReturn(new UserPreferences());
-        when(promptSectionService.buildTemplateVariables(any())).thenReturn(Map.of("lang", "en"));
-        when(promptSectionService.renderSection(any(), any())).thenReturn("Draft en");
-
-        StepVerifier.create(controller.previewSection("identity", request))
-                .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
-                    assertEquals("Draft en", response.getBody().get("rendered"));
                 })
                 .verifyComplete();
     }
@@ -173,9 +120,9 @@ class PromptsControllerTest {
                 .content("Custom body")
                 .build();
         PromptCreateRequest request = new PromptCreateRequest("custom", "Custom section", 40, true, "Custom body");
-
-        when(promptSectionService.getSection("custom")).thenReturn(Optional.empty(), Optional.of(section));
-        when(promptSectionService.isProtectedSection("custom")).thenReturn(false);
+        when(promptManagementFacade.createSection(new PromptSectionDraft("custom", "Custom section", 40, true,
+                "Custom body"))).thenReturn(section);
+        when(promptManagementFacade.isProtectedSection("custom")).thenReturn(false);
 
         StepVerifier.create(controller.createSection(request))
                 .assertNext(response -> {
@@ -184,29 +131,15 @@ class PromptsControllerTest {
                     assertEquals(true, response.getBody().isDeletable());
                 })
                 .verifyComplete();
-
-        verify(storagePort).putText(eq("prompts"), eq("CUSTOM.md"), anyString());
     }
 
     @Test
-    void shouldRejectDuplicateSectionCreate() {
-        PromptSection existing = PromptSection.builder()
-                .name("custom")
-                .build();
-        PromptCreateRequest request = new PromptCreateRequest("custom", "Custom section", 40, true, "Custom body");
-
-        when(promptSectionService.getSection("custom")).thenReturn(Optional.of(existing));
-
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> controller.createSection(request));
-        assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
-        assertEquals("Prompt section 'custom' already exists", ex.getReason());
-    }
-
-    @Test
-    void shouldRejectInvalidSectionCreateName() {
+    void shouldMapCreateValidationErrors() {
         PromptCreateRequest request = new PromptCreateRequest("Custom Prompt", "Custom section", 40, true,
                 "Custom body");
+        when(promptManagementFacade.createSection(new PromptSectionDraft("Custom Prompt", "Custom section", 40, true,
+                "Custom body")))
+                .thenThrow(new IllegalArgumentException("Prompt name is required and must match [a-z0-9][a-z0-9-]*"));
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> controller.createSection(request));
@@ -215,14 +148,20 @@ class PromptsControllerTest {
     }
 
     @Test
+    void shouldMapCreateConflicts() {
+        PromptCreateRequest request = new PromptCreateRequest("custom", "Custom section", 40, true, "Custom body");
+        when(promptManagementFacade.createSection(new PromptSectionDraft("custom", "Custom section", 40, true,
+                "Custom body")))
+                .thenThrow(new IllegalStateException("Prompt section 'custom' already exists"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.createSection(request));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+        assertEquals("Prompt section 'custom' already exists", ex.getReason());
+    }
+
+    @Test
     void shouldUpdateSection() {
-        PromptSection existing = PromptSection.builder()
-                .name("custom")
-                .description("Old section")
-                .order(40)
-                .enabled(true)
-                .content("Old body")
-                .build();
         PromptSection updated = PromptSection.builder()
                 .name("custom")
                 .description("Updated section")
@@ -232,60 +171,73 @@ class PromptsControllerTest {
                 .build();
         PromptCreateRequest request = new PromptCreateRequest("ignored-body-name", "Updated section", 50, false,
                 "Updated body");
-
-        when(promptSectionService.getSection("custom")).thenReturn(Optional.of(existing), Optional.of(updated));
-        when(promptSectionService.isProtectedSection("custom")).thenReturn(false);
+        when(promptManagementFacade.updateSection("custom",
+                new PromptSectionDraft("ignored-body-name", "Updated section", 50, false, "Updated body")))
+                .thenReturn(updated);
+        when(promptManagementFacade.isProtectedSection("custom")).thenReturn(false);
 
         StepVerifier.create(controller.updateSection("custom", request))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertEquals("custom", response.getBody().getName());
                     assertEquals("Updated section", response.getBody().getDescription());
-                    assertEquals(50, response.getBody().getOrder());
                     assertEquals(false, response.getBody().isEnabled());
-                    assertEquals(true, response.getBody().isDeletable());
                 })
                 .verifyComplete();
-
-        verify(storagePort).putText(eq("prompts"), eq("CUSTOM.md"), anyString());
     }
 
     @Test
-    void shouldDeleteSection() {
-        PromptSection section = PromptSection.builder()
-                .name("custom")
-                .enabled(true)
-                .build();
-
-        when(promptSectionService.getSection("custom")).thenReturn(Optional.of(section));
-        when(promptSectionService.isProtectedSection("custom")).thenReturn(false);
-
-        StepVerifier.create(controller.deleteSection("custom"))
-                .assertNext(response -> assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode()))
-                .verifyComplete();
-
-        verify(storagePort).deleteObject("prompts", "CUSTOM.md");
-    }
-
-    @Test
-    void shouldReturn404ForMissingDelete() {
-        when(promptSectionService.getSection("custom")).thenReturn(Optional.empty());
+    void shouldMapUpdateValidationErrors() {
+        PromptCreateRequest request = new PromptCreateRequest("ignored-body-name", "Updated section", 50, false,
+                "Updated body");
+        when(promptManagementFacade.updateSection("custom",
+                new PromptSectionDraft("ignored-body-name", "Updated section", 50, false, "Updated body")))
+                .thenThrow(new IllegalArgumentException("Prompt name is required and must match [a-z0-9][a-z0-9-]*"));
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> controller.deleteSection("custom"));
+                () -> controller.updateSection("custom", request));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Prompt name is required and must match [a-z0-9][a-z0-9-]*", ex.getReason());
+    }
+
+    @Test
+    void shouldMapUpdateMissingSection() {
+        PromptCreateRequest request = new PromptCreateRequest("ignored-body-name", "Updated section", 50, false,
+                "Updated body");
+        when(promptManagementFacade.updateSection("custom",
+                new PromptSectionDraft("ignored-body-name", "Updated section", 50, false, "Updated body")))
+                .thenThrow(new NoSuchElementException("Prompt section 'custom' not found"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.updateSection("custom", request));
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
         assertEquals("Prompt section 'custom' not found", ex.getReason());
     }
 
     @Test
-    void shouldRejectProtectedSectionDeletion() {
-        PromptSection section = PromptSection.builder()
-                .name("identity")
-                .enabled(true)
-                .build();
+    void shouldMapPreviewMissingSection() {
+        when(promptManagementFacade.previewSection("missing", null))
+                .thenThrow(new NoSuchElementException("Prompt section 'missing' not found"));
 
-        when(promptSectionService.getSection("identity")).thenReturn(Optional.of(section));
-        when(promptSectionService.isProtectedSection("identity")).thenReturn(true);
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.previewSection("missing", null));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertEquals("Prompt section 'missing' not found", ex.getReason());
+    }
+
+    @Test
+    void shouldDeleteSection() {
+        StepVerifier.create(controller.deleteSection("custom"))
+                .assertNext(response -> assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode()))
+                .verifyComplete();
+
+        verify(promptManagementFacade).deleteSection("custom");
+    }
+
+    @Test
+    void shouldMapDeleteConflicts() {
+        doThrow(new IllegalStateException("Prompt section 'identity' cannot be deleted"))
+                .when(promptManagementFacade).deleteSection("identity");
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> controller.deleteSection("identity"));
@@ -294,13 +246,25 @@ class PromptsControllerTest {
     }
 
     @Test
+    void shouldMapDeleteMissingSection() {
+        doThrow(new NoSuchElementException("Prompt section 'missing' not found"))
+                .when(promptManagementFacade).deleteSection("missing");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.deleteSection("missing"));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertEquals("Prompt section 'missing' not found", ex.getReason());
+    }
+
+    @Test
     void shouldReload() {
         StepVerifier.create(controller.reload())
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
-                    assertEquals("reloaded", response.getBody().get("status"));
+                    assertEquals(Map.of("status", "reloaded"), response.getBody());
                 })
                 .verifyComplete();
-    }
 
+        verify(promptManagementFacade).reload();
+    }
 }

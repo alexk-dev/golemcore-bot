@@ -33,15 +33,23 @@ describe('settings llm provider api', () => {
       requestTimeoutSeconds: 30,
       apiType: 'openai',
       legacyApi: null,
-    });
+    }, ['xmesh/gpt-5.2']);
 
     expect(clientPostMock).toHaveBeenCalledWith('/settings/runtime/llm/providers/xmesh/import-models', {
-      baseUrl: 'https://models.example.com/v1',
-      requestTimeoutSeconds: 30,
-      apiKey: { value: 'secret-token', encrypted: false },
-      apiType: 'openai',
-      legacyApi: null,
-    });
+      config: {
+        baseUrl: 'https://models.example.com/v1',
+        requestTimeoutSeconds: 30,
+        apiKey: { value: 'secret-token', encrypted: false },
+        apiType: 'openai',
+        legacyApi: null,
+      },
+      selectedModelIds: ['xmesh/gpt-5.2'],
+    }, expect.objectContaining({
+      _telemetry: {
+        counterKey: 'settings_save_count_by_section',
+        value: 'llm-providers',
+      },
+    }));
     expect(result.addedModels).toEqual(['xmesh/gpt-5.2']);
     expect(result.skippedModels).toEqual(['xmesh/existing']);
   });

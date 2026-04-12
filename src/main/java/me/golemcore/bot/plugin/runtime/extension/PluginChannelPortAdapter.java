@@ -1,7 +1,7 @@
 package me.golemcore.bot.plugin.runtime.extension;
 
 import me.golemcore.bot.domain.model.ProgressUpdate;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -89,6 +89,11 @@ public final class PluginChannelPortAdapter implements ChannelPort {
     @Override
     public CompletableFuture<Void> sendDocument(String chatId, byte[] fileData, String filename, String caption) {
         return delegate.sendDocument(chatId, fileData, filename, caption);
+    }
+
+    @Override
+    public boolean supportsDocumentDelivery() {
+        return true;
     }
 
     @Override

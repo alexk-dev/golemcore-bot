@@ -25,12 +25,12 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -71,10 +71,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
-import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
@@ -84,7 +84,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.time.Duration;
 
 /**
  * LLM adapter using the langchain4j library.
@@ -323,7 +322,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
                 .maxTokens(4096)
-                .timeout(java.time.Duration.ofSeconds(
+                .timeout(Duration.ofSeconds(
                         config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (config.getBaseUrl() != null) {
@@ -350,7 +349,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 // both returnThinking and sendThinking are enabled.
                 .returnThinking(true)
                 .sendThinking(true)
-                .timeout(java.time.Duration.ofSeconds(
+                .timeout(Duration.ofSeconds(
                         config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (supportsTemperature(fullModel)) {
@@ -370,7 +369,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .maxRetries(0) // Retry handled by our backoff logic
-                .timeout(java.time.Duration.ofSeconds(
+                .timeout(Duration.ofSeconds(
                         config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (config.getBaseUrl() != null) {
@@ -708,11 +707,11 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     public List<String> getSupportedModels() {
         // Build from models.json — provider/modelName for each configured provider
         List<String> models = new ArrayList<>();
-        Map<String, ModelConfigService.ModelSettings> modelsConfig = modelConfig
+        Map<String, ModelCatalogEntry> modelsConfig = modelConfig
                 .getAllModels();
 
         if (modelsConfig != null) {
-            for (Map.Entry<String, ModelConfigService.ModelSettings> entry : modelsConfig
+            for (Map.Entry<String, ModelCatalogEntry> entry : modelsConfig
                     .entrySet()) {
                 String modelName = entry.getKey();
                 String provider = entry.getValue().getProvider();

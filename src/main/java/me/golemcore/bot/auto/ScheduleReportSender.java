@@ -20,11 +20,12 @@ package me.golemcore.bot.auto;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -52,7 +53,6 @@ import java.util.concurrent.TimeoutException;
 @Slf4j
 public class ScheduleReportSender {
 
-    public static final String WEBHOOK_CHANNEL_TYPE = "webhook";
     private static final int CHANNEL_SEND_TIMEOUT_SECONDS = 30;
     private static final int WEBHOOK_MAX_RETRIES = 3;
     private static final long WEBHOOK_INITIAL_BACKOFF_MILLIS = 100L;
@@ -97,7 +97,7 @@ public class ScheduleReportSender {
         }
 
         ScheduleReportConfig report = schedule.getReport();
-        if (WEBHOOK_CHANNEL_TYPE.equals(report.getChannelType())) {
+        if (ChannelTypes.WEBHOOK.equals(report.getChannelType())) {
             sendViaWebhook(schedule, reportHeader, assistantText);
         } else {
             sendViaChannel(schedule, reportHeader, assistantText, fallbackDeliveryContext);

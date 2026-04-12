@@ -2,17 +2,14 @@ package me.golemcore.bot.domain.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Service;
-
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import me.golemcore.bot.port.outbound.UpdateSettingsPort;
+import me.golemcore.bot.port.outbound.WorkspaceFilePort;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
@@ -23,22 +20,18 @@ public class UpdateRuntimeCleanupService {
     private static final String STAGED_MARKER_NAME = "staged.txt";
     private static final String JARS_DIR_NAME = "jars";
 
-    private final BotProperties botProperties;
-
-    @EventListener(ApplicationReadyEvent.class)
-    public void onApplicationReady() {
-        cleanupAfterSuccessfulStartup();
-    }
+    private final UpdateSettingsPort settingsPort;
+    private final WorkspaceFilePort workspaceFilePort;
 
     @SuppressWarnings("PMD.NullAssignment")
-    void cleanupAfterSuccessfulStartup() {
-        if (!botProperties.getUpdate().isEnabled()) {
+    public void cleanupAfterSuccessfulStartup() {
+        if (!settingsPort.update().enabled()) {
             return;
         }
 
-        Path updatesDir = Path.of(botProperties.getUpdate().getUpdatesPath()).toAbsolutePath().normalize();
+        Path updatesDir = Path.of(settingsPort.update().updatesPath()).toAbsolutePath().normalize();
         Path jarsDir = updatesDir.resolve(JARS_DIR_NAME);
-        if (!Files.isDirectory(jarsDir)) {
+        if (!workspaceFilePort.isDirectory(jarsDir)) {
             return;
         }
 
@@ -60,10 +53,13 @@ public class UpdateRuntimeCleanupService {
             retainedAssets.add(stagedAsset);
         }
 
-        try (java.util.stream.Stream<Path> stream = Files.list(jarsDir)) {
-            stream.filter(Files::isRegularFile)
-                    .filter(path -> shouldDeleteJar(path, retainedAssets))
-                    .forEach(this::deleteIfExists);
+        try {
+            List<Path> jarPaths = workspaceFilePort.list(jarsDir);
+            for (Path path : jarPaths) {
+                if (workspaceFilePort.isRegularFile(path) && shouldDeleteJar(path, retainedAssets)) {
+                    deleteIfExists(path);
+                }
+            }
         } catch (IOException e) {
             log.warn("[update] failed to cleanup old runtime jars: {}", e.getMessage());
         }
@@ -81,10 +77,10 @@ public class UpdateRuntimeCleanupService {
 
     private String readMarker(Path markerPath) {
         try {
-            if (!Files.exists(markerPath)) {
+            if (!workspaceFilePort.exists(markerPath)) {
                 return null;
             }
-            String content = Files.readString(markerPath, StandardCharsets.UTF_8).trim();
+            String content = workspaceFilePort.readString(markerPath).trim();
             return content.isBlank() ? null : content;
         } catch (IOException e) {
             return null;
@@ -93,7 +89,7 @@ public class UpdateRuntimeCleanupService {
 
     private void deleteIfExists(Path path) {
         try {
-            Files.deleteIfExists(path);
+            workspaceFilePort.deleteIfExists(path);
         } catch (IOException e) {
             log.warn("[update] failed to delete {}: {}", path, e.getMessage());
         }

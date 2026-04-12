@@ -47,8 +47,7 @@ import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -65,6 +64,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static me.golemcore.bot.support.ChannelRuntimeTestSupport.responseRoutingSystem;
+import static me.golemcore.bot.support.ChannelRuntimeTestSupport.runtime;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -493,9 +494,8 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 List.of(transitionSystem,
-                        new ResponseRoutingSystem(new ChannelRegistry(List.of(channel)), preferencesService,
-                                mock(VoiceResponseHandler.class))),
-                new ChannelRegistry(List.of(channel)),
+                        responseRoutingSystem(List.of(channel), preferencesService, mock(VoiceResponseHandler.class))),
+                runtime(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -572,8 +572,7 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 List.of(system,
-                        new ResponseRoutingSystem(new ChannelRegistry(List.of(channel)), preferencesService,
-                                mock(VoiceResponseHandler.class))),
+                        createRoutingSystem(channel, preferencesService)),
                 List.of(channel),
                 mockRuntimeConfigService(1),
                 preferencesService,
@@ -876,8 +875,8 @@ class AgentLoopTest {
             }
         };
 
-        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
+        ResponseRoutingSystem routingSystem = responseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
 
         AgentLoop loop = createLoop(
                 sessionPort,
@@ -960,8 +959,7 @@ class AgentLoopTest {
             }
         };
 
-        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
+        ResponseRoutingSystem routingSystem = createRoutingSystem(channel, preferencesService);
 
         AgentLoop loop = createLoop(
                 sessionPort,
@@ -1105,8 +1103,7 @@ class AgentLoopTest {
             }
         };
 
-        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
+        ResponseRoutingSystem routingSystem = createRoutingSystem(channel, preferencesService);
 
         AgentLoop loop = createLoop(
                 sessionPort,
@@ -1197,14 +1194,13 @@ class AgentLoopTest {
             }
         };
 
-        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
+        ResponseRoutingSystem routingSystem = createRoutingSystem(channel, preferencesService);
 
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(turnOutcomeSystem, routingSystem),
-                new ChannelRegistry(List.of(channel)),
+                runtime(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -1285,14 +1281,14 @@ class AgentLoopTest {
             }
         };
 
-        ResponseRoutingSystem routingSystem = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
+        ResponseRoutingSystem routingSystem = responseRoutingSystem(
+                List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
 
         AgentLoop loop = new AgentLoop(
                 sessionPort,
                 rateLimitPort,
                 List.of(routingOutcomeAttributeSystem, routingSystem),
-                new ChannelRegistry(List.of(channel)),
+                runtime(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -1544,8 +1540,7 @@ class AgentLoopTest {
             }
         };
 
-        ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
+        ResponseRoutingSystem routing = createRoutingSystem(channel, preferencesService);
 
         AgentLoop loop = createLoop(
                 sessionPort, rateLimitPort, List.of(retryScheduled, routing), List.of(channel),
@@ -1584,8 +1579,7 @@ class AgentLoopTest {
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
         when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
+        ResponseRoutingSystem routing = createRoutingSystem(channel, preferencesService);
 
         AgentLoop loop = createLoop(
                 sessionPort, rateLimitPort, List.of(routing), List.of(channel),
@@ -1651,8 +1645,7 @@ class AgentLoopTest {
             }
         };
 
-        ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
+        ResponseRoutingSystem routing = createRoutingSystem(channel, preferencesService);
 
         AgentLoop loop = createLoop(
                 sessionPort, rateLimitPort, List.of(alwaysTransition, routing), List.of(channel),
@@ -1726,7 +1719,7 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 List.of(attachmentsOnlySystem),
-                new ChannelRegistry(List.of(channel)),
+                runtime(List.of(channel)),
                 mockRuntimeConfigService(1),
                 preferencesService,
                 llmPort,
@@ -1799,8 +1792,7 @@ class AgentLoopTest {
             }
         };
 
-        ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(channel)), preferencesService, mock(VoiceResponseHandler.class));
+        ResponseRoutingSystem routing = createRoutingSystem(channel, preferencesService);
 
         AgentLoop loop = createLoop(
                 sessionPort, rateLimitPort, List.of(errorSystem, routing), List.of(channel),
@@ -2252,12 +2244,17 @@ class AgentLoopTest {
                 sessionPort,
                 rateLimitPort,
                 systems,
-                new ChannelRegistry(channels),
+                runtime(channels),
                 runtimeConfigService,
                 preferencesService,
                 llmPort,
                 clock,
                 new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
+    }
+
+    private static ResponseRoutingSystem createRoutingSystem(ChannelPort channel,
+            UserPreferencesService preferencesService) {
+        return responseRoutingSystem(List.of(channel), preferencesService, mock(VoiceResponseHandler.class));
     }
 
     private static RuntimeConfigService mockRuntimeConfigService(int maxLlmCalls) {

@@ -1,15 +1,9 @@
 package me.golemcore.bot.domain.service;
 
 import lombok.RequiredArgsConstructor;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionMessagesPageDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSnapshotDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSpanDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceStorageStatsDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.trace.TraceEventRecord;
@@ -17,13 +11,18 @@ import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSnapshot;
 import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.model.trace.TraceStorageStats;
+import me.golemcore.bot.domain.view.SessionDetailView;
+import me.golemcore.bot.domain.view.SessionMessagesPageView;
+import me.golemcore.bot.domain.view.SessionSummaryView;
+import me.golemcore.bot.domain.view.SessionTraceExportView;
+import me.golemcore.bot.domain.view.SessionTraceSnapshotView;
+import me.golemcore.bot.domain.view.SessionTraceSpanView;
+import me.golemcore.bot.domain.view.SessionTraceStorageStatsView;
+import me.golemcore.bot.domain.view.SessionTraceSummaryView;
+import me.golemcore.bot.domain.view.SessionTraceView;
 import me.golemcore.bot.port.outbound.SessionPort;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Comparator;
@@ -31,48 +30,69 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SessionInspectionService {
 
-    private static final String CHANNEL_TELEGRAM = "telegram";
     private static final int MAX_PAGE_LIMIT = 100;
     private static final int SNAPSHOT_PREVIEW_MAX_CHARS = 4096;
     private static final int START_WITH_INDEX = 0;
+    private static final Pattern CONTENT_TYPE_PATTERN = Pattern.compile("^[\\w!#$&^_.+-]+/[\\w!#$&^_.+-]+$");
+    private static final String CONTENT_TYPE_PARAMETER_NAME_CHARS = "!#$%&'*+.^_`|~-";
 
     private final SessionPort sessionPort;
     private final ActiveSessionPointerService pointerService;
     private final TraceSnapshotCompressionService traceSnapshotCompressionService;
 
-    public List<SessionSummaryDto> listSessions(String channel) {
+    public List<SessionSummaryView> listSessions(String channel) {
         List<AgentSession> sessions = StringValueSupport.isBlank(channel)
                 ? sessionPort.listAll()
                 : sessionPort.listByChannelType(channel.trim());
         return sessions.stream()
                 .sorted(ConversationKeyValidator.byRecentActivity())
-                .map(session -> SessionPresentationSupport.toSummary(session, false))
+                .map(session -> summarizeSession(session, false))
                 .toList();
     }
 
-    public SessionDetailDto getSessionDetail(String sessionId) {
+    public SessionSummaryView resolveSession(String channel, String conversationKey) {
+        if (StringValueSupport.isBlank(channel) || StringValueSupport.isBlank(conversationKey)) {
+            throw new IllegalArgumentException("conversationKey is required");
+        }
+        String normalizedChannel = channel.trim();
+        String normalizedConversationKey = conversationKey.trim();
+        AgentSession session = sessionPort.listByChannelType(normalizedChannel).stream()
+                .filter(candidate -> matchesConversationKey(candidate, normalizedConversationKey))
+                .findFirst()
+                .orElseThrow(() -> new NoSuchElementException("Session not found"));
+        return summarizeSession(session, false);
+    }
+
+    public SessionSummaryView summarizeSession(AgentSession session, boolean active) {
+        return SessionPresentationSupport.toSummary(session, active);
+    }
+
+    public SessionDetailView getSessionDetail(String sessionId) {
         return toDetail(requireSession(sessionId));
     }
 
-    public SessionMessagesPageDto getSessionMessages(String sessionId, int limit, String beforeMessageId) {
+    public SessionMessagesPageView getSessionMessages(String sessionId, int limit, String beforeMessageId) {
         AgentSession session = requireSession(sessionId);
         int normalizedLimit = Math.clamp(limit, 1, MAX_PAGE_LIMIT);
         List<Message> visibleMessages = SessionPresentationSupport.getVisibleMessages(session);
         int endExclusive = resolvePageEndExclusive(visibleMessages, beforeMessageId);
         int startInclusive = Math.max(START_WITH_INDEX, endExclusive - normalizedLimit);
-        List<SessionDetailDto.MessageDto> page = visibleMessages.subList(startInclusive, endExclusive).stream()
+        List<SessionDetailView.MessageView> page = visibleMessages.subList(startInclusive, endExclusive).stream()
                 .map(this::toMessageDto)
                 .toList();
         String oldestMessageId = page.isEmpty() ? null : page.get(START_WITH_INDEX).getId();
 
-        return SessionMessagesPageDto.builder()
+        return SessionMessagesPageView.builder()
                 .sessionId(sessionId)
                 .messages(page)
                 .hasMore(startInclusive > START_WITH_INDEX)
@@ -80,25 +100,25 @@ public class SessionInspectionService {
                 .build();
     }
 
-    public SessionTraceSummaryDto getSessionTraceSummary(String sessionId) {
+    public SessionTraceSummaryView getSessionTraceSummary(String sessionId) {
         return toTraceSummary(requireSession(sessionId));
     }
 
-    public SessionTraceDto getSessionTrace(String sessionId) {
+    public SessionTraceView getSessionTrace(String sessionId) {
         return toTraceDetail(requireSession(sessionId));
     }
 
-    public Map<String, Object> exportSessionTrace(String sessionId) {
-        return toTraceExport(requireSession(sessionId));
+    public SessionTraceExportView getSessionTraceExport(String sessionId) {
+        return toTraceExportView(requireSession(sessionId));
     }
 
     public SnapshotPayloadExport exportSessionTraceSnapshotPayload(String sessionId, String snapshotId) {
         AgentSession session = requireSession(sessionId);
         TraceSnapshot snapshot = findTraceSnapshot(session, snapshotId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Trace snapshot not found"));
+                .orElseThrow(() -> new NoSuchElementException("Trace snapshot not found"));
         String payloadText = decompressSnapshotPayload(snapshot);
         if (payloadText == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Trace snapshot payload not found");
+            throw new NoSuchElementException("Trace snapshot payload not found");
         }
         return new SnapshotPayloadExport(
                 payloadText,
@@ -120,9 +140,9 @@ public class SessionInspectionService {
         sessionPort.clearMessages(sessionId);
     }
 
-    public SessionTraceSnapshotDto toTraceSnapshotDto(TraceSnapshot snapshot, boolean includePayloadPreview) {
+    public SessionTraceSnapshotView toTraceSnapshotView(TraceSnapshot snapshot, boolean includePayloadPreview) {
         SnapshotPreview preview = includePayloadPreview ? buildSnapshotPreview(snapshot) : SnapshotPreview.empty();
-        return SessionTraceSnapshotDto.builder()
+        return SessionTraceSnapshotView.builder()
                 .snapshotId(snapshot.getSnapshotId())
                 .role(snapshot.getRole())
                 .contentType(snapshot.getContentType())
@@ -138,39 +158,39 @@ public class SessionInspectionService {
 
     private AgentSession requireSession(String sessionId) {
         return sessionPort.get(sessionId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+                .orElseThrow(() -> new NoSuchElementException("Session not found"));
     }
 
-    private SessionDetailDto toDetail(AgentSession session) {
+    private SessionDetailView toDetail(AgentSession session) {
         String conversationKey = SessionIdentitySupport.resolveConversationKey(session);
         String transportChatId = SessionIdentitySupport.resolveTransportChatId(session);
-        List<SessionDetailDto.MessageDto> messages = List.of();
+        List<SessionDetailView.MessageView> messages = List.of();
         if (session.getMessages() != null) {
             messages = session.getMessages().stream()
                     .filter(SessionPresentationSupport::isHistoryVisibleMessage)
                     .map(this::toMessageDto)
                     .toList();
         }
-        return SessionDetailDto.builder()
+        return SessionDetailView.builder()
                 .id(session.getId())
                 .channelType(session.getChannelType())
                 .chatId(session.getChatId())
                 .conversationKey(conversationKey)
                 .transportChatId(transportChatId)
                 .state(session.getState() != null ? session.getState().name() : "ACTIVE")
-                .createdAt(session.getCreatedAt() != null ? session.getCreatedAt().toString() : null)
-                .updatedAt(session.getUpdatedAt() != null ? session.getUpdatedAt().toString() : null)
+                .createdAt(session.getCreatedAt())
+                .updatedAt(session.getUpdatedAt())
                 .messages(messages)
                 .build();
     }
 
-    private SessionDetailDto.MessageDto toMessageDto(Message message) {
+    private SessionDetailView.MessageView toMessageDto(Message message) {
         MessageMetadataView metadata = resolveMetadataView(message);
-        return SessionDetailDto.MessageDto.builder()
+        return SessionDetailView.MessageView.builder()
                 .id(message.getId())
                 .role(message.getRole())
                 .content(SessionPresentationSupport.resolveMessageContent(message))
-                .timestamp(message.getTimestamp() != null ? message.getTimestamp().toString() : null)
+                .timestamp(message.getTimestamp())
                 .hasToolCalls(message.hasToolCalls())
                 .hasVoice(message.hasVoice())
                 .model(metadata.model())
@@ -224,7 +244,7 @@ public class SessionInspectionService {
         return !StringValueSupport.isBlank(primary) ? primary : fallback;
     }
 
-    private SessionTraceSummaryDto toTraceSummary(AgentSession session) {
+    private SessionTraceSummaryView toTraceSummary(AgentSession session) {
         List<TraceRecord> traces = getSortedTraces(session);
         int spanCount = traces.stream()
                 .mapToInt(trace -> trace.getSpans() != null ? trace.getSpans().size() : 0)
@@ -232,10 +252,10 @@ public class SessionInspectionService {
         int snapshotCount = traces.stream()
                 .mapToInt(this::countSnapshots)
                 .sum();
-        List<SessionTraceSummaryDto.TraceSummaryDto> traceSummaries = traces.stream()
+        List<SessionTraceSummaryView.TraceSummaryView> traceSummaries = traces.stream()
                 .map(this::toTraceSummaryItem)
                 .toList();
-        return SessionTraceSummaryDto.builder()
+        return SessionTraceSummaryView.builder()
                 .sessionId(session.getId())
                 .traceCount(traces.size())
                 .spanCount(spanCount)
@@ -245,31 +265,28 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private SessionTraceDto toTraceDetail(AgentSession session) {
-        List<SessionTraceDto.TraceDto> traces = getSortedTraces(session).stream()
+    private SessionTraceView toTraceDetail(AgentSession session) {
+        List<SessionTraceView.TraceView> traces = getSortedTraces(session).stream()
                 .map(trace -> toTraceDto(trace, true))
                 .toList();
-        return SessionTraceDto.builder()
+        return SessionTraceView.builder()
                 .sessionId(session.getId())
                 .storageStats(toTraceStorageStatsDto(session.getTraceStorageStats()))
                 .traces(traces)
                 .build();
     }
 
-    private Map<String, Object> toTraceExport(AgentSession session) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("sessionId", session.getId());
-        result.put("storageStats", toTraceStorageStatsMap(session.getTraceStorageStats()));
-        List<Map<String, Object>> traces = getSortedTraces(session).stream()
-                .map(this::toTraceExportMap)
-                .toList();
-        result.put("traces", traces);
-        return result;
+    private SessionTraceExportView toTraceExportView(AgentSession session) {
+        return SessionTraceExportView.builder()
+                .sessionId(session.getId())
+                .storageStats(toTraceStorageStatsDto(session.getTraceStorageStats()))
+                .traces(getSortedTraces(session).stream().map(this::toTraceExportItem).toList())
+                .build();
     }
 
-    private SessionTraceSummaryDto.TraceSummaryDto toTraceSummaryItem(TraceRecord trace) {
+    private SessionTraceSummaryView.TraceSummaryView toTraceSummaryItem(TraceRecord trace) {
         TraceSpanRecord rootSpan = findRootSpan(trace);
-        return SessionTraceSummaryDto.TraceSummaryDto.builder()
+        return SessionTraceSummaryView.TraceSummaryView.builder()
                 .traceId(trace.getTraceId())
                 .rootSpanId(trace.getRootSpanId())
                 .traceName(trace.getTraceName())
@@ -277,8 +294,8 @@ public class SessionInspectionService {
                 .rootStatusCode(rootSpan != null && rootSpan.getStatusCode() != null
                         ? rootSpan.getStatusCode().name()
                         : null)
-                .startedAt(toTimestamp(trace.getStartedAt()))
-                .endedAt(toTimestamp(trace.getEndedAt()))
+                .startedAt(trace.getStartedAt())
+                .endedAt(trace.getEndedAt())
                 .durationMs(toDurationMs(trace.getStartedAt(), trace.getEndedAt()))
                 .spanCount(trace.getSpans() != null ? trace.getSpans().size() : 0)
                 .snapshotCount(countSnapshots(trace))
@@ -286,16 +303,16 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private SessionTraceDto.TraceDto toTraceDto(TraceRecord trace, boolean includeSnapshotPreview) {
-        List<SessionTraceSpanDto> spans = getSortedSpans(trace).stream()
+    private SessionTraceView.TraceView toTraceDto(TraceRecord trace, boolean includeSnapshotPreview) {
+        List<SessionTraceSpanView> spans = getSortedSpans(trace).stream()
                 .map(span -> toTraceSpanDto(span, includeSnapshotPreview))
                 .toList();
-        return SessionTraceDto.TraceDto.builder()
+        return SessionTraceView.TraceView.builder()
                 .traceId(trace.getTraceId())
                 .rootSpanId(trace.getRootSpanId())
                 .traceName(trace.getTraceName())
-                .startedAt(toTimestamp(trace.getStartedAt()))
-                .endedAt(toTimestamp(trace.getEndedAt()))
+                .startedAt(trace.getStartedAt())
+                .endedAt(trace.getEndedAt())
                 .truncated(trace.isTruncated())
                 .compressedSnapshotBytes(trace.getCompressedSnapshotBytes())
                 .uncompressedSnapshotBytes(trace.getUncompressedSnapshotBytes())
@@ -303,26 +320,26 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private SessionTraceSpanDto toTraceSpanDto(TraceSpanRecord span, boolean includeSnapshotPreview) {
-        List<SessionTraceSpanDto.EventDto> events = span.getEvents() == null
+    private SessionTraceSpanView toTraceSpanDto(TraceSpanRecord span, boolean includeSnapshotPreview) {
+        List<SessionTraceSpanView.EventView> events = span.getEvents() == null
                 ? List.of()
                 : span.getEvents().stream()
                         .map(this::toTraceEventDto)
                         .toList();
-        List<SessionTraceSnapshotDto> snapshots = span.getSnapshots() == null
+        List<SessionTraceSnapshotView> snapshots = span.getSnapshots() == null
                 ? List.of()
                 : span.getSnapshots().stream()
-                        .map(snapshot -> toTraceSnapshotDto(snapshot, includeSnapshotPreview))
+                        .map(snapshot -> toTraceSnapshotView(snapshot, includeSnapshotPreview))
                         .toList();
-        return SessionTraceSpanDto.builder()
+        return SessionTraceSpanView.builder()
                 .spanId(span.getSpanId())
                 .parentSpanId(span.getParentSpanId())
                 .name(span.getName())
                 .kind(span.getKind() != null ? span.getKind().name() : null)
                 .statusCode(span.getStatusCode() != null ? span.getStatusCode().name() : null)
                 .statusMessage(span.getStatusMessage())
-                .startedAt(toTimestamp(span.getStartedAt()))
-                .endedAt(toTimestamp(span.getEndedAt()))
+                .startedAt(span.getStartedAt())
+                .endedAt(span.getEndedAt())
                 .durationMs(toDurationMs(span.getStartedAt(), span.getEndedAt()))
                 .attributes(copyAttributes(span.getAttributes()))
                 .events(events)
@@ -330,17 +347,17 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private SessionTraceSpanDto.EventDto toTraceEventDto(TraceEventRecord event) {
-        return SessionTraceSpanDto.EventDto.builder()
+    private SessionTraceSpanView.EventView toTraceEventDto(TraceEventRecord event) {
+        return SessionTraceSpanView.EventView.builder()
                 .name(event.getName())
-                .timestamp(toTimestamp(event.getTimestamp()))
+                .timestamp(event.getTimestamp())
                 .attributes(copyAttributes(event.getAttributes()))
                 .build();
     }
 
-    private SessionTraceStorageStatsDto toTraceStorageStatsDto(TraceStorageStats stats) {
+    private SessionTraceStorageStatsView toTraceStorageStatsDto(TraceStorageStats stats) {
         TraceStorageStats effective = stats != null ? stats : TraceStorageStats.builder().build();
-        return SessionTraceStorageStatsDto.builder()
+        return SessionTraceStorageStatsView.builder()
                 .compressedSnapshotBytes(effective.getCompressedSnapshotBytes())
                 .uncompressedSnapshotBytes(effective.getUncompressedSnapshotBytes())
                 .evictedSnapshots(effective.getEvictedSnapshots())
@@ -349,78 +366,64 @@ public class SessionInspectionService {
                 .build();
     }
 
-    private Map<String, Object> toTraceExportMap(TraceRecord trace) {
-        Map<String, Object> traceMap = new LinkedHashMap<>();
-        traceMap.put("traceId", trace.getTraceId());
-        traceMap.put("rootSpanId", trace.getRootSpanId());
-        traceMap.put("traceName", trace.getTraceName());
-        traceMap.put("startedAt", toTimestamp(trace.getStartedAt()));
-        traceMap.put("endedAt", toTimestamp(trace.getEndedAt()));
-        traceMap.put("truncated", trace.isTruncated());
-        traceMap.put("compressedSnapshotBytes", trace.getCompressedSnapshotBytes());
-        traceMap.put("uncompressedSnapshotBytes", trace.getUncompressedSnapshotBytes());
-        List<Map<String, Object>> spans = getSortedSpans(trace).stream()
-                .map(this::toTraceSpanExportMap)
-                .toList();
-        traceMap.put("spans", spans);
-        return traceMap;
+    private SessionTraceExportView.TraceExportView toTraceExportItem(TraceRecord trace) {
+        return SessionTraceExportView.TraceExportView.builder()
+                .traceId(trace.getTraceId())
+                .rootSpanId(trace.getRootSpanId())
+                .traceName(trace.getTraceName())
+                .startedAt(trace.getStartedAt())
+                .endedAt(trace.getEndedAt())
+                .truncated(trace.isTruncated())
+                .compressedSnapshotBytes(trace.getCompressedSnapshotBytes())
+                .uncompressedSnapshotBytes(trace.getUncompressedSnapshotBytes())
+                .spans(getSortedSpans(trace).stream().map(this::toTraceExportSpan).toList())
+                .build();
     }
 
-    private Map<String, Object> toTraceSpanExportMap(TraceSpanRecord span) {
-        Map<String, Object> spanMap = new LinkedHashMap<>();
-        Map<String, Object> statusMap = new LinkedHashMap<>();
-        statusMap.put("code", span.getStatusCode() != null ? span.getStatusCode().name() : null);
-        statusMap.put("message", span.getStatusMessage());
-        spanMap.put("spanId", span.getSpanId());
-        spanMap.put("parentSpanId", span.getParentSpanId());
-        spanMap.put("name", span.getName());
-        spanMap.put("kind", span.getKind() != null ? span.getKind().name() : null);
-        spanMap.put("status", statusMap);
-        spanMap.put("startedAt", toTimestamp(span.getStartedAt()));
-        spanMap.put("endedAt", toTimestamp(span.getEndedAt()));
-        spanMap.put("durationMs", toDurationMs(span.getStartedAt(), span.getEndedAt()));
-        spanMap.put("attributes", copyAttributes(span.getAttributes()));
-        List<Map<String, Object>> events = span.getEvents() == null
+    private SessionTraceExportView.SpanExportView toTraceExportSpan(TraceSpanRecord span) {
+        List<SessionTraceExportView.EventExportView> events = span.getEvents() == null
                 ? List.of()
-                : span.getEvents().stream().map(this::toTraceEventExportMap).toList();
-        spanMap.put("events", events);
-        List<Map<String, Object>> snapshots = span.getSnapshots() == null
+                : span.getEvents().stream().map(this::toTraceExportEvent).toList();
+        List<SessionTraceExportView.SnapshotExportView> snapshots = span.getSnapshots() == null
                 ? List.of()
-                : span.getSnapshots().stream().map(this::toTraceSnapshotExportMap).toList();
-        spanMap.put("snapshots", snapshots);
-        return spanMap;
+                : span.getSnapshots().stream().map(this::toTraceExportSnapshot).toList();
+        return SessionTraceExportView.SpanExportView.builder()
+                .spanId(span.getSpanId())
+                .parentSpanId(span.getParentSpanId())
+                .name(span.getName())
+                .kind(span.getKind() != null ? span.getKind().name() : null)
+                .status(SessionTraceExportView.StatusView.builder()
+                        .code(span.getStatusCode() != null ? span.getStatusCode().name() : null)
+                        .message(span.getStatusMessage())
+                        .build())
+                .startedAt(span.getStartedAt())
+                .endedAt(span.getEndedAt())
+                .durationMs(toDurationMs(span.getStartedAt(), span.getEndedAt()))
+                .attributes(copyAttributes(span.getAttributes()))
+                .events(events)
+                .snapshots(snapshots)
+                .build();
     }
 
-    private Map<String, Object> toTraceEventExportMap(TraceEventRecord event) {
-        Map<String, Object> eventMap = new LinkedHashMap<>();
-        eventMap.put("name", event.getName());
-        eventMap.put("timestamp", toTimestamp(event.getTimestamp()));
-        eventMap.put("attributes", copyAttributes(event.getAttributes()));
-        return eventMap;
+    private SessionTraceExportView.EventExportView toTraceExportEvent(TraceEventRecord event) {
+        return SessionTraceExportView.EventExportView.builder()
+                .name(event.getName())
+                .timestamp(event.getTimestamp())
+                .attributes(copyAttributes(event.getAttributes()))
+                .build();
     }
 
-    private Map<String, Object> toTraceSnapshotExportMap(TraceSnapshot snapshot) {
-        Map<String, Object> snapshotMap = new LinkedHashMap<>();
-        snapshotMap.put("snapshotId", snapshot.getSnapshotId());
-        snapshotMap.put("role", snapshot.getRole());
-        snapshotMap.put("contentType", snapshot.getContentType());
-        snapshotMap.put("encoding", snapshot.getEncoding());
-        snapshotMap.put("originalSize", snapshot.getOriginalSize());
-        snapshotMap.put("compressedSize", snapshot.getCompressedSize());
-        snapshotMap.put("truncated", snapshot.isTruncated());
-        snapshotMap.put("payloadText", decompressSnapshotPayload(snapshot));
-        return snapshotMap;
-    }
-
-    private Map<String, Object> toTraceStorageStatsMap(TraceStorageStats stats) {
-        SessionTraceStorageStatsDto dto = toTraceStorageStatsDto(stats);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("compressedSnapshotBytes", dto.getCompressedSnapshotBytes());
-        result.put("uncompressedSnapshotBytes", dto.getUncompressedSnapshotBytes());
-        result.put("evictedSnapshots", dto.getEvictedSnapshots());
-        result.put("evictedTraces", dto.getEvictedTraces());
-        result.put("truncatedTraces", dto.getTruncatedTraces());
-        return result;
+    private SessionTraceExportView.SnapshotExportView toTraceExportSnapshot(TraceSnapshot snapshot) {
+        return SessionTraceExportView.SnapshotExportView.builder()
+                .snapshotId(snapshot.getSnapshotId())
+                .role(snapshot.getRole())
+                .contentType(snapshot.getContentType())
+                .encoding(snapshot.getEncoding())
+                .originalSize(snapshot.getOriginalSize())
+                .compressedSize(snapshot.getCompressedSize())
+                .truncated(snapshot.isTruncated())
+                .payloadText(decompressSnapshotPayload(snapshot))
+                .build();
     }
 
     private List<TraceRecord> getSortedTraces(AgentSession session) {
@@ -478,10 +481,6 @@ public class SessionInspectionService {
         return attributes != null ? new LinkedHashMap<>(attributes) : Map.of();
     }
 
-    private String toTimestamp(Instant timestamp) {
-        return timestamp != null ? timestamp.toString() : null;
-    }
-
     private Long toDurationMs(Instant startedAt, Instant endedAt) {
         if (startedAt == null || endedAt == null) {
             return null;
@@ -524,20 +523,71 @@ public class SessionInspectionService {
                 .findFirst();
     }
 
-    private MediaType resolveSnapshotContentType(TraceSnapshot snapshot) {
+    private String resolveSnapshotContentType(TraceSnapshot snapshot) {
         if (snapshot == null || StringValueSupport.isBlank(snapshot.getContentType())) {
-            return MediaType.APPLICATION_JSON;
+            return "application/json";
         }
-        try {
-            return MediaType.parseMediaType(snapshot.getContentType());
-        } catch (IllegalArgumentException _) {
-            return MediaType.APPLICATION_OCTET_STREAM;
+        String contentType = snapshot.getContentType().trim();
+        String baseType = extractContentTypeBase(contentType);
+        if (!CONTENT_TYPE_PATTERN.matcher(baseType).matches() || !hasValidContentTypeParameters(contentType)) {
+            return "application/octet-stream";
         }
+        return contentType;
     }
 
     private String resolveSnapshotFileExtension(TraceSnapshot snapshot) {
-        MediaType contentType = resolveSnapshotContentType(snapshot);
-        return MediaType.APPLICATION_JSON.includes(contentType) ? ".json" : ".txt";
+        String contentType = resolveSnapshotContentType(snapshot);
+        return isJsonContentType(contentType) ? ".json" : ".txt";
+    }
+
+    private String extractContentTypeBase(String contentType) {
+        int separatorIndex = contentType.indexOf(';');
+        if (separatorIndex < 0) {
+            return contentType;
+        }
+        return contentType.substring(0, separatorIndex).trim();
+    }
+
+    private boolean hasValidContentTypeParameters(String contentType) {
+        String[] parts = contentType.split(";");
+        for (int index = 1; index < parts.length; index++) {
+            String parameter = parts[index].trim();
+            if (!isValidContentTypeParameter(parameter)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isValidContentTypeParameter(String parameter) {
+        if (parameter == null || parameter.isEmpty()) {
+            return false;
+        }
+
+        int separatorIndex = parameter.indexOf('=');
+        if (separatorIndex <= 0 || separatorIndex == parameter.length() - 1) {
+            return false;
+        }
+
+        String name = parameter.substring(0, separatorIndex).trim();
+        String value = parameter.substring(separatorIndex + 1).trim();
+        if (name.isEmpty() || value.isEmpty()) {
+            return false;
+        }
+
+        for (int index = 0; index < name.length(); index++) {
+            char character = name.charAt(index);
+            if (!Character.isLetterOrDigit(character)
+                    && CONTENT_TYPE_PARAMETER_NAME_CHARS.indexOf(character) < 0) {
+                return false;
+            }
+        }
+        return value.indexOf(';') < 0;
+    }
+
+    private boolean isJsonContentType(String contentType) {
+        String baseType = extractContentTypeBase(contentType);
+        return "application/json".equalsIgnoreCase(baseType) || baseType.endsWith("+json");
     }
 
     private int resolvePageEndExclusive(List<Message> messages, String beforeMessageId) {
@@ -554,11 +604,11 @@ public class SessionInspectionService {
                 return index;
             }
         }
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "beforeMessageId not found");
+        throw new IllegalArgumentException("beforeMessageId not found");
     }
 
     @SuppressWarnings("unchecked")
-    private List<SessionDetailDto.AttachmentDto> resolveAttachments(Message message) {
+    private List<SessionDetailView.AttachmentView> resolveAttachments(Message message) {
         if (message == null || message.getMetadata() == null) {
             return List.of();
         }
@@ -574,7 +624,7 @@ public class SessionInspectionService {
     }
 
     @SuppressWarnings("unchecked")
-    private SessionDetailDto.AttachmentDto toAttachmentDto(Object attachmentObj) {
+    private SessionDetailView.AttachmentView toAttachmentDto(Object attachmentObj) {
         if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
             return null;
         }
@@ -582,34 +632,21 @@ public class SessionInspectionService {
         String type = readAttachmentString(normalized, "type");
         String name = readAttachmentString(normalized, "name");
         String mimeType = readAttachmentString(normalized, "mimeType");
-        String url = readAttachmentUrl(normalized);
+        String directUrl = readAttachmentString(normalized, "url");
         String internalFilePath = readAttachmentString(normalized, "internalFilePath");
         String thumbnailBase64 = readAttachmentString(normalized, "thumbnailBase64");
-        if (type == null && name == null && mimeType == null && url == null
+        if (type == null && name == null && mimeType == null && directUrl == null
                 && internalFilePath == null && thumbnailBase64 == null) {
             return null;
         }
-        return SessionDetailDto.AttachmentDto.builder()
+        return SessionDetailView.AttachmentView.builder()
                 .type(type)
                 .name(name)
                 .mimeType(mimeType)
-                .url(url)
+                .directUrl(directUrl)
                 .internalFilePath(internalFilePath)
                 .thumbnailBase64(thumbnailBase64)
                 .build();
-    }
-
-    private String readAttachmentUrl(Map<String, Object> attachment) {
-        String directUrl = readAttachmentString(attachment, "url");
-        if (directUrl != null) {
-            return directUrl;
-        }
-        String internalFilePath = readAttachmentString(attachment, "internalFilePath");
-        if (internalFilePath == null) {
-            return null;
-        }
-        String encoded = URLEncoder.encode(internalFilePath, StandardCharsets.UTF_8).replace("+", "%20");
-        return "/api/files/download?path=" + encoded;
     }
 
     private String readAttachmentString(Map<String, Object> attachment, String key) {
@@ -619,6 +656,14 @@ public class SessionInspectionService {
         }
         String normalized = stringValue.trim();
         return normalized.isEmpty() ? null : normalized;
+    }
+
+    private boolean matchesConversationKey(AgentSession session, String conversationKey) {
+        if (session == null || StringValueSupport.isBlank(conversationKey)) {
+            return false;
+        }
+        String resolvedConversationKey = SessionIdentitySupport.resolveConversationKey(session);
+        return conversationKey.equals(resolvedConversationKey) || conversationKey.equals(session.getChatId());
     }
 
     private void repairPointersAfterDelete(String deletedSessionId, AgentSession deletedSession) {
@@ -644,7 +689,7 @@ public class SessionInspectionService {
                 continue;
             }
 
-            String pointerTransportChatId = CHANNEL_TELEGRAM.equals(channel)
+            String pointerTransportChatId = ChannelTypes.TELEGRAM.equals(channel)
                     ? extractTelegramTransportChatId(pointerKey)
                     : null;
             String replacement = SessionConversationSupport.resolveOrCreateConversationKey(
@@ -664,7 +709,7 @@ public class SessionInspectionService {
         if (StringValueSupport.isBlank(pointerKey)) {
             return null;
         }
-        String prefix = CHANNEL_TELEGRAM + "|";
+        String prefix = ChannelTypes.TELEGRAM + "|";
         if (!pointerKey.startsWith(prefix) || pointerKey.length() <= prefix.length()) {
             return null;
         }
@@ -716,6 +761,6 @@ public class SessionInspectionService {
         }
     }
 
-    public record SnapshotPayloadExport(String payloadText, MediaType contentType, String fileExtension) {
+    public record SnapshotPayloadExport(String payloadText, String contentType, String fileExtension) {
     }
 }

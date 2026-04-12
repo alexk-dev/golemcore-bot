@@ -5,13 +5,15 @@ import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSnapshotDto;
 import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
+import me.golemcore.bot.adapter.inbound.web.mapper.SessionWebDtoMapper;
+import me.golemcore.bot.adapter.shared.dto.SessionTraceExportPayload;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.domain.service.SessionInspectionService;
+import me.golemcore.bot.domain.service.SessionSelectionService;
 import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSnapshot;
@@ -28,7 +30,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.test.StepVerifier;
 
-import java.lang.reflect.Method;
 import java.security.Principal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -64,7 +65,8 @@ class SessionsControllerTest {
         compressionService = new TraceSnapshotCompressionService();
         SessionInspectionService inspectionService = new SessionInspectionService(sessionPort, pointerService,
                 compressionService);
-        controller = new SessionsController(sessionPort, pointerService, inspectionService);
+        SessionSelectionService selectionService = new SessionSelectionService(sessionPort, pointerService);
+        controller = new SessionsController(inspectionService, selectionService, new SessionWebDtoMapper());
     }
 
     @Test
@@ -375,46 +377,15 @@ class SessionsControllerTest {
         StepVerifier.create(controller.exportSessionTrace("s-detail"))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> traces = (List<Map<String, Object>>) response.getBody().get("traces");
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> spans = (List<Map<String, Object>>) traces.get(0).get("spans");
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> firstSnapshots = (List<Map<String, Object>>) spans.get(0)
-                            .get("snapshots");
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> secondSnapshots = (List<Map<String, Object>>) spans.get(1)
-                            .get("snapshots");
-                    assertEquals(longPayload, firstSnapshots.get(0).get("payloadText"));
-                    assertNull(secondSnapshots.get(0).get("payloadText"));
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> events = (List<Map<String, Object>>) spans.get(0).get("events");
-                    assertEquals("request.received", events.get(0).get("name"));
+                    SessionTraceExportPayload body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(longPayload, body.getTraces().get(0).getSpans().get(0).getSnapshots().get(0)
+                            .getPayloadText());
+                    assertNull(body.getTraces().get(0).getSpans().get(1).getSnapshots().get(0).getPayloadText());
+                    assertEquals("request.received", body.getTraces().get(0).getSpans().get(0).getEvents().get(0)
+                            .getName());
                 })
                 .verifyComplete();
-    }
-
-    @Test
-    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
-    void shouldHideSnapshotPreviewWhenPreviewDisabled() throws Exception {
-        TraceSnapshot snapshot = TraceSnapshot.builder()
-                .snapshotId("snap-hidden")
-                .role("request")
-                .contentType("text/plain")
-                .encoding("zstd")
-                .compressedPayload(compressionService.compress("hidden".getBytes(StandardCharsets.UTF_8)))
-                .originalSize(6L)
-                .compressedSize(18L)
-                .build();
-
-        Method method = SessionsController.class.getDeclaredMethod(
-                "toTraceSnapshotDto", TraceSnapshot.class, boolean.class);
-        method.setAccessible(true);
-        SessionTraceSnapshotDto dto = (SessionTraceSnapshotDto) method.invoke(controller, snapshot, false);
-
-        assertFalse(dto.isPayloadAvailable());
-        assertNull(dto.getPayloadPreview());
-        assertFalse(dto.isPayloadPreviewTruncated());
     }
 
     @Test
@@ -458,16 +429,11 @@ class SessionsControllerTest {
         StepVerifier.create(controller.exportSessionTrace("s-export"))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
-                    assertNotNull(response.getBody());
-                    assertEquals("s-export", response.getBody().get("sessionId"));
-                    assertTrue(response.getBody().containsKey("traces"));
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> traces = (List<Map<String, Object>>) response.getBody().get("traces");
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> spans = (List<Map<String, Object>>) traces.get(0).get("spans");
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> snapshots = (List<Map<String, Object>>) spans.get(0).get("snapshots");
-                    assertEquals("{\"answer\":\"ok\"}", snapshots.get(0).get("payloadText"));
+                    SessionTraceExportPayload body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals("s-export", body.getSessionId());
+                    assertEquals("{\"answer\":\"ok\"}",
+                            body.getTraces().get(0).getSpans().get(0).getSnapshots().get(0).getPayloadText());
                 })
                 .verifyComplete();
     }
@@ -712,6 +678,56 @@ class SessionsControllerTest {
                     assertEquals("application/json", response.getHeaders().getContentType().toString());
                     assertTrue(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION)
                             .endsWith("snap-json-default.json\""));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldPreserveParameterizedContentTypeWhenExportingSnapshotPayload() {
+        String payloadText = "{\"answer\":\"ok\"}";
+        TraceSnapshot snapshot = TraceSnapshot.builder()
+                .snapshotId("snap-json-charset")
+                .role("response")
+                .contentType("application/json; charset=utf-8")
+                .encoding("zstd")
+                .compressedPayload(compressionService.compress(payloadText.getBytes(StandardCharsets.UTF_8)))
+                .originalSize((long) payloadText.length())
+                .compressedSize(24L)
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("s-json-charset")
+                .channelType("web")
+                .chatId("chat-8")
+                .createdAt(Instant.parse("2026-03-20T09:59:00Z"))
+                .updatedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                .traces(List.of(TraceRecord.builder()
+                        .traceId("trace-json-charset")
+                        .rootSpanId("span-root")
+                        .traceName("web.message")
+                        .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                        .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                        .spans(List.of(TraceSpanRecord.builder()
+                                .spanId("span-root")
+                                .name("response.route")
+                                .kind(TraceSpanKind.OUTBOUND)
+                                .statusCode(TraceStatusCode.OK)
+                                .startedAt(Instant.parse("2026-03-20T10:00:00Z"))
+                                .endedAt(Instant.parse("2026-03-20T10:00:01Z"))
+                                .snapshots(List.of(snapshot))
+                                .build()))
+                        .build()))
+                .messages(List.of())
+                .build();
+        when(sessionPort.get("s-json-charset")).thenReturn(Optional.of(session));
+
+        StepVerifier.create(controller.exportSessionTraceSnapshotPayload("s-json-charset", "snap-json-charset"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(payloadText, response.getBody());
+                    assertEquals("application/json;charset=utf-8",
+                            response.getHeaders().getContentType().toString());
+                    assertTrue(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION)
+                            .endsWith("snap-json-charset.json\""));
                 })
                 .verifyComplete();
     }
@@ -1035,10 +1051,13 @@ class SessionsControllerTest {
                 .id("web:abc-session")
                 .channelType("web")
                 .chatId("abc-session")
+                .metadata(new java.util.HashMap<>())
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .messages(List.of())
                 .build();
+        session.getMetadata().put(ContextAttributes.CONVERSATION_KEY, "abc-session");
+        session.getMetadata().put(ContextAttributes.WEB_CLIENT_INSTANCE_ID, "client-1");
         when(sessionPort.listByChannelType("web")).thenReturn(List.of(session));
         when(pointerService.buildWebPointerKey("admin", "client-1")).thenReturn("web|admin|client-1");
         when(pointerService.getActiveConversationKey("web|admin|client-1"))
@@ -1165,6 +1184,7 @@ class SessionsControllerTest {
 
         verify(sessionPort).save(session);
         verify(pointerService).setActiveConversationKey("web|admin|client-1", "new-session");
+        assertEquals("client-1", session.getMetadata().get(ContextAttributes.WEB_CLIENT_INSTANCE_ID));
     }
 
     @Test
@@ -1230,6 +1250,21 @@ class SessionsControllerTest {
     }
 
     @Test
+    void shouldRejectCreateSessionWithoutClientInstanceId() {
+        CreateSessionRequest request = CreateSessionRequest.builder()
+                .channelType("web")
+                .conversationKey("new-session")
+                .activate(true)
+                .build();
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> controller.createSession(request, () -> "admin"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        verify(sessionPort, never()).save(any(AgentSession.class));
+    }
+
+    @Test
     void shouldCreateSessionWithoutActivationWhenRequested() {
         AgentSession session = AgentSession.builder()
                 .id("web:new-passive")
@@ -1279,9 +1314,11 @@ class SessionsControllerTest {
                 .id("web:valid-session-123")
                 .channelType("web")
                 .chatId("valid-session-123")
+                .metadata(new java.util.HashMap<>())
                 .updatedAt(Instant.parse("2026-02-22T10:00:00Z"))
                 .messages(List.of())
                 .build();
+        fallback.getMetadata().put(ContextAttributes.WEB_CLIENT_INSTANCE_ID, "client-1");
         when(sessionPort.listByChannelType("web")).thenReturn(List.of(fallback));
 
         StepVerifier.create(controller.getActiveSession("web", "client-1", null, () -> "admin"))

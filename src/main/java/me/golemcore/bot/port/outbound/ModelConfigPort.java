@@ -18,7 +18,7 @@ package me.golemcore.bot.port.outbound;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.infrastructure.config.ModelConfigService.ModelSettings;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 
 import java.util.List;
 import java.util.Map;
@@ -32,13 +32,13 @@ public interface ModelConfigPort {
     /**
      * Look up settings for a model by name. Throws if not found in the catalog.
      */
-    ModelSettings getModelSettings(String modelName);
+    ModelCatalogEntry getModelSettings(String modelName);
 
     /** All registered models. */
-    Map<String, ModelSettings> getAllModels();
+    Map<String, ModelCatalogEntry> getAllModels();
 
     /** Models filtered by provider names. */
-    Map<String, ModelSettings> getModelsForProviders(List<String> providers);
+    Map<String, ModelCatalogEntry> getModelsForProviders(List<String> providers);
 
     /** Provider id for a model. */
     String getProvider(String modelName);

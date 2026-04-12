@@ -195,7 +195,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     @Test
     void shouldPollOwnedRuntimeAndObserveRecoveryAfterStartupTimeout() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
-        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, true);
+        supervisor.setCurrentStatus(status(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, true));
 
         bridge.runWatchdogTick();
 
@@ -208,7 +208,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     @Test
     void shouldRecheckStartupWhenStatusIsMissingDuringWatchdogTick() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
-        supervisor.currentStatus = null;
+        supervisor.clearCurrentStatus();
 
         bridge.runWatchdogTick();
 
@@ -220,7 +220,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     @Test
     void shouldAttemptScheduledRetryAfterOwnedCrashDetection() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
-        supervisor.currentStatus = status(ManagedLocalOllamaState.OWNED_READY, true);
+        supervisor.setCurrentStatus(status(ManagedLocalOllamaState.OWNED_READY, true));
         supervisor.pollOwnedProcessStatus = status(ManagedLocalOllamaState.DEGRADED_CRASHED, true);
 
         bridge.runWatchdogTick();
@@ -233,7 +233,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     @Test
     void shouldRecheckStartupForExternalStartTimeoutState() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
-        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, false);
+        supervisor.setCurrentStatus(status(ManagedLocalOllamaState.DEGRADED_START_TIMEOUT, false));
 
         bridge.runWatchdogTick();
 
@@ -245,7 +245,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     @Test
     void shouldPollExternalRuntimeWhenUsingExternalOwnership() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
-        supervisor.currentStatus = status(ManagedLocalOllamaState.EXTERNAL_READY, false);
+        supervisor.setCurrentStatus(status(ManagedLocalOllamaState.EXTERNAL_READY, false));
 
         bridge.runWatchdogTick();
 
@@ -257,7 +257,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     @Test
     void shouldRetryExternalRecoveryWithoutTakingOwnership() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
-        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_EXTERNAL_LOST, false);
+        supervisor.setCurrentStatus(status(ManagedLocalOllamaState.DEGRADED_EXTERNAL_LOST, false));
 
         bridge.runWatchdogTick();
 
@@ -269,7 +269,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     @Test
     void shouldMonitorOwnedOutdatedRuntimeAndRetryWhenPollSchedulesBackoff() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
-        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_OUTDATED, true);
+        supervisor.setCurrentStatus(status(ManagedLocalOllamaState.DEGRADED_OUTDATED, true));
         supervisor.pollOwnedProcessStatus = status(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF, true);
 
         bridge.runWatchdogTick();
@@ -282,7 +282,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     @Test
     void shouldPollExternalRuntimeForOutdatedExternalRuntime() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
-        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_OUTDATED, false);
+        supervisor.setCurrentStatus(status(ManagedLocalOllamaState.DEGRADED_OUTDATED, false));
 
         bridge.runWatchdogTick();
 
@@ -294,7 +294,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     @Test
     void shouldMarkSupervisorDisabledWhenManagedLocalEmbeddingsAreInactive() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(false));
-        supervisor.currentStatus = status(ManagedLocalOllamaState.OWNED_READY, true);
+        supervisor.setCurrentStatus(status(ManagedLocalOllamaState.OWNED_READY, true));
 
         bridge.runWatchdogTick();
 
@@ -307,7 +307,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     @Test
     void shouldIgnoreStoppingStateDuringWatchdogTick() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
-        supervisor.currentStatus = status(ManagedLocalOllamaState.STOPPING, true);
+        supervisor.setCurrentStatus(status(ManagedLocalOllamaState.STOPPING, true));
 
         bridge.runWatchdogTick();
 
@@ -320,7 +320,7 @@ class ManagedLocalOllamaLifecycleBridgeTest {
     @Test
     void shouldIgnoreMissingBinaryStateDuringWatchdogTick() {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(localEmbeddingsConfig(true));
-        supervisor.currentStatus = status(ManagedLocalOllamaState.DEGRADED_MISSING_BINARY, false);
+        supervisor.setCurrentStatus(status(ManagedLocalOllamaState.DEGRADED_MISSING_BINARY, false));
 
         bridge.runWatchdogTick();
 
@@ -457,10 +457,11 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         private Duration lastRefreshStartupWindow;
         private Duration lastRefreshInitialRestartBackoff;
         private String lastRefreshMinimumSupportedVersion;
-        private ManagedLocalOllamaStatus currentStatus = ManagedLocalOllamaStatus.builder()
+        private ManagedLocalOllamaStatus statusSnapshot = ManagedLocalOllamaStatus.builder()
                 .currentState(ManagedLocalOllamaState.DISABLED)
                 .owned(false)
                 .build();
+        private boolean statusAvailable = true;
         private ManagedLocalOllamaStatus pollOwnedProcessStatus;
 
         private RecordingSupervisor() {
@@ -477,47 +478,49 @@ class ManagedLocalOllamaLifecycleBridgeTest {
         public ManagedLocalOllamaStatus startupCheck(boolean localEmbeddingsActive) {
             startupCheckInvocations++;
             lastLocalEmbeddingsActive = localEmbeddingsActive;
-            return currentStatus;
+            return currentStatus();
         }
 
         @Override
         public ManagedLocalOllamaStatus stop() {
             stopInvoked = true;
-            return currentStatus;
+            return currentStatus();
         }
 
         @Override
         public ManagedLocalOllamaStatus embeddingsDisabled() {
             embeddingsDisabledInvocations++;
-            currentStatus = status(ManagedLocalOllamaState.DISABLED, Boolean.TRUE.equals(currentStatus.getOwned()));
-            return currentStatus;
+            statusSnapshot = status(ManagedLocalOllamaState.DISABLED, Boolean.TRUE.equals(currentStatus().getOwned()));
+            statusAvailable = true;
+            return currentStatus();
         }
 
         @Override
         public ManagedLocalOllamaStatus pollOwnedProcess() {
             pollOwnedProcessInvocations++;
             if (pollOwnedProcessStatus != null) {
-                currentStatus = pollOwnedProcessStatus;
+                statusSnapshot = pollOwnedProcessStatus;
+                statusAvailable = true;
             }
-            return currentStatus;
+            return currentStatus();
         }
 
         @Override
         public ManagedLocalOllamaStatus observeReadiness() {
             observeReadinessInvocations++;
-            return currentStatus;
+            return currentStatus();
         }
 
         @Override
         public ManagedLocalOllamaStatus pollExternalRuntime() {
             pollExternalRuntimeInvocations++;
-            return currentStatus;
+            return currentStatus();
         }
 
         @Override
         public ManagedLocalOllamaStatus attemptScheduledRetry() {
             attemptScheduledRetryInvocations++;
-            return currentStatus;
+            return currentStatus();
         }
 
         @Override
@@ -539,26 +542,35 @@ class ManagedLocalOllamaLifecycleBridgeTest {
                     minimumSupportedVersion);
         }
 
+        public void setCurrentStatus(ManagedLocalOllamaStatus currentStatus) {
+            statusSnapshot = currentStatus;
+            statusAvailable = true;
+        }
+
+        public void clearCurrentStatus() {
+            statusAvailable = false;
+        }
+
         @Override
         public ManagedLocalOllamaStatus currentStatus() {
-            return currentStatus;
+            return statusAvailable ? statusSnapshot : null;
         }
     }
 
     private static final class NoopRuntimeProbePort implements OllamaRuntimeProbePort {
 
         @Override
-        public boolean isRuntimeReachable(String endpoint, java.time.Duration timeout) {
+        public boolean isRuntimeReachable(String endpoint, Duration timeout) {
             return false;
         }
 
         @Override
-        public String getRuntimeVersion(String endpoint, java.time.Duration timeout) {
+        public String getRuntimeVersion(String endpoint, Duration timeout) {
             return null;
         }
 
         @Override
-        public boolean hasModel(String endpoint, String model, java.time.Duration timeout) {
+        public boolean hasModel(String endpoint, String model, Duration timeout) {
             return false;
         }
     }
@@ -673,10 +685,10 @@ class ManagedLocalOllamaLifecycleBridgeTest {
 
     private static final class BridgeMutableClock extends Clock {
 
-        private Instant instant;
+        private Instant currentInstant;
 
         private BridgeMutableClock(Instant instant) {
-            this.instant = instant;
+            this.currentInstant = instant;
         }
 
         @Override
@@ -691,11 +703,11 @@ class ManagedLocalOllamaLifecycleBridgeTest {
 
         @Override
         public Instant instant() {
-            return instant;
+            return currentInstant;
         }
 
         private void advance(Duration duration) {
-            instant = instant.plus(duration);
+            currentInstant = currentInstant.plus(duration);
         }
     }
 }

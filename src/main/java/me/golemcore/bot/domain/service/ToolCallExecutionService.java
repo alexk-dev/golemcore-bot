@@ -1,19 +1,6 @@
 package me.golemcore.bot.domain.service;
 
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.component.ToolComponent;
-import me.golemcore.bot.domain.loop.AgentContextHolder;
-import me.golemcore.bot.domain.model.AgentContext;
-import me.golemcore.bot.domain.model.Attachment;
-import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.model.ToolArtifact;
-import me.golemcore.bot.domain.model.ToolFailureKind;
-import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.port.outbound.ConfirmationPort;
-import org.springframework.stereotype.Component;
-
 import java.util.Base64;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -25,6 +12,18 @@ import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.loop.AgentContextHolder;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.Attachment;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolArtifact;
+import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.port.outbound.ConfirmationPort;
+import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
+import org.springframework.stereotype.Component;
 
 /**
  * Pure tool-call execution service: executes tools + confirmation gating +
@@ -43,13 +42,13 @@ public class ToolCallExecutionService {
     private final Map<String, ToolComponent> toolRegistry;
     private final ToolConfirmationPolicy confirmationPolicy;
     private final ConfirmationPort confirmationPort;
-    private final BotProperties properties;
+    private final ToolRuntimeSettingsPort settingsPort;
     private final ToolArtifactService toolArtifactService;
 
     public ToolCallExecutionService(List<ToolComponent> toolComponents,
             ToolConfirmationPolicy confirmationPolicy,
             ConfirmationPort confirmationPort,
-            BotProperties properties,
+            ToolRuntimeSettingsPort settingsPort,
             ToolArtifactService toolArtifactService) {
         this.toolRegistry = new ConcurrentHashMap<>();
         for (ToolComponent tool : toolComponents) {
@@ -57,7 +56,7 @@ public class ToolCallExecutionService {
         }
         this.confirmationPolicy = confirmationPolicy;
         this.confirmationPort = confirmationPort;
-        this.properties = properties;
+        this.settingsPort = settingsPort;
         this.toolArtifactService = toolArtifactService;
     }
 
@@ -245,7 +244,7 @@ public class ToolCallExecutionService {
         if (content == null) {
             return null;
         }
-        int maxChars = properties.getAutoCompact().getMaxToolResultChars();
+        int maxChars = settingsPort.toolExecution().maxToolResultChars();
         if (maxChars <= 0 || content.length() <= maxChars) {
             return content;
         }

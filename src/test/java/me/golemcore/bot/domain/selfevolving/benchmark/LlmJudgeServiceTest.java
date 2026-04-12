@@ -14,6 +14,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionService;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -43,6 +44,7 @@ class LlmJudgeServiceTest {
     private RuntimeConfigService runtimeConfigService;
     private SessionService sessionService;
     private TraceService traceService;
+    private TraceSnapshotCodecPort traceSnapshotCodecPort;
     private LlmJudgeService llmJudgeService;
 
     @BeforeEach
@@ -53,6 +55,7 @@ class LlmJudgeServiceTest {
         runtimeConfigService = mock(RuntimeConfigService.class);
         sessionService = mock(SessionService.class);
         traceService = mock(TraceService.class);
+        traceSnapshotCodecPort = new FakeTraceSnapshotCodecPort();
         RuntimeConfig.SelfEvolvingJudgeConfig judgeConfig = RuntimeConfig.SelfEvolvingJudgeConfig.builder()
                 .enabled(true)
                 .requireEvidenceAnchors(true)
@@ -80,7 +83,7 @@ class LlmJudgeServiceTest {
                         .spanId("llm-span-1")
                         .build());
         llmJudgeService = new LlmJudgeService(llmPort, judgeTierResolver, judgeTraceDigestService,
-                runtimeConfigService, sessionService, traceService);
+                runtimeConfigService, sessionService, traceService, traceSnapshotCodecPort);
     }
 
     @Test

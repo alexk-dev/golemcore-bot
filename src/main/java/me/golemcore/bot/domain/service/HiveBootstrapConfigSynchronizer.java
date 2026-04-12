@@ -23,7 +23,7 @@ import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class HiveBootstrapConfigSynchronizer {
 
-    private final BotProperties botProperties;
+    private final HiveBootstrapSettingsPort hiveBootstrapSettingsPort;
     private final RuntimeConfigService runtimeConfigService;
 
     @PostConstruct
@@ -44,7 +44,7 @@ public class HiveBootstrapConfigSynchronizer {
     }
 
     public String getManagedJoinCode() {
-        return normalizeOptionalString(botProperties.getHive().getJoinCode());
+        return normalizeOptionalString(hiveBootstrapSettingsPort.joinCode());
     }
 
     public void synchronize() {
@@ -67,8 +67,8 @@ public class HiveBootstrapConfigSynchronizer {
         boolean managed = hasManagedBootstrapOverrides();
         Boolean enabled = resolveEnabled(baseline.getEnabled());
         String serverUrl = resolveServerUrl(baseline.getServerUrl());
-        String displayName = resolveString(botProperties.getHive().getDisplayName(), baseline.getDisplayName());
-        String hostLabel = resolveString(botProperties.getHive().getHostLabel(), baseline.getHostLabel());
+        String displayName = resolveString(hiveBootstrapSettingsPort.displayName(), baseline.getDisplayName());
+        String hostLabel = resolveString(hiveBootstrapSettingsPort.hostLabel(), baseline.getHostLabel());
         Boolean autoConnect = resolveAutoConnect(baseline.getAutoConnect());
         return RuntimeConfig.HiveConfig.builder()
                 .enabled(enabled)
@@ -81,16 +81,16 @@ public class HiveBootstrapConfigSynchronizer {
     }
 
     private boolean hasManagedBootstrapOverrides() {
-        return botProperties.getHive().getEnabled() != null
-                || botProperties.getHive().getAutoConnectOnStartup() != null
-                || normalizeOptionalString(botProperties.getHive().getJoinCode()) != null
-                || normalizeOptionalString(botProperties.getHive().getDisplayName()) != null
-                || normalizeOptionalString(botProperties.getHive().getHostLabel()) != null;
+        return hiveBootstrapSettingsPort.enabled() != null
+                || hiveBootstrapSettingsPort.autoConnectOnStartup() != null
+                || normalizeOptionalString(hiveBootstrapSettingsPort.joinCode()) != null
+                || normalizeOptionalString(hiveBootstrapSettingsPort.displayName()) != null
+                || normalizeOptionalString(hiveBootstrapSettingsPort.hostLabel()) != null;
     }
 
     private Boolean resolveEnabled(Boolean currentEnabled) {
-        if (botProperties.getHive().getEnabled() != null) {
-            return botProperties.getHive().getEnabled();
+        if (hiveBootstrapSettingsPort.enabled() != null) {
+            return hiveBootstrapSettingsPort.enabled();
         }
         if (getManagedJoinCode() != null) {
             return true;
@@ -99,8 +99,8 @@ public class HiveBootstrapConfigSynchronizer {
     }
 
     private Boolean resolveAutoConnect(Boolean currentAutoConnect) {
-        if (botProperties.getHive().getAutoConnectOnStartup() != null) {
-            return botProperties.getHive().getAutoConnectOnStartup();
+        if (hiveBootstrapSettingsPort.autoConnectOnStartup() != null) {
+            return hiveBootstrapSettingsPort.autoConnectOnStartup();
         }
         return currentAutoConnect != null ? currentAutoConnect : false;
     }

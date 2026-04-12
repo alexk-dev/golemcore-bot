@@ -9,10 +9,8 @@ import type {
   SelfEvolvingArtifactTransitionDiff,
   SelfEvolvingArtifactWorkspaceSummary,
 } from '../../api/selfEvolving';
-import {
-  SelfEvolvingArtifactCompareToolbar,
-  type SelfEvolvingArtifactCompareMode,
-} from './SelfEvolvingArtifactCompareToolbar';
+import { SelfEvolvingArtifactCompareToolbar } from './SelfEvolvingArtifactCompareToolbar';
+import type { SelfEvolvingArtifactCompareMode } from './SelfEvolvingArtifactCompareTypes';
 import { SelfEvolvingArtifactBenchmarkImpactPanel } from './SelfEvolvingArtifactBenchmarkImpactPanel';
 import { SelfEvolvingArtifactCatalog } from './SelfEvolvingArtifactCatalog';
 import { SelfEvolvingArtifactDiffTabs } from './SelfEvolvingArtifactDiffTabs';

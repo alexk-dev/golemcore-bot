@@ -27,7 +27,9 @@ class UpdateRuntimeCleanupServiceTest {
         Files.writeString(tempDir.resolve("current.txt"), "bot-0.4.2.jar\n", StandardCharsets.UTF_8);
         Files.writeString(tempDir.resolve("staged.txt"), "bot-0.4.3.jar\n", StandardCharsets.UTF_8);
 
-        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(botProperties);
+        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                new LocalTestWorkspaceFilePort());
         service.cleanupAfterSuccessfulStartup();
 
         assertFalse(Files.exists(jarsDir.resolve("bot-0.4.1.jar")));
@@ -48,7 +50,9 @@ class UpdateRuntimeCleanupServiceTest {
         Files.writeString(tempDir.resolve("current.txt"), "bot-0.4.2.jar\n", StandardCharsets.UTF_8);
         Files.writeString(tempDir.resolve("staged.txt"), "bot-0.4.2.jar\n", StandardCharsets.UTF_8);
 
-        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(botProperties);
+        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                new LocalTestWorkspaceFilePort());
         service.cleanupAfterSuccessfulStartup();
 
         assertFalse(Files.exists(tempDir.resolve("staged.txt")));
@@ -66,8 +70,10 @@ class UpdateRuntimeCleanupServiceTest {
         Files.createDirectories(jarsDir);
         Files.writeString(jarsDir.resolve("bot-0.4.2.jar"), "current", StandardCharsets.UTF_8);
 
-        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(botProperties);
-        service.onApplicationReady();
+        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                new LocalTestWorkspaceFilePort());
+        service.cleanupAfterSuccessfulStartup();
 
         assertTrue(Files.exists(jarsDir.resolve("bot-0.4.2.jar")));
     }
@@ -78,9 +84,11 @@ class UpdateRuntimeCleanupServiceTest {
         botProperties.getUpdate().setEnabled(true);
         botProperties.getUpdate().setUpdatesPath(tempDir.toString());
 
-        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(botProperties);
+        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                new LocalTestWorkspaceFilePort());
 
-        service.onApplicationReady();
+        service.cleanupAfterSuccessfulStartup();
 
         assertFalse(Files.exists(tempDir.resolve("jars")));
     }
@@ -97,7 +105,9 @@ class UpdateRuntimeCleanupServiceTest {
         Files.createDirectories(tempDir.resolve("current.txt"));
         Files.createDirectories(tempDir.resolve("staged.txt"));
 
-        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(botProperties);
+        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                new LocalTestWorkspaceFilePort());
         service.cleanupAfterSuccessfulStartup();
 
         assertFalse(Files.exists(jarsDir.resolve("bot-0.4.1.jar")));

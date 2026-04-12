@@ -1,17 +1,11 @@
 package me.golemcore.bot.domain.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import org.springframework.stereotype.Service;
-
-import me.golemcore.bot.port.outbound.StoragePort;
-
-import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import me.golemcore.bot.port.outbound.PluginConfigurationStorePort;
+import org.springframework.stereotype.Service;
 
 /**
  * Stores plugin-owned configuration separately from engine runtime config.
@@ -19,24 +13,16 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class PluginConfigurationService {
 
-    private static final String PREFERENCES_DIR = "preferences";
-    private static final String PLUGINS_PREFIX = "plugins/";
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
-    };
-
-    private final StoragePort storagePort;
-    private final ObjectMapper objectMapper;
+    private final PluginConfigurationStorePort pluginConfigurationStorePort;
     private final Map<String, Map<String, Object>> cache = new ConcurrentHashMap<>();
 
-    public PluginConfigurationService(StoragePort storagePort) {
-        this.storagePort = storagePort;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
+    public PluginConfigurationService(PluginConfigurationStorePort pluginConfigurationStorePort) {
+        this.pluginConfigurationStorePort = pluginConfigurationStorePort;
     }
 
     public boolean hasPluginConfig(String pluginId) {
         String normalized = normalizePluginId(pluginId);
-        return storagePort.exists(PREFERENCES_DIR, pathFor(normalized)).join();
+        return pluginConfigurationStorePort.hasConfig(normalized);
     }
 
     public synchronized Map<String, Object> getPluginConfig(String pluginId) {
@@ -46,38 +32,21 @@ public class PluginConfigurationService {
             return copyMap(cached);
         }
 
-        String json = storagePort.getText(PREFERENCES_DIR, pathFor(normalized)).join();
-        if (json == null || json.isBlank()) {
-            Map<String, Object> empty = new LinkedHashMap<>();
-            cache.put(normalized, empty);
-            return new LinkedHashMap<>();
-        }
-
-        try {
-            Map<String, Object> config = objectMapper.readValue(json, MAP_TYPE);
-            Map<String, Object> normalizedConfig = config != null ? config : new LinkedHashMap<>();
-            cache.put(normalized, normalizedConfig);
-            return copyMap(normalizedConfig);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to read plugin config for " + normalized, e);
-        }
+        Map<String, Object> normalizedConfig = pluginConfigurationStorePort.loadConfig(normalized);
+        cache.put(normalized, normalizedConfig);
+        return copyMap(normalizedConfig);
     }
 
     public synchronized void savePluginConfig(String pluginId, Map<String, Object> config) {
         String normalized = normalizePluginId(pluginId);
         Map<String, Object> normalizedConfig = copyMap(config != null ? config : Map.of());
-        try {
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(normalizedConfig);
-            storagePort.putTextAtomic(PREFERENCES_DIR, pathFor(normalized), json, true).join();
-            cache.put(normalized, normalizedConfig);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to write plugin config for " + normalized, e);
-        }
+        pluginConfigurationStorePort.saveConfig(normalized, normalizedConfig);
+        cache.put(normalized, normalizedConfig);
     }
 
     public synchronized void deletePluginConfig(String pluginId) {
         String normalized = normalizePluginId(pluginId);
-        storagePort.deleteObject(PREFERENCES_DIR, pathFor(normalized)).join();
+        pluginConfigurationStorePort.deleteConfig(normalized);
         cache.remove(normalized);
     }
 
@@ -106,10 +75,6 @@ public class PluginConfigurationService {
             return bytes.clone();
         }
         return value;
-    }
-
-    private String pathFor(String pluginId) {
-        return PLUGINS_PREFIX + pluginId + ".json";
     }
 
     private String normalizePluginId(String pluginId) {

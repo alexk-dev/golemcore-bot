@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Locale;
 import me.golemcore.bot.domain.service.StringValueSupport;
 
 /**
@@ -201,7 +202,7 @@ public class LlmEvolutionService {
     }
 
     private String buildSuccessfulToolInstructions(String successFocus) {
-        String normalizedFocus = StringValueSupport.nullSafe(successFocus).toLowerCase();
+        String normalizedFocus = StringValueSupport.nullSafe(successFocus).toLowerCase(Locale.ROOT);
         if (normalizedFocus.contains("shell")
                 || normalizedFocus.contains("command")
                 || normalizedFocus.contains("tool")) {

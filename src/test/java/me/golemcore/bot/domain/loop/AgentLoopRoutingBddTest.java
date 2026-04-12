@@ -31,8 +31,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -46,6 +45,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static me.golemcore.bot.support.ChannelRuntimeTestSupport.responseRoutingSystem;
+import static me.golemcore.bot.support.ChannelRuntimeTestSupport.runtime;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -127,8 +128,7 @@ class AgentLoopRoutingBddTest {
 
         // Use a real ResponseRoutingSystem so AgentLoop's instanceof check works.
         VoiceResponseHandler voiceHandler = mock(VoiceResponseHandler.class);
-        ResponseRoutingSystem routing = new ResponseRoutingSystem(
-                new ChannelRegistry(List.of(channel)), preferencesService, voiceHandler);
+        ResponseRoutingSystem routing = responseRoutingSystem(List.of(channel), preferencesService, voiceHandler);
 
         AgentLoop loop = createLoop(
                 sessionPort,
@@ -173,7 +173,7 @@ class AgentLoopRoutingBddTest {
                 sessionPort,
                 rateLimitPort,
                 systems,
-                new ChannelRegistry(channels),
+                runtime(channels),
                 runtimeConfigService,
                 preferencesService,
                 llmPort,

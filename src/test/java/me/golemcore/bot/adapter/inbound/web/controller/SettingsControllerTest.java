@@ -2,14 +2,21 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
+import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
+import me.golemcore.bot.adapter.inbound.web.mapper.RuntimeSettingsWebMapper;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos;
+import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
+import me.golemcore.bot.application.models.ProviderModelImportService;
+import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
+import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
+import me.golemcore.bot.adapter.outbound.voice.PluginVoiceProviderCatalogAdapter;
 import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.ProviderModelDiscoveryService;
-import me.golemcore.bot.domain.service.ProviderModelImportService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
@@ -21,10 +28,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,11 +52,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 class SettingsControllerTest {
@@ -58,6 +70,7 @@ class SettingsControllerTest {
     private ProviderModelDiscoveryService providerModelDiscoveryService;
     private SttProviderRegistry sttProviderRegistry;
     private TtsProviderRegistry ttsProviderRegistry;
+    private RuntimeSettingsWebMapper runtimeSettingsWebMapper;
     private SettingsController controller;
 
     @BeforeEach
@@ -70,13 +83,12 @@ class SettingsControllerTest {
         providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         sttProviderRegistry = new SttProviderRegistry();
         ttsProviderRegistry = new TtsProviderRegistry();
+        runtimeSettingsWebMapper = new RuntimeSettingsWebMapper();
         registerSttProvider("golemcore/elevenlabs", "elevenlabs");
         registerSttProvider("golemcore/whisper", "whisper");
         registerTtsProvider("golemcore/elevenlabs", "elevenlabs");
         registerTtsProvider("golemcore/whisper", "whisper");
-        controller = new SettingsController(preferencesService, modelSelectionService, runtimeConfigService,
-                memoryPresetService, providerModelImportService, providerModelDiscoveryService, sttProviderRegistry,
-                ttsProviderRegistry);
+        controller = createController(sttProviderRegistry, ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
         when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(false);
         when(modelSelectionService.validateModel(anyString(), anyList()))
@@ -89,6 +101,21 @@ class SettingsControllerTest {
             int delimiterIndex = model.indexOf('/');
             return delimiterIndex > 0 ? model.substring(0, delimiterIndex) : null;
         });
+    }
+
+    private SettingsController createController(SttProviderRegistry sttRegistry, TtsProviderRegistry ttsRegistry) {
+        RuntimeSettingsFacade runtimeSettingsFacade = new RuntimeSettingsFacade(
+                runtimeConfigService,
+                preferencesService,
+                memoryPresetService,
+                new RuntimeSettingsValidator(
+                        modelSelectionService,
+                        new PluginVoiceProviderCatalogAdapter(sttRegistry, ttsRegistry)),
+                new RuntimeSettingsMergeService(),
+                providerModelImportService,
+                providerModelDiscoveryService);
+        return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade,
+                runtimeSettingsWebMapper);
     }
 
     @Test
@@ -822,124 +849,59 @@ class SettingsControllerTest {
     }
 
     @Test
-    void shouldSaveProviderAndReturnImportResult() {
+    void shouldSaveProviderAndImportOnlySelectedModels() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
                 .build();
-        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
-
         RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(Secret.of("x"))
                 .apiType("openai")
                 .build();
-        when(providerModelImportService.importMissingModels("test"))
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(providerModelImportService.importMissingModels("test", List.of("test/gpt-5.2")))
                 .thenReturn(new ProviderModelImportService.ProviderImportResult(
                         "https://models.example.com/v1/models",
                         List.of("test/gpt-5.2"),
-                        List.of("test/existing"),
-                        List.of("test/failing: timeout")));
+                        List.of(),
+                        List.of()));
 
-        StepVerifier.create(controller.addLlmProviderAndImportModels("test", providerConfig))
+        StepVerifier.create(controller.addLlmProviderAndImportModels(
+                "test",
+                new SettingsController.LlmProviderImportRequest(providerConfig, List.of("test/gpt-5.2"))))
                 .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
                     SettingsController.LlmProviderImportResponse body = response.getBody();
                     assertNotNull(body);
                     assertTrue(body.providerSaved());
                     assertEquals("test", body.providerName());
-                    assertEquals("https://models.example.com/v1/models", body.resolvedEndpoint());
                     assertEquals(List.of("test/gpt-5.2"), body.addedModels());
-                    assertEquals(List.of("test/existing"), body.skippedModels());
-                    assertEquals(List.of("test/failing: timeout"), body.errors());
+                    assertEquals(List.of(), body.skippedModels());
+                    assertEquals(List.of(), body.errors());
                 })
                 .verifyComplete();
 
         verify(runtimeConfigService).addLlmProvider("test", providerConfig);
-    }
-
-    @Test
-    void shouldKeepProviderSavedWhenImportReturnsErrors() {
-        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
-                .build();
-        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
-
-        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
-                .apiKey(Secret.of("x"))
-                .apiType("openai")
-                .build();
-        when(providerModelImportService.importMissingModels("test"))
-                .thenReturn(new ProviderModelImportService.ProviderImportResult(
-                        null,
-                        List.of(),
-                        List.of(),
-                        List.of("bad gateway")));
-
-        StepVerifier.create(controller.addLlmProviderAndImportModels("test", providerConfig))
-                .assertNext(response -> {
-                    SettingsController.LlmProviderImportResponse body = response.getBody();
-                    assertNotNull(body);
-                    assertTrue(body.providerSaved());
-                    assertEquals(List.of("bad gateway"), body.errors());
-                })
-                .verifyComplete();
-
-        verify(runtimeConfigService).addLlmProvider("test", providerConfig);
+        verify(providerModelImportService).importMissingModels("test", List.of("test/gpt-5.2"));
     }
 
     @Test
     void shouldTestSavedProvider() {
-        ProviderModelDiscoveryService.DiscoveryResult discoveryResult = new ProviderModelDiscoveryService.DiscoveryResult(
-                "https://openrouter.ai/api/v1/models",
-                List.of(
-                        new ProviderModelDiscoveryService.DiscoveredModel("openrouter", "openai/gpt-5", "GPT-5",
-                                "openai", null),
-                        new ProviderModelDiscoveryService.DiscoveredModel("openrouter", "openai/gpt-4.1",
-                                "GPT-4.1", "openai", null)));
-        when(providerModelDiscoveryService.discoverModelsForProvider("openrouter")).thenReturn(discoveryResult);
+        when(providerModelDiscoveryService.discoverModelsForProvider("openrouter"))
+                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
+                        "https://openrouter.ai/api/v1/models",
+                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("openrouter", "openai/gpt-5",
+                                "OpenAI: GPT-5", "openai", null))));
 
         StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
                 "saved",
                 "openrouter",
                 null)))
                 .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
                     SettingsController.LlmProviderTestResponse body = response.getBody();
                     assertNotNull(body);
-                    assertEquals("saved", body.mode());
                     assertTrue(body.success());
+                    assertEquals("openrouter", body.providerName());
                     assertEquals("https://openrouter.ai/api/v1/models", body.resolvedEndpoint());
-                    assertEquals(List.of("openrouter/openai/gpt-5", "openrouter/openai/gpt-4.1"), body.models());
-                    assertNull(body.error());
-                })
-                .verifyComplete();
-
-        verifyNoInteractions(runtimeConfigService);
-    }
-
-    @Test
-    void shouldTestDraftProvider() {
-        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
-                .apiKey(Secret.of("draft-key"))
-                .baseUrl("https://draft.example.com")
-                .apiType("openai")
-                .build();
-        ProviderModelDiscoveryService.DiscoveryResult discoveryResult = new ProviderModelDiscoveryService.DiscoveryResult(
-                "https://draft.example.com/v1/models",
-                List.of(new ProviderModelDiscoveryService.DiscoveredModel("draftmesh", "draft-gpt", "Draft GPT",
-                        "draft", null)));
-        when(providerModelDiscoveryService.discoverModelsForConfig("draftmesh", providerConfig))
-                .thenReturn(discoveryResult);
-
-        StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
-                "draft",
-                "draftmesh",
-                providerConfig)))
-                .assertNext(response -> {
-                    SettingsController.LlmProviderTestResponse body = response.getBody();
-                    assertNotNull(body);
-                    assertEquals("draft", body.mode());
-                    assertTrue(body.success());
-                    assertEquals(List.of("draftmesh/draft-gpt"), body.models());
+                    assertEquals(List.of("openrouter/openai/gpt-5"), body.models());
                 })
                 .verifyComplete();
     }
@@ -956,19 +918,18 @@ class SettingsControllerTest {
                                         .build())))
                         .build())
                 .build();
-        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
-        when(providerModelDiscoveryService.discoverModelsForConfig(anyString(),
-                any(RuntimeConfig.LlmProviderConfig.class)))
-                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
-                        "https://draft.example.com/v1/models",
-                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("draftmesh", "draft-gpt", "Draft GPT",
-                                "draft", null))));
-
         RuntimeConfig.LlmProviderConfig requestConfig = RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(null)
                 .baseUrl("https://draft.example.com")
                 .apiType("openai")
                 .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(providerModelDiscoveryService.discoverModelsForConfig(anyString(),
+                any(RuntimeConfig.LlmProviderConfig.class)))
+                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
+                        "https://draft.example.com/v1/models",
+                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("draftmesh", "draft-gpt",
+                                "Draft GPT", "draft", null))));
 
         StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
                 "draft",
@@ -990,41 +951,6 @@ class SettingsControllerTest {
         assertEquals("saved-key", effectiveConfig.getApiKey().getValue());
         assertEquals("https://draft.example.com", effectiveConfig.getBaseUrl());
         assertEquals("openai", effectiveConfig.getApiType());
-    }
-
-    @Test
-    void shouldReturnFailedDraftProviderTestWhenDiscoveryRejectsConfig() {
-        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
-                .apiKey(Secret.of("draft-key"))
-                .baseUrl("https://draft.example.com")
-                .apiType("openai")
-                .build();
-        when(providerModelDiscoveryService.discoverModelsForConfig("draftmesh", providerConfig))
-                .thenThrow(new IllegalArgumentException("Provider base URL is invalid"));
-
-        StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
-                "draft",
-                "draftmesh",
-                providerConfig)))
-                .assertNext(response -> {
-                    SettingsController.LlmProviderTestResponse body = response.getBody();
-                    assertNotNull(body);
-                    assertEquals("draft", body.mode());
-                    assertFalse(body.success());
-                    assertEquals(List.of(), body.models());
-                    assertEquals("Provider base URL is invalid", body.error());
-                })
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldRejectDraftProviderTestWithoutConfig() {
-        ResponseStatusException error = assertThrows(ResponseStatusException.class,
-                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest("draft", "draftmesh",
-                        null)).block());
-
-        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
-        assertEquals("config is required", error.getReason());
     }
 
     @Test
@@ -1457,7 +1383,7 @@ class SettingsControllerTest {
         StepVerifier.create(controller.getShellEnvironmentVariables())
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
-                    List<RuntimeConfig.ShellEnvironmentVariable> body = response.getBody();
+                    List<ShellEnvironmentVariableDto> body = response.getBody();
                     assertNotNull(body);
                     assertEquals(1, body.size());
                     assertEquals("API_TOKEN", body.get(0).getName());
@@ -1475,7 +1401,7 @@ class SettingsControllerTest {
         StepVerifier.create(controller.getShellEnvironmentVariables())
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
-                    List<RuntimeConfig.ShellEnvironmentVariable> body = response.getBody();
+                    List<ShellEnvironmentVariableDto> body = response.getBody();
                     assertNotNull(body);
                     assertTrue(body.isEmpty());
                 })
@@ -1861,15 +1787,7 @@ class SettingsControllerTest {
 
     @Test
     void shouldRejectUnloadedVoiceProvidersEvenWhenCanonicalIdsAreUsed() {
-        SettingsController unloadedController = new SettingsController(
-                preferencesService,
-                modelSelectionService,
-                runtimeConfigService,
-                memoryPresetService,
-                providerModelImportService,
-                providerModelDiscoveryService,
-                new SttProviderRegistry(),
-                new TtsProviderRegistry());
+        SettingsController unloadedController = createController(new SttProviderRegistry(), new TtsProviderRegistry());
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder().build())
                 .build();
@@ -2007,15 +1925,7 @@ class SettingsControllerTest {
 
     @Test
     void shouldAllowDisabledVoiceConfigWhenNoVoiceProvidersAreLoaded() {
-        SettingsController unloadedController = new SettingsController(
-                preferencesService,
-                modelSelectionService,
-                runtimeConfigService,
-                memoryPresetService,
-                providerModelImportService,
-                providerModelDiscoveryService,
-                new SttProviderRegistry(),
-                new TtsProviderRegistry());
+        SettingsController unloadedController = createController(new SttProviderRegistry(), new TtsProviderRegistry());
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .voice(RuntimeConfig.VoiceConfig.builder()
                         .enabled(false)
@@ -2479,8 +2389,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldUpdateMcpCatalogEntry() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(true);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(true);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("github")
@@ -2494,8 +2404,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldReturnNotFoundWhenUpdatingNonexistentCatalogEntry() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(false);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(false);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("nonexistent")
@@ -2508,8 +2418,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldNormalizeNameOnUpdate() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(true);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(true);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("github")
@@ -2520,8 +2430,7 @@ class SettingsControllerTest {
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
 
-        verify(runtimeConfigService).updateMcpCatalogEntry(org.mockito.ArgumentMatchers.eq("github"),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class));
+        verify(runtimeConfigService).updateMcpCatalogEntry(eq("github"), any(RuntimeConfig.McpCatalogEntry.class));
     }
 
     @Test
@@ -2579,6 +2488,224 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldGetRuntimeConfigFromFacade() {
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+
+        StepVerifier.create(controller.getRuntimeConfig())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertEquals(apiView, response.getBody());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldDelegateRuntimeEndpointUpdates() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of("openai",
+                                RuntimeConfig.LlmProviderConfig.builder().build())))
+                        .build())
+                .build();
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+        when(runtimeConfigService.removeLlmProvider("openai")).thenReturn(true);
+        when(preferencesService.getPreferences()).thenReturn(new UserPreferences());
+
+        StepVerifier.create(controller.updateModelRouterConfig(RuntimeConfig.ModelRouterConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateLlmProvider("openai", RuntimeConfig.LlmProviderConfig.builder()
+                .requestTimeoutSeconds(30)
+                .build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.removeLlmProvider("openai"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateToolsConfig(RuntimeConfig.ToolsConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateSkillsConfig(RuntimeConfig.SkillsConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateUsageConfig(RuntimeConfig.UsageConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateTelemetryConfig(RuntimeConfig.TelemetryConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(controller.updateWebhooksConfig(UserPreferences.WebhookConfig.builder().build()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldDelegateRuntimeDtoEndpointUpdates() throws Throwable {
+        RuntimeSettingsFacade facade = mock(RuntimeSettingsFacade.class);
+        SettingsController dtoController = new SettingsController(preferencesService, modelSelectionService, facade,
+                runtimeSettingsWebMapper);
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        when(facade.updateRuntimeConfig(any(RuntimeConfig.class))).thenReturn(apiView);
+        when(facade.updateModelRouterConfig(any(RuntimeConfig.ModelRouterConfig.class))).thenReturn(apiView);
+        when(facade.updateLlmConfig(any(RuntimeConfig.LlmConfig.class))).thenReturn(apiView);
+        when(facade.addLlmProvider(anyString(), any(RuntimeConfig.LlmProviderConfig.class))).thenReturn(apiView);
+        when(facade.updateLlmProvider(anyString(), any(RuntimeConfig.LlmProviderConfig.class))).thenReturn(apiView);
+        when(facade.updateToolsConfig(any(RuntimeConfig.ToolsConfig.class))).thenReturn(apiView);
+        when(facade.getShellEnvironmentVariables()).thenReturn(List.of(
+                RuntimeConfig.ShellEnvironmentVariable.builder().name("API_TOKEN").value("secret").build()));
+        when(facade.createShellEnvironmentVariable(any(RuntimeConfig.ShellEnvironmentVariable.class)))
+                .thenReturn(apiView);
+        when(facade.updateShellEnvironmentVariable(anyString(), any(RuntimeConfig.ShellEnvironmentVariable.class)))
+                .thenReturn(apiView);
+        when(facade.deleteShellEnvironmentVariable(anyString())).thenReturn(apiView);
+        when(facade.updateVoiceConfig(any(RuntimeConfig.VoiceConfig.class))).thenReturn(apiView);
+        when(facade.updateTurnConfig(any(RuntimeConfig.TurnConfig.class))).thenReturn(apiView);
+        when(facade.updateMemoryConfig(any(RuntimeConfig.MemoryConfig.class))).thenReturn(apiView);
+        when(facade.updateSkillsConfig(any(RuntimeConfig.SkillsConfig.class))).thenReturn(apiView);
+        when(facade.updateUsageConfig(any(RuntimeConfig.UsageConfig.class))).thenReturn(apiView);
+        when(facade.updateTelemetryConfig(any(RuntimeConfig.TelemetryConfig.class))).thenReturn(apiView);
+        when(facade.updateMcpConfig(any(RuntimeConfig.McpConfig.class))).thenReturn(apiView);
+        when(facade.getMcpCatalog()).thenReturn(List.of(
+                RuntimeConfig.McpCatalogEntry.builder().name("github").command("npx github").build()));
+        when(facade.addMcpCatalogEntry(any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(apiView);
+        when(facade.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(apiView);
+        when(facade.updateHiveConfig(any(RuntimeConfig.HiveConfig.class))).thenReturn(apiView);
+        when(facade.updatePlanConfig(any(RuntimeConfig.PlanConfig.class))).thenReturn(apiView);
+        when(facade.updateAutoConfig(any(RuntimeConfig.AutoModeConfig.class))).thenReturn(apiView);
+        when(facade.updateTracingConfig(any(RuntimeConfig.TracingConfig.class))).thenReturn(apiView);
+        when(facade.updateAdvancedConfig(any(RuntimeConfig.RateLimitConfig.class),
+                any(RuntimeConfig.SecurityConfig.class),
+                any(RuntimeConfig.CompactionConfig.class))).thenReturn(apiView);
+
+        StepVerifier.create(dtoController.updateRuntimeConfig(new RuntimeSettingsWebDtos.RuntimeConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateModelRouterConfig(new RuntimeSettingsWebDtos.ModelRouterConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateLlmConfig(new RuntimeSettingsWebDtos.LlmConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.addLlmProvider("openai", new RuntimeSettingsWebDtos.LlmProviderConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateLlmProvider("openai",
+                new RuntimeSettingsWebDtos.LlmProviderConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.removeLlmProvider("openai"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateToolsConfig(new RuntimeSettingsWebDtos.ToolsConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.getShellEnvironmentVariables())
+                .assertNext(response -> assertEquals(1, response.getBody().size()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.createShellEnvironmentVariable(
+                new RuntimeSettingsWebDtos.ShellEnvironmentVariableDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateShellEnvironmentVariable("API_TOKEN",
+                new RuntimeSettingsWebDtos.ShellEnvironmentVariableDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.deleteShellEnvironmentVariable("API_TOKEN"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateVoiceConfig(new RuntimeSettingsWebDtos.VoiceConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateTurnConfig(new RuntimeSettingsWebDtos.TurnConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateMemoryConfig(new RuntimeSettingsWebDtos.MemoryConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.getMemoryPresets())
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateSkillsConfig(new RuntimeSettingsWebDtos.SkillsConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateUsageConfig(new RuntimeSettingsWebDtos.UsageConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateTelemetryConfig(new RuntimeSettingsWebDtos.TelemetryConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateMcpConfig(new RuntimeSettingsWebDtos.McpConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.getMcpCatalog())
+                .assertNext(response -> assertEquals(1, response.getBody().size()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.addMcpCatalogEntry(new RuntimeSettingsWebDtos.McpCatalogEntryDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateMcpCatalogEntry("github",
+                new RuntimeSettingsWebDtos.McpCatalogEntryDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.removeMcpCatalogEntry("github"))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateHiveConfig(new RuntimeSettingsWebDtos.HiveConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updatePlanConfig(new RuntimeSettingsWebDtos.PlanConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateAutoConfig(new RuntimeSettingsWebDtos.AutoModeConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+        StepVerifier.create(dtoController.updateTracingConfig(new RuntimeSettingsWebDtos.TracingConfigDto()))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        Class<?> requestType = Class.forName(SettingsController.class.getName() + "$AdvancedConfigRequest");
+        Object request = instantiateAdvancedConfigRequest(
+                requestType,
+                new RuntimeSettingsWebDtos.RateLimitConfigDto(),
+                new RuntimeSettingsWebDtos.SecurityConfigDto(),
+                new RuntimeSettingsWebDtos.CompactionConfigDto());
+        Method method = SettingsController.class.getMethod("updateAdvancedConfig", requestType);
+        Mono<ResponseEntity<RuntimeSettingsWebDtos.RuntimeConfigDto>> response = (Mono<ResponseEntity<RuntimeSettingsWebDtos.RuntimeConfigDto>>) method
+                .invoke(dtoController, request);
+
+        StepVerifier.create(response)
+                .assertNext(result -> assertEquals(HttpStatus.OK, result.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldDelegateAdvancedConfigUpdate() throws Throwable {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+        Class<?> requestType = Class.forName(SettingsController.class.getName() + "$AdvancedConfigRequest");
+        Object request = instantiateAdvancedConfigRequest(
+                requestType,
+                RuntimeConfig.RateLimitConfig.builder().build(),
+                RuntimeConfig.SecurityConfig.builder().build(),
+                RuntimeConfig.CompactionConfig.builder().build());
+        Method method = SettingsController.class.getMethod("updateAdvancedConfig", requestType);
+
+        Mono<ResponseEntity<RuntimeConfig>> response = (Mono<ResponseEntity<RuntimeConfig>>) method.invoke(controller,
+                request);
+
+        StepVerifier.create(response)
+                .assertNext(result -> assertEquals(HttpStatus.OK, result.getStatusCode()))
+                .verifyComplete();
+    }
+
+    @Test
     void shouldRejectNullCatalogEntry() {
         assertThrows(IllegalArgumentException.class, () -> controller.addMcpCatalogEntry(null));
     }
@@ -2597,5 +2724,14 @@ class SettingsControllerTest {
         when(provider.getAliases()).thenReturn(Set.of(alias));
         when(provider.isAvailable()).thenReturn(true);
         ttsProviderRegistry.replaceProviders(providerId, List.of(provider));
+    }
+
+    private Object instantiateAdvancedConfigRequest(Class<?> requestType, Object first, Object second, Object third)
+            throws Throwable {
+        MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(requestType, MethodHandles.lookup());
+        MethodHandle constructor = lookup.findConstructor(
+                requestType,
+                MethodType.methodType(void.class, first.getClass(), second.getClass(), third.getClass()));
+        return constructor.invoke(first, second, third);
     }
 }

@@ -1,6 +1,5 @@
 package me.golemcore.bot.domain.system;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -45,13 +44,13 @@ import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuild
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
+import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
+import me.golemcore.bot.port.outbound.PlanStorePort;
 import me.golemcore.bot.port.outbound.RagPort;
-import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.tools.PlanGetTool;
 import me.golemcore.bot.tools.PlanSetContentTool;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -86,9 +85,8 @@ class PlanWorkLifecycleBddTest {
     @Test
     void shouldPersistCanonicalMarkdownAndKeepPlanWorkActiveUntilPlanDone() {
         // GIVEN: a real PlanService with mocked storage
-        StoragePort storagePort = mock(StoragePort.class);
-        when(storagePort.getText(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
-        when(storagePort.putText(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        PlanStorePort planStorePort = mock(PlanStorePort.class);
+        when(planStorePort.loadPlans()).thenReturn(new ArrayList<>());
 
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isPlanEnabled()).thenReturn(true);
@@ -96,8 +94,7 @@ class PlanWorkLifecycleBddTest {
         when(runtimeConfigService.getPlanMaxStepsPerPlan()).thenReturn(50);
 
         PlanService planService = new PlanService(
-                storagePort,
-                new ObjectMapper().findAndRegisterModules(),
+                planStorePort,
                 runtimeConfigService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
@@ -152,8 +149,8 @@ class PlanWorkLifecycleBddTest {
                 .toolExecutor(toolExecutor)
                 .historyWriter(new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)))
                 .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
-                .turnSettings(new BotProperties.TurnProperties())
-                .settings(new BotProperties.ToolLoopProperties())
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(new BotProperties.TurnProperties()))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(new BotProperties.ToolLoopProperties()))
                 .modelSelectionService(modelSelectionService)
                 .planService(planService)
                 .clock(Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneOffset.UTC))
@@ -180,8 +177,9 @@ class PlanWorkLifecycleBddTest {
         verify(toolExecutor, never()).execute(any(), any());
 
         // WHEN: PlanFinalizationSystem runs
-        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
-        PlanFinalizationSystem planFinalizationSystem = new PlanFinalizationSystem(planService, publisher);
+        PlanReadyNotificationPort planReadyNotificationPort = mock(PlanReadyNotificationPort.class);
+        PlanFinalizationSystem planFinalizationSystem = new PlanFinalizationSystem(planService,
+                planReadyNotificationPort);
         assertTrue(planFinalizationSystem.shouldProcess(context));
         planFinalizationSystem.process(context);
 

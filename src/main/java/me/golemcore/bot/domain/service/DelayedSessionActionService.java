@@ -18,12 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
 import me.golemcore.bot.domain.model.DelayedActionKind;
@@ -31,11 +25,10 @@ import me.golemcore.bot.domain.model.DelayedActionStatus;
 import me.golemcore.bot.domain.model.DelayedJobReadyEvent;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.context.event.EventListener;
+import me.golemcore.bot.domain.model.ChannelTypes;
+import me.golemcore.bot.port.outbound.DelayedActionRegistryPort;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -56,28 +49,22 @@ import java.util.UUID;
 @Slf4j
 public class DelayedSessionActionService {
 
-    static final String AUTOMATION_DIR = "automation";
-    static final String ACTIONS_FILE = "delayed-actions.json";
     private static final int REGISTRY_VERSION = 1;
-    private static final String CHANNEL_WEBHOOK = "webhook";
 
-    private final StoragePort storagePort;
+    private final DelayedActionRegistryPort delayedActionRegistryPort;
     private final RuntimeConfigService runtimeConfigService;
     private final Clock clock;
-    private final ObjectMapper objectMapper;
     private final Object lock = new Object();
 
     private final Map<String, DelayedSessionAction> actions = new LinkedHashMap<>();
     private volatile boolean loaded = false;
 
-    public DelayedSessionActionService(StoragePort storagePort,
+    public DelayedSessionActionService(DelayedActionRegistryPort delayedActionRegistryPort,
             RuntimeConfigService runtimeConfigService,
             Clock clock) {
-        this.storagePort = storagePort;
+        this.delayedActionRegistryPort = delayedActionRegistryPort;
         this.runtimeConfigService = runtimeConfigService;
         this.clock = clock;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     public DelayedSessionAction schedule(DelayedSessionAction candidate) {
@@ -106,7 +93,7 @@ public class DelayedSessionActionService {
             }
 
             actions.put(normalized.getId(), normalized);
-            persistLocked(now);
+            persistLocked();
             return copyAction(normalized);
         }
     }
@@ -137,15 +124,6 @@ public class DelayedSessionActionService {
                 .createdBy("event:job_ready")
                 .payload(payload)
                 .build());
-    }
-
-    @EventListener
-    public void onDelayedJobReady(DelayedJobReadyEvent event) {
-        try {
-            scheduleJobReadyNotification(event);
-        } catch (RuntimeException e) {
-            log.warn("[DelayedActions] Failed to schedule job-ready event: {}", e.getMessage());
-        }
     }
 
     public Optional<DelayedSessionAction> get(String actionId) {
@@ -185,7 +163,7 @@ public class DelayedSessionActionService {
             action.setUpdatedAt(now);
             action.setCompletedAt(now);
             action.setExpiresAt(resolveRetentionExpiry(now));
-            persistLocked(now);
+            persistLocked();
             return true;
         }
     }
@@ -202,7 +180,7 @@ public class DelayedSessionActionService {
             action.setStatus(DelayedActionStatus.SCHEDULED);
             action.setLeaseUntil(null);
             action.setUpdatedAt(now);
-            persistLocked(now);
+            persistLocked();
             return true;
         }
     }
@@ -235,7 +213,7 @@ public class DelayedSessionActionService {
                 changed = true;
             }
             if (changed) {
-                persistLocked(now);
+                persistLocked();
             }
         }
     }
@@ -267,7 +245,7 @@ public class DelayedSessionActionService {
                 action.setLeaseUntil(leaseUntil);
                 action.setUpdatedAt(now);
             }
-            persistLocked(now);
+            persistLocked();
             return leased.stream().map(this::copyAction).toList();
         }
     }
@@ -294,7 +272,7 @@ public class DelayedSessionActionService {
             action.setRunAt(nextRunAt != null ? nextRunAt : now);
             action.setLastError(error);
             action.setUpdatedAt(now);
-            persistLocked(now);
+            persistLocked();
         }
     }
 
@@ -312,7 +290,7 @@ public class DelayedSessionActionService {
             action.setCompletedAt(now);
             action.setExpiresAt(resolveRetentionExpiry(now));
             action.setLastError(error);
-            persistLocked(now);
+            persistLocked();
         }
     }
 
@@ -395,8 +373,8 @@ public class DelayedSessionActionService {
                 || StringValueSupport.isBlank(normalized.getConversationKey())) {
             throw new IllegalArgumentException("channelType and conversationKey are required");
         }
-        if (CHANNEL_WEBHOOK.equals(normalized.getChannelType())) {
-            throw new IllegalStateException("Delayed actions are not supported for channel: " + CHANNEL_WEBHOOK);
+        if (ChannelTypes.WEBHOOK.equals(normalized.getChannelType())) {
+            throw new IllegalStateException("Delayed actions are not supported for channel: " + ChannelTypes.WEBHOOK);
         }
         if (normalized.getMaxAttempts() < 1) {
             normalized.setMaxAttempts(runtimeConfigService.getDelayedActionsDefaultMaxAttempts());
@@ -466,34 +444,19 @@ public class DelayedSessionActionService {
 
     private void loadLocked() {
         try {
-            String json = storagePort.getText(AUTOMATION_DIR, ACTIONS_FILE).join();
-            if (StringValueSupport.isBlank(json)) {
-                return;
-            }
-            Registry registry = objectMapper.readValue(json, Registry.class);
-            if (registry.getActions() != null) {
-                for (DelayedSessionAction action : registry.getActions()) {
-                    if (action != null && !StringValueSupport.isBlank(action.getId())) {
-                        actions.put(action.getId(), action);
-                    }
+            List<DelayedSessionAction> loadedActions = delayedActionRegistryPort.loadActions();
+            for (DelayedSessionAction action : loadedActions) {
+                if (action != null && !StringValueSupport.isBlank(action.getId())) {
+                    actions.put(action.getId(), action);
                 }
             }
-        } catch (IOException | RuntimeException e) {
-            log.warn("[DelayedActions] Failed to load registry: {}", e.getMessage());
+        } catch (RuntimeException exception) {
+            log.warn("[DelayedActions] Failed to load registry: {}", exception.getMessage());
         }
     }
 
-    private void persistLocked(Instant now) {
-        try {
-            Registry registry = new Registry();
-            registry.setVersion(REGISTRY_VERSION);
-            registry.setUpdatedAt(now.toString());
-            registry.setActions(new ArrayList<>(actions.values()));
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(registry);
-            storagePort.putTextAtomic(AUTOMATION_DIR, ACTIONS_FILE, json, true).join();
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to persist delayed actions", e);
-        }
+    private void persistLocked() {
+        delayedActionRegistryPort.saveActions(new ArrayList<>(actions.values()));
     }
 
     private void pruneRetainedTerminalLocked(Instant now) {
@@ -501,7 +464,7 @@ public class DelayedSessionActionService {
                 && action.getExpiresAt() != null
                 && !action.getExpiresAt().isAfter(now));
         if (changed) {
-            persistLocked(now);
+            persistLocked();
         }
     }
 
@@ -547,15 +510,5 @@ public class DelayedSessionActionService {
         String normalizedChannel = normalizeChannelType(event.channelType());
         String normalizedConversation = normalizeConversationKey(event.conversationKey());
         return "job-ready:" + normalizedChannel + ":" + normalizedConversation + ":" + event.jobId().trim();
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class Registry {
-        private int version = REGISTRY_VERSION;
-        private String updatedAt;
-        private List<DelayedSessionAction> actions = new ArrayList<>();
     }
 }

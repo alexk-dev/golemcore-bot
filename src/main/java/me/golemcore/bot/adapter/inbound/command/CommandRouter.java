@@ -18,32 +18,24 @@
 
 package me.golemcore.bot.adapter.inbound.command;
 
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
-import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
-import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
-import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
-import me.golemcore.bot.domain.model.Plan;
-import me.golemcore.bot.domain.model.PlanStep;
-import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.Skill;
-import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.UsageStats;
-import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
-import me.golemcore.bot.domain.service.DelayedSessionActionService;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanExecutionService;
-import me.golemcore.bot.domain.service.PlanService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -51,51 +43,17 @@ import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import me.golemcore.bot.tools.ScheduleSessionActionTool;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
-
-import java.time.Duration;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * Routes slash commands to appropriate handlers.
  *
  * <p>
- * This adapter implements the command handling interface and provides execution
- * logic for all bot slash commands:
- *
- * <ul>
- * <li>/skills - List available skills
- * <li>/tools - List enabled tools
- * <li>/status - Show session info and 24h usage stats
- * <li>/new, /reset - Start new conversation
- * <li>/compact [N] - Summarize old messages via LLM, keep last N
- * <li>/help - Show available commands
- * <li>/auto [on|off] - Toggle auto mode (if enabled)
- * <li>/goals - List goals (if auto mode enabled)
- * <li>/goal &lt;desc&gt; - Create goal (if auto mode enabled)
- * <li>/tasks - List tasks (if auto mode enabled)
- * <li>/diary [N] - Show diary entries (if auto mode enabled)
- * <li>/schedule - Manage cron-based schedules (if auto mode enabled)
- * </ul>
- *
- * <p>
- * Commands are routed before the AgentLoop by channel adapters (e.g.,
- * TelegramAdapter).
- *
- * @see me.golemcore.bot.port.inbound.CommandPort
+ * The router is intentionally transport-focused: it extracts command context,
+ * dispatches to command family handlers, and keeps only generic status/help
+ * formatting locally.
  */
 @Component
 @Slf4j
@@ -107,23 +65,35 @@ public class CommandRouter implements CommandPort {
     private static final long TOKEN_THOUSAND_THRESHOLD = 1_000;
     private static final String DOUBLE_NEWLINE = "\n\n";
     private static final String TABLE_SEPARATOR = " | ";
-    private static final String MSG_AUTO_NOT_AVAILABLE = "command.auto.not-available";
-    private static final String MSG_PLAN_NOT_AVAILABLE = "command.plan.not-available";
     private static final String CMD_HELP = "help";
     private static final String CMD_GOAL = "goal";
     private static final String CMD_PLAN = "plan";
     private static final String CMD_PLANS = "plans";
     private static final String CMD_LATER = "later";
     private static final String CMD_STATUS = "status";
-    private static final int MIN_SCHEDULE_ARGS = 2;
-    private static final int MIN_CRON_PARTS_FOR_REPEAT_CHECK = 1;
-    private static final int MIN_REASONING_ARGS = 2;
-    private static final String SUBCMD_LIST = "list";
-    private static final DateTimeFormatter LATER_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z");
     private static final String SUBCMD_RESET = "reset";
-    private static final String SUBCMD_REASONING = "reasoning";
-    private static final String ERR_PROVIDER_NOT_CONFIGURED = "provider.not.configured";
-    private static final String ERR_NO_REASONING = "no.reasoning";
+
+    private static final List<String> KNOWN_COMMANDS = List.of(
+            "skills",
+            "tools",
+            CMD_STATUS,
+            "new",
+            SUBCMD_RESET,
+            "compact",
+            CMD_HELP,
+            "tier",
+            "model",
+            "sessions",
+            "auto",
+            "goals",
+            CMD_GOAL,
+            "diary",
+            "tasks",
+            "schedule",
+            CMD_LATER,
+            CMD_PLAN,
+            CMD_PLANS,
+            "stop");
 
     private final SkillComponent skillComponent;
     private final List<ToolComponent> toolComponents;
@@ -131,22 +101,12 @@ public class CommandRouter implements CommandPort {
     private final UsageTrackingPort usageTracker;
     private final UserPreferencesService preferencesService;
     private final CompactionOrchestrationService compactionOrchestrationService;
-    private final AutoModeService autoModeService;
-    private final ModelSelectionService modelSelectionService;
-    private final PlanService planService;
-    private final PlanExecutionService planExecutionService;
-    private final ScheduleService scheduleService;
+    private final AutomationCommandHandler automationCommandHandler;
+    private final ModelSelectionCommandHandler modelSelectionCommandHandler;
+    private final PlanCommandHandler planCommandHandler;
     private final DelayedActionPolicyService delayedActionPolicyService;
-    private final DelayedSessionActionService delayedSessionActionService;
     private final SessionRunCoordinator runCoordinator;
-    private final ApplicationEventPublisher eventPublisher;
-    private final RuntimeConfigService runtimeConfigService;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
-
-    private static final List<String> KNOWN_COMMANDS = List.of(
-            "skills", "tools", CMD_STATUS, "new", SUBCMD_RESET, "compact", CMD_HELP,
-            "tier", "model", "sessions", "auto", "goals", CMD_GOAL, "diary", "tasks", "schedule", CMD_LATER,
-            CMD_PLAN, CMD_PLANS, "stop");
 
     public CommandRouter(
             SkillComponent skillComponent,
@@ -155,16 +115,11 @@ public class CommandRouter implements CommandPort {
             UsageTrackingPort usageTracker,
             UserPreferencesService preferencesService,
             CompactionOrchestrationService compactionOrchestrationService,
-            AutoModeService autoModeService,
-            ModelSelectionService modelSelectionService,
-            PlanService planService,
-            PlanExecutionService planExecutionService,
-            ScheduleService scheduleService,
+            AutomationCommandHandler automationCommandHandler,
+            ModelSelectionCommandHandler modelSelectionCommandHandler,
+            PlanCommandHandler planCommandHandler,
             DelayedActionPolicyService delayedActionPolicyService,
-            DelayedSessionActionService delayedSessionActionService,
             SessionRunCoordinator runCoordinator,
-            ApplicationEventPublisher eventPublisher,
-            RuntimeConfigService runtimeConfigService,
             ObjectProvider<BuildProperties> buildPropertiesProvider) {
         this.skillComponent = skillComponent;
         this.toolComponents = toolComponents;
@@ -172,16 +127,11 @@ public class CommandRouter implements CommandPort {
         this.usageTracker = usageTracker;
         this.preferencesService = preferencesService;
         this.compactionOrchestrationService = compactionOrchestrationService;
-        this.autoModeService = autoModeService;
-        this.modelSelectionService = modelSelectionService;
-        this.planService = planService;
-        this.planExecutionService = planExecutionService;
-        this.scheduleService = scheduleService;
+        this.automationCommandHandler = automationCommandHandler;
+        this.modelSelectionCommandHandler = modelSelectionCommandHandler;
+        this.planCommandHandler = planCommandHandler;
         this.delayedActionPolicyService = delayedActionPolicyService;
-        this.delayedSessionActionService = delayedSessionActionService;
         this.runCoordinator = runCoordinator;
-        this.eventPublisher = eventPublisher;
-        this.runtimeConfigService = runtimeConfigService;
         this.buildPropertiesProvider = buildPropertiesProvider;
         log.info("CommandRouter initialized with commands: {}", KNOWN_COMMANDS);
     }
@@ -211,35 +161,22 @@ public class CommandRouter implements CommandPort {
             case "reset" -> handleReset(sessionId, sessionIdentity);
             case "compact" -> handleCompact(sessionId, args);
             case CMD_HELP -> handleHelp();
-            case "tier" -> handleTier(args);
-            case "model" -> handleModel(args);
+            case "tier" -> modelSelectionCommandHandler.handleTier(args);
+            case "model" -> modelSelectionCommandHandler.handleModel(args);
             case "sessions" -> handleSessions(channelType);
-            case "auto" -> handleAuto(args, channelType, autoSessionChatId, transportChatId);
-            case "goals" -> handleGoals();
-            case CMD_GOAL -> handleGoal(args);
-            case "diary" -> handleDiary(args);
-            case "tasks" -> handleTasks();
-            case "schedule" -> handleSchedule(args);
-            case CMD_LATER -> handleLater(args, channelType, conversationKey);
-            case CMD_PLAN -> handlePlan(args, sessionIdentity, transportChatId);
-            case CMD_PLANS -> handlePlans(sessionIdentity);
+            case "auto" -> automationCommandHandler.handleAuto(args, channelType, autoSessionChatId, transportChatId);
+            case "goals" -> automationCommandHandler.handleGoals();
+            case CMD_GOAL -> automationCommandHandler.handleGoal(args);
+            case "diary" -> automationCommandHandler.handleDiary(args);
+            case "tasks" -> automationCommandHandler.handleTasks();
+            case "schedule" -> automationCommandHandler.handleSchedule(args);
+            case CMD_LATER -> automationCommandHandler.handleLater(args, channelType, conversationKey);
+            case CMD_PLAN -> planCommandHandler.handlePlan(args, sessionIdentity, transportChatId);
+            case CMD_PLANS -> planCommandHandler.handlePlans(sessionIdentity);
             case "stop" -> handleStop(channelType, sessionChatId);
             default -> CommandResult.failure(msg("command.unknown", command));
             };
         });
-    }
-
-    private String resolveContextString(Map<String, Object> context, String key, String fallback) {
-        Object value = context.get(key);
-        if (value instanceof String && !((String) value).isBlank()) {
-            return (String) value;
-        }
-        return fallback;
-    }
-
-    private boolean hasExplicitContextString(Map<String, Object> context, String key) {
-        Object value = context.get(key);
-        return value instanceof String && !((String) value).isBlank();
     }
 
     @Override
@@ -257,16 +194,20 @@ public class CommandRouter implements CommandPort {
                 new CommandDefinition(SUBCMD_RESET, "Reset conversation", "/reset"),
                 new CommandDefinition("compact", "Compact conversation history", "/compact [keep]"),
                 new CommandDefinition(CMD_HELP, "Show available commands", "/help"),
-                new CommandDefinition("tier", "Set model tier",
+                new CommandDefinition(
+                        "tier",
+                        "Set model tier",
                         "/tier [" + String.join("|", ModelTierCatalog.orderedExplicitTiers()) + "] [force]"),
-                new CommandDefinition("model", "Per-tier model selection",
+                new CommandDefinition(
+                        "model",
+                        "Per-tier model selection",
                         "/model [list|<tier> <model>|<tier> reasoning <level>|<tier> reset]"),
                 new CommandDefinition("sessions", "Open session switcher menu (Telegram)", "/sessions"),
                 new CommandDefinition("stop", "Stop current run", "/stop")));
-        if (runtimeConfigService.isDelayedActionsEnabled()) {
+        if (automationCommandHandler.isLaterFeatureEnabled()) {
             commands.add(new CommandDefinition(CMD_LATER, "Reminders and follow-ups", "/later [list|cancel|now|help]"));
         }
-        if (autoModeService.isFeatureEnabled()) {
+        if (automationCommandHandler.isAutoFeatureEnabled()) {
             commands.add(new CommandDefinition("auto", "Toggle auto mode", "/auto [on|off]"));
             commands.add(new CommandDefinition("goals", "List goals", "/goals"));
             commands.add(new CommandDefinition(CMD_GOAL, "Create a goal", "/goal <description>"));
@@ -274,12 +215,25 @@ public class CommandRouter implements CommandPort {
             commands.add(new CommandDefinition("diary", "Show diary entries", "/diary [count]"));
             commands.add(new CommandDefinition("schedule", "Manage schedules", "/schedule [help]"));
         }
-        if (planService.isFeatureEnabled()) {
+        if (planCommandHandler.isFeatureEnabled()) {
             commands.add(new CommandDefinition(CMD_PLAN, "Plan work control",
                     "/plan [on|off|done|status|approve|cancel|resume]"));
             commands.add(new CommandDefinition(CMD_PLANS, "List plans", "/plans"));
         }
         return commands;
+    }
+
+    private String resolveContextString(Map<String, Object> context, String key, String fallback) {
+        Object value = context.get(key);
+        if (value instanceof String && !((String) value).isBlank()) {
+            return (String) value;
+        }
+        return fallback;
+    }
+
+    private boolean hasExplicitContextString(Map<String, Object> context, String key) {
+        Object value = context.get(key);
+        return value instanceof String && !((String) value).isBlank();
     }
 
     private CommandResult handleStop(String channelType, String chatId) {
@@ -296,22 +250,22 @@ public class CommandRouter implements CommandPort {
             return CommandResult.success(msg("command.skills.empty"));
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append(msg("command.skills.title", skills.size()));
-        sb.append("\n");
+        StringBuilder builder = new StringBuilder();
+        builder.append(msg("command.skills.title", skills.size()));
+        builder.append("\n");
 
         for (Skill skill : skills) {
-            sb.append("\n`").append(skill.getName()).append("`");
+            builder.append("\n`").append(skill.getName()).append("`");
             if (!skill.isAvailable()) {
-                sb.append(" _(unavailable)_");
+                builder.append(" _(unavailable)_");
             }
-            sb.append("\n");
+            builder.append("\n");
             if (skill.getDescription() != null && !skill.getDescription().isBlank()) {
-                sb.append(skill.getDescription()).append("\n");
+                builder.append(skill.getDescription()).append("\n");
             }
         }
 
-        return CommandResult.success(sb.toString());
+        return CommandResult.success(builder.toString());
     }
 
     private CommandResult handleTools(String channelType) {
@@ -320,25 +274,26 @@ public class CommandRouter implements CommandPort {
                 .filter(tool -> isToolVisibleForChannel(tool, channelType))
                 .toList();
 
-        StringBuilder sb = new StringBuilder();
-        sb.append(msg("command.tools.title", enabledTools.size()));
-        sb.append("\n");
+        StringBuilder builder = new StringBuilder();
+        builder.append(msg("command.tools.title", enabledTools.size()));
+        builder.append("\n");
 
-        for (ToolComponent t : enabledTools) {
-            String name = t.getDefinition().getName();
-            String desc = t.getDefinition().getDescription().trim()
-                    .replace('\n', ' ').replace('\t', ' ');
+        for (ToolComponent tool : enabledTools) {
+            String name = tool.getDefinition().getName();
+            String desc = tool.getDefinition().getDescription().trim()
+                    .replace('\n', ' ')
+                    .replace('\t', ' ');
             int dotIdx = desc.indexOf(". ");
             if (dotIdx > 0 && dotIdx < MAX_TOOL_DESC_LENGTH) {
                 desc = desc.substring(0, dotIdx + 1);
             } else if (desc.length() > MAX_TOOL_DESC_LENGTH) {
                 desc = desc.substring(0, MAX_TOOL_DESC_LENGTH) + "...";
             }
-            sb.append("\n`").append(name).append("`\n");
-            sb.append(desc).append("\n");
+            builder.append("\n`").append(name).append("`\n");
+            builder.append(desc).append("\n");
         }
 
-        return CommandResult.success(sb.toString());
+        return CommandResult.success(builder.toString());
     }
 
     private boolean isToolVisibleForChannel(ToolComponent tool, String channelType) {
@@ -355,44 +310,45 @@ public class CommandRouter implements CommandPort {
     }
 
     private CommandResult handleStatus(String sessionId) {
-        StringBuilder sb = new StringBuilder();
+        StringBuilder builder = new StringBuilder();
 
         BuildProperties buildProps = buildPropertiesProvider.getIfAvailable();
         if (buildProps != null) {
-            sb.append(msg("command.status.version", buildProps.getVersion())).append(DOUBLE_NEWLINE);
+            builder.append(msg("command.status.version", buildProps.getVersion())).append(DOUBLE_NEWLINE);
         }
 
-        sb.append("**").append(msg("command.status.title")).append("**").append(DOUBLE_NEWLINE);
+        builder.append("**").append(msg("command.status.title")).append("**").append(DOUBLE_NEWLINE);
 
         int messageCount = sessionService.getMessageCount(sessionId);
-        sb.append(msg("command.status.messages", messageCount)).append(DOUBLE_NEWLINE);
+        builder.append(msg("command.status.messages", messageCount)).append(DOUBLE_NEWLINE);
 
         try {
             Map<String, UsageStats> statsByModel = usageTracker.getStatsByModel(Duration.ofHours(24));
             if (statsByModel == null || statsByModel.isEmpty()) {
-                sb.append(msg("command.status.usage.empty"));
+                builder.append(msg("command.status.usage.empty"));
             } else {
-                sb.append(msg("command.status.usage.title")).append(DOUBLE_NEWLINE);
-                sb.append(renderUsageTable(statsByModel));
+                builder.append(msg("command.status.usage.title")).append(DOUBLE_NEWLINE);
+                builder.append(renderUsageTable(statsByModel));
             }
-        } catch (Exception e) {
-            log.debug("Failed to get usage stats", e);
+        } catch (Exception exception) {
+            log.debug("Failed to get usage stats", exception);
         }
 
-        if (autoModeService.isFeatureEnabled()) {
-            sb.append("\n");
-            if (autoModeService.isAutoModeEnabled()) {
-                sb.append(msg("command.status.auto.title")).append("\n");
-                List<Goal> activeGoals = autoModeService.getActiveGoals();
-                sb.append(msg("command.status.auto.goals", activeGoals.size())).append("\n");
-                autoModeService.getNextPendingTask()
-                        .ifPresent(task -> sb.append(msg("command.status.auto.task", task.getTitle())).append("\n"));
+        if (automationCommandHandler.isAutoFeatureEnabled()) {
+            builder.append("\n");
+            if (automationCommandHandler.isAutoModeEnabled()) {
+                builder.append(msg("command.status.auto.title")).append("\n");
+                List<Goal> activeGoals = automationCommandHandler.getActiveGoals();
+                builder.append(msg("command.status.auto.goals", activeGoals.size())).append("\n");
+                automationCommandHandler.getNextPendingTask()
+                        .ifPresent(
+                                task -> builder.append(msg("command.status.auto.task", task.getTitle())).append("\n"));
             } else {
-                sb.append(msg("command.status.auto.off")).append("\n");
+                builder.append(msg("command.status.auto.off")).append("\n");
             }
         }
 
-        return CommandResult.success(sb.toString());
+        return CommandResult.success(builder.toString());
     }
 
     private String renderUsageTable(Map<String, UsageStats> statsByModel) {
@@ -402,17 +358,18 @@ public class CommandRouter implements CommandPort {
         String totalLabel = msg("command.status.usage.total");
 
         List<Map.Entry<String, UsageStats>> sorted = statsByModel.entrySet().stream()
-                .sorted(Comparator.<Map.Entry<String, UsageStats>>comparingLong(e -> e.getValue().getTotalTokens())
+                .sorted(Comparator.<Map.Entry<String, UsageStats>>comparingLong(
+                        entry -> entry.getValue().getTotalTokens())
                         .reversed())
                 .toList();
 
         long totalReq = 0;
         long totalTokens = 0;
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("| ").append(colModel).append(TABLE_SEPARATOR).append(colReq).append(TABLE_SEPARATOR)
+        StringBuilder builder = new StringBuilder();
+        builder.append("| ").append(colModel).append(TABLE_SEPARATOR).append(colReq).append(TABLE_SEPARATOR)
                 .append(colTokens).append(" |\n");
-        sb.append("|---|---|---|\n");
+        builder.append("|---|---|---|\n");
 
         for (Map.Entry<String, UsageStats> entry : sorted) {
             String key = entry.getKey();
@@ -420,54 +377,35 @@ public class CommandRouter implements CommandPort {
             UsageStats stats = entry.getValue();
             totalReq += stats.getTotalRequests();
             totalTokens += stats.getTotalTokens();
-            sb.append("| ").append(modelName)
+            builder.append("| ").append(modelName)
                     .append(TABLE_SEPARATOR).append(stats.getTotalRequests())
                     .append(TABLE_SEPARATOR).append(formatTokens(stats.getTotalTokens()))
                     .append(" |\n");
         }
 
-        sb.append("| **").append(totalLabel).append("**").append(TABLE_SEPARATOR).append("**").append(totalReq)
+        builder.append("| **").append(totalLabel).append("**").append(TABLE_SEPARATOR).append("**").append(totalReq)
                 .append("**").append(TABLE_SEPARATOR).append("**").append(formatTokens(totalTokens)).append("** |\n");
 
-        return sb.toString();
+        return builder.toString();
     }
 
     static String formatTokens(long tokens) {
         if (tokens >= TOKEN_MILLION_THRESHOLD) {
             return String.format("%.1fM", tokens / (double) TOKEN_MILLION_THRESHOLD);
-        } else if (tokens >= TOKEN_THOUSAND_THRESHOLD) {
+        }
+        if (tokens >= TOKEN_THOUSAND_THRESHOLD) {
             return String.format("%.1fK", tokens / (double) TOKEN_THOUSAND_THRESHOLD);
         }
         return String.valueOf(tokens);
     }
 
     private CommandResult handleNew() {
-        // /new semantics are channel-specific:
-        // - Web creates a new conversation on client side before WS send.
-        // - Telegram creates/activates a new conversation in TelegramAdapter.
-        // Command router keeps backward-compatible acknowledgement and does not
-        // mutate current session history.
         return CommandResult.success(msg("command.new.done"));
     }
 
     private CommandResult handleReset(String sessionId, SessionIdentity sessionIdentity) {
         sessionService.clearMessages(sessionId);
-        if (!planService.isFeatureEnabled()) {
-            return CommandResult.success(msg("command.reset.done"));
-        }
-
-        if (sessionIdentity == null) {
-            if (planService.isPlanModeActive()) {
-                planService.getActivePlanIdOptional().ifPresent(planService::cancelPlan);
-                planService.deactivatePlanMode();
-            }
-            return CommandResult.success(msg("command.reset.done"));
-        }
-
-        if (planService.isPlanModeActive(sessionIdentity)) {
-            planService.getActivePlanIdOptional(sessionIdentity).ifPresent(planService::cancelPlan);
-            planService.deactivatePlanMode(sessionIdentity);
-        }
+        planCommandHandler.resetPlanMode(sessionIdentity);
         return CommandResult.success(msg("command.reset.done"));
     }
 
@@ -512,868 +450,7 @@ public class CommandRouter implements CommandPort {
         return CommandResult.success(msg("command.sessions.use-menu"));
     }
 
-    // ==================== Tier Command ====================
-
-    private CommandResult handleTier(List<String> args) {
-        UserPreferences prefs = preferencesService.getPreferences();
-
-        if (args.isEmpty()) {
-            String tier = prefs.getModelTier() != null ? prefs.getModelTier() : "balanced";
-            String force = prefs.isTierForce() ? "on" : "off";
-            return CommandResult.success(msg("command.tier.current", tier, force));
-        }
-
-        String tierArg = ModelTierCatalog.normalizeTierId(args.get(0));
-        if (!ModelTierCatalog.isExplicitSelectableTier(tierArg)) {
-            return CommandResult.success(msg("command.tier.invalid"));
-        }
-
-        boolean force = args.size() > 1 && "force".equalsIgnoreCase(args.get(1));
-
-        prefs.setModelTier(tierArg);
-        prefs.setTierForce(force);
-        preferencesService.savePreferences(prefs);
-
-        if (force) {
-            return CommandResult.success(msg("command.tier.set.force", tierArg));
-        }
-        return CommandResult.success(msg("command.tier.set", tierArg));
-    }
-
-    // ==================== Model Selection Command ====================
-
-    private CommandResult handleModel(List<String> args) {
-        if (args.isEmpty()) {
-            return handleModelShow();
-        }
-
-        String subcommand = ModelTierCatalog.normalizeTierId(args.get(0));
-        if (SUBCMD_LIST.equals(subcommand)) {
-            return handleModelList();
-        }
-
-        // Tier-based subcommands: /model <tier> ...
-        if (!ModelTierCatalog.isExplicitSelectableTier(subcommand)) {
-            return CommandResult.success(msg("command.model.invalid.tier"));
-        }
-
-        String tier = subcommand;
-        List<String> subArgs = args.subList(1, args.size());
-
-        if (subArgs.isEmpty()) {
-            return CommandResult.success(msg("command.model.usage"));
-        }
-
-        String action = subArgs.get(0).toLowerCase(Locale.ROOT);
-        if (SUBCMD_RESET.equals(action)) {
-            return handleModelReset(tier);
-        }
-        if (SUBCMD_REASONING.equals(action)) {
-            if (subArgs.size() < MIN_REASONING_ARGS) {
-                return CommandResult.success(msg("command.model.usage"));
-            }
-            return handleModelSetReasoning(tier, subArgs.get(1).toLowerCase(Locale.ROOT));
-        }
-
-        // /model <tier> <provider/model>
-        String modelSpec = subArgs.get(0);
-        return handleModelSet(tier, modelSpec);
-    }
-
-    private CommandResult handleModelShow() {
-        UserPreferences prefs = preferencesService.getPreferences();
-        StringBuilder sb = new StringBuilder();
-        sb.append("**").append(msg("command.model.show.title")).append("**\n\n");
-
-        for (String tier : ModelTierCatalog.orderedExplicitTiers()) {
-            ModelSelectionService.ModelSelection selection = modelSelectionService.resolveForTier(tier);
-            String model = selection.model() != null ? selection.model() : "—";
-            String reasoning = selection.reasoning() != null ? selection.reasoning() : "—";
-
-            boolean hasOverride = prefs.getTierOverrides() != null
-                    && prefs.getTierOverrides().containsKey(tier);
-            String msgKey = hasOverride ? "command.model.show.tier.override" : "command.model.show.tier.default";
-            sb.append(msg(msgKey, tier, model, reasoning)).append("\n");
-        }
-
-        return CommandResult.success(sb.toString());
-    }
-
-    private CommandResult handleModelList() {
-        Map<String, List<ModelSelectionService.AvailableModel>> grouped = modelSelectionService
-                .getAvailableModelsGrouped();
-        if (grouped.isEmpty()) {
-            return CommandResult.success(msg("command.model.list.title") + "\n\nNo models available.");
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("**").append(msg("command.model.list.title")).append("**\n\n");
-
-        for (Map.Entry<String, List<ModelSelectionService.AvailableModel>> entry : grouped.entrySet()) {
-            sb.append(msg("command.model.list.provider", entry.getKey())).append("\n");
-            for (ModelSelectionService.AvailableModel model : entry.getValue()) {
-                String reasoningInfo = model.hasReasoning()
-                        ? " [reasoning: " + String.join(", ", model.reasoningLevels()) + "]"
-                        : "";
-                sb.append(msg("command.model.list.model", model.id(), model.displayName(), reasoningInfo)).append("\n");
-            }
-            sb.append("\n");
-        }
-
-        return CommandResult.success(sb.toString());
-    }
-
-    private CommandResult handleModelSet(String tier, String modelSpec) {
-        ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(modelSpec);
-        if (!validation.valid()) {
-            if (ERR_PROVIDER_NOT_CONFIGURED.equals(validation.error())) {
-                String configuredStr = String.join(", ",
-                        runtimeConfigService.getConfiguredLlmProviders());
-                return CommandResult.success(msg("command.model.invalid.provider", modelSpec, configuredStr));
-            }
-            return CommandResult.success(msg("command.model.invalid.model", modelSpec));
-        }
-
-        UserPreferences prefs = preferencesService.getPreferences();
-        String defaultReasoning = findDefaultReasoning(modelSpec);
-
-        UserPreferences.TierOverride override = new UserPreferences.TierOverride(modelSpec, defaultReasoning);
-        prefs.getTierOverrides().put(tier, override);
-        preferencesService.savePreferences(prefs);
-
-        String displayReasoning = defaultReasoning != null ? " (reasoning: " + defaultReasoning + ")" : "";
-        return CommandResult.success(msg("command.model.set", tier, modelSpec) + displayReasoning);
-    }
-
-    private CommandResult handleModelSetReasoning(String tier, String level) {
-        UserPreferences prefs = preferencesService.getPreferences();
-        UserPreferences.TierOverride existing = prefs.getTierOverrides() != null
-                ? prefs.getTierOverrides().get(tier)
-                : null;
-
-        if (existing == null || existing.getModel() == null) {
-            return CommandResult.success(msg("command.model.no.override", tier));
-        }
-
-        ModelSelectionService.ValidationResult validation = modelSelectionService.validateReasoning(
-                existing.getModel(), level);
-        if (!validation.valid()) {
-            if (ERR_NO_REASONING.equals(validation.error())) {
-                return CommandResult.success(msg("command.model.no.reasoning", existing.getModel()));
-            }
-            List<String> available = modelSelectionService.getAvailableModels().stream()
-                    .filter(m -> m.id().equals(existing.getModel())
-                            || existing.getModel().endsWith("/" + m.id()))
-                    .flatMap(m -> m.reasoningLevels().stream())
-                    .toList();
-            return CommandResult.success(msg("command.model.invalid.reasoning", level, String.join(", ", available)));
-        }
-
-        existing.setReasoning(level);
-        preferencesService.savePreferences(prefs);
-        return CommandResult.success(msg("command.model.set.reasoning", tier, level));
-    }
-
-    private CommandResult handleModelReset(String tier) {
-        UserPreferences prefs = preferencesService.getPreferences();
-        if (prefs.getTierOverrides() != null) {
-            prefs.getTierOverrides().remove(tier);
-            preferencesService.savePreferences(prefs);
-        }
-        return CommandResult.success(msg("command.model.reset", tier));
-    }
-
-    private String findDefaultReasoning(String modelSpec) {
-        // Extract from models.json
-        List<ModelSelectionService.AvailableModel> models = modelSelectionService.getAvailableModels();
-        for (ModelSelectionService.AvailableModel model : models) {
-            if (model.id().equals(modelSpec) || modelSpec.endsWith("/" + model.id())) {
-                if (model.hasReasoning() && !model.reasoningLevels().isEmpty()) {
-                    List<String> levels = model.reasoningLevels();
-                    return levels.contains("medium") ? "medium" : levels.get(0);
-                }
-            }
-        }
-        return null;
-    }
-
-    // ==================== Auto Mode Commands ====================
-
-    private CommandResult handleAuto(List<String> args, String channelType, String sessionChatId, String transportChatId) {
-        if (!autoModeService.isFeatureEnabled()) {
-            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
-        }
-
-        if (args.isEmpty()) {
-            boolean enabled = autoModeService.isAutoModeEnabled();
-            return CommandResult.success(msg("command.auto.status", enabled ? "ON" : "OFF"));
-        }
-
-        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
-        return switch (subcommand) {
-            case "on" -> {
-                autoModeService.enableAutoMode();
-                if (channelType != null && sessionChatId != null) {
-                    eventPublisher.publishEvent(new AutoModeChannelRegisteredEvent(
-                            channelType,
-                            sessionChatId,
-                            transportChatId != null ? transportChatId : sessionChatId));
-                }
-                yield CommandResult.success(msg("command.auto.enabled"));
-            }
-            case "off" -> {
-                autoModeService.disableAutoMode();
-                yield CommandResult.success(msg("command.auto.disabled"));
-            }
-            default -> CommandResult.success(msg("command.auto.usage"));
-        };
-    }
-
-    private CommandResult handleGoals() {
-        if (!autoModeService.isFeatureEnabled()) {
-            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
-        }
-
-        List<Goal> goals = autoModeService.getGoals();
-        if (goals.isEmpty()) {
-            return CommandResult.success(msg("command.goals.empty"));
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append(msg("command.goals.title", goals.size())).append(DOUBLE_NEWLINE);
-
-        for (Goal goal : goals) {
-            long completed = goal.getCompletedTaskCount();
-            int total = goal.getTasks().size();
-            String statusIcon = switch (goal.getStatus()) {
-            case ACTIVE -> "▶️";
-            case COMPLETED -> "✅";
-            case PAUSED -> "⏸️";
-            case CANCELLED -> "❌";
-            };
-            sb.append(String.format("%s **%s** [%s] (%d/%d tasks) `goal_id: %s`%n",
-                    statusIcon, goal.getTitle(), goal.getStatus(), completed, total, goal.getId()));
-            if (goal.getDescription() != null && !goal.getDescription().isBlank()) {
-                sb.append("  ").append(goal.getDescription()).append("\n");
-            }
-        }
-
-        return CommandResult.success(sb.toString());
-    }
-
-    private CommandResult handleGoal(List<String> args) {
-        if (!autoModeService.isFeatureEnabled()) {
-            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
-        }
-
-        if (args.isEmpty()) {
-            return CommandResult.success(msg("command.goals.empty"));
-        }
-
-        String description = String.join(" ", args);
-        try {
-            Goal goal = autoModeService.createGoal(description, null);
-            return CommandResult.success(msg("command.goal.created", goal.getTitle()));
-        } catch (IllegalStateException e) {
-            return CommandResult.failure(msg("command.goal.limit",
-                    runtimeConfigService.getAutoMaxGoals()));
-        }
-    }
-
-    private CommandResult handleTasks() {
-        if (!autoModeService.isFeatureEnabled()) {
-            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
-        }
-
-        List<Goal> goals = autoModeService.getGoals();
-        boolean hasTasks = goals.stream().anyMatch(g -> !g.getTasks().isEmpty());
-        if (goals.isEmpty() || !hasTasks) {
-            return CommandResult.success(msg("command.tasks.empty"));
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append(msg("command.tasks.title")).append(DOUBLE_NEWLINE);
-
-        for (Goal goal : goals) {
-            if (goal.getTasks().isEmpty())
-                continue;
-
-            sb.append(msg("command.tasks.goal", goal.getTitle()));
-            sb.append(" [").append(goal.getStatus()).append("] `goal_id: ").append(goal.getId()).append("`\n");
-
-            List<AutoTask> sortedTasks = goal.getTasks().stream()
-                    .sorted(Comparator.comparingInt(AutoTask::getOrder))
-                    .toList();
-
-            for (AutoTask task : sortedTasks) {
-                String icon = switch (task.getStatus()) {
-                case PENDING -> "[ ]";
-                case IN_PROGRESS -> "[>]";
-                case COMPLETED -> "[x]";
-                case FAILED -> "[!]";
-                case SKIPPED -> "[-]";
-                };
-                sb.append("  ").append(icon).append(" ").append(task.getTitle())
-                        .append(" `task_id: ").append(task.getId()).append("`\n");
-            }
-            sb.append("\n");
-        }
-
-        return CommandResult.success(sb.toString().trim());
-    }
-
-    private CommandResult handleDiary(List<String> args) {
-        if (!autoModeService.isFeatureEnabled()) {
-            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
-        }
-
-        int count = 10;
-        if (!args.isEmpty()) {
-            try {
-                count = Integer.parseInt(args.get(0));
-                count = Math.max(1, Math.min(count, 50));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-
-        List<DiaryEntry> entries = autoModeService.getRecentDiary(count);
-        if (entries.isEmpty()) {
-            return CommandResult.success(msg("command.diary.empty"));
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append(msg("command.diary.title", entries.size())).append(DOUBLE_NEWLINE);
-
-        DateTimeFormatter timeFormat = DateTimeFormatter.ofPattern("HH:mm")
-                .withZone(ZoneOffset.UTC);
-
-        for (DiaryEntry entry : entries) {
-            sb.append("[").append(timeFormat.format(entry.getTimestamp())).append("] ");
-            sb.append("**").append(entry.getType()).append("**: ");
-            sb.append(entry.getContent()).append("\n");
-        }
-
-        return CommandResult.success(sb.toString());
-    }
-
-    // ==================== Plan Mode Commands ====================
-
-    private CommandResult handlePlan(List<String> args, SessionIdentity sessionIdentity, String transportChatId) {
-        if (!planService.isFeatureEnabled()) {
-            return CommandResult.success(msg(MSG_PLAN_NOT_AVAILABLE));
-        }
-
-        if (args.isEmpty()) {
-            boolean active = sessionIdentity != null
-                    ? planService.isPlanModeActive(sessionIdentity)
-                    : planService.isPlanModeActive();
-            return CommandResult.success(msg("command.plan.status", active ? "ON" : "OFF"));
-        }
-
-        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
-        return switch (subcommand) {
-        case "on" -> handlePlanOn(args, sessionIdentity, transportChatId);
-        case "off" -> handlePlanOff(sessionIdentity);
-        case "done" -> handlePlanDone(sessionIdentity);
-        case "approve" -> handlePlanApprove(args, sessionIdentity);
-        case "cancel" -> handlePlanCancel(args, sessionIdentity);
-        case "resume" -> handlePlanResume(args, sessionIdentity);
-        case CMD_STATUS -> handlePlanStatus(args, sessionIdentity);
-        default -> CommandResult.success(msg("command.plan.usage"));
-        };
-    }
-
-    private CommandResult handlePlanOn(List<String> args, SessionIdentity sessionIdentity, String transportChatId) {
-        if (sessionIdentity == null && planService.isPlanModeActive()) {
-            return CommandResult.success(msg("command.plan.already-active"));
-        }
-        if (sessionIdentity != null && planService.isPlanModeActive(sessionIdentity)) {
-            return CommandResult.success(msg("command.plan.already-active"));
-        }
-
-        String modelTier = args.size() > 1 ? args.get(1).toLowerCase(Locale.ROOT) : null;
-        try {
-            if (sessionIdentity == null) {
-                planService.activatePlanMode(transportChatId, modelTier);
-            } else {
-                planService.activatePlanMode(sessionIdentity, transportChatId, modelTier);
-            }
-            String tierMsg = modelTier != null ? " (tier: " + modelTier + ")" : "";
-            return CommandResult.success(msg("command.plan.enabled") + tierMsg);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return CommandResult.failure(msg("command.plan.limit", runtimeConfigService.getPlanMaxPlans()));
-        }
-    }
-
-    private CommandResult handlePlanOff(SessionIdentity sessionIdentity) {
-        if (sessionIdentity == null && !planService.isPlanModeActive()) {
-            return CommandResult.success(msg("command.plan.not-active"));
-        }
-        if (sessionIdentity != null && !planService.isPlanModeActive(sessionIdentity)) {
-            return CommandResult.success(msg("command.plan.not-active"));
-        }
-
-        if (sessionIdentity == null) {
-            planService.deactivatePlanMode();
-        } else {
-            planService.deactivatePlanMode(sessionIdentity);
-        }
-        return CommandResult.success(msg("command.plan.disabled"));
-    }
-
-    private CommandResult handlePlanDone(SessionIdentity sessionIdentity) {
-        if (sessionIdentity == null && !planService.isPlanModeActive()) {
-            return CommandResult.success(msg("command.plan.not-active"));
-        }
-        if (sessionIdentity != null && !planService.isPlanModeActive(sessionIdentity)) {
-            return CommandResult.success(msg("command.plan.not-active"));
-        }
-
-        // "Done" means: stop plan drafting mode.
-        // The plan itself is finalized via the plan_set_content tool.
-        if (sessionIdentity == null) {
-            planService.deactivatePlanMode();
-        } else {
-            planService.deactivatePlanMode(sessionIdentity);
-        }
-        return CommandResult.success(msg("command.plan.done"));
-    }
-
-    private CommandResult handlePlanApprove(List<String> args, SessionIdentity sessionIdentity) {
-        String planId = args.size() > 1 ? args.get(1) : findMostRecentReadyPlanId(sessionIdentity);
-        if (planId == null) {
-            return CommandResult.failure(msg("command.plan.no-ready"));
-        }
-
-        try {
-            if (sessionIdentity != null && planService.getPlan(planId, sessionIdentity).isEmpty()) {
-                return CommandResult.failure(msg("command.plan.not-found", planId));
-            }
-            planService.approvePlan(planId);
-            planExecutionService.executePlan(planId);
-            return CommandResult.success(msg("command.plan.approved", planId));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return CommandResult.failure(e.getMessage());
-        }
-    }
-
-    private CommandResult handlePlanCancel(List<String> args, SessionIdentity sessionIdentity) {
-        String planId = args.size() > 1 ? args.get(1) : findMostRecentActivePlanId(sessionIdentity);
-        if (planId == null) {
-            return CommandResult.failure(msg("command.plan.no-active-plan"));
-        }
-
-        try {
-            if (sessionIdentity != null && planService.getPlan(planId, sessionIdentity).isEmpty()) {
-                return CommandResult.failure(msg("command.plan.not-found", planId));
-            }
-            planService.cancelPlan(planId);
-            return CommandResult.success(msg("command.plan.cancelled", planId));
-        } catch (IllegalArgumentException e) {
-            return CommandResult.failure(e.getMessage());
-        }
-    }
-
-    private CommandResult handlePlanResume(List<String> args, SessionIdentity sessionIdentity) {
-        String planId = args.size() > 1 ? args.get(1) : findMostRecentPartialPlanId(sessionIdentity);
-        if (planId == null) {
-            return CommandResult.failure(msg("command.plan.no-partial"));
-        }
-
-        try {
-            if (sessionIdentity != null && planService.getPlan(planId, sessionIdentity).isEmpty()) {
-                return CommandResult.failure(msg("command.plan.not-found", planId));
-            }
-            planExecutionService.resumePlan(planId);
-            return CommandResult.success(msg("command.plan.resumed", planId));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return CommandResult.failure(e.getMessage());
-        }
-    }
-
-    private CommandResult handlePlanStatus(List<String> args, SessionIdentity sessionIdentity) {
-        String planId = args.size() > 1 ? args.get(1) : findMostRecentActivePlanId(sessionIdentity);
-        if (planId == null) {
-            // Show most recent plan of any status
-            List<Plan> plans = sessionIdentity != null
-                    ? planService.getPlans(sessionIdentity)
-                    : planService.getPlans();
-            if (plans.isEmpty()) {
-                return CommandResult.success(msg("command.plans.empty"));
-            }
-            planId = plans.get(plans.size() - 1).getId();
-        }
-
-        Optional<Plan> plan = sessionIdentity != null
-                ? planService.getPlan(planId, sessionIdentity)
-                : planService.getPlan(planId);
-        return plan
-                .map(this::formatPlanStatus)
-                .map(CommandResult::success)
-                .orElse(CommandResult.failure(msg("command.plan.not-found", planId)));
-    }
-
-    private CommandResult handlePlans(SessionIdentity sessionIdentity) {
-        if (!planService.isFeatureEnabled()) {
-            return CommandResult.success(msg(MSG_PLAN_NOT_AVAILABLE));
-        }
-
-        List<Plan> plans = sessionIdentity != null
-                ? planService.getPlans(sessionIdentity)
-                : planService.getPlans();
-        if (plans.isEmpty()) {
-            return CommandResult.success(msg("command.plans.empty"));
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append(msg("command.plans.title", plans.size())).append(DOUBLE_NEWLINE);
-
-        for (Plan plan : plans) {
-            long completed = plan.getCompletedStepCount();
-            int total = plan.getSteps().size();
-            String statusIcon = switch (plan.getStatus()) {
-            case COLLECTING -> "✍️";
-            case READY -> "⏳";
-            case APPROVED -> "✅";
-            case EXECUTING -> "▶️";
-            case COMPLETED -> "✅";
-            case PARTIALLY_COMPLETED -> "⚠️";
-            case CANCELLED -> "❌";
-            };
-            sb.append(String.format("%s `%s` [%s] (%d/%d steps)%n",
-                    statusIcon, plan.getId().substring(0, 8), plan.getStatus(), completed, total));
-            if (plan.getTitle() != null) {
-                sb.append("  ").append(plan.getTitle()).append("\n");
-            }
-        }
-
-        return CommandResult.success(sb.toString());
-    }
-
-    private String formatPlanStatus(Plan plan) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("**Plan** `").append(plan.getId().substring(0, 8)).append("`\n");
-        sb.append("Status: ").append(plan.getStatus()).append("\n");
-        if (plan.getModelTier() != null) {
-            sb.append("Tier: ").append(plan.getModelTier()).append("\n");
-        }
-        sb.append("Steps: ").append(plan.getSteps().size()).append("\n\n");
-
-        List<PlanStep> sortedSteps = plan.getSteps().stream()
-                .sorted(Comparator.comparingInt(PlanStep::getOrder))
-                .toList();
-
-        for (PlanStep step : sortedSteps) {
-            String icon = switch (step.getStatus()) {
-            case PENDING -> "[ ]";
-            case IN_PROGRESS -> "[>]";
-            case COMPLETED -> "[x]";
-            case FAILED -> "[!]";
-            case SKIPPED -> "[-]";
-            };
-            sb.append("  ").append(icon).append(" `").append(step.getToolName()).append("`");
-            if (step.getDescription() != null) {
-                sb.append(" — ").append(step.getDescription());
-            }
-            sb.append("\n");
-        }
-
-        return sb.toString();
-    }
-
-    private String findMostRecentReadyPlanId(SessionIdentity sessionIdentity) {
-        List<Plan> plans = sessionIdentity != null
-                ? planService.getPlans(sessionIdentity)
-                : planService.getPlans();
-        return plans.stream()
-                .filter(p -> p.getStatus() == Plan.PlanStatus.READY)
-                .reduce((first, second) -> second)
-                .map(Plan::getId)
-                .orElse(null);
-    }
-
-    private String findMostRecentActivePlanId(SessionIdentity sessionIdentity) {
-        List<Plan> plans = sessionIdentity != null
-                ? planService.getPlans(sessionIdentity)
-                : planService.getPlans();
-        return plans.stream()
-                .filter(p -> p.getStatus() == Plan.PlanStatus.COLLECTING
-                        || p.getStatus() == Plan.PlanStatus.READY
-                        || p.getStatus() == Plan.PlanStatus.APPROVED
-                        || p.getStatus() == Plan.PlanStatus.EXECUTING)
-                .reduce((first, second) -> second)
-                .map(Plan::getId)
-                .orElse(null);
-    }
-
-    private String findMostRecentPartialPlanId(SessionIdentity sessionIdentity) {
-        List<Plan> plans = sessionIdentity != null
-                ? planService.getPlans(sessionIdentity)
-                : planService.getPlans();
-        return plans.stream()
-                .filter(p -> p.getStatus() == Plan.PlanStatus.PARTIALLY_COMPLETED)
-                .reduce((first, second) -> second)
-                .map(Plan::getId)
-                .orElse(null);
-    }
-
-    // ==================== Schedule Commands ====================
-
-    private CommandResult handleSchedule(List<String> args) {
-        if (!autoModeService.isFeatureEnabled()) {
-            return CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
-        }
-
-        if (args.isEmpty()) {
-            return handleScheduleList();
-        }
-
-        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
-        List<String> subArgs = args.subList(1, args.size());
-
-        return switch (subcommand) {
-        case CMD_GOAL -> handleScheduleGoal(subArgs);
-        case "task" -> handleScheduleTask(subArgs);
-        case "list" -> handleScheduleList();
-        case "delete" -> handleScheduleDelete(subArgs);
-        case CMD_HELP -> CommandResult.success(msg("command.schedule.help.text"));
-        default -> CommandResult.success(msg("command.schedule.usage"));
-        };
-    }
-
-    private CommandResult handleScheduleGoal(List<String> args) {
-        if (args.size() < MIN_SCHEDULE_ARGS) {
-            return CommandResult.success(msg("command.schedule.goal.usage"));
-        }
-
-        String goalId = args.get(0);
-        if (autoModeService.getGoal(goalId).isEmpty()) {
-            return CommandResult.failure(msg("command.schedule.goal.not-found", goalId));
-        }
-
-        return createScheduleFromArgs(ScheduleEntry.ScheduleType.GOAL, goalId, args.subList(1, args.size()));
-    }
-
-    private CommandResult handleScheduleTask(List<String> args) {
-        if (args.size() < MIN_SCHEDULE_ARGS) {
-            return CommandResult.success(msg("command.schedule.task.usage"));
-        }
-
-        String taskId = args.get(0);
-        if (autoModeService.findGoalForTask(taskId).isEmpty()) {
-            return CommandResult.failure(msg("command.schedule.task.not-found", taskId));
-        }
-
-        return createScheduleFromArgs(ScheduleEntry.ScheduleType.TASK, taskId, args.subList(1, args.size()));
-    }
-
-    private CommandResult createScheduleFromArgs(ScheduleEntry.ScheduleType type,
-            String targetId, List<String> cronAndRepeat) {
-        int maxExecutions = -1;
-
-        // Check if last arg is a numeric repeat count
-        List<String> cronParts = new ArrayList<>(cronAndRepeat);
-        if (cronParts.size() > MIN_CRON_PARTS_FOR_REPEAT_CHECK) {
-            String lastArg = cronParts.get(cronParts.size() - 1);
-            try {
-                maxExecutions = Integer.parseInt(lastArg);
-                cronParts = cronParts.subList(0, cronParts.size() - 1);
-            } catch (NumberFormatException ignored) {
-                // Last arg is part of cron expression
-            }
-        }
-
-        String cronExpression = String.join(" ", cronParts);
-
-        try {
-            ScheduleEntry entry = scheduleService.createSchedule(type, targetId, cronExpression, maxExecutions);
-            return CommandResult.success(msg("command.schedule.created",
-                    entry.getId(), entry.getCronExpression()));
-        } catch (IllegalArgumentException e) {
-            return CommandResult.failure(msg("command.schedule.invalid-cron", e.getMessage()));
-        }
-    }
-
-    private CommandResult handleScheduleList() {
-        List<ScheduleEntry> schedules = scheduleService.getSchedules();
-        if (schedules.isEmpty()) {
-            return CommandResult.success(msg("command.schedule.list.empty"));
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append(msg("command.schedule.list.title", schedules.size())).append(DOUBLE_NEWLINE);
-
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-                .withZone(ZoneOffset.UTC);
-
-        for (ScheduleEntry entry : schedules) {
-            String enabledIcon = entry.isEnabled() ? "✅" : "❌";
-            sb.append(String.format("%s `%s` [%s] -> %s%n",
-                    enabledIcon, entry.getId(), entry.getType(), entry.getTargetId()));
-            sb.append("  Cron: `").append(entry.getCronExpression()).append("`");
-            if (entry.getMaxExecutions() > 0) {
-                sb.append(String.format(" (%d/%d runs)", entry.getExecutionCount(), entry.getMaxExecutions()));
-            } else {
-                sb.append(String.format(" (%d runs)", entry.getExecutionCount()));
-            }
-            sb.append("\n");
-            if (entry.getNextExecutionAt() != null) {
-                sb.append("  Next: ").append(formatter.format(entry.getNextExecutionAt())).append(" UTC\n");
-            }
-        }
-
-        return CommandResult.success(sb.toString());
-    }
-
-    private CommandResult handleScheduleDelete(List<String> args) {
-        if (args.isEmpty()) {
-            return CommandResult.success(msg("command.schedule.delete.usage"));
-        }
-
-        String scheduleId = args.get(0);
-        try {
-            scheduleService.deleteSchedule(scheduleId);
-            return CommandResult.success(msg("command.schedule.deleted", scheduleId));
-        } catch (IllegalArgumentException e) {
-            return CommandResult.failure(msg("command.schedule.not-found", scheduleId));
-        }
-    }
-
-    private CommandResult handleLater(List<String> args, String channelType, String conversationKey) {
-        if (!runtimeConfigService.isDelayedActionsEnabled()) {
-            return CommandResult.success(msg("command.later.not-available"));
-        }
-        if (delayedSessionActionService == null) {
-            return CommandResult.success(msg("command.later.not-available"));
-        }
-        if (channelType == null || conversationKey == null) {
-            return CommandResult.failure(msg("command.later.not-available"));
-        }
-        if (delayedActionPolicyService != null && !delayedActionPolicyService.canScheduleActions(channelType)) {
-            return CommandResult.success(msg("command.later.not-available"));
-        }
-        if (args.isEmpty()) {
-            return CommandResult.success(msg("command.later.usage"));
-        }
-
-        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
-        return switch (subcommand) {
-        case SUBCMD_LIST -> handleLaterList(channelType, conversationKey);
-        case "cancel" -> handleLaterCancel(args.subList(1, args.size()), channelType, conversationKey);
-        case "now" -> handleLaterRunNow(args.subList(1, args.size()), channelType, conversationKey);
-        case CMD_HELP -> CommandResult.success(msg("command.later.help.text"));
-        default -> CommandResult.success(msg("command.later.usage"));
-        };
-    }
-
-    private CommandResult handleLaterList(String channelType, String conversationKey) {
-        List<DelayedSessionAction> actions = delayedSessionActionService.listActions(channelType, conversationKey);
-        if (actions.isEmpty()) {
-            return CommandResult.success(msg("command.later.list.empty"));
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append(msg("command.later.list.title", actions.size())).append(DOUBLE_NEWLINE);
-        for (DelayedSessionAction action : actions) {
-            sb.append("`").append(action.getId()).append("` ");
-            sb.append(resolveLaterSummary(action)).append("\n");
-            sb.append(msg("command.later.list.status")).append(": ");
-            sb.append(resolveLaterStatus(action)).append("\n");
-            sb.append(msg("command.later.list.next-check")).append(": ");
-            sb.append(formatLaterRunAt(action));
-            if (action.isCancelOnUserActivity()) {
-                sb.append("\n").append(msg("command.later.list.cancel-on-activity"));
-            }
-            sb.append(DOUBLE_NEWLINE);
-        }
-        return CommandResult.success(sb.toString().stripTrailing());
-    }
-
-    private CommandResult handleLaterCancel(List<String> args, String channelType, String conversationKey) {
-        if (args.isEmpty()) {
-            return CommandResult.success(msg("command.later.cancel.usage"));
-        }
-        String actionId = args.get(0);
-        boolean cancelled = delayedSessionActionService.cancelAction(actionId, channelType, conversationKey);
-        if (!cancelled) {
-            return CommandResult.failure(msg("command.later.not-found", actionId));
-        }
-        return CommandResult.success(msg("command.later.cancelled", actionId));
-    }
-
-    private CommandResult handleLaterRunNow(List<String> args, String channelType, String conversationKey) {
-        if (args.isEmpty()) {
-            return CommandResult.success(msg("command.later.now.usage"));
-        }
-        String actionId = args.get(0);
-        boolean updated = delayedSessionActionService.runNow(actionId, channelType, conversationKey);
-        if (!updated) {
-            return CommandResult.failure(msg("command.later.not-found", actionId));
-        }
-        return CommandResult.success(msg("command.later.now.done", actionId));
-    }
-
     private String msg(String key, Object... args) {
         return preferencesService.getMessage(key, args);
-    }
-
-    private String resolveLaterSummary(DelayedSessionAction action) {
-        String humanSummary = payloadString(action, "humanSummary");
-        if (humanSummary != null) {
-            return humanSummary;
-        }
-        String message = payloadString(action, "message");
-        String originalSummary = payloadString(action, "originalSummary");
-        if (action.getKind() == null) {
-            return msg("command.later.kind.default");
-        }
-        return switch (action.getKind()) {
-        case REMIND_LATER -> message != null ? msg("command.later.kind.reminder.with-message", message)
-                : msg("command.later.kind.reminder");
-        case RUN_LATER -> originalSummary != null ? msg("command.later.kind.check-back.with-summary", originalSummary)
-                : msg("command.later.kind.check-back");
-        case NOTIFY_JOB_READY -> message != null ? message : msg("command.later.kind.job-result");
-        };
-    }
-
-    private String resolveLaterStatus(DelayedSessionAction action) {
-        if (action == null || action.getStatus() == null) {
-            return msg("command.later.status.unknown");
-        }
-        return switch (action.getStatus()) {
-        case SCHEDULED -> msg("command.later.status.scheduled");
-        case LEASED -> msg("command.later.status.leased");
-        case COMPLETED -> msg("command.later.status.completed");
-        case CANCELLED -> msg("command.later.status.cancelled");
-        case DEAD_LETTER -> msg("command.later.status.dead-letter");
-        };
-    }
-
-    private String formatLaterRunAt(DelayedSessionAction action) {
-        if (action == null || action.getRunAt() == null) {
-            return msg("command.later.list.no-time");
-        }
-        ZoneId zoneId = resolveUserZoneId();
-        return LATER_TIME_FORMATTER.format(action.getRunAt().atZone(zoneId));
-    }
-
-    private ZoneId resolveUserZoneId() {
-        try {
-            UserPreferences preferences = preferencesService.getPreferences();
-            if (preferences != null && preferences.getTimezone() != null && !preferences.getTimezone().isBlank()) {
-                return ZoneId.of(preferences.getTimezone().trim());
-            }
-        } catch (RuntimeException e) {
-            log.debug("Falling back to UTC for delayed action time formatting: {}", e.getMessage());
-        }
-        return ZoneOffset.UTC;
-    }
-
-    private String payloadString(DelayedSessionAction action, String key) {
-        if (action == null || action.getPayload() == null) {
-            return null;
-        }
-        Object value = action.getPayload().get(key);
-        return value instanceof String stringValue && !stringValue.isBlank() ? stringValue.trim() : null;
     }
 }

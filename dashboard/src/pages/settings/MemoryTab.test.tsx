@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { MemoryConfig, MemoryPreset } from '../../api/settings';
+import type { MemoryConfig, MemoryPreset } from '../../api/settingsTypes';
 import MemoryTab from './MemoryTab';
 
 const memoryConfig: MemoryConfig = {

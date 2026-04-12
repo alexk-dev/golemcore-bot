@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+import me.golemcore.bot.port.outbound.EmbeddingProviderIds;
 import org.springframework.stereotype.Component;
 
 /**
@@ -116,7 +117,7 @@ public class TacticEmbeddingBackfillScheduler {
         if (status == null) {
             return true;
         }
-        if (!"ollama".equalsIgnoreCase(status.getProvider())) {
+        if (!EmbeddingProviderIds.OLLAMA.equalsIgnoreCase(status.getProvider())) {
             return true;
         }
         return "hybrid".equalsIgnoreCase(status.getMode())

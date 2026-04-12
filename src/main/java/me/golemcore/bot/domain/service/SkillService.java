@@ -19,17 +19,6 @@ package me.golemcore.bot.domain.service;
  */
 
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.component.SkillComponent;
-import me.golemcore.bot.domain.model.McpConfig;
-import me.golemcore.bot.domain.model.Skill;
-import me.golemcore.bot.domain.model.SkillDocument;
-import me.golemcore.bot.domain.model.SkillVariable;
-import me.golemcore.bot.infrastructure.config.BotProperties;
-import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -40,6 +29,16 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.component.SkillComponent;
+import me.golemcore.bot.domain.model.McpConfig;
+import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.SkillDocument;
+import me.golemcore.bot.domain.model.SkillVariable;
+import me.golemcore.bot.port.outbound.SkillSettingsPort;
+import me.golemcore.bot.port.outbound.StoragePort;
+import org.springframework.stereotype.Service;
 
 /**
  * Service for loading and managing skills from SKILL.md files with YAML
@@ -60,7 +59,7 @@ public class SkillService implements SkillComponent {
     private static final int MIN_PATH_PARTS_FOR_SKILL_NAME = 2;
 
     private final StoragePort storagePort;
-    private final BotProperties properties;
+    private final SkillSettingsPort settingsPort;
     private final SkillVariableResolver variableResolver;
     private final RuntimeConfigService runtimeConfigService;
     private final SkillDocumentService skillDocumentService;
@@ -406,7 +405,7 @@ public class SkillService implements SkillComponent {
     }
 
     private String getSkillsDirectory() {
-        String configured = properties.getSkills().getDirectory();
+        String configured = settingsPort.skills().directory();
         if (configured == null || configured.isBlank()) {
             return DEFAULT_SKILLS_DIR;
         }

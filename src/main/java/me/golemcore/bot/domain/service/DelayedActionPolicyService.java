@@ -18,13 +18,11 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.adapter.inbound.web.WebChannelAdapter;
-import me.golemcore.bot.adapter.inbound.webhook.WebhookChannelAdapter;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
+import me.golemcore.bot.port.outbound.ChannelRuntimePort;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import org.springframework.stereotype.Service;
 
-import java.lang.reflect.Method;
 import java.util.Locale;
 
 /**
@@ -33,18 +31,16 @@ import java.util.Locale;
 @Service
 public class DelayedActionPolicyService {
 
-    private static final String CHANNEL_WEBHOOK = "webhook";
-
     private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
-    private final ChannelRegistry channelRegistry;
+    private final ChannelRuntimePort channelRuntimePort;
 
     public DelayedActionPolicyService(RuntimeConfigService runtimeConfigService,
             UserPreferencesService userPreferencesService,
-            ChannelRegistry channelRegistry) {
+            ChannelRuntimePort channelRuntimePort) {
         this.runtimeConfigService = runtimeConfigService;
         this.userPreferencesService = userPreferencesService;
-        this.channelRegistry = channelRegistry;
+        this.channelRuntimePort = channelRuntimePort;
     }
 
     public boolean canScheduleActions() {
@@ -76,24 +72,21 @@ public class DelayedActionPolicyService {
         if (StringValueSupport.isBlank(channelType)) {
             return false;
         }
-        return !CHANNEL_WEBHOOK.equals(channelType.trim().toLowerCase(Locale.ROOT));
+        return !ChannelTypes.WEBHOOK.equals(channelType.trim().toLowerCase(Locale.ROOT));
     }
 
     public boolean supportsProactiveMessage(String channelType, String transportChatId) {
         if (!canPersistDelayedIntent(channelType) || !notificationsEnabled()) {
             return false;
         }
-        ChannelPort channel = findRunningChannel(channelType);
-        if (channel == null || !channel.isRunning()) {
+        ChannelDeliveryPort channel = findChannel(channelType);
+        if (channel == null) {
             return false;
         }
-        if (channel instanceof WebChannelAdapter webChannelAdapter) {
-            return webChannelAdapter.hasActiveSession(transportChatId);
-        }
-        if (channel instanceof WebhookChannelAdapter) {
+        if (!channelRuntimePort.isChannelRunning(channelType)) {
             return false;
         }
-        return true;
+        return channel.supportsProactiveMessage(transportChatId);
     }
 
     public boolean supportsDelayedExecution(String channelType, String transportChatId) {
@@ -104,23 +97,17 @@ public class DelayedActionPolicyService {
         if (!supportsProactiveMessage(channelType, transportChatId)) {
             return false;
         }
-        ChannelPort channel = findRunningChannel(channelType);
+        ChannelDeliveryPort channel = findChannel(channelType);
         if (channel == null) {
             return false;
         }
-        try {
-            Method method = channel.getClass().getMethod("sendDocument",
-                    String.class, byte[].class, String.class, String.class);
-            return !ChannelPort.class.equals(method.getDeclaringClass());
-        } catch (NoSuchMethodException e) {
-            return false;
-        }
+        return channel.supportsProactiveDocument(transportChatId);
     }
 
-    private ChannelPort findRunningChannel(String channelType) {
+    private ChannelDeliveryPort findChannel(String channelType) {
         if (StringValueSupport.isBlank(channelType)) {
             return null;
         }
-        return channelRegistry.get(channelType).orElse(null);
+        return channelRuntimePort.findChannel(channelType).orElse(null);
     }
 }

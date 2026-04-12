@@ -19,8 +19,14 @@ describe('LlmProviderEditorCard', () => {
         showKey={false}
         isSaving={false}
         isTesting={false}
+        importableModels={[]}
+        selectedImportModels={[]}
         onFormChange={vi.fn()}
         onToggleShowKey={vi.fn()}
+        onToggleImportModel={vi.fn()}
+        onSelectAllImportModels={vi.fn()}
+        onClearImportModels={vi.fn()}
+        onInvertImportModels={vi.fn()}
         onSave={vi.fn()}
         onCancel={vi.fn()}
         onTestDraft={vi.fn()}
@@ -49,8 +55,14 @@ describe('LlmProviderEditorCard', () => {
         showKey={false}
         isSaving={false}
         isTesting={false}
+        importableModels={['draftmesh/draft-gpt']}
+        selectedImportModels={['draftmesh/draft-gpt']}
         onFormChange={vi.fn()}
         onToggleShowKey={vi.fn()}
+        onToggleImportModel={vi.fn()}
+        onSelectAllImportModels={vi.fn()}
+        onClearImportModels={vi.fn()}
+        onInvertImportModels={vi.fn()}
         onSave={vi.fn()}
         onCancel={vi.fn()}
         onTestDraft={vi.fn()}
@@ -60,5 +72,9 @@ describe('LlmProviderEditorCard', () => {
 
     expect(html).toContain('Test Draft');
     expect(html).not.toContain('Test Saved');
+    expect(html).toContain('Models to import');
+    expect(html).toContain('Select all');
+    expect(html).toContain('Clear all');
+    expect(html).toContain('Invert');
   });
 });

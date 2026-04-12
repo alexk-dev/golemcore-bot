@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.adapter.outbound.storage;
 
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AudioFormat;
@@ -36,11 +36,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SuppressWarnings("PMD.TooManyMethods")
 class SessionProtoMapperTest {
 
-    private SessionProtoMapper mapper;
+    private SessionProtoMapperSupport mapper;
 
     @BeforeEach
     void setUp() {
-        mapper = new SessionProtoMapper();
+        mapper = new SessionProtoMapperSupport();
     }
 
     // ── Round-trip: full session ──────────────────────────────────────

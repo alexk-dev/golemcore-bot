@@ -5,10 +5,10 @@ import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.PlanExecutionCompletedEvent;
 import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.port.outbound.PlanExecutionNotificationPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -45,7 +45,7 @@ class PlanExecutionServiceTest {
     private PlanService planService;
     private ToolComponent filesystemTool;
     private ToolComponent shellTool;
-    private ApplicationEventPublisher eventPublisher;
+    private PlanExecutionNotificationPort planExecutionNotificationPort;
     private RuntimeConfigService runtimeConfigService;
     private PlanExecutionService service;
 
@@ -61,7 +61,7 @@ class PlanExecutionServiceTest {
         when(shellTool.getToolName()).thenReturn(TOOL_SHELL);
         when(shellTool.isEnabled()).thenReturn(true);
 
-        eventPublisher = mock(ApplicationEventPublisher.class);
+        planExecutionNotificationPort = mock(PlanExecutionNotificationPort.class);
 
         runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isPlanStopOnFailure()).thenReturn(true);
@@ -69,7 +69,7 @@ class PlanExecutionServiceTest {
         service = new PlanExecutionService(
                 planService,
                 List.of(filesystemTool, shellTool),
-                eventPublisher,
+                planExecutionNotificationPort,
                 runtimeConfigService);
     }
 
@@ -217,7 +217,7 @@ class PlanExecutionServiceTest {
 
         ArgumentCaptor<PlanExecutionCompletedEvent> captor = ArgumentCaptor
                 .forClass(PlanExecutionCompletedEvent.class);
-        verify(eventPublisher).publishEvent(captor.capture());
+        verify(planExecutionNotificationPort).publish(captor.capture());
 
         PlanExecutionCompletedEvent event = captor.getValue();
         assertEquals(PLAN_ID, event.planId());
@@ -243,7 +243,7 @@ class PlanExecutionServiceTest {
 
         service.executePlan(PLAN_ID).get(5, TimeUnit.SECONDS);
 
-        verify(eventPublisher, never()).publishEvent(any(PlanExecutionCompletedEvent.class));
+        verify(planExecutionNotificationPort, never()).publish(any(PlanExecutionCompletedEvent.class));
     }
 
     @Test

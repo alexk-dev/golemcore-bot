@@ -8,7 +8,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.WebSocketSession;
@@ -199,6 +199,11 @@ public class WebChannelAdapter implements ChannelPort {
         }
         WebSocketSession session = sessions.get(chatId);
         return session != null && session.isOpen();
+    }
+
+    @Override
+    public boolean supportsProactiveMessage(String chatId) {
+        return isRunning() && hasActiveSession(chatId);
     }
 
     public void handleIncomingMessage(Message message, String connectionId) {

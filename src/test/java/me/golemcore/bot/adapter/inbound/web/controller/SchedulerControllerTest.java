@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.application.scheduler.SchedulerFacade;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -11,8 +12,8 @@ import me.golemcore.bot.domain.model.ScheduleReportConfigUpdate;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -45,7 +46,7 @@ class SchedulerControllerTest {
     private AutoModeService autoModeService;
     private ScheduleService scheduleService;
     private RuntimeConfigService runtimeConfigService;
-    private ChannelRegistry channelRegistry;
+    private ChannelRuntimePort channelRuntimePort;
     private SchedulerController controller;
     private ObjectMapper objectMapper;
 
@@ -54,8 +55,9 @@ class SchedulerControllerTest {
         autoModeService = mock(AutoModeService.class);
         scheduleService = mock(ScheduleService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
-        channelRegistry = mock(ChannelRegistry.class);
-        controller = new SchedulerController(autoModeService, scheduleService, runtimeConfigService, channelRegistry);
+        channelRuntimePort = mock(ChannelRuntimePort.class);
+        controller = new SchedulerController(
+                new SchedulerFacade(autoModeService, scheduleService, runtimeConfigService, channelRuntimePort));
         objectMapper = new ObjectMapper().findAndRegisterModules();
 
         RuntimeConfig.TelegramConfig telegramConfig = new RuntimeConfig.TelegramConfig();
@@ -65,7 +67,7 @@ class SchedulerControllerTest {
 
         ChannelPort webhookChannel = mock(ChannelPort.class);
         when(webhookChannel.getChannelType()).thenReturn("webhook");
-        when(channelRegistry.getAll()).thenReturn(List.of(webhookChannel));
+        when(channelRuntimePort.listChannels()).thenReturn(List.of(webhookChannel));
     }
 
     @Test
@@ -1159,7 +1161,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
 
         ChannelPort telegramChannel = mock(ChannelPort.class);
-        when(channelRegistry.get("telegram")).thenReturn(Optional.of(telegramChannel));
+        when(channelRuntimePort.findChannel("telegram")).thenReturn(Optional.of(telegramChannel));
 
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
                 eq("0 0 9 * * *"), eq(-1), eq(false), any(ScheduleReportConfig.class)))
@@ -1204,7 +1206,7 @@ class SchedulerControllerTest {
 
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
-        when(channelRegistry.get("nonexistent")).thenReturn(Optional.empty());
+        when(channelRuntimePort.findChannel("nonexistent")).thenReturn(Optional.empty());
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
                 "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
@@ -1241,7 +1243,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
 
         ChannelPort telegramChannel = mock(ChannelPort.class);
-        when(channelRegistry.get("telegram")).thenReturn(Optional.of(telegramChannel));
+        when(channelRuntimePort.findChannel("telegram")).thenReturn(Optional.of(telegramChannel));
 
         when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
                 eq("0 0 9 * * *"), eq(-1), eq(false), any(ScheduleReportConfig.class)))
@@ -1561,7 +1563,7 @@ class SchedulerControllerTest {
 
         ChannelPort telegramChannel = mock(ChannelPort.class);
         when(telegramChannel.getChannelType()).thenReturn("telegram");
-        when(channelRegistry.get("telegram")).thenReturn(Optional.of(telegramChannel));
+        when(channelRuntimePort.findChannel("telegram")).thenReturn(Optional.of(telegramChannel));
 
         SchedulerController.ScheduleReportRequest reportReq = new SchedulerController.ScheduleReportRequest(
                 "telegram", null, "https://example.com", null);
@@ -1578,7 +1580,7 @@ class SchedulerControllerTest {
     void createScheduleShouldRejectUnknownChannelType() {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(Goal.builder().id("goal-1").build()));
-        when(channelRegistry.get("unknown")).thenReturn(Optional.empty());
+        when(channelRuntimePort.findChannel("unknown")).thenReturn(Optional.empty());
 
         SchedulerController.ScheduleReportRequest reportReq = new SchedulerController.ScheduleReportRequest(
                 "unknown", "12345", null, null);
@@ -1616,7 +1618,7 @@ class SchedulerControllerTest {
 
         ChannelPort telegramChannel = mock(ChannelPort.class);
         when(telegramChannel.getChannelType()).thenReturn("telegram");
-        when(channelRegistry.getAll()).thenReturn(List.of(telegramChannel));
+        when(channelRuntimePort.listChannels()).thenReturn(List.of(telegramChannel));
 
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.isAutoModeEnabled()).thenReturn(false);
@@ -1643,7 +1645,7 @@ class SchedulerControllerTest {
         when(autoModeService.isAutoModeEnabled()).thenReturn(false);
         when(autoModeService.getGoals()).thenReturn(List.of());
         when(scheduleService.getSchedules()).thenReturn(List.of());
-        when(channelRegistry.getAll()).thenReturn(List.of());
+        when(channelRuntimePort.listChannels()).thenReturn(List.of());
 
         StepVerifier.create(controller.getState())
                 .assertNext(response -> {

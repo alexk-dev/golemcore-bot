@@ -23,6 +23,7 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.UserPreferences;
@@ -194,9 +195,9 @@ public class WebhookController {
                 metadata.put("webhook.modelTier", modelTier);
             }
             if (request.isDeliver()) {
-                metadata.put("webhook.deliver", true);
-                metadata.put("webhook.deliver.channel", request.getChannel());
-                metadata.put("webhook.deliver.to", request.getTo());
+                metadata.put(ContextAttributes.WEBHOOK_DELIVER, true);
+                metadata.put(ContextAttributes.WEBHOOK_DELIVER_CHANNEL, request.getChannel());
+                metadata.put(ContextAttributes.WEBHOOK_DELIVER_TO, request.getTo());
             }
 
             String deliveryId = null;
@@ -304,9 +305,9 @@ public class WebhookController {
             metadata.put("webhook.modelTier", modelTier);
         }
         if (mapping.isDeliver()) {
-            metadata.put("webhook.deliver", true);
-            metadata.put("webhook.deliver.channel", mapping.getChannel());
-            metadata.put("webhook.deliver.to", mapping.getTo());
+            metadata.put(ContextAttributes.WEBHOOK_DELIVER, true);
+            metadata.put(ContextAttributes.WEBHOOK_DELIVER_CHANNEL, mapping.getChannel());
+            metadata.put(ContextAttributes.WEBHOOK_DELIVER_TO, mapping.getTo());
         }
 
         channelAdapter.registerPendingRun(chatId, runId, null, modelTier, null);

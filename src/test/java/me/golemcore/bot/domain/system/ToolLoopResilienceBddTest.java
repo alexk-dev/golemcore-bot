@@ -306,6 +306,7 @@ class ToolLoopResilienceBddTest {
         assertFalse(events.stream().anyMatch(event -> RuntimeEventType.TURN_FAILED.equals(event.type())));
     }
 
+    @Test
     void shouldFailWhenInterruptedDuringLlmWaitWithoutStopRequest() throws Exception {
         AgentSession session = AgentSession.builder()
                 .id("s3c")
@@ -762,8 +763,8 @@ class ToolLoopResilienceBddTest {
                 .toolExecutor(toolExecutor)
                 .historyWriter(new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC)))
                 .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
-                .turnSettings(turnProperties)
-                .settings(toolLoopProperties)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnProperties))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(toolLoopProperties))
                 .modelSelectionService(modelSelectionService)
                 .runtimeConfigService(runtimeConfigService)
                 .compactionOrchestrationService(compactionOrchestrationService)

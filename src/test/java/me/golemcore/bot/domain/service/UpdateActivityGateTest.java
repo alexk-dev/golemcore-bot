@@ -1,7 +1,7 @@
 package me.golemcore.bot.domain.service;
 
-import me.golemcore.bot.auto.AutoModeScheduler;
 import me.golemcore.bot.domain.model.UpdateBlockedReason;
+import me.golemcore.bot.port.outbound.AutoExecutionStatusPort;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -16,11 +16,11 @@ class UpdateActivityGateTest {
     @Test
     void shouldReportIdleWhenNoRuntimeWorkExists() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
-        AutoModeScheduler autoModeScheduler = mock(AutoModeScheduler.class);
+        AutoExecutionStatusPort autoExecutionStatusPort = mock(AutoExecutionStatusPort.class);
         when(coordinator.hasActiveOrQueuedWork()).thenReturn(false);
-        when(autoModeScheduler.isExecuting()).thenReturn(false);
+        when(autoExecutionStatusPort.isAutoJobExecuting()).thenReturn(false);
 
-        UpdateActivityGate.Result result = new UpdateActivityGate(coordinator, autoModeScheduler).getStatus();
+        UpdateActivityGate.Result result = new UpdateActivityGate(coordinator, autoExecutionStatusPort).getStatus();
 
         assertFalse(result.busy());
         assertNull(result.blockedReason());
@@ -29,11 +29,11 @@ class UpdateActivityGateTest {
     @Test
     void shouldReportSessionWorkBeforeApply() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
-        AutoModeScheduler autoModeScheduler = mock(AutoModeScheduler.class);
+        AutoExecutionStatusPort autoExecutionStatusPort = mock(AutoExecutionStatusPort.class);
         when(coordinator.hasActiveOrQueuedWork()).thenReturn(true);
-        when(autoModeScheduler.isExecuting()).thenReturn(false);
+        when(autoExecutionStatusPort.isAutoJobExecuting()).thenReturn(false);
 
-        UpdateActivityGate.Result result = new UpdateActivityGate(coordinator, autoModeScheduler).getStatus();
+        UpdateActivityGate.Result result = new UpdateActivityGate(coordinator, autoExecutionStatusPort).getStatus();
 
         assertTrue(result.busy());
         assertEquals(UpdateBlockedReason.SESSION_WORK_RUNNING, result.blockedReason());
@@ -42,11 +42,11 @@ class UpdateActivityGateTest {
     @Test
     void shouldReportAutoJobExecutionAsBlocker() {
         SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
-        AutoModeScheduler autoModeScheduler = mock(AutoModeScheduler.class);
+        AutoExecutionStatusPort autoExecutionStatusPort = mock(AutoExecutionStatusPort.class);
         when(coordinator.hasActiveOrQueuedWork()).thenReturn(false);
-        when(autoModeScheduler.isExecuting()).thenReturn(true);
+        when(autoExecutionStatusPort.isAutoJobExecuting()).thenReturn(true);
 
-        UpdateActivityGate.Result result = new UpdateActivityGate(coordinator, autoModeScheduler).getStatus();
+        UpdateActivityGate.Result result = new UpdateActivityGate(coordinator, autoExecutionStatusPort).getStatus();
 
         assertTrue(result.busy());
         assertEquals(UpdateBlockedReason.AUTO_JOB_RUNNING, result.blockedReason());

@@ -1,12 +1,12 @@
 package me.golemcore.bot.domain.service;
 
+import me.golemcore.bot.port.outbound.DelayedActionRegistryPort;
 import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
 import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedActionStatus;
 import me.golemcore.bot.domain.model.DelayedJobReadyEvent;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -17,48 +17,26 @@ import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class DelayedSessionActionServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-03-19T18:30:00Z");
-
-    private StoragePort storagePort;
+    private DelayedActionRegistryPort delayedActionRegistryPort;
     private RuntimeConfigService runtimeConfigService;
     private DelayedSessionActionService service;
-    private Map<String, String> storedText;
 
     @BeforeEach
     void setUp() {
-        storagePort = mock(StoragePort.class);
+        delayedActionRegistryPort = new InMemoryDelayedActionRegistryPort();
         runtimeConfigService = mock(RuntimeConfigService.class);
-        storedText = new ConcurrentHashMap<>();
-
-        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
-                .thenAnswer(invocation -> {
-                    String directory = invocation.getArgument(0);
-                    String fileName = invocation.getArgument(1);
-                    String content = invocation.getArgument(2);
-                    storedText.put(directory + "/" + fileName, content);
-                    return CompletableFuture.completedFuture(null);
-                });
-        when(storagePort.getText(anyString(), anyString()))
-                .thenAnswer(invocation -> {
-                    String directory = invocation.getArgument(0);
-                    String fileName = invocation.getArgument(1);
-                    return CompletableFuture.completedFuture(storedText.get(directory + "/" + fileName));
-                });
         when(runtimeConfigService.isDelayedActionsEnabled()).thenReturn(true);
         when(runtimeConfigService.getDelayedActionsMaxPendingPerSession()).thenReturn(50);
         when(runtimeConfigService.getDelayedActionsMaxDelay()).thenReturn(Duration.ofDays(30));
@@ -66,7 +44,8 @@ class DelayedSessionActionServiceTest {
         when(runtimeConfigService.getDelayedActionsLeaseDuration()).thenReturn(Duration.ofMinutes(2));
         when(runtimeConfigService.getDelayedActionsRetentionAfterCompletion()).thenReturn(Duration.ofDays(7));
 
-        service = new DelayedSessionActionService(storagePort, runtimeConfigService, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new DelayedSessionActionService(delayedActionRegistryPort, runtimeConfigService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -86,7 +65,6 @@ class DelayedSessionActionServiceTest {
         List<DelayedSessionAction> actions = service.listActions("telegram", "conv-1");
         assertEquals(1, actions.size());
         assertEquals(DelayedActionKind.RUN_LATER, actions.get(0).getKind());
-        assertTrue(storedText.containsKey("automation/delayed-actions.json"));
     }
 
     @Test
@@ -185,7 +163,7 @@ class DelayedSessionActionServiceTest {
         assertEquals(DelayedActionStatus.LEASED, service.get(created.getId()).orElseThrow().getStatus());
 
         DelayedSessionActionService recovered = new DelayedSessionActionService(
-                storagePort,
+                delayedActionRegistryPort,
                 runtimeConfigService,
                 Clock.fixed(NOW.plus(Duration.ofMinutes(3)), ZoneOffset.UTC));
 
@@ -278,11 +256,20 @@ class DelayedSessionActionServiceTest {
 
     @Test
     void shouldStartWithEmptyRegistryWhenLoadFails() {
-        when(storagePort.getText(DelayedSessionActionService.AUTOMATION_DIR, DelayedSessionActionService.ACTIONS_FILE))
-                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("boom")));
+        DelayedActionRegistryPort failingRegistry = new DelayedActionRegistryPort() {
+            @Override
+            public List<DelayedSessionAction> loadActions() {
+                throw new IllegalStateException("boom");
+            }
+
+            @Override
+            public void saveActions(List<DelayedSessionAction> actions) {
+                // no-op
+            }
+        };
 
         DelayedSessionActionService failingService = new DelayedSessionActionService(
-                storagePort,
+                failingRegistry,
                 runtimeConfigService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 

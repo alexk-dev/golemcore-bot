@@ -1,28 +1,5 @@
 import { type UseMutationResult, type UseQueryResult, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  type ModelRouterConfig,
-  type LlmConfig,
-  type LlmProviderConfig,
-  type LlmProviderImportResult,
-  type LlmProviderTestResult,
-  type ToolsConfig,
-  type VoiceConfig,
-  type RuntimeConfig,
-  type MemoryConfig,
-  type MemoryPreset,
-  type SkillsConfig,
-  type TurnConfig,
-  type UsageConfig,
-  type TelemetryConfig,
-  type McpConfig,
-  type McpCatalogEntry,
-  type HiveConfig,
-  type PlanConfig,
-  type AutoModeConfig,
-  type TracingConfig,
-  type RateLimitConfig,
-  type SecurityConfig,
-  type CompactionConfig,
   getSettings,
   updatePreferences,
   getModels,
@@ -54,6 +31,31 @@ import {
   updateTracingConfig,
   updateAdvancedConfig,
 } from '../api/settings';
+import type {
+  ModelRouterConfig,
+  LlmConfig,
+  LlmProviderConfig,
+  LlmProviderImportResult,
+  LlmProviderTestResult,
+  ToolsConfig,
+  VoiceConfig,
+  RuntimeConfig,
+  MemoryConfig,
+  MemoryPreset,
+  SkillsConfig,
+  TurnConfig,
+  UsageConfig,
+  TelemetryConfig,
+  McpConfig,
+  McpCatalogEntry,
+  HiveConfig,
+  PlanConfig,
+  AutoModeConfig,
+  TracingConfig,
+  RateLimitConfig,
+  SecurityConfig,
+  CompactionConfig,
+} from '../api/settingsTypes';
 
 export function useSettings(): UseQueryResult<Awaited<ReturnType<typeof getSettings>>, unknown> {
   return useQuery({ queryKey: ['settings'], queryFn: getSettings });
@@ -109,10 +111,15 @@ export function useAddLlmProvider(): UseMutationResult<Awaited<ReturnType<typeof
   });
 }
 
-export function useAddLlmProviderAndImport(): UseMutationResult<LlmProviderImportResult, unknown, { name: string; config: LlmProviderConfig }> {
+export function useAddLlmProviderAndImport(): UseMutationResult<
+  LlmProviderImportResult,
+  unknown,
+  { name: string; config: LlmProviderConfig; selectedModelIds: string[] }
+> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, config }: { name: string; config: LlmProviderConfig }) => addLlmProviderAndImport(name, config),
+    mutationFn: ({ name, config, selectedModelIds }: { name: string; config: LlmProviderConfig; selectedModelIds: string[] }) =>
+      addLlmProviderAndImport(name, config, selectedModelIds),
     onSuccess: () => Promise.all([
       qc.invalidateQueries({ queryKey: ['runtime-config'] }),
       qc.invalidateQueries({ queryKey: ['models-config'] }),

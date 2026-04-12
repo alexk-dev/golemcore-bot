@@ -1,19 +1,30 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.update;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.adapter.outbound.update.BuildPropertiesUpdateVersionAdapter;
+import me.golemcore.bot.adapter.outbound.update.RuntimeConfigUpdateRuntimeAdapter;
+import me.golemcore.bot.adapter.outbound.update.UpdateAutoUpdateLifecycle;
 import me.golemcore.bot.domain.model.AvailableRelease;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.UpdateActionResult;
 import me.golemcore.bot.domain.model.UpdateBlockedReason;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
+import me.golemcore.bot.domain.service.JvmExitService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.UpdateActivityGate;
+import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
+import me.golemcore.bot.port.outbound.UpdateArtifactStorePort;
+import me.golemcore.bot.port.outbound.UpdateRestartPort;
+import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;
+import me.golemcore.bot.port.outbound.UpdateSettingsPort;
+import me.golemcore.bot.port.outbound.UpdateVersionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
-import org.springframework.context.ApplicationContext;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -27,6 +38,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -48,6 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @SuppressWarnings("PMD.CloseResource")
@@ -59,23 +72,46 @@ class UpdateServiceTest {
 
     private BotProperties botProperties;
     private ObjectProvider<BuildProperties> buildPropertiesProvider;
-    private ApplicationContext applicationContext;
     private JvmExitService jvmExitService;
     private MutableClock clock;
     private RuntimeConfigService runtimeConfigService;
     private UpdateActivityGate updateActivityGate;
     private UpdateMaintenanceWindow updateMaintenanceWindow;
+    private UpdateArtifactStorePort updateArtifactStorePort;
+    private AtomicReference<Optional<UpdateArtifactStorePort.StoredArtifact>> currentArtifactRef;
+    private AtomicReference<Optional<UpdateArtifactStorePort.StoredArtifact>> stagedArtifactRef;
 
     @BeforeEach
     void setUp() {
         botProperties = new BotProperties();
         buildPropertiesProvider = mock(ObjectProvider.class);
-        applicationContext = mock(ApplicationContext.class);
         jvmExitService = mock(JvmExitService.class);
         clock = new MutableClock(BASE_TIME, ZoneOffset.UTC);
         runtimeConfigService = mock(RuntimeConfigService.class);
         updateActivityGate = mock(UpdateActivityGate.class);
         updateMaintenanceWindow = new UpdateMaintenanceWindow();
+        updateArtifactStorePort = mock(UpdateArtifactStorePort.class);
+        currentArtifactRef = new AtomicReference<>(Optional.empty());
+        stagedArtifactRef = new AtomicReference<>(Optional.empty());
+        when(updateArtifactStorePort.findCurrentArtifact()).thenAnswer(invocation -> currentArtifactRef.get());
+        when(updateArtifactStorePort.findStagedArtifact()).thenAnswer(invocation -> stagedArtifactRef.get());
+        when(updateArtifactStorePort.stageReleaseAsset(any(UpdateArtifactStorePort.StageArtifactRequest.class)))
+                .thenAnswer(invocation -> {
+                    UpdateArtifactStorePort.StageArtifactRequest request = invocation.getArgument(0);
+                    UpdateArtifactStorePort.PreparedArtifact preparedArtifact = new UpdateArtifactStorePort.PreparedArtifact(
+                            request.assetName(), BASE_TIME);
+                    stagedArtifactRef.set(Optional.of(new UpdateArtifactStorePort.StoredArtifact(
+                            request.assetName(), BASE_TIME)));
+                    return preparedArtifact;
+                });
+        doAnswer(invocation -> {
+            String assetName = invocation.getArgument(0);
+            currentArtifactRef.set(Optional.of(new UpdateArtifactStorePort.StoredArtifact(assetName, BASE_TIME)));
+            stagedArtifactRef.set(Optional.empty());
+            return null;
+        }).when(updateArtifactStorePort).activateStagedArtifact(any(String.class));
+        doAnswer(invocation -> null).when(updateArtifactStorePort)
+                .cleanupTempArtifact(any(String.class));
 
         Properties props = new Properties();
         props.setProperty("version", VERSION_CURRENT);
@@ -256,9 +292,9 @@ class UpdateServiceTest {
         assertTrue(service.isRestartRequested());
         assertEquals(UpdateState.APPLYING, service.getStatus().getState());
         assertEquals("Scheduling restart 0.4.2", service.getStatus().getStageTitle());
-        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
-        assertFalse(Files.exists(tempDir.resolve("staged.txt")));
-        assertEquals("bot-0.4.2.jar", Files.readString(tempDir.resolve("current.txt"), StandardCharsets.UTF_8).trim());
+        assertTrue(stagedArtifactRef.get().isEmpty());
+        assertTrue(currentArtifactRef.get().isPresent());
+        assertEquals("bot-0.4.2.jar", currentArtifactRef.get().orElseThrow().assetName());
     }
 
     @Test
@@ -275,15 +311,12 @@ class UpdateServiceTest {
 
         assertEquals("Update workflow started. Checking the latest release.", service.updateNow().getMessage());
         assertTrue(service.isRestartRequested());
-        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
+        assertTrue(currentArtifactRef.get().isPresent());
     }
 
     @Test
-    void shouldRecoverWhenReleaseExistsButStagedJarIsMissing(@TempDir Path tempDir) throws Exception {
+    void shouldRecoverWhenReleaseExistsButStagedJarIsMissing(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        Files.createDirectories(tempDir.resolve("jars"));
-        Files.writeString(tempDir.resolve("staged.txt"), "bot-0.4.2.jar\n", StandardCharsets.UTF_8);
-
         byte[] jarBytes = "new-binary".getBytes(StandardCharsets.UTF_8);
         String checksum = sha256Hex(jarBytes);
 
@@ -295,13 +328,11 @@ class UpdateServiceTest {
 
         assertEquals("Update workflow started. Checking the latest release.", service.updateNow().getMessage());
         assertTrue(service.isRestartRequested());
-        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
-        assertFalse(Files.exists(tempDir.resolve("staged.txt")));
-        assertEquals("bot-0.4.2.jar", Files.readString(tempDir.resolve("current.txt"), StandardCharsets.UTF_8).trim());
+        assertTrue(currentArtifactRef.get().isPresent());
     }
 
     @Test
-    void shouldCreateUpdatesDirectoryWhenItDoesNotExist(@TempDir Path tempDir) throws Exception {
+    void shouldCreateUpdatesDirectoryWhenItDoesNotExist(@TempDir Path tempDir) {
         Path missingUpdatesDir = tempDir.resolve("missing").resolve("updates");
         assertFalse(Files.exists(missingUpdatesDir));
         enableUpdates(missingUpdatesDir);
@@ -317,9 +348,7 @@ class UpdateServiceTest {
         service.check();
         service.updateNow();
 
-        assertTrue(Files.isDirectory(missingUpdatesDir));
-        assertTrue(Files.isDirectory(missingUpdatesDir.resolve("jars")));
-        assertTrue(Files.exists(missingUpdatesDir.resolve("jars").resolve("bot-0.4.2.jar")));
+        assertTrue(currentArtifactRef.get().isPresent());
     }
 
     @Test
@@ -329,16 +358,19 @@ class UpdateServiceTest {
         source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
         source.enqueueAsset("jar-content".getBytes(StandardCharsets.UTF_8));
         source.enqueueChecksum("deadbeef", "SHA-256", "bot-0.4.2.jar");
+        when(updateArtifactStorePort.findStagedArtifact()).thenReturn(Optional.empty());
+        when(updateArtifactStorePort.stageReleaseAsset(any(UpdateArtifactStorePort.StageArtifactRequest.class)))
+                .thenThrow(new IllegalStateException("Checksum mismatch for bot-0.4.2.jar"));
         TestableUpdateService service = createTestableService(source);
         service.check();
 
         assertEquals("Update workflow started for 0.4.2. Page will reload after restart.",
                 service.updateNow().getMessage());
-        assertFalse(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar.tmp")));
         assertEquals(UpdateState.FAILED, service.getStatus().getState());
         assertTrue(service.getStatus().getLastError().contains("Failed to prepare update"));
         assertTrue(service.getStatus().getLastError().contains("Checksum mismatch"));
         assertEquals("Update failed", service.getStatus().getStageTitle());
+        verify(updateArtifactStorePort).cleanupTempArtifact("bot-0.4.2.jar");
     }
 
     @Test
@@ -348,6 +380,9 @@ class UpdateServiceTest {
         source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
         source.enqueueAsset("jar-content".getBytes(StandardCharsets.UTF_8));
         source.enqueueChecksum("deadbeef", "SHA-256", "bot-0.4.2.jar");
+        when(updateArtifactStorePort.findStagedArtifact()).thenReturn(Optional.empty());
+        when(updateArtifactStorePort.stageReleaseAsset(any(UpdateArtifactStorePort.StageArtifactRequest.class)))
+                .thenThrow(new IllegalStateException("Checksum mismatch for bot-0.4.2.jar"));
         TestableUpdateService service = createTestableService(source);
 
         service.check();
@@ -372,6 +407,11 @@ class UpdateServiceTest {
         source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
         source.enqueueAsset("jar-content".getBytes(StandardCharsets.UTF_8));
         source.enqueueChecksum("ignored", "SHA-256", "bot-0.4.2.jar");
+        when(updateArtifactStorePort.findStagedArtifact()).thenReturn(Optional.empty());
+        when(updateArtifactStorePort.stageReleaseAsset(any(UpdateArtifactStorePort.StageArtifactRequest.class)))
+                .thenThrow(new IllegalStateException(
+                        "Update directory is not writable: " + blockedPath
+                                + ". Configure UPDATE_PATH to a writable path."));
         TestableUpdateService service = createTestableService(source);
         service.check();
 
@@ -428,28 +468,30 @@ class UpdateServiceTest {
     void shouldNotInitializeAutoUpdateSchedulerWhenFeatureIsDisabled() {
         botProperties.getUpdate().setEnabled(false);
         UpdateService service = createService(new StubReleaseSource());
+        UpdateAutoUpdateLifecycle lifecycle = new UpdateAutoUpdateLifecycle(service);
 
-        service.initAutoUpdateScheduler();
+        invokeNoArgMethod(lifecycle, "start");
 
-        assertNull(readPrivateField(service, "autoUpdateScheduler", ScheduledExecutorService.class));
-        assertNull(readPrivateField(service, "autoUpdateTask", ScheduledFuture.class));
+        assertNull(readPrivateField(lifecycle, "autoUpdateScheduler", ScheduledExecutorService.class));
+        assertNull(readPrivateField(lifecycle, "autoUpdateTask", ScheduledFuture.class));
     }
 
     @Test
     void shouldInitializeAndShutdownAutoUpdateScheduler(@TempDir Path tempDir) {
         enableUpdates(tempDir);
         UpdateService service = createService(new StubReleaseSource());
+        UpdateAutoUpdateLifecycle lifecycle = new UpdateAutoUpdateLifecycle(service);
 
-        service.initAutoUpdateScheduler();
-        ScheduledExecutorService scheduler = readPrivateField(service, "autoUpdateScheduler",
+        invokeNoArgMethod(lifecycle, "start");
+        ScheduledExecutorService scheduler = readPrivateField(lifecycle, "autoUpdateScheduler",
                 ScheduledExecutorService.class);
-        ScheduledFuture<?> task = readPrivateField(service, "autoUpdateTask", ScheduledFuture.class);
+        ScheduledFuture<?> task = readPrivateField(lifecycle, "autoUpdateTask", ScheduledFuture.class);
 
         assertNotNull(scheduler);
         assertNotNull(task);
         assertFalse(scheduler.isShutdown());
 
-        service.shutdownAutoUpdateScheduler();
+        invokeNoArgMethod(lifecycle, "stop");
 
         assertTrue(task.isCancelled());
         assertTrue(scheduler.isShutdown());
@@ -476,6 +518,8 @@ class UpdateServiceTest {
         AtomicReference<RuntimeConfig> storedConfig = new AtomicReference<>(RuntimeConfig.builder().build());
         when(runtimeConfigService.getRuntimeConfig()).thenAnswer(invocation -> storedConfig.get());
         when(runtimeConfigService.getRuntimeConfigForApi()).thenAnswer(invocation -> storedConfig.get());
+        when(runtimeConfigService.copyRuntimeConfig(any(RuntimeConfig.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         doAnswer(invocation -> {
             storedConfig.set(invocation.getArgument(0));
             return null;
@@ -504,6 +548,8 @@ class UpdateServiceTest {
         AtomicReference<RuntimeConfig> storedConfig = new AtomicReference<>(RuntimeConfig.builder().build());
         when(runtimeConfigService.getRuntimeConfig()).thenAnswer(invocation -> storedConfig.get());
         when(runtimeConfigService.getRuntimeConfigForApi()).thenAnswer(invocation -> storedConfig.get());
+        when(runtimeConfigService.copyRuntimeConfig(any(RuntimeConfig.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         doAnswer(invocation -> {
             storedConfig.set(invocation.getArgument(0));
             return null;
@@ -539,8 +585,6 @@ class UpdateServiceTest {
         service.runAutoUpdateCycle();
 
         assertEquals(UpdateState.WAITING_FOR_WINDOW, service.getStatus().getState());
-        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
-        assertTrue(Files.exists(tempDir.resolve("staged.txt")));
         assertFalse(service.isRestartRequested());
     }
 
@@ -562,26 +606,81 @@ class UpdateServiceTest {
         service.runAutoUpdateCycle();
 
         assertEquals(UpdateState.WAITING_FOR_IDLE, service.getStatus().getState());
-        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
-        assertTrue(Files.exists(tempDir.resolve("staged.txt")));
         assertFalse(service.isRestartRequested());
     }
 
     @Test
-    void shouldAutoApplyStagedUpdateWhenWindowIsOpenAndRuntimeIsIdle(@TempDir Path tempDir) throws Exception {
+    void shouldAutoApplyStagedUpdateWhenWindowIsOpenAndRuntimeIsIdle(@TempDir Path tempDir) {
         enableUpdates(tempDir);
-        Files.createDirectories(tempDir.resolve("jars"));
-        Files.writeString(tempDir.resolve("jars").resolve("bot-0.4.2.jar"), "staged", StandardCharsets.UTF_8);
-        Files.writeString(tempDir.resolve("staged.txt"), "bot-0.4.2.jar\n", StandardCharsets.UTF_8);
+        when(updateArtifactStorePort.findStagedArtifact())
+                .thenReturn(Optional.of(new UpdateArtifactStorePort.StoredArtifact("bot-0.4.2.jar", BASE_TIME)));
 
         TestableUpdateService service = createTestableService(new StubReleaseSource());
 
         service.runAutoUpdateCycle();
 
         assertTrue(service.isRestartRequested());
-        assertFalse(Files.exists(tempDir.resolve("staged.txt")));
-        assertEquals("bot-0.4.2.jar", Files.readString(tempDir.resolve("current.txt"), StandardCharsets.UTF_8).trim());
         assertEquals(UpdateState.APPLYING, service.getStatus().getState());
+    }
+
+    @Test
+    void shouldFallbackToImageSourceWhenCurrentMarkerIsInvalid(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        when(updateArtifactStorePort.findCurrentArtifact())
+                .thenReturn(Optional.of(new UpdateArtifactStorePort.StoredArtifact("../bot-0.4.2.jar", BASE_TIME)));
+
+        UpdateService service = createService(new StubReleaseSource());
+        UpdateStatus status = service.getStatus();
+
+        assertEquals("image", status.getCurrent().getSource());
+        assertEquals(VERSION_CURRENT, status.getCurrent().getVersion());
+    }
+
+    @Test
+    void shouldIgnoreStagedMarkerWhenJarIsMissing(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        when(updateArtifactStorePort.findStagedArtifact()).thenReturn(Optional.empty());
+
+        UpdateService service = createService(new StubReleaseSource());
+        UpdateStatus status = service.getStatus();
+
+        assertNull(status.getStaged());
+        assertEquals(UpdateState.IDLE, status.getState());
+    }
+
+    @Test
+    void shouldRejectDangerousAssetNameDuringUpdateNow(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "../bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        when(updateArtifactStorePort.stageReleaseAsset(any(UpdateArtifactStorePort.StageArtifactRequest.class)))
+                .thenThrow(new IllegalArgumentException("Asset name contains prohibited path characters"));
+        TestableUpdateService service = createTestableService(source);
+
+        UpdateActionResult action = service.updateNow();
+        UpdateStatus status = service.getStatus();
+
+        assertEquals("Update workflow started. Checking the latest release.", action.getMessage());
+        assertEquals(UpdateState.FAILED, status.getState());
+        assertTrue(status.getLastError().contains("Failed to prepare update"));
+        assertFalse(service.isRestartRequested());
+    }
+
+    @Test
+    void shouldSkipAutoCheckWhenIntervalHasNotElapsed(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        when(runtimeConfigService.getUpdateCheckIntervalMinutes()).thenReturn(120);
+
+        StubReleaseSource source = new StubReleaseSource();
+        source.enqueueRelease("0.4.2", "bot-0.4.2.jar", "2026-02-22T10:00:00Z");
+        TestableUpdateService service = createTestableService(source);
+        writePrivateField(service, "lastCheckAt", BASE_TIME.minus(Duration.ofMinutes(30)));
+
+        service.runAutoUpdateCycle();
+
+        assertEquals(UpdateState.IDLE, service.getStatus().getState());
+        assertNull(service.getStatus().getAvailable());
     }
 
     @Test
@@ -591,11 +690,17 @@ class UpdateServiceTest {
 
         assertTrue(invokeCompareVersions(service, "1.2.4", "1.2.3") > 0);
         assertTrue(invokeCompareVersions(service, "1.2.3-rc.1", "1.2.3-rc.2") < 0);
+        assertTrue(invokeCompareVersions(service, "1.2.3", "1.2.3-rc.1") > 0);
+        assertTrue(invokeCompareVersions(service, "1.2.3-alpha", "1.2.3-1") > 0);
+        assertTrue(invokeCompareVersions(service, "1.2.3-1", "1.2.3-alpha") < 0);
+        assertTrue(invokeCompareVersions(service, "release-2", "release-10") > 0);
         assertEquals(0, invokeCompareVersions(service, "v1.2.3+build.1", "1.2.3"));
         assertEquals("1.2.3", service.extractVersionFromAssetName("bot-1.2.3.jar"));
         assertEquals("1.2.3-rc.1", service.extractVersionFromAssetName("release-v1.2.3-rc.1.jar"));
         assertEquals("1.2.3", service.extractVersionFromAssetName("bot-1.2.3-exec.jar"));
+        assertEquals("2.3.4-beta-2", service.extractVersionFromAssetName("release-V2.3.4-beta-2.jar"));
         assertNull(service.extractVersionFromAssetName("bot-latest.jar"));
+        assertNull(service.extractVersionFromAssetName("bot-1.2.jar"));
     }
 
     @Test
@@ -662,63 +767,71 @@ class UpdateServiceTest {
         service.updateNow();
 
         assertTrue(service.isRestartRequested());
-        assertTrue(Files.exists(tempDir.resolve("jars").resolve("bot-0.4.2.jar")));
+        assertTrue(currentArtifactRef.get().isPresent());
     }
 
     private UpdateService createService(StubReleaseSource source) {
         return new UpdateService(
-                botProperties,
-                buildPropertiesProvider,
-                new ObjectMapper(),
-                applicationContext,
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                createVersionPort(),
+                createRuntimeConfigPort(),
+                createRestartPort(),
                 clock,
-                jvmExitService,
-                runtimeConfigService,
                 updateActivityGate,
                 updateMaintenanceWindow,
-                List.of(source));
+                List.of(source),
+                updateArtifactStorePort);
     }
 
     private TestableUpdateService createTestableService(StubReleaseSource source) {
         return new TestableUpdateService(
-                botProperties,
-                buildPropertiesProvider,
-                new ObjectMapper(),
-                applicationContext,
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                createVersionPort(),
+                createRuntimeConfigPort(),
+                createRestartPort(),
                 clock,
-                jvmExitService,
-                runtimeConfigService,
                 updateActivityGate,
                 updateMaintenanceWindow,
-                List.of(source));
+                List.of(source),
+                updateArtifactStorePort);
     }
 
     private TestableUpdateService createTestableServiceMultiSource(List<ReleaseSourcePort> sources) {
         return new TestableUpdateService(
-                botProperties,
-                buildPropertiesProvider,
-                new ObjectMapper(),
-                applicationContext,
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                createVersionPort(),
+                createRuntimeConfigPort(),
+                createRestartPort(),
                 clock,
-                jvmExitService,
-                runtimeConfigService,
                 updateActivityGate,
                 updateMaintenanceWindow,
-                sources);
+                sources,
+                updateArtifactStorePort);
     }
 
     private DeferredUpdateService createDeferredUpdateService(StubReleaseSource source) {
         return new DeferredUpdateService(
-                botProperties,
-                buildPropertiesProvider,
-                new ObjectMapper(),
-                applicationContext,
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                createVersionPort(),
+                createRuntimeConfigPort(),
+                createRestartPort(),
                 clock,
-                jvmExitService,
-                runtimeConfigService,
                 updateActivityGate,
                 updateMaintenanceWindow,
-                List.of(source));
+                List.of(source),
+                updateArtifactStorePort);
+    }
+
+    private UpdateVersionPort createVersionPort() {
+        return new BuildPropertiesUpdateVersionAdapter(buildPropertiesProvider);
+    }
+
+    private UpdateRuntimeConfigPort createRuntimeConfigPort() {
+        return new RuntimeConfigUpdateRuntimeAdapter(runtimeConfigService);
+    }
+
+    private UpdateRestartPort createRestartPort() {
+        return jvmExitService::exit;
     }
 
     private void enableUpdates(Path updatesPath) {
@@ -743,34 +856,37 @@ class UpdateServiceTest {
                 builder.append(String.format("%02x", value));
             }
             return builder.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(exception);
         }
     }
 
     private static int invokeCompareVersions(UpdateService service, String left, String right) {
         Method method = getDeclaredMethod("compareVersions", String.class, String.class);
-        return (int) invokeReflective(method, service, left, right);
+        return (int) invokeReflective(method, new UpdateVersionSupport(), left, right);
     }
 
     @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
     private static Method getDeclaredMethod(String methodName, Class<?>... parameterTypes) {
         try {
-            Method method = UpdateService.class.getDeclaredMethod(methodName, parameterTypes);
+            Class<?> owner = "compareVersions".equals(methodName)
+                    ? UpdateVersionSupport.class
+                    : UpdateService.class;
+            Method method = owner.getDeclaredMethod(methodName, parameterTypes);
             method.setAccessible(true);
             return method;
-        } catch (NoSuchMethodException e) {
-            throw new IllegalStateException("Method not found: " + methodName, e);
+        } catch (NoSuchMethodException exception) {
+            throw new IllegalStateException("Method not found: " + methodName, exception);
         }
     }
 
     private static Object invokeReflective(Method method, Object target, Object... arguments) {
         try {
             return method.invoke(target, arguments);
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException("Failed to access reflective method: " + method.getName(), e);
-        } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
+        } catch (IllegalAccessException exception) {
+            throw new IllegalStateException("Failed to access reflective method: " + method.getName(), exception);
+        } catch (InvocationTargetException exception) {
+            Throwable cause = exception.getCause();
             if (cause instanceof RuntimeException runtimeException) {
                 throw runtimeException;
             }
@@ -782,17 +898,37 @@ class UpdateServiceTest {
     }
 
     @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })
-    private static <T> T readPrivateField(UpdateService service, String fieldName, Class<T> fieldType) {
+    private static <T> T readPrivateField(Object target, String fieldName, Class<T> fieldType) {
         try {
-            Field field = UpdateService.class.getDeclaredField(fieldName);
+            Field field = target.getClass().getDeclaredField(fieldName);
             field.setAccessible(true);
-            return (T) field.get(service);
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new IllegalStateException("Failed to read field: " + fieldName, e);
+            return (T) field.get(target);
+        } catch (NoSuchFieldException | IllegalAccessException exception) {
+            throw new IllegalStateException("Failed to read field: " + fieldName, exception);
         }
     }
 
-    // ==================== Test Doubles ====================
+    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+    private static void writePrivateField(Object target, String fieldName, Object value) {
+        try {
+            Field field = UpdateService.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            field.set(target, value);
+        } catch (NoSuchFieldException | IllegalAccessException exception) {
+            throw new IllegalStateException("Failed to write field: " + fieldName, exception);
+        }
+    }
+
+    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+    private static void invokeNoArgMethod(Object target, String methodName) {
+        try {
+            Method method = target.getClass().getDeclaredMethod(methodName);
+            method.setAccessible(true);
+            method.invoke(target);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to invoke method: " + methodName, exception);
+        }
+    }
 
     @SuppressWarnings("PMD.TestClassWithoutTestCases")
     private static final class TestableUpdateService extends UpdateService {
@@ -800,27 +936,25 @@ class UpdateServiceTest {
         private boolean restartRequested;
 
         private TestableUpdateService(
-                BotProperties botProperties,
-                ObjectProvider<BuildProperties> buildPropertiesProvider,
-                ObjectMapper objectMapper,
-                ApplicationContext applicationContext,
+                UpdateSettingsPort settingsPort,
+                UpdateVersionPort updateVersionPort,
+                UpdateRuntimeConfigPort updateRuntimeConfigPort,
+                UpdateRestartPort updateRestartPort,
                 Clock clock,
-                JvmExitService jvmExitService,
-                RuntimeConfigService runtimeConfigService,
                 UpdateActivityGate updateActivityGate,
                 UpdateMaintenanceWindow updateMaintenanceWindow,
-                List<ReleaseSourcePort> releaseSources) {
+                List<ReleaseSourcePort> releaseSources,
+                UpdateArtifactStorePort updateArtifactStorePort) {
             super(
-                    botProperties,
-                    buildPropertiesProvider,
-                    objectMapper,
-                    applicationContext,
+                    settingsPort,
+                    updateVersionPort,
+                    updateRuntimeConfigPort,
+                    updateRestartPort,
                     clock,
-                    jvmExitService,
-                    runtimeConfigService,
                     updateActivityGate,
                     updateMaintenanceWindow,
-                    releaseSources);
+                    releaseSources,
+                    updateArtifactStorePort);
         }
 
         @Override
@@ -842,27 +976,25 @@ class UpdateServiceTest {
     private static final class DeferredUpdateService extends UpdateService {
 
         private DeferredUpdateService(
-                BotProperties botProperties,
-                ObjectProvider<BuildProperties> buildPropertiesProvider,
-                ObjectMapper objectMapper,
-                ApplicationContext applicationContext,
+                UpdateSettingsPort settingsPort,
+                UpdateVersionPort updateVersionPort,
+                UpdateRuntimeConfigPort updateRuntimeConfigPort,
+                UpdateRestartPort updateRestartPort,
                 Clock clock,
-                JvmExitService jvmExitService,
-                RuntimeConfigService runtimeConfigService,
                 UpdateActivityGate updateActivityGate,
                 UpdateMaintenanceWindow updateMaintenanceWindow,
-                List<ReleaseSourcePort> releaseSources) {
+                List<ReleaseSourcePort> releaseSources,
+                UpdateArtifactStorePort updateArtifactStorePort) {
             super(
-                    botProperties,
-                    buildPropertiesProvider,
-                    objectMapper,
-                    applicationContext,
+                    settingsPort,
+                    updateVersionPort,
+                    updateRuntimeConfigPort,
+                    updateRestartPort,
                     clock,
-                    jvmExitService,
-                    runtimeConfigService,
                     updateActivityGate,
                     updateMaintenanceWindow,
-                    releaseSources);
+                    releaseSources,
+                    updateArtifactStorePort);
         }
 
         @Override

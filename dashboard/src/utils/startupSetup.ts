@@ -1,4 +1,4 @@
-import type { RuntimeConfig } from '../api/settings';
+import type { RuntimeConfig } from '../api/settingsTypes';
 import { listConfiguredModelSpecs } from '../lib/modelRouter';
 
 const STARTUP_SETUP_DISMISSED_COOKIE = 'golemcore_startup_setup_dismissed';

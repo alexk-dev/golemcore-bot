@@ -1,7 +1,7 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { FiSave } from 'react-icons/fi';
-import type { ModelRegistryConfig } from '../../../api/settings';
+import type { ModelRegistryConfig } from '../../../api/settingsTypes';
 import { SaveStateHint } from '../../../components/common/SettingsSaveBar';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';

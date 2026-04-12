@@ -25,7 +25,7 @@ import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.infrastructure.config.ModelConfigService;
+import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import org.springframework.stereotype.Service;
 
@@ -141,12 +141,12 @@ public class ModelSelectionService {
      */
     public List<AvailableModel> getAvailableModels() {
         List<String> configuredProviders = runtimeConfigService.getConfiguredLlmProviders();
-        Map<String, ModelConfigService.ModelSettings> filtered = modelConfigService
+        Map<String, ModelCatalogEntry> filtered = modelConfigService
                 .getModelsForProviders(configuredProviders);
 
         List<AvailableModel> result = new ArrayList<>();
-        for (Map.Entry<String, ModelConfigService.ModelSettings> entry : filtered.entrySet()) {
-            ModelConfigService.ModelSettings settings = entry.getValue();
+        for (Map.Entry<String, ModelCatalogEntry> entry : filtered.entrySet()) {
+            ModelCatalogEntry settings = entry.getValue();
             String displayName = settings.getDisplayName() != null ? settings.getDisplayName() : entry.getKey();
             boolean hasReasoning = modelConfigService.isReasoningRequired(entry.getKey());
             List<String> reasoningLevels = hasReasoning
@@ -337,7 +337,7 @@ public class ModelSelectionService {
         }
 
         String normalizedSpec = modelSpec.trim();
-        Map<String, ModelConfigService.ModelSettings> allModels = modelConfigService.getAllModels();
+        Map<String, ModelCatalogEntry> allModels = modelConfigService.getAllModels();
         if (allModels.containsKey(normalizedSpec)) {
             return normalizedSpec;
         }
@@ -358,7 +358,7 @@ public class ModelSelectionService {
 
     private String findUniqueCanonicalCandidate(
             String modelSpec,
-            Map<String, ModelConfigService.ModelSettings> allModels,
+            Map<String, ModelCatalogEntry> allModels,
             List<String> configuredProviders,
             boolean exactOnly) {
         List<String> matchingCandidates = allModels.entrySet().stream()
@@ -381,7 +381,7 @@ public class ModelSelectionService {
     }
 
     private boolean hasKnownModelMatch(String modelSpec) {
-        Map<String, ModelConfigService.ModelSettings> allModels = modelConfigService.getAllModels();
+        Map<String, ModelCatalogEntry> allModels = modelConfigService.getAllModels();
         String name = normalizeModelName(modelSpec);
         if (allModels.containsKey(modelSpec) || allModels.containsKey(name)) {
             return true;

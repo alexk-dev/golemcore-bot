@@ -20,6 +20,7 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -97,7 +98,7 @@ class TelemetryRollupSchedulerTest {
         scheduler.flushReadyRollupsNow();
 
         verify(publisher).publishEvent(eq("model_usage"), anyMap());
-        verify(publisher, org.mockito.Mockito.times(2)).publishEvent(eq("plugin_usage"), anyMap());
+        verify(publisher, times(2)).publishEvent(eq("plugin_usage"), anyMap());
 
         clearInvocations(publisher);
         scheduler.flushReadyRollupsNow();
@@ -107,10 +108,10 @@ class TelemetryRollupSchedulerTest {
     }
 
     private static final class MutableClock extends Clock {
-        private Instant instant;
+        private Instant currentInstant;
 
         private MutableClock(Instant instant) {
-            this.instant = instant;
+            this.currentInstant = instant;
         }
 
         @Override
@@ -125,11 +126,11 @@ class TelemetryRollupSchedulerTest {
 
         @Override
         public Instant instant() {
-            return instant;
+            return currentInstant;
         }
 
         void advanceSeconds(long seconds) {
-            instant = instant.plusSeconds(seconds);
+            currentInstant = currentInstant.plusSeconds(seconds);
         }
     }
 }

@@ -6,8 +6,7 @@ import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
-import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -21,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static me.golemcore.bot.support.ChannelRuntimeTestSupport.runtime;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -34,7 +34,7 @@ class DelayedActionDispatcherTest {
     void shouldRejectMissingDelayedAction() throws Exception {
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 mock(ToolArtifactService.class),
                 mock(DelayedActionPolicyService.class),
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -59,7 +59,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 sessionRunCoordinator,
-                new ChannelRegistry(List.of(channelPort)),
+                runtime(List.of(channelPort)),
                 toolArtifactService,
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -87,7 +87,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 mock(ToolArtifactService.class),
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -117,7 +117,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of(channelPort)),
+                runtime(List.of(channelPort)),
                 mock(ToolArtifactService.class),
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -148,7 +148,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of(channelPort)),
+                runtime(List.of(channelPort)),
                 mock(ToolArtifactService.class),
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -180,7 +180,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of(channelPort)),
+                runtime(List.of(channelPort)),
                 mock(ToolArtifactService.class),
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -208,7 +208,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 mock(ToolArtifactService.class),
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -237,7 +237,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 coordinator,
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 mock(ToolArtifactService.class),
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -271,7 +271,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 mock(ToolArtifactService.class),
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -298,7 +298,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 mock(ToolArtifactService.class),
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -324,7 +324,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 mock(ToolArtifactService.class),
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -357,7 +357,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of(channelPort)),
+                runtime(List.of(channelPort)),
                 toolArtifactService,
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -397,7 +397,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of(channelPort)),
+                runtime(List.of(channelPort)),
                 toolArtifactService,
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -440,7 +440,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 mock(SessionRunCoordinator.class),
-                new ChannelRegistry(List.of(channelPort)),
+                runtime(List.of(channelPort)),
                 toolArtifactService,
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -473,7 +473,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 sessionRunCoordinator,
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 toolArtifactService,
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -513,7 +513,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 sessionRunCoordinator,
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 mock(ToolArtifactService.class),
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -546,7 +546,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 sessionRunCoordinator,
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 mock(ToolArtifactService.class),
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -581,7 +581,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 sessionRunCoordinator,
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 toolArtifactService,
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
@@ -613,7 +613,7 @@ class DelayedActionDispatcherTest {
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
                 sessionRunCoordinator,
-                new ChannelRegistry(List.of()),
+                runtime(List.of()),
                 toolArtifactService,
                 policyService,
                 Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
