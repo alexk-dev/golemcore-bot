@@ -1,5 +1,3 @@
-package me.golemcore.bot.tools;
-
 /*
  * Copyright 2026 Aleksei Kuleshov
  *
@@ -18,6 +16,8 @@ package me.golemcore.bot.tools;
  * Contact: alex@kuleshov.tech
  */
 
+package me.golemcore.bot.tools;
+
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -31,6 +31,7 @@ import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.model.hive.HiveEvidenceRef;
 import me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest;
 import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -55,10 +56,15 @@ public class HiveLifecycleSignalTool implements ToolComponent {
     private static final Set<String> ALLOWED_SIGNAL_TYPES = Set.copyOf(SUPPORTED_SIGNAL_TYPES);
 
     private final HiveEventPublishPort hiveEventPublishPort;
+    private final RuntimeConfigService runtimeConfigService;
     private final Clock clock;
 
-    public HiveLifecycleSignalTool(HiveEventPublishPort hiveEventPublishPort, Clock clock) {
+    public HiveLifecycleSignalTool(
+            HiveEventPublishPort hiveEventPublishPort,
+            RuntimeConfigService runtimeConfigService,
+            Clock clock) {
         this.hiveEventPublishPort = hiveEventPublishPort;
+        this.runtimeConfigService = runtimeConfigService;
         this.clock = clock;
     }
 
@@ -100,6 +106,11 @@ public class HiveLifecycleSignalTool implements ToolComponent {
                                                                 "type", "string",
                                                                 "description", "Evidence reference id or path.")))))))
                 .build();
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return runtimeConfigService.isHiveSdlcLifecycleSignalEnabled();
     }
 
     @Override

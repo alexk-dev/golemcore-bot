@@ -9,6 +9,7 @@ import { useHiveStatus, useJoinHive, useLeaveHive, useReconnectHive } from '../.
 import type { HiveConfig } from '../../api/settingsTypes';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { HiveActionButtons } from './HiveActionButtons';
+import { HiveSdlcSettings } from './HiveSdlcSettings';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -74,6 +75,7 @@ export default function HiveTab({ config }: HiveTabProps): ReactElement {
         )}
         <HiveConnectionSummary status={status} />
         <HiveRuntimeSettings form={form} isManaged={isManaged} setForm={setForm} />
+        <HiveSdlcSettings form={form} isManaged={isManaged} setForm={setForm} />
         <HiveJoinWorkspace
           isManaged={isManaged}
           isBusy={isBusy}
