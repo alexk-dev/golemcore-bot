@@ -6,6 +6,7 @@ import me.golemcore.bot.application.command.PlanCommandService;
 import me.golemcore.bot.application.models.ModelManagementFacade;
 import me.golemcore.bot.application.models.ModelRegistryService;
 import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
+import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.prompts.PromptManagementFacade;
 import me.golemcore.bot.application.selfevolving.tactic.TacticEmbeddingProbeService;
 import me.golemcore.bot.application.scheduler.SchedulerFacade;
@@ -68,13 +69,17 @@ public class ApplicationLayerConfiguration {
             UserPreferencesService preferencesService,
             MemoryPresetService memoryPresetService,
             RuntimeSettingsValidator validator,
-            RuntimeSettingsMergeService mergeService) {
+            RuntimeSettingsMergeService mergeService,
+            ProviderModelImportService providerModelImportService,
+            ProviderModelDiscoveryService providerModelDiscoveryService) {
         return new RuntimeSettingsFacade(
                 runtimeConfigService,
                 preferencesService,
                 memoryPresetService,
                 validator,
-                mergeService);
+                mergeService,
+                providerModelImportService,
+                providerModelDiscoveryService);
     }
 
     @Bean
@@ -135,6 +140,13 @@ public class ApplicationLayerConfiguration {
             RuntimeConfigService runtimeConfigService,
             ProviderModelDiscoveryPort providerModelDiscoveryPort) {
         return new ProviderModelDiscoveryService(runtimeConfigService, providerModelDiscoveryPort);
+    }
+
+    @Bean
+    ProviderModelImportService providerModelImportService(
+            ProviderModelDiscoveryService providerModelDiscoveryService,
+            ModelConfigAdminPort modelConfigAdminPort) {
+        return new ProviderModelImportService(providerModelDiscoveryService, modelConfigAdminPort);
     }
 
     @Bean

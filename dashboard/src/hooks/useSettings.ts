@@ -8,8 +8,11 @@ import {
   updateModelRouterConfig,
   updateLlmConfig,
   addLlmProvider,
+  addLlmProviderAndImport,
   updateLlmProvider,
   removeLlmProvider,
+  testDraftLlmProvider,
+  testSavedLlmProvider,
   updateToolsConfig,
   updateVoiceConfig,
   updateMemoryConfig,
@@ -32,6 +35,8 @@ import type {
   ModelRouterConfig,
   LlmConfig,
   LlmProviderConfig,
+  LlmProviderImportResult,
+  LlmProviderTestResult,
   ToolsConfig,
   VoiceConfig,
   RuntimeConfig,
@@ -106,6 +111,23 @@ export function useAddLlmProvider(): UseMutationResult<Awaited<ReturnType<typeof
   });
 }
 
+export function useAddLlmProviderAndImport(): UseMutationResult<
+  LlmProviderImportResult,
+  unknown,
+  { name: string; config: LlmProviderConfig; selectedModelIds: string[] }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, config, selectedModelIds }: { name: string; config: LlmProviderConfig; selectedModelIds: string[] }) =>
+      addLlmProviderAndImport(name, config, selectedModelIds),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+      qc.invalidateQueries({ queryKey: ['models-config'] }),
+      qc.invalidateQueries({ queryKey: ['models-available'] }),
+    ]),
+  });
+}
+
 export function useUpdateLlmProvider(): UseMutationResult<Awaited<ReturnType<typeof updateLlmProvider>>, unknown, { name: string; config: LlmProviderConfig }> {
   const qc = useQueryClient();
   return useMutation({
@@ -119,6 +141,21 @@ export function useRemoveLlmProvider(): UseMutationResult<Awaited<ReturnType<typ
   return useMutation({
     mutationFn: (name: string) => removeLlmProvider(name),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useTestLlmProvider(): UseMutationResult<
+  LlmProviderTestResult,
+  unknown,
+  | { mode: 'saved'; providerName: string }
+  | { mode: 'draft'; providerName: string; config: LlmProviderConfig }
+> {
+  return useMutation({
+    mutationFn: (request) => (
+      request.mode === 'saved'
+        ? testSavedLlmProvider(request.providerName)
+        : testDraftLlmProvider(request.providerName, request.config)
+    ),
   });
 }
 

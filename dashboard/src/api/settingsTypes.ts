@@ -28,6 +28,9 @@ export interface RuntimeConfig {
 export interface ModelRegistryConfig { repositoryUrl: string | null; branch: string | null; }
 export interface LlmConfig { providers: Record<string, LlmProviderConfig>; }
 export interface LlmProviderConfig { apiKey: string | null; apiKeyPresent?: boolean; baseUrl: string | null; requestTimeoutSeconds: number | null; apiType: ApiType | null; legacyApi: boolean | null; }
+export interface LlmProviderImportResult { providerSaved: boolean; providerName: string; resolvedEndpoint: string | null; addedModels: string[]; skippedModels: string[]; errors: string[]; }
+export type LlmProviderTestMode = 'saved' | 'draft';
+export interface LlmProviderTestResult { mode: LlmProviderTestMode; providerName: string; resolvedEndpoint: string | null; models: string[]; success: boolean; error: string | null; }
 export interface MemoryConfig { enabled: boolean | null; softPromptBudgetTokens: number | null; maxPromptBudgetTokens: number | null; workingTopK: number | null; episodicTopK: number | null; semanticTopK: number | null; proceduralTopK: number | null; promotionEnabled: boolean | null; promotionMinConfidence: number | null; decayEnabled: boolean | null; decayDays: number | null; retrievalLookbackDays: number | null; codeAwareExtractionEnabled: boolean | null; disclosure?: MemoryDisclosureConfig | null; diagnostics?: MemoryDiagnosticsConfig | null; }
 export interface MemoryPreset { id: string; label: string; comment: string; memory: MemoryConfig; }
 export type MemoryDisclosureMode = 'index' | 'summary' | 'selective_detail' | 'full_pack';

@@ -266,6 +266,55 @@ class ProviderModelDiscoveryServiceTest {
     }
 
     @Test
+    void shouldDiscoverModelsForDraftProviderConfig() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("draft-key"))
+                .baseUrl("https://example.com")
+                .requestTimeoutSeconds(25)
+                .apiType("openai")
+                .build();
+        StubProviderModelDiscoveryPort discoveryPort = new StubProviderModelDiscoveryPort(
+                new ProviderModelDiscoveryPort.DiscoveryResponse(200,
+                        List.of(openAiDocument("draft-gpt", "Draft GPT", "draft",
+                                List.of("text"), null, List.of("temperature"), 0, 0))));
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService, discoveryPort);
+
+        ProviderModelDiscoveryService.DiscoveryResult result = service.discoverModelsForConfig("draftmesh",
+                providerConfig);
+
+        assertEquals("https://example.com/v1/models", result.resolvedEndpoint());
+        assertEquals(1, result.models().size());
+        assertEquals("draft-gpt", result.models().getFirst().id());
+        assertEquals("https://example.com/v1/models", discoveryPort.discoveryRequest().uri().toString());
+        assertEquals("draft-key", discoveryPort.discoveryRequest().apiKey());
+    }
+
+    @Test
+    void shouldAllowLocalDiscoveryEndpointForDraftProviderConfig() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("draft-key"))
+                .baseUrl("http://127.0.0.1:11434")
+                .requestTimeoutSeconds(25)
+                .apiType("openai")
+                .build();
+        StubProviderModelDiscoveryPort discoveryPort = new StubProviderModelDiscoveryPort(
+                new ProviderModelDiscoveryPort.DiscoveryResponse(200,
+                        List.of(openAiDocument("draft-gpt", "Draft GPT", "draft",
+                                List.of("text"), null, List.of("temperature"), 0, 0))));
+        ProviderModelDiscoveryService service = new ProviderModelDiscoveryService(runtimeConfigService, discoveryPort);
+
+        ProviderModelDiscoveryService.DiscoveryResult result = service.discoverModelsForConfig("draftmesh",
+                providerConfig);
+
+        assertEquals("http://127.0.0.1:11434/v1/models", result.resolvedEndpoint());
+        assertEquals(1, result.models().size());
+        assertEquals("draft-gpt", result.models().getFirst().id());
+        assertEquals("http://127.0.0.1:11434/v1/models", discoveryPort.discoveryRequest().uri().toString());
+    }
+
+    @Test
     void shouldRejectUnknownProvider() {
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of("openai"));

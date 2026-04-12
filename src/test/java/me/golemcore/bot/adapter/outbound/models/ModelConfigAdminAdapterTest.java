@@ -93,7 +93,7 @@ class ModelConfigAdminAdapterTest {
         adapter.reload();
 
         verify(modelConfigService)
-                .saveModel(eq("claude-opus"), eq("claude-legacy"), any(ModelConfigService.ModelSettings.class));
+                .saveModelStrict(eq("claude-opus"), eq("claude-legacy"), any(ModelConfigService.ModelSettings.class));
         verify(modelConfigService).reload();
         assertTrue(deleted);
     }

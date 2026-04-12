@@ -110,10 +110,8 @@ public class ModelConfigService implements ModelConfigPort {
      */
     public void saveConfig() {
         try {
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(config);
-            storagePort.putText(MODELS_DIR, CONFIG_FILE, json).join();
-            log.info("[ModelConfig] Saved to workspace: {} models", config.getModels().size());
-        } catch (Exception e) {
+            persistConfig();
+        } catch (RuntimeException e) {
             log.error("[ModelConfig] Failed to save: {}", e.getMessage());
         }
     }
@@ -135,6 +133,42 @@ public class ModelConfigService implements ModelConfigPort {
         }
         config.getModels().put(id, settings);
         saveConfig();
+    }
+
+    public void saveModelStrict(String id, ModelSettings settings) {
+        saveModelStrict(id, null, settings);
+    }
+
+    public void saveModelStrict(String id, String previousId, ModelSettings settings) {
+        Map<String, ModelSettings> previousModels = new LinkedHashMap<>(config.getModels());
+        if (previousId != null && !previousId.isBlank() && !previousId.trim().equals(id)) {
+            config.getModels().remove(previousId.trim());
+        }
+        config.getModels().put(id, settings);
+        try {
+            persistConfig();
+        } catch (RuntimeException e) {
+            config.setModels(previousModels);
+            throw e;
+        }
+    }
+
+    public boolean hasModel(String id) {
+        return config.getModels().containsKey(id);
+    }
+
+    public ModelSettings copyModelSettings(ModelSettings source) {
+        ModelSettings copy = new ModelSettings();
+        if (source == null) {
+            return copy;
+        }
+        copy.setProvider(source.getProvider());
+        copy.setDisplayName(source.getDisplayName());
+        copy.setSupportsVision(source.isSupportsVision());
+        copy.setSupportsTemperature(source.isSupportsTemperature());
+        copy.setMaxInputTokens(source.getMaxInputTokens());
+        copy.setReasoning(copyReasoningConfig(source.getReasoning()));
+        return copy;
     }
 
     /**
@@ -400,5 +434,34 @@ public class ModelConfigService implements ModelConfigPort {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ReasoningLevelConfig {
         private int maxInputTokens = 128000;
+    }
+
+    private ReasoningConfig copyReasoningConfig(ReasoningConfig source) {
+        if (source == null) {
+            return null;
+        }
+        ReasoningConfig copy = new ReasoningConfig();
+        copy.setDefaultLevel(source.getDefaultLevel());
+        Map<String, ReasoningLevelConfig> copiedLevels = new LinkedHashMap<>();
+        if (source.getLevels() != null) {
+            for (Map.Entry<String, ReasoningLevelConfig> entry : source.getLevels().entrySet()) {
+                ReasoningLevelConfig levelConfig = entry.getValue();
+                copiedLevels.put(entry.getKey(), levelConfig == null
+                        ? new ReasoningLevelConfig()
+                        : new ReasoningLevelConfig(levelConfig.getMaxInputTokens()));
+            }
+        }
+        copy.setLevels(copiedLevels);
+        return copy;
+    }
+
+    private void persistConfig() {
+        try {
+            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(config);
+            storagePort.putText(MODELS_DIR, CONFIG_FILE, json).join();
+            log.info("[ModelConfig] Saved to workspace: {} models", config.getModels().size());
+        } catch (Exception e) { // NOSONAR - preserve cause for strict callers
+            throw new IllegalStateException("Failed to save models config", e);
+        }
     }
 }

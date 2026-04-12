@@ -28,7 +28,7 @@ public class ModelConfigAdminAdapter implements ModelConfigAdminPort {
 
     @Override
     public void saveModel(String id, String previousId, ModelSettingsSnapshot settings) {
-        modelConfigService.saveModel(id, previousId, toModelSettings(settings));
+        modelConfigService.saveModelStrict(id, previousId, toModelSettings(settings));
     }
 
     @Override

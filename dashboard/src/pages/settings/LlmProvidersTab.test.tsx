@@ -5,8 +5,10 @@ import LlmProvidersTab from './LlmProvidersTab';
 
 vi.mock('../../hooks/useSettings', () => ({
   useAddLlmProvider: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useAddLlmProviderAndImport: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useUpdateLlmProvider: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useRemoveLlmProvider: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useTestLlmProvider: () => ({ isPending: false, mutateAsync: vi.fn() }),
 }));
 
 const config: LlmConfig = {

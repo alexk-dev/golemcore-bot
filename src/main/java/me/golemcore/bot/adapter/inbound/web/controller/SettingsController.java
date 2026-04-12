@@ -24,6 +24,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.UsageConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.VoiceConfigDto;
 import me.golemcore.bot.adapter.inbound.web.mapper.RuntimeSettingsWebMapper;
+import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
@@ -46,6 +47,7 @@ import reactor.core.publisher.Mono;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.function.Supplier;
@@ -178,6 +180,26 @@ public class SettingsController {
                         runtimeSettingsWebMapper.toLlmProviderConfig(providerConfig))));
     }
 
+    @PostMapping("/runtime/llm/providers/{name}/import-models")
+    public Mono<ResponseEntity<LlmProviderImportResponse>> addLlmProviderAndImportModels(
+            @PathVariable String name,
+            @RequestBody LlmProviderImportRequest request) {
+        if (request == null || request.config() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "config is required");
+        }
+        return Mono.just(ResponseEntity.ok(invokeRuntime(() -> {
+            ProviderModelImportService.ProviderImportResult importResult = runtimeSettingsFacade
+                    .addLlmProviderAndImportModels(name, request.config(), request.selectedModelIds());
+            return new LlmProviderImportResponse(
+                    true,
+                    name.trim().toLowerCase(Locale.ROOT),
+                    importResult.resolvedEndpoint(),
+                    importResult.addedModels(),
+                    importResult.skippedModels(),
+                    importResult.errors());
+        })));
+    }
+
     @PutMapping("/runtime/llm/providers/{name}")
     public Mono<ResponseEntity<RuntimeConfigDto>> updateLlmProvider(
             @PathVariable String name,
@@ -185,6 +207,37 @@ public class SettingsController {
         return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
                 runtimeSettingsFacade.updateLlmProvider(name,
                         runtimeSettingsWebMapper.toLlmProviderConfig(providerConfig))));
+    }
+
+    @PostMapping("/runtime/llm/provider-tests")
+    public Mono<ResponseEntity<LlmProviderTestResponse>> testLlmProvider(@RequestBody LlmProviderTestRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
+        }
+        String mode = requireRequestValue(request.mode(), "mode").toLowerCase(Locale.ROOT);
+        String providerName = requireRequestValue(request.providerName(), "providerName");
+        try {
+            RuntimeSettingsFacade.LlmProviderTestResult testResult;
+            if ("saved".equals(mode)) {
+                testResult = runtimeSettingsFacade.testSavedLlmProvider(providerName);
+            } else if ("draft".equals(mode)) {
+                if (request.config() == null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "config is required");
+                }
+                testResult = runtimeSettingsFacade.testDraftLlmProvider(providerName, request.config());
+            } else {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "mode must be one of [saved, draft]");
+            }
+            return Mono.just(ResponseEntity.ok(new LlmProviderTestResponse(
+                    testResult.mode(),
+                    testResult.providerName(),
+                    testResult.resolvedEndpoint(),
+                    testResult.models(),
+                    testResult.success(),
+                    testResult.error())));
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
     }
 
     @DeleteMapping("/runtime/llm/providers/{name}")
@@ -502,6 +555,27 @@ public class SettingsController {
 
     private record ModelDto(String id, String displayName, boolean hasReasoning,
             List<String> reasoningLevels, boolean supportsVision) {
+    }
+
+    private String requireRequestValue(String value, String fieldName) {
+        if (value == null || value.trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required");
+        }
+        return value.trim();
+    }
+
+    public record LlmProviderImportRequest(RuntimeConfig.LlmProviderConfig config, List<String> selectedModelIds) {
+    }
+
+    public record LlmProviderImportResponse(boolean providerSaved, String providerName, String resolvedEndpoint,
+            List<String> addedModels, List<String> skippedModels, List<String> errors) {
+    }
+
+    public record LlmProviderTestRequest(String mode, String providerName, RuntimeConfig.LlmProviderConfig config) {
+    }
+
+    public record LlmProviderTestResponse(String mode, String providerName, String resolvedEndpoint,
+            List<String> models, boolean success, String error) {
     }
 
     private record AdvancedConfigRequest(

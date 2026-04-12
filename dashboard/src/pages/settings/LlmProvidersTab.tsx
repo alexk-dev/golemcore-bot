@@ -4,11 +4,24 @@ import toast from 'react-hot-toast';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import { ProviderNameCombobox } from '../../components/common/ProviderNameCombobox';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
-import type { LlmConfig, LlmProviderConfig, ModelRouterConfig } from '../../api/settingsTypes';
-import { useAddLlmProvider, useRemoveLlmProvider, useUpdateLlmProvider } from '../../hooks/useSettings';
+import type {
+  LlmConfig,
+  LlmProviderConfig,
+  LlmProviderImportResult,
+  LlmProviderTestResult,
+  ModelRouterConfig,
+} from '../../api/settingsTypes';
+import {
+  useAddLlmProviderAndImport,
+  useRemoveLlmProvider,
+  useTestLlmProvider,
+  useUpdateLlmProvider,
+} from '../../hooks/useSettings';
 import { listConfiguredModelSpecs } from '../../lib/modelRouter';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import { LlmProviderEditorCard } from './LlmProviderEditorCard';
+import { ProviderModelImportResultModal } from './ProviderModelImportResultModal';
+import { ProviderModelTestResultModal } from './ProviderModelTestResultModal';
 import {
   API_TYPE_DETAILS,
   buildDefaultProviderConfig,
@@ -23,9 +36,10 @@ export interface LlmProvidersTabProps {
 }
 
 export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTabProps): ReactElement {
-  const addProvider = useAddLlmProvider();
+  const addProviderAndImport = useAddLlmProviderAndImport();
   const updateProvider = useUpdateLlmProvider();
   const removeProvider = useRemoveLlmProvider();
+  const testProvider = useTestLlmProvider();
 
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<LlmProviderConfig | null>(null);
@@ -33,6 +47,10 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
   const [showKey, setShowKey] = useState(false);
   const [newProviderName, setNewProviderName] = useState('');
   const [deleteProvider, setDeleteProvider] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<LlmProviderImportResult | null>(null);
+  const [testResult, setTestResult] = useState<LlmProviderTestResult | null>(null);
+  const [importableModels, setImportableModels] = useState<string[]>([]);
+  const [selectedImportModels, setSelectedImportModels] = useState<string[]>([]);
 
   const providerNames = Object.keys(config.providers ?? {});
   const knownSuggestions = useMemo(() => {
@@ -51,7 +69,7 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
     return used;
   }, [modelRouter]);
 
-  const isSaving = addProvider.isPending || updateProvider.isPending;
+  const isSaving = addProviderAndImport.isPending || updateProvider.isPending;
   const normalizedNewProviderName = newProviderName.trim().toLowerCase();
   const isProviderNameInvalid = normalizedNewProviderName.length > 0 && !PROVIDER_NAME_PATTERN.test(normalizedNewProviderName);
   const providerAlreadyExists = normalizedNewProviderName.length > 0
@@ -79,6 +97,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
     setEditForm(buildDefaultProviderConfig(name));
     setIsNewProvider(true);
     setShowKey(false);
+    setImportableModels([]);
+    setSelectedImportModels([]);
     setNewProviderName('');
   };
 
@@ -91,6 +111,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
     setEditForm({ ...provider, apiKey: null, apiType: normalizeApiType(provider.apiType), legacyApi: provider.legacyApi ?? null });
     setIsNewProvider(false);
     setShowKey(false);
+    setImportableModels([]);
+    setSelectedImportModels([]);
   };
 
   const handleCancelEdit = (): void => {
@@ -98,6 +120,8 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
     setEditForm(null);
     setIsNewProvider(false);
     setShowKey(false);
+    setImportableModels([]);
+    setSelectedImportModels([]);
   };
 
   const handleSave = async (): Promise<void> => {
@@ -106,7 +130,12 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
     }
     try {
       if (isNewProvider) {
-        await addProvider.mutateAsync({ name: editingName, config: editForm });
+        const result = await addProviderAndImport.mutateAsync({
+          name: editingName,
+          config: editForm,
+          selectedModelIds: selectedImportModels,
+        });
+        setImportResult(result);
         toast.success(`Provider "${editingName}" added`);
       } else {
         await updateProvider.mutateAsync({ name: editingName, config: editForm });
@@ -116,6 +145,58 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
     } catch (error) {
       toast.error(`Failed to save: ${extractErrorMessage(error)}`);
     }
+  };
+
+  const handleTestDraft = async (): Promise<void> => {
+    if (editingName == null || editForm == null) {
+      return;
+    }
+    try {
+      const result = await testProvider.mutateAsync({
+        mode: 'draft',
+        providerName: editingName,
+        config: editForm,
+      });
+      setTestResult(result);
+      if (isNewProvider && result.success) {
+        const models = Array.from(new Set(result.models));
+        setImportableModels(models);
+        setSelectedImportModels(models);
+      }
+      if (isNewProvider && !result.success) {
+        setImportableModels([]);
+        setSelectedImportModels([]);
+      }
+    } catch (error) {
+      toast.error(`Provider test failed: ${extractErrorMessage(error)}`);
+    }
+  };
+
+  const handleTestSaved = async (): Promise<void> => {
+    if (editingName == null || isNewProvider) {
+      return;
+    }
+    try {
+      const result = await testProvider.mutateAsync({
+        mode: 'saved',
+        providerName: editingName,
+      });
+      setTestResult(result);
+    } catch (error) {
+      toast.error(`Provider test failed: ${extractErrorMessage(error)}`);
+    }
+  };
+
+  const handleToggleImportModel = (modelId: string): void => {
+    setSelectedImportModels((current) => {
+      const next = new Set(current);
+      if (next.has(modelId)) {
+        next.delete(modelId);
+      } else {
+        next.add(modelId);
+      }
+      return importableModels.filter((model) => next.has(model));
+    });
   };
 
   const handleConfirmDelete = async (): Promise<void> => {
@@ -246,10 +327,22 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
             isNew={isNewProvider}
             showKey={showKey}
             isSaving={isSaving}
+            isTesting={testProvider.isPending}
+            importableModels={importableModels}
+            selectedImportModels={selectedImportModels}
             onFormChange={setEditForm}
             onToggleShowKey={() => setShowKey(!showKey)}
+            onToggleImportModel={handleToggleImportModel}
+            onSelectAllImportModels={() => setSelectedImportModels(importableModels)}
+            onClearImportModels={() => setSelectedImportModels([])}
+            onInvertImportModels={() => {
+              const selectedSet = new Set(selectedImportModels);
+              setSelectedImportModels(importableModels.filter((model) => !selectedSet.has(model)));
+            }}
             onSave={() => { void handleSave(); }}
             onCancel={handleCancelEdit}
+            onTestDraft={() => { void handleTestDraft(); }}
+            onTestSaved={() => { void handleTestSaved(); }}
           />
         )}
       </Card.Body>
@@ -263,6 +356,16 @@ export default function LlmProvidersTab({ config, modelRouter }: LlmProvidersTab
         isProcessing={removeProvider.isPending}
         onConfirm={() => { void handleConfirmDelete(); }}
         onCancel={() => setDeleteProvider(null)}
+      />
+      <ProviderModelImportResultModal
+        show={importResult != null}
+        result={importResult}
+        onHide={() => setImportResult(null)}
+      />
+      <ProviderModelTestResultModal
+        show={testResult != null}
+        result={testResult}
+        onHide={() => setTestResult(null)}
       />
     </Card>
   );
