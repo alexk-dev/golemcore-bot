@@ -884,6 +884,21 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldRejectProviderImportWithoutConfig() {
+        ResponseStatusException nullRequest = assertThrows(ResponseStatusException.class,
+                () -> controller.addLlmProviderAndImportModels("test", null));
+        assertEquals(HttpStatus.BAD_REQUEST, nullRequest.getStatusCode());
+        assertTrue(nullRequest.getReason().contains("config is required"));
+
+        ResponseStatusException missingConfig = assertThrows(ResponseStatusException.class,
+                () -> controller.addLlmProviderAndImportModels(
+                        "test",
+                        new SettingsController.LlmProviderImportRequest(null, List.of("test/gpt-5.2"))));
+        assertEquals(HttpStatus.BAD_REQUEST, missingConfig.getStatusCode());
+        assertTrue(missingConfig.getReason().contains("config is required"));
+    }
+
+    @Test
     void shouldTestSavedProvider() {
         when(providerModelDiscoveryService.discoverModelsForProvider("openrouter"))
                 .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
@@ -904,6 +919,58 @@ class SettingsControllerTest {
                     assertEquals(List.of("openrouter/openai/gpt-5"), body.models());
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldRejectInvalidProviderTestRequests() {
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiType("openai")
+                .build();
+
+        ResponseStatusException nullRequest = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(null));
+        assertEquals(HttpStatus.BAD_REQUEST, nullRequest.getStatusCode());
+        assertTrue(nullRequest.getReason().contains("request body is required"));
+
+        ResponseStatusException missingMode = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        null,
+                        "openrouter",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, missingMode.getStatusCode());
+        assertTrue(missingMode.getReason().contains("mode is required"));
+
+        ResponseStatusException blankProvider = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "saved",
+                        " ",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, blankProvider.getStatusCode());
+        assertTrue(blankProvider.getReason().contains("providerName is required"));
+
+        ResponseStatusException draftWithoutConfig = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "draft",
+                        "openrouter",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, draftWithoutConfig.getStatusCode());
+        assertTrue(draftWithoutConfig.getReason().contains("config is required"));
+
+        ResponseStatusException invalidMode = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "delete",
+                        "openrouter",
+                        providerConfig)));
+        assertEquals(HttpStatus.BAD_REQUEST, invalidMode.getStatusCode());
+        assertTrue(invalidMode.getReason().contains("mode must be one of"));
+
+        ResponseStatusException invalidProvider = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "saved",
+                        "bad name",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, invalidProvider.getStatusCode());
+        assertTrue(invalidProvider.getReason().contains("Provider name must match"));
     }
 
     @Test

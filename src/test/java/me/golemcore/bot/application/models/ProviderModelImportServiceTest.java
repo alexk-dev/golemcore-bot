@@ -1,6 +1,8 @@
 package me.golemcore.bot.application.models;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -13,6 +15,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
+import me.golemcore.bot.domain.model.catalog.ModelReasoningLevel;
+import me.golemcore.bot.domain.model.catalog.ModelReasoningProfile;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -107,6 +111,74 @@ class ProviderModelImportServiceTest {
     }
 
     @Test
+    void shouldUseBuiltInDefaultsWhenConfigIsMissingAndNormalizeRawSelections() {
+        ProviderModelDiscoveryService providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
+        ModelConfigAdminPort modelConfigAdminPort = mock(ModelConfigAdminPort.class);
+
+        when(providerModelDiscoveryService.discoverModelsForProvider(" XMESH "))
+                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
+                        "https://models.example.com/v1/models",
+                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("xmesh", "gpt-5.2", "GPT-5.2",
+                                "openai", null))));
+        when(modelConfigAdminPort.getConfig()).thenReturn(null);
+
+        ProviderModelImportService service = new ProviderModelImportService(providerModelDiscoveryService,
+                modelConfigAdminPort);
+
+        ProviderModelImportService.ProviderImportResult result = service.importMissingModels(" XMESH ",
+                java.util.Arrays.asList(" ", null, "gpt-5.2"));
+
+        ArgumentCaptor<ModelConfigAdminPort.ModelSettingsSnapshot> settingsCaptor = ArgumentCaptor.forClass(
+                ModelConfigAdminPort.ModelSettingsSnapshot.class);
+        verify(modelConfigAdminPort).saveModel(eq("xmesh/gpt-5.2"), eq(null), settingsCaptor.capture());
+        ModelConfigAdminPort.ModelSettingsSnapshot savedSettings = settingsCaptor.getValue();
+        assertEquals("xmesh", savedSettings.provider());
+        assertEquals("GPT-5.2", savedSettings.displayName());
+        assertEquals(128000, savedSettings.maxInputTokens());
+        assertTrue(savedSettings.supportsVision());
+        assertTrue(savedSettings.supportsTemperature());
+        assertNull(savedSettings.reasoning());
+        assertEquals(List.of("xmesh/gpt-5.2"), result.addedModels());
+    }
+
+    @Test
+    void shouldCopyReasoningDefaultsFromCatalogEntry() {
+        ProviderModelDiscoveryService providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
+        ModelConfigAdminPort modelConfigAdminPort = mock(ModelConfigAdminPort.class);
+        Map<String, ModelReasoningLevel> levels = new LinkedHashMap<>();
+        levels.put("high", new ModelReasoningLevel(200000));
+        levels.put("defaulted", null);
+        ModelReasoningProfile reasoning = new ModelReasoningProfile("high", levels);
+        ModelCatalogEntry importedSettings = new ModelCatalogEntry(
+                "upstream", "GPT-5.2", false, false, 64000, reasoning);
+        ModelConfigAdminPort.ModelsConfigSnapshot config = new ModelConfigAdminPort.ModelsConfigSnapshot(
+                new LinkedHashMap<>(),
+                null);
+
+        when(providerModelDiscoveryService.discoverModelsForProvider("xmesh"))
+                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
+                        "https://models.example.com/v1/models",
+                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("xmesh", "gpt-5.2", "GPT-5.2",
+                                "openai", importedSettings))));
+        when(modelConfigAdminPort.getConfig()).thenReturn(config);
+
+        ProviderModelImportService service = new ProviderModelImportService(providerModelDiscoveryService,
+                modelConfigAdminPort);
+
+        ProviderModelImportService.ProviderImportResult result = service.importMissingModels("xmesh", null);
+
+        ArgumentCaptor<ModelConfigAdminPort.ModelSettingsSnapshot> settingsCaptor = ArgumentCaptor.forClass(
+                ModelConfigAdminPort.ModelSettingsSnapshot.class);
+        verify(modelConfigAdminPort).saveModel(eq("xmesh/gpt-5.2"), eq(null), settingsCaptor.capture());
+        ModelConfigAdminPort.ModelSettingsSnapshot savedSettings = settingsCaptor.getValue();
+        assertEquals("xmesh", savedSettings.provider());
+        assertEquals("high", savedSettings.reasoning().defaultLevel());
+        assertEquals(200000, savedSettings.reasoning().levels().get("high").maxInputTokens());
+        assertEquals(128000, savedSettings.reasoning().levels().get("defaulted").maxInputTokens());
+        assertEquals(List.of("xmesh/gpt-5.2"), result.addedModels());
+    }
+
+    @Test
     void shouldReturnDiscoveryErrorsWithoutThrowing() {
         ProviderModelDiscoveryService providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         ModelConfigAdminPort modelConfigAdminPort = mock(ModelConfigAdminPort.class);
@@ -151,5 +223,19 @@ class ProviderModelImportServiceTest {
         assertTrue(result.addedModels().isEmpty());
         assertTrue(result.skippedModels().isEmpty());
         assertEquals(List.of("xmesh/gpt-5.2: disk full"), result.errors());
+    }
+
+    @Test
+    void shouldRejectBlankProviderNameBeforeDiscovery() {
+        ProviderModelDiscoveryService providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
+        ModelConfigAdminPort modelConfigAdminPort = mock(ModelConfigAdminPort.class);
+        ProviderModelImportService service = new ProviderModelImportService(providerModelDiscoveryService,
+                modelConfigAdminPort);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.importMissingModels(" ", null));
+
+        assertEquals("Provider name is required", error.getMessage());
+        verifyNoInteractions(providerModelDiscoveryService, modelConfigAdminPort);
     }
 }
