@@ -140,3 +140,5 @@ me.golemcore.bot.domain.system.TacticOutcomeFeedbackSystem
 me.golemcore.bot.domain.system.ToolLoopExecutionSystem
 me.golemcore.bot.domain.system.TurnOutcomeFinalizationSystem
 me.golemcore.bot.domain.system.toolloop.ToolFailureRecoveryService
+
+me.golemcore.bot.domain.service.HiveSdlcService
