@@ -20,7 +20,6 @@ package me.golemcore.bot.domain.service;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;

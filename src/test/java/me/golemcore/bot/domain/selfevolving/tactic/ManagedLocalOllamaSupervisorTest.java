@@ -49,16 +49,16 @@ class ManagedLocalOllamaSupervisorTest {
     private static final String SELECTED_MODEL = "qwen3-embedding:0.6b";
 
     private MutableClock clock;
-    private TestOllamaRuntimeProbePort runtimeProbePort;
-    private TestOllamaProcessPort processPort;
-    private TestManagedLocalOllamaSupervisor supervisor;
+    private StubOllamaRuntimeProbePort runtimeProbePort;
+    private StubOllamaProcessPort processPort;
+    private StubManagedLocalOllamaSupervisor supervisor;
 
     @BeforeEach
     void setUp() {
         clock = new MutableClock(Instant.parse("2026-04-02T00:00:00Z"), ZoneId.of("UTC"));
-        runtimeProbePort = new TestOllamaRuntimeProbePort(clock);
-        processPort = new TestOllamaProcessPort();
-        supervisor = new TestManagedLocalOllamaSupervisor(
+        runtimeProbePort = new StubOllamaRuntimeProbePort(clock);
+        processPort = new StubOllamaProcessPort();
+        supervisor = new StubManagedLocalOllamaSupervisor(
                 clock,
                 runtimeProbePort,
                 processPort,
@@ -173,7 +173,7 @@ class ManagedLocalOllamaSupervisorTest {
 
     @Test
     void shouldNotProbeRuntimeVersionWhenSupervisorStartsDisabled() {
-        TestManagedLocalOllamaSupervisor nullVersionSupervisor = new TestManagedLocalOllamaSupervisor(
+        StubManagedLocalOllamaSupervisor nullVersionSupervisor = new StubManagedLocalOllamaSupervisor(
                 clock,
                 runtimeProbePort,
                 processPort,
@@ -226,7 +226,7 @@ class ManagedLocalOllamaSupervisorTest {
         runtimeProbePort.consumeVersionTimeouts.add(java.time.Duration.ofSeconds(3));
         processPort.binaryAvailable = true;
 
-        TestManagedLocalOllamaSupervisor nullVersionSupervisor = new TestManagedLocalOllamaSupervisor(
+        StubManagedLocalOllamaSupervisor nullVersionSupervisor = new StubManagedLocalOllamaSupervisor(
                 clock,
                 runtimeProbePort,
                 processPort,
@@ -312,6 +312,7 @@ class ManagedLocalOllamaSupervisorTest {
 
         processPort.ownedProcessAlive = false;
         processPort.ownedProcessExitCode = 137;
+        processPort.ownedProcessExitCodePresent = true;
         ManagedLocalOllamaStatus crashed = supervisor.pollOwnedProcess();
         assertEquals(ManagedLocalOllamaState.DEGRADED_CRASHED, crashed.getCurrentState());
 
@@ -428,6 +429,7 @@ class ManagedLocalOllamaSupervisorTest {
         supervisor.startupCheck(true);
         processPort.ownedProcessAlive = false;
         processPort.ownedProcessExitCode = 137;
+        processPort.ownedProcessExitCodePresent = true;
 
         ManagedLocalOllamaStatus status = supervisor.pollOwnedProcess();
 
@@ -463,7 +465,7 @@ class ManagedLocalOllamaSupervisorTest {
         runtimeProbePort.modelResponses.add(true);
         processPort.binaryAvailable = true;
 
-        TestManagedLocalOllamaSupervisor outdatedSupervisor = new TestManagedLocalOllamaSupervisor(
+        StubManagedLocalOllamaSupervisor outdatedSupervisor = new StubManagedLocalOllamaSupervisor(
                 clock,
                 runtimeProbePort,
                 processPort,
@@ -488,6 +490,7 @@ class ManagedLocalOllamaSupervisorTest {
         supervisor.startupCheck(true);
         processPort.ownedProcessAlive = false;
         processPort.ownedProcessExitCode = 137;
+        processPort.ownedProcessExitCodePresent = true;
         supervisor.pollOwnedProcess();
         processPort.startFailure = new IllegalStateException("restart failed");
         assertEquals(ManagedLocalOllamaState.DEGRADED_RESTART_BACKOFF,
@@ -512,6 +515,7 @@ class ManagedLocalOllamaSupervisorTest {
         supervisor.startupCheck(true);
         processPort.ownedProcessAlive = false;
         processPort.ownedProcessExitCode = 137;
+        processPort.ownedProcessExitCodePresent = true;
         supervisor.pollOwnedProcess();
 
         ManagedLocalOllamaStatus backoffStatus = supervisor.attemptScheduledRetry();
@@ -540,6 +544,7 @@ class ManagedLocalOllamaSupervisorTest {
         supervisor.startupCheck(true);
         processPort.ownedProcessAlive = false;
         processPort.ownedProcessExitCode = 137;
+        processPort.ownedProcessExitCodePresent = true;
         supervisor.pollOwnedProcess();
 
         ManagedLocalOllamaStatus status = supervisor.startupCheck(true);
@@ -559,6 +564,7 @@ class ManagedLocalOllamaSupervisorTest {
         supervisor.startupCheck(true);
         processPort.ownedProcessAlive = false;
         processPort.ownedProcessExitCode = 137;
+        processPort.ownedProcessExitCodePresent = true;
         supervisor.pollOwnedProcess();
         runtimeProbePort.runtimeReachableResponses.add(false);
         runtimeProbePort.runtimeReachableResponses.add(true);
@@ -621,6 +627,7 @@ class ManagedLocalOllamaSupervisorTest {
         ManagedLocalOllamaStatus timeoutStatus = supervisor.startupCheck(true);
         processPort.ownedProcessAlive = false;
         processPort.ownedProcessExitCode = 137;
+        processPort.ownedProcessExitCodePresent = true;
 
         ManagedLocalOllamaStatus crashedStatus = supervisor.pollOwnedProcess();
 
@@ -640,6 +647,7 @@ class ManagedLocalOllamaSupervisorTest {
         supervisor.startupCheck(true);
         processPort.ownedProcessAlive = false;
         processPort.ownedProcessExitCode = 137;
+        processPort.ownedProcessExitCodePresent = true;
 
         ManagedLocalOllamaStatus firstCrashStatus = supervisor.pollOwnedProcess();
         ManagedLocalOllamaStatus secondCrashStatus = supervisor.pollOwnedProcess();
@@ -668,7 +676,7 @@ class ManagedLocalOllamaSupervisorTest {
         runtimeProbePort.runtimeReachableResponses.add(true);
         runtimeProbePort.modelResponses.add(true);
 
-        TestManagedLocalOllamaSupervisor outdatedExternalSupervisor = new TestManagedLocalOllamaSupervisor(
+        StubManagedLocalOllamaSupervisor outdatedExternalSupervisor = new StubManagedLocalOllamaSupervisor(
                 clock,
                 runtimeProbePort,
                 processPort,
@@ -698,7 +706,7 @@ class ManagedLocalOllamaSupervisorTest {
             runtimeProbePort.runtimeReachableResponses.add(false);
             supervisor.pollExternalRuntime();
 
-            TestManagedLocalOllamaSupervisor outdatedSupervisor = new TestManagedLocalOllamaSupervisor(
+            StubManagedLocalOllamaSupervisor outdatedSupervisor = new StubManagedLocalOllamaSupervisor(
                     clock,
                     runtimeProbePort,
                     processPort,
@@ -734,27 +742,29 @@ class ManagedLocalOllamaSupervisorTest {
         return appender;
     }
 
-    private static final class TestManagedLocalOllamaSupervisor extends ManagedLocalOllamaSupervisor {
+    private static final class StubManagedLocalOllamaSupervisor extends ManagedLocalOllamaSupervisor {
 
         private final List<ManagedLocalOllamaState> observedStates = new ArrayList<>();
+        private final MutableClock mutableClock;
 
-        private TestManagedLocalOllamaSupervisor(Clock clock,
+        private StubManagedLocalOllamaSupervisor(MutableClock clock,
                 OllamaRuntimeProbePort runtimeProbePort,
                 OllamaProcessPort processPort,
                 String endpoint,
                 String version,
                 String selectedModel) {
             super(clock, runtimeProbePort, processPort, endpoint, version, selectedModel);
+            this.mutableClock = clock;
         }
 
         @Override
         protected void pauseBeforeRetry(java.time.Duration delay) {
             observedStates.add(currentStatus().getCurrentState());
-            ((MutableClock) getClock()).advance(delay);
+            mutableClock.advance(delay);
         }
     }
 
-    private static final class TestOllamaRuntimeProbePort implements OllamaRuntimeProbePort {
+    private static final class StubOllamaRuntimeProbePort implements OllamaRuntimeProbePort {
 
         private final MutableClock clock;
         private final Deque<Boolean> runtimeReachableResponses = new ArrayDeque<>();
@@ -768,7 +778,7 @@ class ManagedLocalOllamaSupervisorTest {
         private String runtimeVersion;
         private boolean consumeReachabilityTimeout;
 
-        private TestOllamaRuntimeProbePort(MutableClock clock) {
+        private StubOllamaRuntimeProbePort(MutableClock clock) {
             this.clock = clock;
         }
 
@@ -815,11 +825,12 @@ class ManagedLocalOllamaSupervisorTest {
         }
     }
 
-    private static final class TestOllamaProcessPort implements OllamaProcessPort {
+    private static final class StubOllamaProcessPort implements OllamaProcessPort {
 
         private boolean binaryAvailable;
         private boolean ownedProcessAlive;
-        private Integer ownedProcessExitCode;
+        private int ownedProcessExitCode;
+        private boolean ownedProcessExitCodePresent;
         private int binaryAvailabilityChecks;
         private int startCount;
         private int stopCount;
@@ -844,7 +855,7 @@ class ManagedLocalOllamaSupervisorTest {
             }
             startCount++;
             ownedProcessAlive = true;
-            ownedProcessExitCode = null;
+            ownedProcessExitCodePresent = false;
             startEndpoints.addLast(endpoint);
         }
 
@@ -855,7 +866,7 @@ class ManagedLocalOllamaSupervisorTest {
 
         @Override
         public Integer getOwnedProcessExitCode() {
-            return ownedProcessExitCode;
+            return ownedProcessExitCodePresent ? ownedProcessExitCode : null;
         }
 
         @Override
@@ -867,20 +878,20 @@ class ManagedLocalOllamaSupervisorTest {
 
     private static final class MutableClock extends Clock {
 
-        private Instant instant;
+        private Instant currentInstant;
         private final ZoneId zoneId;
 
         private MutableClock(Instant instant, ZoneId zoneId) {
-            this.instant = instant;
+            this.currentInstant = instant;
             this.zoneId = zoneId;
         }
 
         private void advanceSeconds(long seconds) {
-            instant = instant.plusSeconds(seconds);
+            currentInstant = currentInstant.plusSeconds(seconds);
         }
 
         private void advance(java.time.Duration duration) {
-            instant = instant.plus(duration);
+            currentInstant = currentInstant.plus(duration);
         }
 
         @Override
@@ -890,16 +901,12 @@ class ManagedLocalOllamaSupervisorTest {
 
         @Override
         public Clock withZone(ZoneId zone) {
-            return new MutableClock(instant, zone);
+            return new MutableClock(currentInstant, zone);
         }
 
         @Override
         public Instant instant() {
-            return instant;
+            return currentInstant;
         }
-    }
-
-    private MutableClock getClock() {
-        return clock;
     }
 }

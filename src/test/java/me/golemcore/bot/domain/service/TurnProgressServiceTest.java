@@ -9,7 +9,7 @@ import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.ProgressUpdateType;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

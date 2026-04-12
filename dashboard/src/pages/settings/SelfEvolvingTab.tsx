@@ -2,7 +2,7 @@ import { type Dispatch, type ReactElement, type SetStateAction, useEffect, useMe
 import { Alert, Button, Card, Col, Form, Nav, Row } from 'react-bootstrap';
 import toast from 'react-hot-toast';
 
-import type { SelfEvolvingConfig } from '../../api/settings';
+import type { SelfEvolvingConfig } from '../../api/settingsTypes';
 import type { SelfEvolvingTacticSearchStatus, SelfEvolvingTacticSearchStatusPreview } from '../../api/selfEvolving';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';

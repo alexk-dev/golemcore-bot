@@ -5,7 +5,7 @@ import type {
   SelfEvolvingArtifactRevisionDiff,
   SelfEvolvingArtifactTransitionDiff,
 } from '../../api/selfEvolving';
-import type { SelfEvolvingArtifactCompareMode } from './SelfEvolvingArtifactCompareToolbar';
+import type { SelfEvolvingArtifactCompareMode } from './SelfEvolvingArtifactCompareTypes';
 
 interface SelfEvolvingArtifactDiffTabsProps {
   compareMode: SelfEvolvingArtifactCompareMode;

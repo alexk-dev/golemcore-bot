@@ -24,7 +24,7 @@ import {
   useUninstallPluginFromMarketplace,
 } from '../../hooks/usePlugins';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
-import { useTelemetry } from '../../lib/telemetry/TelemetryProvider';
+import { useTelemetry } from '../../lib/telemetry/TelemetryContext';
 import { PluginMarketplaceCard } from './PluginMarketplaceCard';
 import {
   matchesFilter,

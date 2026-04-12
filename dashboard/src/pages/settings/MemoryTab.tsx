@@ -12,7 +12,7 @@ import type {
   MemoryDisclosureMode,
   MemoryPreset,
   MemoryPromptStyle,
-} from '../../api/settings';
+} from '../../api/settingsTypes';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { MemoryDisclosureFields } from './MemoryDisclosureFields';
 import { MemoryPresetPicker } from './MemoryPresetPicker';

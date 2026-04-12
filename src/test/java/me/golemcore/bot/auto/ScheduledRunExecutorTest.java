@@ -12,7 +12,6 @@ import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -22,7 +21,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -133,7 +131,7 @@ class ScheduledRunExecutorTest {
         when(runtimeConfigService.isAutoReflectionEnabled()).thenReturn(false);
 
         Message syntheticMessage = stubSyntheticMessage(runMessage, schedule, ctx);
-        CompletableFuture<Void> future = stubNeverCompletingFuture(syntheticMessage);
+        stubNeverCompletingFuture(syntheticMessage);
 
         executor.executeSchedule(schedule, ctx, TIMEOUT);
 

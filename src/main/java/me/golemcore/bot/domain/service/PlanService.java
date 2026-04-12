@@ -25,7 +25,6 @@ import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.port.outbound.PlanStorePort;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;

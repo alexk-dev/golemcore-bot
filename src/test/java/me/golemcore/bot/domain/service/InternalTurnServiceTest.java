@@ -1,6 +1,5 @@
 package me.golemcore.bot.domain.service;
 
-import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;

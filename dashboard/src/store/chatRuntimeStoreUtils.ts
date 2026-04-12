@@ -6,6 +6,7 @@ import type {
   ChatRuntimeSessionState,
   LiveProgressUpdate,
 } from '../components/chat/chatRuntimeTypes';
+import { areAttachmentsEqual, isDuplicateAssistantDraft } from './chatRuntimeStoreUtilsComparators';
 
 const EMPTY_TURN_METADATA: TurnMetadata = {
   model: null,
@@ -107,41 +108,29 @@ export function mergeInitialHistory(existingMessages: ChatMessage[], historyMess
     return historyMessages;
   }
 
-  const merged = [...historyMessages];
   const lastPersistedAssistant = [...historyMessages].reverse().find((message) => message.role === 'assistant') ?? null;
-  for (const message of existingMessages) {
-    if (message.persisted) {
-      continue;
-    }
-    if (
-      message.role === 'assistant'
-      && message.content === lastPersistedAssistant?.content
-      && message.model === lastPersistedAssistant?.model
-      && message.tier === lastPersistedAssistant?.tier
-      && message.skill === lastPersistedAssistant?.skill
-      && message.reasoning === lastPersistedAssistant?.reasoning
-      && areAttachmentsEqual(message.attachments, lastPersistedAssistant?.attachments ?? [])
-    ) {
-      continue;
-    }
-    merged.push(message);
-  }
-  return dedupeMessages(merged);
+  const draftMessages = existingMessages.filter((message) => (
+    !message.persisted && !isDuplicateAssistantDraft(message, lastPersistedAssistant)
+  ));
+  return dedupeMessages([...historyMessages, ...draftMessages]);
 }
 
-function areAttachmentsEqual(left: ChatMessageAttachment[], right: ChatMessageAttachment[]): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-  return left.every((attachment, index) => {
-    const other = right[index];
-    return attachment.type === other.type
-      && attachment.name === other.name
-      && attachment.mimeType === other.mimeType
-      && attachment.url === other.url
-      && attachment.internalFilePath === other.internalFilePath
-      && attachment.thumbnailBase64 === other.thumbnailBase64;
-  });
+
+
+interface AssistantMetadataUpdate {
+  model: string | null | undefined;
+  tier: string | null | undefined;
+  skill: string | null | undefined;
+  reasoning: string | null | undefined;
+  attachments: ChatMessageAttachment[];
+}
+
+function hasAssistantMetadataChanged(message: ChatMessage, update: AssistantMetadataUpdate): boolean {
+  return update.model !== message.model
+    || update.tier !== message.tier
+    || update.skill !== message.skill
+    || update.reasoning !== message.reasoning
+    || !areAttachmentsEqual(update.attachments, message.attachments);
 }
 
 function updateAssistantMessage(
@@ -170,13 +159,13 @@ function updateAssistantMessage(
   }
 
   if (text.length === 0 || text === message.content) {
-    if (
-      nextModel === message.model
-      && nextTier === message.tier
-      && nextSkill === message.skill
-      && nextReasoning === message.reasoning
-      && areAttachmentsEqual(nextAttachments, message.attachments)
-    ) {
+    if (!hasAssistantMetadataChanged(message, {
+      model: nextModel,
+      tier: nextTier,
+      skill: nextSkill,
+      reasoning: nextReasoning,
+      attachments: nextAttachments,
+    })) {
       return message;
     }
     return {

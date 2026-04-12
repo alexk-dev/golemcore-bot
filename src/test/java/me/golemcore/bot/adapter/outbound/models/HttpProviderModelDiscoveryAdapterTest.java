@@ -13,7 +13,6 @@ import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executor;
@@ -27,68 +26,71 @@ class HttpProviderModelDiscoveryAdapterTest {
 
     @Test
     void shouldUseBearerHeaderAndParseOpenAiLikePayload() {
-        FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 200, """
+        try (FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 200, """
                 {"data":[{"id":"gpt-5","name":"GPT-5","owned_by":"openai","context_length":128000}]}
-                """);
-        TestHttpProviderModelDiscoveryAdapter adapter = new TestHttpProviderModelDiscoveryAdapter(httpClient);
+                """)) {
+            StubHttpProviderModelDiscoveryAdapter adapter = new StubHttpProviderModelDiscoveryAdapter(httpClient);
 
-        ProviderModelDiscoveryPort.DiscoveryResponse response = adapter
-                .discover(new ProviderModelDiscoveryPort.DiscoveryRequest(
-                        URI.create("https://api.openai.com/v1/models"),
-                        Duration.ofSeconds(10),
-                        "openai-key",
-                        "golemcore-model-discovery",
-                        ProviderModelDiscoveryPort.AuthMode.BEARER));
+            ProviderModelDiscoveryPort.DiscoveryResponse response = adapter
+                    .discover(new ProviderModelDiscoveryPort.DiscoveryRequest(
+                            URI.create("https://api.openai.com/v1/models"),
+                            Duration.ofSeconds(10),
+                            "openai-key",
+                            "golemcore-model-discovery",
+                            ProviderModelDiscoveryPort.AuthMode.BEARER));
 
-        assertEquals(200, response.statusCode());
-        assertEquals(1, response.documents().size());
-        assertEquals("gpt-5", response.documents().get(0).id());
-        assertEquals("Bearer openai-key",
-                httpClient.getCapturedRequest().headers().firstValue("Authorization").orElse(""));
+            assertEquals(200, response.statusCode());
+            assertEquals(1, response.documents().size());
+            assertEquals("gpt-5", response.documents().get(0).id());
+            assertEquals("Bearer openai-key",
+                    httpClient.getCapturedRequest().headers().firstValue("Authorization").orElse(""));
+        }
     }
 
     @Test
     void shouldUseAnthropicHeaders() {
-        FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 200, "{\"data\":[]}");
-        TestHttpProviderModelDiscoveryAdapter adapter = new TestHttpProviderModelDiscoveryAdapter(httpClient);
+        try (FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 200, "{\"data\":[]}")) {
+            StubHttpProviderModelDiscoveryAdapter adapter = new StubHttpProviderModelDiscoveryAdapter(httpClient);
 
-        adapter.discover(new ProviderModelDiscoveryPort.DiscoveryRequest(
-                URI.create("https://api.anthropic.com/v1/models"),
-                Duration.ofSeconds(20),
-                "anthropic-key",
-                "golemcore-model-discovery",
-                ProviderModelDiscoveryPort.AuthMode.ANTHROPIC));
+            adapter.discover(new ProviderModelDiscoveryPort.DiscoveryRequest(
+                    URI.create("https://api.anthropic.com/v1/models"),
+                    Duration.ofSeconds(20),
+                    "anthropic-key",
+                    "golemcore-model-discovery",
+                    ProviderModelDiscoveryPort.AuthMode.ANTHROPIC));
 
-        assertEquals("anthropic-key", httpClient.getCapturedRequest().headers().firstValue("x-api-key").orElse(""));
-        assertEquals("2023-06-01",
-                httpClient.getCapturedRequest().headers().firstValue("anthropic-version").orElse(""));
+            assertEquals("anthropic-key", httpClient.getCapturedRequest().headers().firstValue("x-api-key").orElse(""));
+            assertEquals("2023-06-01",
+                    httpClient.getCapturedRequest().headers().firstValue("anthropic-version").orElse(""));
+        }
     }
 
     @Test
     void shouldUseGoogleHeaderAndParseGeminiPayload() {
-        FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 200,
+        try (FakeHttpClient httpClient = new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 200,
                 """
                         {"models":[{"name":"models/gemini-2.0-flash","displayName":"Gemini 2.0 Flash","publisher":"google","supportedGenerationMethods":["generateContent"]}]}
-                        """);
-        TestHttpProviderModelDiscoveryAdapter adapter = new TestHttpProviderModelDiscoveryAdapter(httpClient);
+                        """)) {
+            StubHttpProviderModelDiscoveryAdapter adapter = new StubHttpProviderModelDiscoveryAdapter(httpClient);
 
-        ProviderModelDiscoveryPort.DiscoveryResponse response = adapter
-                .discover(new ProviderModelDiscoveryPort.DiscoveryRequest(
-                        URI.create("https://generativelanguage.googleapis.com/v1beta/models"),
-                        Duration.ofSeconds(20),
-                        "google-key",
-                        "golemcore-model-discovery",
-                        ProviderModelDiscoveryPort.AuthMode.GOOGLE));
+            ProviderModelDiscoveryPort.DiscoveryResponse response = adapter
+                    .discover(new ProviderModelDiscoveryPort.DiscoveryRequest(
+                            URI.create("https://generativelanguage.googleapis.com/v1beta/models"),
+                            Duration.ofSeconds(20),
+                            "google-key",
+                            "golemcore-model-discovery",
+                            ProviderModelDiscoveryPort.AuthMode.GOOGLE));
 
-        assertEquals(1, response.documents().size());
-        assertEquals(ProviderModelDiscoveryPort.DocumentKind.GEMINI, response.documents().get(0).kind());
-        assertEquals("google-key",
-                httpClient.getCapturedRequest().headers().firstValue("x-goog-api-key").orElse(""));
+            assertEquals(1, response.documents().size());
+            assertEquals(ProviderModelDiscoveryPort.DocumentKind.GEMINI, response.documents().get(0).kind());
+            assertEquals("google-key",
+                    httpClient.getCapturedRequest().headers().firstValue("x-goog-api-key").orElse(""));
+        }
     }
 
     @Test
     void shouldWrapInterruptedRequests() {
-        TestHttpProviderModelDiscoveryAdapter adapter = new TestHttpProviderModelDiscoveryAdapter(
+        StubHttpProviderModelDiscoveryAdapter adapter = new StubHttpProviderModelDiscoveryAdapter(
                 new FakeHttpClient(FakeHttpClient.Mode.INTERRUPTED, 0, null));
 
         IllegalStateException error = assertThrows(IllegalStateException.class,
@@ -105,7 +107,7 @@ class HttpProviderModelDiscoveryAdapterTest {
 
     @Test
     void shouldWrapIoFailures() {
-        TestHttpProviderModelDiscoveryAdapter adapter = new TestHttpProviderModelDiscoveryAdapter(
+        StubHttpProviderModelDiscoveryAdapter adapter = new StubHttpProviderModelDiscoveryAdapter(
                 new FakeHttpClient(FakeHttpClient.Mode.IO_EXCEPTION, 0, null));
 
         IllegalStateException error = assertThrows(IllegalStateException.class,
@@ -121,7 +123,7 @@ class HttpProviderModelDiscoveryAdapterTest {
 
     @Test
     void shouldRejectInvalidDiscoveryPayload() {
-        TestHttpProviderModelDiscoveryAdapter adapter = new TestHttpProviderModelDiscoveryAdapter(
+        StubHttpProviderModelDiscoveryAdapter adapter = new StubHttpProviderModelDiscoveryAdapter(
                 new FakeHttpClient(FakeHttpClient.Mode.SUCCESS, 200, "{"));
 
         assertThrows(IllegalStateException.class,
@@ -133,11 +135,11 @@ class HttpProviderModelDiscoveryAdapterTest {
                         ProviderModelDiscoveryPort.AuthMode.BEARER)));
     }
 
-    private static final class TestHttpProviderModelDiscoveryAdapter extends HttpProviderModelDiscoveryAdapter {
+    private static final class StubHttpProviderModelDiscoveryAdapter extends HttpProviderModelDiscoveryAdapter {
 
         private final HttpClient httpClient;
 
-        private TestHttpProviderModelDiscoveryAdapter(HttpClient httpClient) {
+        private StubHttpProviderModelDiscoveryAdapter(HttpClient httpClient) {
             this.httpClient = httpClient;
         }
 
@@ -147,7 +149,7 @@ class HttpProviderModelDiscoveryAdapterTest {
         }
     }
 
-    private static final class FakeHttpClient extends HttpClient {
+    private static final class FakeHttpClient extends HttpClient implements AutoCloseable {
 
         private enum Mode {
             SUCCESS, INTERRUPTED, IO_EXCEPTION
@@ -237,6 +239,10 @@ class HttpProviderModelDiscoveryAdapterTest {
                 HttpResponse.BodyHandler<T> responseBodyHandler,
                 HttpResponse.PushPromiseHandler<T> pushPromiseHandler) {
             throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void close() {
         }
 
         private HttpRequest getCapturedRequest() {

@@ -18,6 +18,7 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.port.outbound.selfevolving.TacticRecordStorePort;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,7 +42,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -51,6 +51,7 @@ import static org.mockito.Mockito.when;
 class TacticRecordServiceTest {
 
     private StoragePort storagePort;
+    private TacticRecordStorePort tacticRecordStorePort;
     private Map<String, String> persistedFiles;
     private TacticRecordService tacticRecordService;
     private TacticIndexRebuildService rebuildService;
@@ -61,6 +62,7 @@ class TacticRecordServiceTest {
     void setUp() {
         storagePort = mock(StoragePort.class);
         persistedFiles = new ConcurrentHashMap<>();
+        tacticRecordStorePort = new InMemoryTacticRecordStorePort();
         rebuildService = mock(TacticIndexRebuildService.class);
         rebuildServiceProvider = mock(ObjectProvider.class);
         when(rebuildServiceProvider.getIfAvailable()).thenReturn(rebuildService);
@@ -97,7 +99,7 @@ class TacticRecordServiceTest {
                 });
 
         tacticRecordService = new TacticRecordService(
-                storagePort,
+                tacticRecordStorePort,
                 Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC),
                 rebuildServiceProvider,
                 null);
@@ -108,38 +110,29 @@ class TacticRecordServiceTest {
         TacticRecord record = tacticRecordService.save(sampleTactic());
 
         assertEquals("stream-1", record.getArtifactStreamId());
-        assertFalse(storagePort.listObjects("self-evolving", "tactics").join().isEmpty());
-        assertTrue(persistedFiles.keySet().stream().anyMatch(path -> path.startsWith("self-evolving/tactics/")));
-        verify(storagePort, never()).putText(eq("skills"), anyString(), anyString());
-        verify(storagePort).putTextAtomic(eq("self-evolving"), eq("tactics/tactic-1.json"), anyString(), eq(true));
+        assertTrue(((InMemoryTacticRecordStorePort) tacticRecordStorePort).contains("tactic-1"));
         verify(rebuildService, times(1)).onTacticChanged("tactic-1");
     }
 
     @Test
     void shouldLoadAndNormalizePersistedTacticsWhileIgnoringBrokenFiles() {
-        persistedFiles.put("self-evolving/tactics/tactic-b.json", """
-                {
-                  "tacticId": " tactic-b ",
-                  "artifactKey": "prompt:toolloop_core",
-                  "artifactType": "prompt",
-                  "contentRevisionId": "revision-b",
-                  "successRate": 0.8,
-                  "updatedAt": "2026-04-01T20:00:00Z"
-                }
-                """);
-        persistedFiles.put("self-evolving/tactics/tactic-a.json", """
-                {
-                  "tacticId": "tactic-a",
-                  "artifactStreamId": "stream-a",
-                  "artifactKey": "skill:planner",
-                  "artifactType": "skill",
-                  "title": "Planner tactic",
-                  "contentRevisionId": "revision-a",
-                  "updatedAt": "2026-04-01T21:30:00Z"
-                }
-                """);
-        persistedFiles.put("self-evolving/tactics/invalid.json", "{");
-        persistedFiles.put("self-evolving/tactics/readme.txt", "ignore");
+        ((InMemoryTacticRecordStorePort) tacticRecordStorePort).seed(TacticRecord.builder()
+                .tacticId(" tactic-b ")
+                .artifactKey("prompt:toolloop_core")
+                .artifactType("prompt")
+                .contentRevisionId("revision-b")
+                .successRate(0.8)
+                .updatedAt(Instant.parse("2026-04-01T20:00:00Z"))
+                .build());
+        ((InMemoryTacticRecordStorePort) tacticRecordStorePort).seed(TacticRecord.builder()
+                .tacticId("tactic-a")
+                .artifactStreamId("stream-a")
+                .artifactKey("skill:planner")
+                .artifactType("skill")
+                .title("Planner tactic")
+                .contentRevisionId("revision-a")
+                .updatedAt(Instant.parse("2026-04-01T21:30:00Z"))
+                .build());
 
         List<TacticRecord> records = tacticRecordService.getAll();
 
@@ -166,17 +159,15 @@ class TacticRecordServiceTest {
 
     @Test
     void shouldRefreshCachedRecordWhenSavingUpdatedTactic() {
-        persistedFiles.put("self-evolving/tactics/tactic-1.json", """
-                {
-                  "tacticId": "tactic-1",
-                  "artifactStreamId": "stream-1",
-                  "artifactKey": "skill:planner",
-                  "artifactType": "skill",
-                  "title": "Old planner",
-                  "contentRevisionId": "revision-1",
-                  "updatedAt": "2026-04-01T19:00:00Z"
-                }
-                """);
+        ((InMemoryTacticRecordStorePort) tacticRecordStorePort).seed(TacticRecord.builder()
+                .tacticId("tactic-1")
+                .artifactStreamId("stream-1")
+                .artifactKey("skill:planner")
+                .artifactType("skill")
+                .title("Old planner")
+                .contentRevisionId("revision-1")
+                .updatedAt(Instant.parse("2026-04-01T19:00:00Z"))
+                .build());
 
         List<TacticRecord> initial = tacticRecordService.getAll();
         TacticRecord saved = tacticRecordService.save(TacticRecord.builder()
@@ -195,7 +186,6 @@ class TacticRecordServiceTest {
         assertEquals(1, records.size());
         assertEquals("revision-2", records.getFirst().getContentRevisionId());
         assertEquals("New planner", records.getFirst().getTitle());
-        assertNull(persistedFiles.get("skills/tactic-1.json"));
     }
 
     @Test
@@ -232,8 +222,7 @@ class TacticRecordServiceTest {
 
         assertTrue(tacticRecordService.getAll().isEmpty());
         assertTrue(tacticRecordService.getById("tactic-1").isEmpty());
-        assertFalse(persistedFiles.containsKey("self-evolving/tactics/tactic-1.json"));
-        verify(storagePort).deleteObject("self-evolving", "tactics/tactic-1.json");
+        assertFalse(((InMemoryTacticRecordStorePort) tacticRecordStorePort).contains("tactic-1"));
         verify(rebuildService, times(2)).onTacticChanged("tactic-1");
     }
 
@@ -245,8 +234,6 @@ class TacticRecordServiceTest {
         tacticRecordService.updateEmbeddingStatuses(Map.of("tactic-1", "indexed"));
 
         assertEquals("indexed", tacticRecordService.getById("tactic-1").orElseThrow().getEmbeddingStatus());
-        assertTrue(
-                persistedFiles.get("self-evolving/tactics/tactic-1.json").contains("\"embeddingStatus\":\"indexed\""));
         verify(rebuildService, never()).onTacticChanged("tactic-1");
     }
 
@@ -278,7 +265,7 @@ class TacticRecordServiceTest {
             return enriched;
         });
         TacticRecordService enrichedService = new TacticRecordService(
-                storagePort,
+                tacticRecordStorePort,
                 Clock.fixed(Instant.parse("2026-04-01T21:00:00Z"), ZoneOffset.UTC),
                 rebuildServiceProvider,
                 qualityMetricsServiceProvider);

@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -16,6 +15,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
@@ -175,6 +177,17 @@ class ModelManagementFacadeTest {
     }
 
     @Test
+    void shouldMapSuccessfulModelTestWithEmptyReplyWhenContentIsMissing() {
+        when(llmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content(null).build()));
+
+        ModelManagementFacade.TestModelResult result = facade.testModel("gpt-5");
+
+        assertTrue(result.success());
+        assertEquals("", result.reply());
+    }
+
+    @Test
     void shouldRejectBlankTestModelTarget() {
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> facade.testModel(" "));
 
@@ -191,6 +204,31 @@ class ModelManagementFacadeTest {
 
         assertFalse(result.success());
         assertEquals("Connection refused", result.error());
+    }
+
+    @Test
+    void shouldRestoreInterruptStatusWhenModelTestIsInterrupted() {
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(new InterruptedFuture());
+
+        try {
+            ModelManagementFacade.TestModelResult result = facade.testModel("gpt-5");
+
+            assertFalse(result.success());
+            assertEquals("interrupted", result.error());
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    void shouldMapTimedOutModelTestWithoutCause() {
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(new TimeoutFuture());
+
+        ModelManagementFacade.TestModelResult result = facade.testModel("gpt-5");
+
+        assertFalse(result.success());
+        assertEquals("timed out", result.error());
     }
 
     @Test
@@ -226,5 +264,21 @@ class ModelManagementFacadeTest {
 
         assertFalse(result.success());
         assertEquals("transport unavailable", result.error());
+    }
+
+    private static final class InterruptedFuture extends CompletableFuture<LlmResponse> {
+
+        @Override
+        public LlmResponse get(long timeout, TimeUnit unit) throws InterruptedException {
+            throw new InterruptedException("interrupted");
+        }
+    }
+
+    private static final class TimeoutFuture extends CompletableFuture<LlmResponse> {
+
+        @Override
+        public LlmResponse get(long timeout, TimeUnit unit) throws ExecutionException, TimeoutException {
+            throw new TimeoutException("timed out");
+        }
     }
 }

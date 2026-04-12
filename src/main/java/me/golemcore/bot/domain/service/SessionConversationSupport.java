@@ -4,11 +4,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.port.outbound.SessionPort;
 
 public final class SessionConversationSupport {
-
-    private static final String CHANNEL_TELEGRAM = "telegram";
 
     private SessionConversationSupport() {
     }
@@ -47,7 +46,7 @@ public final class SessionConversationSupport {
             return false;
         }
 
-        if (!CHANNEL_TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
+        if (!ChannelTypes.TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
             return true;
         }
         return transportChatId.equals(SessionIdentitySupport.resolveTransportChatId(session.get()));
@@ -57,7 +56,7 @@ public final class SessionConversationSupport {
             SessionPort sessionPort,
             String channel,
             String transportChatId) {
-        if (!CHANNEL_TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
+        if (!ChannelTypes.TELEGRAM.equals(channel) || StringValueSupport.isBlank(transportChatId)) {
             return sessionPort.listByChannelType(channel);
         }
         return sessionPort.listByChannelTypeAndTransportChatId(channel, transportChatId);
@@ -81,7 +80,7 @@ public final class SessionConversationSupport {
             String transportChatId,
             String conversationKey) {
         AgentSession session = sessionPort.getOrCreate(channel, conversationKey);
-        if (CHANNEL_TELEGRAM.equals(channel)) {
+        if (ChannelTypes.TELEGRAM.equals(channel)) {
             SessionIdentitySupport.bindTransportAndConversation(session, transportChatId, conversationKey);
         }
         sessionPort.save(session);

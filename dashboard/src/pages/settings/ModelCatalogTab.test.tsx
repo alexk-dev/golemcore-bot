@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { LlmConfig, ModelRegistryConfig } from '../../api/settings';
+import type { LlmConfig, ModelRegistryConfig } from '../../api/settingsTypes';
 import { ModelCatalogTab } from './ModelCatalogTab';
 
 vi.mock('react-router-dom', () => ({

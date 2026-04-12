@@ -1,6 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.security;
 
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;

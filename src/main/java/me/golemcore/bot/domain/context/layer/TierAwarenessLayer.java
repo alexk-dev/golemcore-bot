@@ -24,7 +24,6 @@ import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import org.springframework.stereotype.Component;
 
 /**
  * Informs the LLM when a skill-recommended model tier is active.
@@ -34,7 +33,6 @@ import org.springframework.stereotype.Component;
  * forced a different tier. Produces a brief note so the LLM is aware of the
  * tier context.
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class TierAwarenessLayer implements ContextLayer {

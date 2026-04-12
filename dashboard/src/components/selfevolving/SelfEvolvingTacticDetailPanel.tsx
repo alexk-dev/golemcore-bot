@@ -3,6 +3,7 @@ import { type ReactElement, useState } from 'react';
 import type { SelfEvolvingTacticSearchResult } from '../../api/selfEvolving';
 import ConfirmModal from '../common/ConfirmModal';
 import { humanizeStatus } from './selfEvolvingUi';
+import { SelfEvolvingTacticActions } from './SelfEvolvingTacticActions';
 
 interface Props {
   tactic: SelfEvolvingTacticSearchResult | null;
@@ -62,35 +63,16 @@ export function SelfEvolvingTacticDetailPanel({
             <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground" title="Traces and campaigns that contributed evidence for this tactic">Evidence</span>
             <p className="mt-0.5 mb-0 font-mono text-xs">{tactic.evidenceSnippets.join(', ') || 'n/a'}</p>
           </div>
-          <div className="flex flex-wrap gap-2 pt-2">
-            {tactic.promotionState === 'inactive' ? (
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => onReactivateTactic(tactic.tacticId)}
-                disabled={isReactivating || isDeleting}
-              >
-                {isReactivating ? 'Reactivating...' : 'Reactivate'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => onDeactivateTactic(tactic.tacticId)}
-                disabled={isDeactivating || isDeleting}
-              >
-                {isDeactivating ? 'Deactivating...' : 'Deactivate'}
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              onClick={() => setShowDeleteConfirm(true)}
-              disabled={isDeleting || isDeactivating}
-            >
-              {isDeleting ? 'Deleting...' : 'Delete'}
-            </button>
-          </div>
+          <SelfEvolvingTacticActions
+            tacticId={tactic.tacticId}
+            promotionState={tactic.promotionState}
+            isDeactivating={isDeactivating}
+            isReactivating={isReactivating}
+            isDeleting={isDeleting}
+            onDeactivateTactic={onDeactivateTactic}
+            onReactivateTactic={onReactivateTactic}
+            onRequestDelete={() => setShowDeleteConfirm(true)}
+          />
         </div>
       </div>
       <ConfirmModal

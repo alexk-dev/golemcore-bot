@@ -98,6 +98,6 @@ class LlmEvolutionServiceTest {
         assertTrue(proposal.getSummary().contains("Deployment verification"));
         assertTrue(proposal.getBehaviorInstructions().contains("Deployment verification"));
         assertTrue(proposal.getProposedPatch().contains("Deployment verification"));
-        assertFalse(proposal.getSummary().toLowerCase().contains("planner"));
+        assertFalse(proposal.getSummary().toLowerCase(java.util.Locale.ROOT).contains("planner"));
     }
 }

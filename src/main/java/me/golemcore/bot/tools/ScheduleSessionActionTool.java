@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
@@ -48,7 +49,7 @@ import java.util.concurrent.CompletableFuture;
 @Component
 public class ScheduleSessionActionTool implements ToolComponent {
 
-    public static final String TOOL_NAME = "schedule_session_action";
+    public static final String TOOL_NAME = ToolNames.SCHEDULE_SESSION_ACTION;
 
     private final DelayedSessionActionService delayedActionService;
     private final DelayedActionPolicyService delayedActionPolicyService;

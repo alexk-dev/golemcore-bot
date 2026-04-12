@@ -15,7 +15,7 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.tools.GoalManagementTool;
 import org.junit.jupiter.api.BeforeEach;

@@ -20,10 +20,10 @@ package me.golemcore.bot.domain.service;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Locale;
-import java.util.concurrent.CompletionException;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletionException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
@@ -66,7 +66,7 @@ public class HiveControlCommandDispatcher {
                 hiveControlInboxService.markProcessed(trackingId);
             } catch (RuntimeException exception) {
                 hiveControlInboxService.markFailedIfPending(trackingId, exception);
-                throw exception;
+                throw inspectionDispatchFailure(exception);
             }
             log.info("[Hive] Handled inspection request: requestId={}, threadId={}, operation={}",
                     envelope.getRequestId(),
@@ -242,5 +242,12 @@ public class HiveControlCommandDispatcher {
         }
         return failure instanceof IllegalStateException
                 && CANCELLED_BY_HIVE_MESSAGE.equals(failure.getMessage());
+    }
+
+    private static IllegalStateException inspectionDispatchFailure(RuntimeException exception) {
+        if (exception instanceof IllegalStateException illegalStateException) {
+            return illegalStateException;
+        }
+        return new IllegalStateException("Failed to handle Hive inspection request", exception);
     }
 }

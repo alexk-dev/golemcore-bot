@@ -18,13 +18,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
  * Contact: alex@kuleshov.tech
  */
 
-import java.util.List;
-import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.adapter.outbound.embedding.OpenAiCompatibleEmbeddingClient;
-import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.port.outbound.EmbeddingPort;
+import me.golemcore.bot.application.selfevolving.tactic.TacticEmbeddingProbeService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,26 +28,17 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Dashboard endpoint that probes an OpenAI-compatible embedding provider using
- * the current form values plus the stored API key fallback.
+ * Dashboard endpoint that probes an embedding provider using the current form
+ * values plus the stored API key fallback.
  */
 @RestController
 @RequestMapping("/api/self-evolving/tactics/embeddings")
-@Slf4j
 public class TacticEmbeddingProbeController {
 
-    private static final String DEFAULT_BASE_URL = "https://api.openai.com/v1";
-    private static final String DEFAULT_MODEL = "text-embedding-3-large";
-    private static final String PROBE_INPUT = "golemcore embedding connectivity check";
+    private final TacticEmbeddingProbeService tacticEmbeddingProbeService;
 
-    private final OpenAiCompatibleEmbeddingClient openAiCompatibleEmbeddingClient;
-    private final RuntimeConfigService runtimeConfigService;
-
-    public TacticEmbeddingProbeController(
-            OpenAiCompatibleEmbeddingClient openAiCompatibleEmbeddingClient,
-            RuntimeConfigService runtimeConfigService) {
-        this.openAiCompatibleEmbeddingClient = openAiCompatibleEmbeddingClient;
-        this.runtimeConfigService = runtimeConfigService;
+    public TacticEmbeddingProbeController(TacticEmbeddingProbeService tacticEmbeddingProbeService) {
+        this.tacticEmbeddingProbeService = tacticEmbeddingProbeService;
     }
 
     public record ProbeRequest(
@@ -76,57 +61,27 @@ public class TacticEmbeddingProbeController {
     @PostMapping("/probe")
     public Mono<ResponseEntity<ProbeResponse>> probeRemoteEmbedding(
             @RequestBody(required = false) ProbeRequest request) {
-        return Mono.fromCallable(() -> executeProbe(request))
+        return Mono.fromCallable(() -> tacticEmbeddingProbeService.probe(
+                request != null
+                        ? new TacticEmbeddingProbeService.ProbeRequest(
+                                request.baseUrl(),
+                                request.apiKey(),
+                                request.model(),
+                                request.dimensions(),
+                                request.timeoutMs())
+                        : null))
                 .subscribeOn(Schedulers.boundedElastic())
-                .map(ResponseEntity::ok);
+                .map(this::toResponseEntity);
     }
 
-    private ProbeResponse executeProbe(ProbeRequest request) {
-        String baseUrl = firstNonBlank(request != null ? request.baseUrl() : null, DEFAULT_BASE_URL);
-        String model = firstNonBlank(request != null ? request.model() : null, DEFAULT_MODEL);
-        String apiKey = resolveApiKey(request != null ? request.apiKey() : null);
-        Integer dimensions = request != null ? request.dimensions() : null;
-        Integer timeoutMs = request != null ? request.timeoutMs() : null;
-        try {
-            EmbeddingPort.EmbeddingResponse response = openAiCompatibleEmbeddingClient.embed(
-                    new EmbeddingPort.EmbeddingRequest(
-                            baseUrl,
-                            apiKey,
-                            model,
-                            dimensions,
-                            timeoutMs,
-                            List.of(PROBE_INPUT)));
-            int vectorLength = response.vectors().isEmpty() ? 0 : response.vectors().get(0).size();
-            return new ProbeResponse(true, response.model(), vectorLength > 0 ? vectorLength : null,
-                    vectorLength, baseUrl, null);
-        } catch (RuntimeException exception) { // NOSONAR broad catch to surface network/auth failures to UI
-            log.warn("[TacticSearch] Remote embedding probe failed: {}", exception.getMessage());
-            String message = exception.getMessage() != null ? exception.getMessage()
-                    : exception.getClass().getSimpleName();
-            Throwable cause = exception.getCause();
-            if (cause != null && cause.getMessage() != null && !cause.getMessage().isBlank()) {
-                message = message + " (" + cause.getMessage() + ")";
-            }
-            return new ProbeResponse(false, model, dimensions, null, baseUrl, message);
-        }
-    }
-
-    private String resolveApiKey(String requestedApiKey) {
-        if (requestedApiKey != null && !requestedApiKey.isBlank()) {
-            return requestedApiKey.trim();
-        }
-        RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = runtimeConfigService.getSelfEvolvingConfig();
-        if (selfEvolvingConfig == null || selfEvolvingConfig.getTactics() == null
-                || selfEvolvingConfig.getTactics().getSearch() == null
-                || selfEvolvingConfig.getTactics().getSearch().getEmbeddings() == null) {
-            return null;
-        }
-        Secret stored = selfEvolvingConfig.getTactics().getSearch().getEmbeddings().getApiKey();
-        String value = Secret.valueOrEmpty(stored);
-        return value.isBlank() ? null : value.trim();
-    }
-
-    private String firstNonBlank(String candidate, String fallback) {
-        return candidate != null && !candidate.isBlank() ? candidate.trim() : fallback;
+    private ResponseEntity<ProbeResponse> toResponseEntity(
+            TacticEmbeddingProbeService.EmbeddingProbeResult result) {
+        return ResponseEntity.ok(new ProbeResponse(
+                result.ok(),
+                result.model(),
+                result.dimensions(),
+                result.vectorLength(),
+                result.baseUrl(),
+                result.error()));
     }
 }

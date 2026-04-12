@@ -26,7 +26,6 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.outbound.RagPort;
-import org.springframework.stereotype.Component;
 
 /**
  * Retrieves relevant context from the RAG (Retrieval-Augmented Generation)
@@ -37,7 +36,6 @@ import org.springframework.stereotype.Component;
  * user message text and stores the result both in context attributes and in the
  * prompt.
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class RagLayer implements ContextLayer {

@@ -131,7 +131,7 @@ class HiveInspectionCommandHandlerTest {
         handler.handle(inspection("req-delete", "session.delete", body -> body.sessionId("web:conv-1")));
 
         ArgumentCaptor<HiveInspectionResponse> responseCaptor = ArgumentCaptor.forClass(HiveInspectionResponse.class);
-        verify(publisher, org.mockito.Mockito.times(4)).publishInspectionResponse(responseCaptor.capture());
+        verify(publisher, times(4)).publishInspectionResponse(responseCaptor.capture());
         List<HiveInspectionResponse> responses = responseCaptor.getAllValues();
         assertEquals("req-snapshot", responses.get(0).requestId());
         assertTrue(responses.get(0).success());

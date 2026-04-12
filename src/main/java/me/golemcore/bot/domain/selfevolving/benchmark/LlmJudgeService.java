@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.selfevolving.benchmark;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmRequest;
@@ -39,6 +38,7 @@ import me.golemcore.bot.domain.service.SessionService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -126,7 +126,7 @@ public class LlmJudgeService {
     private final RuntimeConfigService runtimeConfigService;
     private final SessionService sessionService;
     private final TraceService traceService;
-    private final ObjectMapper objectMapper;
+    private final TraceSnapshotCodecPort traceSnapshotCodecPort;
 
     public LlmJudgeService(
             LlmPort llmPort,
@@ -134,15 +134,15 @@ public class LlmJudgeService {
             JudgeTraceDigestService judgeTraceDigestService,
             RuntimeConfigService runtimeConfigService,
             SessionService sessionService,
-            TraceService traceService) {
+            TraceService traceService,
+            TraceSnapshotCodecPort traceSnapshotCodecPort) {
         this.llmPort = llmPort;
         this.judgeTierResolver = judgeTierResolver;
         this.judgeTraceDigestService = judgeTraceDigestService;
         this.runtimeConfigService = runtimeConfigService;
         this.sessionService = sessionService;
         this.traceService = traceService;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.findAndRegisterModules();
+        this.traceSnapshotCodecPort = traceSnapshotCodecPort;
     }
 
     public RunVerdict judge(RunRecord runRecord, TraceRecord traceRecord, RunVerdict deterministicVerdict,
@@ -363,16 +363,13 @@ public class LlmJudgeService {
                 log.debug("[SelfEvolving] Skipping {} snapshot: tracing disabled", role);
                 return;
             }
-            // Judge snapshots are always captured when tracing is enabled — they are
-            // essential for debugging self-evolving verdicts and should not depend on
-            // the general payloadSnapshotsEnabled toggle.
             tracingConfig.setPayloadSnapshotsEnabled(true);
-            byte[] data = objectMapper.writeValueAsBytes(payload);
+            byte[] data = traceSnapshotCodecPort.encodeJson(payload);
             log.debug("[SelfEvolving] Capturing {} snapshot ({} bytes) for span {}",
                     role, data.length, spanContext.getSpanId());
             traceService.captureSnapshot(session, spanContext, tracingConfig,
                     role, "application/json", data);
-        } catch (Exception exception) { // NOSONAR - tracing must not break judge flow
+        } catch (RuntimeException exception) {
             log.warn("[SelfEvolving] Failed to capture {} snapshot: {}", role, exception.getMessage(), exception);
         }
     }
@@ -380,14 +377,14 @@ public class LlmJudgeService {
     private void saveJudgeSession(AgentSession session) {
         try {
             sessionService.save(session);
-        } catch (RuntimeException exception) { // NOSONAR - persistence failure must not break judge
+        } catch (RuntimeException exception) {
             log.warn("[SelfEvolving] Failed to save judge session {}: {}", session.getId(), exception.getMessage());
         }
     }
 
     private RunVerdict parseVerdict(String rawContent, RunRecord runRecord) {
         try {
-            RunVerdict verdict = objectMapper.readValue(rawContent, RunVerdict.class);
+            RunVerdict verdict = traceSnapshotCodecPort.decodeJson(rawContent, RunVerdict.class);
             normalizeVerdict(verdict);
             if (StringValueSupport.isBlank(verdict.getId())) {
                 verdict.setId(UUID.randomUUID().toString());
@@ -399,7 +396,7 @@ public class LlmJudgeService {
                 verdict.setCreatedAt(Instant.now());
             }
             return verdict;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             throw new IllegalArgumentException("Unable to parse judge verdict", e);
         }
     }
@@ -633,8 +630,7 @@ public class LlmJudgeService {
 
     private boolean shouldEscalate(RunVerdict mergedVerdict) {
         RuntimeConfig.SelfEvolvingConfig config = runtimeConfigService.getSelfEvolvingConfig();
-        Double threshold = config != null && config.getJudge() != null ? config.getJudge().getUncertaintyThreshold()
-                : null;
+        Double threshold = config.getJudge() != null ? config.getJudge().getUncertaintyThreshold() : null;
         return mergedVerdict != null
                 && mergedVerdict.getConfidence() != null
                 && threshold != null
@@ -643,14 +639,12 @@ public class LlmJudgeService {
 
     private boolean isJudgeEnabled() {
         RuntimeConfig.SelfEvolvingConfig config = runtimeConfigService.getSelfEvolvingConfig();
-        return config != null && config.getJudge() != null && Boolean.TRUE.equals(config.getJudge().getEnabled());
+        return config.getJudge() != null && Boolean.TRUE.equals(config.getJudge().getEnabled());
     }
 
     private boolean requireEvidenceAnchors() {
         RuntimeConfig.SelfEvolvingConfig config = runtimeConfigService.getSelfEvolvingConfig();
-        return config == null
-                || config.getJudge() == null
-                || Boolean.TRUE.equals(config.getJudge().getRequireEvidenceAnchors());
+        return config.getJudge() == null || Boolean.TRUE.equals(config.getJudge().getRequireEvidenceAnchors());
     }
 
     private String resolveSystemPrompt(String judgeType) {

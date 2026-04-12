@@ -8,7 +8,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 
 public final class ChannelRuntimeTestSupport {

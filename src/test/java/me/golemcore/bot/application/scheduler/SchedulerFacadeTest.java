@@ -1,7 +1,6 @@
 package me.golemcore.bot.application.scheduler;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -19,7 +18,7 @@ import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -30,12 +29,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService;
+import me.golemcore.bot.port.outbound.EmbeddingProviderIds;
 import me.golemcore.bot.port.outbound.RuntimeConfigPersistencePort;
 import org.springframework.stereotype.Service;
 
@@ -182,7 +181,7 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_SELF_EVOLVING_TRACE_PAYLOAD_OVERRIDE = true;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTICS_ENABLED = false;
     private static final String DEFAULT_SELF_EVOLVING_TACTIC_SEARCH_MODE = "hybrid";
-    private static final String DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_PROVIDER = "ollama";
+    private static final String DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_PROVIDER = EmbeddingProviderIds.OLLAMA;
     private static final String DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_BASE_URL = "http://127.0.0.1:11434";
     private static final String DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MODEL = "qwen3-embedding:0.6b";
     private static final boolean DEFAULT_SELF_EVOLVING_TACTIC_BM25_ENABLED = true;

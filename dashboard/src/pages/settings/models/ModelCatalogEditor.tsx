@@ -12,7 +12,7 @@ import {
   useResolveModelRegistry,
   useSaveModel,
 } from '../../../hooks/useModels';
-import { useTelemetry } from '../../../lib/telemetry/TelemetryProvider';
+import { useTelemetry } from '../../../lib/telemetry/TelemetryContext';
 import { AvailableModelInsertModal } from './AvailableModelInsertModal';
 import { ModelCatalogForm } from './ModelCatalogForm';
 import { ModelCatalogSidebar } from './ModelCatalogSidebar';

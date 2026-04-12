@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.loop;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
@@ -50,7 +51,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -189,7 +190,7 @@ public class AgentLoop {
             log.info("[AgentLoop] routingSystem resolved: {}",
                     routingSystem != null ? routingSystem.getClass().getName() : "<null>");
 
-            ChannelPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
+            ChannelDeliveryPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
             ScheduledFuture<?> typingTask = null;
             String typingChatId = resolveTransportChatId(message);
             if (channel != null && typingChatId != null && !typingChatId.isBlank()) {
@@ -260,7 +261,7 @@ public class AgentLoop {
         SessionIdentitySupport.bindTransportAndConversation(session, transportChatId, conversationKey);
         String webClientInstanceId = readMetadataString(message, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
         if (message.getChannelType() != null
-                && "web".equalsIgnoreCase(message.getChannelType())
+                && ChannelTypes.WEB.equalsIgnoreCase(message.getChannelType())
                 && webClientInstanceId != null
                 && !webClientInstanceId.isBlank()) {
             SessionIdentitySupport.bindWebClientInstance(session, webClientInstanceId);
@@ -275,7 +276,7 @@ public class AgentLoop {
         return message != null ? message.getChatId() : null;
     }
 
-    private void sendTypingIndicator(ChannelPort channel, String chatId) {
+    private void sendTypingIndicator(ChannelDeliveryPort channel, String chatId) {
         try {
             channel.showTyping(chatId);
         } catch (Exception e) {
@@ -293,7 +294,7 @@ public class AgentLoop {
             return;
         }
 
-        ChannelPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
+        ChannelDeliveryPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
         if (channel == null) {
             return;
         }

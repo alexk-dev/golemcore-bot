@@ -10,8 +10,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import me.golemcore.bot.auto.ScheduleReportSender;
 import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.ScheduleEntry;
@@ -21,13 +21,12 @@ import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 
 public class SchedulerFacade {
 
     private static final String FEATURE_DISABLED = "Auto mode feature is disabled";
-    private static final String CHANNEL_TELEGRAM = "telegram";
     private static final Set<Integer> WEEKDAY_SET = Set.of(1, 2, 3, 4, 5, 6, 7);
 
     private final AutoModeService autoModeService;
@@ -223,16 +222,16 @@ public class SchedulerFacade {
     private List<ScheduleReportChannelOptionView> buildReportChannelOptions() {
         String telegramSuggestedChatId = resolveTelegramSuggestedChatId();
         return channelRuntimePort.listChannels().stream()
-                .map(ChannelPort::getChannelType)
+                .map(ChannelDeliveryPort::getChannelType)
                 .filter(type -> !StringValueSupport.isBlank(type))
                 .map(type -> type.trim().toLowerCase(Locale.ROOT))
-                .filter(type -> !"web".equals(type))
+                .filter(type -> !ChannelTypes.WEB.equals(type))
                 .distinct()
                 .sorted(SchedulerFacade::compareChannelTypes)
                 .map(type -> new ScheduleReportChannelOptionView(
                         type,
                         toChannelLabel(type),
-                        CHANNEL_TELEGRAM.equals(type) ? telegramSuggestedChatId : null))
+                        ChannelTypes.TELEGRAM.equals(type) ? telegramSuggestedChatId : null))
                 .toList();
     }
 
@@ -253,10 +252,10 @@ public class SchedulerFacade {
     }
 
     private static int compareChannelTypes(String left, String right) {
-        if (CHANNEL_TELEGRAM.equals(left) && !CHANNEL_TELEGRAM.equals(right)) {
+        if (ChannelTypes.TELEGRAM.equals(left) && !ChannelTypes.TELEGRAM.equals(right)) {
             return -1;
         }
-        if (!CHANNEL_TELEGRAM.equals(left) && CHANNEL_TELEGRAM.equals(right)) {
+        if (!ChannelTypes.TELEGRAM.equals(left) && ChannelTypes.TELEGRAM.equals(right)) {
             return 1;
         }
         return left.compareTo(right);
@@ -573,7 +572,7 @@ public class SchedulerFacade {
         if (channelType == null) {
             throw new IllegalArgumentException("reportChannelType is required when report settings are set");
         }
-        if (ScheduleReportSender.WEBHOOK_CHANNEL_TYPE.equals(channelType)) {
+        if (ChannelTypes.WEBHOOK.equals(channelType)) {
             if (!StringValueSupport.isBlank(chatId)) {
                 throw new IllegalArgumentException("reportChatId is not supported for webhook channel type");
             }

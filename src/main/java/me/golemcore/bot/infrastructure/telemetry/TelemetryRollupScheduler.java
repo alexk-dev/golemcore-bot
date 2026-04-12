@@ -50,7 +50,7 @@ public class TelemetryRollupScheduler {
                 flushPluginUsage(rollup, pendingRollup);
             } catch (RuntimeException exception) {
                 telemetryRollupStore.restoreReadyRollups(buildUnsentRollups(rollups, pendingRollup, rollupIndex + 1));
-                throw exception;
+                throw rollupFlushFailure(exception);
             }
         }
     }
@@ -137,5 +137,12 @@ public class TelemetryRollupScheduler {
             unsentRollups.add(originalRollups.get(index).copy());
         }
         return unsentRollups;
+    }
+
+    private static IllegalStateException rollupFlushFailure(RuntimeException exception) {
+        if (exception instanceof IllegalStateException illegalStateException) {
+            return illegalStateException;
+        }
+        return new IllegalStateException("Failed to flush telemetry rollup", exception);
     }
 }

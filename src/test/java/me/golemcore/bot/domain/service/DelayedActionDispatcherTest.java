@@ -6,7 +6,7 @@ import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 

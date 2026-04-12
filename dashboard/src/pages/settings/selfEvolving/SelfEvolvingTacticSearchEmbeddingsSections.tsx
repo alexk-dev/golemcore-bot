@@ -1,9 +1,8 @@
 import type { Dispatch, ReactElement, SetStateAction } from 'react';
 import { Button, Col, Form, InputGroup, Row } from 'react-bootstrap';
 
-import type { SelfEvolvingConfig, SelfEvolvingTacticQueryExpansionConfig } from '../../../api/settings';
+import type { SelfEvolvingConfig } from '../../../api/settingsTypes';
 import HelpTip from '../../../components/common/HelpTip';
-import { getExplicitModelTierOptions } from '../../../lib/modelTiers';
 
 const TACTIC_SEARCH_MODE_OPTIONS = [
   { value: 'bm25', label: 'BM25 only' },
@@ -82,13 +81,6 @@ interface SearchModeSettingsProps {
   toNullableInt: (value: string) => number | null;
 }
 
-interface EmbeddingDimensionSettingsProps {
-  resolvedDimensions: number;
-  resolvedBatchSize: number;
-  disabled?: boolean;
-  updateEmbeddings: UpdateEmbeddings;
-  toNullableInt: (value: string) => number | null;
-}
 
 export function EmbeddingProviderSelector({
   embeddings,
@@ -361,172 +353,3 @@ export function SearchModeSettings({
     </Row>
   );
 }
-
-export function EmbeddingDimensionSettings({
-  resolvedDimensions,
-  resolvedBatchSize,
-  disabled = false,
-  updateEmbeddings,
-  toNullableInt,
-}: EmbeddingDimensionSettingsProps): ReactElement {
-  return (
-    <Row className="g-3 mb-4">
-      <Col md={6}>
-        <Form.Group controlId="self-evolving-embedding-dimensions">
-          <Form.Label className="small fw-medium">Dimensions</Form.Label>
-          <Form.Control
-            size="sm"
-            type="number"
-            min={1}
-            value={resolvedDimensions}
-            disabled={disabled}
-            onChange={(event) => updateEmbeddings((current) => ({ ...current, dimensions: toNullableInt(event.target.value) }))}
-          />
-        </Form.Group>
-      </Col>
-      <Col md={6}>
-        <Form.Group controlId="self-evolving-embedding-batch-size">
-          <Form.Label className="small fw-medium">Batch size</Form.Label>
-          <Form.Control
-            size="sm"
-            type="number"
-            min={1}
-            value={resolvedBatchSize}
-            disabled={disabled}
-            onChange={(event) => updateEmbeddings((current) => ({ ...current, batchSize: toNullableInt(event.target.value) }))}
-          />
-        </Form.Group>
-      </Col>
-    </Row>
-  );
-}
-
-interface AdvisoryCountSettingsProps {
-  advisoryCount: number | null;
-  disabled?: boolean;
-  setForm: Dispatch<SetStateAction<SelfEvolvingConfig>>;
-}
-
-export function AdvisoryCountSettings({
-  advisoryCount,
-  disabled = false,
-  setForm,
-}: AdvisoryCountSettingsProps): ReactElement {
-  return (
-    <>
-      <div className="mb-3">
-        <h6 className="mb-2">Multi-tactic advisory</h6>
-        <p className="text-body-secondary small mb-0">
-          Controls how many top-ranked tactics are included in the advisory message injected into each turn.
-          Higher values cover more aspects but add context length.
-        </p>
-      </div>
-      <Row className="g-3 mb-4">
-        <Col md={6}>
-          <Form.Group controlId="self-evolving-advisory-count">
-            <Form.Label className="small fw-medium">
-              Advisory count{' '}
-              <HelpTip text="Number of top-ranked tactics to include in the transient advisory (1-5). Default: 1." />
-            </Form.Label>
-            <Form.Select
-              size="sm"
-              value={advisoryCount ?? 1}
-              disabled={disabled}
-              onChange={(event) => setForm((current) => ({
-                ...current,
-                tactics: {
-                  ...current.tactics,
-                  search: {
-                    ...current.tactics.search,
-                    advisoryCount: Number(event.target.value),
-                  },
-                },
-              }))}
-            >
-              {[1, 2, 3, 4, 5].map((count) => (
-                <option key={count} value={count}>{count}{count === 1 ? ' tactic' : ' tactics'}</option>
-              ))}
-            </Form.Select>
-          </Form.Group>
-        </Col>
-      </Row>
-    </>
-  );
-}
-
-const QUERY_EXPANSION_TIER_OPTIONS = getExplicitModelTierOptions();
-
-interface QueryExpansionSettingsProps {
-  queryExpansion: SelfEvolvingTacticQueryExpansionConfig;
-  disabled?: boolean;
-  setForm: Dispatch<SetStateAction<SelfEvolvingConfig>>;
-}
-
-export function QueryExpansionSettings({
-  queryExpansion,
-  disabled = false,
-  setForm,
-}: QueryExpansionSettingsProps): ReactElement {
-  const updateQueryExpansion = (
-    updater: (current: SelfEvolvingTacticQueryExpansionConfig) => SelfEvolvingTacticQueryExpansionConfig,
-  ): void => {
-    setForm((current) => ({
-      ...current,
-      tactics: {
-        ...current.tactics,
-        search: {
-          ...current.tactics.search,
-          queryExpansion: updater(current.tactics.search.queryExpansion),
-        },
-      },
-    }));
-  };
-
-  return (
-    <>
-      <div className="mb-3">
-        <h6 className="mb-2">LLM query expansion</h6>
-        <p className="text-body-secondary small mb-0">
-          When enabled, the user message is rewritten by an LLM into 2-3 search queries covering problem domain,
-          tooling, and failure recovery. Results are cached per turn and merged with keyword-based views.
-        </p>
-      </div>
-
-      <Form.Check
-        type="switch"
-        label={
-          <>
-            Enable LLM query expansion{' '}
-            <HelpTip text="Rewrites the user message into richer search queries via LLM before tactic retrieval. Disable to use keyword-only expansion." />
-          </>
-        }
-        checked={queryExpansion.enabled ?? true}
-        disabled={disabled}
-        onChange={(event) => updateQueryExpansion((current) => ({ ...current, enabled: event.target.checked }))}
-        className="mb-3"
-      />
-
-      <Row className="g-3 mb-4">
-        <Col md={6}>
-          <Form.Group controlId="self-evolving-query-expansion-tier">
-            <Form.Label className="small fw-medium">
-              Expansion tier{' '}
-              <HelpTip text="Model tier used for query rewriting. Lower tiers are faster and cheaper; higher tiers produce more nuanced expansions." />
-            </Form.Label>
-            <Form.Select
-              size="sm"
-              value={queryExpansion.tier ?? 'balanced'}
-              disabled={disabled || !(queryExpansion.enabled ?? true)}
-              onChange={(event) => updateQueryExpansion((current) => ({ ...current, tier: event.target.value }))}
-            >
-              {QUERY_EXPANSION_TIER_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </Form.Select>
-          </Form.Group>
-        </Col>
-      </Row>
-    </>
-  );
-}
-

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.testsupport.http.OkHttpMockEngine;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.BeforeEach;

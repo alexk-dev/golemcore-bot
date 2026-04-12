@@ -24,7 +24,6 @@ import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.service.WorkspaceInstructionService;
-import org.springframework.stereotype.Component;
 
 /**
  * Injects workspace instruction files (AGENTS.md, CLAUDE.md) into context.
@@ -34,7 +33,6 @@ import org.springframework.stereotype.Component;
  * directory depth (broader first, more local later), and renders them as a
  * single section with a precedence note.
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class WorkspaceInstructionsLayer implements ContextLayer {

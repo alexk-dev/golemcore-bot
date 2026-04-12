@@ -18,8 +18,9 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.port.inbound.ChannelPort;
+import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import org.springframework.stereotype.Service;
 
 import java.util.Locale;
@@ -29,8 +30,6 @@ import java.util.Locale;
  */
 @Service
 public class DelayedActionPolicyService {
-
-    private static final String CHANNEL_WEBHOOK = "webhook";
 
     private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
@@ -73,15 +72,18 @@ public class DelayedActionPolicyService {
         if (StringValueSupport.isBlank(channelType)) {
             return false;
         }
-        return !CHANNEL_WEBHOOK.equals(channelType.trim().toLowerCase(Locale.ROOT));
+        return !ChannelTypes.WEBHOOK.equals(channelType.trim().toLowerCase(Locale.ROOT));
     }
 
     public boolean supportsProactiveMessage(String channelType, String transportChatId) {
         if (!canPersistDelayedIntent(channelType) || !notificationsEnabled()) {
             return false;
         }
-        ChannelPort channel = findRunningChannel(channelType);
-        if (channel == null || !channel.isRunning()) {
+        ChannelDeliveryPort channel = findChannel(channelType);
+        if (channel == null) {
+            return false;
+        }
+        if (!channelRuntimePort.isChannelRunning(channelType)) {
             return false;
         }
         return channel.supportsProactiveMessage(transportChatId);
@@ -95,14 +97,14 @@ public class DelayedActionPolicyService {
         if (!supportsProactiveMessage(channelType, transportChatId)) {
             return false;
         }
-        ChannelPort channel = findRunningChannel(channelType);
+        ChannelDeliveryPort channel = findChannel(channelType);
         if (channel == null) {
             return false;
         }
         return channel.supportsProactiveDocument(transportChatId);
     }
 
-    private ChannelPort findRunningChannel(String channelType) {
+    private ChannelDeliveryPort findChannel(String channelType) {
         if (StringValueSupport.isBlank(channelType)) {
             return null;
         }

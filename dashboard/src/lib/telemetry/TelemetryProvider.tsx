@@ -1,8 +1,6 @@
 import {
-  createContext,
   type ReactElement,
   type ReactNode,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -14,6 +12,7 @@ import {
   sanitizeTelemetryErrorName,
   sanitizeTelemetryRoute,
 } from './telemetrySanitizers';
+import { NOOP_RECORDER, TelemetryContext } from './TelemetryContext';
 import type { TelemetryRecorder, UiErrorInput, UiUsageRollup } from './telemetryTypes';
 
 export type FlushRollupFn = (rollup: UiUsageRollup) => Promise<void>;
@@ -23,15 +22,6 @@ interface TelemetryProviderProps {
   flushRollup: FlushRollupFn;
   children: ReactNode;
 }
-
-const NOOP_RECORDER: TelemetryRecorder = {
-  recordCounter: () => {},
-  recordKeyedCounter: () => {},
-  recordCounterByRoute: () => {},
-  recordUiError: () => {},
-};
-
-const TelemetryContext = createContext<TelemetryRecorder>(NOOP_RECORDER);
 
 function normalizeUnknownError(reason: unknown): { errorName: string } {
   if (reason instanceof Error) {
@@ -166,8 +156,4 @@ export function TelemetryProvider({ enabled, flushRollup, children }: TelemetryP
       {children}
     </TelemetryContext.Provider>
   );
-}
-
-export function useTelemetry(): TelemetryRecorder {
-  return useContext(TelemetryContext);
 }

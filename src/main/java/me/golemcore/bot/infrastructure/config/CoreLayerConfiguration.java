@@ -1,6 +1,5 @@
 package me.golemcore.bot.infrastructure.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.util.List;
 import me.golemcore.bot.application.update.UpdateService;
@@ -22,6 +21,7 @@ import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import me.golemcore.bot.port.outbound.ScheduleCronPort;
 import me.golemcore.bot.port.outbound.SchedulePersistencePort;
 import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.port.outbound.UpdateArtifactStorePort;
 import me.golemcore.bot.port.outbound.UpdateRestartPort;
 import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;
 import me.golemcore.bot.port.outbound.UpdateSettingsPort;
@@ -46,6 +46,7 @@ public class CoreLayerConfiguration {
             UpdateVersionPort updateVersionPort,
             UpdateRuntimeConfigPort updateRuntimeConfigPort,
             UpdateRestartPort updateRestartPort,
+            UpdateArtifactStorePort updateArtifactStorePort,
             Clock clock,
             UpdateActivityGate updateActivityGate,
             UpdateMaintenanceWindow updateMaintenanceWindow,
@@ -58,7 +59,8 @@ public class CoreLayerConfiguration {
                 clock,
                 updateActivityGate,
                 updateMaintenanceWindow,
-                releaseSources);
+                releaseSources,
+                updateArtifactStorePort);
     }
 
     @Bean

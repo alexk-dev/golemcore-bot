@@ -16,14 +16,13 @@ import {
   AdvancedCronFields,
   ClearContextField,
   RepeatLimitField,
-  ReportChannelField,
-  type ReportChannelOption,
   ScheduleEnabledField,
   SchedulerModeToggle,
   SimpleScheduleFields,
   TargetSelector,
   TargetTypeToggle,
 } from './SchedulerCreateCardSections';
+import { ReportChannelField, type ReportChannelOption } from './SchedulerCreateCardReportChannel';
 
 interface SchedulerCreateCardProps {
   featureEnabled: boolean;

@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.selfevolving.artifact;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
