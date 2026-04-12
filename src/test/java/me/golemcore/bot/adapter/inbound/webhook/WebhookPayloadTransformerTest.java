@@ -250,6 +250,16 @@ class WebhookPayloadTransformerTest {
     }
 
     @Test
+    void shouldTreatBlankPlaceholderAsMissing() {
+        String template = "Payload: { }";
+        byte[] body = "{\"secret\":\"value\"}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Payload: <missing>", result);
+    }
+
+    @Test
     void shouldHandleDeeplyNestedPath() {
         String template = "Value: {a.b.c.d}";
         byte[] body = "{\"a\":{\"b\":{\"c\":{\"d\":\"deep\"}}}}".getBytes(StandardCharsets.UTF_8);

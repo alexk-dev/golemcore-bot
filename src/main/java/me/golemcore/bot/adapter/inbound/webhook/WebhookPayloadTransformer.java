@@ -83,6 +83,9 @@ public class WebhookPayloadTransformer {
     }
 
     private String resolveJsonPath(DocumentContext context, String path) {
+        if (path == null || path.isBlank()) {
+            return "<missing>";
+        }
         String normalizedPath = normalizeJsonPath(path);
         try {
             Object resolved = context.read(normalizedPath);
