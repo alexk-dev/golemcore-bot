@@ -11,6 +11,7 @@ import me.golemcore.bot.application.models.ModelManagementFacade;
 import me.golemcore.bot.application.models.ModelRegistryService;
 import me.golemcore.bot.application.prompts.PromptManagementFacade;
 import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
+import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.scheduler.SchedulerFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
@@ -63,7 +64,9 @@ class ApplicationLayerConfigurationTest {
                 mock(UserPreferencesService.class),
                 mock(MemoryPresetService.class),
                 validator,
-                mergeService);
+                mergeService,
+                mock(ProviderModelImportService.class),
+                mock(ProviderModelDiscoveryService.class));
 
         assertInstanceOf(RuntimeSettingsMergeService.class, mergeService);
         assertInstanceOf(RuntimeSettingsValidator.class, validator);
