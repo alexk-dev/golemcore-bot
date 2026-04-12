@@ -29,8 +29,9 @@ public class ProviderModelImportService {
         List<String> skippedModels = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         String normalizedProvider = normalizeProvider(providerName);
+        boolean importAllModels = selectedModelIds == null;
         Set<String> selectedModels = normalizeSelectedModels(normalizedProvider, selectedModelIds);
-        if (selectedModels != null && selectedModels.isEmpty()) {
+        if (!importAllModels && selectedModels.isEmpty()) {
             return new ProviderImportResult(null, addedModels, skippedModels, errors);
         }
 
@@ -45,7 +46,7 @@ public class ProviderModelImportService {
             Set<String> existingModelIds = new LinkedHashSet<>(configuredModels.keySet());
             for (ProviderModelDiscoveryService.DiscoveredModel model : discoveryResult.models()) {
                 String modelId = normalizedProvider + "/" + model.id();
-                if (selectedModels != null && !selectedModels.contains(modelId)) {
+                if (!importAllModels && !selectedModels.contains(modelId)) {
                     continue;
                 }
                 if (existingModelIds.contains(modelId)) {
@@ -127,7 +128,7 @@ public class ProviderModelImportService {
 
     private Set<String> normalizeSelectedModels(String providerName, List<String> selectedModelIds) {
         if (selectedModelIds == null) {
-            return null;
+            return Set.of();
         }
         Set<String> normalized = new LinkedHashSet<>();
         for (String modelId : selectedModelIds) {
