@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -941,6 +942,54 @@ class SettingsControllerTest {
                     assertEquals(List.of("draftmesh/draft-gpt"), body.models());
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldReuseSavedSecretWhenTestingDraftProviderWithoutApiKeyOverride() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "draftmesh", RuntimeConfig.LlmProviderConfig.builder()
+                                        .apiKey(Secret.of("saved-key"))
+                                        .baseUrl("https://saved.example.com")
+                                        .apiType("openai")
+                                        .build())))
+                        .build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(providerModelDiscoveryService.discoverModelsForConfig(anyString(),
+                any(RuntimeConfig.LlmProviderConfig.class)))
+                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
+                        "https://draft.example.com/v1/models",
+                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("draftmesh", "draft-gpt", "Draft GPT",
+                                "draft", null))));
+
+        RuntimeConfig.LlmProviderConfig requestConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(null)
+                .baseUrl("https://draft.example.com")
+                .apiType("openai")
+                .build();
+
+        StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                "draft",
+                "draftmesh",
+                requestConfig)))
+                .assertNext(response -> {
+                    SettingsController.LlmProviderTestResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.success());
+                    assertEquals(List.of("draftmesh/draft-gpt"), body.models());
+                })
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig.LlmProviderConfig> captor = ArgumentCaptor
+                .forClass(RuntimeConfig.LlmProviderConfig.class);
+        verify(providerModelDiscoveryService).discoverModelsForConfig(anyString(), captor.capture());
+        RuntimeConfig.LlmProviderConfig effectiveConfig = captor.getValue();
+        assertNotNull(effectiveConfig);
+        assertEquals("saved-key", effectiveConfig.getApiKey().getValue());
+        assertEquals("https://draft.example.com", effectiveConfig.getBaseUrl());
+        assertEquals("openai", effectiveConfig.getApiType());
     }
 
     @Test

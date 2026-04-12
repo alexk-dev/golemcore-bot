@@ -731,7 +731,7 @@ export async function addLlmProviderAndImport(name: string, config: LlmProviderC
 }
 
 export async function testSavedLlmProvider(name: string): Promise<LlmProviderTestResult> {
-  const { data } = await client.post<LlmProviderTestResult>('/settings/runtime/llm/providers/test', {
+  const { data } = await client.post<LlmProviderTestResult>('/settings/runtime/llm/provider-tests', {
     mode: 'saved',
     providerName: name,
     config: null,
@@ -740,7 +740,7 @@ export async function testSavedLlmProvider(name: string): Promise<LlmProviderTes
 }
 
 export async function testDraftLlmProvider(name: string, config: LlmProviderConfig): Promise<LlmProviderTestResult> {
-  const { data } = await client.post<LlmProviderTestResult>('/settings/runtime/llm/providers/test', {
+  const { data } = await client.post<LlmProviderTestResult>('/settings/runtime/llm/provider-tests', {
     mode: 'draft',
     providerName: name,
     config: buildLlmProviderPayload(config),

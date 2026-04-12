@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { Badge, Button } from 'react-bootstrap';
 import type { LlmProviderImportResult } from '../../api/settings';
+import { Modal } from '../../components/ui/bootstrap-overlay';
 
 interface ProviderModelImportResultModalProps {
   show: boolean;
@@ -43,54 +44,47 @@ export function ProviderModelImportResultModal({
   }
 
   return (
-    <div
-      className="position-fixed top-0 start-0 z-3 w-100 h-100 d-flex align-items-center justify-content-center bg-dark bg-opacity-50 px-3 py-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Provider import result"
-    >
-      <div className="col-12 col-xl-8">
-        <div className="rounded-4 border border-border/80 bg-card/95 shadow-lg overflow-hidden">
-          <div className="border-bottom border-border/70 p-4">
-            <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
-              <Badge bg={result.providerSaved ? 'success' : 'secondary'}>Provider Saved</Badge>
-              <Badge bg="info">{result.providerName}</Badge>
-            </div>
-            <h2 className="h5 mb-2">Provider saved with safe model import</h2>
-            <div className="small text-body-secondary">
-              Best-effort import finished without overwriting existing catalog entries.
-            </div>
-            <div className="small mt-3">
-              <span className="fw-semibold">Resolved endpoint:</span>{' '}
-              {result.resolvedEndpoint != null ? <code>{result.resolvedEndpoint}</code> : <span className="text-body-secondary">Unavailable</span>}
-            </div>
+    <Modal show={show} onHide={onHide} centered size="lg" className="overflow-hidden">
+      <Modal.Header closeButton>
+        <div>
+          <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <Badge bg={result.providerSaved ? 'success' : 'secondary'}>Provider Saved</Badge>
+            <Badge bg="info">{result.providerName}</Badge>
           </div>
-
-          <div className="p-4 d-grid gap-3">
-            <ResultSection
-              title="Added Models"
-              items={result.addedModels}
-              emptyText="No new models were added."
-            />
-            <ResultSection
-              title="Skipped Existing Models"
-              items={result.skippedModels}
-              emptyText="No existing models were skipped."
-            />
-            <ResultSection
-              title="Errors"
-              items={result.errors}
-              emptyText="No import errors were reported."
-            />
+          <Modal.Title>Provider saved with safe model import</Modal.Title>
+          <div className="small text-body-secondary mt-2">
+            Best-effort import finished without overwriting existing catalog entries.
           </div>
-
-          <div className="border-top border-border/70 p-3 d-flex justify-content-end">
-            <Button type="button" variant="primary" size="sm" onClick={onHide}>
-              Close
-            </Button>
+          <div className="small mt-3">
+            <span className="fw-semibold">Resolved endpoint:</span>{' '}
+            {result.resolvedEndpoint != null ? <code>{result.resolvedEndpoint}</code> : <span className="text-body-secondary">Unavailable</span>}
           </div>
         </div>
-      </div>
-    </div>
+      </Modal.Header>
+
+      <Modal.Body className="space-y-3">
+        <ResultSection
+          title="Added Models"
+          items={result.addedModels}
+          emptyText="No new models were added."
+        />
+        <ResultSection
+          title="Skipped Existing Models"
+          items={result.skippedModels}
+          emptyText="No existing models were skipped."
+        />
+        <ResultSection
+          title="Errors"
+          items={result.errors}
+          emptyText="No import errors were reported."
+        />
+      </Modal.Body>
+
+      <Modal.Footer>
+        <Button type="button" variant="primary" size="sm" onClick={onHide}>
+          Close
+        </Button>
+      </Modal.Footer>
+    </Modal>
   );
 }

@@ -305,7 +305,7 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok(runtimeConfigService.getRuntimeConfigForApi()));
     }
 
-    @PostMapping("/runtime/llm/providers/test")
+    @PostMapping("/runtime/llm/provider-tests")
     public Mono<ResponseEntity<LlmProviderTestResponse>> testLlmProvider(@RequestBody LlmProviderTestRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "request body is required");
@@ -321,8 +321,10 @@ public class SettingsController {
                 if (request.config() == null) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "config is required");
                 }
-                validateProviderConfig(providerName, request.config());
-                discoveryResult = providerModelDiscoveryService.discoverModelsForConfig(providerName, request.config());
+                RuntimeConfig.LlmProviderConfig effectiveConfig = buildDraftProviderTestConfig(providerName,
+                        request.config());
+                validateProviderConfig(providerName, effectiveConfig);
+                discoveryResult = providerModelDiscoveryService.discoverModelsForConfig(providerName, effectiveConfig);
             } else {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "mode must be one of [saved, draft]");
             }
@@ -344,6 +346,24 @@ public class SettingsController {
                     false,
                     e.getMessage())));
         }
+    }
+
+    private RuntimeConfig.LlmProviderConfig buildDraftProviderTestConfig(String providerName,
+            RuntimeConfig.LlmProviderConfig draftConfig) {
+        RuntimeConfig.LlmProviderConfig savedProviderConfig = null;
+        RuntimeConfig runtimeConfig = runtimeConfigService.getRuntimeConfig();
+        if (runtimeConfig != null && runtimeConfig.getLlm() != null && runtimeConfig.getLlm().getProviders() != null) {
+            savedProviderConfig = runtimeConfig.getLlm().getProviders().get(providerName);
+        }
+
+        return RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(mergeSecret(savedProviderConfig != null ? savedProviderConfig.getApiKey() : null,
+                        draftConfig.getApiKey()))
+                .baseUrl(draftConfig.getBaseUrl())
+                .requestTimeoutSeconds(draftConfig.getRequestTimeoutSeconds())
+                .apiType(draftConfig.getApiType())
+                .legacyApi(draftConfig.getLegacyApi())
+                .build();
     }
 
     @DeleteMapping("/runtime/llm/providers/{name}")

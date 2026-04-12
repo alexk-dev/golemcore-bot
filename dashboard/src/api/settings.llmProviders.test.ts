@@ -61,7 +61,7 @@ describe('settings llm provider api', () => {
     const api = await import('./settings');
     const result = await api.testSavedLlmProvider('openrouter');
 
-    expect(clientPostMock).toHaveBeenCalledWith('/settings/runtime/llm/providers/test', {
+    expect(clientPostMock).toHaveBeenCalledWith('/settings/runtime/llm/provider-tests', {
       mode: 'saved',
       providerName: 'openrouter',
       config: null,
@@ -92,7 +92,7 @@ describe('settings llm provider api', () => {
       legacyApi: null,
     });
 
-    expect(clientPostMock).toHaveBeenCalledWith('/settings/runtime/llm/providers/test', {
+    expect(clientPostMock).toHaveBeenCalledWith('/settings/runtime/llm/provider-tests', {
       mode: 'draft',
       providerName: 'draftmesh',
       config: {
