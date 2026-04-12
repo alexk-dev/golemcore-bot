@@ -18,7 +18,6 @@
 
 package me.golemcore.bot.tools;
 
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
