@@ -2,6 +2,32 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.58.1 - 2026-04-12
+#### Bug Fixes
+- (**settings**) validate self-evolving local runtime config (#266) - (067e1ca) - GolemCore AI Agent #1
+#### Tests
+- (**ci**) add bot integration suite (#271) - (51565e7) - GolemCore AI Agent #1
+#### Refactoring
+- (**architecture**) canonicalize webhook context keys (#265) - (eb2383f) - Alex Kuleshov
+- (**architecture**) tighten hexagonal boundaries (#263) - (aa84378) - Alex Kuleshov
+- (**architecture**) add hexagonal architecture contract (#249) - (1d446df) - Alex Kuleshov
+- (**boundary**) isolate dashboard auth and session inspection (#251) - (2b2d75d) - Alex Kuleshov
+- (**commands**) extract model selection command service (#258) - (c5591d8) - Alex Kuleshov
+- (**core**) isolate config boundary from domain (#256) - (d546d15) - Alex Kuleshov
+- (**dashboard**) satisfy lint quality gates (#267) - (99bffbc) - GolemCore AI Agent #1
+- (**hex**) continue architecture hardening (#262) - (81b0bb7) - GolemCore AI Agent #1
+- (**hex**) tighten semantic architecture boundaries (#260) - (2a26c38) - Alex Kuleshov
+- (**hex**) remove framework coupling from core services (#259) - (764c511) - Alex Kuleshov
+- (**hive**) decouple hive boundary from core (#255) - (35b79f9) - Alex Kuleshov
+- (**models**) decouple model catalog contract from config service (#253) - (d8c1c2d) - Alex Kuleshov
+- (**runtime**) extract runtime settings application layer (#257) - (300f3fb) - Alex Kuleshov
+- (**runtime**) decouple channel registry from core systems (#254) - (10d73ab) - Alex Kuleshov
+- (**session**) split session inspection mapping (#250) - (78ea735) - Alex Kuleshov
+#### Miscellaneous
+- (**deps**) bump axios from 1.13.5 to 1.15.0 in /dashboard (#264) - (b7ebcb5) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
