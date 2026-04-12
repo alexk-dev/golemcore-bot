@@ -40,6 +40,61 @@ class WebhookPayloadTransformerTest {
     }
 
     @Test
+    void shouldResolveExplicitPathFromWrappedPayload() {
+        String template = "Command: {payload.request.command}";
+        byte[] body = """
+                {
+                  "method": "POST",
+                  "payload": {
+                    "request": {
+                      "command": "test note what day is today"
+                    }
+                  }
+                }
+                """.getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Command: test note what day is today", result);
+    }
+
+    @Test
+    void shouldNotFallbackToPayloadWrapperWhenRootPathIsMissing() {
+        String template = "Command: {request.command}";
+        byte[] body = """
+                {
+                  "payload": {
+                    "request": {
+                      "command": "wrapped-value"
+                    }
+                  }
+                }
+                """.getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Command: <missing>", result);
+    }
+
+    @Test
+    void shouldSupportFullJsonPathExpressions() {
+        String template = "Client: {$.payload.meta.client_id}";
+        byte[] body = """
+                {
+                  "payload": {
+                    "meta": {
+                      "client_id": "ru.yandex.searchplugin/7.16"
+                    }
+                  }
+                }
+                """.getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Client: ru.yandex.searchplugin/7.16", result);
+    }
+
+    @Test
     void shouldReplaceMissingFieldsWithMarker() {
         String template = "Event: {action} on {missing.field}";
         byte[] body = "{\"action\":\"push\"}".getBytes(StandardCharsets.UTF_8);
@@ -195,6 +250,16 @@ class WebhookPayloadTransformerTest {
     }
 
     @Test
+    void shouldTreatBlankPlaceholderAsMissing() {
+        String template = "Payload: { }";
+        byte[] body = "{\"secret\":\"value\"}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("Payload: <missing>", result);
+    }
+
+    @Test
     void shouldHandleDeeplyNestedPath() {
         String template = "Value: {a.b.c.d}";
         byte[] body = "{\"a\":{\"b\":{\"c\":{\"d\":\"deep\"}}}}".getBytes(StandardCharsets.UTF_8);
@@ -206,12 +271,21 @@ class WebhookPayloadTransformerTest {
 
     @Test
     void shouldHandleArrayIndexInPath() {
-        // Arrays accessed via numeric index are not supported - should return <missing>
-        String template = "First: {items.0}";
+        String template = "First: {items[0]}";
         byte[] body = "{\"items\":[\"one\",\"two\"]}".getBytes(StandardCharsets.UTF_8);
 
         String result = transformer.transform(template, body);
 
-        assertEquals("First: <missing>", result);
+        assertEquals("First: one", result);
+    }
+
+    @Test
+    void shouldHandleNestedFieldAfterArrayIndexInPath() {
+        String template = "First id: {items[0].id}";
+        byte[] body = "{\"items\":[{\"id\":\"one\"},{\"id\":\"two\"}]}".getBytes(StandardCharsets.UTF_8);
+
+        String result = transformer.transform(template, body);
+
+        assertEquals("First id: one", result);
     }
 }

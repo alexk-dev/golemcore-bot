@@ -6,6 +6,7 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input, Select, Textarea } from '../ui/field';
 import { HookMappingFieldHeading } from './HookMappingFieldHeading';
+import { HOOK_TEMPLATE_EXAMPLES, HOOK_TEMPLATE_PATH_HINT } from './hookTemplateExamples';
 import {
   ACTION_DESCRIPTIONS,
   AUTH_DESCRIPTIONS,
@@ -105,7 +106,7 @@ export function HookIdentitySection({
       <div className={surfaceClassName}>
         <HookMappingFieldHeading
           label="Message Template"
-          help="Template for the message sent to the bot. Use {field.path} placeholders from the JSON payload. If empty, raw payload is used."
+          help="Template for the message sent to the bot. Use JSON-path placeholders such as {request.command} or {payload.meta.client_id}. If empty, raw payload is used."
         />
         <Textarea
           rows={4}
@@ -114,6 +115,21 @@ export function HookIdentitySection({
           placeholder="Push to {repository.full_name} by {pusher.name}: {head_commit.message}"
           className="min-h-[8.5rem] rounded-2xl border-border/80 bg-background/80 shadow-none"
         />
+        <p className={fieldHelpClassName}>{HOOK_TEMPLATE_PATH_HINT}</p>
+        <div className="mt-3 rounded-2xl border border-border/80 bg-background/70 p-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Example paths</div>
+          <div className="mt-3 grid gap-2 xl:grid-cols-2">
+            {HOOK_TEMPLATE_EXAMPLES.map((example) => (
+              <div
+                key={example.path}
+                className="rounded-2xl border border-border/70 bg-card/70 px-3 py-2 shadow-soft"
+              >
+                <code className="text-[0.78rem] text-foreground">{example.path}</code>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{example.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
