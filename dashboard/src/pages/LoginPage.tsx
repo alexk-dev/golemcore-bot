@@ -71,13 +71,6 @@ export default function LoginPage(): ReactElement {
       .catch((error: unknown) => console.error('Failed to load Hive SSO status', error));
   }, []);
 
-  // Return to the method choice when Hive SSO becomes active again after using password fallback.
-  useEffect(() => {
-    if (shouldShowSsoChoice && loginMethod === 'password') {
-      setLoginMethod('choice');
-    }
-  }, [loginMethod, shouldShowSsoChoice]);
-
   // Exchange the one-time Hive OAuth code from the callback query string exactly once.
   useEffect(() => {
     const params = new URLSearchParams(location.search);

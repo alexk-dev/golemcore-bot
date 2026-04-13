@@ -379,7 +379,9 @@ interface HiveJoinCodeFieldProps {
   isBusy: boolean;
   joinCode: string;
   setJoinCode: (value: string) => void;
-}function HiveJoinCodeField({ isManaged, isBusy, joinCode, setJoinCode }: HiveJoinCodeFieldProps): ReactElement {
+}
+
+function HiveJoinCodeField({ isManaged, isBusy, joinCode, setJoinCode }: HiveJoinCodeFieldProps): ReactElement {
   return (
     <Col md={6}>
       <Form.Group controlId="hive-join-code">
