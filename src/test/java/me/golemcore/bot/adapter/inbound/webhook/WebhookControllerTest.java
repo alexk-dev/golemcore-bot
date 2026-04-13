@@ -299,7 +299,7 @@ class WebhookControllerTest {
         when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
                 .thenReturn(CompletableFuture.completedFuture("Ready"));
         when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
-        when(responseSchemaService.validateAndRepair(eq("Ready"), eq(schema), eq("smart"), eq("coding"), any()))
+        when(responseSchemaService.validateAndRepair(eq("Ready"), eq(schema), eq("smart"), eq("smart"), any()))
                 .thenReturn(new WebhookResponseSchemaService.SchemaResult(payload, 1));
 
         ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
@@ -308,9 +308,10 @@ class WebhookControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(payload, response.getBody());
         assertEquals(List.of("1"), response.getHeaders().get("X-Golemcore-Schema-Repair-Attempts"));
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(), any(), eq("smart"), any());
         verify(responseSchemaService).validateSchemaDefinition(schema);
         ArgumentCaptor<Duration> repairBudgetCaptor = ArgumentCaptor.forClass(Duration.class);
-        verify(responseSchemaService).validateAndRepair(eq("Ready"), eq(schema), eq("smart"), eq("coding"),
+        verify(responseSchemaService).validateAndRepair(eq("Ready"), eq(schema), eq("smart"), eq("smart"),
                 repairBudgetCaptor.capture());
         assertTrue(repairBudgetCaptor.getValue().compareTo(Duration.ZERO) > 0);
         assertTrue(repairBudgetCaptor.getValue().compareTo(Duration.ofSeconds(300)) <= 0);
@@ -323,7 +324,33 @@ class WebhookControllerTest {
         assertEquals("{\"type\":\"object\"}",
                 message.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT));
         assertEquals("smart", message.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER));
-        assertEquals("coding", message.getMetadata().get(ContextAttributes.WEBHOOK_MODEL_TIER));
+        assertEquals("smart", message.getMetadata().get(ContextAttributes.WEBHOOK_MODEL_TIER));
+    }
+
+    @Test
+    void agentShouldUseModelTierForSynchronousSchemaWhenValidationTierIsDefault() {
+        Map<String, Object> schema = responseEnvelopeSchema();
+        Map<String, Object> payload = Map.of(
+                "version", "1.0",
+                "response", Map.of("text", "Ready", "tts", "Ready", "end_session", true));
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer in configured schema")
+                .model("coding")
+                .syncResponse(true)
+                .responseJsonSchema(schema)
+                .build();
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture("Ready"));
+        when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
+        when(responseSchemaService.validateAndRepair(eq("Ready"), eq(schema), isNull(), eq("coding"), any()))
+                .thenReturn(new WebhookResponseSchemaService.SchemaResult(payload, 0));
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(), any(), eq("coding"), any());
+        verify(responseSchemaService).validateAndRepair(eq("Ready"), eq(schema), isNull(), eq("coding"), any());
     }
 
     @Test
@@ -642,6 +669,43 @@ class WebhookControllerTest {
         verify(responseSchemaService, never()).validateSchemaDefinition(any());
         verify(responseSchemaService, never()).renderSchema(any());
         verify(responseSchemaService, never()).validateAndRepair(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void customHookAgentActionShouldUseSchemaTierForSynchronousSchemaResponse() {
+        Map<String, Object> schema = responseEnvelopeSchema();
+        Map<String, Object> payload = Map.of(
+                "version", "1.0",
+                "response", Map.of("text", "Deployment done", "tts", "Deployment done", "end_session", true));
+        UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
+                .name("agent-hook")
+                .action("agent")
+                .messageTemplate("Process: {event}")
+                .model("balanced")
+                .syncResponse(true)
+                .responseJsonSchema(schema)
+                .responseValidationModelTier("special5")
+                .build();
+        when(preferencesService.getPreferences()).thenReturn(buildPrefsWithMapping(mapping));
+        when(authenticator.authenticate(any(), any(), any())).thenReturn(true);
+        when(transformer.transform(any(), any())).thenReturn("Process: deploy");
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture("Deployment done"));
+        when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
+        when(responseSchemaService.validateAndRepair(
+                eq("Deployment done"), eq(schema), eq("special5"), eq("special5"), any()))
+                .thenReturn(new WebhookResponseSchemaService.SchemaResult(payload, 1));
+
+        byte[] body = "{\"event\":\"deploy\"}".getBytes();
+        ResponseEntity<?> response = controller.customHook("agent-hook", body, new HttpHeaders())
+                .block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(payload, response.getBody());
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(), any(), eq("special5"), any());
+        verify(responseSchemaService).validateAndRepair(
+                eq("Deployment done"), eq(schema), eq("special5"), eq("special5"), any());
     }
 
     @Test

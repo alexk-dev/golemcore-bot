@@ -165,7 +165,7 @@ public class UserPreferences {
         /** Optional JSON Schema that the synchronous response must satisfy. */
         private Map<String, Object> responseJsonSchema;
 
-        /** Optional explicit tier for response schema repair calls. */
+        /** Optional explicit tier for schema-constrained responses and repair calls. */
         private String responseValidationModelTier;
     }
 }

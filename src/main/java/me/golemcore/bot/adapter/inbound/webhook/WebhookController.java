@@ -196,12 +196,17 @@ public class WebhookController {
                     : config.getDefaultTimeoutSeconds();
             String modelTier;
             String responseValidationModelTier;
+            String effectiveModelTier;
             try {
                 modelTier = normalizeOptionalModelTier(request.getModel(), "'model'");
                 responseValidationModelTier = normalizeResponseValidationModelTier(
                         request.getResponseJsonSchema(),
                         request.getResponseValidationModelTier(),
                         "'responseValidationModelTier'");
+                effectiveModelTier = resolveEffectiveWebhookModelTier(
+                        modelTier,
+                        request.getResponseJsonSchema(),
+                        responseValidationModelTier);
                 validateSynchronousResponseContract(
                         request.isSyncResponse(),
                         request.getResponseJsonSchema(),
@@ -219,8 +224,8 @@ public class WebhookController {
                     request.getMetadata() != null ? request.getMetadata() : Map.of());
             metadata.put("webhook.runId", runId);
             metadata.put("webhook.timeoutSeconds", timeout);
-            if (modelTier != null) {
-                metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, modelTier);
+            if (effectiveModelTier != null) {
+                metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, effectiveModelTier);
             }
             addResponseContractMetadata(metadata, request.getResponseJsonSchema(), responseValidationModelTier);
             if (request.isDeliver()) {
@@ -240,14 +245,14 @@ public class WebhookController {
                         runId,
                         chatId,
                         request.getCallbackUrl(),
-                        modelTier);
+                        effectiveModelTier);
             }
 
             CompletableFuture<String> responseFuture = channelAdapter.registerPendingRun(
                     chatId,
                     runId,
                     request.getCallbackUrl(),
-                    modelTier,
+                    effectiveModelTier,
                     deliveryId);
 
             Message message = buildMessage(chatId, safeMessage, metadata, TraceNamingSupport.WEBHOOK_AGENT);
@@ -263,7 +268,7 @@ public class WebhookController {
                         timeout,
                         request.getResponseJsonSchema(),
                         responseValidationModelTier,
-                        modelTier,
+                        effectiveModelTier,
                         message);
             }
             return ResponseEntity.status(HttpStatus.ACCEPTED)
@@ -345,6 +350,10 @@ public class WebhookController {
                 mapping.getResponseJsonSchema(),
                 mapping.getResponseValidationModelTier(),
                 "Webhook mapping responseValidationModelTier");
+        String effectiveModelTier = resolveEffectiveWebhookModelTier(
+                modelTier,
+                mapping.getResponseJsonSchema(),
+                responseValidationModelTier);
         validateSynchronousResponseContract(
                 mapping.isSyncResponse(),
                 mapping.getResponseJsonSchema(),
@@ -354,8 +363,8 @@ public class WebhookController {
         metadata.put("webhook.runId", runId);
         metadata.put("webhook.mapping", mapping.getName());
         metadata.put("webhook.timeoutSeconds", config.getDefaultTimeoutSeconds());
-        if (modelTier != null) {
-            metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, modelTier);
+        if (effectiveModelTier != null) {
+            metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, effectiveModelTier);
         }
         addResponseContractMetadata(metadata, mapping.getResponseJsonSchema(), responseValidationModelTier);
         if (mapping.isDeliver()) {
@@ -364,8 +373,8 @@ public class WebhookController {
             metadata.put(ContextAttributes.WEBHOOK_DELIVER_TO, mapping.getTo());
         }
 
-        CompletableFuture<String> responseFuture = channelAdapter.registerPendingRun(chatId, runId, null, modelTier,
-                null);
+        CompletableFuture<String> responseFuture = channelAdapter.registerPendingRun(chatId, runId, null,
+                effectiveModelTier, null);
 
         Message message = buildMessage(chatId, text, metadata, TraceNamingSupport.WEBHOOK_AGENT);
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
@@ -380,7 +389,7 @@ public class WebhookController {
                     config.getDefaultTimeoutSeconds(),
                     mapping.getResponseJsonSchema(),
                     responseValidationModelTier,
-                    modelTier,
+                    effectiveModelTier,
                     message);
         }
         return ResponseEntity.status(HttpStatus.ACCEPTED)
@@ -539,6 +548,15 @@ public class WebhookController {
             return fallbackModelTier;
         }
         return "balanced";
+    }
+
+    private String resolveEffectiveWebhookModelTier(String modelTier, Map<String, Object> responseJsonSchema,
+            String responseValidationModelTier) {
+        if (WebhookResponseSchemaService.hasSchema(responseJsonSchema)
+                && responseValidationModelTier != null && !responseValidationModelTier.isBlank()) {
+            return responseValidationModelTier;
+        }
+        return modelTier;
     }
 
     private void putIfPresent(Map<String, Object> attributes, String key, String value) {

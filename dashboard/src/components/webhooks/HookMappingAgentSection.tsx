@@ -125,8 +125,8 @@ export function HookAgentSection({
         <div className={cn('mt-5 grid gap-4 lg:grid-cols-[minmax(12rem,16rem)_minmax(0,1fr)]', !mapping.syncResponse && 'opacity-75')}>
           <div>
             <HookMappingFieldHeading
-              label="Schema Repair Tier"
-              help="Optional tier used only to reformat responses that do not match the JSON Schema. Use Model Tier for the primary answer model."
+              label="Schema Response Tier"
+              help="Optional tier used for schema-constrained responses and repair attempts."
             />
             <Select
               value={mapping.responseValidationModelTier ?? ''}

@@ -41,11 +41,11 @@ function renderSection(mapping: HookMappingDraft): RenderResult {
   return { container, root };
 }
 
-function schemaRepairTierSelect(container: HTMLElement): HTMLSelectElement {
+function schemaResponseTierSelect(container: HTMLElement): HTMLSelectElement {
   const selects = Array.from(container.querySelectorAll('select'));
   const select = selects[2];
   if (!(select instanceof HTMLSelectElement)) {
-    throw new Error('Schema repair tier select not found');
+    throw new Error('Schema response tier select not found');
   }
   return select;
 }
@@ -70,7 +70,7 @@ describe('HookAgentSection', () => {
     expect(html).toContain('JSON Schema Draft 2020-12');
   });
 
-  it('keeps schema repair tier disabled until a response JSON Schema is configured', () => {
+  it('keeps schema response tier disabled until a response JSON Schema is configured', () => {
     const withoutSchema = renderSection({
       ...createEmptyWebhookMapping(),
       name: 'sync-hook',
@@ -79,7 +79,7 @@ describe('HookAgentSection', () => {
       responseValidationModelTier: 'special5',
     });
 
-    expect(schemaRepairTierSelect(withoutSchema.container).disabled).toBe(true);
+    expect(schemaResponseTierSelect(withoutSchema.container).disabled).toBe(true);
 
     act(() => {
       withoutSchema.root.unmount();
@@ -94,7 +94,7 @@ describe('HookAgentSection', () => {
       responseJsonSchema: '{"type":"object"}',
     });
 
-    expect(schemaRepairTierSelect(withSchema.container).disabled).toBe(false);
+    expect(schemaResponseTierSelect(withSchema.container).disabled).toBe(false);
 
     act(() => {
       withSchema.root.unmount();
