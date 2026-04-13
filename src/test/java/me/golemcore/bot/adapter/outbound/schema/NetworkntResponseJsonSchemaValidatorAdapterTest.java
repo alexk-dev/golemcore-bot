@@ -39,4 +39,12 @@ class NetworkntResponseJsonSchemaValidatorAdapterTest {
 
         assertTrue(error.getMessage().contains("Invalid responseJsonSchema"));
     }
+
+    @Test
+    void shouldRejectEmptyResponseSchema() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> adapter.validateResponseJsonSchema(Map.of()));
+
+        assertTrue(error.getMessage().contains("schema must not be empty"));
+    }
 }

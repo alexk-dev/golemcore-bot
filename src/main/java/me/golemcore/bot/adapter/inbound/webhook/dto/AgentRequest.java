@@ -75,6 +75,9 @@ public class AgentRequest {
     /** Optional explicit tier for schema-constrained responses and repair calls. */
     private String responseValidationModelTier;
 
+    /** Optional memory preset override for this webhook run. */
+    private String memoryPreset;
+
     /** Maximum execution time in seconds. */
     @Builder.Default
     private int timeoutSeconds = 300;

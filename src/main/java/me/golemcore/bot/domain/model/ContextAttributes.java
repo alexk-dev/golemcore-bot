@@ -232,6 +232,9 @@ public final class ContextAttributes {
     /** String - explicit model tier requested by a webhook agent run. */
     public static final String WEBHOOK_MODEL_TIER = "webhook.modelTier";
 
+    /** String - memory preset id applied to the current turn. */
+    public static final String MEMORY_PRESET_ID = "memory.presetId";
+
     /** Map<String,Object> ? JSON Schema required for webhook response payloads. */
     public static final String WEBHOOK_RESPONSE_JSON_SCHEMA = "webhook.response.jsonSchema";
 

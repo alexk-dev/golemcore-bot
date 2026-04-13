@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
@@ -237,7 +238,7 @@ class PlanWorkLifecycleBddTest {
         List<ContextLayer> layers = List.of(
                 new IdentityLayer(promptSectionService, userPreferencesService),
                 new WorkspaceInstructionsLayer(workspaceInstructionService),
-                new MemoryLayer(memoryComponent, runtimeConfigService),
+                new MemoryLayer(memoryComponent, runtimeConfigService, new MemoryPresetService()),
                 new RagLayer(ragPort),
                 new SkillLayer(skillComponent, templateEngine),
                 new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService),

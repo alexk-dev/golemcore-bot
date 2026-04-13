@@ -63,9 +63,10 @@ public class ApplicationLayerConfiguration {
     RuntimeSettingsValidator runtimeSettingsValidator(
             ModelSelectionService modelSelectionService,
             VoiceProviderCatalogPort voiceProviderCatalogPort,
-            ResponseJsonSchemaValidatorPort responseJsonSchemaValidatorPort) {
+            ResponseJsonSchemaValidatorPort responseJsonSchemaValidatorPort,
+            MemoryPresetService memoryPresetService) {
         return new RuntimeSettingsValidator(modelSelectionService, voiceProviderCatalogPort,
-                responseJsonSchemaValidatorPort);
+                responseJsonSchemaValidatorPort, memoryPresetService);
     }
 
     @Bean

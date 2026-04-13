@@ -7,12 +7,14 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
@@ -61,6 +63,7 @@ class WebhookControllerTest {
     private WebhookPayloadTransformer transformer;
     private WebhookDeliveryTracker deliveryTracker;
     private WebhookResponseSchemaService responseSchemaService;
+    private MemoryPresetService memoryPresetService;
     private ApplicationEventPublisher eventPublisher;
     private SessionPort sessionPort;
     private TraceService traceService;
@@ -75,6 +78,7 @@ class WebhookControllerTest {
         transformer = mock(WebhookPayloadTransformer.class);
         deliveryTracker = mock(WebhookDeliveryTracker.class);
         responseSchemaService = mock(WebhookResponseSchemaService.class);
+        memoryPresetService = new MemoryPresetService();
         eventPublisher = mock(ApplicationEventPublisher.class);
         sessionPort = mock(SessionPort.class);
         traceService = mock(TraceService.class);
@@ -82,7 +86,7 @@ class WebhookControllerTest {
 
         controller = new WebhookController(
                 preferencesService, authenticator, channelAdapter,
-                transformer, deliveryTracker, responseSchemaService, eventPublisher,
+                transformer, deliveryTracker, responseSchemaService, memoryPresetService, eventPublisher,
                 sessionPort, traceService, inputSanitizer);
 
         when(preferencesService.getPreferences()).thenReturn(buildEnabledPrefs());
@@ -208,6 +212,51 @@ class WebhookControllerTest {
         assertNotNull(webhookBody(response).getRunId());
         assertNotNull(webhookBody(response).getChatId());
         assertEquals("accepted", webhookBody(response).getStatus());
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals(MemoryPresetIds.DISABLED,
+                captor.getValue().message().getMetadata().get(ContextAttributes.MEMORY_PRESET_ID));
+    }
+
+    @Test
+    void agentShouldUseConfiguredMemoryPresetMetadata() {
+        UserPreferences prefs = UserPreferences.builder()
+                .webhooks(UserPreferences.WebhookConfig.builder()
+                        .enabled(true)
+                        .token(Secret.of(TOKEN))
+                        .memoryPreset("general_chat")
+                        .build())
+                .build();
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        AgentRequest request = AgentRequest.builder()
+                .message("Summarize issues")
+                .build();
+
+        controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("general_chat",
+                captor.getValue().message().getMetadata().get(ContextAttributes.MEMORY_PRESET_ID));
+    }
+
+    @Test
+    void agentShouldRejectUnknownMemoryPresetOverride() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Summarize issues")
+                .memoryPreset("unknown")
+                .build();
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("'memoryPreset' must be a known memory preset id", webhookBody(response).getErrorMessage());
+        verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), any(), any(), any());
     }
 
     @Test
@@ -430,6 +479,22 @@ class WebhookControllerTest {
         assertNotNull(response);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertEquals("'responseJsonSchema' requires syncResponse=true", webhookBody(response).getErrorMessage());
+        verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    void agentShouldRejectEmptyResponseSchemaBeforeDispatch() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer in configured schema")
+                .syncResponse(true)
+                .responseJsonSchema(Map.of())
+                .build();
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("'responseJsonSchema' must not be empty", webhookBody(response).getErrorMessage());
         verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), any(), any(), any());
     }
 

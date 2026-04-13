@@ -345,6 +345,40 @@ class RuntimeSettingsValidatorTest {
     }
 
     @Test
+    void shouldDefaultWebhookMemoryPresetToDisabled() {
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .memoryPreset(null)
+                .build();
+
+        validator.validateWebhookConfig(webhookConfig);
+
+        assertEquals("disabled", webhookConfig.getMemoryPreset());
+    }
+
+    @Test
+    void shouldNormalizeWebhookMemoryPreset() {
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .memoryPreset(" GENERAL_CHAT ")
+                .build();
+
+        validator.validateWebhookConfig(webhookConfig);
+
+        assertEquals("general_chat", webhookConfig.getMemoryPreset());
+    }
+
+    @Test
+    void shouldRejectUnknownWebhookMemoryPreset() {
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .memoryPreset("unknown")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateWebhookConfig(webhookConfig));
+
+        assertEquals("webhooks.memoryPreset must be a known memory preset id", error.getMessage());
+    }
+
+    @Test
     void shouldRejectWebhookResponseSchemaWithoutSynchronousResponse() {
         UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
                 .mappings(List.of(UserPreferences.HookMapping.builder()
@@ -357,6 +391,23 @@ class RuntimeSettingsValidatorTest {
                 () -> validator.validateWebhookConfig(webhookConfig));
 
         assertEquals("webhooks.mapping.responseJsonSchema requires syncResponse=true", error.getMessage());
+    }
+
+    @Test
+    void shouldRejectEmptyWebhookResponseSchema() {
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("build")
+                        .responseJsonSchema(Map.of())
+                        .syncResponse(true)
+                        .build()))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateWebhookConfig(webhookConfig));
+
+        assertEquals("webhooks.mapping.responseJsonSchema must not be empty", error.getMessage());
+        verify(responseJsonSchemaValidatorPort, never()).validateResponseJsonSchema(any());
     }
 
     @Test

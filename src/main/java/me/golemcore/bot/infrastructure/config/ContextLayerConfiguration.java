@@ -21,6 +21,7 @@ import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
@@ -68,8 +69,11 @@ public class ContextLayerConfiguration {
     }
 
     @Bean
-    MemoryLayer memoryLayer(MemoryComponent memoryComponent, RuntimeConfigService runtimeConfigService) {
-        return new MemoryLayer(memoryComponent, runtimeConfigService);
+    MemoryLayer memoryLayer(
+            MemoryComponent memoryComponent,
+            RuntimeConfigService runtimeConfigService,
+            MemoryPresetService memoryPresetService) {
+        return new MemoryLayer(memoryComponent, runtimeConfigService, memoryPresetService);
     }
 
     @Bean

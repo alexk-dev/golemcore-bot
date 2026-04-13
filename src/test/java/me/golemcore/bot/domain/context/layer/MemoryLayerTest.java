@@ -6,10 +6,13 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.MemoryPack;
+import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Map;
@@ -19,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MemoryLayerTest {
@@ -31,12 +35,25 @@ class MemoryLayerTest {
     void setUp() {
         memoryComponent = mock(MemoryComponent.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
-        layer = new MemoryLayer(memoryComponent, runtimeConfigService);
+        layer = new MemoryLayer(memoryComponent, runtimeConfigService, new MemoryPresetService());
     }
 
     @Test
     void shouldAlwaysApply() {
         assertTrue(layer.appliesTo(AgentContext.builder().build()));
+    }
+
+    @Test
+    void shouldSkipWhenMemoryPresetIsDisabled() {
+        AgentContext context = AgentContext.builder()
+                .attributes(Map.of(ContextAttributes.MEMORY_PRESET_ID, "disabled"))
+                .build();
+
+        assertFalse(layer.appliesTo(context));
+        ContextLayerResult result = layer.assemble(context);
+
+        assertFalse(result.hasContent());
+        assertEquals("", context.getMemoryContext());
     }
 
     @Test
@@ -74,6 +91,30 @@ class MemoryLayerTest {
         layer.assemble(context);
 
         assertEquals("memory content", context.getMemoryContext());
+    }
+
+    @Test
+    void shouldApplyConfiguredMemoryPresetBudgets() {
+        MemoryPack pack = MemoryPack.builder().renderedContext("").build();
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(pack);
+
+        AgentContext context = AgentContext.builder()
+                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .session(AgentSession.builder().channelType("web").chatId("1").build())
+                .build();
+        context.setAttribute(ContextAttributes.MEMORY_PRESET_ID, "general_chat");
+
+        layer.assemble(context);
+
+        ArgumentCaptor<MemoryQuery> queryCaptor = ArgumentCaptor.forClass(MemoryQuery.class);
+        verify(memoryComponent).buildMemoryPack(queryCaptor.capture());
+        MemoryQuery query = queryCaptor.getValue();
+        assertEquals(1000, query.getSoftPromptBudgetTokens());
+        assertEquals(1800, query.getMaxPromptBudgetTokens());
+        assertEquals(4, query.getWorkingTopK());
+        assertEquals(6, query.getEpisodicTopK());
+        assertEquals(5, query.getSemanticTopK());
+        assertEquals(1, query.getProceduralTopK());
     }
 
     @Test

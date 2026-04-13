@@ -1,8 +1,10 @@
 package me.golemcore.bot.application.settings;
 
+import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
 import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;
@@ -71,18 +73,29 @@ public class RuntimeSettingsValidator {
     };
 
     private final ModelSelectionService modelSelectionService;
+    private final MemoryPresetService memoryPresetService;
     private final VoiceProviderCatalogPort voiceProviderCatalogPort;
     private final ResponseJsonSchemaValidatorPort responseJsonSchemaValidatorPort;
 
     public RuntimeSettingsValidator(ModelSelectionService modelSelectionService,
             VoiceProviderCatalogPort voiceProviderCatalogPort) {
-        this(modelSelectionService, voiceProviderCatalogPort, NOOP_RESPONSE_JSON_SCHEMA_VALIDATOR);
+        this(modelSelectionService, voiceProviderCatalogPort, NOOP_RESPONSE_JSON_SCHEMA_VALIDATOR,
+                new MemoryPresetService());
     }
 
     public RuntimeSettingsValidator(ModelSelectionService modelSelectionService,
             VoiceProviderCatalogPort voiceProviderCatalogPort,
             ResponseJsonSchemaValidatorPort responseJsonSchemaValidatorPort) {
+        this(modelSelectionService, voiceProviderCatalogPort, responseJsonSchemaValidatorPort,
+                new MemoryPresetService());
+    }
+
+    public RuntimeSettingsValidator(ModelSelectionService modelSelectionService,
+            VoiceProviderCatalogPort voiceProviderCatalogPort,
+            ResponseJsonSchemaValidatorPort responseJsonSchemaValidatorPort,
+            MemoryPresetService memoryPresetService) {
         this.modelSelectionService = modelSelectionService;
+        this.memoryPresetService = memoryPresetService != null ? memoryPresetService : new MemoryPresetService();
         this.voiceProviderCatalogPort = voiceProviderCatalogPort;
         this.responseJsonSchemaValidatorPort = responseJsonSchemaValidatorPort != null
                 ? responseJsonSchemaValidatorPort
@@ -467,7 +480,13 @@ public class RuntimeSettingsValidator {
     }
 
     public void validateWebhookConfig(UserPreferences.WebhookConfig webhookConfig) {
-        if (webhookConfig == null || webhookConfig.getMappings() == null) {
+        if (webhookConfig == null) {
+            return;
+        }
+        webhookConfig.setMemoryPreset(normalizeMemoryPreset(
+                webhookConfig.getMemoryPreset(),
+                "webhooks.memoryPreset"));
+        if (webhookConfig.getMappings() == null) {
             return;
         }
         for (UserPreferences.HookMapping mapping : webhookConfig.getMappings()) {
@@ -475,6 +494,9 @@ public class RuntimeSettingsValidator {
                 continue;
             }
             mapping.setModel(normalizeOptionalSelectableTier(mapping.getModel(), "webhooks.mapping.model"));
+            if (mapping.getResponseJsonSchema() != null && mapping.getResponseJsonSchema().isEmpty()) {
+                throw new IllegalArgumentException("webhooks.mapping.responseJsonSchema must not be empty");
+            }
             if (!hasResponseJsonSchema(mapping.getResponseJsonSchema())) {
                 mapping.setResponseValidationModelTier(null);
                 continue;
@@ -491,6 +513,17 @@ public class RuntimeSettingsValidator {
 
     private boolean hasResponseJsonSchema(Map<String, Object> responseJsonSchema) {
         return responseJsonSchema != null && !responseJsonSchema.isEmpty();
+    }
+
+    private String normalizeMemoryPreset(String memoryPreset, String fieldName) {
+        if (memoryPreset == null || memoryPreset.isBlank()) {
+            return MemoryPresetIds.DISABLED;
+        }
+        String normalizedPreset = memoryPreset.trim().toLowerCase(Locale.ROOT);
+        if (memoryPresetService.findById(normalizedPreset).isEmpty()) {
+            throw new IllegalArgumentException(fieldName + " must be a known memory preset id");
+        }
+        return normalizedPreset;
     }
 
     public RuntimeConfig.ToolsConfig ensureToolsConfig(RuntimeConfig config) {

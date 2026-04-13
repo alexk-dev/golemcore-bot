@@ -352,6 +352,7 @@ public class AgentLoop {
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_REFLECTION_TIER);
         copyStringMetadataAttribute(message, context, ContextAttributes.WEBHOOK_MODEL_TIER);
+        copyStringMetadataAttribute(message, context, ContextAttributes.MEMORY_PRESET_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_CARD_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_THREAD_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_COMMAND_ID);

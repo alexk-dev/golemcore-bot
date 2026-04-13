@@ -144,6 +144,19 @@ class MemoryPersistSystemTest {
     }
 
     @Test
+    void processSkipsWhenMemoryPresetIsDisabled() {
+        AgentContext ctx = contextWith(
+                List.of(Message.builder().role(ROLE_USER).content("user input").timestamp(Instant.now()).build()),
+                LlmResponse.builder().content("assistant reply").build());
+        ctx.setAttribute(ContextAttributes.MEMORY_PRESET_ID, "disabled");
+
+        system.process(ctx);
+
+        verify(memoryComponent, never()).persistTurnMemory(any());
+        assertFalse(system.shouldProcess(ctx));
+    }
+
+    @Test
     void processIgnoresInternalRetryMessageAsLastUserInput() {
         Message visibleUser = Message.builder()
                 .role(ROLE_USER)

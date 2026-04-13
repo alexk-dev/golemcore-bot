@@ -27,6 +27,10 @@ describe('webhook response JSON Schema validation', () => {
     expect(JSON_SCHEMA_DRAFT_2020_12_DOCS_URL).toBe('https://json-schema.org/draft/2020-12');
   });
 
+  it('defaults webhook memory preset to disabled', () => {
+    expect(createDefaultWebhookConfig().memoryPreset).toBe('disabled');
+  });
+
   it('accepts a valid synchronous response schema', () => {
     const config = createConfig({
       responseJsonSchema: JSON.stringify({
@@ -81,6 +85,15 @@ describe('webhook response JSON Schema validation', () => {
     expect(invalidType.valid).toBe(false);
     expect(invalidType.issues.some((issue) => issue.includes('Draft 2020-12'))).toBe(true);
     expect(invalidType.issues.some((issue) => issue.includes('/type'))).toBe(true);
+  });
+
+  it('rejects empty response schema objects', () => {
+    const result = validateWebhookConfig(createConfig({
+      responseJsonSchema: '{}',
+    }));
+
+    expect(result.valid).toBe(false);
+    expect(result.issues).toContain('Mapping #1: response JSON Schema must not be empty.');
   });
 
   it('rejects invalid nested schema shapes before saving', () => {

@@ -61,7 +61,8 @@ class ApplicationLayerConfigurationTest {
         RuntimeSettingsValidator validator = configuration.runtimeSettingsValidator(
                 mock(ModelSelectionService.class),
                 mock(VoiceProviderCatalogPort.class),
-                mock(ResponseJsonSchemaValidatorPort.class));
+                mock(ResponseJsonSchemaValidatorPort.class),
+                mock(MemoryPresetService.class));
         RuntimeSettingsFacade facade = configuration.runtimeSettingsFacade(
                 mock(RuntimeConfigService.class),
                 mock(UserPreferencesService.class),

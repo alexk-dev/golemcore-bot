@@ -96,7 +96,8 @@ class CoreLayerConfigurationTest {
                 mock(me.golemcore.bot.domain.service.WorkspaceInstructionService.class)));
         assertNotNull(contextLayerConfiguration.memoryLayer(
                 mock(me.golemcore.bot.domain.component.MemoryComponent.class),
-                mock(RuntimeConfigService.class)));
+                mock(RuntimeConfigService.class),
+                mock(me.golemcore.bot.domain.service.MemoryPresetService.class)));
         assertNotNull(contextLayerConfiguration.ragLayer(mock(me.golemcore.bot.port.outbound.RagPort.class)));
         assertNotNull(contextLayerConfiguration.skillLayer(
                 mock(me.golemcore.bot.domain.component.SkillComponent.class),

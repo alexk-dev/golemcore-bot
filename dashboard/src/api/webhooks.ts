@@ -31,11 +31,13 @@ export interface WebhookConfig {
   tokenPresent?: boolean;
   maxPayloadSize: number;
   defaultTimeoutSeconds: number;
+  memoryPreset: string;
   mappings: HookMapping[];
 }
 
 const DEFAULT_MAX_PAYLOAD_SIZE = 65536;
 const DEFAULT_TIMEOUT_SECONDS = 300;
+const DEFAULT_MEMORY_PRESET = 'disabled';
 const HOOK_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const MAX_JSON_SCHEMA_VALIDATION_ISSUES = 8;
 const JSON_SCHEMA_VALIDATOR = new Ajv2020({
@@ -168,6 +170,7 @@ function parseWebhookConfig(raw: unknown): WebhookConfig {
     tokenPresent: hasSecretValue(tokenRaw),
     maxPayloadSize: toNumberOrDefault(record.maxPayloadSize, DEFAULT_MAX_PAYLOAD_SIZE),
     defaultTimeoutSeconds: toNumberOrDefault(record.defaultTimeoutSeconds, DEFAULT_TIMEOUT_SECONDS),
+    memoryPreset: toNullableString(record.memoryPreset) ?? DEFAULT_MEMORY_PRESET,
     mappings: mappingsRaw.map((item) => normalizeMapping(item)),
   };
 }
@@ -178,6 +181,7 @@ function toBackendWebhookConfig(config: WebhookConfig): UnknownRecord {
     token: toSecretPayload(config.token),
     maxPayloadSize: config.maxPayloadSize,
     defaultTimeoutSeconds: config.defaultTimeoutSeconds,
+    memoryPreset: toNullableString(config.memoryPreset) ?? DEFAULT_MEMORY_PRESET,
     mappings: config.mappings.map((mapping) => toBackendMapping(mapping)),
   };
 }
@@ -189,6 +193,7 @@ export function createDefaultWebhookConfig(): WebhookConfig {
     tokenPresent: false,
     maxPayloadSize: DEFAULT_MAX_PAYLOAD_SIZE,
     defaultTimeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+    memoryPreset: DEFAULT_MEMORY_PRESET,
     mappings: [],
   };
 }
@@ -314,6 +319,10 @@ function validateMappingResponseSchema(mapping: HookMapping, index: number, issu
 function validateJsonSchemaDocument(schema: unknown, prefix: string, issues: string[]): void {
   if (!isPlainObject(schema)) {
     issues.push(`${prefix}: response JSON Schema must be a JSON object.`);
+    return;
+  }
+  if (Object.keys(schema).length === 0) {
+    issues.push(`${prefix}: response JSON Schema must not be empty.`);
     return;
   }
 

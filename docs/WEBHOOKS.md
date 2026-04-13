@@ -40,6 +40,7 @@ Or edit `settings.json` directly:
     "token": "my-secret-token",
     "maxPayloadSize": 65536,
     "defaultTimeoutSeconds": 300,
+    "memoryPreset": "disabled",
     "mappings": []
   }
 }
@@ -131,10 +132,11 @@ Full agent turn. Runs a complete agent pipeline (LLM + tools) in an isolated ses
 | `name` | string | No | — | Human-readable label for logging |
 | `chatId` | string | No | `"hook:<uuid>"` | Session identifier |
 | `model` | string | No | — | Model tier (`balanced`, `smart`, `coding`, `deep`) |
+| `memoryPreset` | string | No | `disabled` | Memory preset for webhook turns; use another preset to opt in to memory |
 | `callbackUrl` | string | No | — | URL to POST results to when done |
 | `syncResponse` | boolean | No | `false` | Wait for the agent result and return it in the HTTP response |
 | `responseJsonSchema` | object | No | — | JSON Schema for the synchronous HTTP response body |
-| `responseValidationModelTier` | string | No | — | Model tier used for response schema repair calls |
+| `responseValidationModelTier` | string | No | — | Model tier used for schema-constrained response and repair calls |
 | `deliver` | boolean | No | `false` | Route response to a messaging channel |
 | `channel` | string | No | — | Target channel type (e.g. `"telegram"`) |
 | `to` | string | No | — | Target chat ID on delivery channel |
@@ -178,18 +180,13 @@ On failure:
 
 **Synchronous response**:
 
-Set `syncResponse=true` to wait for the completed agent output and return `200 OK` from the original HTTP call:
+Set `syncResponse=true` to wait for the completed agent output and return `200 OK` from the original HTTP call. Without `responseJsonSchema`, the response body is `text/plain` and the `X-Golemcore-Run-Id` / `X-Golemcore-Chat-Id` headers identify the run:
 
-```json
-{
-  "status": "completed",
-  "runId": "550e8400-e29b-41d4-a716-446655440000",
-  "chatId": "hook:...",
-  "response": "Here is the summary..."
-}
+```text
+Here is the summary...
 ```
 
-If `responseJsonSchema` is provided, the schema describes the top-level HTTP response body. The bot adds schema instructions to the system prompt, validates the final agent output, and makes up to three repair calls when the output does not match the schema. The repair calls use `responseValidationModelTier` when set, otherwise the hook model tier or `balanced`.
+If `responseJsonSchema` is provided, it must be a non-empty Draft 2020-12 JSON Schema for the top-level HTTP response body. The bot adds schema instructions to the system prompt, uses `responseValidationModelTier` as the schema-constrained response tier when set, validates the final agent output, and makes up to three repair calls when the output does not match the schema. Repair calls use `responseValidationModelTier` when set, otherwise the hook model tier or `balanced`.
 
 Example Alice-style response contract:
 
@@ -324,7 +321,7 @@ Custom mappings transform raw JSON payloads from external services into structur
 | `model` | string | — | Model tier override (for agent action) |
 | `syncResponse` | boolean | `false` | Return the final agent result in the HTTP response |
 | `responseJsonSchema` | object | — | JSON Schema for the synchronous HTTP response body |
-| `responseValidationModelTier` | string | — | Model tier used for schema repair calls |
+| `responseValidationModelTier` | string | — | Model tier used for schema-constrained response and repair calls |
 | `deliver` | boolean | `false` | Route response to a messaging channel |
 | `channel` | string | — | Target channel type for delivery |
 | `to` | string | — | Target chat ID for delivery |
@@ -485,6 +482,7 @@ All webhook configuration is stored in `UserPreferences` (not application.proper
     "token": null,
     "maxPayloadSize": 65536,
     "defaultTimeoutSeconds": 300,
+    "memoryPreset": "disabled",
     "mappings": []
   }
 }
@@ -496,6 +494,7 @@ All webhook configuration is stored in `UserPreferences` (not application.proper
 | `token` | string | `null` | Shared secret for Bearer authentication |
 | `maxPayloadSize` | int | `65536` | Max payload size in bytes (64KB) |
 | `defaultTimeoutSeconds` | int | `300` | Default timeout for `/agent` runs |
+| `memoryPreset` | string | `disabled` | Memory preset for webhook turns; use another preset to opt in to memory |
 | `mappings` | array | `[]` | Custom hook mappings (see above) |
 
 ### Delivery Tracking Config

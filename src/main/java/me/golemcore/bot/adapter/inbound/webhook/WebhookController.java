@@ -25,12 +25,14 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.TraceContextSupport;
 import me.golemcore.bot.domain.service.TraceNamingSupport;
 import me.golemcore.bot.domain.service.TraceService;
@@ -60,6 +62,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
@@ -105,6 +108,7 @@ public class WebhookController {
     private final WebhookPayloadTransformer transformer;
     private final WebhookDeliveryTracker deliveryTracker;
     private final WebhookResponseSchemaService responseSchemaService;
+    private final MemoryPresetService memoryPresetService;
     private final ApplicationEventPublisher eventPublisher;
     private final SessionPort sessionPort;
     private final TraceService traceService;
@@ -145,8 +149,18 @@ public class WebhookController {
             String chatId = request.getChatId() != null ? request.getChatId() : "webhook:default";
             String sanitizedText = inputSanitizer.sanitize(request.getText());
             String safeText = wrapExternal(sanitizedText);
+            String memoryPreset;
+            try {
+                memoryPreset = resolveWebhookMemoryPreset(null, config);
+            } catch (IllegalArgumentException e) {
+                return badRequest(e.getMessage());
+            }
 
-            Message message = buildMessage(chatId, safeText, request.getMetadata(), TraceNamingSupport.WEBHOOK_WAKE);
+            Map<String, Object> metadata = new HashMap<>(
+                    request.getMetadata() != null ? request.getMetadata() : Map.of());
+            addMemoryPresetMetadata(metadata, memoryPreset);
+
+            Message message = buildMessage(chatId, safeText, metadata, TraceNamingSupport.WEBHOOK_WAKE);
             eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
             log.info("[Webhook] Wake event accepted for chatId={}", chatId);
@@ -197,6 +211,7 @@ public class WebhookController {
             String modelTier;
             String responseValidationModelTier;
             String effectiveModelTier;
+            String memoryPreset;
             try {
                 modelTier = normalizeOptionalModelTier(request.getModel(), "'model'");
                 responseValidationModelTier = normalizeResponseValidationModelTier(
@@ -211,6 +226,7 @@ public class WebhookController {
                         request.isSyncResponse(),
                         request.getResponseJsonSchema(),
                         "'responseJsonSchema'");
+                memoryPreset = resolveWebhookMemoryPreset(request.getMemoryPreset(), config);
             } catch (IllegalArgumentException e) {
                 return badRequest(e.getMessage());
             } catch (WebhookResponseSchemaService.SchemaProcessingException e) {
@@ -224,6 +240,7 @@ public class WebhookController {
                     request.getMetadata() != null ? request.getMetadata() : Map.of());
             metadata.put("webhook.runId", runId);
             metadata.put("webhook.timeoutSeconds", timeout);
+            addMemoryPresetMetadata(metadata, memoryPreset);
             if (effectiveModelTier != null) {
                 metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, effectiveModelTier);
             }
@@ -323,16 +340,23 @@ public class WebhookController {
                 }
             }
 
-            return dispatchAsWake(mapping, safeText);
+            try {
+                return dispatchAsWake(mapping, safeText, config);
+            } catch (IllegalArgumentException e) {
+                return badRequest(e.getMessage());
+            }
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
     // ==================== internal helpers ====================
 
-    private ResponseEntity<WebhookResponse> dispatchAsWake(UserPreferences.HookMapping mapping, String text) {
+    private ResponseEntity<WebhookResponse> dispatchAsWake(
+            UserPreferences.HookMapping mapping, String text, UserPreferences.WebhookConfig config) {
         String chatId = "hook:" + mapping.getName();
 
-        Map<String, Object> metadata = Map.of("webhook.mapping", mapping.getName());
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("webhook.mapping", mapping.getName());
+        addMemoryPresetMetadata(metadata, resolveWebhookMemoryPreset(null, config));
         Message message = buildMessage(chatId, text, metadata, TraceNamingSupport.WEBHOOK_WAKE);
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
@@ -346,6 +370,7 @@ public class WebhookController {
         String runId = UUID.randomUUID().toString();
         String chatId = "hook:" + mapping.getName() + ":" + UUID.randomUUID();
         String modelTier = normalizeOptionalModelTier(mapping.getModel(), "Webhook mapping model");
+        String memoryPreset = resolveWebhookMemoryPreset(null, config);
         String responseValidationModelTier = normalizeResponseValidationModelTier(
                 mapping.getResponseJsonSchema(),
                 mapping.getResponseValidationModelTier(),
@@ -363,6 +388,7 @@ public class WebhookController {
         metadata.put("webhook.runId", runId);
         metadata.put("webhook.mapping", mapping.getName());
         metadata.put("webhook.timeoutSeconds", config.getDefaultTimeoutSeconds());
+        addMemoryPresetMetadata(metadata, memoryPreset);
         if (effectiveModelTier != null) {
             metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, effectiveModelTier);
         }
@@ -396,6 +422,10 @@ public class WebhookController {
                 .body(WebhookResponse.accepted(runId, chatId));
     }
 
+    private void addMemoryPresetMetadata(Map<String, Object> metadata, String memoryPreset) {
+        metadata.put(ContextAttributes.MEMORY_PRESET_ID, memoryPreset);
+    }
+
     private void addResponseContractMetadata(Map<String, Object> metadata, Map<String, Object> responseJsonSchema,
             String responseValidationModelTier) {
         if (!WebhookResponseSchemaService.hasSchema(responseJsonSchema)) {
@@ -411,6 +441,9 @@ public class WebhookController {
 
     private void validateSynchronousResponseContract(boolean syncResponse, Map<String, Object> responseJsonSchema,
             String fieldName) {
+        if (responseJsonSchema != null && responseJsonSchema.isEmpty()) {
+            throw new IllegalArgumentException(fieldName + " must not be empty");
+        }
         if (!WebhookResponseSchemaService.hasSchema(responseJsonSchema)) {
             return;
         }
@@ -557,6 +590,25 @@ public class WebhookController {
             return responseValidationModelTier;
         }
         return modelTier;
+    }
+
+    private String resolveWebhookMemoryPreset(String requestMemoryPreset, UserPreferences.WebhookConfig config) {
+        if (requestMemoryPreset != null && !requestMemoryPreset.isBlank()) {
+            return normalizeMemoryPreset(requestMemoryPreset, "'memoryPreset'");
+        }
+        String configuredPreset = config != null ? config.getMemoryPreset() : null;
+        return normalizeMemoryPreset(configuredPreset, "webhooks.memoryPreset");
+    }
+
+    private String normalizeMemoryPreset(String memoryPreset, String fieldName) {
+        if (memoryPreset == null || memoryPreset.isBlank()) {
+            return MemoryPresetIds.DISABLED;
+        }
+        String normalizedPreset = memoryPreset.trim().toLowerCase(Locale.ROOT);
+        if (memoryPresetService.findById(normalizedPreset).isEmpty()) {
+            throw new IllegalArgumentException(fieldName + " must be a known memory preset id");
+        }
+        return normalizedPreset;
     }
 
     private void putIfPresent(Map<String, Object> attributes, String key, String value) {

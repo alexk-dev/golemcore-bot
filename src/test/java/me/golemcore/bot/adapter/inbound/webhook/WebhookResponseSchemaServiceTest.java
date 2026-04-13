@@ -70,6 +70,21 @@ class WebhookResponseSchemaServiceTest {
     }
 
     @Test
+    void shouldRejectEmptySchemaDefinition() {
+        WebhookResponseSchemaService.SchemaProcessingException exception = assertThrows(
+                WebhookResponseSchemaService.SchemaProcessingException.class,
+                () -> service.validateSchemaDefinition(Map.of()));
+
+        assertTrue(exception.getMessage().contains("schema must not be empty"));
+
+        WebhookResponseSchemaService.SchemaProcessingException validationException = assertThrows(
+                WebhookResponseSchemaService.SchemaProcessingException.class,
+                () -> service.validateAndRepair("{}", Map.of(), null, null));
+
+        assertTrue(validationException.getMessage().contains("schema must not be empty"));
+    }
+
+    @Test
     void shouldRenderAndValidateSchemaDefinition() {
         service.validateSchemaDefinition(responseEnvelopeSchema());
 

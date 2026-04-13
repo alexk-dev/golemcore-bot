@@ -48,8 +48,11 @@ public class NetworkntResponseJsonSchemaValidatorAdapter implements ResponseJson
 
     @Override
     public void validateResponseJsonSchema(Map<String, Object> responseJsonSchema) {
-        if (responseJsonSchema == null || responseJsonSchema.isEmpty()) {
+        if (responseJsonSchema == null) {
             return;
+        }
+        if (responseJsonSchema.isEmpty()) {
+            throw new IllegalArgumentException("Invalid responseJsonSchema: schema must not be empty");
         }
 
         JsonNode schemaNode = objectMapper.valueToTree(responseJsonSchema);

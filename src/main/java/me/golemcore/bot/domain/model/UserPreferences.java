@@ -90,6 +90,8 @@ public class UserPreferences {
     @AllArgsConstructor
     @Builder
     public static class WebhookConfig {
+        public static final String DEFAULT_MEMORY_PRESET = MemoryPresetIds.DISABLED;
+
         /** Master switch for webhook endpoints. */
         @Builder.Default
         private boolean enabled = false;
@@ -104,6 +106,10 @@ public class UserPreferences {
         /** Default timeout for /agent runs (seconds). */
         @Builder.Default
         private int defaultTimeoutSeconds = 300;
+
+        /** Memory preset applied to webhook turns. Defaults to disabled. */
+        @Builder.Default
+        private String memoryPreset = DEFAULT_MEMORY_PRESET;
 
         /** Custom hook mappings for {@code POST /api/hooks/{name}}. */
         @Builder.Default

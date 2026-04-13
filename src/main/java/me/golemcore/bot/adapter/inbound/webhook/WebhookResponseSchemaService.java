@@ -68,9 +68,13 @@ public class WebhookResponseSchemaService {
     }
 
     public void validateSchemaDefinition(Map<String, Object> schema) {
-        if (hasSchema(schema)) {
-            buildSchema(schema);
+        if (schema == null) {
+            return;
         }
+        if (schema.isEmpty()) {
+            throw new SchemaProcessingException("Invalid responseJsonSchema: schema must not be empty");
+        }
+        buildSchema(schema);
     }
 
     public String renderSchema(Map<String, Object> schema) {
@@ -85,6 +89,9 @@ public class WebhookResponseSchemaService {
 
     public SchemaResult validateAndRepair(String rawResponse, Map<String, Object> schema,
             String validationModelTier, String fallbackModelTier, Duration repairBudget) {
+        if (schema != null && schema.isEmpty()) {
+            throw new SchemaProcessingException("Invalid responseJsonSchema: schema must not be empty");
+        }
         if (!hasSchema(schema)) {
             return new SchemaResult(rawResponse, 0);
         }

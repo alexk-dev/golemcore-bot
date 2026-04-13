@@ -34,6 +34,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
@@ -132,7 +133,7 @@ class ContextBuildingSystemPromptTest {
         List<ContextLayer> layers = List.of(
                 new IdentityLayer(promptSectionService, userPreferencesService),
                 new WorkspaceInstructionsLayer(workspaceInstructionService),
-                new MemoryLayer(memoryComponent, runtimeConfigService),
+                new MemoryLayer(memoryComponent, runtimeConfigService, new MemoryPresetService()),
                 new RagLayer(ragPort),
                 new SkillLayer(skillComponent, templateEngine),
                 new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService),

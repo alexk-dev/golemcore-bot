@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.context.layer;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ToolDefinition;
@@ -81,6 +82,30 @@ class ToolLayerTest {
         layer.assemble(context);
 
         assertEquals(1, context.getAvailableTools().size());
+    }
+
+    @Test
+    void shouldHideMemoryToolWhenMemoryPresetIsDisabled() {
+        ToolComponent memoryTool = mock(ToolComponent.class);
+        when(memoryTool.isEnabled()).thenReturn(true);
+        when(memoryTool.getToolName()).thenReturn(ToolNames.MEMORY);
+        when(memoryTool.getDefinition()).thenReturn(
+                ToolDefinition.builder().name(ToolNames.MEMORY).description("Memory").build());
+
+        ToolComponent shellTool = mock(ToolComponent.class);
+        when(shellTool.isEnabled()).thenReturn(true);
+        when(shellTool.getToolName()).thenReturn("shell");
+        when(shellTool.getDefinition()).thenReturn(
+                ToolDefinition.builder().name("shell").description("Shell").build());
+
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(memoryTool, shellTool));
+
+        AgentContext context = AgentContext.builder().build();
+        context.setAttribute(ContextAttributes.MEMORY_PRESET_ID, "disabled");
+        layer.assemble(context);
+
+        assertEquals(1, context.getAvailableTools().size());
+        assertEquals("shell", context.getAvailableTools().get(0).getName());
     }
 
     @Test
