@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.hive.HiveCardSearchRequest;
 import me.golemcore.bot.domain.model.hive.HiveCardSummary;
 import me.golemcore.bot.domain.model.hive.HiveCreateCardRequest;
 import me.golemcore.bot.domain.model.hive.HiveRequestReviewRequest;
+import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
 import me.golemcore.bot.domain.model.hive.HiveThreadMessage;
 
 public interface HiveGatewayPort {
@@ -30,7 +31,15 @@ public interface HiveGatewayPort {
             String status,
             String healthSummary,
             String lastErrorSummary,
-            Long uptimeSeconds);
+            Long uptimeSeconds,
+            String dashboardBaseUrl);
+
+    HiveSsoTokenResponse exchangeSsoCode(
+            String serverUrl,
+            String code,
+            String clientId,
+            String redirectUri,
+            String codeVerifier);
 
     HiveCardDetail getCard(String serverUrl, String golemId, String accessToken, String cardId);
 

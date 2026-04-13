@@ -34,7 +34,8 @@ public interface HiveMachinePort {
             Integer targetPolicyVersion,
             Integer appliedPolicyVersion,
             String syncStatus,
-            String lastPolicyErrorDigest);
+            String lastPolicyErrorDigest,
+            String dashboardBaseUrl);
 
     HivePolicyPackage getPolicyPackage(String serverUrl, String golemId, String accessToken);
 

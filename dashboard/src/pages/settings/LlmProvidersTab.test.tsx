@@ -54,6 +54,8 @@ const managedHiveStatus: HiveStatusResponse = {
   serverUrl: 'https://hive.example.com',
   displayName: 'Build Runner',
   hostLabel: 'builder-a',
+  dashboardBaseUrl: 'https://bot.example.com/dashboard',
+  ssoEnabled: true,
   sessionPresent: true,
   golemId: 'golem-1',
   controlChannelUrl: 'wss://hive.example.com/ws',

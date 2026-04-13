@@ -59,7 +59,7 @@ export function buildRuntimeConfigFixture(selfEvolving: Record<string, unknown>)
     usage: { enabled: true },
     mcp: { enabled: false, defaultStartupTimeout: null, defaultIdleTimeout: null, catalog: [] },
     plan: { enabled: false, maxPlans: null, maxStepsPerPlan: null, stopOnFailure: true },
-    hive: { enabled: false, serverUrl: null, displayName: null, hostLabel: null, autoConnect: false, managedByProperties: false, sdlc: { currentContextEnabled: true, cardReadEnabled: true, cardSearchEnabled: true, threadMessageEnabled: true, reviewRequestEnabled: true, followupCardCreateEnabled: true, lifecycleSignalEnabled: true } },
+    hive: { enabled: false, serverUrl: null, displayName: null, hostLabel: null, dashboardBaseUrl: null, ssoEnabled: true, autoConnect: false, managedByProperties: false, sdlc: { currentContextEnabled: true, cardReadEnabled: true, cardSearchEnabled: true, threadMessageEnabled: true, reviewRequestEnabled: true, followupCardCreateEnabled: true, lifecycleSignalEnabled: true } },
     selfEvolving,
     autoMode: {},
     tracing: {},

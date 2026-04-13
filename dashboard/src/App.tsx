@@ -31,6 +31,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function HiveSsoCallbackRoute(): React.ReactElement {
+  return <Navigate to={`/login${window.location.search}`} replace />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -41,6 +45,10 @@ export default function App() {
             <LoginPage />
           </Suspense>
         }
+      />
+      <Route
+        path="/api/auth/hive/callback"
+        element={<HiveSsoCallbackRoute />}
       />
       <Route
         path="/*"

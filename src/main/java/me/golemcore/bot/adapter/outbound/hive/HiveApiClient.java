@@ -77,7 +77,8 @@ public class HiveApiClient {
             Integer targetPolicyVersion,
             Integer appliedPolicyVersion,
             String syncStatus,
-            String lastPolicyErrorDigest) {
+            String lastPolicyErrorDigest,
+            String dashboardBaseUrl) {
         HeartbeatRequest request = new HeartbeatRequest(
                 status,
                 null,
@@ -96,7 +97,8 @@ public class HiveApiClient {
                 targetPolicyVersion,
                 appliedPolicyVersion,
                 syncStatus,
-                lastPolicyErrorDigest);
+                lastPolicyErrorDigest,
+                dashboardBaseUrl);
         postJson(serverUrl,
                 "/api/v1/golems/" + golemId + "/heartbeat",
                 request,
@@ -126,6 +128,20 @@ public class HiveApiClient {
                         applyResult.getErrorDetails()),
                 accessToken,
                 HivePolicyApplyResult.class);
+    }
+
+    public OAuth2TokenResponse exchangeSsoCode(
+            String serverUrl,
+            String code,
+            String clientId,
+            String redirectUri,
+            String codeVerifier) {
+        return postJson(
+                serverUrl,
+                "/api/v1/oauth2/token",
+                new OAuth2TokenRequest(code, clientId, redirectUri, codeVerifier),
+                null,
+                OAuth2TokenResponse.class);
     }
 
     public void publishEventsBatch(
@@ -297,6 +313,10 @@ public class HiveApiClient {
             if (message.isTextual() && !message.asText().isBlank()) {
                 return message.asText();
             }
+            JsonNode error = root.path("error");
+            if (error.isTextual() && !error.asText().isBlank()) {
+                return error.asText();
+            }
         } catch (IOException ignored) {
             // Fall back to the raw response body.
         }
@@ -314,6 +334,18 @@ public class HiveApiClient {
     }
 
     private record RefreshTokenRequest(String refreshToken) {
+    }
+
+    private record OAuth2TokenRequest(String code, String clientId, String redirectUri, String codeVerifier) {
+    }
+
+    public record OperatorResponse(String id, String username, String displayName, List<String> roles) {
+    }
+
+    public record LoginResponse(String accessToken, OperatorResponse operator) {
+    }
+
+    public record OAuth2TokenResponse(LoginResponse login, String code) {
     }
 
     private record ThreadMessageRequest(String body) {
@@ -337,7 +369,8 @@ public class HiveApiClient {
             Integer targetPolicyVersion,
             Integer appliedPolicyVersion,
             String syncStatus,
-            String lastPolicyErrorDigest) {
+            String lastPolicyErrorDigest,
+            String dashboardBaseUrl) {
     }
 
     private record PolicyApplyResultRequest(

@@ -3,7 +3,9 @@ package me.golemcore.bot.domain.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.adapter.outbound.dashboard.BCryptPasswordHashAdapter;
 import me.golemcore.bot.adapter.outbound.dashboard.StorageDashboardCredentialsAdapter;
+import java.util.List;
 import me.golemcore.bot.domain.model.AdminCredentials;
+import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
 import me.golemcore.bot.port.outbound.DashboardAuthSettingsPort;
 import me.golemcore.bot.port.outbound.DashboardTokenPort;
 import me.golemcore.bot.port.outbound.PasswordHashPort;
@@ -275,4 +277,32 @@ class DashboardAuthServiceTest {
         DashboardAuthService.TokenPair tokens2 = authService.authenticate(PASSWORD, "  ");
         assertNull(tokens2);
     }
+
+    @Test
+    void shouldAuthenticateHiveSsoAdminOperator() {
+        authService.init();
+
+        DashboardAuthService.TokenPair tokens = authService.authenticateHiveSso(new HiveSsoTokenResponse(
+                "hive-access",
+                "admin",
+                "Hive Admin",
+                List.of("ADMIN")));
+
+        assertNotNull(tokens);
+        assertEquals("access-admin", tokens.getAccessToken());
+    }
+
+    @Test
+    void shouldRejectHiveSsoViewerOperator() {
+        authService.init();
+
+        DashboardAuthService.TokenPair tokens = authService.authenticateHiveSso(new HiveSsoTokenResponse(
+                "hive-access",
+                "viewer",
+                "Hive Viewer",
+                List.of("VIEWER")));
+
+        assertNull(tokens);
+    }
+
 }

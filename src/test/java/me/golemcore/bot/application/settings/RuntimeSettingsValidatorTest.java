@@ -254,6 +254,19 @@ class RuntimeSettingsValidatorTest {
     }
 
     @Test
+    void shouldRejectInvalidHiveDashboardBaseUrl() {
+        RuntimeConfig.HiveConfig hiveConfig = RuntimeConfig.HiveConfig.builder()
+                .enabled(true)
+                .dashboardBaseUrl("ftp://bot.example.com/dashboard")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateHiveConfig(hiveConfig));
+
+        assertEquals("hive.dashboardBaseUrl must be a valid http(s) URL", error.getMessage());
+    }
+
+    @Test
     void shouldRejectManagedHiveMutation() {
         RuntimeConfig current = RuntimeConfig.builder()
                 .hive(RuntimeConfig.HiveConfig.builder().enabled(false).build())

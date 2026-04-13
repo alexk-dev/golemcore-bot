@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type Ref, useState } from 'react';
 import { Form, Button, Alert, Spinner } from 'react-bootstrap';
 
 interface Props {
@@ -6,9 +6,16 @@ interface Props {
   onSubmit: (password: string, mfaCode?: string) => Promise<void>;
   error: string | null;
   loading: boolean;
+  passwordInputRef?: Ref<HTMLInputElement>;
 }
 
-export default function LoginForm({ mfaRequired, onSubmit, error, loading }: Props) {
+export default function LoginForm({
+  mfaRequired,
+  onSubmit,
+  error,
+  loading,
+  passwordInputRef,
+}: Props) {
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
   const [step, setStep] = useState<1 | 2>(1);
@@ -30,6 +37,7 @@ export default function LoginForm({ mfaRequired, onSubmit, error, loading }: Pro
         <Form.Group className="mb-3">
           <Form.Label>Password</Form.Label>
           <Form.Control
+            ref={passwordInputRef}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

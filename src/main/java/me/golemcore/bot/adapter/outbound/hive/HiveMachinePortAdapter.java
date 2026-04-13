@@ -62,7 +62,8 @@ public class HiveMachinePortAdapter implements HiveMachinePort {
             Integer targetPolicyVersion,
             Integer appliedPolicyVersion,
             String syncStatus,
-            String lastPolicyErrorDigest) {
+            String lastPolicyErrorDigest,
+            String dashboardBaseUrl) {
         try {
             hiveApiClient.heartbeat(
                     serverUrl,
@@ -77,7 +78,8 @@ public class HiveMachinePortAdapter implements HiveMachinePort {
                     targetPolicyVersion,
                     appliedPolicyVersion,
                     syncStatus,
-                    lastPolicyErrorDigest);
+                    lastPolicyErrorDigest,
+                    dashboardBaseUrl);
         } catch (HiveApiClient.HiveApiException exception) {
             throw translate(exception);
         }

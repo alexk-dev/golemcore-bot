@@ -20,6 +20,8 @@ import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
 import me.golemcore.bot.domain.service.HiveManagedPolicyService;
+import me.golemcore.bot.domain.service.HiveSessionStateStore;
+import me.golemcore.bot.domain.service.HiveSsoService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
@@ -33,6 +35,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.WorkspacePathService;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.EmbeddingClientResolverPort;
+import me.golemcore.bot.port.outbound.HiveGatewayPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.ModelRegistryCachePort;
@@ -209,6 +212,14 @@ public class ApplicationLayerConfiguration {
     SkillMarketplaceInstallPort skillMarketplaceInstallPort(
             SkillMarketplaceLegacySupport skillMarketplaceLegacySupport) {
         return skillMarketplaceLegacySupport;
+    }
+
+    @Bean
+    HiveSsoService hiveSsoService(
+            RuntimeConfigService runtimeConfigService,
+            HiveSessionStateStore hiveSessionStateStore,
+            HiveGatewayPort hiveGatewayPort) {
+        return new HiveSsoService(runtimeConfigService, hiveSessionStateStore, hiveGatewayPort);
     }
 
     @Bean
