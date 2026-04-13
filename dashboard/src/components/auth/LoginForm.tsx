@@ -6,9 +6,10 @@ interface Props {
   onSubmit: (password: string, mfaCode?: string) => Promise<void>;
   error: string | null;
   loading: boolean;
+  passwordInputId?: string;
 }
 
-export default function LoginForm({ mfaRequired, onSubmit, error, loading }: Props) {
+export default function LoginForm({ mfaRequired, onSubmit, error, loading, passwordInputId }: Props) {
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
   const [step, setStep] = useState<1 | 2>(1);
@@ -30,6 +31,7 @@ export default function LoginForm({ mfaRequired, onSubmit, error, loading }: Pro
         <Form.Group className="mb-3">
           <Form.Label>Password</Form.Label>
           <Form.Control
+            id={passwordInputId}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

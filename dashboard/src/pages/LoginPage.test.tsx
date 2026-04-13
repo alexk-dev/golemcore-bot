@@ -38,7 +38,7 @@ describe('LoginPage', () => {
     useAuthStore.getState().setAccessToken(null);
   });
 
-  it('keeps password fallback visible after choosing it from Hive SSO login', async () => {
+  it('keeps password fallback usable from Hive SSO login', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root: Root = createRoot(container);
@@ -53,6 +53,8 @@ describe('LoginPage', () => {
     });
 
     expect(document.body.textContent ?? '').toContain('Continue with Hive SSO');
+    const passwordInput = document.body.querySelector('input[type="password"]');
+    expect(passwordInput).toBeInstanceOf(HTMLInputElement);
     const passwordFallbackButton = Array.from(document.body.querySelectorAll('button'))
       .find((button) => button.textContent === 'Use password instead');
     if (!(passwordFallbackButton instanceof HTMLButtonElement)) {
@@ -64,9 +66,9 @@ describe('LoginPage', () => {
       await flushPromises();
     });
 
-    expect(document.body.textContent ?? '').toContain('Back to Hive SSO');
+    expect(document.activeElement).toBe(passwordInput);
     expect(document.body.textContent ?? '').toContain('Login');
-    expect(document.body.textContent ?? '').not.toContain('Use password instead');
+    expect(document.body.textContent ?? '').toContain('Use password instead');
 
     act(() => {
       root.unmount();

@@ -5,11 +5,10 @@ import { exchangeHiveSsoCode, getHiveSsoStatus, getMfaStatus, login, type HiveSs
 import { useAuthStore } from '../store/authStore';
 import LoginForm from '../components/auth/LoginForm';
 
-type LoginMethod = 'choice' | 'password';
-
 const PKCE_CODE_BYTE_LENGTH = 32;
 const HIVE_SSO_PKCE_PREFIX = 'hive-sso-pkce:';
 const S256_CHALLENGE_METHOD = 'S256';
+const PASSWORD_INPUT_ID = 'dashboard-password-login';
 
 function shouldOfferHiveSsoChoice(hiveSso: HiveSsoStatus | null): boolean {
   if (hiveSso == null) {
@@ -44,14 +43,12 @@ export default function LoginPage(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hiveSso, setHiveSso] = useState<HiveSsoStatus | null>(null);
-  const [loginMethod, setLoginMethod] = useState<LoginMethod>('choice');
   const ssoExchangeCodeRef = useRef<string | null>(null);
   const setAccessToken = useAuthStore((s) => s.setAccessToken);
   const token = useAuthStore((s) => s.accessToken);
   const nav = useNavigate();
   const location = useLocation();
   const shouldShowSsoChoice = shouldOfferHiveSsoChoice(hiveSso);
-  const shouldShowPasswordForm = loginMethod === 'password' || !shouldShowSsoChoice;
   const hiveSsoLoginUrl = shouldShowSsoChoice ? hiveSso?.loginUrl : null;
 
   // Keep authenticated users out of the login page.
@@ -81,7 +78,6 @@ export default function LoginPage(): ReactElement {
     }
     if (state == null || state.length === 0) {
       setError('Hive SSO state is missing');
-      setLoginMethod('password');
       nav('/login', { replace: true });
       return;
     }
@@ -89,7 +85,6 @@ export default function LoginPage(): ReactElement {
     const codeVerifier = window.sessionStorage.getItem(storageKey);
     if (codeVerifier == null || codeVerifier.length === 0) {
       setError('Hive SSO verifier is missing');
-      setLoginMethod('password');
       nav('/login', { replace: true });
       return;
     }
@@ -104,7 +99,6 @@ export default function LoginPage(): ReactElement {
       .catch((error: unknown) => {
         console.error('Hive SSO failed', error);
         setError('Hive SSO failed');
-        setLoginMethod('password');
         nav('/login', { replace: true });
       })
       .finally(() => setLoading(false));
@@ -127,8 +121,14 @@ export default function LoginPage(): ReactElement {
     } catch (error: unknown) {
       console.error('Failed to prepare Hive SSO PKCE challenge', error);
       setError('Hive SSO setup failed');
-      setLoginMethod('password');
     }
+  };
+
+  const focusPasswordLogin = (): void => {
+    setError(null);
+    window.requestAnimationFrame(() => {
+      document.getElementById(PASSWORD_INPUT_ID)?.focus();
+    });
   };
 
   const handleSubmit = async (password: string, mfaCode?: string): Promise<void> => {
@@ -150,40 +150,26 @@ export default function LoginPage(): ReactElement {
       <Card className="login-card shadow-sm">
         <Card.Body>
           <h4 className="text-center mb-4">GolemCore Dashboard</h4>
-          {shouldShowSsoChoice && loginMethod === 'choice' && (
+          {shouldShowSsoChoice && (
             <div className="d-grid gap-2 mb-3">
               <Button type="button" variant="primary" onClick={() => { void handleHiveSsoLogin(); }}>
                 Continue with Hive SSO
               </Button>
-              <Button type="button" variant="secondary" onClick={() => setLoginMethod('password')}>
+              <Button type="button" variant="secondary" onClick={focusPasswordLogin}>
                 Use password instead
               </Button>
             </div>
           )}
-          {shouldShowSsoChoice && loginMethod === 'password' && (
-            <Button
-              type="button"
-              variant="secondary"
-              className="w-100 mb-3"
-              onClick={() => {
-                setError(null);
-                setLoginMethod('choice');
-              }}
-            >
-              Back to Hive SSO
-            </Button>
-          )}
           {hiveSso?.enabled === true && !hiveSso.available && hiveSso.reason != null && (
             <div className="text-body-secondary small mb-3">Hive SSO unavailable: {hiveSso.reason}</div>
           )}
-          {shouldShowPasswordForm && (
-            <LoginForm
-              mfaRequired={mfaRequired}
-              onSubmit={handleSubmit}
-              error={error}
-              loading={loading}
-            />
-          )}
+          <LoginForm
+            mfaRequired={mfaRequired}
+            onSubmit={handleSubmit}
+            error={error}
+            loading={loading}
+            passwordInputId={PASSWORD_INPUT_ID}
+          />
         </Card.Body>
       </Card>
     </Container>
