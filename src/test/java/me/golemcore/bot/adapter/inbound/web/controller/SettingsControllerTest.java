@@ -6,6 +6,8 @@ import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.adapter.inbound.web.mapper.RuntimeSettingsWebMapper;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos;
+import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
+import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
 import me.golemcore.bot.adapter.outbound.voice.PluginVoiceProviderCatalogAdapter;
@@ -13,6 +15,8 @@ import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
+import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -30,6 +34,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -47,6 +54,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,7 +67,10 @@ class SettingsControllerTest {
     private UserPreferencesService preferencesService;
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
+    private HiveManagedPolicyService hiveManagedPolicyService;
     private MemoryPresetService memoryPresetService;
+    private ProviderModelImportService providerModelImportService;
+    private ProviderModelDiscoveryService providerModelDiscoveryService;
     private SttProviderRegistry sttProviderRegistry;
     private TtsProviderRegistry ttsProviderRegistry;
     private RuntimeSettingsWebMapper runtimeSettingsWebMapper;
@@ -70,7 +81,10 @@ class SettingsControllerTest {
         preferencesService = mock(UserPreferencesService.class);
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        hiveManagedPolicyService = mock(HiveManagedPolicyService.class);
         memoryPresetService = mock(MemoryPresetService.class);
+        providerModelImportService = mock(ProviderModelImportService.class);
+        providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         sttProviderRegistry = new SttProviderRegistry();
         ttsProviderRegistry = new TtsProviderRegistry();
         runtimeSettingsWebMapper = new RuntimeSettingsWebMapper();
@@ -81,6 +95,7 @@ class SettingsControllerTest {
         controller = createController(sttProviderRegistry, ttsProviderRegistry);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(RuntimeConfig.builder().build());
         when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(false);
+        when(hiveManagedPolicyService.getBindingState()).thenReturn(java.util.Optional.empty());
         when(modelSelectionService.validateModel(anyString(), anyList()))
                 .thenReturn(new ModelSelectionService.ValidationResult(true, null));
         when(modelSelectionService.resolveProviderForModel(anyString())).thenAnswer(invocation -> {
@@ -98,10 +113,13 @@ class SettingsControllerTest {
                 runtimeConfigService,
                 preferencesService,
                 memoryPresetService,
+                hiveManagedPolicyService,
                 new RuntimeSettingsValidator(
                         modelSelectionService,
                         new PluginVoiceProviderCatalogAdapter(sttRegistry, ttsRegistry)),
-                new RuntimeSettingsMergeService());
+                new RuntimeSettingsMergeService(),
+                providerModelImportService,
+                providerModelDiscoveryService);
         return new SettingsController(preferencesService, modelSelectionService, runtimeSettingsFacade,
                 runtimeSettingsWebMapper);
     }
@@ -249,6 +267,62 @@ class SettingsControllerTest {
         assertEquals("special3", prefs.getModelTier());
         assertTrue(prefs.isTierForce());
         assertTrue(prefs.isNotificationsEnabled());
+    }
+
+    @Test
+    void shouldRejectHiveManagedLlmMutation() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .build();
+        RuntimeConfig incoming = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(Map.of("openai", RuntimeConfig.LlmProviderConfig.builder()
+                                .apiKey(Secret.of("sk-test"))
+                                .apiType("openai")
+                                .build()))
+                        .build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(hiveManagedPolicyService.getBindingState())
+                .thenReturn(java.util.Optional.of(HivePolicyBindingState.builder()
+                        .policyGroupId("pg-1")
+                        .targetVersion(4)
+                        .appliedVersion(4)
+                        .syncStatus("IN_SYNC")
+                        .build()));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.updateLlmConfig(incoming.getLlm()).block());
+
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        assertEquals("LLM settings are managed by Hive policy group \"pg-1\" and are read-only", error.getReason());
+    }
+
+    @Test
+    void shouldRejectHiveManagedModelRouterMutation() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .modelRouter(RuntimeConfig.ModelRouterConfig.builder().balancedModel("openai/gpt-5.1").build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(hiveManagedPolicyService.getBindingState())
+                .thenReturn(java.util.Optional.of(HivePolicyBindingState.builder()
+                        .policyGroupId("pg-1")
+                        .targetVersion(4)
+                        .appliedVersion(4)
+                        .syncStatus("IN_SYNC")
+                        .build()));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.updateModelRouterConfig(RuntimeConfig.ModelRouterConfig.builder()
+                        .balancedModel("openai/gpt-5.2")
+                        .build()).block());
+
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        assertEquals("Model router settings are managed by Hive policy group \"pg-1\" and are read-only",
+                error.getReason());
     }
 
     @Test
@@ -834,6 +908,178 @@ class SettingsControllerTest {
                 .build();
 
         assertDoesNotThrow(() -> controller.addLlmProvider("test", providerConfig));
+    }
+
+    @Test
+    void shouldSaveProviderAndImportOnlySelectedModels() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder().providers(new LinkedHashMap<>()).build())
+                .build();
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("x"))
+                .apiType("openai")
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(providerModelImportService.importMissingModels("test", List.of("test/gpt-5.2")))
+                .thenReturn(new ProviderModelImportService.ProviderImportResult(
+                        "https://models.example.com/v1/models",
+                        List.of("test/gpt-5.2"),
+                        List.of(),
+                        List.of()));
+
+        StepVerifier.create(controller.addLlmProviderAndImportModels(
+                "test",
+                new SettingsController.LlmProviderImportRequest(providerConfig, List.of("test/gpt-5.2"))))
+                .assertNext(response -> {
+                    SettingsController.LlmProviderImportResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.providerSaved());
+                    assertEquals("test", body.providerName());
+                    assertEquals(List.of("test/gpt-5.2"), body.addedModels());
+                    assertEquals(List.of(), body.skippedModels());
+                    assertEquals(List.of(), body.errors());
+                })
+                .verifyComplete();
+
+        verify(runtimeConfigService).addLlmProvider("test", providerConfig);
+        verify(providerModelImportService).importMissingModels("test", List.of("test/gpt-5.2"));
+    }
+
+    @Test
+    void shouldRejectProviderImportWithoutConfig() {
+        ResponseStatusException nullRequest = assertThrows(ResponseStatusException.class,
+                () -> controller.addLlmProviderAndImportModels("test", null));
+        assertEquals(HttpStatus.BAD_REQUEST, nullRequest.getStatusCode());
+        assertTrue(nullRequest.getReason().contains("config is required"));
+
+        ResponseStatusException missingConfig = assertThrows(ResponseStatusException.class,
+                () -> controller.addLlmProviderAndImportModels(
+                        "test",
+                        new SettingsController.LlmProviderImportRequest(null, List.of("test/gpt-5.2"))));
+        assertEquals(HttpStatus.BAD_REQUEST, missingConfig.getStatusCode());
+        assertTrue(missingConfig.getReason().contains("config is required"));
+    }
+
+    @Test
+    void shouldTestSavedProvider() {
+        when(providerModelDiscoveryService.discoverModelsForProvider("openrouter"))
+                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
+                        "https://openrouter.ai/api/v1/models",
+                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("openrouter", "openai/gpt-5",
+                                "OpenAI: GPT-5", "openai", null))));
+
+        StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                "saved",
+                "openrouter",
+                null)))
+                .assertNext(response -> {
+                    SettingsController.LlmProviderTestResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.success());
+                    assertEquals("openrouter", body.providerName());
+                    assertEquals("https://openrouter.ai/api/v1/models", body.resolvedEndpoint());
+                    assertEquals(List.of("openrouter/openai/gpt-5"), body.models());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldRejectInvalidProviderTestRequests() {
+        RuntimeConfig.LlmProviderConfig providerConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiType("openai")
+                .build();
+
+        ResponseStatusException nullRequest = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(null));
+        assertEquals(HttpStatus.BAD_REQUEST, nullRequest.getStatusCode());
+        assertTrue(nullRequest.getReason().contains("request body is required"));
+
+        ResponseStatusException missingMode = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        null,
+                        "openrouter",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, missingMode.getStatusCode());
+        assertTrue(missingMode.getReason().contains("mode is required"));
+
+        ResponseStatusException blankProvider = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "saved",
+                        " ",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, blankProvider.getStatusCode());
+        assertTrue(blankProvider.getReason().contains("providerName is required"));
+
+        ResponseStatusException draftWithoutConfig = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "draft",
+                        "openrouter",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, draftWithoutConfig.getStatusCode());
+        assertTrue(draftWithoutConfig.getReason().contains("config is required"));
+
+        ResponseStatusException invalidMode = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "delete",
+                        "openrouter",
+                        providerConfig)));
+        assertEquals(HttpStatus.BAD_REQUEST, invalidMode.getStatusCode());
+        assertTrue(invalidMode.getReason().contains("mode must be one of"));
+
+        ResponseStatusException invalidProvider = assertThrows(ResponseStatusException.class,
+                () -> controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                        "saved",
+                        "bad name",
+                        null)));
+        assertEquals(HttpStatus.BAD_REQUEST, invalidProvider.getStatusCode());
+        assertTrue(invalidProvider.getReason().contains("Provider name must match"));
+    }
+
+    @Test
+    void shouldReuseSavedSecretWhenTestingDraftProviderWithoutApiKeyOverride() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .llm(RuntimeConfig.LlmConfig.builder()
+                        .providers(new LinkedHashMap<>(Map.of(
+                                "draftmesh", RuntimeConfig.LlmProviderConfig.builder()
+                                        .apiKey(Secret.of("saved-key"))
+                                        .baseUrl("https://saved.example.com")
+                                        .apiType("openai")
+                                        .build())))
+                        .build())
+                .build();
+        RuntimeConfig.LlmProviderConfig requestConfig = RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(null)
+                .baseUrl("https://draft.example.com")
+                .apiType("openai")
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+        when(providerModelDiscoveryService.discoverModelsForConfig(anyString(),
+                any(RuntimeConfig.LlmProviderConfig.class)))
+                .thenReturn(new ProviderModelDiscoveryService.DiscoveryResult(
+                        "https://draft.example.com/v1/models",
+                        List.of(new ProviderModelDiscoveryService.DiscoveredModel("draftmesh", "draft-gpt",
+                                "Draft GPT", "draft", null))));
+
+        StepVerifier.create(controller.testLlmProvider(new SettingsController.LlmProviderTestRequest(
+                "draft",
+                "draftmesh",
+                requestConfig)))
+                .assertNext(response -> {
+                    SettingsController.LlmProviderTestResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.success());
+                    assertEquals(List.of("draftmesh/draft-gpt"), body.models());
+                })
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig.LlmProviderConfig> captor = ArgumentCaptor
+                .forClass(RuntimeConfig.LlmProviderConfig.class);
+        verify(providerModelDiscoveryService).discoverModelsForConfig(anyString(), captor.capture());
+        RuntimeConfig.LlmProviderConfig effectiveConfig = captor.getValue();
+        assertNotNull(effectiveConfig);
+        assertEquals("saved-key", effectiveConfig.getApiKey().getValue());
+        assertEquals("https://draft.example.com", effectiveConfig.getBaseUrl());
+        assertEquals("openai", effectiveConfig.getApiType());
     }
 
     @Test
@@ -2272,8 +2518,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldUpdateMcpCatalogEntry() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(true);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(true);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("github")
@@ -2287,8 +2533,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldReturnNotFoundWhenUpdatingNonexistentCatalogEntry() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(false);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(false);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("nonexistent")
@@ -2301,8 +2547,8 @@ class SettingsControllerTest {
 
     @Test
     void shouldNormalizeNameOnUpdate() {
-        when(runtimeConfigService.updateMcpCatalogEntry(anyString(),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(true);
+        when(runtimeConfigService.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class)))
+                .thenReturn(true);
 
         RuntimeConfig.McpCatalogEntry entry = RuntimeConfig.McpCatalogEntry.builder()
                 .name("github")
@@ -2313,8 +2559,7 @@ class SettingsControllerTest {
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
 
-        verify(runtimeConfigService).updateMcpCatalogEntry(org.mockito.ArgumentMatchers.eq("github"),
-                org.mockito.ArgumentMatchers.any(RuntimeConfig.McpCatalogEntry.class));
+        verify(runtimeConfigService).updateMcpCatalogEntry(eq("github"), any(RuntimeConfig.McpCatalogEntry.class));
     }
 
     @Test
@@ -2428,7 +2673,7 @@ class SettingsControllerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void shouldDelegateRuntimeDtoEndpointUpdates() throws Exception {
+    void shouldDelegateRuntimeDtoEndpointUpdates() throws Throwable {
         RuntimeSettingsFacade facade = mock(RuntimeSettingsFacade.class);
         SettingsController dtoController = new SettingsController(preferencesService, modelSelectionService, facade,
                 runtimeSettingsWebMapper);
@@ -2552,12 +2797,8 @@ class SettingsControllerTest {
                 .verifyComplete();
 
         Class<?> requestType = Class.forName(SettingsController.class.getName() + "$AdvancedConfigRequest");
-        var constructor = requestType.getDeclaredConstructor(
-                RuntimeSettingsWebDtos.RateLimitConfigDto.class,
-                RuntimeSettingsWebDtos.SecurityConfigDto.class,
-                RuntimeSettingsWebDtos.CompactionConfigDto.class);
-        constructor.setAccessible(true);
-        Object request = constructor.newInstance(
+        Object request = instantiateAdvancedConfigRequest(
+                requestType,
                 new RuntimeSettingsWebDtos.RateLimitConfigDto(),
                 new RuntimeSettingsWebDtos.SecurityConfigDto(),
                 new RuntimeSettingsWebDtos.CompactionConfigDto());
@@ -2572,18 +2813,14 @@ class SettingsControllerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void shouldDelegateAdvancedConfigUpdate() throws Exception {
+    void shouldDelegateAdvancedConfigUpdate() throws Throwable {
         RuntimeConfig current = RuntimeConfig.builder().build();
         RuntimeConfig apiView = RuntimeConfig.builder().build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
         when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
         Class<?> requestType = Class.forName(SettingsController.class.getName() + "$AdvancedConfigRequest");
-        var constructor = requestType.getDeclaredConstructor(
-                RuntimeConfig.RateLimitConfig.class,
-                RuntimeConfig.SecurityConfig.class,
-                RuntimeConfig.CompactionConfig.class);
-        constructor.setAccessible(true);
-        Object request = constructor.newInstance(
+        Object request = instantiateAdvancedConfigRequest(
+                requestType,
                 RuntimeConfig.RateLimitConfig.builder().build(),
                 RuntimeConfig.SecurityConfig.builder().build(),
                 RuntimeConfig.CompactionConfig.builder().build());
@@ -2616,5 +2853,14 @@ class SettingsControllerTest {
         when(provider.getAliases()).thenReturn(Set.of(alias));
         when(provider.isAvailable()).thenReturn(true);
         ttsProviderRegistry.replaceProviders(providerId, List.of(provider));
+    }
+
+    private Object instantiateAdvancedConfigRequest(Class<?> requestType, Object first, Object second, Object third)
+            throws Throwable {
+        MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(requestType, MethodHandles.lookup());
+        MethodHandle constructor = lookup.findConstructor(
+                requestType,
+                MethodType.methodType(void.class, first.getClass(), second.getClass(), third.getClass()));
+        return constructor.invoke(first, second, third);
     }
 }

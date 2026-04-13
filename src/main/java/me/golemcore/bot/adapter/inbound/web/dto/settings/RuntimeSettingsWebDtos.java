@@ -2,10 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.dto.settings;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
 
-public final class RuntimeSettingsWebDtos {
-
-    private RuntimeSettingsWebDtos() {
-    }
+public interface RuntimeSettingsWebDtos {
 
     public static class RuntimeConfigDto extends RuntimeConfig {
     }

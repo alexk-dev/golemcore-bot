@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -66,14 +69,12 @@ class HiveEventBatchPublisherTest {
         hiveApiClient = mock(HiveApiClient.class);
         storagePort = mock(StoragePort.class);
         persistedFiles = new ConcurrentHashMap<>();
-        when(storagePort.putTextAtomic(org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyBoolean()))
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenAnswer(invocation -> {
                     persistedFiles.put(invocation.getArgument(1), invocation.getArgument(2));
                     return CompletableFuture.completedFuture(null);
                 });
-        when(storagePort.getText(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+        when(storagePort.getText(anyString(), anyString()))
                 .thenAnswer(
                         invocation -> CompletableFuture.completedFuture(persistedFiles.get(invocation.getArgument(1))));
         publisher = new HiveEventBatchPublisher(
@@ -180,8 +181,8 @@ class HiveEventBatchPublisherTest {
         HiveEventPayload event = eventsCaptor.getValue().get(0);
         assertEquals("RUN_PROGRESS", event.runtimeEventType());
         assertEquals("Progress update", event.summary());
-        org.junit.jupiter.api.Assertions.assertFalse(event.details().contains(ContextAttributes.HIVE_THREAD_ID));
-        org.junit.jupiter.api.Assertions.assertTrue(event.details().contains("toolCount"));
+        assertFalse(event.details().contains(ContextAttributes.HIVE_THREAD_ID));
+        assertTrue(event.details().contains("toolCount"));
     }
 
     @Test

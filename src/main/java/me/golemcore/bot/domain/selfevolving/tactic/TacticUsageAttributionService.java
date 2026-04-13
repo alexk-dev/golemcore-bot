@@ -68,11 +68,11 @@ public class TacticUsageAttributionService {
         return bundleIdToTacticIds;
     }
 
-    public LinkedHashSet<String> resolveAttributedTacticIds(
+    public Set<String> resolveAttributedTacticIds(
             RunRecord run,
             Map<String, List<String>> bundleIdToTacticIds,
             Set<String> knownTacticIds) {
-        LinkedHashSet<String> attributedTacticIds = new LinkedHashSet<>();
+        Set<String> attributedTacticIds = new LinkedHashSet<>();
         if (run == null) {
             return attributedTacticIds;
         }
@@ -113,7 +113,7 @@ public class TacticUsageAttributionService {
                 || candidate.getArtifactRevisionBindings().isEmpty()) {
             return attributed;
         }
-        Map<String, String> baselineBindings = null;
+        Map<String, String> baselineBindings = Map.of();
         if (!StringValueSupport.isBlank(campaign.getBaselineBundleId())
                 && !campaign.getBaselineBundleId().equals(campaign.getCandidateBundleId())) {
             ArtifactBundleRecord baseline = bundlesById.get(campaign.getBaselineBundleId());
@@ -127,7 +127,7 @@ public class TacticUsageAttributionService {
             if (StringValueSupport.isBlank(streamId) || StringValueSupport.isBlank(revisionId)) {
                 continue;
             }
-            String baselineRevision = baselineBindings != null ? baselineBindings.get(streamId) : null;
+            String baselineRevision = baselineBindings.get(streamId);
             if (revisionId.equals(baselineRevision)) {
                 // Tactic revision unchanged between baseline and candidate — campaign
                 // is not exercising it, so no attribution.

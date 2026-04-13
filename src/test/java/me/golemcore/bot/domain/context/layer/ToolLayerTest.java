@@ -4,7 +4,9 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
@@ -89,6 +91,33 @@ class ToolLayerTest {
         ContextLayerResult result = layer.assemble(context);
 
         assertFalse(result.hasContent());
+    }
+
+    @Test
+    void shouldAdvertiseHiveSdlcToolsOnlyForHiveSessions() {
+        layer = new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
+
+        ToolComponent tool = mock(ToolComponent.class);
+        when(tool.isEnabled()).thenReturn(true);
+        when(tool.getToolName()).thenReturn(ToolNames.HIVE_GET_CARD);
+        when(tool.getDefinition()).thenReturn(ToolDefinition.builder()
+                .name(ToolNames.HIVE_GET_CARD)
+                .description("Hive card read")
+                .build());
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(tool));
+
+        AgentContext webContext = AgentContext.builder()
+                .session(AgentSession.builder().channelType("web").chatId("chat-1").build())
+                .build();
+        layer.assemble(webContext);
+        assertTrue(webContext.getAvailableTools().isEmpty());
+
+        AgentContext hiveContext = AgentContext.builder()
+                .session(AgentSession.builder().channelType("hive").chatId("thread-1").build())
+                .build();
+        layer.assemble(hiveContext);
+        assertEquals(1, hiveContext.getAvailableTools().size());
+        assertEquals(ToolNames.HIVE_GET_CARD, hiveContext.getAvailableTools().get(0).getName());
     }
 
     @Test

@@ -28,6 +28,9 @@ export interface RuntimeConfig {
 export interface ModelRegistryConfig { repositoryUrl: string | null; branch: string | null; }
 export interface LlmConfig { providers: Record<string, LlmProviderConfig>; }
 export interface LlmProviderConfig { apiKey: string | null; apiKeyPresent?: boolean; baseUrl: string | null; requestTimeoutSeconds: number | null; apiType: ApiType | null; legacyApi: boolean | null; }
+export interface LlmProviderImportResult { providerSaved: boolean; providerName: string; resolvedEndpoint: string | null; addedModels: string[]; skippedModels: string[]; errors: string[]; }
+export type LlmProviderTestMode = 'saved' | 'draft';
+export interface LlmProviderTestResult { mode: LlmProviderTestMode; providerName: string; resolvedEndpoint: string | null; models: string[]; success: boolean; error: string | null; }
 export interface MemoryConfig { enabled: boolean | null; softPromptBudgetTokens: number | null; maxPromptBudgetTokens: number | null; workingTopK: number | null; episodicTopK: number | null; semanticTopK: number | null; proceduralTopK: number | null; promotionEnabled: boolean | null; promotionMinConfidence: number | null; decayEnabled: boolean | null; decayDays: number | null; retrievalLookbackDays: number | null; codeAwareExtractionEnabled: boolean | null; disclosure?: MemoryDisclosureConfig | null; diagnostics?: MemoryDiagnosticsConfig | null; }
 export interface MemoryPreset { id: string; label: string; comment: string; memory: MemoryConfig; }
 export type MemoryDisclosureMode = 'index' | 'summary' | 'selective_detail' | 'full_pack';
@@ -48,7 +51,8 @@ export interface VoiceConfig { enabled: boolean | null; apiKey: string | null; a
 export interface UsageConfig { enabled: boolean | null; }
 export interface TelemetryConfig { enabled: boolean | null; clientId?: string; }
 export interface PlanConfig { enabled: boolean | null; maxPlans: number | null; maxStepsPerPlan: number | null; stopOnFailure: boolean | null; }
-export interface HiveConfig { enabled: boolean | null; serverUrl: string | null; displayName: string | null; hostLabel: string | null; dashboardBaseUrl: string | null; ssoEnabled: boolean | null; autoConnect: boolean | null; managedByProperties: boolean | null; }
+export interface HiveConfig { enabled: boolean | null; serverUrl: string | null; displayName: string | null; hostLabel: string | null; dashboardBaseUrl: string | null; ssoEnabled: boolean | null; autoConnect: boolean | null; managedByProperties: boolean | null; sdlc: HiveSdlcConfig; }
+export interface HiveSdlcConfig { currentContextEnabled: boolean | null; cardReadEnabled: boolean | null; cardSearchEnabled: boolean | null; threadMessageEnabled: boolean | null; reviewRequestEnabled: boolean | null; followupCardCreateEnabled: boolean | null; lifecycleSignalEnabled: boolean | null; }
 export interface SelfEvolvingConfig { enabled: boolean | null; tracePayloadOverride: boolean | null; managedByProperties?: boolean | null; overriddenPaths?: string[]; capture: SelfEvolvingCaptureConfig; judge: SelfEvolvingJudgeConfig; evolution: SelfEvolvingEvolutionConfig; tactics: SelfEvolvingTacticsConfig; promotion: SelfEvolvingPromotionConfig; benchmark: SelfEvolvingBenchmarkConfig; hive: SelfEvolvingHiveConfig; }
 export interface SelfEvolvingCaptureConfig { llm: string | null; tool: string | null; context: string | null; skill: string | null; tier: string | null; infra: string | null; }
 export interface SelfEvolvingJudgeConfig { enabled: boolean | null; primaryTier: string | null; tiebreakerTier: string | null; evolutionTier: string | null; requireEvidenceAnchors: boolean | null; uncertaintyThreshold: number | null; }

@@ -29,7 +29,9 @@ public class ModelSelectionCommandService {
             return new CurrentTier(tier, preferences.isTierForce());
         }
 
-        SetTierSelection setTier = (SetTierSelection) request;
+        if (!(request instanceof SetTierSelection setTier)) {
+            throw new IllegalArgumentException("Unsupported tier request: " + request.getClass().getSimpleName());
+        }
         String tierArg = ModelTierCatalog.normalizeTierId(setTier.tier());
         if (!ModelTierCatalog.isExplicitSelectableTier(tierArg)) {
             return new InvalidTier();
@@ -57,8 +59,10 @@ public class ModelSelectionCommandService {
         if (request instanceof SetReasoningLevel setReasoningLevel) {
             return handleModelSetReasoning(setReasoningLevel.tier(), setReasoningLevel.level());
         }
-        ResetModelOverride resetModelOverride = (ResetModelOverride) request;
-        return handleModelReset(resetModelOverride.tier());
+        if (request instanceof ResetModelOverride resetModelOverride) {
+            return handleModelReset(resetModelOverride.tier());
+        }
+        throw new IllegalArgumentException("Unsupported model request: " + request.getClass().getSimpleName());
     }
 
     private ModelOutcome handleModelShow() {

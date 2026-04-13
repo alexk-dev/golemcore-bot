@@ -86,6 +86,7 @@ public class ManagedLocalOllamaLifecycleBridge {
         boolean owned = status != null && Boolean.TRUE.equals(status.getOwned());
         switch (state) {
         case DISABLED:
+        case DEGRADED_EXTERNAL_LOST:
             supervisor.startupCheck(true);
             break;
         case OWNED_READY:
@@ -108,9 +109,6 @@ public class ManagedLocalOllamaLifecycleBridge {
             break;
         case EXTERNAL_READY:
             supervisor.pollExternalRuntime();
-            break;
-        case DEGRADED_EXTERNAL_LOST:
-            supervisor.startupCheck(true);
             break;
         case DEGRADED_OUTDATED:
             if (owned) {
@@ -189,7 +187,6 @@ public class ManagedLocalOllamaLifecycleBridge {
             return;
         }
         watchdogExecutor.shutdownNow();
-        watchdogExecutor = null;
     }
 
     private void safeRunWatchdogTick() {

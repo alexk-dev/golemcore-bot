@@ -21,10 +21,9 @@ package me.golemcore.bot.domain.selfevolving.artifact;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjection;
 import me.golemcore.bot.port.outbound.selfevolving.ArtifactRepositoryPort;
-import org.springframework.stereotype.Service;
-
 import java.time.Clock;
 import java.util.List;
+import org.springframework.stereotype.Service;
 
 /**
  * Rebuilds materialized artifact workspace projections.
@@ -36,7 +35,6 @@ public class ArtifactWorkspaceProjectionRebuildService {
 
     private final ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService;
     private final ArtifactRepositoryPort artifactRepository;
-    private final Clock clock;
 
     public ArtifactWorkspaceProjectionRebuildService(
             ArtifactWorkspaceProjectionService artifactWorkspaceProjectionService,
@@ -44,7 +42,6 @@ public class ArtifactWorkspaceProjectionRebuildService {
             Clock clock) {
         this.artifactWorkspaceProjectionService = artifactWorkspaceProjectionService;
         this.artifactRepository = artifactRepository;
-        this.clock = clock;
     }
 
     public void rebuildAll() {

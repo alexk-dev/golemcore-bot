@@ -1,6 +1,5 @@
 package me.golemcore.bot.infrastructure.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.util.List;
 import me.golemcore.bot.application.update.UpdateService;

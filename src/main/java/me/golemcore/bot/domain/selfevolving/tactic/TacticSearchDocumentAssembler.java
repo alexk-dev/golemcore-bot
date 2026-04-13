@@ -70,7 +70,7 @@ public class TacticSearchDocumentAssembler {
     private String buildLexicalText(TacticRecord record) {
         List<String> segments = new ArrayList<>();
         append(segments, record.getTitle());
-        append(segments, record.getAliases());
+        appendValues(segments, record.getAliases());
         append(segments, record.getArtifactKey());
         append(segments, record.getIntentSummary());
         append(segments, record.getBehaviorSummary());
@@ -78,9 +78,9 @@ public class TacticSearchDocumentAssembler {
         append(segments, record.getOutcomeSummary());
         append(segments, record.getBenchmarkSummary());
         append(segments, record.getApprovalNotes());
-        append(segments, record.getEvidenceSnippets());
-        append(segments, record.getTaskFamilies());
-        append(segments, record.getTags());
+        appendValues(segments, record.getEvidenceSnippets());
+        appendValues(segments, record.getTaskFamilies());
+        appendValues(segments, record.getTags());
         return normalize(String.join(" ", segments));
     }
 
@@ -91,7 +91,7 @@ public class TacticSearchDocumentAssembler {
         appendLabeled(segments, "tooling", record.getToolSummary());
         appendLabeled(segments, "outcome", record.getOutcomeSummary());
         appendLabeled(segments, "benchmark", record.getBenchmarkSummary());
-        appendLabeled(segments, "evidence", record.getEvidenceSnippets());
+        appendLabeledValues(segments, "evidence", record.getEvidenceSnippets());
         return normalize(String.join(" ", segments));
     }
 
@@ -101,7 +101,7 @@ public class TacticSearchDocumentAssembler {
         }
     }
 
-    private void appendLabeled(List<String> segments, String label, List<String> values) {
+    private void appendLabeledValues(List<String> segments, String label, List<String> values) {
         if (values == null) {
             return;
         }
@@ -121,7 +121,7 @@ public class TacticSearchDocumentAssembler {
         }
     }
 
-    private void append(List<String> segments, List<String> values) {
+    private void appendValues(List<String> segments, List<String> values) {
         if (values == null) {
             return;
         }

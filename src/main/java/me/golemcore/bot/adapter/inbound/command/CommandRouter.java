@@ -27,7 +27,6 @@ import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
-import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.Goal;

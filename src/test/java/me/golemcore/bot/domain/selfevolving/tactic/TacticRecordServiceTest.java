@@ -18,10 +18,9 @@ package me.golemcore.bot.domain.selfevolving.tactic;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.port.outbound.selfevolving.TacticRecordStorePort;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
-import me.golemcore.bot.port.outbound.selfevolving.TacticRecordStorePort;
-import me.golemcore.bot.port.outbound.selfevolving.TacticRecordStorePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -43,7 +42,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;

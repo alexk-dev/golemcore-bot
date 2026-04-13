@@ -21,6 +21,7 @@ package me.golemcore.bot.adapter.inbound.web.projection;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactCatalogEntryDto;
 import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.artifact.SelfEvolvingArtifactCompareOptionsDto;
@@ -146,7 +147,7 @@ public class ArtifactProjectionService {
             String fromRevisionId,
             String toRevisionId) {
         return getArtifactWorkspaceSummary(artifactStreamId)
-                .map(ignored -> toArtifactEvidenceDto(artifactWorkspaceProjectionService.getCompareEvidence(
+                .map(ignored -> toArtifactCompareEvidenceDto(artifactWorkspaceProjectionService.getCompareEvidence(
                         artifactStreamId,
                         fromRevisionId,
                         toRevisionId)));
@@ -157,10 +158,11 @@ public class ArtifactProjectionService {
             String fromNodeId,
             String toNodeId) {
         return getArtifactWorkspaceSummary(artifactStreamId)
-                .map(ignored -> toArtifactEvidenceDto(artifactWorkspaceProjectionService.getTransitionEvidence(
-                        artifactStreamId,
-                        fromNodeId,
-                        toNodeId)));
+                .map(ignored -> toArtifactTransitionEvidenceDto(
+                        artifactWorkspaceProjectionService.getTransitionEvidence(
+                                artifactStreamId,
+                                fromNodeId,
+                                toNodeId)));
     }
 
     public Optional<SelfEvolvingArtifactCompareOptionsDto> getArtifactCompareOptions(String artifactStreamId) {
@@ -195,8 +197,8 @@ public class ArtifactProjectionService {
         List<ArtifactRevisionProjection> revisions = artifactWorkspaceProjectionService.listRevisions(artifactStreamId);
         ArtifactLineageProjection lineageProjection = artifactWorkspaceProjectionService.getLineage(artifactStreamId);
         List<SelfEvolvingArtifactCompareOptionsDto.CompareOptionDto> revisionOptions = new ArrayList<>();
-        String defaultFromRevisionId = null;
-        String defaultToRevisionId = null;
+        String defaultFromRevisionId = "";
+        String defaultToRevisionId = "";
         if (!revisions.isEmpty()) {
             ArtifactRevisionProjection latestRevision = revisions.getLast();
             ArtifactRevisionProjection previousRevision = revisions.size() > 1 ? revisions.get(revisions.size() - 2)
@@ -205,8 +207,8 @@ public class ArtifactProjectionService {
                     .filter(entry -> artifactStreamId.equals(entry.getArtifactStreamId()))
                     .findFirst()
                     .orElse(null);
-            defaultFromRevisionId = catalogEntry != null ? catalogEntry.getActiveRevisionId() : null;
-            defaultToRevisionId = catalogEntry != null ? catalogEntry.getLatestCandidateRevisionId() : null;
+            defaultFromRevisionId = catalogEntry != null ? catalogEntry.getActiveRevisionId() : "";
+            defaultToRevisionId = catalogEntry != null ? catalogEntry.getLatestCandidateRevisionId() : "";
             if (!StringValueSupport.isBlank(defaultFromRevisionId)
                     && !StringValueSupport.isBlank(defaultToRevisionId)) {
                 revisionOptions.add(compareOption("active_vs_candidate", defaultFromRevisionId, defaultToRevisionId));
@@ -240,8 +242,8 @@ public class ArtifactProjectionService {
         }
         return SelfEvolvingArtifactCompareOptionsDto.builder()
                 .artifactStreamId(artifactStreamId)
-                .defaultFromRevisionId(defaultFromRevisionId)
-                .defaultToRevisionId(defaultToRevisionId)
+                .defaultFromRevisionId(StringValueSupport.isBlank(defaultFromRevisionId) ? null : defaultFromRevisionId)
+                .defaultToRevisionId(StringValueSupport.isBlank(defaultToRevisionId) ? null : defaultToRevisionId)
                 .defaultFromNodeId(defaultFromNodeId)
                 .defaultToNodeId(defaultToNodeId)
                 .revisionOptions(revisionOptions)
@@ -355,7 +357,7 @@ public class ArtifactProjectionService {
                 .build();
     }
 
-    private SelfEvolvingArtifactEvidenceDto toArtifactEvidenceDto(ArtifactCompareEvidenceProjection projection) {
+    private SelfEvolvingArtifactEvidenceDto toArtifactCompareEvidenceDto(ArtifactCompareEvidenceProjection projection) {
         return SelfEvolvingArtifactEvidenceDto.builder()
                 .artifactStreamId(projection.getArtifactStreamId())
                 .artifactKey(projection.getArtifactKey())
@@ -374,7 +376,8 @@ public class ArtifactProjectionService {
                 .build();
     }
 
-    private SelfEvolvingArtifactEvidenceDto toArtifactEvidenceDto(ArtifactTransitionEvidenceProjection projection) {
+    private SelfEvolvingArtifactEvidenceDto toArtifactTransitionEvidenceDto(
+            ArtifactTransitionEvidenceProjection projection) {
         return SelfEvolvingArtifactEvidenceDto.builder()
                 .artifactStreamId(projection.getArtifactStreamId())
                 .artifactKey(projection.getArtifactKey())
@@ -404,15 +407,17 @@ public class ArtifactProjectionService {
         if (StringValueSupport.isBlank(query)) {
             return true;
         }
-        String normalizedQuery = query.toLowerCase();
-        if (StringValueSupport.nullSafe(entry.getArtifactStreamId()).toLowerCase().contains(normalizedQuery)
-                || StringValueSupport.nullSafe(entry.getArtifactKey()).toLowerCase().contains(normalizedQuery)
-                || StringValueSupport.nullSafe(entry.getDisplayName()).toLowerCase().contains(normalizedQuery)) {
+        String normalizedQuery = query.toLowerCase(Locale.ROOT);
+        if (StringValueSupport.nullSafe(entry.getArtifactStreamId()).toLowerCase(Locale.ROOT).contains(normalizedQuery)
+                || StringValueSupport.nullSafe(entry.getArtifactKey()).toLowerCase(Locale.ROOT)
+                        .contains(normalizedQuery)
+                || StringValueSupport.nullSafe(entry.getDisplayName()).toLowerCase(Locale.ROOT)
+                        .contains(normalizedQuery)) {
             return true;
         }
         return entry.getArtifactAliases() != null && entry.getArtifactAliases().stream()
                 .filter(alias -> !StringValueSupport.isBlank(alias))
-                .map(String::toLowerCase)
+                .map(alias -> alias.toLowerCase(Locale.ROOT))
                 .anyMatch(alias -> alias.contains(normalizedQuery));
     }
 

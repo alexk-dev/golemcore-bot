@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { HiveStatusResponse } from '../../api/hive';
 import type { LlmConfig, ModelRouterConfig } from '../../api/settingsTypes';
 import ModelsTab from './ModelsTab';
 
@@ -86,6 +87,44 @@ const modelRouterConfig: ModelRouterConfig = {
   dynamicTierEnabled: true,
 };
 
+const managedHiveStatus: HiveStatusResponse = {
+  state: 'CONNECTED',
+  enabled: true,
+  managedByProperties: false,
+  managedJoinCodeAvailable: false,
+  autoConnect: true,
+  serverUrl: 'https://hive.example.com',
+  displayName: 'Build Runner',
+  hostLabel: 'builder-a',
+  dashboardBaseUrl: 'https://bot.example.com/dashboard',
+  ssoEnabled: true,
+  sessionPresent: true,
+  golemId: 'golem-1',
+  controlChannelUrl: 'wss://hive.example.com/ws',
+  heartbeatIntervalSeconds: 30,
+  lastConnectedAt: null,
+  lastHeartbeatAt: null,
+  lastTokenRotatedAt: null,
+  controlChannelState: 'CONNECTED',
+  controlChannelConnectedAt: null,
+  controlChannelLastMessageAt: null,
+  controlChannelLastError: null,
+  lastReceivedCommandId: null,
+  lastReceivedCommandAt: null,
+  receivedCommandCount: 0,
+  bufferedCommandCount: 0,
+  pendingCommandCount: 0,
+  pendingEventBatchCount: 0,
+  pendingEventCount: 0,
+  outboxLastError: null,
+  lastError: null,
+  policyGroupId: 'policy-prod',
+  targetPolicyVersion: 8,
+  appliedPolicyVersion: 8,
+  policySyncStatus: 'IN_SYNC',
+  lastPolicyErrorDigest: null,
+};
+
 describe('ModelsTab', () => {
   beforeEach(() => {
     modelRouterConfig.tiers.special1 = { model: null, reasoning: null };
@@ -122,5 +161,17 @@ describe('ModelsTab', () => {
 
     expect(html).toContain('qwen/model-name:version');
     expect(html).not.toContain('openrouter/qwen/model-name:version');
+  });
+
+  it('shows policy state and disables router editing when Hive manages the section', () => {
+    const html = renderToStaticMarkup(
+      <ModelsTab config={modelRouterConfig} llmConfig={llmConfig} hiveStatus={managedHiveStatus} />,
+    );
+
+    expect(html).toContain('Model Router managed by Hive');
+    expect(html).toContain('policy-prod');
+    expect(html).toContain('IN_SYNC');
+    expect(html).toContain('Applied v8. Target v8.');
+    expect(html).toContain('<fieldset disabled=""');
   });
 });

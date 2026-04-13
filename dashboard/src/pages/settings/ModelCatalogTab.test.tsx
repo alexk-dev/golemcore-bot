@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import type { HiveStatusResponse } from '../../api/hive';
 import type { LlmConfig, ModelRegistryConfig } from '../../api/settingsTypes';
 import { ModelCatalogTab } from './ModelCatalogTab';
 
@@ -35,6 +36,44 @@ const llmConfig: LlmConfig = {
 const configuredModelRegistry: ModelRegistryConfig = {
   repositoryUrl: 'https://github.com/alexk-dev/golemcore-models',
   branch: 'main',
+};
+
+const managedHiveStatus: HiveStatusResponse = {
+  state: 'CONNECTED',
+  enabled: true,
+  managedByProperties: false,
+  managedJoinCodeAvailable: false,
+  autoConnect: true,
+  serverUrl: 'https://hive.example.com',
+  displayName: 'Build Runner',
+  hostLabel: 'builder-a',
+  dashboardBaseUrl: 'https://bot.example.com/dashboard',
+  ssoEnabled: true,
+  sessionPresent: true,
+  golemId: 'golem-1',
+  controlChannelUrl: 'wss://hive.example.com/ws',
+  heartbeatIntervalSeconds: 30,
+  lastConnectedAt: null,
+  lastHeartbeatAt: null,
+  lastTokenRotatedAt: null,
+  controlChannelState: 'CONNECTED',
+  controlChannelConnectedAt: null,
+  controlChannelLastMessageAt: null,
+  controlChannelLastError: null,
+  lastReceivedCommandId: null,
+  lastReceivedCommandAt: null,
+  receivedCommandCount: 0,
+  bufferedCommandCount: 0,
+  pendingCommandCount: 0,
+  pendingEventBatchCount: 0,
+  pendingEventCount: 0,
+  outboxLastError: null,
+  lastError: null,
+  policyGroupId: 'policy-prod',
+  targetPolicyVersion: 2,
+  appliedPolicyVersion: 1,
+  policySyncStatus: 'SYNC_PENDING',
+  lastPolicyErrorDigest: null,
 };
 
 describe('ModelCatalogTab', () => {
@@ -81,5 +120,23 @@ describe('ModelCatalogTab', () => {
     expect(html).toContain('openrouter');
     expect(html).toContain('Provider-first discovery');
     expect(html).toContain('API-ready');
+  });
+
+  it('shows the Hive policy notice and disables catalog editing when a policy group is active', () => {
+    const html = renderToStaticMarkup(
+      <ModelCatalogTab
+        llmConfig={llmConfig}
+        modelRegistryConfig={configuredModelRegistry}
+        isSavingModelRegistry={false}
+        hiveStatus={managedHiveStatus}
+        onSaveModelRegistry={vi.fn(async () => {})}
+      />,
+    );
+
+    expect(html).toContain('Model Catalog managed by Hive');
+    expect(html).toContain('policy-prod');
+    expect(html).toContain('SYNC_PENDING');
+    expect(html).toContain('Applied v1. Target v2.');
+    expect(html).toContain('<fieldset disabled=""');
   });
 });

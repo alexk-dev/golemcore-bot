@@ -82,6 +82,7 @@ public class HiveBootstrapConfigSynchronizer {
                 .ssoEnabled(ssoEnabled)
                 .autoConnect(autoConnect)
                 .managedByProperties(managed)
+                .sdlc(baseline.getSdlc())
                 .build();
     }
 

@@ -47,7 +47,6 @@ import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
 import me.golemcore.bot.port.outbound.PlanStorePort;
 import me.golemcore.bot.port.outbound.RagPort;
-import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.tools.PlanGetTool;
 import me.golemcore.bot.tools.PlanSetContentTool;

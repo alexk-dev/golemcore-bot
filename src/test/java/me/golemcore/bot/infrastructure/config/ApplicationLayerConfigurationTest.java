@@ -11,6 +11,7 @@ import me.golemcore.bot.application.models.ModelManagementFacade;
 import me.golemcore.bot.application.models.ModelRegistryService;
 import me.golemcore.bot.application.prompts.PromptManagementFacade;
 import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
+import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.scheduler.SchedulerFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
@@ -21,6 +22,7 @@ import me.golemcore.bot.application.skills.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
+import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanExecutionService;
@@ -62,8 +64,11 @@ class ApplicationLayerConfigurationTest {
                 mock(RuntimeConfigService.class),
                 mock(UserPreferencesService.class),
                 mock(MemoryPresetService.class),
+                mock(HiveManagedPolicyService.class),
                 validator,
-                mergeService);
+                mergeService,
+                mock(ProviderModelImportService.class),
+                mock(ProviderModelDiscoveryService.class));
 
         assertInstanceOf(RuntimeSettingsMergeService.class, mergeService);
         assertInstanceOf(RuntimeSettingsValidator.class, validator);
@@ -112,7 +117,8 @@ class ApplicationLayerConfigurationTest {
                 mock(ModelSelectionService.class),
                 discovery,
                 modelRegistry,
-                mock(LlmPort.class));
+                mock(LlmPort.class),
+                mock(HiveManagedPolicyService.class));
         SkillMarketplaceLegacySupport legacySupport = configuration.skillMarketplaceLegacySupport(
                 mock(SkillSettingsPort.class),
                 mock(StoragePort.class),

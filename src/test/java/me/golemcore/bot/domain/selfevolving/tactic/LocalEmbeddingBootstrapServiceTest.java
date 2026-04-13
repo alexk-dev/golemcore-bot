@@ -38,7 +38,6 @@ import me.golemcore.bot.port.outbound.OllamaRuntimeModelPort;
 import me.golemcore.bot.port.outbound.OllamaRuntimeProbePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import me.golemcore.bot.domain.model.selfevolving.tactic.ManagedLocalOllamaState;
 import me.golemcore.bot.domain.selfevolving.SelfEvolvingTacticSearchStatusProjectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 
@@ -48,13 +47,13 @@ class LocalEmbeddingBootstrapServiceTest {
 
     private RuntimeConfigService runtimeConfigService;
     private TacticSearchMetricsService metricsService;
-    private TestLocalEmbeddingBootstrapService service;
+    private StubLocalEmbeddingBootstrapService service;
 
     @BeforeEach
     void setUp() {
         runtimeConfigService = mock(RuntimeConfigService.class);
         metricsService = new TacticSearchMetricsService(FIXED_CLOCK);
-        service = new TestLocalEmbeddingBootstrapService(runtimeConfigService, metricsService);
+        service = new StubLocalEmbeddingBootstrapService(runtimeConfigService, metricsService);
     }
 
     @Test
@@ -498,7 +497,7 @@ class LocalEmbeddingBootstrapServiceTest {
         when(runtimeConfigService.getSelfEvolvingConfig()).thenReturn(config(true, true, "hybrid", true,
                 "ollama", true, true, false, true, "http://localhost:11434", "qwen3-embedding:0.6b"));
 
-        TestLocalEmbeddingBootstrapService projectedService = new TestLocalEmbeddingBootstrapService(
+        StubLocalEmbeddingBootstrapService projectedService = new StubLocalEmbeddingBootstrapService(
                 runtimeConfigService,
                 metricsService,
                 projectionService);
@@ -1040,7 +1039,7 @@ class LocalEmbeddingBootstrapServiceTest {
                 .build();
     }
 
-    private static final class TestLocalEmbeddingBootstrapService extends LocalEmbeddingBootstrapService {
+    private static final class StubLocalEmbeddingBootstrapService extends LocalEmbeddingBootstrapService {
 
         private LocalEmbeddingBootstrapService.LocalRuntimeProbe runtimeProbe = new LocalEmbeddingBootstrapService.LocalRuntimeProbe(
                 true, "0.19.0");
@@ -1048,13 +1047,13 @@ class LocalEmbeddingBootstrapServiceTest {
         private final Deque<Boolean> hasModelResponses = new ArrayDeque<>();
         private boolean pullResult;
 
-        private TestLocalEmbeddingBootstrapService(
+        private StubLocalEmbeddingBootstrapService(
                 RuntimeConfigService runtimeConfigService,
                 TacticSearchMetricsService metricsService) {
             this(runtimeConfigService, metricsService, null);
         }
 
-        private TestLocalEmbeddingBootstrapService(
+        private StubLocalEmbeddingBootstrapService(
                 RuntimeConfigService runtimeConfigService,
                 TacticSearchMetricsService metricsService,
                 SelfEvolvingTacticSearchStatusProjectionService projectionService) {

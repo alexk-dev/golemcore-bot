@@ -21,9 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +54,8 @@ class ModelConfigServiceTest {
         when(storagePort.exists(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(false));
         when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(null));
         service = new ModelConfigService(storagePort);
         service.init();
@@ -223,6 +227,20 @@ class ModelConfigServiceTest {
     }
 
     @Test
+    void shouldRollbackStrictModelSaveWhenPersistenceFails() {
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("disk full")));
+
+        ModelConfigService.ModelSettings settings = standardModel("xmesh", "GPT-5.2", true, 32000);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.saveModelStrict("xmesh/gpt-5.2", settings));
+
+        assertTrue(error.getMessage().contains("Failed to save models config"));
+        assertFalse(service.getConfig().getModels().containsKey("xmesh/gpt-5.2"));
+    }
+
+    @Test
     void shouldReturnAllKnownModels() {
         Map<String, ModelCatalogEntry> models = service.getAllModels();
         assertNotNull(models);
@@ -267,6 +285,140 @@ class ModelConfigServiceTest {
         assertNotNull(renamed);
         assertEquals(settings.getProvider(), renamed.getProvider());
         assertEquals(settings.getDisplayName(), renamed.getDisplayName());
+    }
+
+    @Test
+    void shouldKeepInMemoryCatalogUnchangedWhenReplacingSnapshotFailsToPersist() {
+        Map<String, ModelCatalogEntry> beforeModels = Map.copyOf(service.getAllModels());
+        ModelConfigService.ModelSettings beforeDefaults = service.getConfig().getDefaults();
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("disk full")));
+
+        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog catalogSnapshot = me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog
+                .builder()
+                .models(Map.of("managed/gpt-5.1",
+                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                                .provider("openai")
+                                .displayName("Managed GPT")
+                                .supportsTemperature(true)
+                                .supportsVision(true)
+                                .maxInputTokens(128000)
+                                .build()))
+                .build();
+
+        assertThrows(IllegalStateException.class, () -> service.replaceCatalogSnapshot(catalogSnapshot));
+        assertEquals(beforeModels, service.getAllModels());
+        assertEquals(beforeDefaults, service.getConfig().getDefaults());
+    }
+
+    @Test
+    void shouldCreateCatalogSnapshotFromModelConfig() {
+        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog snapshot = service.getCatalogSnapshot();
+
+        assertNotNull(snapshot);
+        assertTrue(snapshot.getModels().containsKey(MODEL_GPT_5_1));
+        assertTrue(snapshot.getModels().containsKey(MODEL_CLAUDE_SONNET_4));
+        assertNotNull(snapshot.getDefaults());
+        assertEquals(PROVIDER_OPENAI, snapshot.getDefaults().getProvider());
+        assertEquals(PROVIDER_OPENAI, snapshot.getModels().get(MODEL_GPT_5_1).getProvider());
+        assertEquals("GPT-5.1", snapshot.getModels().get(MODEL_GPT_5_1).getDisplayName());
+        assertFalse(snapshot.getModels().get(MODEL_GPT_5_1).getSupportsTemperature());
+        assertNotNull(snapshot.getModels().get(MODEL_GPT_5_1).getReasoning());
+        assertEquals("none", snapshot.getModels().get(MODEL_GPT_5_1).getReasoning().getDefaultLevel());
+        assertEquals(400000,
+                snapshot.getModels().get(MODEL_GPT_5_1).getReasoning().getLevels().get("xhigh").getMaxInputTokens());
+        assertNull(snapshot.getModels().get(MODEL_CLAUDE_SONNET_4).getReasoning());
+    }
+
+    @Test
+    void shouldReplaceCatalogSnapshotUsingExplicitDefaults() {
+        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog snapshot = me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog
+                .builder()
+                .models(Map.of(
+                        "managed/gpt-5.1",
+                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                                .provider(PROVIDER_OPENAI)
+                                .displayName("Managed GPT")
+                                .supportsTemperature(false)
+                                .supportsVision(true)
+                                .maxInputTokens(256000)
+                                .reasoning(
+                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningConfig
+                                                .builder()
+                                                .defaultLevel("medium")
+                                                .levels(Map.of(
+                                                        "medium",
+                                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningLevelConfig
+                                                                .builder()
+                                                                .maxInputTokens(128000)
+                                                                .build()))
+                                                .build())
+                                .build()))
+                .defaults(me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                        .provider(PROVIDER_CUSTOM)
+                        .displayName("Managed Defaults")
+                        .supportsTemperature(false)
+                        .supportsVision(false)
+                        .maxInputTokens(64000)
+                        .build())
+                .build();
+
+        service.replaceCatalogSnapshot(snapshot);
+
+        ModelCatalogEntry managedSettings = service.getAllModels().get("managed/gpt-5.1");
+        assertNotNull(managedSettings);
+        assertEquals(PROVIDER_OPENAI, managedSettings.getProvider());
+        assertEquals("Managed GPT", managedSettings.getDisplayName());
+        assertFalse(managedSettings.isSupportsTemperature());
+        assertTrue(managedSettings.isSupportsVision());
+        assertEquals(256000, managedSettings.getMaxInputTokens());
+        assertEquals("medium", managedSettings.getReasoning().getDefaultLevel());
+        assertEquals(128000, managedSettings.getReasoning().getLevels().get("medium").getMaxInputTokens());
+        assertEquals(PROVIDER_CUSTOM, service.getConfig().getDefaults().getProvider());
+        assertEquals("Managed Defaults", service.getConfig().getDefaults().getDisplayName());
+        assertFalse(service.getConfig().getDefaults().isSupportsVision());
+        assertFalse(service.getConfig().getDefaults().isSupportsTemperature());
+        assertEquals(64000, service.getConfig().getDefaults().getMaxInputTokens());
+    }
+
+    @Test
+    void shouldReplaceCatalogSnapshotUsingDefaultModelFallbackAndValueDefaults() {
+        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog snapshot = me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog
+                .builder()
+                .models(Map.of(
+                        "managed/gpt-5.1",
+                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                                .displayName("Managed GPT")
+                                .reasoning(
+                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningConfig
+                                                .builder()
+                                                .defaultLevel("low")
+                                                .levels(Map.of(
+                                                        "low",
+                                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningLevelConfig
+                                                                .builder()
+                                                                .build()))
+                                                .build())
+                                .build()))
+                .defaultModel("managed/gpt-5.1")
+                .build();
+
+        service.replaceCatalogSnapshot(snapshot);
+
+        ModelCatalogEntry managedSettings = service.getAllModels().get("managed/gpt-5.1");
+        assertNotNull(managedSettings);
+        assertEquals(PROVIDER_OPENAI, managedSettings.getProvider());
+        assertTrue(managedSettings.isSupportsVision());
+        assertTrue(managedSettings.isSupportsTemperature());
+        assertEquals(128000, managedSettings.getMaxInputTokens());
+        assertEquals("low", managedSettings.getReasoning().getDefaultLevel());
+        assertEquals(128000, managedSettings.getReasoning().getLevels().get("low").getMaxInputTokens());
+        assertEquals(PROVIDER_OPENAI, service.getConfig().getDefaults().getProvider());
+        assertEquals("Managed GPT", service.getConfig().getDefaults().getDisplayName());
+        assertTrue(service.getConfig().getDefaults().isSupportsVision());
+        assertTrue(service.getConfig().getDefaults().isSupportsTemperature());
+        assertEquals(128000, service.getConfig().getDefaults().getMaxInputTokens());
+        assertNotSame(managedSettings, service.getConfig().getDefaults());
     }
 
     // ===== ModelSettings constructors =====

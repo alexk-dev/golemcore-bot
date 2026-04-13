@@ -60,7 +60,6 @@ public class ToolLayer implements ContextLayer {
 
     private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
     private static final String TOOL_PLAN_GET = "plan_get";
-    private static final String TOOL_HIVE_LIFECYCLE_SIGNAL = ToolNames.HIVE_LIFECYCLE_SIGNAL;
 
     private final ToolCallExecutionService toolCallExecutionService;
     private final McpPort mcpPort;
@@ -158,10 +157,20 @@ public class ToolLayer implements ContextLayer {
                     : null;
             return delayedActionPolicyService.canScheduleActions(channelType);
         }
-        if (TOOL_HIVE_LIFECYCLE_SIGNAL.equals(toolName)) {
+        if (isHiveSdlcTool(toolName)) {
             return hiveSessionActive;
         }
         return true;
+    }
+
+    private boolean isHiveSdlcTool(String toolName) {
+        return ToolNames.HIVE_LIFECYCLE_SIGNAL.equals(toolName)
+                || ToolNames.HIVE_GET_CURRENT_CONTEXT.equals(toolName)
+                || ToolNames.HIVE_GET_CARD.equals(toolName)
+                || ToolNames.HIVE_SEARCH_CARDS.equals(toolName)
+                || ToolNames.HIVE_POST_THREAD_MESSAGE.equals(toolName)
+                || ToolNames.HIVE_REQUEST_REVIEW.equals(toolName)
+                || ToolNames.HIVE_CREATE_FOLLOWUP_CARD.equals(toolName);
     }
 
     private void putToolDefinition(Map<String, ToolDefinition> toolsByName,

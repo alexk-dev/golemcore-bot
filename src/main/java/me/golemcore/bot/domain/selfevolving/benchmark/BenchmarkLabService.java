@@ -183,29 +183,30 @@ public class BenchmarkLabService {
         List<BenchmarkCampaign> campaigns = new ArrayList<>(getCampaigns());
         boolean changed = false;
         for (int i = 0; i < campaigns.size(); i++) {
-            BenchmarkCampaign campaign = campaigns.get(i);
-            if (campaign == null || !campaignId.equals(campaign.getId())) {
-                continue;
-            }
-            if ("completed".equals(campaign.getStatus()) && campaign.getCompletedAt() != null) {
-                return;
-            }
-            campaigns.set(i, BenchmarkCampaign.builder()
-                    .id(campaign.getId())
-                    .suiteId(campaign.getSuiteId())
-                    .baselineBundleId(campaign.getBaselineBundleId())
-                    .candidateBundleId(campaign.getCandidateBundleId())
-                    .status("completed")
-                    .startedAt(campaign.getStartedAt())
-                    .completedAt(Instant.now(clock))
-                    .runIds(campaign.getRunIds() != null ? new ArrayList<>(campaign.getRunIds()) : new ArrayList<>())
-                    .build());
-            changed = true;
-            break;
+            changed = markCampaignCompletedIfNeeded(campaigns, i, campaignId) || changed;
         }
         if (changed) {
             saveCampaigns(campaigns);
         }
+    }
+
+    private boolean markCampaignCompletedIfNeeded(List<BenchmarkCampaign> campaigns, int index, String campaignId) {
+        BenchmarkCampaign campaign = campaigns.get(index);
+        if (campaign == null || !campaignId.equals(campaign.getId())
+                || ("completed".equals(campaign.getStatus()) && campaign.getCompletedAt() != null)) {
+            return false;
+        }
+        campaigns.set(index, BenchmarkCampaign.builder()
+                .id(campaign.getId())
+                .suiteId(campaign.getSuiteId())
+                .baselineBundleId(campaign.getBaselineBundleId())
+                .candidateBundleId(campaign.getCandidateBundleId())
+                .status("completed")
+                .startedAt(campaign.getStartedAt())
+                .completedAt(Instant.now(clock))
+                .runIds(campaign.getRunIds() != null ? new ArrayList<>(campaign.getRunIds()) : new ArrayList<>())
+                .build());
+        return true;
     }
 
     private void invalidateQualityMetricsCache() {

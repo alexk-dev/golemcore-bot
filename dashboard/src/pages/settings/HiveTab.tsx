@@ -8,7 +8,15 @@ import { useUpdateHive } from '../../hooks/useSettings';
 import { useHiveStatus, useJoinHive, useLeaveHive, useReconnectHive } from '../../hooks/useHive';
 import type { HiveConfig } from '../../api/settingsTypes';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
+import {
+  formatHivePolicyVersion,
+  getHiveManagedPolicyDetails,
+  type HiveManagedPolicyDetails,
+  resolveHiveManagedPolicyVariant,
+} from './hiveManagedPolicySupport';
 import { HiveActionButtons } from './HiveActionButtons';
+import { HiveSessionDetails } from './HiveSessionDetails';
+import { HiveSdlcSettings } from './HiveSdlcSettings';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -16,11 +24,12 @@ function hasDiff<T>(current: T, initial: T): boolean {
 
 interface HiveTabProps {
   config: HiveConfig;
+  hiveStatus?: HiveStatusResponse | null;
 }
 
-export default function HiveTab({ config }: HiveTabProps): ReactElement {
+export default function HiveTab({ config, hiveStatus }: HiveTabProps): ReactElement {
   const updateHive = useUpdateHive();
-  const hiveStatus = useHiveStatus();
+  const hiveStatusQuery = useHiveStatus();
   const joinHive = useJoinHive();
   const reconnectHive = useReconnectHive();
   const leaveHive = useLeaveHive();
@@ -28,7 +37,7 @@ export default function HiveTab({ config }: HiveTabProps): ReactElement {
   const [joinCode, setJoinCode] = useState('');
   const isManaged = form.managedByProperties === true;
   const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
-  const status = hiveStatus.data;
+  const status = hiveStatus ?? hiveStatusQuery.data;
   const isBusy = joinHive.isPending || reconnectHive.isPending || leaveHive.isPending;
 
   useEffect(() => {
@@ -74,6 +83,7 @@ export default function HiveTab({ config }: HiveTabProps): ReactElement {
         )}
         <HiveConnectionSummary status={status} />
         <HiveRuntimeSettings form={form} isManaged={isManaged} setForm={setForm} />
+        <HiveSdlcSettings form={form} isManaged={isManaged} setForm={setForm} />
         <HiveJoinWorkspace
           isManaged={isManaged}
           isBusy={isBusy}
@@ -127,25 +137,75 @@ interface HiveConnectionSummaryProps {
 }
 
 function HiveConnectionSummary({ status }: HiveConnectionSummaryProps): ReactElement {
-  const statusVariant = resolveStatusVariant(status?.state ?? 'DISCONNECTED');
-  const controlStatusVariant = resolveStatusVariant(status?.controlChannelState ?? 'DISCONNECTED');
+  const managedPolicy = getHiveManagedPolicyDetails(status);
 
   return (
     <>
-      <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <span className="small text-body-secondary">Connection status</span>
-        <Badge bg={statusVariant}>{status?.state ?? 'LOADING'}</Badge>
-        <span className="small text-body-secondary">Control channel</span>
-        <Badge bg={controlStatusVariant}>{status?.controlChannelState ?? 'DISCONNECTED'}</Badge>
-        {status?.golemId ? <span className="small text-body-secondary">Golem ID: {status.golemId}</span> : null}
-      </div>
-
-      {status?.lastError ? (
-        <Alert variant="danger" className="mb-3">
-          {status.lastError}
-        </Alert>
-      ) : null}
+      <HiveConnectionBadges status={status} />
+      <HivePolicySummary policy={managedPolicy} />
+      <HiveStatusAlert variant="warning" message={managedPolicy?.lastErrorDigest} prefix="Last policy error: " />
+      <HiveStatusAlert variant="danger" message={status?.lastError} />
     </>
+  );
+}
+
+function HiveConnectionBadges({ status }: HiveConnectionSummaryProps): ReactElement {
+  const state = status?.state ?? 'DISCONNECTED';
+  const controlState = status?.controlChannelState ?? 'DISCONNECTED';
+
+  return (
+    <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <span className="small text-body-secondary">Connection status</span>
+      <Badge bg={resolveStatusVariant(state)}>{status?.state ?? 'LOADING'}</Badge>
+      <span className="small text-body-secondary">Control channel</span>
+      <Badge bg={resolveStatusVariant(controlState)}>{controlState}</Badge>
+      {status?.golemId ? <span className="small text-body-secondary">Golem ID: {status.golemId}</span> : null}
+    </div>
+  );
+}
+
+interface HivePolicySummaryProps {
+  policy: HiveManagedPolicyDetails | null;
+}
+
+function HivePolicySummary({ policy }: HivePolicySummaryProps): ReactElement | null {
+  if (policy == null) {
+    return null;
+  }
+
+  return (
+    <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <span className="small text-body-secondary">Policy group</span>
+      <Badge bg="dark">{policy.policyGroupId}</Badge>
+      <span className="small text-body-secondary">Policy sync</span>
+      <Badge bg={resolveHiveManagedPolicyVariant(policy.syncStatus)}>
+        {policy.syncStatus ?? 'UNKNOWN'}
+      </Badge>
+      <span className="small text-body-secondary">
+        Applied {formatHivePolicyVersion(policy.appliedVersion)}
+      </span>
+      <span className="small text-body-secondary">
+        Target {formatHivePolicyVersion(policy.targetVersion)}
+      </span>
+    </div>
+  );
+}
+
+interface HiveStatusAlertProps {
+  variant: 'warning' | 'danger';
+  message: string | null | undefined;
+  prefix?: string;
+}
+
+function HiveStatusAlert({ variant, message, prefix = '' }: HiveStatusAlertProps): ReactElement | null {
+  if (message == null || message.length === 0) {
+    return null;
+  }
+
+  return (
+    <Alert variant={variant} className="mb-3">
+      {prefix}{message}
+    </Alert>
   );
 }
 
@@ -319,9 +379,7 @@ interface HiveJoinCodeFieldProps {
   isBusy: boolean;
   joinCode: string;
   setJoinCode: (value: string) => void;
-}
-
-function HiveJoinCodeField({ isManaged, isBusy, joinCode, setJoinCode }: HiveJoinCodeFieldProps): ReactElement {
+}function HiveJoinCodeField({ isManaged, isBusy, joinCode, setJoinCode }: HiveJoinCodeFieldProps): ReactElement {
   return (
     <Col md={6}>
       <Form.Group controlId="hive-join-code">
@@ -337,45 +395,6 @@ function HiveJoinCodeField({ isManaged, isBusy, joinCode, setJoinCode }: HiveJoi
           placeholder={isManaged ? 'Managed by bot.hive.joinCode' : 'token-id.secret:https://hive.example.com'}
         />
       </Form.Group>
-    </Col>
-  );
-}
-
-interface HiveSessionDetailsProps {
-  status: HiveStatusResponse | undefined;
-  fallbackServerUrl: string | null;
-}
-
-function resolveDetailValue(
-  value: string | number | null | undefined,
-  fallback: string | number = '—',
-): string | number {
-  return value ?? fallback;
-}
-
-function HiveSessionDetails({ status, fallbackServerUrl }: HiveSessionDetailsProps): ReactElement {
-  const detailRows = [
-    ['Server URL', resolveDetailValue(status?.serverUrl, fallbackServerUrl ?? '—')],
-    ['Dashboard URL', resolveDetailValue(status?.dashboardBaseUrl)],
-    ['SSO enabled', status?.ssoEnabled === true ? 'yes' : 'no'],
-    ['Last connected', resolveDetailValue(status?.lastConnectedAt)],
-    ['Last heartbeat', resolveDetailValue(status?.lastHeartbeatAt)],
-    ['Last token refresh', resolveDetailValue(status?.lastTokenRotatedAt)],
-    ['Last control message', resolveDetailValue(status?.controlChannelLastMessageAt)],
-    ['Buffered commands', resolveDetailValue(status?.bufferedCommandCount, 0)],
-    ['Received commands', resolveDetailValue(status?.receivedCommandCount, 0)],
-    ['Last command ID', resolveDetailValue(status?.lastReceivedCommandId)],
-  ] as const;
-
-  return (
-    <Col md={6}>
-      <div className="small text-body-secondary mb-1">Session details</div>
-      {detailRows.map(([label, value]) => (
-        <div key={label} className="small">{label}: {value}</div>
-      ))}
-      {status?.controlChannelLastError ? (
-        <div className="small text-danger">Control error: {status.controlChannelLastError}</div>
-      ) : null}
     </Col>
   );
 }

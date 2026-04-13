@@ -8,6 +8,24 @@ function scrubSecret(): null {
   return null;
 }
 
+function toHiveSdlcConfig(value: unknown): RuntimeConfig['hive']['sdlc'] {
+  const record = value != null && typeof value === 'object' ? value as UnknownRecord : {};
+  return {
+    currentContextEnabled: record.currentContextEnabled !== false,
+    cardReadEnabled: record.cardReadEnabled !== false,
+    cardSearchEnabled: record.cardSearchEnabled !== false,
+    threadMessageEnabled: record.threadMessageEnabled !== false,
+    reviewRequestEnabled: record.reviewRequestEnabled !== false,
+    followupCardCreateEnabled: record.followupCardCreateEnabled !== false,
+    lifecycleSignalEnabled: record.lifecycleSignalEnabled !== false,
+  };
+}
+
+function toHiveConfig(value: unknown): UnknownRecord {
+  const hive = value != null && typeof value === 'object' ? value as UnknownRecord : {};
+  return { ...hive, sdlc: toHiveSdlcConfig(hive.sdlc) };
+}
+
 function toShellEnvironmentVariables(value: unknown): RuntimeConfig['tools']['shellEnvironmentVariables'] {
   if (!Array.isArray(value)) {
     return [];
@@ -37,7 +55,7 @@ export function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
   const cfg: RuntimeConfigUiRecord = {
     ...data,
     plan: typeof data.plan === 'object' && data.plan != null ? { ...data.plan } : {},
-    hive: typeof data.hive === 'object' && data.hive != null ? { ...data.hive } : {},
+    hive: toHiveConfig(data.hive),
   };
   if (cfg.telegram) {
     cfg.telegram = { ...cfg.telegram, token: scrubSecret(), tokenPresent: hasSecretValue(cfg.telegram.token) };

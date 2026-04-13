@@ -28,7 +28,7 @@ public class ModelConfigAdminAdapter implements ModelConfigAdminPort {
 
     @Override
     public void saveModel(String id, String previousId, ModelSettingsSnapshot settings) {
-        modelConfigService.saveModel(id, previousId, toModelSettings(settings));
+        modelConfigService.saveModelStrict(id, previousId, toModelSettings(settings));
     }
 
     @Override
@@ -64,10 +64,10 @@ public class ModelConfigAdminAdapter implements ModelConfigAdminPort {
                 settings.isSupportsVision(),
                 settings.isSupportsTemperature(),
                 settings.getMaxInputTokens(),
-                toSnapshot(settings.getReasoning()));
+                toReasoningSnapshot(settings.getReasoning()));
     }
 
-    private ReasoningConfigSnapshot toSnapshot(ModelConfigService.ReasoningConfig reasoning) {
+    private ReasoningConfigSnapshot toReasoningSnapshot(ModelConfigService.ReasoningConfig reasoning) {
         if (reasoning == null) {
             return null;
         }

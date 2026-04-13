@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Card, Container } from 'react-bootstrap';
 import { exchangeHiveSsoCode, getHiveSsoStatus, getMfaStatus, login, type HiveSsoStatus } from '../api/auth';
@@ -10,35 +10,48 @@ export default function LoginPage(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hiveSso, setHiveSso] = useState<HiveSsoStatus | null>(null);
+  const ssoExchangeCodeRef = useRef<string | null>(null);
   const setAccessToken = useAuthStore((s) => s.setAccessToken);
   const token = useAuthStore((s) => s.accessToken);
   const nav = useNavigate();
   const location = useLocation();
 
+  // Keep authenticated users out of the login page.
   useEffect(() => {
     if (token != null && token.length > 0) {
       nav('/', { replace: true });
     }
   }, [token, nav]);
 
+  // Load public login prerequisites once for the login form and SSO entrypoint.
   useEffect(() => {
-    getMfaStatus().then((r) => setMfaRequired(r.mfaRequired)).catch(() => {});
-    getHiveSsoStatus().then(setHiveSso).catch(() => {});
+    getMfaStatus()
+      .then((r) => setMfaRequired(r.mfaRequired))
+      .catch((error: unknown) => console.error('Failed to load MFA status', error));
+    getHiveSsoStatus()
+      .then(setHiveSso)
+      .catch((error: unknown) => console.error('Failed to load Hive SSO status', error));
   }, []);
 
+  // Exchange the one-time Hive OAuth code from the callback query string exactly once.
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const code = params.get('code');
-    if (code == null || code.length === 0) {
+    if (code == null || code.length === 0 || ssoExchangeCodeRef.current === code) {
       return;
     }
+    ssoExchangeCodeRef.current = code;
     setLoading(true);
     exchangeHiveSsoCode(code)
       .then((result) => {
         setAccessToken(result.accessToken);
         nav('/', { replace: true });
       })
-      .catch(() => setError('Hive SSO failed'))
+      .catch((error: unknown) => {
+        console.error('Hive SSO failed', error);
+        setError('Hive SSO failed');
+        nav('/login', { replace: true });
+      })
       .finally(() => setLoading(false));
   }, [location.search, nav, setAccessToken]);
 

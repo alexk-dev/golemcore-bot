@@ -1,6 +1,7 @@
 import { Badge, Button, Card } from 'react-bootstrap';
 import type { HookMapping } from '../../api/webhooks';
 import { createAbsoluteHookUrl } from './webhookConfigUtils';
+import { HOOK_TEMPLATE_EXAMPLES, HOOK_TEMPLATE_PATH_HINT } from './hookTemplateExamples';
 
 interface HookMappingsTableProps {
   mappings: HookMapping[];
@@ -170,6 +171,21 @@ export function HookExampleCards({ bearerToken, showBearerToken, activeMapping }
           {preview.description}
         </div>
         <pre className="mb-0 webhook-code-block"><code>{preview.command}</code></pre>
+
+        <div className="mt-3 pt-3 border-top">
+          <h3 className="h6 mb-2">Template Paths</h3>
+          <p className="small text-body-secondary mb-3">
+            {HOOK_TEMPLATE_PATH_HINT}
+          </p>
+          <div className="d-grid gap-2">
+            {HOOK_TEMPLATE_EXAMPLES.map((example) => (
+              <div key={example.path} className="rounded border px-2 py-2 bg-body-tertiary">
+                <code className="d-block small">{example.path}</code>
+                <div className="small text-body-secondary mt-1">{example.description}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </Card.Body>
     </Card>
   );

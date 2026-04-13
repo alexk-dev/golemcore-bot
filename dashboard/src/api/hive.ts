@@ -26,7 +26,16 @@ export interface HiveStatusResponse {
   lastReceivedCommandAt: string | null;
   receivedCommandCount: number;
   bufferedCommandCount: number;
+  pendingCommandCount: number;
+  pendingEventBatchCount: number;
+  pendingEventCount: number;
+  outboxLastError: string | null;
   lastError: string | null;
+  policyGroupId: string | null;
+  targetPolicyVersion: number | null;
+  appliedPolicyVersion: number | null;
+  policySyncStatus: string | null;
+  lastPolicyErrorDigest: string | null;
 }
 
 export interface JoinHiveRequest {

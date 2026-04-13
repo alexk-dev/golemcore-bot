@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -17,7 +20,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import me.golemcore.bot.domain.model.HiveSessionState;
-import me.golemcore.bot.domain.model.hive.HiveEvidenceRef;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCompareEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjection;
@@ -56,12 +58,9 @@ class HiveEventBatchPublisherPortCoverageTest {
                 .serverUrl("https://hive.example.com")
                 .accessToken("access")
                 .build()));
-        when(storagePort.putTextAtomic(org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyBoolean()))
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(CompletableFuture.completedFuture(null));
-        when(storagePort.getText(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+        when(storagePort.getText(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
     }
 
@@ -149,11 +148,8 @@ class HiveEventBatchPublisherPortCoverageTest {
                         .build());
 
         ArgumentCaptor<List<HiveEventPayload>> eventsCaptor = ArgumentCaptor.forClass(List.class);
-        verify(hiveApiClient, org.mockito.Mockito.times(8)).publishEventsBatch(
-                eq("https://hive.example.com"),
-                eq("golem-1"),
-                eq("access"),
-                eventsCaptor.capture());
+        verify(hiveApiClient, times(8)).publishEventsBatch(
+                eq("https://hive.example.com"), eq("golem-1"), eq("access"), eventsCaptor.capture());
         List<List<HiveEventPayload>> allBatches = eventsCaptor.getAllValues();
         assertEquals("selfevolving.artifact.upserted", allBatches.get(0).getFirst().eventType());
         assertEquals("selfevolving.artifact.normalized-revision.upserted", allBatches.get(1).getFirst().eventType());
@@ -254,14 +250,13 @@ class HiveEventBatchPublisherPortCoverageTest {
 
     @Test
     void shouldConvertCompatibilityHiveTypesToAndFromDomain() {
-        me.golemcore.bot.adapter.outbound.hive.HiveEvidenceRef legacyEvidence = new me.golemcore.bot.adapter.outbound.hive.HiveEvidenceRef(
-                "artifact", "artifact-1");
+        HiveEvidenceRef legacyEvidence = new HiveEvidenceRef("artifact", "artifact-1");
         assertEquals("artifact", legacyEvidence.toDomain().kind());
         assertEquals("artifact-1",
-                me.golemcore.bot.adapter.outbound.hive.HiveEvidenceRef.fromDomain(legacyEvidence.toDomain()).ref());
-        assertNull(me.golemcore.bot.adapter.outbound.hive.HiveEvidenceRef.fromDomain(null));
+                HiveEvidenceRef.fromDomain(legacyEvidence.toDomain()).ref());
+        assertNull(HiveEvidenceRef.fromDomain(null));
 
-        me.golemcore.bot.adapter.outbound.hive.HiveLifecycleSignalRequest legacyRequest = new me.golemcore.bot.adapter.outbound.hive.HiveLifecycleSignalRequest(
+        HiveLifecycleSignalRequest legacyRequest = new HiveLifecycleSignalRequest(
                 "WORK_COMPLETED",
                 "Done",
                 "All checks passed",
@@ -270,10 +265,9 @@ class HiveEventBatchPublisherPortCoverageTest {
                 Instant.parse("2026-04-01T00:09:00Z"));
         assertEquals("WORK_COMPLETED", legacyRequest.toDomain().signalType());
         assertEquals(1,
-                me.golemcore.bot.adapter.outbound.hive.HiveLifecycleSignalRequest.fromDomain(legacyRequest.toDomain())
-                        .evidenceRefs().size());
-        assertNull(me.golemcore.bot.adapter.outbound.hive.HiveLifecycleSignalRequest.fromDomain(null));
-        assertTrue(legacyRequest.toDomain().evidenceRefs().stream().map(HiveEvidenceRef::kind).toList()
+                HiveLifecycleSignalRequest.fromDomain(legacyRequest.toDomain()).evidenceRefs().size());
+        assertNull(HiveLifecycleSignalRequest.fromDomain(null));
+        assertTrue(legacyRequest.toDomain().evidenceRefs().stream().map(ref -> ref.kind()).toList()
                 .contains("artifact"));
     }
 }

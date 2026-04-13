@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
+import type { HiveStatusResponse } from '../../api/hive';
 import type { AvailableModel } from '../../api/models';
 import { modelReferenceFromSpec, modelReferenceToSpec } from '../../api/settings';
 import type { LlmConfig, ModelRouterConfig } from '../../api/settingsTypes';
@@ -17,10 +18,13 @@ import {
 } from '../../lib/modelTiers';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { Badge, Button, Card, Col, Form, Row } from '../../lib/react-bootstrap';
+import { HiveManagedPolicyNotice } from './HiveManagedPolicyNotice';
+import { getHiveManagedPolicyDetails } from './hiveManagedPolicySupport';
 
 interface ModelsTabProps {
   config: ModelRouterConfig;
   llmConfig: LlmConfig;
+  hiveStatus?: HiveStatusResponse | null;
 }
 
 interface TierCardConfig {
@@ -196,7 +200,7 @@ function TierModelCard({
   );
 }
 
-export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactElement {
+export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabProps): ReactElement {
   const updateRouter = useUpdateModelRouter();
   const { data: available } = useAvailableModels();
   const [form, setForm] = useState<ModelRouterConfig>(cloneModelRouterConfig(config));
@@ -224,6 +228,7 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
 
   const providerNames = useMemo(() => Object.keys(providers), [providers]);
   const isModelsDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const managedPolicy = getHiveManagedPolicyDetails(hiveStatus);
 
   const handleSave = async (): Promise<void> => {
     await updateRouter.mutateAsync(form);
@@ -239,112 +244,124 @@ export default function ModelsTab({ config, llmConfig }: ModelsTabProps): ReactE
 
   return (
     <>
-      <Card className="settings-card mb-3">
-        <Card.Body>
-          <SettingsCardTitle title="Global Settings" />
-          <Row className="g-3">
-            <Col md={6}>
-              <Form.Group>
-                <Form.Label className="small fw-medium">
-                  Temperature: {form.temperature?.toFixed(1) ?? '0.7'}
-                  <HelpTip text="Controls randomness of LLM responses. Higher = more creative, lower = more deterministic. Ignored by reasoning models." />
-                </Form.Label>
-                <Form.Range
-                  min={0}
-                  max={2}
-                  step={0.1}
-                  value={form.temperature ?? 0.7}
-                  onChange={(e) => setForm({ ...form, temperature: parseFloat(e.target.value) })}
+      {managedPolicy ? (
+        <HiveManagedPolicyNotice policy={managedPolicy} sectionLabel="Model Router" className="mb-3" />
+      ) : null}
+
+      <fieldset disabled={managedPolicy != null} className="border-0 m-0 p-0">
+        <Card className="settings-card mb-3">
+          <Card.Body>
+            <SettingsCardTitle title="Global Settings" />
+            <Row className="g-3">
+              <Col md={6}>
+                <Form.Group>
+                  <Form.Label className="small fw-medium">
+                    Temperature: {form.temperature?.toFixed(1) ?? '0.7'}
+                    <HelpTip text="Controls randomness of LLM responses. Higher = more creative, lower = more deterministic. Ignored by reasoning models." />
+                  </Form.Label>
+                  <Form.Range
+                    min={0}
+                    max={2}
+                    step={0.1}
+                    value={form.temperature ?? 0.7}
+                    onChange={(e) => setForm({ ...form, temperature: parseFloat(e.target.value) })}
+                  />
+                </Form.Group>
+              </Col>
+              <Col md={6} className="d-flex align-items-end">
+                <Form.Check
+                  type="switch"
+                  label={<>Dynamic tier upgrade <HelpTip text="Automatically upgrade to coding tier when code-related activity is detected mid-conversation" /></>}
+                  checked={form.dynamicTierEnabled ?? true}
+                  onChange={(e) => setForm({ ...form, dynamicTierEnabled: e.target.checked })}
                 />
-              </Form.Group>
-            </Col>
-            <Col md={6} className="d-flex align-items-end">
-              <Form.Check
-                type="switch"
-                label={<>Dynamic tier upgrade <HelpTip text="Automatically upgrade to coding tier when code-related activity is detected mid-conversation" /></>}
-                checked={form.dynamicTierEnabled ?? true}
-                onChange={(e) => setForm({ ...form, dynamicTierEnabled: e.target.checked })}
-              />
-            </Col>
-          </Row>
-        </Card.Body>
-      </Card>
+              </Col>
+            </Row>
+          </Card.Body>
+        </Card>
 
-      <Row className="g-3 mb-3">
-        {providerNames.length === 0 && (
-          <Col xs={12}>
-            <Card className="settings-card">
-              <Card.Body className="py-2">
-                <small className="text-body-secondary">
-                  No LLM providers with API keys configured. Add a provider with an API key in the LLM Providers tab to select models here.
-                </small>
-              </Card.Body>
-            </Card>
-          </Col>
-        )}
+        <Row className="g-3 mb-3">
+          {providerNames.length === 0 && (
+            <Col xs={12}>
+              <Card className="settings-card">
+                <Card.Body className="py-2">
+                  <small className="text-body-secondary">
+                    No LLM providers with API keys configured. Add a provider with an API key in the LLM Providers tab to select models here.
+                  </small>
+                </Card.Body>
+              </Card>
+            </Col>
+          )}
 
-        <Col sm={6} lg={3}>
-          <TierModelCard
-            label="Routing"
-            color="dark"
-            providers={providers}
-            providerNames={providerNames}
-            modelProvider={form.routing.model?.provider ?? ''}
-            modelValue={toEditorModelIdForProvider(
-              modelReferenceToSpec(form.routing.model),
-              form.routing.model?.provider,
-            )}
-            reasoningValue={form.routing.reasoning ?? ''}
-            allowEmptyModel={false}
-            onModelChange={(value, providerName) => setForm({
-              ...form,
-              routing: {
-                model: modelReferenceFromSpec(value, providerName),
-                reasoning: null,
-              },
-            })}
-            onReasoningChange={(value) => setForm({
-              ...form,
-              routing: {
-                ...form.routing,
-                reasoning: toNullableString(value),
-              },
-            })}
-          />
-        </Col>
-        {tierCards.map(({ key, label, color, allowEmptyModel }) => (
-          <Col sm={6} lg={4} xl={3} key={key}>
+          <Col sm={6} lg={3}>
             <TierModelCard
-              label={label}
-              color={color}
+              label="Routing"
+              color="dark"
               providers={providers}
               providerNames={providerNames}
-              modelProvider={getTierBinding(form, key).model?.provider ?? ''}
+              modelProvider={form.routing.model?.provider ?? ''}
               modelValue={toEditorModelIdForProvider(
-                modelReferenceToSpec(getTierBinding(form, key).model),
-                getTierBinding(form, key).model?.provider,
+                modelReferenceToSpec(form.routing.model),
+                form.routing.model?.provider,
               )}
-              reasoningValue={getTierBinding(form, key).reasoning ?? ''}
-              allowEmptyModel={allowEmptyModel}
-              onModelChange={(value, providerName) => setForm(updateTierBinding(form, key, {
-                model: modelReferenceFromSpec(value, providerName),
-                reasoning: null,
-              }))}
-              onReasoningChange={(value) => setForm(updateTierBinding(form, key, {
-                ...getTierBinding(form, key),
-                reasoning: toNullableString(value),
-              }))}
+              reasoningValue={form.routing.reasoning ?? ''}
+              allowEmptyModel={false}
+              onModelChange={(value, providerName) => setForm({
+                ...form,
+                routing: {
+                  model: modelReferenceFromSpec(value, providerName),
+                  reasoning: null,
+                },
+              })}
+              onReasoningChange={(value) => setForm({
+                ...form,
+                routing: {
+                  ...form.routing,
+                  reasoning: toNullableString(value),
+                },
+              })}
             />
           </Col>
-        ))}
-      </Row>
+          {tierCards.map(({ key, label, color, allowEmptyModel }) => (
+            <Col sm={6} lg={4} xl={3} key={key}>
+              <TierModelCard
+                label={label}
+                color={color}
+                providers={providers}
+                providerNames={providerNames}
+                modelProvider={getTierBinding(form, key).model?.provider ?? ''}
+                modelValue={toEditorModelIdForProvider(
+                  modelReferenceToSpec(getTierBinding(form, key).model),
+                  getTierBinding(form, key).model?.provider,
+                )}
+                reasoningValue={getTierBinding(form, key).reasoning ?? ''}
+                allowEmptyModel={allowEmptyModel}
+                onModelChange={(value, providerName) => setForm(updateTierBinding(form, key, {
+                  model: modelReferenceFromSpec(value, providerName),
+                  reasoning: null,
+                }))}
+                onReasoningChange={(value) => setForm(updateTierBinding(form, key, {
+                  ...getTierBinding(form, key),
+                  reasoning: toNullableString(value),
+                }))}
+              />
+            </Col>
+          ))}
+        </Row>
 
-      <SettingsSaveBar>
-        <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isModelsDirty || updateRouter.isPending}>
-          {updateRouter.isPending ? 'Saving...' : 'Save Model Configuration'}
-        </Button>
-        <SaveStateHint isDirty={isModelsDirty} />
-      </SettingsSaveBar>
+        <SettingsSaveBar>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={() => { void handleSave(); }}
+            disabled={managedPolicy != null || !isModelsDirty || updateRouter.isPending}
+          >
+            {updateRouter.isPending ? 'Saving...' : 'Save Model Configuration'}
+          </Button>
+          <SaveStateHint isDirty={managedPolicy == null && isModelsDirty} />
+        </SettingsSaveBar>
+      </fieldset>
     </>
   );
 }

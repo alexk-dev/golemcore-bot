@@ -666,13 +666,6 @@ public class SessionInspectionService {
         return conversationKey.equals(resolvedConversationKey) || conversationKey.equals(session.getChatId());
     }
 
-    private String defaultIfBlank(String value, String defaultValue) {
-        if (StringValueSupport.isBlank(value)) {
-            return defaultValue;
-        }
-        return value.trim();
-    }
-
     private void repairPointersAfterDelete(String deletedSessionId, AgentSession deletedSession) {
         String channel = deletedSession != null ? deletedSession.getChannelType()
                 : resolveDeletedChannel(deletedSessionId);

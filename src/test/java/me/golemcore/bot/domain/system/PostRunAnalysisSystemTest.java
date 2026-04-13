@@ -34,7 +34,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -188,7 +187,7 @@ class PostRunAnalysisSystemTest {
                 .runId("run-1")
                 .outcomeStatus("COMPLETED")
                 .build();
-        when(selfEvolvingRunService.findRun("run-1")).thenReturn(java.util.Optional.of(existingRun));
+        when(selfEvolvingRunService.findRun("run-1")).thenReturn(Optional.of(existingRun));
         when(selfEvolvingRunService.completeRun(existingRun, context)).thenReturn(completedRun);
         when(deterministicJudgeService.evaluate(completedRun, traceRecord)).thenReturn(deterministicVerdict);
         when(llmJudgeService.judge(eq(completedRun), eq(traceRecord), eq(deterministicVerdict), any(), any()))
@@ -225,7 +224,7 @@ class PostRunAnalysisSystemTest {
 
         AgentContext result = processAndAwait(context);
 
-        assertTrue(result == context);
+        assertEquals(context, result);
         verify(selfEvolvingRunService, never()).startRun(context);
         verify(selfEvolvingRunService, never()).completeRun(null, context);
     }

@@ -44,6 +44,7 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -234,11 +235,11 @@ public class PostRunAnalysisSystem implements AgentSystem {
         if (verdict == null || verdict.getOutcomeStatus() == null) {
             return "unknown";
         }
-        return switch (verdict.getOutcomeStatus().toUpperCase()) {
+        return switch (verdict.getOutcomeStatus().toUpperCase(Locale.ROOT)) {
         case "COMPLETED", "SUCCESS" -> "success";
         case "FAILED", "ERROR" -> "failure";
         case "PARTIAL" -> "partial";
-        default -> verdict.getOutcomeStatus().toLowerCase();
+        default -> verdict.getOutcomeStatus().toLowerCase(Locale.ROOT);
         };
     }
 

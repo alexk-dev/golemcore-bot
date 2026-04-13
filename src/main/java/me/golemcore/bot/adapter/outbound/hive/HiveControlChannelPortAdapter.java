@@ -27,6 +27,9 @@ public class HiveControlChannelPortAdapter implements HiveControlChannelPort {
     @Override
     public HiveControlChannelStatusSnapshot getStatus() {
         HiveControlChannelStatus status = hiveControlChannelClient.getStatus();
+        if (status == null) {
+            return HiveControlChannelStatusSnapshot.disconnected();
+        }
         return new HiveControlChannelStatusSnapshot(
                 status.state(),
                 status.connectedAt(),

@@ -14,7 +14,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class HiveSsoService {
 
-    private static final String DASHBOARD_PATH = "/dashboard";
     private static final String CALLBACK_PATH = "/api/auth/hive/callback";
 
     private final RuntimeConfigService runtimeConfigService;
@@ -30,7 +29,7 @@ public class HiveSsoService {
         if (sessionState.isEmpty()) {
             return HiveSsoStatus.unavailable(true, "Hive session is not connected");
         }
-        String dashboardBaseUrl = normalizeDashboardBaseUrl(hiveConfig.getDashboardBaseUrl());
+        String dashboardBaseUrl = HiveDashboardUrlSupport.normalizeDashboardBaseUrl(hiveConfig.getDashboardBaseUrl());
         if (dashboardBaseUrl == null) {
             return HiveSsoStatus.unavailable(true, "Bot dashboard public URL is not configured");
         }
@@ -44,7 +43,7 @@ public class HiveSsoService {
         }
         HiveSessionState sessionState = hiveSessionStateStore.load()
                 .orElseThrow(() -> new IllegalStateException("Hive session is not connected"));
-        String dashboardBaseUrl = normalizeDashboardBaseUrl(hiveConfig.getDashboardBaseUrl());
+        String dashboardBaseUrl = HiveDashboardUrlSupport.normalizeDashboardBaseUrl(hiveConfig.getDashboardBaseUrl());
         if (dashboardBaseUrl == null) {
             throw new IllegalStateException("Bot dashboard public URL is not configured");
         }
@@ -65,20 +64,6 @@ public class HiveSsoService {
 
     private String buildRedirectUri(String dashboardBaseUrl) {
         return dashboardBaseUrl + CALLBACK_PATH;
-    }
-
-    private String normalizeDashboardBaseUrl(String dashboardBaseUrl) {
-        if (dashboardBaseUrl == null || dashboardBaseUrl.isBlank()) {
-            return null;
-        }
-        String normalized = dashboardBaseUrl.trim();
-        while (normalized.endsWith("/")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
-        if (normalized.endsWith(DASHBOARD_PATH)) {
-            return normalized;
-        }
-        return normalized + DASHBOARD_PATH;
     }
 
     String buildAuthorizeUrlForTest(HiveSessionState sessionState, String dashboardBaseUrl) {

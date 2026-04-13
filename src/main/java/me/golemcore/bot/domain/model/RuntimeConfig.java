@@ -472,7 +472,7 @@ public class RuntimeConfig {
             if (modelNode instanceof ModelReference ref) {
                 return normalize(ref);
             }
-            if (modelNode instanceof java.util.Map<?, ?> map) {
+            if (modelNode instanceof Map<?, ?> map) {
                 return normalize(ModelReference.builder()
                         .provider(trimToNull(map.get("provider") instanceof String s ? s : null))
                         .id(trimToNull(map.get("id") instanceof String s ? s : null))
@@ -959,6 +959,30 @@ public class RuntimeConfig {
         private Boolean autoConnect = false;
         @Builder.Default
         private Boolean managedByProperties = false;
+        @Builder.Default
+        private HiveSdlcConfig sdlc = new HiveSdlcConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class HiveSdlcConfig {
+        @Builder.Default
+        private Boolean currentContextEnabled = true;
+        @Builder.Default
+        private Boolean cardReadEnabled = true;
+        @Builder.Default
+        private Boolean cardSearchEnabled = true;
+        @Builder.Default
+        private Boolean threadMessageEnabled = true;
+        @Builder.Default
+        private Boolean reviewRequestEnabled = true;
+        @Builder.Default
+        private Boolean followupCardCreateEnabled = true;
+        @Builder.Default
+        private Boolean lifecycleSignalEnabled = true;
     }
 
     @Data

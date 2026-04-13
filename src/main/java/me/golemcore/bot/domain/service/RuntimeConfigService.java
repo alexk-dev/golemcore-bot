@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -30,7 +29,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -179,6 +177,7 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_HIVE_ENABLED = false;
     private static final boolean DEFAULT_HIVE_AUTO_CONNECT = false;
     private static final boolean DEFAULT_HIVE_MANAGED_BY_PROPERTIES = false;
+    private static final boolean DEFAULT_HIVE_SDLC_FUNCTION_ENABLED = true;
     private static final boolean DEFAULT_SELF_EVOLVING_ENABLED = false;
     private static final boolean DEFAULT_SELF_EVOLVING_TRACE_PAYLOAD_OVERRIDE = true;
     private static final boolean DEFAULT_SELF_EVOLVING_TACTICS_ENABLED = false;
@@ -293,6 +292,10 @@ public class RuntimeConfigService {
         }
     }
 
+    public RuntimeConfig snapshotRuntimeConfig() {
+        return copyRuntimeConfig(getRuntimeConfig());
+    }
+
     /**
      * Update and persist RuntimeConfig.
      */
@@ -327,6 +330,25 @@ public class RuntimeConfigService {
         return reloaded;
     }
 
+    public void replaceHiveManagedPolicySections(RuntimeConfig.LlmConfig llmConfig,
+            RuntimeConfig.ModelRouterConfig modelRouterConfig) {
+        RuntimeConfig snapshot = snapshotRuntimeConfig();
+        RuntimeConfig llmSnapshot = copyRuntimeConfig(RuntimeConfig.builder()
+                .llm(llmConfig != null ? llmConfig : RuntimeConfig.LlmConfig.builder().build())
+                .build());
+        RuntimeConfig modelRouterSnapshot = copyRuntimeConfig(RuntimeConfig.builder()
+                .modelRouter(modelRouterConfig != null ? modelRouterConfig
+                        : RuntimeConfig.ModelRouterConfig.builder().build())
+                .build());
+        snapshot.setLlm(llmSnapshot.getLlm());
+        snapshot.setModelRouter(modelRouterSnapshot.getModelRouter());
+        updateRuntimeConfig(snapshot);
+    }
+
+    public void restoreRuntimeConfigSnapshot(RuntimeConfig snapshot) {
+        updateRuntimeConfig(copyRuntimeConfig(snapshot));
+    }
+
     public RuntimeConfig.HiveConfig getHiveConfig() {
         RuntimeConfig.HiveConfig hiveConfig = getRuntimeConfig().getHive();
         return hiveConfig != null ? hiveConfig : RuntimeConfig.HiveConfig.builder().build();
@@ -335,6 +357,43 @@ public class RuntimeConfigService {
     public boolean isHiveManagedByProperties() {
         Boolean managedByProperties = getHiveConfig().getManagedByProperties();
         return managedByProperties != null && managedByProperties;
+    }
+
+    public boolean isHiveEnabled() {
+        Boolean enabled = getHiveConfig().getEnabled();
+        return enabled != null && enabled;
+    }
+
+    public boolean isHiveSdlcCurrentContextEnabled() {
+        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getCurrentContextEnabled());
+    }
+
+    public boolean isHiveSdlcCardReadEnabled() {
+        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getCardReadEnabled());
+    }
+
+    public boolean isHiveSdlcCardSearchEnabled() {
+        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getCardSearchEnabled());
+    }
+
+    public boolean isHiveSdlcThreadMessageEnabled() {
+        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getThreadMessageEnabled());
+    }
+
+    public boolean isHiveSdlcReviewRequestEnabled() {
+        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getReviewRequestEnabled());
+    }
+
+    public boolean isHiveSdlcFollowupCardCreateEnabled() {
+        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getFollowupCardCreateEnabled());
+    }
+
+    public boolean isHiveSdlcLifecycleSignalEnabled() {
+        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getLifecycleSignalEnabled());
+    }
+
+    private boolean isHiveSdlcFunctionEnabled(Boolean value) {
+        return isHiveEnabled() && (value != null ? value : DEFAULT_HIVE_SDLC_FUNCTION_ENABLED);
     }
 
     public RuntimeConfig.SelfEvolvingConfig getSelfEvolvingConfig() {
@@ -1927,6 +1986,7 @@ public class RuntimeConfigService {
         if (cfg.getHive().getManagedByProperties() == null) {
             cfg.getHive().setManagedByProperties(DEFAULT_HIVE_MANAGED_BY_PROPERTIES);
         }
+        normalizeHiveSdlcConfig(cfg.getHive());
         normalizeSelfEvolvingConfig(cfg);
         if (!Integer.valueOf(DEFAULT_MEMORY_VERSION).equals(cfg.getMemory().getVersion())) {
             cfg.getMemory().setVersion(DEFAULT_MEMORY_VERSION);
@@ -1973,6 +2033,34 @@ public class RuntimeConfigService {
         }
         normalizeMemoryConfig(cfg.getMemory());
         normalizeSecretFlags(cfg);
+    }
+
+    private void normalizeHiveSdlcConfig(RuntimeConfig.HiveConfig hiveConfig) {
+        if (hiveConfig.getSdlc() == null) {
+            hiveConfig.setSdlc(new RuntimeConfig.HiveSdlcConfig());
+        }
+        RuntimeConfig.HiveSdlcConfig sdlcConfig = hiveConfig.getSdlc();
+        if (sdlcConfig.getCurrentContextEnabled() == null) {
+            sdlcConfig.setCurrentContextEnabled(DEFAULT_HIVE_SDLC_FUNCTION_ENABLED);
+        }
+        if (sdlcConfig.getCardReadEnabled() == null) {
+            sdlcConfig.setCardReadEnabled(DEFAULT_HIVE_SDLC_FUNCTION_ENABLED);
+        }
+        if (sdlcConfig.getCardSearchEnabled() == null) {
+            sdlcConfig.setCardSearchEnabled(DEFAULT_HIVE_SDLC_FUNCTION_ENABLED);
+        }
+        if (sdlcConfig.getThreadMessageEnabled() == null) {
+            sdlcConfig.setThreadMessageEnabled(DEFAULT_HIVE_SDLC_FUNCTION_ENABLED);
+        }
+        if (sdlcConfig.getReviewRequestEnabled() == null) {
+            sdlcConfig.setReviewRequestEnabled(DEFAULT_HIVE_SDLC_FUNCTION_ENABLED);
+        }
+        if (sdlcConfig.getFollowupCardCreateEnabled() == null) {
+            sdlcConfig.setFollowupCardCreateEnabled(DEFAULT_HIVE_SDLC_FUNCTION_ENABLED);
+        }
+        if (sdlcConfig.getLifecycleSignalEnabled() == null) {
+            sdlcConfig.setLifecycleSignalEnabled(DEFAULT_HIVE_SDLC_FUNCTION_ENABLED);
+        }
     }
 
     private void normalizeSelfEvolvingConfig(RuntimeConfig cfg) {

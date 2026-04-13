@@ -26,5 +26,8 @@ public class HiveControlCommandEnvelope {
     private String runId;
     private String body;
     private HiveInspectionRequestBody inspection;
+    private String policyGroupId;
+    private Integer targetVersion;
+    private String checksum;
     private Instant createdAt;
 }

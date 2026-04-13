@@ -27,7 +27,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -72,7 +71,7 @@ class PlanServiceTest {
                     if (json == null || json.isBlank()) {
                         return new ArrayList<>();
                     }
-                    return new ArrayList<>(objectMapper.readValue(json, new TypeReference<List<Plan>>() {
+                    return new ArrayList<>(objectMapper.readValue(json, new TypeReference<>() {
                     }));
                 } catch (Exception exception) {
                     throw new IllegalStateException("Failed to load plans", exception);
