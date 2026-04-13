@@ -76,6 +76,8 @@ class HiveSdlcToolsTest {
         assertEquals("cmd-1", data.get("commandId"));
         assertEquals("run-1", data.get("runId"));
         assertEquals("golem-1", data.get("golemId"));
+        assertTrue(result.getOutput().contains("\"threadId\" : \"thread-1\""));
+        assertTrue(result.getOutput().contains("\"cardId\" : \"card-1\""));
     }
 
     @Test
@@ -87,6 +89,9 @@ class HiveSdlcToolsTest {
 
         assertTrue(result.isSuccess());
         assertEquals("card-1", ((HiveCardDetail) result.getData()).id());
+        assertTrue(result.getOutput().contains("\"title\" : \"Title\""));
+        assertTrue(result.getOutput().contains("\"prompt\" : \"Prompt\""));
+        assertTrue(result.getOutput().contains("\"threadId\" : \"thread-1\""));
     }
 
     @Test
@@ -98,6 +103,9 @@ class HiveSdlcToolsTest {
         ToolResult result = tool.execute(Map.of("board_id", "board-1", "kind", "task")).join();
 
         assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("\"items\""));
+        assertTrue(result.getOutput().contains("\"id\" : \"card-1\""));
+        assertTrue(result.getOutput().contains("\"title\" : \"Title\""));
         verify(hiveSdlcService).searchCards(argThat(request -> "board-1".equals(request.boardId())
                 && "task".equals(request.kind())));
     }
@@ -112,6 +120,8 @@ class HiveSdlcToolsTest {
         ToolResult result = tool.execute(Map.of("body", "Done")).join();
 
         assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("\"id\" : \"msg-1\""));
+        assertTrue(result.getOutput().contains("\"body\" : \"Done\""));
         verify(hiveSdlcService).postThreadMessage("thread-1", "Done");
     }
 
@@ -124,6 +134,8 @@ class HiveSdlcToolsTest {
         ToolResult result = tool.execute(Map.of("required_review_count", 1)).join();
 
         assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("\"id\" : \"card-1\""));
+        assertTrue(result.getOutput().contains("\"title\" : \"Title\""));
         verify(hiveSdlcService).requestReview(argThat(cardId -> "card-1".equals(cardId)),
                 argThat(request -> request.requiredReviewCount() == 1));
     }
@@ -140,6 +152,8 @@ class HiveSdlcToolsTest {
                 "inherit_current_card", true)).join();
 
         assertTrue(result.isSuccess());
+        assertTrue(result.getOutput().contains("\"id\" : \"card-2\""));
+        assertTrue(result.getOutput().contains("\"title\" : \"Title\""));
         verify(hiveSdlcService).createCard(argThat(request -> "card-1".equals(request.parentCardId())
                 && "Follow-up".equals(request.title())));
     }

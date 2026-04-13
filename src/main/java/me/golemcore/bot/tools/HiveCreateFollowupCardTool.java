@@ -94,8 +94,9 @@ public class HiveCreateFollowupCardTool implements ToolComponent {
                 return HiveSdlcToolSupport.executionFailedFuture("Hive follow-up card prompt is required");
             }
             HiveCardDetail card = hiveSdlcService.createCard(buildRequest(context, parameters, title, prompt));
-            return CompletableFuture.completedFuture(ToolResult.success("Hive follow-up card created: " + card.id(),
-                    card));
+            return CompletableFuture
+                    .completedFuture(HiveSdlcToolSupport.visibleSuccess("Hive follow-up card created: " + card.id(),
+                            card));
         } catch (IllegalStateException exception) {
             return HiveSdlcToolSupport.failedFuture(exception.getMessage());
         } catch (RuntimeException exception) {

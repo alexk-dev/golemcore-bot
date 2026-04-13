@@ -57,7 +57,7 @@ public class HiveCurrentContextTool implements ToolComponent {
         try {
             AgentContext context = HiveSdlcToolSupport.requireHiveContext();
             Map<String, Object> data = HiveSdlcToolSupport.currentContextData(context);
-            return CompletableFuture.completedFuture(ToolResult.success("Hive context loaded", data));
+            return CompletableFuture.completedFuture(HiveSdlcToolSupport.visibleSuccess("Hive context loaded", data));
         } catch (IllegalStateException exception) {
             return HiveSdlcToolSupport.failedFuture(exception.getMessage());
         }

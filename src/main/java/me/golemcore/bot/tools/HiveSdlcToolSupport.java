@@ -18,6 +18,8 @@
 
 package me.golemcore.bot.tools;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +31,8 @@ import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 
 final class HiveSdlcToolSupport {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private HiveSdlcToolSupport() {
     }
@@ -48,6 +52,21 @@ final class HiveSdlcToolSupport {
 
     static CompletableFuture<ToolResult> executionFailedFuture(String message) {
         return CompletableFuture.completedFuture(ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, message));
+    }
+
+    static ToolResult visibleSuccess(String summary, Object data) {
+        if (data == null) {
+            return ToolResult.success(summary);
+        }
+        return ToolResult.success(summary + "\n\n" + renderJson(data), data);
+    }
+
+    static String renderJson(Object data) {
+        try {
+            return OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(data);
+        } catch (JsonProcessingException exception) {
+            return String.valueOf(data);
+        }
     }
 
     static String stringParam(Map<String, Object> parameters, String name) {

@@ -77,7 +77,7 @@ public class HiveSearchCardsTool implements ToolComponent {
                     HiveSdlcToolSupport.stringParam(parameters, "objective_id"),
                     HiveSdlcToolSupport.booleanParam(parameters, "include_archived"));
             List<HiveCardSummary> cards = hiveSdlcService.searchCards(request);
-            return CompletableFuture.completedFuture(ToolResult.success(
+            return CompletableFuture.completedFuture(HiveSdlcToolSupport.visibleSuccess(
                     "Hive cards found: " + cards.size(),
                     Map.of("items", cards)));
         } catch (IllegalStateException exception) {

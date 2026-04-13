@@ -141,13 +141,14 @@ public class HiveLifecycleSignalTool implements ToolComponent {
                 new HiveLifecycleSignalRequest(signalType, summary, details, blockerCode, evidenceRefs,
                         Instant.now(clock)),
                 metadata);
-        return CompletableFuture.completedFuture(ToolResult.success(
+        Map<String, Object> resultData = Map.of(
+                "signalType", signalType,
+                "summary", summary,
+                "threadId", metadata.get(ContextAttributes.HIVE_THREAD_ID),
+                "cardId", metadata.get(ContextAttributes.HIVE_CARD_ID));
+        return CompletableFuture.completedFuture(HiveSdlcToolSupport.visibleSuccess(
                 "Hive lifecycle signal emitted: " + signalType,
-                Map.of(
-                        "signalType", signalType,
-                        "summary", summary,
-                        "threadId", metadata.get(ContextAttributes.HIVE_THREAD_ID),
-                        "cardId", metadata.get(ContextAttributes.HIVE_CARD_ID))));
+                resultData));
     }
 
     private boolean isHiveContext(AgentContext context) {

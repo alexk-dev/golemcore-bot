@@ -77,8 +77,9 @@ public class HiveRequestReviewTool implements ToolComponent {
                     HiveSdlcToolSupport.stringParam(parameters, "reviewer_team_id"),
                     HiveSdlcToolSupport.integerParam(parameters, "required_review_count"));
             HiveCardDetail card = hiveSdlcService.requestReview(cardId, request);
-            return CompletableFuture.completedFuture(ToolResult.success("Hive review requested for card: " + card.id(),
-                    card));
+            return CompletableFuture
+                    .completedFuture(HiveSdlcToolSupport.visibleSuccess("Hive review requested for card: " + card.id(),
+                            card));
         } catch (IllegalStateException exception) {
             return HiveSdlcToolSupport.failedFuture(exception.getMessage());
         } catch (RuntimeException exception) {

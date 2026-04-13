@@ -66,7 +66,8 @@ public class HiveGetCardTool implements ToolComponent {
                 return HiveSdlcToolSupport.executionFailedFuture("Hive card_id is required");
             }
             HiveCardDetail card = hiveSdlcService.getCard(cardId);
-            return CompletableFuture.completedFuture(ToolResult.success("Hive card loaded: " + card.id(), card));
+            return CompletableFuture
+                    .completedFuture(HiveSdlcToolSupport.visibleSuccess("Hive card loaded: " + card.id(), card));
         } catch (IllegalStateException exception) {
             return HiveSdlcToolSupport.failedFuture(exception.getMessage());
         } catch (RuntimeException exception) {

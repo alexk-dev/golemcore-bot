@@ -76,7 +76,7 @@ public class HivePostThreadMessageTool implements ToolComponent {
                 return HiveSdlcToolSupport.executionFailedFuture("Hive thread message body is required");
             }
             HiveThreadMessage message = hiveSdlcService.postThreadMessage(threadId, body);
-            return CompletableFuture.completedFuture(ToolResult.success(
+            return CompletableFuture.completedFuture(HiveSdlcToolSupport.visibleSuccess(
                     "Hive thread message posted: " + message.id(),
                     message));
         } catch (IllegalStateException exception) {
