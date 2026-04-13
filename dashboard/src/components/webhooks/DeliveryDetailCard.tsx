@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert, Badge, Button, Card, Col, Row, Spinner } from 'react-bootstrap';
+import { Alert, Badge, Button, Card, Col, Row, Spinner } from '../ui/tailwind-components';
 import type { WebhookDeliveryDetail } from '../../api/webhookDeliveries';
 import {
   webhookStatusBadgeVariant,

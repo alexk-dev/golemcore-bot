@@ -6,7 +6,7 @@ import {
   InputGroup,
   Modal,
   Table,
-} from 'react-bootstrap';
+} from '../../components/ui/tailwind-components';
 
 import type {
   PluginSettingsAction,

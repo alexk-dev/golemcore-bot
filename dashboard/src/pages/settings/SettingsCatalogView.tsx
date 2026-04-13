@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
+import { Badge, Button, Card, Col, Form, InputGroup, Row } from '../../components/ui/tailwind-components';
 import { FiSearch, FiX } from 'react-icons/fi';
 
 import type { SettingsSectionMeta } from './settingsCatalog';

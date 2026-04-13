@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert } from 'react-bootstrap';
+import { Alert } from '../ui/tailwind-components';
 import type { WebhookValidationResult } from '../../api/webhooks';
 
 interface ValidationIssuesAlertProps {

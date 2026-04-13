@@ -4,7 +4,7 @@ import type { SkillMarketplaceCatalogResponse } from '../../api/skills';
 import { Alert } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Form, InputGroup } from '../../components/ui/bootstrap-form';
+import { Form, InputGroup } from '../../components/ui/form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/field';
 import { cn } from '../../lib/utils';

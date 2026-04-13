@@ -1,5 +1,5 @@
 import { type ReactElement, useState } from 'react';
-import { Button, Col, Form, InputGroup, Modal, Row } from 'react-bootstrap';
+import { Button, Col, Form, InputGroup, Modal, Row } from '../ui/tailwind-components';
 import type { TestWebhookDeliveryRequest } from '../../api/webhookDeliveries';
 
 interface TestDeliveryModalProps {

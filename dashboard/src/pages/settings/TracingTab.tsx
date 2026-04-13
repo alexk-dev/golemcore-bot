@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
-import { Button, Card, Col, Form, Row } from 'react-bootstrap';
+import { Button, Card, Col, Form, Row } from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 
 import type { TracingConfig } from '../../api/settingsTypes';

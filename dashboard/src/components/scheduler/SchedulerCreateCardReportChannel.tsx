@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Form } from 'react-bootstrap';
+import { Form } from '../ui/tailwind-components';
 
 
 export interface ReportChannelOption {

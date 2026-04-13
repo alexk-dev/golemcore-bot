@@ -4,7 +4,7 @@ import {
   Card,
   Form,
   Spinner,
-} from 'react-bootstrap';
+} from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';

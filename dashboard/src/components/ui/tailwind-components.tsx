@@ -1,9 +1,9 @@
 import * as React from 'react';
-import { Alert as AlertPrimitive, type AlertProps as AlertPrimitiveProps } from '../components/ui/alert';
-import type { BadgeProps as BadgePrimitiveProps } from '../components/ui/badge';
-import { Button as ButtonPrimitive, type ButtonProps as ButtonPrimitiveProps } from '../components/ui/button';
-import { Card as CardPrimitive, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Form, InputGroup } from '../components/ui/bootstrap-form';
+import { Alert as AlertPrimitive, type AlertProps as AlertPrimitiveProps } from './alert';
+import type { BadgeProps as BadgePrimitiveProps } from './badge';
+import { Button as ButtonPrimitive, type ButtonProps as ButtonPrimitiveProps } from './button';
+import { Card as CardPrimitive, CardContent, CardHeader, CardTitle } from './card';
+import { Form, InputGroup } from './form';
 import {
   Badge,
   ButtonGroup,
@@ -15,9 +15,9 @@ import {
   Row,
   Spinner,
   Table,
-} from '../components/ui/bootstrap-layout';
-import { Modal, Offcanvas } from '../components/ui/bootstrap-overlay';
-import { cn } from './utils';
+} from './layout';
+import { Modal, Offcanvas } from './overlay';
+import { cn } from '../../lib/utils';
 
 function mapButtonVariant(variant?: string): ButtonPrimitiveProps['variant'] {
   if (variant === 'secondary') { return 'secondary'; }
@@ -101,7 +101,7 @@ interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   pill?: boolean;
 }
 
-function BootstrapBadge({ className, bg, text, pill, ...props }: BadgeProps): React.ReactElement {
+function TailwindBadge({ className, bg, text, pill, ...props }: BadgeProps): React.ReactElement {
   return <Badge className={cn('badge', pill && 'rounded-circle', className)} variant={mapBadgeVariant(bg, text)} {...props} />;
 }
 
@@ -146,7 +146,7 @@ function ProgressBar({ className, now = 0, variant, ...props }: ProgressBarProps
 
 export {
   Alert,
-  BootstrapBadge as Badge,
+  TailwindBadge as Badge,
   Button,
   ButtonGroup,
   Card,

@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useState, type ReactElement } from 'react';
-import { Card, Button, Spinner, Placeholder } from 'react-bootstrap';
+import { Card, Button, Spinner, Placeholder } from '../components/ui/tailwind-components';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   useSettings, useRuntimeConfig, useUpdateRuntimeConfig,

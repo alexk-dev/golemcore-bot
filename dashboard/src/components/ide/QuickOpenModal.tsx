@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactEle
 import { FiSearch, FiStar } from 'react-icons/fi';
 import type { QuickOpenItem } from '../../hooks/useIdeQuickOpen';
 import { Badge } from '../ui/badge';
-import { Modal } from '../ui/bootstrap-overlay';
+import { Modal } from '../ui/overlay';
 import { Input } from '../ui/field';
 import { cn } from '../../lib/utils';
 

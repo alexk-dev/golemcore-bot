@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Col, Form, Row } from 'react-bootstrap';
+import { Col, Form, Row } from '../../../components/ui/tailwind-components';
 
 import type { UpdateEmbeddings } from './SelfEvolvingTacticSearchEmbeddingsSections';
 

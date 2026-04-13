@@ -3,7 +3,7 @@ import { FiArrowRight, FiSearch } from 'react-icons/fi';
 import type { DiscoveredProviderModel } from '../../../api/models';
 import { Alert } from '../../../components/ui/alert';
 import { Badge } from '../../../components/ui/badge';
-import { Modal } from '../../../components/ui/bootstrap-overlay';
+import { Modal } from '../../../components/ui/overlay';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/field';
 import { useDiscoveredProviderModels } from '../../../hooks/useModels';

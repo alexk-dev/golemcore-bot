@@ -1,5 +1,5 @@
 import { type ReactElement, useMemo, useState } from 'react';
-import { Card, Row, Col, ButtonGroup, Button, Spinner, Placeholder } from 'react-bootstrap';
+import { Card, Row, Col, ButtonGroup, Button, Spinner, Placeholder } from '../components/ui/tailwind-components';
 import { Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useUsageStats, useUsageByModel } from '../hooks/useUsage';
@@ -46,18 +46,18 @@ export default function AnalyticsPage(): ReactElement {
     };
 
       return {
-        axisColor: readVar('--bs-secondary-color', '#6c757d'),
-        tooltipBg: readVar('--bs-body-bg', '#ffffff'),
-        tooltipBorder: readVar('--bs-border-color', '#dee2e6'),
-        tooltipText: readVar('--bs-body-color', '#212529'),
-        primary: readVar('--bs-primary', '#0d6efd'),
+        axisColor: readVar('--gc-secondary-color', '#6c757d'),
+        tooltipBg: readVar('--gc-body-bg', '#ffffff'),
+        tooltipBorder: readVar('--gc-border-color', '#dee2e6'),
+        tooltipText: readVar('--gc-body-color', '#212529'),
+        primary: readVar('--gc-primary', '#0d6efd'),
         fills: [
-        readVar('--bs-primary', '#0d6efd'),
-        readVar('--bs-success', '#198754'),
-        readVar('--bs-warning', '#ffc107'),
-        readVar('--bs-danger', '#dc3545'),
-        readVar('--bs-info', '#0dcaf0'),
-        readVar('--bs-secondary', '#6c757d'),
+        readVar('--gc-primary', '#0d6efd'),
+        readVar('--gc-success', '#198754'),
+        readVar('--gc-warning', '#ffc107'),
+        readVar('--gc-danger', '#dc3545'),
+        readVar('--gc-info', '#0dcaf0'),
+        readVar('--gc-secondary', '#6c757d'),
       ],
     };
   }, []);

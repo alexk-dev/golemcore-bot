@@ -1,5 +1,5 @@
 import type { KeyboardEventHandler, MutableRefObject, ReactElement } from 'react';
-import { Card } from 'react-bootstrap';
+import { Card } from '../ui/tailwind-components';
 import { formatCompactTimestamp, levelVariant } from './logUtils';
 import type { LogsViewRow } from './logTypes';
 

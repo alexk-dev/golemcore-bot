@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button, Card, Form } from 'react-bootstrap';
+import { Button, Card, Form } from '../ui/tailwind-components';
 import type { WebhookDeliveryStatus } from '../../api/webhookDeliveries';
 import {
   DELIVERY_STATUSES,

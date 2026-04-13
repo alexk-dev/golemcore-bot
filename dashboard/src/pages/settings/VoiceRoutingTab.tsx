@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Col, Form, Row } from 'react-bootstrap';
+import { Badge, Button, Card, Col, Form, Row } from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import HelpTip from '../../components/common/HelpTip';

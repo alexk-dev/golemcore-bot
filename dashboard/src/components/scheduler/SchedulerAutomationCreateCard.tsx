@@ -1,5 +1,5 @@
 import { type ChangeEvent, type ReactElement, useState } from 'react';
-import { Button, Card, Form } from 'react-bootstrap';
+import { Button, Card, Form } from '../ui/tailwind-components';
 import type { CreateGoalRequest, CreateTaskRequest, Goal } from '../../api/goals';
 import { getExplicitModelTierOptions } from '../../lib/modelTiers';
 

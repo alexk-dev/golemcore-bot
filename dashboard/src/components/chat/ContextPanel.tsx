@@ -1,4 +1,4 @@
-import { Badge, Form, ProgressBar } from 'react-bootstrap';
+import { Badge, Form, ProgressBar } from '../ui/tailwind-components';
 import { getExplicitModelTierOptions, getModelTierMeta } from '../../lib/modelTiers';
 import { useContextPanelStore, type FileChangeStat } from '../../store/contextPanelStore';
 import PlanControlPanel from './PlanControlPanel';

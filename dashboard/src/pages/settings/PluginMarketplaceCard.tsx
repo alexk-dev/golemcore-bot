@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert, Badge, Button, Card, Spinner } from 'react-bootstrap';
+import { Alert, Badge, Button, Card, Spinner } from '../../components/ui/tailwind-components';
 import type { IconType } from 'react-icons';
 import {
   FiCheckCircle,

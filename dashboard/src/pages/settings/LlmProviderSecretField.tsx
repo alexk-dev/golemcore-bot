@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Badge, Button, Form, InputGroup } from 'react-bootstrap';
+import { Badge, Button, Form, InputGroup } from '../../components/ui/tailwind-components';
 
 import type { LlmProviderConfig } from '../../api/settingsTypes';
 import { toNullableString } from './llmProvidersSupport';

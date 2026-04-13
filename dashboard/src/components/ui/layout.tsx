@@ -328,8 +328,8 @@ function Placeholder({ as = 'span', animation, className, xs, children, ...props
   );
 }
 
-function BootstrapBadge({ className, variant, children, ...props }: React.ComponentProps<typeof Badge>): React.ReactElement {
+function TailwindBadge({ className, variant, children, ...props }: React.ComponentProps<typeof Badge>): React.ReactElement {
   return <Badge className={className} variant={variant} {...props}>{children}</Badge>;
 }
 
-export { BootstrapBadge as Badge, ButtonGroup, Col, Container, ListGroup, Nav, Placeholder, Row, Spinner, Table };
+export { TailwindBadge as Badge, ButtonGroup, Col, Container, ListGroup, Nav, Placeholder, Row, Spinner, Table };

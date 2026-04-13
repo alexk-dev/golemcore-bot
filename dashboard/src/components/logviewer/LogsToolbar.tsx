@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Badge, Button, ButtonGroup } from 'react-bootstrap';
+import { Badge, Button, ButtonGroup } from '../ui/tailwind-components';
 
 export interface LogsToolbarProps {
   connected: boolean;

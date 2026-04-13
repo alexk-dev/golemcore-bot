@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Col, Row } from 'react-bootstrap';
+import { Col, Row } from '../ui/tailwind-components';
 
 import type {
   SelfEvolvingArtifactCatalogEntry,

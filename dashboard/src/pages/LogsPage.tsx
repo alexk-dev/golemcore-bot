@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert, Col, Row, Spinner } from 'react-bootstrap';
+import { Alert, Col, Row, Spinner } from '../components/ui/tailwind-components';
 import { LogsDetailsCard } from '../components/logviewer/LogsDetailsCard';
 import { LogsFilters } from '../components/logviewer/LogsFilters';
 import { LogsListCard } from '../components/logviewer/LogsListCard';

@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Badge, Card } from 'react-bootstrap';
+import { Badge, Card } from '../ui/tailwind-components';
 import type { WebhookDeliverySummary } from '../../api/webhookDeliveries';
 import {
   formatWebhookTimestamp,

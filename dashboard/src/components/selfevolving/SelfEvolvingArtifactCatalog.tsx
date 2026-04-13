@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Badge, Button, Card, ListGroup } from 'react-bootstrap';
+import { Badge, Button, Card, ListGroup } from '../ui/tailwind-components';
 
 import type { SelfEvolvingArtifactCatalogEntry } from '../../api/selfEvolving';
 

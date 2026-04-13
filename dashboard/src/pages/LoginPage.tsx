@@ -1,6 +1,6 @@
 import { type ReactElement, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Container } from 'react-bootstrap';
+import { Card, Container } from '../components/ui/tailwind-components';
 import { getMfaStatus, login } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
 import LoginForm from '../components/auth/LoginForm';

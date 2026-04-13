@@ -1,5 +1,5 @@
 import { type Dispatch, type ReactElement, type SetStateAction, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Col, Form, Nav, Row } from 'react-bootstrap';
+import { Alert, Button, Card, Col, Form, Nav, Row } from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 
 import type { SelfEvolvingConfig } from '../../api/settingsTypes';

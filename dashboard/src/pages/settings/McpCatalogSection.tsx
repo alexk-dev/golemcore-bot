@@ -1,5 +1,5 @@
 import { type ReactElement, useState } from 'react';
-import { Badge, Button, Card, Form, InputGroup, Table } from 'react-bootstrap';
+import { Badge, Button, Card, Form, InputGroup, Table } from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
 import ConfirmModal from '../../components/common/ConfirmModal';

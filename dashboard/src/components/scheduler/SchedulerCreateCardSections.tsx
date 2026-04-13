@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button, Form } from 'react-bootstrap';
+import { Button, Form } from '../ui/tailwind-components';
 import type { SchedulerFrequency, SchedulerMode, SchedulerTargetType } from './schedulerTypes';
 import { normalizeTimeInput, parseLimitInput, type SchedulerTargetOption } from './schedulerFormUtils';
 

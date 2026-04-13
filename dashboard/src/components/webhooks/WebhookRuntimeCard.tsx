@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
+import { Button, Card, Col, Form, InputGroup, Row } from '../ui/tailwind-components';
 import { FiEye, FiEyeOff } from 'react-icons/fi';
 import type { WebhookConfig } from '../../api/webhooks';
 

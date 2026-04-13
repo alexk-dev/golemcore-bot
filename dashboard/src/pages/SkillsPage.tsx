@@ -6,7 +6,7 @@ import type { SkillInfo, SkillUpdateRequest } from '../api/skills';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/field';
-import { Modal } from '../components/ui/bootstrap-overlay';
+import { Modal } from '../components/ui/overlay';
 import { Card, CardContent } from '../components/ui/card';
 import { cn } from '../lib/utils';
 import {

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import type { TreeActionState } from '../../hooks/useIdeTreeActions';
 import { Button } from '../ui/button';
-import { Modal } from '../ui/bootstrap-overlay';
+import { Modal } from '../ui/overlay';
 import { Input } from '../ui/field';
 
 export interface TreeActionModalProps {

@@ -1,5 +1,5 @@
 import { type ReactElement, useMemo, useState } from 'react';
-import { Alert, Button, Card, Spinner } from 'react-bootstrap';
+import { Alert, Button, Card, Spinner } from '../ui/tailwind-components';
 import toast from 'react-hot-toast';
 import { FiActivity } from 'react-icons/fi';
 import type {

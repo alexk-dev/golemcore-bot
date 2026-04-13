@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { Button } from '../ui/button';
-import { Modal } from '../ui/bootstrap-overlay';
+import { Modal } from '../ui/overlay';
 
 export interface UnsavedChangesModalProps {
   show: boolean;

@@ -1,5 +1,5 @@
 import { type ChangeEvent, type ReactElement, useEffect, useState } from 'react';
-import { Button, Form, Modal } from 'react-bootstrap';
+import { Button, Form, Modal } from '../ui/tailwind-components';
 import type {
   Goal,
   GoalStatus,

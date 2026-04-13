@@ -1,5 +1,5 @@
 import { type ReactElement, useState } from 'react';
-import { Button, Card, Form, Table } from 'react-bootstrap';
+import { Button, Card, Form, Table } from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 import type { ShellEnvironmentVariable } from '../../api/settingsTypes';
 import HelpTip from '../../components/common/HelpTip';
