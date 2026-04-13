@@ -23,14 +23,21 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.TraceContextSupport;
 import me.golemcore.bot.domain.service.TraceNamingSupport;
+import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.security.InputSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +45,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,13 +54,22 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Inbound HTTP webhook controller (OpenClaw-style, WebFlux).
@@ -90,7 +107,11 @@ public class WebhookController {
     private final WebhookChannelAdapter channelAdapter;
     private final WebhookPayloadTransformer transformer;
     private final WebhookDeliveryTracker deliveryTracker;
+    private final WebhookResponseSchemaService responseSchemaService;
+    private final MemoryPresetService memoryPresetService;
     private final ApplicationEventPublisher eventPublisher;
+    private final SessionPort sessionPort;
+    private final TraceService traceService;
     private final InputSanitizer inputSanitizer;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -128,13 +149,23 @@ public class WebhookController {
             String chatId = request.getChatId() != null ? request.getChatId() : "webhook:default";
             String sanitizedText = inputSanitizer.sanitize(request.getText());
             String safeText = wrapExternal(sanitizedText);
+            String memoryPreset;
+            try {
+                memoryPreset = resolveWebhookMemoryPreset(null, config);
+            } catch (IllegalArgumentException e) {
+                return badRequest(e.getMessage());
+            }
 
-            Message message = buildMessage(chatId, safeText, request.getMetadata(), TraceNamingSupport.WEBHOOK_WAKE);
+            Map<String, Object> metadata = new HashMap<>(
+                    request.getMetadata() != null ? request.getMetadata() : Map.of());
+            addMemoryPresetMetadata(metadata, memoryPreset);
+
+            Message message = buildMessage(chatId, safeText, metadata, TraceNamingSupport.WEBHOOK_WAKE);
             eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
             log.info("[Webhook] Wake event accepted for chatId={}", chatId);
             return ResponseEntity.ok(WebhookResponse.accepted(chatId));
-        });
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     // ==================== /agent ====================
@@ -145,7 +176,7 @@ public class WebhookController {
      * adapter.
      */
     @PostMapping("/agent")
-    public Mono<ResponseEntity<WebhookResponse>> agent(
+    public Mono<ResponseEntity<?>> agent(
             @RequestBody(required = false) byte[] body,
             @RequestHeader HttpHeaders headers) {
 
@@ -178,9 +209,27 @@ public class WebhookController {
                     ? request.getTimeoutSeconds()
                     : config.getDefaultTimeoutSeconds();
             String modelTier;
+            String responseValidationModelTier;
+            String effectiveModelTier;
+            String memoryPreset;
             try {
                 modelTier = normalizeOptionalModelTier(request.getModel(), "'model'");
+                responseValidationModelTier = normalizeResponseValidationModelTier(
+                        request.getResponseJsonSchema(),
+                        request.getResponseValidationModelTier(),
+                        "'responseValidationModelTier'");
+                effectiveModelTier = resolveEffectiveWebhookModelTier(
+                        modelTier,
+                        request.getResponseJsonSchema(),
+                        responseValidationModelTier);
+                validateSynchronousResponseContract(
+                        request.isSyncResponse(),
+                        request.getResponseJsonSchema(),
+                        "'responseJsonSchema'");
+                memoryPreset = resolveWebhookMemoryPreset(request.getMemoryPreset(), config);
             } catch (IllegalArgumentException e) {
+                return badRequest(e.getMessage());
+            } catch (WebhookResponseSchemaService.SchemaProcessingException e) {
                 return badRequest(e.getMessage());
             }
 
@@ -191,9 +240,11 @@ public class WebhookController {
                     request.getMetadata() != null ? request.getMetadata() : Map.of());
             metadata.put("webhook.runId", runId);
             metadata.put("webhook.timeoutSeconds", timeout);
-            if (modelTier != null) {
-                metadata.put("webhook.modelTier", modelTier);
+            addMemoryPresetMetadata(metadata, memoryPreset);
+            if (effectiveModelTier != null) {
+                metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, effectiveModelTier);
             }
+            addResponseContractMetadata(metadata, request.getResponseJsonSchema(), responseValidationModelTier);
             if (request.isDeliver()) {
                 metadata.put(ContextAttributes.WEBHOOK_DELIVER, true);
                 metadata.put(ContextAttributes.WEBHOOK_DELIVER_CHANNEL, request.getChannel());
@@ -211,19 +262,35 @@ public class WebhookController {
                         runId,
                         chatId,
                         request.getCallbackUrl(),
-                        modelTier);
+                        effectiveModelTier);
             }
 
-            channelAdapter.registerPendingRun(chatId, runId, request.getCallbackUrl(), modelTier, deliveryId);
+            CompletableFuture<String> responseFuture = channelAdapter.registerPendingRun(
+                    chatId,
+                    runId,
+                    request.getCallbackUrl(),
+                    effectiveModelTier,
+                    deliveryId);
 
             Message message = buildMessage(chatId, safeMessage, metadata, TraceNamingSupport.WEBHOOK_AGENT);
             eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
             log.info("[Webhook] Agent run accepted: runId={}, chatId={}, name={}",
                     runId, chatId, request.getName());
+            if (request.isSyncResponse()) {
+                return buildSynchronousResponse(
+                        responseFuture,
+                        runId,
+                        chatId,
+                        timeout,
+                        request.getResponseJsonSchema(),
+                        responseValidationModelTier,
+                        effectiveModelTier,
+                        message);
+            }
             return ResponseEntity.status(HttpStatus.ACCEPTED)
                     .body(WebhookResponse.accepted(runId, chatId));
-        });
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     // ==================== /{name} (custom mapping) ====================
@@ -234,7 +301,7 @@ public class WebhookController {
      * or agent flow.
      */
     @PostMapping("/{name}")
-    public Mono<ResponseEntity<WebhookResponse>> customHook(
+    public Mono<ResponseEntity<?>> customHook(
             @PathVariable String name,
             @RequestBody(required = false) byte[] body,
             @RequestHeader HttpHeaders headers) {
@@ -268,21 +335,28 @@ public class WebhookController {
             if (ACTION_AGENT.equals(mapping.getAction())) {
                 try {
                     return dispatchAsAgent(mapping, safeText, config);
-                } catch (IllegalArgumentException e) {
+                } catch (IllegalArgumentException | WebhookResponseSchemaService.SchemaProcessingException e) {
                     return badRequest(e.getMessage());
                 }
             }
 
-            return dispatchAsWake(mapping, safeText);
-        });
+            try {
+                return dispatchAsWake(mapping, safeText, config);
+            } catch (IllegalArgumentException e) {
+                return badRequest(e.getMessage());
+            }
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     // ==================== internal helpers ====================
 
-    private ResponseEntity<WebhookResponse> dispatchAsWake(UserPreferences.HookMapping mapping, String text) {
+    private ResponseEntity<WebhookResponse> dispatchAsWake(
+            UserPreferences.HookMapping mapping, String text, UserPreferences.WebhookConfig config) {
         String chatId = "hook:" + mapping.getName();
 
-        Map<String, Object> metadata = Map.of("webhook.mapping", mapping.getName());
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("webhook.mapping", mapping.getName());
+        addMemoryPresetMetadata(metadata, resolveWebhookMemoryPreset(null, config));
         Message message = buildMessage(chatId, text, metadata, TraceNamingSupport.WEBHOOK_WAKE);
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
@@ -290,35 +364,257 @@ public class WebhookController {
         return ResponseEntity.ok(WebhookResponse.accepted(chatId));
     }
 
-    private ResponseEntity<WebhookResponse> dispatchAsAgent(
+    private ResponseEntity<?> dispatchAsAgent(
             UserPreferences.HookMapping mapping, String text, UserPreferences.WebhookConfig config) {
 
         String runId = UUID.randomUUID().toString();
         String chatId = "hook:" + mapping.getName() + ":" + UUID.randomUUID();
         String modelTier = normalizeOptionalModelTier(mapping.getModel(), "Webhook mapping model");
+        String memoryPreset = resolveWebhookMemoryPreset(null, config);
+        String responseValidationModelTier = normalizeResponseValidationModelTier(
+                mapping.getResponseJsonSchema(),
+                mapping.getResponseValidationModelTier(),
+                "Webhook mapping responseValidationModelTier");
+        String effectiveModelTier = resolveEffectiveWebhookModelTier(
+                modelTier,
+                mapping.getResponseJsonSchema(),
+                responseValidationModelTier);
+        validateSynchronousResponseContract(
+                mapping.isSyncResponse(),
+                mapping.getResponseJsonSchema(),
+                "Webhook mapping responseJsonSchema");
 
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("webhook.runId", runId);
         metadata.put("webhook.mapping", mapping.getName());
         metadata.put("webhook.timeoutSeconds", config.getDefaultTimeoutSeconds());
-        if (modelTier != null) {
-            metadata.put("webhook.modelTier", modelTier);
+        addMemoryPresetMetadata(metadata, memoryPreset);
+        if (effectiveModelTier != null) {
+            metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, effectiveModelTier);
         }
+        addResponseContractMetadata(metadata, mapping.getResponseJsonSchema(), responseValidationModelTier);
         if (mapping.isDeliver()) {
             metadata.put(ContextAttributes.WEBHOOK_DELIVER, true);
             metadata.put(ContextAttributes.WEBHOOK_DELIVER_CHANNEL, mapping.getChannel());
             metadata.put(ContextAttributes.WEBHOOK_DELIVER_TO, mapping.getTo());
         }
 
-        channelAdapter.registerPendingRun(chatId, runId, null, modelTier, null);
+        CompletableFuture<String> responseFuture = channelAdapter.registerPendingRun(chatId, runId, null,
+                effectiveModelTier, null);
 
         Message message = buildMessage(chatId, text, metadata, TraceNamingSupport.WEBHOOK_AGENT);
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
 
         log.info("[Webhook] Custom agent accepted: mapping={}, runId={}, chatId={}",
                 mapping.getName(), runId, chatId);
+        if (mapping.isSyncResponse()) {
+            return buildSynchronousResponse(
+                    responseFuture,
+                    runId,
+                    chatId,
+                    config.getDefaultTimeoutSeconds(),
+                    mapping.getResponseJsonSchema(),
+                    responseValidationModelTier,
+                    effectiveModelTier,
+                    message);
+        }
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(WebhookResponse.accepted(runId, chatId));
+    }
+
+    private void addMemoryPresetMetadata(Map<String, Object> metadata, String memoryPreset) {
+        metadata.put(ContextAttributes.MEMORY_PRESET_ID, memoryPreset);
+    }
+
+    private void addResponseContractMetadata(Map<String, Object> metadata, Map<String, Object> responseJsonSchema,
+            String responseValidationModelTier) {
+        if (!WebhookResponseSchemaService.hasSchema(responseJsonSchema)) {
+            return;
+        }
+        metadata.put(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA, responseJsonSchema);
+        metadata.put(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT,
+                responseSchemaService.renderSchema(responseJsonSchema));
+        if (responseValidationModelTier != null && !responseValidationModelTier.isBlank()) {
+            metadata.put(ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER, responseValidationModelTier);
+        }
+    }
+
+    private void validateSynchronousResponseContract(boolean syncResponse, Map<String, Object> responseJsonSchema,
+            String fieldName) {
+        if (responseJsonSchema != null && responseJsonSchema.isEmpty()) {
+            throw new IllegalArgumentException(fieldName + " must not be empty");
+        }
+        if (!WebhookResponseSchemaService.hasSchema(responseJsonSchema)) {
+            return;
+        }
+        if (!syncResponse) {
+            throw new IllegalArgumentException(fieldName + " requires syncResponse=true");
+        }
+        responseSchemaService.validateSchemaDefinition(responseJsonSchema);
+    }
+
+    private ResponseEntity<?> buildSynchronousResponse(CompletableFuture<String> responseFuture, String runId,
+            String chatId, int timeoutSeconds, Map<String, Object> responseJsonSchema,
+            String responseValidationModelTier, String fallbackModelTier, Message triggerMessage) {
+        long startedNanos = System.nanoTime();
+        SchemaTraceSpan schemaTrace = null;
+        try {
+            String response = responseFuture.get(timeoutSeconds, TimeUnit.SECONDS);
+            if (!WebhookResponseSchemaService.hasSchema(responseJsonSchema)) {
+                return buildPlainTextSynchronousResponse(runId, chatId, response);
+            }
+
+            schemaTrace = startSchemaValidationTrace(
+                    triggerMessage, chatId, responseJsonSchema, responseValidationModelTier, fallbackModelTier);
+            WebhookResponseSchemaService.SchemaResult result = responseSchemaService.validateAndRepair(
+                    response,
+                    responseJsonSchema,
+                    responseValidationModelTier,
+                    fallbackModelTier,
+                    remainingBudget(timeoutSeconds, startedNanos));
+            finishSchemaValidationTrace(schemaTrace, TraceStatusCode.OK, null,
+                    Map.of("repair_attempts", result.repairAttempts()));
+            return ResponseEntity.ok()
+                    .header("X-Golemcore-Run-Id", runId)
+                    .header("X-Golemcore-Chat-Id", chatId)
+                    .header("X-Golemcore-Schema-Repair-Attempts", String.valueOf(result.repairAttempts()))
+                    .body(result.payload());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            channelAdapter.cancelPendingRun(chatId);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(WebhookResponse.error("Synchronous webhook response was interrupted"));
+        } catch (TimeoutException e) {
+            channelAdapter.cancelPendingRun(chatId);
+            return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
+                    .body(WebhookResponse.error("Synchronous webhook response timed out"));
+        } catch (CancellationException | ExecutionException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(WebhookResponse.error("Synchronous webhook response failed: " + e.getMessage()));
+        } catch (WebhookResponseSchemaService.SchemaTimeoutException e) {
+            finishSchemaValidationTrace(schemaTrace, TraceStatusCode.ERROR, e.getMessage(),
+                    Map.of("error_type", "timeout"));
+            return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
+                    .body(WebhookResponse.error("Synchronous webhook response timed out"));
+        } catch (WebhookResponseSchemaService.SchemaProcessingException e) {
+            finishSchemaValidationTrace(schemaTrace, TraceStatusCode.ERROR, e.getMessage(),
+                    Map.of("error_type", "schema_processing"));
+            return ResponseEntity.status(HttpStatusCode.valueOf(422))
+                    .body(WebhookResponse.error(e.getMessage()));
+        }
+    }
+
+    private Duration remainingBudget(int timeoutSeconds, long startedNanos) {
+        Duration timeout = Duration.ofSeconds(timeoutSeconds);
+        Duration elapsed = Duration.ofNanos(Math.max(0L, System.nanoTime() - startedNanos));
+        Duration remaining = timeout.minus(elapsed);
+        if (remaining.isNegative() || remaining.isZero()) {
+            throw new WebhookResponseSchemaService.SchemaTimeoutException("Synchronous webhook response timed out");
+        }
+        return remaining;
+    }
+
+    private ResponseEntity<String> buildPlainTextSynchronousResponse(String runId, String chatId, String response) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_PLAIN)
+                .header("X-Golemcore-Run-Id", runId)
+                .header("X-Golemcore-Chat-Id", chatId)
+                .body(response);
+    }
+
+    private SchemaTraceSpan startSchemaValidationTrace(Message triggerMessage, String chatId,
+            Map<String, Object> responseJsonSchema, String responseValidationModelTier, String fallbackModelTier) {
+        try {
+            TraceContext rootTrace = TraceContextSupport
+                    .readTraceContext(triggerMessage != null ? triggerMessage.getMetadata() : null);
+            if (rootTrace == null) {
+                return null;
+            }
+            AgentSession session = sessionPort.get(CHANNEL_TYPE + ":" + chatId).orElse(null);
+            if (session == null) {
+                return null;
+            }
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            attributes.put("schema.present", true);
+            attributes.put("schema.top_level_keys", responseJsonSchema.size());
+            putIfPresent(attributes, "validation.model.tier",
+                    resolveEffectiveValidationTier(responseValidationModelTier, fallbackModelTier));
+            putIfPresent(attributes, "response.model.tier", fallbackModelTier);
+
+            TraceContext span = traceService.startSpan(session, rootTrace,
+                    "webhook.response.schema.validation", TraceSpanKind.INTERNAL, Instant.now(), attributes);
+            traceService.appendEvent(session, span, "schema.validation.started", Instant.now(), attributes);
+            return new SchemaTraceSpan(session, span);
+        } catch (RuntimeException e) {
+            log.debug("[Webhook] Failed to start schema validation trace: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void finishSchemaValidationTrace(SchemaTraceSpan schemaTrace, TraceStatusCode statusCode,
+            String statusMessage, Map<String, Object> attributes) {
+        if (schemaTrace == null) {
+            return;
+        }
+        try {
+            Map<String, Object> eventAttributes = new LinkedHashMap<>(attributes != null ? attributes : Map.of());
+            eventAttributes.put("success", TraceStatusCode.OK.equals(statusCode));
+            traceService.appendEvent(
+                    schemaTrace.session(),
+                    schemaTrace.span(),
+                    TraceStatusCode.OK.equals(statusCode) ? "schema.validation.finished" : "schema.validation.failed",
+                    Instant.now(),
+                    eventAttributes);
+            traceService.finishSpan(schemaTrace.session(), schemaTrace.span(), statusCode, statusMessage,
+                    Instant.now());
+            sessionPort.save(schemaTrace.session());
+        } catch (RuntimeException e) {
+            log.debug("[Webhook] Failed to finish schema validation trace: {}", e.getMessage());
+        }
+    }
+
+    private String resolveEffectiveValidationTier(String responseValidationModelTier, String fallbackModelTier) {
+        if (responseValidationModelTier != null && !responseValidationModelTier.isBlank()) {
+            return responseValidationModelTier;
+        }
+        if (fallbackModelTier != null && !fallbackModelTier.isBlank()) {
+            return fallbackModelTier;
+        }
+        return "balanced";
+    }
+
+    private String resolveEffectiveWebhookModelTier(String modelTier, Map<String, Object> responseJsonSchema,
+            String responseValidationModelTier) {
+        if (WebhookResponseSchemaService.hasSchema(responseJsonSchema)
+                && responseValidationModelTier != null && !responseValidationModelTier.isBlank()) {
+            return responseValidationModelTier;
+        }
+        return modelTier;
+    }
+
+    private String resolveWebhookMemoryPreset(String requestMemoryPreset, UserPreferences.WebhookConfig config) {
+        if (requestMemoryPreset != null && !requestMemoryPreset.isBlank()) {
+            return normalizeMemoryPreset(requestMemoryPreset, "'memoryPreset'");
+        }
+        String configuredPreset = config != null ? config.getMemoryPreset() : null;
+        return normalizeMemoryPreset(configuredPreset, "webhooks.memoryPreset");
+    }
+
+    private String normalizeMemoryPreset(String memoryPreset, String fieldName) {
+        if (memoryPreset == null || memoryPreset.isBlank()) {
+            return MemoryPresetIds.DISABLED;
+        }
+        String normalizedPreset = memoryPreset.trim().toLowerCase(Locale.ROOT);
+        if (memoryPresetService.findById(normalizedPreset).isEmpty()) {
+            throw new IllegalArgumentException(fieldName + " must be a known memory preset id");
+        }
+        return normalizedPreset;
+    }
+
+    private void putIfPresent(Map<String, Object> attributes, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            attributes.put(key, value);
+        }
     }
 
     private Message buildMessage(String chatId, String content, Map<String, Object> metadata, String traceName) {
@@ -347,6 +643,14 @@ public class WebhookController {
             throw new IllegalArgumentException(fieldName + " must be a known tier id");
         }
         return normalizedTier;
+    }
+
+    private String normalizeResponseValidationModelTier(Map<String, Object> responseJsonSchema, String modelTier,
+            String fieldName) {
+        if (!WebhookResponseSchemaService.hasSchema(responseJsonSchema)) {
+            return null;
+        }
+        return normalizeOptionalModelTier(modelTier, fieldName);
     }
 
     private <T> T parseBody(byte[] body, Class<T> type) {
@@ -396,5 +700,8 @@ public class WebhookController {
     private ResponseEntity<WebhookResponse> badRequest(String message) {
         return ResponseEntity.badRequest()
                 .body(WebhookResponse.error(message));
+    }
+
+    private record SchemaTraceSpan(AgentSession session, TraceContext span) {
     }
 }

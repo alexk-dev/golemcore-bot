@@ -271,6 +271,8 @@ public class BotProperties {
         private String joinCode = "";
         private String displayName = "";
         private String hostLabel = "";
+        private String dashboardBaseUrl = "";
+        private Boolean ssoEnabled;
         private Boolean autoConnectOnStartup;
     }
 

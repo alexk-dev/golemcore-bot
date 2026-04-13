@@ -48,6 +48,12 @@ public class WebhookResponse {
     @JsonProperty("error")
     private String errorMessage;
 
+    /** Agent response text for synchronous runs without a custom JSON schema. */
+    private Object response;
+
+    /** Number of LLM repair attempts used to satisfy the configured JSON Schema. */
+    private Integer schemaValidationAttempts;
+
     public static WebhookResponse accepted(String chatId) {
         return WebhookResponse.builder()
                 .status("accepted")
@@ -60,6 +66,17 @@ public class WebhookResponse {
                 .status("accepted")
                 .runId(runId)
                 .chatId(chatId)
+                .build();
+    }
+
+    public static WebhookResponse completed(String runId, String chatId, Object response,
+            Integer schemaValidationAttempts) {
+        return WebhookResponse.builder()
+                .status("completed")
+                .runId(runId)
+                .chatId(chatId)
+                .response(response)
+                .schemaValidationAttempts(schemaValidationAttempts)
                 .build();
     }
 

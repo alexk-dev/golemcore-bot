@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.model.hive.HiveCardSearchRequest;
 import me.golemcore.bot.domain.model.hive.HiveCardSummary;
 import me.golemcore.bot.domain.model.hive.HiveCreateCardRequest;
 import me.golemcore.bot.domain.model.hive.HiveRequestReviewRequest;
+import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
 import me.golemcore.bot.domain.model.hive.HiveThreadMessage;
 import me.golemcore.bot.port.outbound.HiveGatewayPort;
 import org.springframework.stereotype.Component;
@@ -53,7 +54,8 @@ public class HiveGatewayAdapter implements HiveGatewayPort {
             String status,
             String healthSummary,
             String lastErrorSummary,
-            Long uptimeSeconds) {
+            Long uptimeSeconds,
+            String dashboardBaseUrl) {
         hiveApiClient.heartbeat(
                 serverUrl,
                 golemId,
@@ -67,7 +69,30 @@ public class HiveGatewayAdapter implements HiveGatewayPort {
                 null,
                 null,
                 null,
-                null);
+                null,
+                dashboardBaseUrl);
+    }
+
+    @Override
+    public HiveSsoTokenResponse exchangeSsoCode(
+            String serverUrl,
+            String code,
+            String clientId,
+            String redirectUri,
+            String codeVerifier) {
+        HiveApiClient.OAuth2TokenResponse response = hiveApiClient.exchangeSsoCode(
+                serverUrl,
+                code,
+                clientId,
+                redirectUri,
+                codeVerifier);
+        HiveApiClient.LoginResponse login = response.login();
+        HiveApiClient.OperatorResponse operator = login.operator();
+        return new HiveSsoTokenResponse(
+                login.accessToken(),
+                operator.username(),
+                operator.displayName(),
+                operator.roles());
     }
 
     @Override

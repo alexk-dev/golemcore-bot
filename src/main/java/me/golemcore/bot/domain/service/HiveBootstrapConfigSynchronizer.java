@@ -69,12 +69,17 @@ public class HiveBootstrapConfigSynchronizer {
         String serverUrl = resolveServerUrl(baseline.getServerUrl());
         String displayName = resolveString(hiveBootstrapSettingsPort.displayName(), baseline.getDisplayName());
         String hostLabel = resolveString(hiveBootstrapSettingsPort.hostLabel(), baseline.getHostLabel());
+        String dashboardBaseUrl = resolveString(hiveBootstrapSettingsPort.dashboardBaseUrl(),
+                baseline.getDashboardBaseUrl());
+        Boolean ssoEnabled = resolveSsoEnabled(baseline.getSsoEnabled());
         Boolean autoConnect = resolveAutoConnect(baseline.getAutoConnect());
         return RuntimeConfig.HiveConfig.builder()
                 .enabled(enabled)
                 .serverUrl(serverUrl)
                 .displayName(displayName)
                 .hostLabel(hostLabel)
+                .dashboardBaseUrl(dashboardBaseUrl)
+                .ssoEnabled(ssoEnabled)
                 .autoConnect(autoConnect)
                 .managedByProperties(managed)
                 .sdlc(baseline.getSdlc())
@@ -86,7 +91,9 @@ public class HiveBootstrapConfigSynchronizer {
                 || hiveBootstrapSettingsPort.autoConnectOnStartup() != null
                 || normalizeOptionalString(hiveBootstrapSettingsPort.joinCode()) != null
                 || normalizeOptionalString(hiveBootstrapSettingsPort.displayName()) != null
-                || normalizeOptionalString(hiveBootstrapSettingsPort.hostLabel()) != null;
+                || normalizeOptionalString(hiveBootstrapSettingsPort.hostLabel()) != null
+                || normalizeOptionalString(hiveBootstrapSettingsPort.dashboardBaseUrl()) != null
+                || hiveBootstrapSettingsPort.ssoEnabled() != null;
     }
 
     private Boolean resolveEnabled(Boolean currentEnabled) {
@@ -97,6 +104,13 @@ public class HiveBootstrapConfigSynchronizer {
             return true;
         }
         return currentEnabled != null ? currentEnabled : false;
+    }
+
+    private Boolean resolveSsoEnabled(Boolean currentSsoEnabled) {
+        if (hiveBootstrapSettingsPort.ssoEnabled() != null) {
+            return hiveBootstrapSettingsPort.ssoEnabled();
+        }
+        return currentSsoEnabled != null ? currentSsoEnabled : true;
     }
 
     private Boolean resolveAutoConnect(Boolean currentAutoConnect) {

@@ -6,10 +6,31 @@ export async function getMfaStatus(): Promise<{ mfaRequired: boolean }> {
   return data;
 }
 
+export interface HiveSsoStatus {
+  enabled: boolean;
+  available: boolean;
+  loginUrl: string | null;
+  reason: string | null;
+}
+
 export async function login(password: string, mfaCode?: string): Promise<{ accessToken: string }> {
   const { data } = await axios.post<{ accessToken: string }>(
     '/api/auth/login',
     { password, mfaCode },
+    { withCredentials: true }
+  );
+  return data;
+}
+
+export async function getHiveSsoStatus(): Promise<HiveSsoStatus> {
+  const { data } = await axios.get<HiveSsoStatus>('/api/auth/hive/sso-status');
+  return data;
+}
+
+export async function exchangeHiveSsoCode(code: string, codeVerifier: string): Promise<{ accessToken: string }> {
+  const { data } = await axios.post<{ accessToken: string }>(
+    '/api/auth/hive/exchange',
+    { code, codeVerifier },
     { withCredentials: true }
   );
   return data;

@@ -25,6 +25,8 @@ const config: HiveConfig = {
   serverUrl: 'https://hive.example.com',
   displayName: 'Build Runner',
   hostLabel: 'builder-a',
+  dashboardBaseUrl: 'https://bot.example.com/dashboard',
+  ssoEnabled: true,
   autoConnect: true,
   sdlc: {
     currentContextEnabled: true,
@@ -48,6 +50,8 @@ describe('HiveTab', () => {
       serverUrl: 'https://hive.example.com',
       displayName: 'Build Runner',
       hostLabel: 'builder-a',
+      dashboardBaseUrl: 'https://bot.example.com/dashboard',
+      ssoEnabled: true,
       sessionPresent: true,
       golemId: 'golem-1',
       controlChannelUrl: 'wss://hive.example.com/ws',

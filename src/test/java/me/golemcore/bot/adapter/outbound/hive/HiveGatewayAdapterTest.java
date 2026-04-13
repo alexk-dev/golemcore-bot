@@ -17,6 +17,7 @@ import me.golemcore.bot.domain.model.hive.HiveCardSearchRequest;
 import me.golemcore.bot.domain.model.hive.HiveCardSummary;
 import me.golemcore.bot.domain.model.hive.HiveCreateCardRequest;
 import me.golemcore.bot.domain.model.hive.HiveRequestReviewRequest;
+import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
 import me.golemcore.bot.domain.model.hive.HiveThreadMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -101,7 +102,8 @@ class HiveGatewayAdapterTest {
                 "connected",
                 "healthy",
                 null,
-                42L);
+                42L,
+                "https://bot.example.com/dashboard");
 
         verify(hiveApiClient).heartbeat(
                 "https://hive.example.com",
@@ -116,7 +118,36 @@ class HiveGatewayAdapterTest {
                 null,
                 null,
                 null,
-                null);
+                null,
+                "https://bot.example.com/dashboard");
+    }
+
+    @Test
+    void shouldDelegateSsoCodeExchangeWithPkceVerifier() {
+        HiveApiClient.OperatorResponse operator = new HiveApiClient.OperatorResponse(
+                "op-1",
+                "admin",
+                "Hive Admin",
+                List.of("ADMIN"));
+        HiveApiClient.LoginResponse login = new HiveApiClient.LoginResponse("hive-access", operator);
+        when(hiveApiClient.exchangeSsoCode(
+                "https://hive.example.com",
+                "code-1",
+                "golem_1",
+                "https://bot.example.com/dashboard/api/auth/hive/callback",
+                "verifier-1"))
+                .thenReturn(new HiveApiClient.OAuth2TokenResponse(login, "code-1"));
+
+        HiveSsoTokenResponse response = adapter.exchangeSsoCode(
+                "https://hive.example.com",
+                "code-1",
+                "golem_1",
+                "https://bot.example.com/dashboard/api/auth/hive/callback",
+                "verifier-1");
+
+        assertEquals("hive-access", response.accessToken());
+        assertEquals("admin", response.username());
+        assertEquals(List.of("ADMIN"), response.roles());
     }
 
     @Test

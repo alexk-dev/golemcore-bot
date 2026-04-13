@@ -113,7 +113,8 @@ class HiveApiClientTest {
                 3,
                 2,
                 "OUT_OF_SYNC",
-                "missing-provider");
+                "missing-provider",
+                "https://bot.example.com/dashboard");
 
         RecordedRequest recordedRequest = server.takeRequest();
         assertEquals("/api/v1/golems/golem-1/heartbeat", recordedRequest.getTarget());
@@ -125,6 +126,43 @@ class HiveApiClientTest {
         assertEquals("OUT_OF_SYNC", payload.get("syncStatus").asText());
         assertEquals("missing-provider", payload.get("lastPolicyErrorDigest").asText());
         assertEquals("cap-hash", payload.get("capabilitySnapshotHash").asText());
+        assertEquals("https://bot.example.com/dashboard", payload.get("dashboardBaseUrl").asText());
+    }
+
+    @Test
+    void shouldExchangeSsoCodeWithPkceVerifier() throws Exception {
+        server.enqueue(new MockResponse.Builder().code(200).body("""
+                {
+                  "login": {
+                    "accessToken": "hive-access",
+                    "operator": {
+                      "id": "op-1",
+                      "username": "admin",
+                      "displayName": "Hive Admin",
+                      "roles": ["ADMIN"]
+                    }
+                  },
+                  "code": "code-1"
+                }
+                """).build());
+
+        HiveApiClient.OAuth2TokenResponse response = hiveApiClient.exchangeSsoCode(
+                server.url("/").toString(),
+                "code-1",
+                "golem_1",
+                "https://bot.example.com/dashboard/api/auth/hive/callback",
+                "verifier-1");
+
+        RecordedRequest recordedRequest = server.takeRequest();
+        JsonNode payload = new ObjectMapper().readTree(recordedRequest.getBody().utf8());
+        assertEquals("/api/v1/oauth2/token", recordedRequest.getTarget());
+        assertEquals("code-1", payload.get("code").asText());
+        assertEquals("golem_1", payload.get("clientId").asText());
+        assertEquals("https://bot.example.com/dashboard/api/auth/hive/callback",
+                payload.get("redirectUri").asText());
+        assertEquals("verifier-1", payload.get("codeVerifier").asText());
+        assertEquals("hive-access", response.login().accessToken());
+        assertEquals("admin", response.login().operator().username());
     }
 
     @Test
@@ -224,6 +262,22 @@ class HiveApiClientTest {
         assertEquals("IN_SYNC", payload.get("syncStatus").asText());
         assertEquals("IN_SYNC", response.getSyncStatus());
         assertEquals(4, response.getAppliedVersion());
+    }
+
+    @Test
+    void shouldExtractHiveErrorResponseMessage() {
+        server.enqueue(new MockResponse.Builder().code(400).body("""
+                {
+                  "error": "Unknown policy binding for golem: golem-1"
+                }
+                """).build());
+
+        HiveApiClient.HiveApiException exception = assertThrows(
+                HiveApiClient.HiveApiException.class,
+                () -> hiveApiClient.getPolicyPackage(server.url("/").toString(), "golem-1", "access"));
+
+        assertEquals(400, exception.getStatusCode());
+        assertEquals("Unknown policy binding for golem: golem-1", exception.getMessage());
     }
 
     @Test

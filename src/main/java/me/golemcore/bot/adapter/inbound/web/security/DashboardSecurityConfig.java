@@ -58,7 +58,9 @@ public class DashboardSecurityConfig {
                         }))
                 .addFilterBefore(jwtAuthenticationFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .authorizeExchange(exchanges -> exchanges
-                        .pathMatchers("/api/auth/login", "/api/auth/mfa-status", "/api/auth/refresh").permitAll()
+                        .pathMatchers("/api/auth/login", "/api/auth/mfa-status", "/api/auth/refresh",
+                                "/api/auth/hive/sso-status", "/api/auth/hive/exchange")
+                        .permitAll()
                         .pathMatchers("/api/hooks/**").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/telegram/webhook").permitAll()
                         .pathMatchers("/ws/**").permitAll()

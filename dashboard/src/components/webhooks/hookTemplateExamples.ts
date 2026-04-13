@@ -9,7 +9,7 @@ export const HOOK_TEMPLATE_PATH_HINT =
 export const HOOK_TEMPLATE_EXAMPLES: HookTemplateExample[] = [
   {
     path: '{request.command}',
-    description: 'Raw Alice request body: reads the spoken command directly.',
+    description: 'Direct request body: reads the command field from the request object.',
   },
   {
     path: '{payload.request.command}',

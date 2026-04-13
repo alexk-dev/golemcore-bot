@@ -22,15 +22,20 @@ class ModelSelectionCommandHandler {
     private final UserPreferencesService preferencesService;
 
     CommandPort.CommandResult handleTier(List<String> args) {
+        return handleTier(args, null);
+    }
+
+    CommandPort.CommandResult handleTier(List<String> args, String sessionId) {
         if (args.isEmpty()) {
             return renderTierOutcome(
-                    modelSelectionCommandService.handleTier(new ModelSelectionCommandService.ShowTierStatus()));
+                    modelSelectionCommandService
+                            .handleTier(new ModelSelectionCommandService.ShowTierStatus(sessionId)));
         }
 
         String tier = ModelTierCatalog.normalizeTierId(args.get(0));
         boolean force = args.size() > 1 && "force".equalsIgnoreCase(args.get(1));
         return renderTierOutcome(modelSelectionCommandService.handleTier(
-                new ModelSelectionCommandService.SetTierSelection(tier, force)));
+                new ModelSelectionCommandService.SetTierSelection(tier, force, sessionId)));
     }
 
     CommandPort.CommandResult handleModel(List<String> args) {

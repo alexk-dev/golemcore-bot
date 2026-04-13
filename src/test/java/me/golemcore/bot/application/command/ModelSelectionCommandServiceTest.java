@@ -1,16 +1,20 @@
 package me.golemcore.bot.application.command;
 
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -18,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -28,6 +33,7 @@ class ModelSelectionCommandServiceTest {
     private UserPreferencesService preferencesService;
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
+    private SessionPort sessionPort;
     private UserPreferences preferences;
     private ModelSelectionCommandService service;
 
@@ -36,11 +42,14 @@ class ModelSelectionCommandServiceTest {
         preferencesService = mock(UserPreferencesService.class);
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        sessionPort = mock(SessionPort.class);
         preferences = UserPreferences.builder()
                 .tierOverrides(new LinkedHashMap<>())
                 .build();
         when(preferencesService.getPreferences()).thenReturn(preferences);
-        service = new ModelSelectionCommandService(preferencesService, modelSelectionService, runtimeConfigService);
+        when(sessionPort.get(anyString())).thenReturn(Optional.empty());
+        service = new ModelSelectionCommandService(preferencesService, modelSelectionService, runtimeConfigService,
+                sessionPort);
     }
 
     @Test
@@ -57,6 +66,26 @@ class ModelSelectionCommandServiceTest {
     }
 
     @Test
+    void shouldShowCurrentTierFromSessionSettingsWhenSessionIsProvided() {
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .chatId("conv-1")
+                .metadata(new LinkedHashMap<>(Map.of(
+                        ContextAttributes.SESSION_MODEL_TIER, "deep",
+                        ContextAttributes.SESSION_MODEL_TIER_FORCE, true)))
+                .build();
+        when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
+
+        ModelSelectionCommandService.CurrentTier result = assertInstanceOf(
+                ModelSelectionCommandService.CurrentTier.class,
+                service.handleTier(new ModelSelectionCommandService.ShowTierStatus("web:conv-1")));
+
+        assertEquals("deep", result.tier());
+        assertTrue(result.force());
+    }
+
+    @Test
     void shouldSetTierAndForceWhenRequested() {
         ModelSelectionCommandService.TierUpdated result = assertInstanceOf(
                 ModelSelectionCommandService.TierUpdated.class,
@@ -67,6 +96,49 @@ class ModelSelectionCommandServiceTest {
         assertEquals("smart", preferences.getModelTier());
         assertTrue(preferences.isTierForce());
         verify(preferencesService).savePreferences(preferences);
+    }
+
+    @Test
+    void shouldSetTierOnSessionWhenSessionIsProvided() {
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-1")
+                .channelType("web")
+                .chatId("conv-1")
+                .metadata(new LinkedHashMap<>())
+                .build();
+        when(sessionPort.get("web:conv-1")).thenReturn(Optional.of(session));
+
+        ModelSelectionCommandService.TierUpdated result = assertInstanceOf(
+                ModelSelectionCommandService.TierUpdated.class,
+                service.handleTier(new ModelSelectionCommandService.SetTierSelection("smart", true, "web:conv-1")));
+
+        assertEquals("smart", result.tier());
+        assertTrue(result.force());
+        assertEquals("smart", session.getMetadata().get(ContextAttributes.SESSION_MODEL_TIER));
+        assertEquals(true, session.getMetadata().get(ContextAttributes.SESSION_MODEL_TIER_FORCE));
+        verify(sessionPort).save(session);
+        verify(preferencesService, never()).savePreferences(any());
+    }
+
+    @Test
+    void shouldCreateSessionBeforePersistingTierWhenSessionIsNotLoaded() {
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-2")
+                .channelType("web")
+                .chatId("conv-2")
+                .metadata(new LinkedHashMap<>())
+                .build();
+        when(sessionPort.get("web:conv-2")).thenReturn(Optional.empty());
+        when(sessionPort.getOrCreate("web", "conv-2")).thenReturn(session);
+
+        ModelSelectionCommandService.TierUpdated result = assertInstanceOf(
+                ModelSelectionCommandService.TierUpdated.class,
+                service.handleTier(new ModelSelectionCommandService.SetTierSelection("coding", false, "web:conv-2")));
+
+        assertEquals("coding", result.tier());
+        assertEquals("coding", session.getMetadata().get(ContextAttributes.SESSION_MODEL_TIER));
+        assertEquals(false, session.getMetadata().get(ContextAttributes.SESSION_MODEL_TIER_FORCE));
+        verify(sessionPort).save(session);
     }
 
     @Test

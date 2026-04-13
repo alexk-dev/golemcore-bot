@@ -28,6 +28,8 @@ class HiveBootstrapConfigSynchronizerTest {
         when(hiveBootstrapSettingsPort.joinCode()).thenReturn(null);
         when(hiveBootstrapSettingsPort.displayName()).thenReturn(null);
         when(hiveBootstrapSettingsPort.hostLabel()).thenReturn(null);
+        when(hiveBootstrapSettingsPort.dashboardBaseUrl()).thenReturn(null);
+        when(hiveBootstrapSettingsPort.ssoEnabled()).thenReturn(null);
         synchronizer = new HiveBootstrapConfigSynchronizer(hiveBootstrapSettingsPort, runtimeConfigService);
     }
 
@@ -36,6 +38,8 @@ class HiveBootstrapConfigSynchronizerTest {
         when(hiveBootstrapSettingsPort.joinCode()).thenReturn("et_demo.secret:https://hive.example.com/");
         when(hiveBootstrapSettingsPort.displayName()).thenReturn("Build Runner");
         when(hiveBootstrapSettingsPort.hostLabel()).thenReturn("lab-a");
+        when(hiveBootstrapSettingsPort.dashboardBaseUrl()).thenReturn("https://bot.example.com/dashboard");
+        when(hiveBootstrapSettingsPort.ssoEnabled()).thenReturn(false);
         when(hiveBootstrapSettingsPort.autoConnectOnStartup()).thenReturn(true);
 
         RuntimeConfig runtimeConfig = RuntimeConfig.builder().build();
@@ -50,6 +54,8 @@ class HiveBootstrapConfigSynchronizerTest {
         assertEquals("https://hive.example.com", hiveConfig.getServerUrl());
         assertEquals("Build Runner", hiveConfig.getDisplayName());
         assertEquals("lab-a", hiveConfig.getHostLabel());
+        assertEquals("https://bot.example.com/dashboard", hiveConfig.getDashboardBaseUrl());
+        assertFalse(hiveConfig.getSsoEnabled());
         assertTrue(hiveConfig.getAutoConnect());
         assertTrue(hiveConfig.getManagedByProperties());
     }

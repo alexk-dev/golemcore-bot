@@ -13,6 +13,7 @@ public final class ToolNames {
     public static final String HIVE_REQUEST_REVIEW = "hive_request_review";
     public static final String HIVE_CREATE_FOLLOWUP_CARD = "hive_create_followup_card";
     public static final String SCHEDULE_SESSION_ACTION = "schedule_session_action";
+    public static final String MEMORY = "memory";
 
     private ToolNames() {
     }

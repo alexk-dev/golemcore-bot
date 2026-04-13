@@ -15,6 +15,7 @@ import {
   resolveHiveManagedPolicyVariant,
 } from './hiveManagedPolicySupport';
 import { HiveActionButtons } from './HiveActionButtons';
+import { HiveSessionDetails } from './HiveSessionDetails';
 import { HiveSdlcSettings } from './HiveSdlcSettings';
 
 function hasDiff<T>(current: T, initial: T): boolean {
@@ -261,6 +262,33 @@ function HiveRuntimeSettings({ form, isManaged, setForm }: HiveRuntimeSettingsPr
 
       <Row className="g-3 mb-3">
         <Col md={6}>
+          <Form.Group controlId="hive-dashboard-base-url">
+            <Form.Label className="small fw-medium">
+              Dashboard Public URL <HelpTip text="Public bot dashboard URL used as the OAuth2 redirect origin, for example https://bot.example.com/dashboard." />
+            </Form.Label>
+            <Form.Control
+              type="url"
+              size="sm"
+              value={form.dashboardBaseUrl ?? ''}
+              onChange={(event) => setForm({ ...form, dashboardBaseUrl: event.target.value || null })}
+              disabled={isManaged}
+              placeholder="https://bot.example.com/dashboard"
+            />
+          </Form.Group>
+        </Col>
+        <Col md={6} className="d-flex align-items-end">
+          <Form.Check
+            type="switch"
+            label={<>Enable Hive SSO <HelpTip text="Allows this bot dashboard to accept operator login through Hive OAuth2 SSO when connected." /></>}
+            checked={form.ssoEnabled ?? true}
+            onChange={(event) => setForm({ ...form, ssoEnabled: event.target.checked })}
+            disabled={isManaged}
+          />
+        </Col>
+      </Row>
+
+      <Row className="g-3 mb-3">
+        <Col md={6}>
           <Form.Group controlId="hive-host-label">
             <Form.Label className="small fw-medium">
               Host Label <HelpTip text="Optional machine label surfaced in Hive for assignment and diagnostics." />
@@ -369,43 +397,6 @@ function HiveJoinCodeField({ isManaged, isBusy, joinCode, setJoinCode }: HiveJoi
           placeholder={isManaged ? 'Managed by bot.hive.joinCode' : 'token-id.secret:https://hive.example.com'}
         />
       </Form.Group>
-    </Col>
-  );
-}
-
-interface HiveSessionDetailsProps {
-  status: HiveStatusResponse | undefined;
-  fallbackServerUrl: string | null;
-}
-
-function resolveDetailValue(
-  value: string | number | null | undefined,
-  fallback: string | number = '—',
-): string | number {
-  return value ?? fallback;
-}
-
-function HiveSessionDetails({ status, fallbackServerUrl }: HiveSessionDetailsProps): ReactElement {
-  const detailRows = [
-    ['Server URL', resolveDetailValue(status?.serverUrl, fallbackServerUrl ?? '—')],
-    ['Last connected', resolveDetailValue(status?.lastConnectedAt)],
-    ['Last heartbeat', resolveDetailValue(status?.lastHeartbeatAt)],
-    ['Last token refresh', resolveDetailValue(status?.lastTokenRotatedAt)],
-    ['Last control message', resolveDetailValue(status?.controlChannelLastMessageAt)],
-    ['Buffered commands', resolveDetailValue(status?.bufferedCommandCount, 0)],
-    ['Received commands', resolveDetailValue(status?.receivedCommandCount, 0)],
-    ['Last command ID', resolveDetailValue(status?.lastReceivedCommandId)],
-  ] as const;
-
-  return (
-    <Col md={6}>
-      <div className="small text-body-secondary mb-1">Session details</div>
-      {detailRows.map(([label, value]) => (
-        <div key={label} className="small">{label}: {value}</div>
-      ))}
-      {status?.controlChannelLastError ? (
-        <div className="small text-danger">Control error: {status.controlChannelLastError}</div>
-      ) : null}
     </Col>
   );
 }
