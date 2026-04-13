@@ -280,6 +280,55 @@ class HiveConnectionServiceTest {
     }
 
     @Test
+    void shouldIgnoreMissingPolicyBindingDuringReconnect() {
+        HiveSessionState sessionState = HiveSessionState.builder()
+                .golemId("golem-1")
+                .serverUrl("https://hive.example.com")
+                .refreshToken("refresh")
+                .accessToken("access-old")
+                .controlChannelUrl("/ws/golems/control")
+                .build();
+        storedSession.set(Optional.of(sessionState));
+        when(hiveMachinePort.rotate("https://hive.example.com", "golem-1", "refresh"))
+                .thenReturn(new HiveMachinePort.AuthSession(
+                        "golem-1",
+                        "access-new",
+                        "refresh-new",
+                        Instant.parse("2026-03-18T00:10:00Z"),
+                        Instant.parse("2026-03-19T00:10:00Z"),
+                        "hive",
+                        "golems",
+                        "/ws/golems/control",
+                        30,
+                        List.of("golems:heartbeat", "golems:policy:read", "golems:policy:write")));
+        when(hiveMachinePort.getPolicyPackage("https://hive.example.com", "golem-1", "access-new"))
+                .thenThrow(new HiveMachinePort.HiveMachineException(
+                        400,
+                        "Unknown policy binding for golem: golem-1",
+                        null));
+
+        HiveStatusSnapshot status = service.reconnect();
+
+        assertEquals("CONNECTED", status.state());
+        verify(hiveManagedPolicyService).clearBinding();
+        verify(hiveMachinePort).heartbeat(
+                eq("https://hive.example.com"),
+                eq("golem-1"),
+                eq("access-new"),
+                eq("connected"),
+                eq("Hive reconnect completed"),
+                isNull(),
+                anyLong(),
+                any(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq("https://bot.example.com/dashboard"));
+    }
+
+    @Test
     void shouldUseManagedJoinCodeWhenManagedModeIsActive() {
         when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(true);
         when(hiveBootstrapConfigSynchronizer.getManagedJoinCode())

@@ -265,6 +265,22 @@ class HiveApiClientTest {
     }
 
     @Test
+    void shouldExtractHiveErrorResponseMessage() {
+        server.enqueue(new MockResponse.Builder().code(400).body("""
+                {
+                  "error": "Unknown policy binding for golem: golem-1"
+                }
+                """).build());
+
+        HiveApiClient.HiveApiException exception = assertThrows(
+                HiveApiClient.HiveApiException.class,
+                () -> hiveApiClient.getPolicyPackage(server.url("/").toString(), "golem-1", "access"));
+
+        assertEquals(400, exception.getStatusCode());
+        assertEquals("Unknown policy binding for golem: golem-1", exception.getMessage());
+    }
+
+    @Test
     void shouldPublishEventBatchWithBearerToken() throws Exception {
         server.enqueue(new MockResponse.Builder().code(200).body("{\"acceptedEvents\":1}").build());
 

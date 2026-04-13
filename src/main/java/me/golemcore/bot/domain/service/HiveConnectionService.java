@@ -48,6 +48,7 @@ public class HiveConnectionService {
     private static final String POLICY_WRITE_SCOPE = "golems:policy:write";
     private static final String CONTROL_CHANNEL_NAME = "control";
     private static final String POLICY_SYNC_FEATURE = "policy-sync-v1";
+    private static final String UNKNOWN_POLICY_BINDING_MESSAGE = "Unknown policy binding for golem:";
 
     private final HiveBootstrapSettingsPort hiveBootstrapSettingsPort;
     private final RuntimeConfigService runtimeConfigService;
@@ -541,12 +542,25 @@ public class HiveConnectionService {
                         applyResult);
             }
         } catch (HiveMachinePort.HiveMachineException exception) {
-            if (exception.getStatusCode() == 404) {
+            if (isMissingPolicyBinding(exception)) {
                 hiveManagedPolicyService.clearBinding();
                 return;
             }
             throw exception;
         }
+    }
+
+    private boolean isMissingPolicyBinding(HiveMachinePort.HiveMachineException exception) {
+        if (exception == null) {
+            return false;
+        }
+        int statusCode = exception.getStatusCode();
+        if (statusCode == 404) {
+            return true;
+        }
+        return (statusCode == 400 || statusCode == 409)
+                && exception.getMessage() != null
+                && exception.getMessage().contains(UNKNOWN_POLICY_BINDING_MESSAGE);
     }
 
     private void drainPendingControlCommands() {

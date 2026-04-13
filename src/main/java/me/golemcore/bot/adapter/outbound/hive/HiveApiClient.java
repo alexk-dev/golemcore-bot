@@ -313,6 +313,10 @@ public class HiveApiClient {
             if (message.isTextual() && !message.asText().isBlank()) {
                 return message.asText();
             }
+            JsonNode error = root.path("error");
+            if (error.isTextual() && !error.asText().isBlank()) {
+                return error.asText();
+            }
         } catch (IOException ignored) {
             // Fall back to the raw response body.
         }
