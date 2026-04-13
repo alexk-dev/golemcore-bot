@@ -76,6 +76,28 @@ class HiveSsoServiceTest {
     }
 
     @Test
+    void shouldReportUnavailableWhenSessionIsMissing() {
+        when(hiveSessionStateStore.load()).thenReturn(Optional.empty());
+
+        HiveSsoService.HiveSsoStatus status = service.getStatus();
+
+        assertFalse(status.available());
+        assertEquals("Hive session is not connected", status.reason());
+    }
+
+    @Test
+    void shouldReportUnavailableWhenDashboardBaseUrlMissing() {
+        when(runtimeConfigService.getHiveConfig()).thenReturn(RuntimeConfig.HiveConfig.builder()
+                .ssoEnabled(true)
+                .build());
+
+        HiveSsoService.HiveSsoStatus status = service.getStatus();
+
+        assertFalse(status.available());
+        assertEquals("Bot dashboard public URL is not configured", status.reason());
+    }
+
+    @Test
     void shouldExchangeCodeThroughHiveGateway() {
         when(hiveGatewayPort.exchangeSsoCode(
                 "https://hive.example.com",
@@ -87,6 +109,18 @@ class HiveSsoServiceTest {
         HiveSsoTokenResponse response = service.exchange("code-1");
 
         assertEquals("access", response.accessToken());
+    }
+
+    @Test
+    void shouldRejectExchangeWhenSsoDisabled() {
+        when(runtimeConfigService.getHiveConfig()).thenReturn(RuntimeConfig.HiveConfig.builder()
+                .ssoEnabled(false)
+                .dashboardBaseUrl("https://bot.example.com/dashboard")
+                .build());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.exchange("code-1"));
+
+        assertEquals("Hive SSO is disabled in bot settings", error.getMessage());
     }
 
     @Test
