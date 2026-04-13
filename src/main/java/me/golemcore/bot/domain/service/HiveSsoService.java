@@ -8,9 +8,7 @@ import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
 import me.golemcore.bot.port.outbound.HiveGatewayPort;
-import org.springframework.stereotype.Service;
 
-@Service
 @RequiredArgsConstructor
 public class HiveSsoService {
 
