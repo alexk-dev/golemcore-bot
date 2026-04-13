@@ -211,7 +211,7 @@ public class ModelSelectionCommandService {
         }
 
         Optional<AgentSession> existing = sessionPort.get(sessionId);
-        if (existing != null && existing.isPresent()) {
+        if (existing.isPresent()) {
             return existing;
         }
 
