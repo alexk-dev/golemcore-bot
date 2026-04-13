@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -75,6 +76,7 @@ public class SessionService implements SessionPort {
                     .createdAt(clock.instant())
                     .updatedAt(clock.instant())
                     .build();
+            inheritModelSettings(session);
 
             log.info("Created new session: {}", id);
             return session;
@@ -291,6 +293,59 @@ public class SessionService implements SessionPort {
 
     private Optional<AgentSession> loadFromStoredFile(String filePath) {
         return filePath.endsWith(PROTO_EXTENSION) ? loadProtoFile(filePath) : Optional.empty();
+    }
+
+    private void inheritModelSettings(AgentSession session) {
+        if (session == null || !SessionModelSettingsSupport.shouldInheritModelSettings(session.getChannelType())) {
+            return;
+        }
+
+        findModelSettingsSource(session).ifPresent(source -> {
+            SessionModelSettingsSupport.inheritModelSettings(source, session);
+            log.debug("Inherited model settings from session {} into {}", source.getId(), session.getId());
+        });
+    }
+
+    private Optional<AgentSession> findModelSettingsSource(AgentSession target) {
+        Map<String, AgentSession> candidates = new LinkedHashMap<>();
+        String targetId = target.getId();
+        String channelType = target.getChannelType();
+
+        sessionCache.values().stream()
+                .filter(candidate -> candidate != null)
+                .filter(candidate -> isModelSettingsInheritanceCandidate(candidate, channelType, targetId))
+                .forEach(candidate -> candidates.putIfAbsent(candidate.getId(), candidate));
+
+        loadStoredModelSettingsCandidates(channelType, targetId)
+                .forEach(candidate -> candidates.putIfAbsent(candidate.getId(), candidate));
+
+        return candidates.values().stream()
+                .sorted(ConversationKeyValidator.byRecentActivity())
+                .findFirst();
+    }
+
+    private List<AgentSession> loadStoredModelSettingsCandidates(String channelType, String targetId) {
+        try {
+            return storagePort.listObjects(SESSIONS_DIR, "").join().stream()
+                    .filter(path -> isStoredFileForChannel(path, channelType))
+                    .map(this::loadFromStoredFile)
+                    .flatMap(Optional::stream)
+                    .filter(candidate -> isModelSettingsInheritanceCandidate(candidate, channelType, targetId))
+                    .toList();
+        } catch (RuntimeException e) { // NOSONAR - inheritance must not block session creation
+            log.debug("Failed to scan stored sessions for model settings inheritance: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private boolean isModelSettingsInheritanceCandidate(AgentSession candidate, String channelType, String targetId) {
+        if (candidate == null || targetId.equals(candidate.getId())) {
+            return false;
+        }
+        if (StringValueSupport.isBlank(channelType) || !channelType.equals(candidate.getChannelType())) {
+            return false;
+        }
+        return SessionModelSettingsSupport.hasModelSettings(candidate);
     }
 
     private Optional<AgentSession> loadProtoFile(String filePath) {

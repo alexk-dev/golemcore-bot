@@ -15,6 +15,7 @@ import me.golemcore.bot.domain.context.layer.RagLayer;
 import me.golemcore.bot.domain.context.layer.SkillLayer;
 import me.golemcore.bot.domain.context.layer.TierAwarenessLayer;
 import me.golemcore.bot.domain.context.layer.ToolLayer;
+import me.golemcore.bot.domain.context.layer.WebhookResponseSchemaLayer;
 import me.golemcore.bot.domain.context.layer.WorkspaceInstructionsLayer;
 import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
@@ -33,6 +34,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
@@ -131,14 +133,15 @@ class ContextBuildingSystemPromptTest {
         List<ContextLayer> layers = List.of(
                 new IdentityLayer(promptSectionService, userPreferencesService),
                 new WorkspaceInstructionsLayer(workspaceInstructionService),
-                new MemoryLayer(memoryComponent, runtimeConfigService),
+                new MemoryLayer(memoryComponent, runtimeConfigService, new MemoryPresetService()),
                 new RagLayer(ragPort),
                 new SkillLayer(skillComponent, templateEngine),
                 new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService),
                 new TierAwarenessLayer(userPreferencesService),
                 new AutoModeLayer(autoModeService),
                 new PlanModeLayer(planService),
-                new HiveLayer());
+                new HiveLayer(),
+                new WebhookResponseSchemaLayer());
 
         ContextAssembler contextAssembler = new ContextAssembler(skillResolver, tierResolver, layers, promptComposer);
         return new ContextBuildingSystem(contextAssembler, null, null, null);
@@ -150,6 +153,31 @@ class ContextBuildingSystemPromptTest {
                 .messages(new ArrayList<>(List.of(
                         Message.builder().role("user").content("Hello").timestamp(Instant.now()).build())))
                 .build();
+    }
+
+    @Test
+    void buildSystemPrompt_withWebhookResponseSchema() {
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().chatId("hook-1").channelType("webhook").build())
+                .messages(new ArrayList<>(List.of(Message.builder()
+                        .role("user")
+                        .content("Answer in JSON")
+                        .metadata(Map.of(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT, """
+                                {
+                                  "$schema" : "https://json-schema.org/draft/2020-12/schema",
+                                  "type" : "object",
+                                  "required" : [ "version", "response" ]
+                                }
+                                """))
+                        .timestamp(Instant.now())
+                        .build())))
+                .build();
+
+        system.process(context);
+
+        assertTrue(context.getSystemPrompt().contains("Webhook Response JSON Contract"));
+        assertTrue(context.getSystemPrompt().contains("Return only the JSON payload"));
+        assertTrue(context.getSystemPrompt().contains("\"version\""));
     }
 
     @Test

@@ -1,3 +1,5 @@
+import type { ErrorObject } from 'ajv';
+import Ajv2020 from 'ajv/dist/2020';
 import client from './client';
 
 export type HookAction = 'wake' | 'agent';
@@ -16,6 +18,9 @@ export interface HookMapping {
   deliver: boolean;
   channel: string | null;
   to: string | null;
+  syncResponse: boolean;
+  responseJsonSchema: string | null;
+  responseValidationModelTier: string | null;
 }
 
 export type HookMappingDraft = HookMapping;
@@ -26,12 +31,22 @@ export interface WebhookConfig {
   tokenPresent?: boolean;
   maxPayloadSize: number;
   defaultTimeoutSeconds: number;
+  memoryPreset: string;
   mappings: HookMapping[];
 }
 
 const DEFAULT_MAX_PAYLOAD_SIZE = 65536;
 const DEFAULT_TIMEOUT_SECONDS = 300;
+const DEFAULT_MEMORY_PRESET = 'disabled';
 const HOOK_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const MAX_JSON_SCHEMA_VALIDATION_ISSUES = 8;
+const JSON_SCHEMA_VALIDATOR = new Ajv2020({
+  allErrors: true,
+  strictSchema: true,
+  validateSchema: true,
+});
+
+export const JSON_SCHEMA_DRAFT_2020_12_DOCS_URL = 'https://json-schema.org/draft/2020-12';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -115,10 +130,15 @@ function normalizeMapping(raw: unknown): HookMapping {
     deliver: Boolean(record.deliver),
     channel: toNullableString(record.channel),
     to: toNullableString(record.to),
+    syncResponse: Boolean(record.syncResponse),
+    responseJsonSchema: toSchemaEditorValue(record.responseJsonSchema),
+    responseValidationModelTier: toNullableString(record.responseValidationModelTier),
   };
 }
 
 function toBackendMapping(mapping: HookMapping): UnknownRecord {
+  const responseJsonSchema = toBackendJsonSchema(mapping.responseJsonSchema);
+
   return {
     name: mapping.name.trim(),
     action: mapping.action,
@@ -131,6 +151,11 @@ function toBackendMapping(mapping: HookMapping): UnknownRecord {
     deliver: mapping.deliver,
     channel: toNullableString(mapping.channel),
     to: toNullableString(mapping.to),
+    syncResponse: mapping.syncResponse,
+    responseJsonSchema,
+    responseValidationModelTier: responseJsonSchema == null
+      ? null
+      : toNullableString(mapping.responseValidationModelTier),
   };
 }
 
@@ -145,6 +170,7 @@ function parseWebhookConfig(raw: unknown): WebhookConfig {
     tokenPresent: hasSecretValue(tokenRaw),
     maxPayloadSize: toNumberOrDefault(record.maxPayloadSize, DEFAULT_MAX_PAYLOAD_SIZE),
     defaultTimeoutSeconds: toNumberOrDefault(record.defaultTimeoutSeconds, DEFAULT_TIMEOUT_SECONDS),
+    memoryPreset: toNullableString(record.memoryPreset) ?? DEFAULT_MEMORY_PRESET,
     mappings: mappingsRaw.map((item) => normalizeMapping(item)),
   };
 }
@@ -155,6 +181,7 @@ function toBackendWebhookConfig(config: WebhookConfig): UnknownRecord {
     token: toSecretPayload(config.token),
     maxPayloadSize: config.maxPayloadSize,
     defaultTimeoutSeconds: config.defaultTimeoutSeconds,
+    memoryPreset: toNullableString(config.memoryPreset) ?? DEFAULT_MEMORY_PRESET,
     mappings: config.mappings.map((mapping) => toBackendMapping(mapping)),
   };
 }
@@ -166,6 +193,7 @@ export function createDefaultWebhookConfig(): WebhookConfig {
     tokenPresent: false,
     maxPayloadSize: DEFAULT_MAX_PAYLOAD_SIZE,
     defaultTimeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+    memoryPreset: DEFAULT_MEMORY_PRESET,
     mappings: [],
   };
 }
@@ -184,6 +212,9 @@ export function createEmptyWebhookMapping(): HookMappingDraft {
     deliver: false,
     channel: null,
     to: null,
+    syncResponse: false,
+    responseJsonSchema: null,
+    responseValidationModelTier: null,
   };
 }
 
@@ -264,6 +295,93 @@ function validateMappingDelivery(mapping: HookMapping, index: number, issues: st
   }
 }
 
+function validateMappingResponseSchema(mapping: HookMapping, index: number, issues: string[]): void {
+  if (mapping.action !== 'agent') {
+    return;
+  }
+
+  if (mapping.responseJsonSchema == null || mapping.responseJsonSchema.trim().length === 0) {
+    return;
+  }
+
+  const prefix = `Mapping #${index + 1}`;
+  if (!mapping.syncResponse) {
+    issues.push(`${prefix}: synchronous response is required when response JSON Schema is configured.`);
+  }
+  try {
+    const parsedSchema = JSON.parse(mapping.responseJsonSchema) as unknown;
+    validateJsonSchemaDocument(parsedSchema, prefix, issues);
+  } catch {
+    issues.push(`${prefix}: response JSON Schema must be valid JSON.`);
+  }
+}
+
+function validateJsonSchemaDocument(schema: unknown, prefix: string, issues: string[]): void {
+  if (!isPlainObject(schema)) {
+    issues.push(`${prefix}: response JSON Schema must be a JSON object.`);
+    return;
+  }
+  if (Object.keys(schema).length === 0) {
+    issues.push(`${prefix}: response JSON Schema must not be empty.`);
+    return;
+  }
+
+  validateJsonSchemaWithDraft202012(schema, prefix, issues);
+}
+
+function isPlainObject(value: unknown): value is UnknownRecord {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validateJsonSchemaWithDraft202012(schema: UnknownRecord, prefix: string, issues: string[]): void {
+  try {
+    if (JSON_SCHEMA_VALIDATOR.validateSchema(schema)) {
+      return;
+    }
+  } catch (error: unknown) {
+    issues.push(
+      `${prefix}: response JSON Schema is not a valid Draft 2020-12 schema (${formatSchemaException(error)}).`,
+    );
+    return;
+  }
+
+  const schemaErrors = JSON_SCHEMA_VALIDATOR.errors ?? [];
+  if (schemaErrors.length === 0) {
+    issues.push(`${prefix}: response JSON Schema is not a valid Draft 2020-12 schema.`);
+    return;
+  }
+  uniqueSchemaErrors(schemaErrors).slice(0, MAX_JSON_SCHEMA_VALIDATION_ISSUES).forEach((error) => {
+    issues.push(
+      `${prefix}: response JSON Schema is not a valid Draft 2020-12 schema (${formatSchemaError(error)}).`,
+    );
+  });
+}
+
+function uniqueSchemaErrors(errors: ErrorObject[]): ErrorObject[] {
+  const seen = new Set<string>();
+  return errors.filter((error) => {
+    const key = `${error.instancePath}:${error.schemaPath}:${error.message ?? ''}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatSchemaError(error: ErrorObject): string {
+  const location = error.instancePath.length > 0 ? error.instancePath : error.schemaPath;
+  const message = error.message ?? 'is invalid';
+  return `${location} ${message}`;
+}
+
+function formatSchemaException(error: unknown): string {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+  return 'schema validation failed';
+}
+
 export function validateWebhookConfig(config: WebhookConfig): WebhookValidationResult {
   const issues: string[] = [];
   const seenNames = new Set<string>();
@@ -274,12 +392,34 @@ export function validateWebhookConfig(config: WebhookConfig): WebhookValidationR
     validateMappingName(mapping, index, seenNames, issues);
     validateMappingAuth(mapping, index, issues);
     validateMappingDelivery(mapping, index, issues);
+    validateMappingResponseSchema(mapping, index, issues);
   });
 
   return {
     valid: issues.length === 0,
     issues,
   };
+}
+
+function toSchemaEditorValue(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return toNullableTemplate(value);
+  }
+  if (value == null) {
+    return null;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return null;
+  }
+}
+
+function toBackendJsonSchema(value: string | null | undefined): unknown {
+  if (value == null || value.trim().length === 0) {
+    return null;
+  }
+  return JSON.parse(value);
 }
 
 export async function getWebhookConfig(): Promise<WebhookConfig> {

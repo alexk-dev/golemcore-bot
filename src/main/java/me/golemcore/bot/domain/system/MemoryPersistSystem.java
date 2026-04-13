@@ -18,17 +18,18 @@ package me.golemcore.bot.domain.system;
  * Contact: alex@kuleshov.tech
  */
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.TurnMemoryEvent;
+import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.service.MemoryScopeSupport;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -61,6 +62,9 @@ public class MemoryPersistSystem implements AgentSystem {
 
     @Override
     public boolean shouldProcess(AgentContext context) {
+        if (isMemoryPresetDisabled(context)) {
+            return false;
+        }
         // Prefer TurnOutcome; fall back to legacy finalAnswerReady
         TurnOutcome outcome = context.getTurnOutcome();
         if (outcome != null) {
@@ -71,6 +75,10 @@ public class MemoryPersistSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
+        if (isMemoryPresetDisabled(context)) {
+            return context;
+        }
+
         // Get the last user message
         Message lastUserMessage = getLastUserMessage(context);
         if (lastUserMessage == null) {
@@ -190,5 +198,10 @@ public class MemoryPersistSystem implements AgentSystem {
             scopes.add(sessionScope);
         }
         return new ArrayList<>(scopes);
+    }
+
+    private boolean isMemoryPresetDisabled(AgentContext context) {
+        String memoryPreset = context != null ? context.getAttribute(ContextAttributes.MEMORY_PRESET_ID) : null;
+        return memoryPreset != null && MemoryPresetIds.DISABLED.equalsIgnoreCase(memoryPreset.trim());
     }
 }

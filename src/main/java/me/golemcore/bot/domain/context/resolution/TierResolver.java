@@ -29,6 +29,7 @@ import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.AutoRunContextSupport;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionModelSettingsSupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 
 import java.util.Optional;
@@ -40,8 +41,9 @@ import java.util.Optional;
  * Tier resolution follows a priority chain that balances user control, skill
  * recommendations, and system defaults:
  * <ol>
- * <li><b>Forced user preference</b> — user explicitly locked a tier via
- * preferences with {@code tierForce=true}</li>
+ * <li><b>Webhook request override</b> — inbound hook mapping/request tier</li>
+ * <li><b>Forced user/session preference</b> — user explicitly locked a tier via
+ * preferences or session settings with {@code tierForce=true}</li>
  * <li><b>Reflection override</b> — autonomous recovery runs may specify a
  * dedicated reflection tier</li>
  * <li><b>Active skill recommendation</b> — the skill's YAML frontmatter
@@ -98,28 +100,45 @@ public class TierResolver {
             return;
         }
 
-        boolean force = prefs.isTierForce();
-        String userTier = prefs.getModelTier();
+        TierPreference tierPreference = resolveTierPreference(context, prefs);
 
-        if (force && userTier != null) {
-            applyModelTier(context, userTier, "user_pref_forced");
+        String webhookTier = context.getAttribute(ContextAttributes.WEBHOOK_MODEL_TIER);
+        if (webhookTier != null && !webhookTier.isBlank()) {
+            applyModelTier(context, webhookTier, "webhook");
+            return;
+        }
+
+        if (tierPreference.force() && tierPreference.tier() != null) {
+            applyModelTier(context, tierPreference.tier(), tierPreference.forcedSource());
             return;
         }
 
         if (isAutoReflectionContext(context)) {
-            resolveReflectionTier(context, userTier);
+            resolveReflectionTier(context, tierPreference.tier(), tierPreference.source());
             return;
         }
 
         Skill activeSkill = context.getActiveSkill();
         if (activeSkill != null && activeSkill.getModelTier() != null) {
             applyModelTier(context, activeSkill.getModelTier(), "skill");
-        } else if (userTier != null) {
-            applyModelTier(context, userTier, "user_pref");
+        } else if (tierPreference.tier() != null) {
+            applyModelTier(context, tierPreference.tier(), tierPreference.source());
         }
     }
 
-    private void resolveReflectionTier(AgentContext context, String userTier) {
+    private TierPreference resolveTierPreference(AgentContext context, UserPreferences prefs) {
+        if (context.getSession() != null
+                && SessionModelSettingsSupport.hasModelSettings(context.getSession())) {
+            return new TierPreference(
+                    SessionModelSettingsSupport.readModelTier(context.getSession()),
+                    SessionModelSettingsSupport.readForce(context.getSession()),
+                    "session_pref",
+                    "session_pref_forced");
+        }
+        return new TierPreference(prefs.getModelTier(), prefs.isTierForce(), "user_pref", "user_pref_forced");
+    }
+
+    private void resolveReflectionTier(AgentContext context, String fallbackTier, String fallbackSource) {
         Skill activeSkill = resolveReflectionSkill(context);
         String configuredReflectionTier = resolveReflectionTierOverride(context);
         boolean priority = resolveReflectionTierPriority(context);
@@ -147,8 +166,8 @@ public class TierResolver {
             applyModelTier(context, activeSkill.getModelTier(), "skill");
             return;
         }
-        if (userTier != null) {
-            applyModelTier(context, userTier, "user_pref");
+        if (fallbackTier != null) {
+            applyModelTier(context, fallbackTier, fallbackSource);
         }
     }
 
@@ -270,5 +289,8 @@ public class TierResolver {
             return null;
         }
         return context.getMessages().get(context.getMessages().size() - 1);
+    }
+
+    private record TierPreference(String tier, boolean force, String source, String forcedSource) {
     }
 }
