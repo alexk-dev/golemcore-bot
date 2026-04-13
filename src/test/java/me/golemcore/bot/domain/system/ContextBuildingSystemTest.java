@@ -85,9 +85,12 @@ class ContextBuildingSystemTest {
         McpPort mcpPort = mock(McpPort.class);
         PlanService planService = mock(PlanService.class);
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        when(runtimeConfigService.isHiveSdlcLifecycleSignalEnabled()).thenReturn(true);
 
         HiveLifecycleSignalTool hiveLifecycleSignalTool = new HiveLifecycleSignalTool(
                 mock(me.golemcore.bot.port.outbound.HiveEventPublishPort.class),
+                runtimeConfigService,
                 Clock.systemUTC());
         when(toolCallExecutionService.listTools()).thenReturn(List.of(hiveLifecycleSignalTool));
 

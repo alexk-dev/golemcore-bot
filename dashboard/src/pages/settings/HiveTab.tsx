@@ -15,6 +15,7 @@ import {
   resolveHiveManagedPolicyVariant,
 } from './hiveManagedPolicySupport';
 import { HiveActionButtons } from './HiveActionButtons';
+import { HiveSdlcSettings } from './HiveSdlcSettings';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -81,6 +82,7 @@ export default function HiveTab({ config, hiveStatus }: HiveTabProps): ReactElem
         )}
         <HiveConnectionSummary status={status} />
         <HiveRuntimeSettings form={form} isManaged={isManaged} setForm={setForm} />
+        <HiveSdlcSettings form={form} isManaged={isManaged} setForm={setForm} />
         <HiveJoinWorkspace
           isManaged={isManaged}
           isBusy={isBusy}

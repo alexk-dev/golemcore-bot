@@ -26,6 +26,15 @@ const config: HiveConfig = {
   displayName: 'Build Runner',
   hostLabel: 'builder-a',
   autoConnect: true,
+  sdlc: {
+    currentContextEnabled: true,
+    cardReadEnabled: true,
+    cardSearchEnabled: true,
+    threadMessageEnabled: true,
+    reviewRequestEnabled: true,
+    followupCardCreateEnabled: true,
+    lifecycleSignalEnabled: true,
+  },
 };
 
 describe('HiveTab', () => {

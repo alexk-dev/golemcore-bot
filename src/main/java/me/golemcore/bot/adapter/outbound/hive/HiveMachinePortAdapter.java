@@ -1,13 +1,12 @@
 package me.golemcore.bot.adapter.outbound.hive;
 
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
 import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;
 import me.golemcore.bot.domain.model.hive.HivePolicyPackage;
 import me.golemcore.bot.port.outbound.HiveMachinePort;
 import org.springframework.stereotype.Component;
-
-import java.util.Set;
 
 @Component
 @RequiredArgsConstructor

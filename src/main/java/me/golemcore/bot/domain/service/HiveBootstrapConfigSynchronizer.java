@@ -77,6 +77,7 @@ public class HiveBootstrapConfigSynchronizer {
                 .hostLabel(hostLabel)
                 .autoConnect(autoConnect)
                 .managedByProperties(managed)
+                .sdlc(baseline.getSdlc())
                 .build();
     }
 

@@ -1,5 +1,3 @@
-package me.golemcore.bot.tools;
-
 /*
  * Copyright 2026 Aleksei Kuleshov
  *
@@ -18,6 +16,8 @@ package me.golemcore.bot.tools;
  * Contact: alex@kuleshov.tech
  */
 
+package me.golemcore.bot.tools;
+
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -31,6 +31,7 @@ import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.model.hive.HiveEvidenceRef;
 import me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest;
 import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -46,19 +47,29 @@ public class HiveLifecycleSignalTool implements ToolComponent {
     public static final String TOOL_NAME = ToolNames.HIVE_LIFECYCLE_SIGNAL;
 
     private static final List<String> SUPPORTED_SIGNAL_TYPES = List.of(
+            "WORK_STARTED",
             "PROGRESS_REPORTED",
             "BLOCKER_RAISED",
             "BLOCKER_CLEARED",
             "REVIEW_REQUESTED",
             "WORK_COMPLETED",
-            "WORK_FAILED");
+            "WORK_FAILED",
+            "WORK_CANCELLED",
+            "REVIEW_STARTED",
+            "REVIEW_APPROVED",
+            "CHANGES_REQUESTED");
     private static final Set<String> ALLOWED_SIGNAL_TYPES = Set.copyOf(SUPPORTED_SIGNAL_TYPES);
 
     private final HiveEventPublishPort hiveEventPublishPort;
+    private final RuntimeConfigService runtimeConfigService;
     private final Clock clock;
 
-    public HiveLifecycleSignalTool(HiveEventPublishPort hiveEventPublishPort, Clock clock) {
+    public HiveLifecycleSignalTool(
+            HiveEventPublishPort hiveEventPublishPort,
+            RuntimeConfigService runtimeConfigService,
+            Clock clock) {
         this.hiveEventPublishPort = hiveEventPublishPort;
+        this.runtimeConfigService = runtimeConfigService;
         this.clock = clock;
     }
 
@@ -67,8 +78,9 @@ public class HiveLifecycleSignalTool implements ToolComponent {
         return ToolDefinition.builder()
                 .name(TOOL_NAME)
                 .description("Emit a structured Hive card lifecycle signal for the active Hive card thread. "
-                        + "Use this when the work is blocked, unblocked, ready for review, completed, or "
-                        + "intentionally marked as failed. Plain text alone does not update Hive board state.")
+                        + "Use this when work starts, progresses, is blocked/unblocked, requests review, "
+                        + "completes, fails/cancels, or records review decisions. Plain text alone does not "
+                        + "update Hive board state.")
                 .inputSchema(Map.of(
                         "type", "object",
                         "required", List.of("signal_type", "summary"),
@@ -103,6 +115,11 @@ public class HiveLifecycleSignalTool implements ToolComponent {
     }
 
     @Override
+    public boolean isEnabled() {
+        return runtimeConfigService.isHiveSdlcLifecycleSignalEnabled();
+    }
+
+    @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
         AgentContext context = AgentContextHolder.get();
         if (!isHiveContext(context)) {
@@ -130,13 +147,14 @@ public class HiveLifecycleSignalTool implements ToolComponent {
                 new HiveLifecycleSignalRequest(signalType, summary, details, blockerCode, evidenceRefs,
                         Instant.now(clock)),
                 metadata);
-        return CompletableFuture.completedFuture(ToolResult.success(
+        Map<String, Object> resultData = Map.of(
+                "signalType", signalType,
+                "summary", summary,
+                "threadId", metadata.get(ContextAttributes.HIVE_THREAD_ID),
+                "cardId", metadata.get(ContextAttributes.HIVE_CARD_ID));
+        return CompletableFuture.completedFuture(HiveSdlcToolSupport.visibleSuccess(
                 "Hive lifecycle signal emitted: " + signalType,
-                Map.of(
-                        "signalType", signalType,
-                        "summary", summary,
-                        "threadId", metadata.get(ContextAttributes.HIVE_THREAD_ID),
-                        "cardId", metadata.get(ContextAttributes.HIVE_CARD_ID))));
+                resultData));
     }
 
     private boolean isHiveContext(AgentContext context) {

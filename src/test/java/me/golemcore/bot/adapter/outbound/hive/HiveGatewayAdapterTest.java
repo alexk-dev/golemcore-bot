@@ -12,6 +12,12 @@ import java.util.List;
 import java.util.Set;
 import me.golemcore.bot.domain.model.hive.HiveAuthSession;
 import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
+import me.golemcore.bot.domain.model.hive.HiveCardDetail;
+import me.golemcore.bot.domain.model.hive.HiveCardSearchRequest;
+import me.golemcore.bot.domain.model.hive.HiveCardSummary;
+import me.golemcore.bot.domain.model.hive.HiveCreateCardRequest;
+import me.golemcore.bot.domain.model.hive.HiveRequestReviewRequest;
+import me.golemcore.bot.domain.model.hive.HiveThreadMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -111,6 +117,40 @@ class HiveGatewayAdapterTest {
                 null,
                 null,
                 null);
+    }
+
+    @Test
+    void shouldDelegateSdlcOperations() {
+        HiveCardSearchRequest searchRequest = new HiveCardSearchRequest(null, "board-1", null, null, null, null, null,
+                false);
+        HiveCreateCardRequest createRequest = new HiveCreateCardRequest(null, "board-1", "Title", null, "Prompt",
+                null, null, null, null, null, List.of(), null, null, null, null, false);
+        HiveRequestReviewRequest reviewRequest = new HiveRequestReviewRequest(List.of("golem-reviewer"), null, 1);
+        HiveCardDetail card = new HiveCardDetail("card-1", null, "board-1", "task", null, null, List.of(), null,
+                List.of(), null, 0, null, null, null, "thread-1", "Title", null, "Prompt", "ready", null, null,
+                0, false, null, null, null, null);
+        HiveThreadMessage message = new HiveThreadMessage("msg-1", "thread-1", "card-1", null, null, null,
+                "NOTE", "OPERATOR", "golem-1", "Bot", "Done", null);
+        when(hiveApiClient.getCard("https://hive.example.com", "golem-1", "access", "card-1")).thenReturn(card);
+        when(hiveApiClient.searchCards("https://hive.example.com", "golem-1", "access", searchRequest))
+                .thenReturn(List.of(new HiveCardSummary("card-1", null, "board-1", "task", null, null, List.of(),
+                        null, List.of(), null, 0, null, null, null, "thread-1", "Title", "ready", null, null, 0,
+                        false)));
+        when(hiveApiClient.createCard("https://hive.example.com", "golem-1", "access", createRequest)).thenReturn(card);
+        when(hiveApiClient.postThreadMessage("https://hive.example.com", "golem-1", "access", "thread-1", "Done"))
+                .thenReturn(message);
+        when(hiveApiClient.requestReview("https://hive.example.com", "golem-1", "access", "card-1", reviewRequest))
+                .thenReturn(card);
+
+        assertEquals("card-1", adapter.getCard("https://hive.example.com", "golem-1", "access", "card-1").id());
+        assertEquals(1, adapter.searchCards("https://hive.example.com", "golem-1", "access", searchRequest).size());
+        assertEquals("card-1", adapter.createCard("https://hive.example.com", "golem-1", "access", createRequest).id());
+        assertEquals("msg-1",
+                adapter.postThreadMessage("https://hive.example.com", "golem-1", "access", "thread-1", "Done")
+                        .id());
+        assertEquals("card-1",
+                adapter.requestReview("https://hive.example.com", "golem-1", "access", "card-1", reviewRequest)
+                        .id());
     }
 
     @Test
