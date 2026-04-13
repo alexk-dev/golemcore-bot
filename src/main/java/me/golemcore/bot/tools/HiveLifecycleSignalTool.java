@@ -47,12 +47,17 @@ public class HiveLifecycleSignalTool implements ToolComponent {
     public static final String TOOL_NAME = ToolNames.HIVE_LIFECYCLE_SIGNAL;
 
     private static final List<String> SUPPORTED_SIGNAL_TYPES = List.of(
+            "WORK_STARTED",
             "PROGRESS_REPORTED",
             "BLOCKER_RAISED",
             "BLOCKER_CLEARED",
             "REVIEW_REQUESTED",
             "WORK_COMPLETED",
-            "WORK_FAILED");
+            "WORK_FAILED",
+            "WORK_CANCELLED",
+            "REVIEW_STARTED",
+            "REVIEW_APPROVED",
+            "CHANGES_REQUESTED");
     private static final Set<String> ALLOWED_SIGNAL_TYPES = Set.copyOf(SUPPORTED_SIGNAL_TYPES);
 
     private final HiveEventPublishPort hiveEventPublishPort;
@@ -73,8 +78,9 @@ public class HiveLifecycleSignalTool implements ToolComponent {
         return ToolDefinition.builder()
                 .name(TOOL_NAME)
                 .description("Emit a structured Hive card lifecycle signal for the active Hive card thread. "
-                        + "Use this when the work is blocked, unblocked, ready for review, completed, or "
-                        + "intentionally marked as failed. Plain text alone does not update Hive board state.")
+                        + "Use this when work starts, progresses, is blocked/unblocked, requests review, "
+                        + "completes, fails/cancels, or records review decisions. Plain text alone does not "
+                        + "update Hive board state.")
                 .inputSchema(Map.of(
                         "type", "object",
                         "required", List.of("signal_type", "summary"),

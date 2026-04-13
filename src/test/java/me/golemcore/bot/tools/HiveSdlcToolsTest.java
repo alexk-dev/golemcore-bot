@@ -131,13 +131,45 @@ class HiveSdlcToolsTest {
         when(hiveSdlcService.requestReview(argThat(cardId -> "card-1".equals(cardId)),
                 argThat(request -> request.requiredReviewCount() == 1))).thenReturn(card("card-1"));
 
-        ToolResult result = tool.execute(Map.of("required_review_count", 1)).join();
+        ToolResult result = tool.execute(Map.of(
+                "reviewer_golem_ids", List.of("reviewer-golem-1"),
+                "required_review_count", 1)).join();
 
         assertTrue(result.isSuccess());
         assertTrue(result.getOutput().contains("\"id\" : \"card-1\""));
         assertTrue(result.getOutput().contains("\"title\" : \"Title\""));
         verify(hiveSdlcService).requestReview(argThat(cardId -> "card-1".equals(cardId)),
                 argThat(request -> request.requiredReviewCount() == 1));
+    }
+
+    @Test
+    void shouldRequestReviewUsingExistingCardReviewerSettings() {
+        HiveRequestReviewTool tool = new HiveRequestReviewTool(hiveSdlcService, runtimeConfigService);
+        when(hiveSdlcService.getCard("card-1")).thenReturn(reviewableCard("card-1"));
+        when(hiveSdlcService.requestReview(argThat(cardId -> "card-1".equals(cardId)),
+                argThat(request -> request.requiredReviewCount() == 2
+                        && request.reviewerGolemIds().contains("reviewer-golem-1")
+                        && "review-team".equals(request.reviewerTeamId()))))
+                .thenReturn(card("card-1"));
+
+        ToolResult result = tool.execute(Map.of()).join();
+
+        assertTrue(result.isSuccess());
+        verify(hiveSdlcService).requestReview(argThat(cardId -> "card-1".equals(cardId)),
+                argThat(request -> request.requiredReviewCount() == 2
+                        && request.reviewerGolemIds().contains("reviewer-golem-1")
+                        && "review-team".equals(request.reviewerTeamId())));
+    }
+
+    @Test
+    void shouldRejectReviewRequestWhenNoReviewerInputsOrCardSettingsExist() {
+        HiveRequestReviewTool tool = new HiveRequestReviewTool(hiveSdlcService, runtimeConfigService);
+        when(hiveSdlcService.getCard("card-1")).thenReturn(card("card-1"));
+
+        ToolResult result = tool.execute(Map.of()).join();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("reviewer_golem_ids or reviewer_team_id"));
     }
 
     @Test
@@ -174,6 +206,14 @@ class HiveSdlcToolsTest {
     private HiveCardDetail card(String id) {
         return new HiveCardDetail(id, "service-1", "board-1", "task", null, null, List.of(), null, List.of(), null,
                 0, null, null, null, "thread-1", "Title", "Description", "Prompt", "ready", null, null,
+                0, false, null, Instant.parse("2026-03-18T00:00:00Z"),
+                Instant.parse("2026-03-18T00:00:00Z"), null);
+    }
+
+    private HiveCardDetail reviewableCard(String id) {
+        return new HiveCardDetail(id, "service-1", "board-1", "task", null, null, List.of(), null,
+                List.of("reviewer-golem-1"), "review-team",
+                2, null, null, null, "thread-1", "Title", "Description", "Prompt", "ready", null, null,
                 0, false, null, Instant.parse("2026-03-18T00:00:00Z"),
                 Instant.parse("2026-03-18T00:00:00Z"), null);
     }

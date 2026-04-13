@@ -19,11 +19,11 @@ Add Hive SDLC tools that are advertised only for Hive sessions and are individua
 - `hive_post_thread_message`
   - Posts a structured operator-facing note into the active or explicit Hive thread.
 - `hive_request_review`
-  - Requests Hive review for the active or explicit card.
+  - Requests Hive review for the active or explicit card. Explicit reviewer golems/team can be supplied; otherwise existing card reviewer settings are reused.
 - `hive_create_followup_card`
   - Creates a follow-up/subtask/review card in Hive, defaulting relationships from the active card when requested.
 - `hive_lifecycle_signal`
-  - Existing tool stays built-in and becomes governed by the same SDLC function toggle model.
+  - Existing tool stays built-in and becomes governed by the same SDLC function toggle model. It supports work, blocker, cancellation, review-start, approval, and changes-requested signals.
 
 ### Runtime settings
 
@@ -68,6 +68,23 @@ Lifecycle signals continue to use `events:batch` through the existing event publ
 
 Add the machine-scoped Hive endpoints above with `golems:sdlc:read` / `golems:sdlc:write` scopes. Hive remains the authority for card state and filters machine API access to cards assigned/review-assigned to the golem or linked to accessible cards.
 
+### Multi-golem topology
+
+Use Hive as the collaboration hub:
+
+```text
+Golem A -> Hive card/thread/signal -> Hive policy/assignment -> Golem B
+```
+
+Recommended roles:
+
+- Planner / PM golem: objective and epic decomposition, follow-up card creation.
+- Implementer golem: task execution, progress/blocker/completion signals.
+- Reviewer golem: review-card execution, `REVIEW_STARTED`, `REVIEW_APPROVED`, `CHANGES_REQUESTED` signals.
+- QA golem: regression and integration verification, evidence and bug follow-ups.
+- Release golem: final gate checks and release/rollback coordination.
+- Human operator: priority, risk acceptance, credentials, and manual overrides.
+
 ## Architecture
 
 - Domain-facing API: extend `HiveGatewayPort` with SDLC operations.
@@ -76,6 +93,7 @@ Add the machine-scoped Hive endpoints above with `golems:sdlc:read` / `golems:sd
 - Tools: implement each new tool as a `ToolComponent`, using `AgentContextHolder` directly and avoiding async thread pools because the context is ThreadLocal.
 - Advertisement: update `ToolLayer` to advertise Hive tools only for Hive sessions and only when their feature toggle is enabled.
 - UI: update the dashboard Hive tab with per-function toggles.
+- SDLC lifecycle: keep board transitions signal-driven and let Hive enforce board flow mappings, reviewer separation, audit, and manual override rules.
 
 ## Tests
 
@@ -83,6 +101,8 @@ Add/update tests for:
 
 - runtime config defaulting/normalization of Hive SDLC toggles;
 - tool enablement and policy denial outside Hive sessions;
+- lifecycle signal enum/schema support for work, cancellation, and review decision signals;
+- `hive_request_review` explicit reviewer input and card reviewer-setting fallback;
 - API client request path/body/auth mapping;
 - gateway adapter mapping;
 - dashboard mapping of `hive.sdlc` settings;

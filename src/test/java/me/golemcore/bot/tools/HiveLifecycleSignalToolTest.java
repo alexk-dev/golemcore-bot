@@ -84,6 +84,36 @@ class HiveLifecycleSignalToolTest {
     }
 
     @Test
+    void shouldPublishReviewDecisionSignalsForHiveSession() {
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
+        HiveLifecycleSignalTool tool = new HiveLifecycleSignalTool(
+                publisher,
+                enabledRuntimeConfigService(),
+                Clock.fixed(Instant.parse("2026-03-18T12:00:00Z"), ZoneOffset.UTC));
+
+        AgentContext context = AgentContextHolder.get();
+        context.setAttribute(ContextAttributes.HIVE_THREAD_ID, "thread-review");
+        context.setAttribute(ContextAttributes.HIVE_CARD_ID, "review-card-1");
+        context.setAttribute(ContextAttributes.HIVE_COMMAND_ID, "cmd-review");
+        context.setAttribute(ContextAttributes.HIVE_RUN_ID, "run-review");
+
+        ToolResult result = tool.execute(Map.of(
+                "signal_type", "changes_requested",
+                "summary", "Add regression coverage",
+                "details", "Token refresh failure path is not covered"))
+                .join();
+
+        assertEquals(true, result.isSuccess());
+        assertEquals(true, result.getOutput().contains("CHANGES_REQUESTED"));
+        verify(publisher).publishLifecycleSignal(
+                argThat(request -> "CHANGES_REQUESTED".equals(request.signalType())
+                        && "Add regression coverage".equals(request.summary())
+                        && "Token refresh failure path is not covered".equals(request.details())),
+                argThat(metadata -> "thread-review".equals(metadata.get(ContextAttributes.HIVE_THREAD_ID))
+                        && "review-card-1".equals(metadata.get(ContextAttributes.HIVE_CARD_ID))));
+    }
+
+    @Test
     void shouldDenyLifecycleSignalOutsideHiveSession() {
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveLifecycleSignalTool tool = new HiveLifecycleSignalTool(publisher, enabledRuntimeConfigService(),

@@ -18,6 +18,7 @@
 
 package me.golemcore.bot.tools;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
@@ -44,7 +45,7 @@ public class HiveRequestReviewTool implements ToolComponent {
         return ToolDefinition.builder()
                 .name(ToolNames.HIVE_REQUEST_REVIEW)
                 .description(
-                        "Request Hive review for a card, optionally specifying reviewer golems, reviewer team, and required review count.")
+                        "Request Hive review for a card. If reviewer inputs are omitted, existing reviewer settings from the Hive card are reused.")
                 .inputSchema(Map.of(
                         "type", "object",
                         "properties", Map.of(
@@ -72,10 +73,7 @@ public class HiveRequestReviewTool implements ToolComponent {
             if (cardId == null) {
                 return HiveSdlcToolSupport.executionFailedFuture("Hive card_id is required");
             }
-            HiveRequestReviewRequest request = new HiveRequestReviewRequest(
-                    HiveSdlcToolSupport.stringListParam(parameters, "reviewer_golem_ids"),
-                    HiveSdlcToolSupport.stringParam(parameters, "reviewer_team_id"),
-                    HiveSdlcToolSupport.integerParam(parameters, "required_review_count"));
+            HiveRequestReviewRequest request = buildReviewRequest(parameters, cardId);
             HiveCardDetail card = hiveSdlcService.requestReview(cardId, request);
             return CompletableFuture
                     .completedFuture(HiveSdlcToolSupport.visibleSuccess("Hive review requested for card: " + card.id(),
@@ -85,5 +83,28 @@ public class HiveRequestReviewTool implements ToolComponent {
         } catch (RuntimeException exception) {
             return HiveSdlcToolSupport.executionFailedFuture(exception.getMessage());
         }
+    }
+
+    private HiveRequestReviewRequest buildReviewRequest(Map<String, Object> parameters, String cardId) {
+        List<String> reviewerGolemIds = HiveSdlcToolSupport.stringListParam(parameters, "reviewer_golem_ids");
+        String reviewerTeamId = HiveSdlcToolSupport.stringParam(parameters, "reviewer_team_id");
+        Integer requiredReviewCount = HiveSdlcToolSupport.integerParam(parameters, "required_review_count");
+        if (!reviewerGolemIds.isEmpty() || reviewerTeamId != null) {
+            return new HiveRequestReviewRequest(reviewerGolemIds, reviewerTeamId, requiredReviewCount);
+        }
+
+        HiveCardDetail currentCard = hiveSdlcService.getCard(cardId);
+        List<String> cardReviewerGolemIds = currentCard.reviewerGolemIds();
+        String cardReviewerTeamId = currentCard.reviewerTeamId();
+        if ((cardReviewerGolemIds == null || cardReviewerGolemIds.isEmpty()) && cardReviewerTeamId == null) {
+            throw new IllegalArgumentException(
+                    "Hive review request requires reviewer_golem_ids or reviewer_team_id because the card has no reviewer settings");
+        }
+        Integer effectiveReviewCount = requiredReviewCount != null ? requiredReviewCount
+                : currentCard.requiredReviewCount();
+        return new HiveRequestReviewRequest(
+                cardReviewerGolemIds != null ? cardReviewerGolemIds : List.of(),
+                cardReviewerTeamId,
+                effectiveReviewCount);
     }
 }
