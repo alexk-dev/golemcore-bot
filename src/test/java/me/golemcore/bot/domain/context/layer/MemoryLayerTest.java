@@ -12,6 +12,8 @@ import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
@@ -54,6 +56,22 @@ class MemoryLayerTest {
 
         assertFalse(result.hasContent());
         assertEquals("", context.getMemoryContext());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "telegram", "hive", "web" })
+    void shouldKeepMemoryEnabledForNonWebhookChatsWhenPresetIsMissing(String channelType) {
+        MemoryPack pack = MemoryPack.builder().renderedContext("").build();
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(pack);
+        AgentContext context = AgentContext.builder()
+                .messages(List.of(Message.builder().role("user").content("Hi").build()))
+                .session(AgentSession.builder().channelType(channelType).chatId("1").build())
+                .build();
+
+        assertTrue(layer.appliesTo(context));
+        layer.assemble(context);
+
+        verify(memoryComponent).buildMemoryPack(any());
     }
 
     @Test

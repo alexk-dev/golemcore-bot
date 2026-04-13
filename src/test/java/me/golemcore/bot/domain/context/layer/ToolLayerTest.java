@@ -14,6 +14,8 @@ import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.port.outbound.McpPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 
@@ -106,6 +108,26 @@ class ToolLayerTest {
 
         assertEquals(1, context.getAvailableTools().size());
         assertEquals("shell", context.getAvailableTools().get(0).getName());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "telegram", "hive", "web" })
+    void shouldAdvertiseMemoryToolForNonWebhookChatsWhenPresetIsMissing(String channelType) {
+        ToolComponent memoryTool = mock(ToolComponent.class);
+        when(memoryTool.isEnabled()).thenReturn(true);
+        when(memoryTool.getToolName()).thenReturn(ToolNames.MEMORY);
+        when(memoryTool.getDefinition()).thenReturn(
+                ToolDefinition.builder().name(ToolNames.MEMORY).description("Memory").build());
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(memoryTool));
+
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().channelType(channelType).chatId("chat-1").build())
+                .build();
+
+        layer.assemble(context);
+
+        assertEquals(1, context.getAvailableTools().size());
+        assertEquals(ToolNames.MEMORY, context.getAvailableTools().get(0).getName());
     }
 
     @Test
