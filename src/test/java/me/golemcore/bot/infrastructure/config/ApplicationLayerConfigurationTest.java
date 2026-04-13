@@ -80,7 +80,8 @@ class ApplicationLayerConfigurationTest {
         ModelSelectionCommandService modelSelection = configuration.modelSelectionCommandService(
                 mock(UserPreferencesService.class),
                 mock(ModelSelectionService.class),
-                mock(RuntimeConfigService.class));
+                mock(RuntimeConfigService.class),
+                mock(me.golemcore.bot.port.outbound.SessionPort.class));
         AutomationCommandService automation = configuration.automationCommandService(
                 mock(AutoModeService.class),
                 mock(RuntimeConfigService.class),

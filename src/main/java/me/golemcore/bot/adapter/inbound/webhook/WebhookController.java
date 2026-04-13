@@ -23,14 +23,19 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
 import me.golemcore.bot.domain.service.TraceContextSupport;
 import me.golemcore.bot.domain.service.TraceNamingSupport;
+import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.security.InputSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +57,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -99,6 +105,8 @@ public class WebhookController {
     private final WebhookDeliveryTracker deliveryTracker;
     private final WebhookResponseSchemaService responseSchemaService;
     private final ApplicationEventPublisher eventPublisher;
+    private final SessionPort sessionPort;
+    private final TraceService traceService;
     private final InputSanitizer inputSanitizer;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -209,7 +217,7 @@ public class WebhookController {
             metadata.put("webhook.runId", runId);
             metadata.put("webhook.timeoutSeconds", timeout);
             if (modelTier != null) {
-                metadata.put("webhook.modelTier", modelTier);
+                metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, modelTier);
             }
             addResponseContractMetadata(metadata, request.getResponseJsonSchema(), responseValidationModelTier);
             if (request.isDeliver()) {
@@ -252,7 +260,8 @@ public class WebhookController {
                         timeout,
                         request.getResponseJsonSchema(),
                         responseValidationModelTier,
-                        modelTier);
+                        modelTier,
+                        message);
             }
             return ResponseEntity.status(HttpStatus.ACCEPTED)
                     .body(WebhookResponse.accepted(runId, chatId));
@@ -342,7 +351,7 @@ public class WebhookController {
         metadata.put("webhook.mapping", mapping.getName());
         metadata.put("webhook.timeoutSeconds", config.getDefaultTimeoutSeconds());
         if (modelTier != null) {
-            metadata.put("webhook.modelTier", modelTier);
+            metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, modelTier);
         }
         addResponseContractMetadata(metadata, mapping.getResponseJsonSchema(), responseValidationModelTier);
         if (mapping.isDeliver()) {
@@ -367,7 +376,8 @@ public class WebhookController {
                     config.getDefaultTimeoutSeconds(),
                     mapping.getResponseJsonSchema(),
                     responseValidationModelTier,
-                    modelTier);
+                    modelTier,
+                    message);
         }
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(WebhookResponse.accepted(runId, chatId));
@@ -398,20 +408,25 @@ public class WebhookController {
 
     private ResponseEntity<?> buildSynchronousResponse(CompletableFuture<String> responseFuture, String runId,
             String chatId, int timeoutSeconds, Map<String, Object> responseJsonSchema,
-            String responseValidationModelTier, String fallbackModelTier) {
+            String responseValidationModelTier, String fallbackModelTier, Message triggerMessage) {
         long startedNanos = System.nanoTime();
+        SchemaTraceSpan schemaTrace = null;
         try {
             String response = responseFuture.get(timeoutSeconds, TimeUnit.SECONDS);
             if (!WebhookResponseSchemaService.hasSchema(responseJsonSchema)) {
                 return ResponseEntity.ok(WebhookResponse.completed(runId, chatId, response, null));
             }
 
+            schemaTrace = startSchemaValidationTrace(
+                    triggerMessage, chatId, responseJsonSchema, responseValidationModelTier, fallbackModelTier);
             WebhookResponseSchemaService.SchemaResult result = responseSchemaService.validateAndRepair(
                     response,
                     responseJsonSchema,
                     responseValidationModelTier,
                     fallbackModelTier,
                     remainingBudget(timeoutSeconds, startedNanos));
+            finishSchemaValidationTrace(schemaTrace, TraceStatusCode.OK, null,
+                    Map.of("repair_attempts", result.repairAttempts()));
             return ResponseEntity.ok()
                     .header("X-Golemcore-Run-Id", runId)
                     .header("X-Golemcore-Chat-Id", chatId)
@@ -430,9 +445,13 @@ public class WebhookController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(WebhookResponse.error("Synchronous webhook response failed: " + e.getMessage()));
         } catch (WebhookResponseSchemaService.SchemaTimeoutException e) {
+            finishSchemaValidationTrace(schemaTrace, TraceStatusCode.ERROR, e.getMessage(),
+                    Map.of("error_type", "timeout"));
             return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
                     .body(WebhookResponse.error("Synchronous webhook response timed out"));
         } catch (WebhookResponseSchemaService.SchemaProcessingException e) {
+            finishSchemaValidationTrace(schemaTrace, TraceStatusCode.ERROR, e.getMessage(),
+                    Map.of("error_type", "schema_processing"));
             return ResponseEntity.status(HttpStatusCode.valueOf(422))
                     .body(WebhookResponse.error(e.getMessage()));
         }
@@ -446,6 +465,73 @@ public class WebhookController {
             throw new WebhookResponseSchemaService.SchemaTimeoutException("Synchronous webhook response timed out");
         }
         return remaining;
+    }
+
+    private SchemaTraceSpan startSchemaValidationTrace(Message triggerMessage, String chatId,
+            Map<String, Object> responseJsonSchema, String responseValidationModelTier, String fallbackModelTier) {
+        try {
+            TraceContext rootTrace = TraceContextSupport
+                    .readTraceContext(triggerMessage != null ? triggerMessage.getMetadata() : null);
+            if (rootTrace == null) {
+                return null;
+            }
+            AgentSession session = sessionPort.get(CHANNEL_TYPE + ":" + chatId).orElse(null);
+            if (session == null) {
+                return null;
+            }
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            attributes.put("schema.present", true);
+            attributes.put("schema.top_level_keys", responseJsonSchema.size());
+            putIfPresent(attributes, "validation.model.tier",
+                    resolveEffectiveValidationTier(responseValidationModelTier, fallbackModelTier));
+            putIfPresent(attributes, "response.model.tier", fallbackModelTier);
+
+            TraceContext span = traceService.startSpan(session, rootTrace,
+                    "webhook.response.schema.validation", TraceSpanKind.INTERNAL, Instant.now(), attributes);
+            traceService.appendEvent(session, span, "schema.validation.started", Instant.now(), attributes);
+            return new SchemaTraceSpan(session, span);
+        } catch (RuntimeException e) {
+            log.debug("[Webhook] Failed to start schema validation trace: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void finishSchemaValidationTrace(SchemaTraceSpan schemaTrace, TraceStatusCode statusCode,
+            String statusMessage, Map<String, Object> attributes) {
+        if (schemaTrace == null) {
+            return;
+        }
+        try {
+            Map<String, Object> eventAttributes = new LinkedHashMap<>(attributes != null ? attributes : Map.of());
+            eventAttributes.put("success", TraceStatusCode.OK.equals(statusCode));
+            traceService.appendEvent(
+                    schemaTrace.session(),
+                    schemaTrace.span(),
+                    TraceStatusCode.OK.equals(statusCode) ? "schema.validation.finished" : "schema.validation.failed",
+                    Instant.now(),
+                    eventAttributes);
+            traceService.finishSpan(schemaTrace.session(), schemaTrace.span(), statusCode, statusMessage,
+                    Instant.now());
+            sessionPort.save(schemaTrace.session());
+        } catch (RuntimeException e) {
+            log.debug("[Webhook] Failed to finish schema validation trace: {}", e.getMessage());
+        }
+    }
+
+    private String resolveEffectiveValidationTier(String responseValidationModelTier, String fallbackModelTier) {
+        if (responseValidationModelTier != null && !responseValidationModelTier.isBlank()) {
+            return responseValidationModelTier;
+        }
+        if (fallbackModelTier != null && !fallbackModelTier.isBlank()) {
+            return fallbackModelTier;
+        }
+        return "balanced";
+    }
+
+    private void putIfPresent(Map<String, Object> attributes, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            attributes.put(key, value);
+        }
     }
 
     private Message buildMessage(String chatId, String content, Map<String, Object> metadata, String traceName) {
@@ -523,5 +609,8 @@ public class WebhookController {
     private ResponseEntity<WebhookResponse> badRequest(String message) {
         return ResponseEntity.badRequest()
                 .body(WebhookResponse.error(message));
+    }
+
+    private record SchemaTraceSpan(AgentSession session, TraceContext span) {
     }
 }

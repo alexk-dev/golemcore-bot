@@ -351,6 +351,7 @@ public class AgentLoop {
         copyStringMetadataAttribute(message, context, ContextAttributes.ACTIVE_SKILL_NAME);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_REFLECTION_TIER);
+        copyStringMetadataAttribute(message, context, ContextAttributes.WEBHOOK_MODEL_TIER);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_CARD_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_THREAD_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_COMMAND_ID);
@@ -874,6 +875,7 @@ public class AgentLoop {
             putIfPresent(attributes, "reasoning", afterState.reasoning());
             putIfPresent(attributes, "source", afterState.source());
             emitTraceEvent(context, systemSpan, "tier.resolved", attributes);
+            emitWebhookResponseSchemaContextEvent(context, systemSpan);
         }
 
         if (!Objects.equals(beforeState.tier(), afterState.tier())
@@ -895,6 +897,30 @@ public class AgentLoop {
             return;
         }
         traceService.appendEvent(context.getSession(), spanContext, eventName, clock.instant(), attributes);
+    }
+
+    private void emitWebhookResponseSchemaContextEvent(AgentContext context, TraceContext systemSpan) {
+        Message lastMessage = lastContextMessage(context);
+        String schemaText = readMetadataString(lastMessage, ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT);
+        if (schemaText == null || schemaText.isBlank()) {
+            return;
+        }
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("schema.present", true);
+        attributes.put("schema.chars", schemaText.length());
+        attributes.put("prompt.injected", context.getSystemPrompt() != null
+                && context.getSystemPrompt().contains("Webhook Response JSON Contract"));
+        putIfPresent(attributes, "validation.model.tier",
+                readMetadataString(lastMessage, ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER));
+        putIfPresent(attributes, "response.model.tier", context.getModelTier());
+        emitTraceEvent(context, systemSpan, "webhook.response.schema.instructions", attributes);
+    }
+
+    private Message lastContextMessage(AgentContext context) {
+        if (context == null || context.getMessages() == null || context.getMessages().isEmpty()) {
+            return null;
+        }
+        return context.getMessages().get(context.getMessages().size() - 1);
     }
 
     private String normalizeTierForTrace(String tier) {

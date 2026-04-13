@@ -40,6 +40,7 @@ import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceArtifactPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceCatalogPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceInstallPort;
@@ -89,8 +90,10 @@ public class ApplicationLayerConfiguration {
     ModelSelectionCommandService modelSelectionCommandService(
             UserPreferencesService preferencesService,
             ModelSelectionService modelSelectionService,
-            RuntimeConfigService runtimeConfigService) {
-        return new ModelSelectionCommandService(preferencesService, modelSelectionService, runtimeConfigService);
+            RuntimeConfigService runtimeConfigService,
+            SessionPort sessionPort) {
+        return new ModelSelectionCommandService(preferencesService, modelSelectionService, runtimeConfigService,
+                sessionPort);
     }
 
     @Bean

@@ -1093,20 +1093,20 @@ class CommandRouterTest {
 
     @Test
     void tierCommandRendersCurrentTierFromApplicationOutcome() throws Exception {
-        when(modelSelectionCommandService.handleTier(new ModelSelectionCommandService.ShowTierStatus())).thenReturn(
-                new ModelSelectionCommandService.CurrentTier("smart", true));
+        when(modelSelectionCommandService.handleTier(new ModelSelectionCommandService.ShowTierStatus(SESSION_ID)))
+                .thenReturn(new ModelSelectionCommandService.CurrentTier("smart", true));
 
         CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(), CTX).get();
 
         assertTrue(result.success());
         assertEquals("command.tier.current smart on", result.output());
-        verify(modelSelectionCommandService).handleTier(new ModelSelectionCommandService.ShowTierStatus());
+        verify(modelSelectionCommandService).handleTier(new ModelSelectionCommandService.ShowTierStatus(SESSION_ID));
     }
 
     @Test
     void tierCommandParsesForceFlagInAdapter() throws Exception {
         when(modelSelectionCommandService
-                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, true)))
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, true, SESSION_ID)))
                 .thenReturn(new ModelSelectionCommandService.TierUpdated(TIER_SMART, true));
 
         CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_SMART, "force"), CTX).get();
@@ -1114,13 +1114,13 @@ class CommandRouterTest {
         assertTrue(result.success());
         assertEquals("command.tier.set.force smart", result.output());
         verify(modelSelectionCommandService)
-                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, true));
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, true, SESSION_ID));
     }
 
     @Test
     void tierCommandRendersNonForcedUpdate() throws Exception {
         when(modelSelectionCommandService
-                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, false)))
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, false, SESSION_ID)))
                 .thenReturn(new ModelSelectionCommandService.TierUpdated(TIER_SMART, false));
 
         CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_SMART), CTX).get();
@@ -1128,13 +1128,13 @@ class CommandRouterTest {
         assertTrue(result.success());
         assertEquals("command.tier.set smart", result.output());
         verify(modelSelectionCommandService)
-                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, false));
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, false, SESSION_ID));
     }
 
     @Test
     void tierCommandRendersInvalidOutcomeFromApplicationService() throws Exception {
         when(modelSelectionCommandService
-                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, false)))
+                .handleTier(new ModelSelectionCommandService.SetTierSelection(TIER_SMART, false, SESSION_ID)))
                 .thenReturn(new ModelSelectionCommandService.InvalidTier());
 
         CommandPort.CommandResult result = router.execute(CMD_TIER, List.of(TIER_SMART), CTX).get();

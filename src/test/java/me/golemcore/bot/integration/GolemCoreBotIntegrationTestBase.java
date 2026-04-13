@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import me.golemcore.bot.infrastructure.telemetry.GaTelemetryClient;
+import me.golemcore.bot.infrastructure.telemetry.TelemetryEventPublisher;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,7 +39,7 @@ abstract class GolemCoreBotIntegrationTestBase {
     protected ObjectMapper objectMapper;
 
     @MockitoBean
-    GaTelemetryClient gaTelemetryClient;
+    TelemetryEventPublisher telemetryEventPublisher;
 
     @DynamicPropertySource
     static void overrideProperties(DynamicPropertyRegistry registry) {

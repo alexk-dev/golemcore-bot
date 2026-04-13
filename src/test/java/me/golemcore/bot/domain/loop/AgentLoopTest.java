@@ -439,6 +439,90 @@ class AgentLoopTest {
     }
 
     @Test
+    void shouldRecordWebhookResponseSchemaInstructionTraceEvent() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+        AgentSession session = AgentSession.builder()
+                .id("webhook:hook:test")
+                .channelType("webhook")
+                .chatId("hook:test")
+                .messages(new ArrayList<>())
+                .build();
+        when(sessionPort.getOrCreate("webhook", "hook:test")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn("webhook");
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentSystem contextSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "ContextBuildingSystem";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                context.setModelTier("coding");
+                context.setSystemPrompt("# Webhook Response JSON Contract\n{}");
+                context.setAttribute(ContextAttributes.MODEL_TIER_SOURCE, "webhook");
+                context.setAttribute(ContextAttributes.MODEL_TIER_MODEL_ID, "gpt-5-coding");
+                context.setOutgoingResponse(OutgoingResponse.textOnly("done"));
+                return context;
+            }
+        };
+
+        AgentLoop loop = createLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(contextSystem),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("trace schema")
+                .channelType("webhook")
+                .chatId("hook:test")
+                .senderId("u1")
+                .metadata(Map.of(
+                        ContextAttributes.TRACE_ID, "trace-1",
+                        ContextAttributes.TRACE_SPAN_ID, "span-1",
+                        ContextAttributes.TRACE_ROOT_KIND, TraceSpanKind.INGRESS.name(),
+                        ContextAttributes.TRACE_NAME, "webhook.agent",
+                        ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT, "{\"type\":\"object\"}",
+                        ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER, "smart"))
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        TraceRecord trace = session.getTraces().get(0);
+        TraceSpanRecord contextSpan = findSpan(trace, "system.ContextBuildingSystem");
+        TraceEventRecord event = findEvent(contextSpan, "webhook.response.schema.instructions");
+        assertEquals(true, event.getAttributes().get("schema.present"));
+        assertEquals(true, event.getAttributes().get("prompt.injected"));
+        assertEquals("smart", event.getAttributes().get("validation.model.tier"));
+        assertEquals("coding", event.getAttributes().get("response.model.tier"));
+    }
+
+    @Test
     void shouldNotSendGenericFallbackDuringSkillTransition() {
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);

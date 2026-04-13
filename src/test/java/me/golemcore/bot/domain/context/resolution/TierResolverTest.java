@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.context.resolution;
 
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Skill;
@@ -12,6 +13,7 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -59,6 +61,26 @@ class TierResolverTest {
     }
 
     @Test
+    void shouldApplyForcedSessionTierBeforeUserPreferences() {
+        when(userPreferencesService.getPreferences())
+                .thenReturn(UserPreferences.builder().modelTier("power").tierForce(true).build());
+        AgentSession session = AgentSession.builder()
+                .metadata(Map.of(
+                        ContextAttributes.SESSION_MODEL_TIER, "coding",
+                        ContextAttributes.SESSION_MODEL_TIER_FORCE, true))
+                .build();
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .currentIteration(0)
+                .build();
+        resolver.resolve(context);
+
+        assertEquals("coding", context.getModelTier());
+        assertEquals("session_pref_forced", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
     void shouldApplySkillTierWhenNotForced() {
         Skill skill = Skill.builder().name("test").description("Test").modelTier("reasoning").build();
 
@@ -73,6 +95,38 @@ class TierResolverTest {
     }
 
     @Test
+    void shouldApplyWebhookTierBeforeSkillAndUserPreferenceWhenNotForced() {
+        when(userPreferencesService.getPreferences())
+                .thenReturn(UserPreferences.builder().modelTier("fast").build());
+        Skill skill = Skill.builder().name("test").description("Test").modelTier("reasoning").build();
+
+        AgentContext context = AgentContext.builder()
+                .currentIteration(0)
+                .activeSkill(skill)
+                .attributes(new HashMap<>(Map.of(ContextAttributes.WEBHOOK_MODEL_TIER, "coding")))
+                .build();
+        resolver.resolve(context);
+
+        assertEquals("coding", context.getModelTier());
+        assertEquals("webhook", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldKeepForcedUserTierAboveWebhookTier() {
+        when(userPreferencesService.getPreferences())
+                .thenReturn(UserPreferences.builder().modelTier("power").tierForce(true).build());
+
+        AgentContext context = AgentContext.builder()
+                .currentIteration(0)
+                .attributes(new HashMap<>(Map.of(ContextAttributes.WEBHOOK_MODEL_TIER, "coding")))
+                .build();
+        resolver.resolve(context);
+
+        assertEquals("power", context.getModelTier());
+        assertEquals("user_pref_forced", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
     void shouldFallBackToUserPrefWhenNoSkillTier() {
         when(userPreferencesService.getPreferences())
                 .thenReturn(UserPreferences.builder().modelTier("fast").build());
@@ -82,6 +136,24 @@ class TierResolverTest {
 
         assertEquals("fast", context.getModelTier());
         assertEquals("user_pref", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldFallBackToSessionTierWhenNoSkillTier() {
+        when(userPreferencesService.getPreferences())
+                .thenReturn(UserPreferences.builder().modelTier("fast").build());
+        AgentSession session = AgentSession.builder()
+                .metadata(Map.of(ContextAttributes.SESSION_MODEL_TIER, "deep"))
+                .build();
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .currentIteration(0)
+                .build();
+        resolver.resolve(context);
+
+        assertEquals("deep", context.getModelTier());
+        assertEquals("session_pref", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
     }
 
     @Test

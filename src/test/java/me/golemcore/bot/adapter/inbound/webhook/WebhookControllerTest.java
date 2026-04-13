@@ -5,11 +5,17 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.security.InputSanitizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +29,7 @@ import org.springframework.http.ResponseEntity;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,7 +39,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -51,6 +60,8 @@ class WebhookControllerTest {
     private WebhookDeliveryTracker deliveryTracker;
     private WebhookResponseSchemaService responseSchemaService;
     private ApplicationEventPublisher eventPublisher;
+    private SessionPort sessionPort;
+    private TraceService traceService;
     private InputSanitizer inputSanitizer;
     private WebhookController controller;
 
@@ -63,14 +74,18 @@ class WebhookControllerTest {
         deliveryTracker = mock(WebhookDeliveryTracker.class);
         responseSchemaService = mock(WebhookResponseSchemaService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
+        sessionPort = mock(SessionPort.class);
+        traceService = mock(TraceService.class);
         inputSanitizer = new InputSanitizer();
 
         controller = new WebhookController(
                 preferencesService, authenticator, channelAdapter,
-                transformer, deliveryTracker, responseSchemaService, eventPublisher, inputSanitizer);
+                transformer, deliveryTracker, responseSchemaService, eventPublisher,
+                sessionPort, traceService, inputSanitizer);
 
         when(preferencesService.getPreferences()).thenReturn(buildEnabledPrefs());
         when(authenticator.authenticateBearer(any())).thenReturn(true);
+        when(sessionPort.get(anyString())).thenReturn(Optional.empty());
     }
 
     // ==================== /wake ====================
@@ -292,6 +307,53 @@ class WebhookControllerTest {
         assertEquals("{\"type\":\"object\"}",
                 message.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT));
         assertEquals("smart", message.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER));
+        assertEquals("coding", message.getMetadata().get(ContextAttributes.WEBHOOK_MODEL_TIER));
+    }
+
+    @Test
+    void agentShouldRecordSynchronousSchemaValidationTraceSpan() {
+        Map<String, Object> schema = aliceResponseSchema();
+        Map<String, Object> payload = Map.of(
+                "version", "1.0",
+                "response", Map.of("text", "Ready", "tts", "Ready", "end_session", true));
+        AgentSession session = AgentSession.builder()
+                .id("webhook:trace-chat")
+                .channelType("webhook")
+                .chatId("trace-chat")
+                .build();
+        TraceContext schemaSpan = TraceContext.builder()
+                .traceId("trace-1")
+                .spanId("schema-span")
+                .parentSpanId("root-span")
+                .rootKind("INGRESS")
+                .build();
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer in Alice format")
+                .chatId("trace-chat")
+                .syncResponse(true)
+                .responseJsonSchema(schema)
+                .responseValidationModelTier("smart")
+                .build();
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture("Ready"));
+        when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
+        when(responseSchemaService.validateAndRepair(eq("Ready"), eq(schema), eq("smart"), any(), any()))
+                .thenReturn(new WebhookResponseSchemaService.SchemaResult(payload, 0));
+        when(sessionPort.get("webhook:trace-chat")).thenReturn(Optional.of(session));
+        when(traceService.startSpan(eq(session), any(), eq("webhook.response.schema.validation"),
+                eq(TraceSpanKind.INTERNAL), any(), any()))
+                .thenReturn(schemaSpan);
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(traceService).appendEvent(eq(session), eq(schemaSpan), eq("schema.validation.started"), any(), any());
+        verify(traceService).appendEvent(eq(session), eq(schemaSpan), eq("schema.validation.finished"), any(),
+                argThat(attributes -> Boolean.TRUE.equals(attributes.get("success"))
+                        && Integer.valueOf(0).equals(attributes.get("repair_attempts"))));
+        verify(traceService).finishSpan(eq(session), eq(schemaSpan), eq(TraceStatusCode.OK), isNull(), any());
+        verify(sessionPort).save(session);
     }
 
     @Test

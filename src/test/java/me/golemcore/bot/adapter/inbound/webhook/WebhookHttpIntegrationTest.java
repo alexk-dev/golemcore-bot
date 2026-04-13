@@ -61,6 +61,8 @@ class WebhookHttpIntegrationTest {
                 mock(WebhookDeliveryTracker.class),
                 mock(WebhookResponseSchemaService.class),
                 mock(ApplicationEventPublisher.class),
+                mock(me.golemcore.bot.port.outbound.SessionPort.class),
+                mock(me.golemcore.bot.domain.service.TraceService.class),
                 new InputSanitizer());
 
         JwtTokenProvider jwtTokenProvider = new JwtTokenProvider(properties);
