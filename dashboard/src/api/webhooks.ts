@@ -1,3 +1,5 @@
+import type { ErrorObject } from 'ajv';
+import Ajv2020 from 'ajv/dist/2020';
 import client from './client';
 
 export type HookAction = 'wake' | 'agent';
@@ -35,6 +37,14 @@ export interface WebhookConfig {
 const DEFAULT_MAX_PAYLOAD_SIZE = 65536;
 const DEFAULT_TIMEOUT_SECONDS = 300;
 const HOOK_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const MAX_JSON_SCHEMA_VALIDATION_ISSUES = 8;
+const JSON_SCHEMA_VALIDATOR = new Ajv2020({
+  allErrors: true,
+  strictSchema: true,
+  validateSchema: true,
+});
+
+export const JSON_SCHEMA_DRAFT_2020_12_DOCS_URL = 'https://json-schema.org/draft/2020-12';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -125,6 +135,8 @@ function normalizeMapping(raw: unknown): HookMapping {
 }
 
 function toBackendMapping(mapping: HookMapping): UnknownRecord {
+  const responseJsonSchema = toBackendJsonSchema(mapping.responseJsonSchema);
+
   return {
     name: mapping.name.trim(),
     action: mapping.action,
@@ -138,8 +150,10 @@ function toBackendMapping(mapping: HookMapping): UnknownRecord {
     channel: toNullableString(mapping.channel),
     to: toNullableString(mapping.to),
     syncResponse: mapping.syncResponse,
-    responseJsonSchema: toBackendJsonSchema(mapping.responseJsonSchema),
-    responseValidationModelTier: toNullableString(mapping.responseValidationModelTier),
+    responseJsonSchema,
+    responseValidationModelTier: responseJsonSchema == null
+      ? null
+      : toNullableString(mapping.responseValidationModelTier),
   };
 }
 
@@ -290,10 +304,73 @@ function validateMappingResponseSchema(mapping: HookMapping, index: number, issu
     issues.push(`${prefix}: synchronous response is required when response JSON Schema is configured.`);
   }
   try {
-    JSON.parse(mapping.responseJsonSchema);
+    const parsedSchema = JSON.parse(mapping.responseJsonSchema) as unknown;
+    validateJsonSchemaDocument(parsedSchema, prefix, issues);
   } catch {
     issues.push(`${prefix}: response JSON Schema must be valid JSON.`);
   }
+}
+
+function validateJsonSchemaDocument(schema: unknown, prefix: string, issues: string[]): void {
+  if (!isPlainObject(schema)) {
+    issues.push(`${prefix}: response JSON Schema must be a JSON object.`);
+    return;
+  }
+
+  validateJsonSchemaWithDraft202012(schema, prefix, issues);
+}
+
+function isPlainObject(value: unknown): value is UnknownRecord {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validateJsonSchemaWithDraft202012(schema: UnknownRecord, prefix: string, issues: string[]): void {
+  try {
+    if (JSON_SCHEMA_VALIDATOR.validateSchema(schema)) {
+      return;
+    }
+  } catch (error: unknown) {
+    issues.push(
+      `${prefix}: response JSON Schema is not a valid Draft 2020-12 schema (${formatSchemaException(error)}).`,
+    );
+    return;
+  }
+
+  const schemaErrors = JSON_SCHEMA_VALIDATOR.errors ?? [];
+  if (schemaErrors.length === 0) {
+    issues.push(`${prefix}: response JSON Schema is not a valid Draft 2020-12 schema.`);
+    return;
+  }
+  uniqueSchemaErrors(schemaErrors).slice(0, MAX_JSON_SCHEMA_VALIDATION_ISSUES).forEach((error) => {
+    issues.push(
+      `${prefix}: response JSON Schema is not a valid Draft 2020-12 schema (${formatSchemaError(error)}).`,
+    );
+  });
+}
+
+function uniqueSchemaErrors(errors: ErrorObject[]): ErrorObject[] {
+  const seen = new Set<string>();
+  return errors.filter((error) => {
+    const key = `${error.instancePath}:${error.schemaPath}:${error.message ?? ''}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatSchemaError(error: ErrorObject): string {
+  const location = error.instancePath.length > 0 ? error.instancePath : error.schemaPath;
+  const message = error.message ?? 'is invalid';
+  return `${location} ${message}`;
+}
+
+function formatSchemaException(error: unknown): string {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+  return 'schema validation failed';
 }
 
 export function validateWebhookConfig(config: WebhookConfig): WebhookValidationResult {

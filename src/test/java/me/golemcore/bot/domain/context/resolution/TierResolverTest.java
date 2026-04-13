@@ -112,18 +112,37 @@ class TierResolverTest {
     }
 
     @Test
-    void shouldKeepForcedUserTierAboveWebhookTier() {
+    void shouldApplyWebhookTierAboveForcedUserTier() {
         when(userPreferencesService.getPreferences())
                 .thenReturn(UserPreferences.builder().modelTier("power").tierForce(true).build());
 
         AgentContext context = AgentContext.builder()
                 .currentIteration(0)
-                .attributes(new HashMap<>(Map.of(ContextAttributes.WEBHOOK_MODEL_TIER, "coding")))
+                .attributes(new HashMap<>(Map.of(ContextAttributes.WEBHOOK_MODEL_TIER, "special5")))
                 .build();
         resolver.resolve(context);
 
-        assertEquals("power", context.getModelTier());
-        assertEquals("user_pref_forced", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+        assertEquals("special5", context.getModelTier());
+        assertEquals("webhook", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldApplyWebhookTierAboveForcedSessionTier() {
+        AgentSession session = AgentSession.builder()
+                .metadata(Map.of(
+                        ContextAttributes.SESSION_MODEL_TIER, "balanced",
+                        ContextAttributes.SESSION_MODEL_TIER_FORCE, true))
+                .build();
+
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .currentIteration(0)
+                .attributes(new HashMap<>(Map.of(ContextAttributes.WEBHOOK_MODEL_TIER, "special5")))
+                .build();
+        resolver.resolve(context);
+
+        assertEquals("special5", context.getModelTier());
+        assertEquals("webhook", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
     }
 
     @Test

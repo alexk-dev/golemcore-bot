@@ -46,7 +46,7 @@ class WebhookResponseSchemaServiceTest {
                 """
                         {"version":"1.0","response":{"text":"Ready","tts":"Ready","end_session":true}}
                         """,
-                aliceResponseSchema(),
+                responseEnvelopeSchema(),
                 "smart",
                 "coding");
 
@@ -71,9 +71,9 @@ class WebhookResponseSchemaServiceTest {
 
     @Test
     void shouldRenderAndValidateSchemaDefinition() {
-        service.validateSchemaDefinition(aliceResponseSchema());
+        service.validateSchemaDefinition(responseEnvelopeSchema());
 
-        String rendered = service.renderSchema(aliceResponseSchema());
+        String rendered = service.renderSchema(responseEnvelopeSchema());
 
         assertTrue(rendered.contains("\"version\""));
         verify(llmPort, never()).chat(any());
@@ -92,7 +92,7 @@ class WebhookResponseSchemaServiceTest {
 
         WebhookResponseSchemaService.SchemaResult result = service.validateAndRepair(
                 "Ready",
-                aliceResponseSchema(),
+                responseEnvelopeSchema(),
                 "smart",
                 "coding");
 
@@ -123,7 +123,7 @@ class WebhookResponseSchemaServiceTest {
                 """
                         {"version":"1.0"}
                         """,
-                aliceResponseSchema(),
+                responseEnvelopeSchema(),
                 "smart",
                 "coding");
 
@@ -141,7 +141,7 @@ class WebhookResponseSchemaServiceTest {
                         {"version":"1.0","response":{"text":"Ready","tts":"Ready","end_session":true}}
                         ```
                         """,
-                aliceResponseSchema(),
+                responseEnvelopeSchema(),
                 null,
                 null);
 
@@ -194,7 +194,7 @@ class WebhookResponseSchemaServiceTest {
 
         WebhookResponseSchemaService.SchemaProcessingException exception = assertThrows(
                 WebhookResponseSchemaService.SchemaProcessingException.class,
-                () -> service.validateAndRepair("Ready", aliceResponseSchema(), "smart", null));
+                () -> service.validateAndRepair("Ready", responseEnvelopeSchema(), "smart", null));
 
         assertTrue(exception.getMessage().contains("repair attempts"));
         verify(llmPort, times(3)).chat(any());
@@ -204,7 +204,7 @@ class WebhookResponseSchemaServiceTest {
     void shouldRejectRepairWhenBudgetIsExhausted() {
         WebhookResponseSchemaService.SchemaTimeoutException exception = assertThrows(
                 WebhookResponseSchemaService.SchemaTimeoutException.class,
-                () -> service.validateAndRepair("Ready", aliceResponseSchema(), "smart", null, Duration.ZERO));
+                () -> service.validateAndRepair("Ready", responseEnvelopeSchema(), "smart", null, Duration.ZERO));
 
         assertTrue(exception.getMessage().contains("timed out"));
         verify(llmPort, never()).chat(any());
@@ -221,7 +221,7 @@ class WebhookResponseSchemaServiceTest {
 
         WebhookResponseSchemaService.SchemaProcessingException exception = assertThrows(
                 WebhookResponseSchemaService.SchemaProcessingException.class,
-                () -> service.validateAndRepair("Ready", aliceResponseSchema(), "smart", null));
+                () -> service.validateAndRepair("Ready", responseEnvelopeSchema(), "smart", null));
 
         assertTrue(exception.getMessage().contains("empty response"));
     }
@@ -237,7 +237,7 @@ class WebhookResponseSchemaServiceTest {
                                 """)
                         .build()));
 
-        service.validateAndRepair("Ready", aliceResponseSchema(), " ", "coding");
+        service.validateAndRepair("Ready", responseEnvelopeSchema(), " ", "coding");
 
         ArgumentCaptor<LlmRequest> requestCaptor = ArgumentCaptor.forClass(LlmRequest.class);
         verify(llmPort).chat(requestCaptor.capture());
@@ -255,7 +255,7 @@ class WebhookResponseSchemaServiceTest {
                                 """)
                         .build()));
 
-        service.validateAndRepair("Ready", aliceResponseSchema(), null, null);
+        service.validateAndRepair("Ready", responseEnvelopeSchema(), null, null);
 
         ArgumentCaptor<LlmRequest> requestCaptor = ArgumentCaptor.forClass(LlmRequest.class);
         verify(llmPort).chat(requestCaptor.capture());
@@ -271,7 +271,7 @@ class WebhookResponseSchemaServiceTest {
 
         WebhookResponseSchemaService.SchemaProcessingException exception = assertThrows(
                 WebhookResponseSchemaService.SchemaProcessingException.class,
-                () -> service.validateAndRepair("Ready", aliceResponseSchema(), "smart", null));
+                () -> service.validateAndRepair("Ready", responseEnvelopeSchema(), "smart", null));
 
         assertTrue(exception.getMessage().contains("repair failed"));
     }
@@ -288,7 +288,7 @@ class WebhookResponseSchemaServiceTest {
 
         WebhookResponseSchemaService.SchemaProcessingException exception = assertThrows(
                 WebhookResponseSchemaService.SchemaProcessingException.class,
-                () -> service.validateAndRepair("Ready", aliceResponseSchema(), "smart", null));
+                () -> service.validateAndRepair("Ready", responseEnvelopeSchema(), "smart", null));
 
         assertTrue(exception.getMessage().contains("interrupted"));
         assertTrue(Thread.currentThread().isInterrupted());
@@ -317,7 +317,7 @@ class WebhookResponseSchemaServiceTest {
         assertTrue(exception.getMessage().contains("Failed to render responseJsonSchema"));
     }
 
-    private Map<String, Object> aliceResponseSchema() {
+    private Map<String, Object> responseEnvelopeSchema() {
         return Map.of(
                 "type", "object",
                 "required", List.of("version", "response"),

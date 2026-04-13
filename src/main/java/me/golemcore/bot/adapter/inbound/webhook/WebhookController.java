@@ -43,6 +43,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -197,8 +198,10 @@ public class WebhookController {
             String responseValidationModelTier;
             try {
                 modelTier = normalizeOptionalModelTier(request.getModel(), "'model'");
-                responseValidationModelTier = normalizeOptionalModelTier(
-                        request.getResponseValidationModelTier(), "'responseValidationModelTier'");
+                responseValidationModelTier = normalizeResponseValidationModelTier(
+                        request.getResponseJsonSchema(),
+                        request.getResponseValidationModelTier(),
+                        "'responseValidationModelTier'");
                 validateSynchronousResponseContract(
                         request.isSyncResponse(),
                         request.getResponseJsonSchema(),
@@ -338,7 +341,8 @@ public class WebhookController {
         String runId = UUID.randomUUID().toString();
         String chatId = "hook:" + mapping.getName() + ":" + UUID.randomUUID();
         String modelTier = normalizeOptionalModelTier(mapping.getModel(), "Webhook mapping model");
-        String responseValidationModelTier = normalizeOptionalModelTier(
+        String responseValidationModelTier = normalizeResponseValidationModelTier(
+                mapping.getResponseJsonSchema(),
                 mapping.getResponseValidationModelTier(),
                 "Webhook mapping responseValidationModelTier");
         validateSynchronousResponseContract(
@@ -385,11 +389,12 @@ public class WebhookController {
 
     private void addResponseContractMetadata(Map<String, Object> metadata, Map<String, Object> responseJsonSchema,
             String responseValidationModelTier) {
-        if (WebhookResponseSchemaService.hasSchema(responseJsonSchema)) {
-            metadata.put(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA, responseJsonSchema);
-            metadata.put(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT,
-                    responseSchemaService.renderSchema(responseJsonSchema));
+        if (!WebhookResponseSchemaService.hasSchema(responseJsonSchema)) {
+            return;
         }
+        metadata.put(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA, responseJsonSchema);
+        metadata.put(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT,
+                responseSchemaService.renderSchema(responseJsonSchema));
         if (responseValidationModelTier != null && !responseValidationModelTier.isBlank()) {
             metadata.put(ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER, responseValidationModelTier);
         }
@@ -414,7 +419,7 @@ public class WebhookController {
         try {
             String response = responseFuture.get(timeoutSeconds, TimeUnit.SECONDS);
             if (!WebhookResponseSchemaService.hasSchema(responseJsonSchema)) {
-                return ResponseEntity.ok(WebhookResponse.completed(runId, chatId, response, null));
+                return buildPlainTextSynchronousResponse(runId, chatId, response);
             }
 
             schemaTrace = startSchemaValidationTrace(
@@ -465,6 +470,14 @@ public class WebhookController {
             throw new WebhookResponseSchemaService.SchemaTimeoutException("Synchronous webhook response timed out");
         }
         return remaining;
+    }
+
+    private ResponseEntity<String> buildPlainTextSynchronousResponse(String runId, String chatId, String response) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_PLAIN)
+                .header("X-Golemcore-Run-Id", runId)
+                .header("X-Golemcore-Chat-Id", chatId)
+                .body(response);
     }
 
     private SchemaTraceSpan startSchemaValidationTrace(Message triggerMessage, String chatId,
@@ -560,6 +573,14 @@ public class WebhookController {
             throw new IllegalArgumentException(fieldName + " must be a known tier id");
         }
         return normalizedTier;
+    }
+
+    private String normalizeResponseValidationModelTier(Map<String, Object> responseJsonSchema, String modelTier,
+            String fieldName) {
+        if (!WebhookResponseSchemaService.hasSchema(responseJsonSchema)) {
+            return null;
+        }
+        return normalizeOptionalModelTier(modelTier, fieldName);
     }
 
     private <T> T parseBody(byte[] body, Class<T> type) {

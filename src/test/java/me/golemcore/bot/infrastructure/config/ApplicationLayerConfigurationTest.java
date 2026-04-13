@@ -42,6 +42,7 @@ import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
+import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceArtifactPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceCatalogPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceInstallPort;
@@ -59,7 +60,8 @@ class ApplicationLayerConfigurationTest {
         RuntimeSettingsMergeService mergeService = configuration.runtimeSettingsMergeService();
         RuntimeSettingsValidator validator = configuration.runtimeSettingsValidator(
                 mock(ModelSelectionService.class),
-                mock(VoiceProviderCatalogPort.class));
+                mock(VoiceProviderCatalogPort.class),
+                mock(ResponseJsonSchemaValidatorPort.class));
         RuntimeSettingsFacade facade = configuration.runtimeSettingsFacade(
                 mock(RuntimeConfigService.class),
                 mock(UserPreferencesService.class),

@@ -4,6 +4,7 @@ import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
 import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;
 
 import java.net.URI;
@@ -66,14 +67,26 @@ public class RuntimeSettingsValidator {
     private static final int LOCAL_EMBEDDING_RESTART_BACKOFF_MS_MIN = 1;
     private static final int LOCAL_EMBEDDING_RESTART_BACKOFF_MS_MAX = 60000;
     private static final Pattern SEMVER_PATTERN = Pattern.compile("v?\\d+(?:\\.\\d+){0,2}");
+    private static final ResponseJsonSchemaValidatorPort NOOP_RESPONSE_JSON_SCHEMA_VALIDATOR = schema -> {
+    };
 
     private final ModelSelectionService modelSelectionService;
     private final VoiceProviderCatalogPort voiceProviderCatalogPort;
+    private final ResponseJsonSchemaValidatorPort responseJsonSchemaValidatorPort;
 
     public RuntimeSettingsValidator(ModelSelectionService modelSelectionService,
             VoiceProviderCatalogPort voiceProviderCatalogPort) {
+        this(modelSelectionService, voiceProviderCatalogPort, NOOP_RESPONSE_JSON_SCHEMA_VALIDATOR);
+    }
+
+    public RuntimeSettingsValidator(ModelSelectionService modelSelectionService,
+            VoiceProviderCatalogPort voiceProviderCatalogPort,
+            ResponseJsonSchemaValidatorPort responseJsonSchemaValidatorPort) {
         this.modelSelectionService = modelSelectionService;
         this.voiceProviderCatalogPort = voiceProviderCatalogPort;
+        this.responseJsonSchemaValidatorPort = responseJsonSchemaValidatorPort != null
+                ? responseJsonSchemaValidatorPort
+                : NOOP_RESPONSE_JSON_SCHEMA_VALIDATOR;
     }
 
     public void validateRuntimeConfigUpdate(RuntimeConfig current, RuntimeConfig merged,
@@ -462,12 +475,17 @@ public class RuntimeSettingsValidator {
                 continue;
             }
             mapping.setModel(normalizeOptionalSelectableTier(mapping.getModel(), "webhooks.mapping.model"));
+            if (!hasResponseJsonSchema(mapping.getResponseJsonSchema())) {
+                mapping.setResponseValidationModelTier(null);
+                continue;
+            }
+            if (!mapping.isSyncResponse()) {
+                throw new IllegalArgumentException("webhooks.mapping.responseJsonSchema requires syncResponse=true");
+            }
+            responseJsonSchemaValidatorPort.validateResponseJsonSchema(mapping.getResponseJsonSchema());
             mapping.setResponseValidationModelTier(normalizeOptionalSelectableTier(
                     mapping.getResponseValidationModelTier(),
                     "webhooks.mapping.responseValidationModelTier"));
-            if (hasResponseJsonSchema(mapping.getResponseJsonSchema()) && !mapping.isSyncResponse()) {
-                throw new IllegalArgumentException("webhooks.mapping.responseJsonSchema requires syncResponse=true");
-            }
         }
     }
 

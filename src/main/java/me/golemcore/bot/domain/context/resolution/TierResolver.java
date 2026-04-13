@@ -41,8 +41,9 @@ import java.util.Optional;
  * Tier resolution follows a priority chain that balances user control, skill
  * recommendations, and system defaults:
  * <ol>
- * <li><b>Forced user preference</b> — user explicitly locked a tier via
- * preferences with {@code tierForce=true}</li>
+ * <li><b>Webhook request override</b> — inbound hook mapping/request tier</li>
+ * <li><b>Forced user/session preference</b> — user explicitly locked a tier via
+ * preferences or session settings with {@code tierForce=true}</li>
  * <li><b>Reflection override</b> — autonomous recovery runs may specify a
  * dedicated reflection tier</li>
  * <li><b>Active skill recommendation</b> — the skill's YAML frontmatter
@@ -101,14 +102,14 @@ public class TierResolver {
 
         TierPreference tierPreference = resolveTierPreference(context, prefs);
 
-        if (tierPreference.force() && tierPreference.tier() != null) {
-            applyModelTier(context, tierPreference.tier(), tierPreference.forcedSource());
-            return;
-        }
-
         String webhookTier = context.getAttribute(ContextAttributes.WEBHOOK_MODEL_TIER);
         if (webhookTier != null && !webhookTier.isBlank()) {
             applyModelTier(context, webhookTier, "webhook");
+            return;
+        }
+
+        if (tierPreference.force() && tierPreference.tier() != null) {
+            applyModelTier(context, tierPreference.tier(), tierPreference.forcedSource());
             return;
         }
 

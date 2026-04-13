@@ -24,6 +24,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
 import java.time.Duration;
@@ -33,6 +34,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -254,6 +256,7 @@ class WebhookControllerTest {
     void agentShouldReturnSynchronousResponseWhenRequested() {
         AgentRequest request = AgentRequest.builder()
                 .message("Answer directly")
+                .responseValidationModelTier("turbo")
                 .syncResponse(true)
                 .build();
         when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
@@ -263,18 +266,31 @@ class WebhookControllerTest {
 
         assertNotNull(response);
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("completed", webhookBody(response).getStatus());
-        assertEquals("Direct answer", webhookBody(response).getResponse());
+        assertEquals(MediaType.TEXT_PLAIN, response.getHeaders().getContentType());
+        assertEquals("Direct answer", response.getBody());
+        assertNotNull(response.getHeaders().getFirst("X-Golemcore-Run-Id"));
+        assertNotNull(response.getHeaders().getFirst("X-Golemcore-Chat-Id"));
+        verify(responseSchemaService, never()).validateSchemaDefinition(any());
+        verify(responseSchemaService, never()).renderSchema(any());
+        verify(responseSchemaService, never()).validateAndRepair(any(), any(), any(), any(), any());
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        Map<String, Object> metadata = captor.getValue().message().getMetadata();
+        assertFalse(metadata.containsKey(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA));
+        assertFalse(metadata.containsKey(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT));
+        assertFalse(metadata.containsKey(ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER));
     }
 
     @Test
     void agentShouldReturnSchemaPayloadForSynchronousJsonSchema() {
-        Map<String, Object> schema = aliceResponseSchema();
+        Map<String, Object> schema = responseEnvelopeSchema();
         Map<String, Object> payload = Map.of(
                 "version", "1.0",
                 "response", Map.of("text", "Ready", "tts", "Ready", "end_session", true));
         AgentRequest request = AgentRequest.builder()
-                .message("Answer in Alice format")
+                .message("Answer in configured schema")
                 .model("coding")
                 .syncResponse(true)
                 .responseJsonSchema(schema)
@@ -312,7 +328,7 @@ class WebhookControllerTest {
 
     @Test
     void agentShouldRecordSynchronousSchemaValidationTraceSpan() {
-        Map<String, Object> schema = aliceResponseSchema();
+        Map<String, Object> schema = responseEnvelopeSchema();
         Map<String, Object> payload = Map.of(
                 "version", "1.0",
                 "response", Map.of("text", "Ready", "tts", "Ready", "end_session", true));
@@ -328,7 +344,7 @@ class WebhookControllerTest {
                 .rootKind("INGRESS")
                 .build();
         AgentRequest request = AgentRequest.builder()
-                .message("Answer in Alice format")
+                .message("Answer in configured schema")
                 .chatId("trace-chat")
                 .syncResponse(true)
                 .responseJsonSchema(schema)
@@ -379,7 +395,7 @@ class WebhookControllerTest {
     void agentShouldRejectResponseSchemaWithoutSynchronousResponse() {
         AgentRequest request = AgentRequest.builder()
                 .message("Answer in JSON")
-                .responseJsonSchema(aliceResponseSchema())
+                .responseJsonSchema(responseEnvelopeSchema())
                 .build();
 
         ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
@@ -392,9 +408,9 @@ class WebhookControllerTest {
 
     @Test
     void agentShouldReturnGatewayTimeoutWhenSchemaRepairBudgetExpires() {
-        Map<String, Object> schema = aliceResponseSchema();
+        Map<String, Object> schema = responseEnvelopeSchema();
         AgentRequest request = AgentRequest.builder()
-                .message("Answer in Alice format")
+                .message("Answer in configured schema")
                 .syncResponse(true)
                 .responseJsonSchema(schema)
                 .build();
@@ -621,8 +637,11 @@ class WebhookControllerTest {
 
         assertNotNull(response);
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("completed", webhookBody(response).getStatus());
-        assertEquals("Deployment done", webhookBody(response).getResponse());
+        assertEquals(MediaType.TEXT_PLAIN, response.getHeaders().getContentType());
+        assertEquals("Deployment done", response.getBody());
+        verify(responseSchemaService, never()).validateSchemaDefinition(any());
+        verify(responseSchemaService, never()).renderSchema(any());
+        verify(responseSchemaService, never()).validateAndRepair(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -704,7 +723,7 @@ class WebhookControllerTest {
         return (WebhookResponse) response.getBody();
     }
 
-    private Map<String, Object> aliceResponseSchema() {
+    private Map<String, Object> responseEnvelopeSchema() {
         return Map.of(
                 "type", "object",
                 "required", List.of("version", "response"),

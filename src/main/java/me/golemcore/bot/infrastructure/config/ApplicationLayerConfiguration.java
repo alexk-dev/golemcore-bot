@@ -40,6 +40,7 @@ import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
+import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceArtifactPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceCatalogPort;
@@ -61,8 +62,10 @@ public class ApplicationLayerConfiguration {
     @Bean
     RuntimeSettingsValidator runtimeSettingsValidator(
             ModelSelectionService modelSelectionService,
-            VoiceProviderCatalogPort voiceProviderCatalogPort) {
-        return new RuntimeSettingsValidator(modelSelectionService, voiceProviderCatalogPort);
+            VoiceProviderCatalogPort voiceProviderCatalogPort,
+            ResponseJsonSchemaValidatorPort responseJsonSchemaValidatorPort) {
+        return new RuntimeSettingsValidator(modelSelectionService, voiceProviderCatalogPort,
+                responseJsonSchemaValidatorPort);
     }
 
     @Bean

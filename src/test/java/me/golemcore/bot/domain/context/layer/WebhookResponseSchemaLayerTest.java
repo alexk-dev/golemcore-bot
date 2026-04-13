@@ -39,6 +39,7 @@ class WebhookResponseSchemaLayerTest {
                 .build();
 
         assertFalse(layer.appliesTo(context));
+        assertFalse(layer.assemble(context).hasContent());
     }
 
     @Test
