@@ -31,6 +31,8 @@ public final class RuntimeLauncher {
     static final String BUNDLED_JAR_ENV = "GOLEMCORE_BUNDLED_JAR";
     static final String BUNDLED_JAR_PROPERTY = "golemcore.launcher.bundled-jar";
     static final String SERVER_PORT_PROPERTY = "server.port";
+    private static final String LIB_DIR_NAME = "lib";
+    private static final String RUNTIME_DIR_NAME = "runtime";
 
     private static final List<String> FORWARDED_SYSTEM_PROPERTIES = List.of(
             STORAGE_PATH_PROPERTY,
@@ -234,27 +236,27 @@ public final class RuntimeLauncher {
         List<String> forwardedOptions = new ArrayList<>();
         Set<String> explicitSystemPropertyNames = new LinkedHashSet<>();
         for (String arg : args) {
-            if (!isSystemPropertyArg(arg)) {
-                continue;
+            if (isSystemPropertyArg(arg)) {
+                forwardedOptions.add(arg);
+                explicitSystemPropertyNames.add(extractSystemPropertyName(arg));
             }
-            forwardedOptions.add(arg);
-            explicitSystemPropertyNames.add(extractSystemPropertyName(arg));
         }
 
         for (String propertyName : FORWARDED_SYSTEM_PROPERTIES) {
-            if (explicitSystemPropertyNames.contains(propertyName)) {
-                continue;
-            }
-            if (extractPropertyArg(args, propertyName) != null) {
-                continue;
-            }
-
-            String propertyValue = propertyReader.get(propertyName);
-            if (propertyValue != null && !propertyValue.isBlank()) {
-                forwardedOptions.add(buildSystemPropertyOption(propertyName, propertyValue));
+            boolean propertyExplicitlyConfigured = explicitSystemPropertyNames.contains(propertyName)
+                    || extractPropertyArg(args, propertyName) != null;
+            if (!propertyExplicitlyConfigured) {
+                addForwardedSystemProperty(forwardedOptions, propertyName);
             }
         }
         return forwardedOptions;
+    }
+
+    private void addForwardedSystemProperty(List<String> forwardedOptions, String propertyName) {
+        String propertyValue = propertyReader.get(propertyName);
+        if (propertyValue != null && !propertyValue.isBlank()) {
+            forwardedOptions.add(buildSystemPropertyOption(propertyName, propertyValue));
+        }
     }
 
     private List<String> resolveApplicationArgs(String[] args) {
@@ -290,14 +292,14 @@ public final class RuntimeLauncher {
         }
 
         Set<Path> searchDirectories = new LinkedHashSet<>();
-        addSearchDirectory(searchDirectories, currentDirectory.resolve("runtime"));
-        addSearchDirectory(searchDirectories, currentDirectory.resolve("lib").resolve("runtime"));
+        addSearchDirectory(searchDirectories, currentDirectory.resolve(RUNTIME_DIR_NAME));
+        addSearchDirectory(searchDirectories, currentDirectory.resolve(LIB_DIR_NAME).resolve(RUNTIME_DIR_NAME));
 
         Path parentDirectory = currentDirectory.getParent();
         if (parentDirectory != null) {
             addSearchDirectory(searchDirectories, parentDirectory);
-            addSearchDirectory(searchDirectories, parentDirectory.resolve("runtime"));
-            addSearchDirectory(searchDirectories, parentDirectory.resolve("lib").resolve("runtime"));
+            addSearchDirectory(searchDirectories, parentDirectory.resolve(RUNTIME_DIR_NAME));
+            addSearchDirectory(searchDirectories, parentDirectory.resolve(LIB_DIR_NAME).resolve(RUNTIME_DIR_NAME));
         }
 
         for (Path searchDirectory : searchDirectories) {
@@ -535,7 +537,7 @@ public final class RuntimeLauncher {
                     return null;
                 }
                 return Path.of(codeSource.getLocation().toURI()).toAbsolutePath().normalize();
-            } catch (URISyntaxException | IllegalArgumentException e) {
+            } catch (URISyntaxException | IllegalArgumentException _) {
                 return null;
             }
         }
