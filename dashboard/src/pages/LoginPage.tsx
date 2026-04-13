@@ -8,7 +8,6 @@ import LoginForm from '../components/auth/LoginForm';
 const PKCE_CODE_BYTE_LENGTH = 32;
 const HIVE_SSO_PKCE_PREFIX = 'hive-sso-pkce:';
 const S256_CHALLENGE_METHOD = 'S256';
-const PASSWORD_INPUT_ID = 'dashboard-password-login';
 
 function shouldOfferHiveSsoChoice(hiveSso: HiveSsoStatus | null): boolean {
   if (hiveSso == null) {
@@ -44,6 +43,7 @@ export default function LoginPage(): ReactElement {
   const [loading, setLoading] = useState(false);
   const [hiveSso, setHiveSso] = useState<HiveSsoStatus | null>(null);
   const ssoExchangeCodeRef = useRef<string | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
   const setAccessToken = useAuthStore((s) => s.setAccessToken);
   const token = useAuthStore((s) => s.accessToken);
   const nav = useNavigate();
@@ -126,9 +126,7 @@ export default function LoginPage(): ReactElement {
 
   const focusPasswordLogin = (): void => {
     setError(null);
-    window.requestAnimationFrame(() => {
-      document.getElementById(PASSWORD_INPUT_ID)?.focus();
-    });
+    passwordInputRef.current?.focus();
   };
 
   const handleSubmit = async (password: string, mfaCode?: string): Promise<void> => {
@@ -168,7 +166,7 @@ export default function LoginPage(): ReactElement {
             onSubmit={handleSubmit}
             error={error}
             loading={loading}
-            passwordInputId={PASSWORD_INPUT_ID}
+            passwordInputRef={passwordInputRef}
           />
         </Card.Body>
       </Card>
