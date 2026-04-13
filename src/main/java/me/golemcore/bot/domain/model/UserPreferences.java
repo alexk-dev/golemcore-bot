@@ -90,6 +90,8 @@ public class UserPreferences {
     @AllArgsConstructor
     @Builder
     public static class WebhookConfig {
+        public static final String DEFAULT_MEMORY_PRESET = MemoryPresetIds.DISABLED;
+
         /** Master switch for webhook endpoints. */
         @Builder.Default
         private boolean enabled = false;
@@ -104,6 +106,10 @@ public class UserPreferences {
         /** Default timeout for /agent runs (seconds). */
         @Builder.Default
         private int defaultTimeoutSeconds = 300;
+
+        /** Memory preset applied to webhook turns. Defaults to disabled. */
+        @Builder.Default
+        private String memoryPreset = DEFAULT_MEMORY_PRESET;
 
         /** Custom hook mappings for {@code POST /api/hooks/{name}}. */
         @Builder.Default
@@ -157,5 +163,15 @@ public class UserPreferences {
 
         /** Target chat ID on the delivery channel. */
         private String to;
+
+        /** Wait for the agent response and return it in the webhook HTTP response. */
+        @Builder.Default
+        private boolean syncResponse = false;
+
+        /** Optional JSON Schema that the synchronous response must satisfy. */
+        private Map<String, Object> responseJsonSchema;
+
+        /** Optional explicit tier for schema-constrained responses and repair calls. */
+        private String responseValidationModelTier;
     }
 }

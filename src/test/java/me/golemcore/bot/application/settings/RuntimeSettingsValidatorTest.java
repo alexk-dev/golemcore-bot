@@ -4,6 +4,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.adapter.outbound.voice.PluginVoiceProviderCatalogAdapter;
+import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
 import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;
 import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
 import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
@@ -21,13 +22,18 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class RuntimeSettingsValidatorTest {
 
     private ModelSelectionService modelSelectionService;
     private VoiceProviderCatalogPort voiceProviderCatalogPort;
+    private ResponseJsonSchemaValidatorPort responseJsonSchemaValidatorPort;
     private RuntimeSettingsValidator validator;
 
     @BeforeEach
@@ -35,9 +41,11 @@ class RuntimeSettingsValidatorTest {
         modelSelectionService = mock(ModelSelectionService.class);
         voiceProviderCatalogPort = new PluginVoiceProviderCatalogAdapter(new SttProviderRegistry(),
                 new TtsProviderRegistry());
+        responseJsonSchemaValidatorPort = mock(ResponseJsonSchemaValidatorPort.class);
         validator = new RuntimeSettingsValidator(
                 modelSelectionService,
-                voiceProviderCatalogPort);
+                voiceProviderCatalogPort,
+                responseJsonSchemaValidatorPort);
     }
 
     @Test
@@ -286,12 +294,133 @@ class RuntimeSettingsValidatorTest {
                 .mappings(List.of(UserPreferences.HookMapping.builder()
                         .name("build")
                         .model("default")
+                        .responseJsonSchema(Map.of("type", "object"))
+                        .responseValidationModelTier("SMART")
+                        .syncResponse(true)
                         .build()))
                 .build();
 
         validator.validateWebhookConfig(webhookConfig);
 
         assertNull(webhookConfig.getMappings().getFirst().getModel());
+        assertEquals("smart", webhookConfig.getMappings().getFirst().getResponseValidationModelTier());
+    }
+
+    @Test
+    void shouldValidateWebhookResponseSchemaWhenConfigured() {
+        Map<String, Object> responseJsonSchema = Map.of("type", "object");
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("build")
+                        .responseJsonSchema(responseJsonSchema)
+                        .syncResponse(true)
+                        .build()))
+                .build();
+
+        validator.validateWebhookConfig(webhookConfig);
+
+        verify(responseJsonSchemaValidatorPort).validateResponseJsonSchema(responseJsonSchema);
+    }
+
+    @Test
+    void shouldRejectInvalidWebhookResponseSchema() {
+        Map<String, Object> responseJsonSchema = Map.of("type", "invalid");
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("build")
+                        .responseJsonSchema(responseJsonSchema)
+                        .syncResponse(true)
+                        .build()))
+                .build();
+        doThrow(new IllegalArgumentException("Invalid responseJsonSchema"))
+                .when(responseJsonSchemaValidatorPort).validateResponseJsonSchema(responseJsonSchema);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateWebhookConfig(webhookConfig));
+
+        assertEquals("Invalid responseJsonSchema", error.getMessage());
+    }
+
+    @Test
+    void shouldClearWebhookSchemaValidationTierWhenResponseSchemaIsMissing() {
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("build")
+                        .responseValidationModelTier("SMART")
+                        .syncResponse(true)
+                        .build()))
+                .build();
+
+        validator.validateWebhookConfig(webhookConfig);
+
+        assertNull(webhookConfig.getMappings().getFirst().getResponseValidationModelTier());
+        verify(responseJsonSchemaValidatorPort, never()).validateResponseJsonSchema(any());
+    }
+
+    @Test
+    void shouldDefaultWebhookMemoryPresetToDisabled() {
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .memoryPreset(null)
+                .build();
+
+        validator.validateWebhookConfig(webhookConfig);
+
+        assertEquals("disabled", webhookConfig.getMemoryPreset());
+    }
+
+    @Test
+    void shouldNormalizeWebhookMemoryPreset() {
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .memoryPreset(" GENERAL_CHAT ")
+                .build();
+
+        validator.validateWebhookConfig(webhookConfig);
+
+        assertEquals("general_chat", webhookConfig.getMemoryPreset());
+    }
+
+    @Test
+    void shouldRejectUnknownWebhookMemoryPreset() {
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .memoryPreset("unknown")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateWebhookConfig(webhookConfig));
+
+        assertEquals("webhooks.memoryPreset must be a known memory preset id", error.getMessage());
+    }
+
+    @Test
+    void shouldRejectWebhookResponseSchemaWithoutSynchronousResponse() {
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("build")
+                        .responseJsonSchema(Map.of("type", "object"))
+                        .build()))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateWebhookConfig(webhookConfig));
+
+        assertEquals("webhooks.mapping.responseJsonSchema requires syncResponse=true", error.getMessage());
+    }
+
+    @Test
+    void shouldRejectEmptyWebhookResponseSchema() {
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("build")
+                        .responseJsonSchema(Map.of())
+                        .syncResponse(true)
+                        .build()))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateWebhookConfig(webhookConfig));
+
+        assertEquals("webhooks.mapping.responseJsonSchema must not be empty", error.getMessage());
+        verify(responseJsonSchemaValidatorPort, never()).validateResponseJsonSchema(any());
     }
 
     @Test

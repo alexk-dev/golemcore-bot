@@ -43,6 +43,8 @@ import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
+import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceArtifactPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceCatalogPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceInstallPort;
@@ -63,8 +65,11 @@ public class ApplicationLayerConfiguration {
     @Bean
     RuntimeSettingsValidator runtimeSettingsValidator(
             ModelSelectionService modelSelectionService,
-            VoiceProviderCatalogPort voiceProviderCatalogPort) {
-        return new RuntimeSettingsValidator(modelSelectionService, voiceProviderCatalogPort);
+            VoiceProviderCatalogPort voiceProviderCatalogPort,
+            ResponseJsonSchemaValidatorPort responseJsonSchemaValidatorPort,
+            MemoryPresetService memoryPresetService) {
+        return new RuntimeSettingsValidator(modelSelectionService, voiceProviderCatalogPort,
+                responseJsonSchemaValidatorPort, memoryPresetService);
     }
 
     @Bean
@@ -92,8 +97,10 @@ public class ApplicationLayerConfiguration {
     ModelSelectionCommandService modelSelectionCommandService(
             UserPreferencesService preferencesService,
             ModelSelectionService modelSelectionService,
-            RuntimeConfigService runtimeConfigService) {
-        return new ModelSelectionCommandService(preferencesService, modelSelectionService, runtimeConfigService);
+            RuntimeConfigService runtimeConfigService,
+            SessionPort sessionPort) {
+        return new ModelSelectionCommandService(preferencesService, modelSelectionService, runtimeConfigService,
+                sessionPort);
     }
 
     @Bean

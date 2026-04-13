@@ -3,6 +3,7 @@ package me.golemcore.bot.tools;
 import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -100,6 +101,17 @@ class TierToolTest {
     void shouldRejectWhenTierForceEnabled() {
         when(preferencesService.getPreferences()).thenReturn(
                 UserPreferences.builder().modelTier("smart").tierForce(true).build());
+
+        ToolResult result = tool.execute(Map.of(PARAM_TIER, TIER_CODING)).join();
+
+        assertNotNull(result.getError());
+        assertTrue(result.getError().contains("locked"));
+    }
+
+    @Test
+    void shouldRejectWhenSessionTierForceEnabled() {
+        AgentContextHolder.get().getSession().getMetadata().put(ContextAttributes.SESSION_MODEL_TIER, "smart");
+        AgentContextHolder.get().getSession().getMetadata().put(ContextAttributes.SESSION_MODEL_TIER_FORCE, true);
 
         ToolResult result = tool.execute(Map.of(PARAM_TIER, TIER_CODING)).join();
 

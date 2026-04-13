@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.adapter.outbound.storage.ProtoSessionRecordCodecAdapter;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -56,6 +57,8 @@ class SessionServiceTest {
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(storagePort.getText(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
+        when(storagePort.listObjects(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
         when(storagePort.putObject(anyString(), anyString(), any(byte[].class)))
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(storagePort.deleteObject(anyString(), anyString()))
@@ -87,6 +90,40 @@ class SessionServiceTest {
         AgentSession second = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
 
         assertSame(first, second);
+    }
+
+    @Test
+    void getOrCreateInheritsModelSettingsFromLatestSameChannelSession() {
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:source.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:new.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+
+        AgentSession source = service.getOrCreate(CHANNEL_TELEGRAM, "source");
+        source.getMetadata().put(ContextAttributes.SESSION_MODEL_TIER, "coding");
+        source.getMetadata().put(ContextAttributes.SESSION_MODEL_TIER_FORCE, true);
+
+        AgentSession created = service.getOrCreate(CHANNEL_TELEGRAM, "new");
+
+        assertEquals("coding", created.getMetadata().get(ContextAttributes.SESSION_MODEL_TIER));
+        assertEquals(true, created.getMetadata().get(ContextAttributes.SESSION_MODEL_TIER_FORCE));
+    }
+
+    @Test
+    void getOrCreateDoesNotInheritModelSettingsForExcludedChannels() {
+        when(storagePort.getObject(SESSIONS_DIR, "webhook:source.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(storagePort.getObject(SESSIONS_DIR, "webhook:new.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+
+        AgentSession source = service.getOrCreate("webhook", "source");
+        source.getMetadata().put(ContextAttributes.SESSION_MODEL_TIER, "coding");
+        source.getMetadata().put(ContextAttributes.SESSION_MODEL_TIER_FORCE, true);
+
+        AgentSession created = service.getOrCreate("webhook", "new");
+
+        assertFalse(created.getMetadata().containsKey(ContextAttributes.SESSION_MODEL_TIER));
+        assertFalse(created.getMetadata().containsKey(ContextAttributes.SESSION_MODEL_TIER_FORCE));
     }
 
     // ==================== get ====================

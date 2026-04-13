@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolNames;
@@ -157,10 +158,18 @@ public class ToolLayer implements ContextLayer {
                     : null;
             return delayedActionPolicyService.canScheduleActions(channelType);
         }
+        if (ToolNames.MEMORY.equals(toolName) && isMemoryPresetDisabled(context)) {
+            return false;
+        }
         if (isHiveSdlcTool(toolName)) {
             return hiveSessionActive;
         }
         return true;
+    }
+
+    private boolean isMemoryPresetDisabled(AgentContext context) {
+        String memoryPreset = context != null ? context.getAttribute(ContextAttributes.MEMORY_PRESET_ID) : null;
+        return memoryPreset != null && MemoryPresetIds.DISABLED.equalsIgnoreCase(memoryPreset.trim());
     }
 
     private boolean isHiveSdlcTool(String toolName) {

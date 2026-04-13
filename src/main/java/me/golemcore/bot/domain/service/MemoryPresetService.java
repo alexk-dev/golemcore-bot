@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.MemoryPreset;
+import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import org.springframework.stereotype.Service;
 
@@ -184,7 +185,7 @@ public class MemoryPresetService {
                     "aggressive",
                     "detailed"),
             createPreset(
-                    "disabled",
+                    MemoryPresetIds.DISABLED,
                     "Memory Disabled",
                     "Memory is fully disabled for privacy-sensitive tasks and debugging without memory context.",
                     false,

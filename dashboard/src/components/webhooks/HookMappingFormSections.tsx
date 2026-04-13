@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { FiEye, FiEyeOff } from 'react-icons/fi';
-import type { HookMappingDraft } from '../../api/webhooks';
+import type { HookAction, HookMappingDraft } from '../../api/webhooks';
 import { cn } from '../../lib/utils';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -77,7 +77,7 @@ export function HookIdentitySection({
           />
           <Select
             value={mapping.action}
-            onChange={(event) => onChange({ ...mapping, action: resolveHookAction(event.target.value) })}
+            onChange={(event) => onChange(nextMappingWithAction(mapping, resolveHookAction(event.target.value)))}
             className={controlClassName}
           >
             <option value="wake">Wake</option>
@@ -133,6 +133,19 @@ export function HookIdentitySection({
       </div>
     </div>
   );
+}
+
+function nextMappingWithAction(mapping: HookMappingDraft, action: HookAction): HookMappingDraft {
+  if (action === 'agent') {
+    return { ...mapping, action };
+  }
+  return {
+    ...mapping,
+    action,
+    syncResponse: false,
+    responseJsonSchema: null,
+    responseValidationModelTier: null,
+  };
 }
 
 interface HookSecuritySectionProps {

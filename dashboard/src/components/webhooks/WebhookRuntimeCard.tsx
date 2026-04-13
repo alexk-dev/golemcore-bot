@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import { FiEye, FiEyeOff } from 'react-icons/fi';
+import type { MemoryPreset } from '../../api/settingsTypes';
 import type { WebhookConfig } from '../../api/webhooks';
 
 const DEFAULT_MAX_PAYLOAD_SIZE = 65536;
@@ -10,6 +11,8 @@ interface WebhookRuntimeCardProps {
   form: WebhookConfig;
   onChange: (next: WebhookConfig) => void;
   showToken: boolean;
+  memoryPresets: MemoryPreset[];
+  memoryPresetsLoading: boolean;
   onToggleShowToken: () => void;
 }
 
@@ -36,9 +39,14 @@ export function WebhookRuntimeCard({
   form,
   onChange,
   showToken,
+  memoryPresets,
+  memoryPresetsLoading,
   onToggleShowToken,
 }: WebhookRuntimeCardProps): ReactElement {
   const tokenToggleLabel = showToken ? 'Hide bearer token' : 'Show bearer token';
+  const memoryPresetOptions: Array<Pick<MemoryPreset, 'id' | 'label'>> = memoryPresets.length > 0
+    ? memoryPresets
+    : [{ id: 'disabled', label: 'Memory Disabled' }];
 
   return (
     <Card className="settings-card h-100">
@@ -87,7 +95,7 @@ export function WebhookRuntimeCard({
             </Form.Group>
           </Col>
 
-          <Col md={3}>
+          <Col md={2}>
             <Form.Group>
               <Form.Label className="small fw-medium">Max Payload (bytes)</Form.Label>
               <Form.Control
@@ -102,7 +110,7 @@ export function WebhookRuntimeCard({
             </Form.Group>
           </Col>
 
-          <Col md={3}>
+          <Col md={2}>
             <Form.Group>
               <Form.Label className="small fw-medium">Default Timeout (sec)</Form.Label>
               <Form.Control
@@ -114,6 +122,22 @@ export function WebhookRuntimeCard({
                   defaultTimeoutSeconds: toNumber(event.target.value, DEFAULT_TIMEOUT_SECONDS),
                 })}
               />
+            </Form.Group>
+          </Col>
+
+          <Col md={2}>
+            <Form.Group>
+              <Form.Label className="small fw-medium">Memory Preset</Form.Label>
+              <Form.Select
+                size="sm"
+                value={form.memoryPreset}
+                disabled={memoryPresetsLoading}
+                onChange={(event) => onChange({ ...form, memoryPreset: event.target.value })}
+              >
+                {memoryPresetOptions.map((preset) => (
+                  <option key={preset.id} value={preset.id}>{preset.label}</option>
+                ))}
+              </Form.Select>
             </Form.Group>
           </Col>
         </Row>

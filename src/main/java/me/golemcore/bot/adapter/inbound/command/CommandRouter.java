@@ -161,7 +161,7 @@ public class CommandRouter implements CommandPort {
             case "reset" -> handleReset(sessionId, sessionIdentity);
             case "compact" -> handleCompact(sessionId, args);
             case CMD_HELP -> handleHelp();
-            case "tier" -> modelSelectionCommandHandler.handleTier(args);
+            case "tier" -> modelSelectionCommandHandler.handleTier(args, sessionId);
             case "model" -> modelSelectionCommandHandler.handleModel(args);
             case "sessions" -> handleSessions(channelType);
             case "auto" -> automationCommandHandler.handleAuto(args, channelType, autoSessionChatId, transportChatId);

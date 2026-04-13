@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionModelSettingsSupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -96,14 +97,14 @@ public class TierTool implements ToolComponent {
                                     + ModelTierCatalog.explicitTierListForDisplay()));
         }
 
-        if (userPreferencesService.getPreferences().isTierForce()) {
-            return CompletableFuture.completedFuture(
-                    ToolResult.failure("Tier is locked by user. Use /tier command to unlock."));
-        }
-
         AgentContext context = AgentContextHolder.get();
         if (context == null) {
             return CompletableFuture.completedFuture(ToolResult.failure("No agent context available"));
+        }
+
+        if (isTierForced(context)) {
+            return CompletableFuture.completedFuture(
+                    ToolResult.failure("Tier is locked by user. Use /tier command to unlock."));
         }
 
         String previousTier = context.getModelTier();
@@ -118,5 +119,12 @@ public class TierTool implements ToolComponent {
     @Override
     public boolean isEnabled() {
         return runtimeConfigService.isTierToolEnabled();
+    }
+
+    private boolean isTierForced(AgentContext context) {
+        if (context.getSession() != null && SessionModelSettingsSupport.hasModelSettings(context.getSession())) {
+            return SessionModelSettingsSupport.readForce(context.getSession());
+        }
+        return userPreferencesService.getPreferences().isTierForce();
     }
 }

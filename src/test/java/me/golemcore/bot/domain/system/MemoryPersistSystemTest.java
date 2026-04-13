@@ -12,6 +12,8 @@ import me.golemcore.bot.domain.model.TurnMemoryEvent;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -141,6 +143,38 @@ class MemoryPersistSystemTest {
                 && "assistant reply".equals(event.getAssistantText())
                 && event.getToolOutputs() != null
                 && event.getToolOutputs().stream().anyMatch(output -> output.contains("tool output"))));
+    }
+
+    @Test
+    void processSkipsWhenMemoryPresetIsDisabled() {
+        AgentContext ctx = contextWith(
+                List.of(Message.builder().role(ROLE_USER).content("user input").timestamp(Instant.now()).build()),
+                LlmResponse.builder().content("assistant reply").build());
+        ctx.setAttribute(ContextAttributes.MEMORY_PRESET_ID, "disabled");
+
+        system.process(ctx);
+
+        verify(memoryComponent, never()).persistTurnMemory(any());
+        assertFalse(system.shouldProcess(ctx));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "telegram", "hive", "web" })
+    void processKeepsMemoryEnabledForNonWebhookChatsWhenPresetIsMissing(String channelType) {
+        AgentContext ctx = AgentContext.builder()
+                .session(AgentSession.builder().id(SESSION_ID).channelType(channelType).chatId("chat-1").build())
+                .messages(new ArrayList<>(List.of(
+                        Message.builder().role(ROLE_USER).content("user input").timestamp(Instant.now()).build())))
+                .build();
+        ctx.setTurnOutcome(TurnOutcome.builder()
+                .finishReason(FinishReason.SUCCESS)
+                .assistantText("assistant reply")
+                .build());
+
+        assertTrue(system.shouldProcess(ctx));
+        system.process(ctx);
+
+        verify(memoryComponent).persistTurnMemory(any());
     }
 
     @Test

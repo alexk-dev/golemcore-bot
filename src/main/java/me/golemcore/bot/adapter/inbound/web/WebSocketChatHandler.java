@@ -57,7 +57,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
     public Mono<Void> handle(WebSocketSession session) {
         String token = extractToken(session);
         if (token == null || !jwtTokenProvider.validateToken(token) || !jwtTokenProvider.isAccessToken(token)) {
-            log.warn("[WebSocket] Connection rejected: invalid or missing JWT");
+            log.debug("[WebSocket] Connection rejected: invalid or missing JWT");
             return session.close();
         }
 
