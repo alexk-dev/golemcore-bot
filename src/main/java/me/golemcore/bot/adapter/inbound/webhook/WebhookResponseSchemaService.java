@@ -53,15 +53,15 @@ public class WebhookResponseSchemaService {
     private static final int MAX_REPORTED_SCHEMA_ERRORS = 8;
     private static final Duration REPAIR_TIMEOUT = Duration.ofSeconds(30);
     private static final String DEFAULT_VALIDATION_TIER = "balanced";
-    private static final SchemaLocation DRAFT_7_META_SCHEMA = SchemaLocation
-            .of("https://json-schema.org/draft-07/schema");
+    private static final SchemaLocation DRAFT_2020_12_META_SCHEMA = SchemaLocation
+            .of("https://json-schema.org/draft/2020-12/schema");
 
     private final ObjectMapper objectMapper;
     private final ModelSelectionService modelSelectionService;
     private final LlmPort llmPort;
 
-    private final JsonSchemaFactory schemaFactory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
-    private final JsonSchema schemaDefinitionSchema = schemaFactory.getSchema(DRAFT_7_META_SCHEMA);
+    private final JsonSchemaFactory schemaFactory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
+    private final JsonSchema schemaDefinitionSchema = schemaFactory.getSchema(DRAFT_2020_12_META_SCHEMA);
 
     public static boolean hasSchema(Map<String, Object> schema) {
         return schema != null && !schema.isEmpty();
@@ -94,7 +94,7 @@ public class WebhookResponseSchemaService {
         String candidate = rawResponse;
         ValidationAttempt validation = validateCandidate(jsonSchema, candidate);
         if (validation.valid()) {
-            return new SchemaResult(validation.payload(), 0);
+            return new SchemaResult(toSerializablePayload(validation.payload()), 0);
         }
 
         String repairTier = resolveRepairTier(validationModelTier, fallbackModelTier);
@@ -104,7 +104,7 @@ public class WebhookResponseSchemaService {
             candidate = repairCandidate(candidate, schemaText, validation.errors(), repairTier, attemptTimeout);
             validation = validateCandidate(jsonSchema, candidate);
             if (validation.valid()) {
-                return new SchemaResult(validation.payload(), attempt);
+                return new SchemaResult(toSerializablePayload(validation.payload()), attempt);
             }
             log.warn("[Webhook] Response schema repair attempt {} failed: {}", attempt, validation.errors());
         }
@@ -151,6 +151,14 @@ public class WebhookResponseSchemaService {
                 .limit(MAX_REPORTED_SCHEMA_ERRORS)
                 .toList();
         return new ValidationAttempt(payload, false, errors);
+    }
+
+    private Object toSerializablePayload(JsonNode payload) {
+        try {
+            return objectMapper.treeToValue(payload, Object.class);
+        } catch (JsonProcessingException e) {
+            throw new SchemaProcessingException("Failed to materialize responseJsonSchema payload", e);
+        }
     }
 
     private JsonNode parseCandidate(String candidate) {

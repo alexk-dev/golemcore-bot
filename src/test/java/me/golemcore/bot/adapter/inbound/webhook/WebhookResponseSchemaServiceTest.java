@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.webhook;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
@@ -51,8 +50,8 @@ class WebhookResponseSchemaServiceTest {
                 "smart",
                 "coding");
 
-        JsonNode payload = assertInstanceOf(JsonNode.class, result.payload());
-        assertEquals("1.0", payload.path("version").asText());
+        Map<?, ?> payload = assertInstanceOf(Map.class, result.payload());
+        assertEquals("1.0", payload.get("version"));
         assertEquals(0, result.repairAttempts());
         verify(llmPort, never()).chat(any());
     }
@@ -97,8 +96,9 @@ class WebhookResponseSchemaServiceTest {
                 "smart",
                 "coding");
 
-        JsonNode payload = assertInstanceOf(JsonNode.class, result.payload());
-        assertEquals("Ready", payload.path("response").path("text").asText());
+        Map<?, ?> payload = assertInstanceOf(Map.class, result.payload());
+        Map<?, ?> response = assertInstanceOf(Map.class, payload.get("response"));
+        assertEquals("Ready", response.get("text"));
         assertEquals(1, result.repairAttempts());
 
         ArgumentCaptor<LlmRequest> requestCaptor = ArgumentCaptor.forClass(LlmRequest.class);
@@ -127,8 +127,9 @@ class WebhookResponseSchemaServiceTest {
                 "smart",
                 "coding");
 
-        JsonNode payload = assertInstanceOf(JsonNode.class, result.payload());
-        assertEquals("Ready", payload.path("response").path("tts").asText());
+        Map<?, ?> payload = assertInstanceOf(Map.class, result.payload());
+        Map<?, ?> response = assertInstanceOf(Map.class, payload.get("response"));
+        assertEquals("Ready", response.get("tts"));
         assertEquals(1, result.repairAttempts());
     }
 
@@ -144,8 +145,8 @@ class WebhookResponseSchemaServiceTest {
                 null,
                 null);
 
-        JsonNode payload = assertInstanceOf(JsonNode.class, result.payload());
-        assertEquals("1.0", payload.path("version").asText());
+        Map<?, ?> payload = assertInstanceOf(Map.class, result.payload());
+        assertEquals("1.0", payload.get("version"));
         verify(llmPort, never()).chat(any());
     }
 
@@ -157,8 +158,26 @@ class WebhookResponseSchemaServiceTest {
                 null,
                 null);
 
-        JsonNode payload = assertInstanceOf(JsonNode.class, result.payload());
-        assertEquals("ready", payload.get(0).asText());
+        List<?> payload = assertInstanceOf(List.class, result.payload());
+        assertEquals("ready", payload.get(0));
+        verify(llmPort, never()).chat(any());
+    }
+
+    @Test
+    void shouldAcceptDraft202012SchemaAsSerializablePayload() {
+        WebhookResponseSchemaService.SchemaResult result = service.validateAndRepair(
+                """
+                        {"version":"1.0","response":{"text":"Ready","tts":"Ready","end_session":true}}
+                        """,
+                strictResponseSchema(),
+                null,
+                null);
+
+        Map<?, ?> payload = assertInstanceOf(Map.class, result.payload());
+        Map<?, ?> response = assertInstanceOf(Map.class, payload.get("response"));
+        assertEquals("1.0", payload.get("version"));
+        assertEquals("Ready", response.get("text"));
+        assertEquals(0, result.repairAttempts());
         verify(llmPort, never()).chat(any());
     }
 
@@ -311,5 +330,25 @@ class WebhookResponseSchemaServiceTest {
                                         "text", Map.of("type", "string"),
                                         "tts", Map.of("type", "string"),
                                         "end_session", Map.of("type", "boolean")))));
+    }
+
+    private Map<String, Object> strictResponseSchema() {
+        return Map.of(
+                "$schema", "https://json-schema.org/draft/2020-12/schema",
+                "title", "Response Schema",
+                "type", "object",
+                "additionalProperties", false,
+                "required", List.of("version", "response"),
+                "properties", Map.of(
+                        "version", Map.of("type", "string", "const", "1.0"),
+                        "response", Map.of(
+                                "type", "object",
+                                "additionalProperties", false,
+                                "required", List.of("text", "tts", "end_session"),
+                                "properties", Map.of(
+                                        "text", Map.of("type", "string", "description", "Response text"),
+                                        "tts", Map.of("type", "string", "description", "Text to speak"),
+                                        "end_session", Map.of("type", "boolean",
+                                                "description", "Session completion flag")))));
     }
 }
