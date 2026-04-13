@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -115,6 +116,10 @@ class HiveConnectionServiceTest {
             storedSession.set(Optional.of(invocation.getArgument(0)));
             return null;
         }).when(hiveSessionStateStore).save(any(HiveSessionState.class));
+        doAnswer(invocation -> {
+            storedSession.set(Optional.empty());
+            return null;
+        }).when(hiveSessionStateStore).clear();
         when(hiveControlInboxService.getSummary())
                 .thenReturn(new HiveControlInboxService.InboxSummary(0, 0, 0, null, null));
         when(hiveControlInboxService.drainPending(any())).thenReturn(0);
@@ -277,6 +282,50 @@ class HiveConnectionServiceTest {
                 isNull(),
                 eq("https://bot.example.com/dashboard"));
         verify(runtimeConfigService, never()).updateRuntimeConfig(any(RuntimeConfig.class));
+    }
+
+    @Test
+    void shouldClearStaleSessionWhenReconnectRefreshTokenIsInvalid() {
+        HiveSessionState sessionState = HiveSessionState.builder()
+                .golemId("golem-1")
+                .serverUrl("https://hive.example.com")
+                .refreshToken("refresh")
+                .accessToken("access-old")
+                .controlChannelUrl("/ws/golems/control")
+                .build();
+        storedSession.set(Optional.of(sessionState));
+        when(hiveMachinePort.rotate("https://hive.example.com", "golem-1", "refresh"))
+                .thenThrow(new HiveMachinePort.HiveMachineException(
+                        401,
+                        "Invalid or expired refresh token",
+                        null));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.reconnect());
+
+        assertEquals("Hive session refresh token is invalid or expired. Use Join with a new Hive join code.",
+                error.getMessage());
+        HiveStatusSnapshot status = service.getStatus();
+        assertEquals("DISCONNECTED", status.state());
+        assertFalse(status.sessionPresent());
+        verify(hiveSessionStateStore).clear();
+        verify(hiveControlInboxService).clear();
+        verify(hiveEventOutboxPort).clear();
+        verify(hiveManagedPolicyService).clearBinding();
+        verify(hiveMachinePort, never()).heartbeat(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any());
     }
 
     @Test

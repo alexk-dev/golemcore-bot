@@ -49,6 +49,7 @@ public class HiveConnectionService {
     private static final String CONTROL_CHANNEL_NAME = "control";
     private static final String POLICY_SYNC_FEATURE = "policy-sync-v1";
     private static final String UNKNOWN_POLICY_BINDING_MESSAGE = "Unknown policy binding for golem:";
+    private static final String RECONNECT_AUTH_FAILURE_MESSAGE = "Hive session refresh token is invalid or expired. Use Join with a new Hive join code.";
 
     private final HiveBootstrapSettingsPort hiveBootstrapSettingsPort;
     private final RuntimeConfigService runtimeConfigService;
@@ -240,6 +241,10 @@ public class HiveConnectionService {
                 activateConnectedSession(sessionState, "Hive reconnect completed");
                 return getStatus();
             } catch (RuntimeException exception) {
+                if (isAuthorizationFailure(exception)) {
+                    handleReconnectAuthorizationFailure(exception);
+                    throw new IllegalStateException(RECONNECT_AUTH_FAILURE_MESSAGE, exception);
+                }
                 handleFailure(exception);
                 throw exception;
             }
@@ -676,13 +681,29 @@ public class HiveConnectionService {
             hiveSessionStateStore.save(sessionState);
         }
         lastErrorRef.set(exception.getMessage());
-        if (exception instanceof HiveMachinePort.HiveMachineException hiveApiException
-                && (hiveApiException.getStatusCode() == 401 || hiveApiException.getStatusCode() == 403)) {
+        if (isAuthorizationFailure(exception)) {
             stateRef.set(HiveConnectionState.REVOKED);
             stopRuntimeTransport();
             return;
         }
         stateRef.set(HiveConnectionState.ERROR);
+    }
+
+    private void handleReconnectAuthorizationFailure(RuntimeException exception) {
+        stopRuntimeTransport();
+        hiveSessionStateStore.clear();
+        hiveControlInboxService.clear();
+        hiveEventOutboxPort.clear();
+        hiveManagedPolicyService.clearBinding();
+        lastErrorRef.set(RECONNECT_AUTH_FAILURE_MESSAGE);
+        stateRef.set(HiveConnectionState.DISCONNECTED);
+        log.warn("[Hive] Cleared stale Hive session after reconnect authorization failure: {}",
+                exception.getMessage());
+    }
+
+    private boolean isAuthorizationFailure(RuntimeException exception) {
+        return exception instanceof HiveMachinePort.HiveMachineException hiveApiException
+                && (hiveApiException.getStatusCode() == 401 || hiveApiException.getStatusCode() == 403);
     }
 
     private boolean hasScope(HiveSessionState sessionState, String scope) {
