@@ -24,6 +24,7 @@ function mapButtonVariant(variant?: string): ButtonPrimitiveProps['variant'] {
   if (variant === 'danger' || variant === 'outline-danger') { return variant === 'outline-danger' ? 'outline' : 'destructive'; }
   if (variant === 'warning') { return 'warning'; }
   if (variant === 'success') { return 'success'; }
+  if (variant === 'dark') { return 'dark'; }
   if (variant === 'link') { return 'link'; }
   return 'default';
 }
@@ -34,6 +35,7 @@ function mapBadgeVariant(bg?: string, text?: string): BadgePrimitiveProps['varia
   if (bg === 'danger') { return 'destructive'; }
   if (bg === 'info' || bg === 'info-subtle') { return 'info'; }
   if (bg === 'light' && text === 'dark') { return 'light'; }
+  if (bg === 'dark') { return 'dark'; }
   if (bg === 'primary') { return 'default'; }
   return 'secondary';
 }
@@ -41,6 +43,7 @@ function mapBadgeVariant(bg?: string, text?: string): BadgePrimitiveProps['varia
 function mapAlertVariant(variant?: string): AlertPrimitiveProps['variant'] {
   if (variant === 'danger') { return 'danger'; }
   if (variant === 'warning') { return 'warning'; }
+  if (variant === 'success') { return 'success'; }
   if (variant === 'info') { return 'info'; }
   if (variant === 'secondary') { return 'secondary'; }
   return 'default';

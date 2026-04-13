@@ -12,6 +12,7 @@ const buttonVariants = cva(
         destructive: 'bg-destructive text-destructive-foreground shadow-glow hover:-translate-y-0.5',
         warning: 'bg-[rgba(var(--gc-warning-rgb),0.92)] text-slate-950 shadow-glow hover:-translate-y-0.5',
         success: 'bg-[rgba(var(--gc-success-rgb),0.92)] text-slate-950 shadow-glow hover:-translate-y-0.5',
+        dark: 'bg-slate-900 text-white shadow-glow hover:-translate-y-0.5 dark:bg-slate-100 dark:text-slate-950',
         outline: 'border border-border bg-transparent text-foreground hover:bg-muted',
         ghost: 'bg-transparent text-foreground hover:bg-muted',
         link: 'bg-transparent p-0 text-primary underline-offset-4 hover:underline',
