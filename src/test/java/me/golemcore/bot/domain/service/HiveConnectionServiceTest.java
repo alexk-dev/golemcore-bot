@@ -241,6 +241,55 @@ class HiveConnectionServiceTest {
     }
 
     @Test
+    void shouldReplaceExistingSessionWhenJoiningWithNewManualJoinCode() {
+        storedSession.set(Optional.of(HiveSessionState.builder()
+                .golemId("golem-old")
+                .serverUrl("https://old-hive.example.com")
+                .accessToken("access-old")
+                .refreshToken("refresh-old")
+                .controlChannelUrl("/ws/golems/control")
+                .build()));
+        when(hiveMachinePort.register(
+                eq("https://hive.example.com"),
+                eq("token-id.secret"),
+                eq("Builder"),
+                eq("lab-a"),
+                eq("dev"),
+                eq("dev"),
+                anySet(),
+                any(HiveCapabilitySnapshot.class))).thenReturn(new HiveMachinePort.AuthSession(
+                        "golem-new",
+                        "access-new",
+                        "refresh-new",
+                        Instant.parse("2026-03-18T00:10:00Z"),
+                        Instant.parse("2026-03-19T00:10:00Z"),
+                        "hive",
+                        "golems",
+                        "/ws/golems/control",
+                        30,
+                        List.of("golems:heartbeat")));
+
+        HiveStatusSnapshot status = service.join("token-id.secret:https://hive.example.com/");
+
+        assertEquals("CONNECTED", status.state());
+        assertEquals("golem-new", status.golemId());
+        verify(hiveSessionStateStore).clear();
+        verify(hiveControlInboxService).clear();
+        verify(hiveEventOutboxPort).clear();
+        verify(hiveManagedPolicyService).clearBinding();
+        verify(hiveMachinePort, never()).rotate(any(), any(), any());
+        verify(hiveMachinePort).register(
+                eq("https://hive.example.com"),
+                eq("token-id.secret"),
+                eq("Builder"),
+                eq("lab-a"),
+                eq("dev"),
+                eq("dev"),
+                anySet(),
+                any(HiveCapabilitySnapshot.class));
+    }
+
+    @Test
     void shouldReconnectUsingPersistedSession() {
         HiveSessionState sessionState = HiveSessionState.builder()
                 .golemId("golem-1")

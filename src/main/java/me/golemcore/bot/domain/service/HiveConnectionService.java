@@ -188,15 +188,19 @@ public class HiveConnectionService {
 
     public HiveStatusSnapshot join(String requestedJoinCode) {
         synchronized (lock) {
+            boolean explicitJoinCode = requestedJoinCode != null && !requestedJoinCode.isBlank();
             String joinCode = resolveJoinCodeForAction(requestedJoinCode);
             HiveJoinCodeParser.ParsedJoinCode parsedJoinCode = HiveJoinCodeParser.parse(joinCode);
             Optional<HiveSessionState> existingSession = hiveSessionStateStore.load();
             if (existingSession.isPresent()) {
-                if (!sameServer(existingSession.get().getServerUrl(), parsedJoinCode.serverUrl())) {
-                    throw new IllegalStateException(
-                            "A Hive session already exists. Leave the current session before joining a different Hive server.");
+                if (!explicitJoinCode) {
+                    if (!sameServer(existingSession.get().getServerUrl(), parsedJoinCode.serverUrl())) {
+                        throw new IllegalStateException(
+                                "A Hive session already exists. Leave the current session before joining a different Hive server.");
+                    }
+                    return reconnect();
                 }
-                return reconnect();
+                clearLocalHiveSession();
             }
             stateRef.set(HiveConnectionState.JOINING);
             lastErrorRef.set(null);
@@ -253,11 +257,7 @@ public class HiveConnectionService {
 
     public HiveStatusSnapshot leave() {
         synchronized (lock) {
-            stopRuntimeTransport();
-            hiveSessionStateStore.clear();
-            hiveControlInboxService.clear();
-            hiveEventOutboxPort.clear();
-            hiveManagedPolicyService.clearBinding();
+            clearLocalHiveSession();
             stateRef.set(HiveConnectionState.DISCONNECTED);
             lastErrorRef.set(null);
             return getStatus();
@@ -690,15 +690,19 @@ public class HiveConnectionService {
     }
 
     private void handleReconnectAuthorizationFailure(RuntimeException exception) {
+        clearLocalHiveSession();
+        lastErrorRef.set(RECONNECT_AUTH_FAILURE_MESSAGE);
+        stateRef.set(HiveConnectionState.DISCONNECTED);
+        log.warn("[Hive] Cleared stale Hive session after reconnect authorization failure: {}",
+                exception.getMessage());
+    }
+
+    private void clearLocalHiveSession() {
         stopRuntimeTransport();
         hiveSessionStateStore.clear();
         hiveControlInboxService.clear();
         hiveEventOutboxPort.clear();
         hiveManagedPolicyService.clearBinding();
-        lastErrorRef.set(RECONNECT_AUTH_FAILURE_MESSAGE);
-        stateRef.set(HiveConnectionState.DISCONNECTED);
-        log.warn("[Hive] Cleared stale Hive session after reconnect authorization failure: {}",
-                exception.getMessage());
     }
 
     private boolean isAuthorizationFailure(RuntimeException exception) {
