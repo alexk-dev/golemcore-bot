@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert, Badge } from 'react-bootstrap';
+import { Alert, Badge } from '../../components/ui/tailwind-components';
 import {
   formatHivePolicyVersion,
   resolveHiveManagedPolicyVariant,

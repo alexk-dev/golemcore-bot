@@ -1,5 +1,5 @@
 import { type ReactElement, useMemo, useState } from 'react';
-import { Badge, Button, Card, InputGroup, Table } from 'react-bootstrap';
+import { Badge, Button, Card, InputGroup, Table } from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import { ProviderNameCombobox } from '../../components/common/ProviderNameCombobox';

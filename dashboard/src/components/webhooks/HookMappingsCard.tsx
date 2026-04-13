@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button, Card } from 'react-bootstrap';
+import { Button, Card } from '../ui/tailwind-components';
 import type { SystemChannelResponse } from '../../api/system';
 import type { HookMapping } from '../../api/webhooks';
 import { HookMappingForm } from './HookMappingForm';

@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Modal } from 'react-bootstrap';
+import { Modal } from '../ui/tailwind-components';
 
 import type { SessionTraceFeedSpanItem } from '../../lib/sessionTraceFeed';
 import { SessionTraceSnapshotViewer } from './SessionTraceSnapshotViewer';

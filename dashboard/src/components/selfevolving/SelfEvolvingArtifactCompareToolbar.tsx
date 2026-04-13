@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button, ButtonGroup, Card } from 'react-bootstrap';
+import { Button, ButtonGroup, Card } from '../ui/tailwind-components';
 
 import type { SelfEvolvingArtifactCompareOptions } from '../../api/selfEvolving';
 

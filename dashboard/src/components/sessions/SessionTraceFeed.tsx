@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactElement } from 'react';
-import { Alert, Badge, Card } from 'react-bootstrap';
+import { Alert, Badge, Card } from '../ui/tailwind-components';
 
 import type { MessageInfo, SessionTrace } from '../../api/sessions';
 import {

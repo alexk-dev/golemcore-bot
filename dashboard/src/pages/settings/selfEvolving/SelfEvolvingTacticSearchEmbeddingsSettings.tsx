@@ -1,5 +1,5 @@
 import { type Dispatch, type ReactElement, type SetStateAction, useCallback, useEffect, useState } from 'react';
-import { Alert, Col, Row } from 'react-bootstrap';
+import { Alert, Col, Row } from '../../../components/ui/tailwind-components';
 
 import type { SelfEvolvingConfig } from '../../../api/settingsTypes';
 import type { SelfEvolvingTacticSearchStatus } from '../../../api/selfEvolving';

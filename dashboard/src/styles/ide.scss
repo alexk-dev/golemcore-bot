@@ -27,12 +27,12 @@
   width: 8px;
   cursor: col-resize;
   background: transparent;
-  border-top: 1px solid var(--bs-border-color);
-  border-bottom: 1px solid var(--bs-border-color);
+  border-top: 1px solid var(--gc-border-color);
+  border-bottom: 1px solid var(--gc-border-color);
 }
 
 .ide-sidebar-resizer:hover {
-  background: rgba(var(--bs-primary-rgb), 0.15);
+  background: rgba(var(--gc-primary-rgb), 0.15);
 }
 
 .ide-toolbar {
@@ -56,21 +56,21 @@
   height: 100%;
   padding: 0 0.35rem;
   border-radius: 0.35rem;
-  color: var(--bs-body-color);
+  color: var(--gc-body-color);
 }
 
 .ide-tree-node.selected {
-  background: rgba(var(--bs-primary-rgb), 0.2);
-  color: var(--bs-emphasis-color);
+  background: rgba(var(--gc-primary-rgb), 0.2);
+  color: var(--gc-emphasis-color);
 }
 
 .ide-tree-chevron {
   width: 12px;
-  color: var(--bs-secondary-color);
+  color: var(--gc-secondary-color);
 }
 
 .ide-tree-icon {
-  color: var(--bs-secondary-color);
+  color: var(--gc-secondary-color);
 }
 
 .ide-tree-name {
@@ -83,15 +83,15 @@
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: var(--bs-warning);
+  background: var(--gc-warning);
 }
 
 .ide-tree-context-menu {
   position: fixed;
   z-index: 2000;
   min-width: 160px;
-  background: var(--bs-body-bg);
-  border: 1px solid var(--bs-border-color);
+  background: var(--gc-body-bg);
+  border: 1px solid var(--gc-border-color);
   box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.16);
   border-radius: 0.4rem;
   padding: 0.35rem;
@@ -101,7 +101,7 @@
   width: 100%;
   border: none;
   background: transparent;
-  color: var(--bs-body-color);
+  color: var(--gc-body-color);
   text-align: left;
   font-size: 0.87rem;
   border-radius: 0.3rem;
@@ -109,15 +109,15 @@
 }
 
 .ide-tree-context-item:hover {
-  background: rgba(var(--bs-primary-rgb), 0.12);
+  background: rgba(var(--gc-primary-rgb), 0.12);
 }
 
 .ide-tree-context-item.danger {
-  color: var(--bs-danger-text-emphasis);
+  color: var(--gc-danger-text-emphasis);
 }
 
 .ide-tree-context-item.danger:hover {
-  background: rgba(var(--bs-danger-rgb), 0.12);
+  background: rgba(var(--gc-danger-rgb), 0.12);
 }
 
 .ide-tabs {
@@ -125,7 +125,7 @@
   align-items: center;
   gap: 0.25rem;
   padding: 0.4rem;
-  border-bottom: 1px solid var(--bs-border-color);
+  border-bottom: 1px solid var(--gc-border-color);
   overflow-x: auto;
 }
 
@@ -134,9 +134,9 @@
   align-items: center;
   min-width: 0;
   max-width: min(24rem, 100%);
-  border: 1px solid var(--bs-border-color);
-  background: var(--bs-body-bg);
-  color: var(--bs-body-color);
+  border: 1px solid var(--gc-border-color);
+  background: var(--gc-body-bg);
+  color: var(--gc-body-color);
   border-radius: 0.85rem;
   padding: 0;
   white-space: nowrap;
@@ -155,14 +155,14 @@
 
 .ide-tab-main:focus-visible,
 .ide-tab-close:focus-visible {
-  outline: 2px solid var(--bs-primary);
+  outline: 2px solid var(--gc-primary);
   outline-offset: 1px;
   border-radius: 0.35rem;
 }
 
 .ide-tab.active {
-  border-color: rgba(var(--bs-primary-rgb), 0.65);
-  background: rgba(var(--bs-primary-rgb), 0.12);
+  border-color: rgba(var(--gc-primary-rgb), 0.65);
+  background: rgba(var(--gc-primary-rgb), 0.12);
 }
 
 .ide-tab-label {
@@ -182,7 +182,7 @@
   max-width: 11rem;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--bs-secondary-color);
+  color: var(--gc-secondary-color);
   font-size: 0.78rem;
 }
 
@@ -190,7 +190,7 @@
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 999px;
-  background: var(--bs-warning);
+  background: var(--gc-warning);
   flex: none;
 }
 
@@ -204,17 +204,17 @@
   border: none;
   border-radius: 999px;
   background: transparent;
-  color: var(--bs-secondary-color);
+  color: var(--gc-secondary-color);
   transition: background 0.18s ease, color 0.18s ease;
 }
 
 .ide-tab-close:hover {
-  background: rgba(var(--bs-primary-rgb), 0.12);
-  color: var(--bs-emphasis-color);
+  background: rgba(var(--gc-primary-rgb), 0.12);
+  color: var(--gc-emphasis-color);
 }
 
 .ide-statusbar {
-  background: var(--bs-tertiary-bg);
+  background: var(--gc-tertiary-bg);
   min-height: 34px;
 }
 
@@ -232,7 +232,7 @@
 }
 
 .ide-editor .cm-minimap {
-  border-left: 1px solid var(--bs-border-color);
+  border-left: 1px solid var(--gc-border-color);
   opacity: 0.85;
 }
 
@@ -259,7 +259,7 @@
   }
 
   .ide-editor-card {
-    border-radius: var(--bs-card-border-radius);
+    border-radius: var(--gc-card-border-radius);
   }
 
   .ide-sidebar-resizer {

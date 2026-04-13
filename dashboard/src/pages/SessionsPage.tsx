@@ -1,5 +1,5 @@
 import { type ReactElement, useState } from 'react';
-import { Badge, Button, Card, Placeholder, Spinner, Table } from 'react-bootstrap';
+import { Badge, Button, Card, Placeholder, Spinner, Table } from '../components/ui/tailwind-components';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 

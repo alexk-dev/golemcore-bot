@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Row, Spinner } from 'react-bootstrap';
+import { Button, Card, Col, Row, Spinner } from '../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { SaveStateHint, SettingsSaveBar } from '../components/common/SettingsSaveBar';

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
-import { Button, Modal } from 'react-bootstrap';
+import { Button, Modal } from '../components/ui/tailwind-components';
 import { useNavigate } from 'react-router-dom';
 import ChatWindow from '../components/chat/ChatWindow';
 import { useRuntimeConfig } from '../hooks/useSettings';

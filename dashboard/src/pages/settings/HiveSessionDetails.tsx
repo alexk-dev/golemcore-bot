@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Col } from 'react-bootstrap';
+import { Col } from '../../components/ui/tailwind-components';
 import type { HiveStatusResponse } from '../../api/hive';
 
 export interface HiveSessionDetailsProps {

@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Badge, Button, Card, Table } from 'react-bootstrap';
+import { Badge, Button, Card, Table } from '../ui/tailwind-components';
 import { Link } from 'react-router-dom';
 import type { SchedulerSchedule } from '../../api/scheduler';
 import { formatLimit, formatNextExecution } from './schedulerFormUtils';

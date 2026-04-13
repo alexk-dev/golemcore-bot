@@ -7,7 +7,7 @@ import { IdeHeader } from '../components/ide/IdeHeader';
 import { QuickOpenModal } from '../components/ide/QuickOpenModal';
 import { TreeActionModal } from '../components/ide/TreeActionModal';
 import { UnsavedChangesModal } from '../components/ide/UnsavedChangesModal';
-import { Offcanvas } from '../components/ui/bootstrap-overlay';
+import { Offcanvas } from '../components/ui/overlay';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { useIdeMobileExplorer } from '../hooks/useIdeMobileExplorer';
 import { useIdeWorkspace } from '../hooks/useIdeWorkspace';

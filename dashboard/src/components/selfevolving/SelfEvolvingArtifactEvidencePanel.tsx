@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Card } from 'react-bootstrap';
+import { Card } from '../ui/tailwind-components';
 
 import type { SelfEvolvingArtifactEvidence } from '../../api/selfEvolving';
 

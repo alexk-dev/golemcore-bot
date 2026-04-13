@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert, Button } from 'react-bootstrap';
+import { Alert, Button } from '../../components/ui/tailwind-components';
 
 import type { SystemUpdateStatusResponse } from '../../api/system';
 import { formatUpdateTimestamp } from '../../utils/systemUpdateUi';

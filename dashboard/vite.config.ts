@@ -10,8 +10,6 @@ export default defineConfig({
       // Vite 6 sometimes fails to resolve devlop's conditional package export
       // through transitive markdown dependencies during production builds.
       devlop: fileURLToPath(new URL('./node_modules/devlop/lib/default.js', import.meta.url)),
-      'dom-helpers': fileURLToPath(new URL('./node_modules/dom-helpers', import.meta.url)),
-      'react-bootstrap': fileURLToPath(new URL('./src/lib/react-bootstrap.tsx', import.meta.url)),
     },
   },
   build: {

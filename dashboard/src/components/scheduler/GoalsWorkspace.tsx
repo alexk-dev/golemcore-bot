@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Card, Col, Row } from 'react-bootstrap';
+import { Card, Col, Row } from '../ui/tailwind-components';
 import type {
   CreateGoalRequest,
   CreateTaskRequest,

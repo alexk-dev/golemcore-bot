@@ -1,5 +1,5 @@
 import { useCallback, type ReactElement } from 'react';
-import { Alert, Button, Card, Spinner } from 'react-bootstrap';
+import { Alert, Button, Card, Spinner } from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 import type {
   SystemUpdateActionResponse,

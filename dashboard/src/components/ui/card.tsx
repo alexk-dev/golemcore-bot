@@ -7,7 +7,7 @@ function Card({ className, ...props }: CardProps): React.ReactElement {
   return (
     <div
       className={cn(
-        'rounded-[var(--bs-card-border-radius)] border border-border/80 bg-card/85 text-card-foreground shadow-soft backdrop-blur-sm',
+        'rounded-[var(--gc-card-border-radius)] border border-border/80 bg-card/85 text-card-foreground shadow-soft backdrop-blur-sm',
         className
       )}
       {...props}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Form } from 'react-bootstrap';
+import { Button, Form } from '../ui/tailwind-components';
 import { FiMic, FiPaperclip, FiSend, FiSquare, FiStopCircle } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { useAvailableModels } from '../../hooks/useModels';

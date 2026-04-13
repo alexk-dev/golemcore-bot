@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button, Form, InputGroup } from 'react-bootstrap';
+import { Button, Form, InputGroup } from '../../components/ui/tailwind-components';
 
 import type { LlmProviderConfig } from '../../api/settingsTypes';
 import { getSuggestedBaseUrl, normalizeApiType, toNullableString } from './llmProvidersSupport';

@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
-import { Badge, Button } from 'react-bootstrap';
+import { Badge, Button } from '../../components/ui/tailwind-components';
 import type { LlmProviderTestResult } from '../../api/settings';
-import { Modal } from '../../components/ui/bootstrap-overlay';
+import { Modal } from '../../components/ui/overlay';
 
 interface ProviderModelTestResultModalProps {
   show: boolean;

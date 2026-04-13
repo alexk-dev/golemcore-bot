@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useState } from 'react';
-import { Alert, Button, Card, Form, Modal } from 'react-bootstrap';
+import { Alert, Button, Card, Form, Modal } from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 
 import type { TelemetryConfig } from '../../api/settingsTypes';

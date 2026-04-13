@@ -21,7 +21,7 @@ npm run lint:fix             # ESLint autofix
 
 ## Tech Stack
 
-React 18, TypeScript 5.7, Vite 6, React Router 6, TanStack React Query 5, Zustand 5, React Bootstrap + Bootswatch Zephyr, SCSS, Axios.
+React 18, TypeScript 5.7, Vite 6, React Router 6, TanStack React Query 5, Zustand 5, Tailwind CSS, SCSS, Axios.
 
 ---
 
@@ -40,7 +40,7 @@ src/
 ├── hooks/          React Query hooks and custom hooks (one file per resource)
 ├── pages/          Page-level components (routed by App.tsx)
 ├── store/          Zustand stores (auth, theme, contextPanel)
-└── styles/         SCSS (global styles, Bootstrap overrides)
+└── styles/         SCSS (global styles and Tailwind surface overrides)
 ```
 
 ### Data Flow
@@ -147,8 +147,7 @@ Page ← useHook (cache update) ← api function ← response
 | `useEffect` for derived state | Causes extra renders, stale bugs | `useMemo` or compute inline |
 | `useEffect` to sync props→state | Anti-pattern, duplicates source of truth | Use props directly or lift state |
 | `setState` inside `useEffect` without deps | Infinite loop risk | Rethink the data flow |
-| Bootstrap `outline` buttons (`variant="outline-*"` / `btn-outline-*`) | Poor contrast consistency across themes | Use solid button variants (`primary`, `secondary`, `danger`, etc.) |
-| Inline styles (`style={{}}`) | Unmaintainable, no theming | SCSS classes or Bootstrap utilities |
+| Inline styles (`style={{}}`) | Unmaintainable, no theming | SCSS classes or Tailwind utilities |
 | String concatenation for classNames | Fragile | Template literals or `clsx` |
 | Magic numbers/strings | Unverifiable | Named constants |
 | Nested ternaries | Unreadable | Early returns, `if`/`else`, or lookup objects |

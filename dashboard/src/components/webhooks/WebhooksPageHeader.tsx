@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Badge } from 'react-bootstrap';
+import { Badge } from '../ui/tailwind-components';
 import { FiGlobe } from 'react-icons/fi';
 
 export interface WebhookSummary {

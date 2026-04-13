@@ -1,5 +1,5 @@
 import { type Ref, useState } from 'react';
-import { Form, Button, Alert, Spinner } from 'react-bootstrap';
+import { Form, Button, Alert, Spinner } from '../ui/tailwind-components';
 
 interface Props {
   mfaRequired: boolean;

@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Button, Card, Container } from 'react-bootstrap';
+import { Button, Card, Container } from '../components/ui/tailwind-components';
 import { exchangeHiveSsoCode, getHiveSsoStatus, getMfaStatus, login, type HiveSsoStatus } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
 import LoginForm from '../components/auth/LoginForm';

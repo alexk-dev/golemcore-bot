@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Badge, Button } from 'react-bootstrap';
+import { Badge, Button } from '../ui/tailwind-components';
 
 import type {
   SessionTraceFeedItem,

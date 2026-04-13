@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert, Badge, ProgressBar } from 'react-bootstrap';
+import { Alert, Badge, ProgressBar } from '../../components/ui/tailwind-components';
 import type { SystemUpdateStatusResponse } from '../../api/system';
 import {
   formatUpdateTimestamp,

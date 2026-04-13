@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert, Badge, Button, Card, Col, Row, Spinner, Table } from 'react-bootstrap';
+import { Alert, Badge, Button, Card, Col, Row, Spinner, Table } from '../components/ui/tailwind-components';
 import { useNavigate } from 'react-router-dom';
 import type { SystemUpdateStatusResponse } from '../api/system';
 import { useSystemDiagnostics, useSystemUpdateStatus } from '../hooks/useSystem';

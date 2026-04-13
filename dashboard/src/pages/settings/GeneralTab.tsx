@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
-import { Button, Card, Col, Form, Row } from 'react-bootstrap';
+import { Button, Card, Col, Form, Row } from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
