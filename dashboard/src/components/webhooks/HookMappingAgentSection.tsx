@@ -5,8 +5,9 @@ import { cn } from '../../lib/utils';
 import { getExplicitModelTierOptions } from '../../lib/modelTiers';
 import HelpTip from '../common/HelpTip';
 import { Badge } from '../ui/badge';
-import { Input, Select } from '../ui/field';
+import { Input, Select, Textarea } from '../ui/field';
 import { HookMappingFieldHeading } from './HookMappingFieldHeading';
+import { SynchronousResponseHeader } from './SynchronousResponseHeader';
 import {
   controlClassName,
   fieldHelpClassName,
@@ -114,8 +115,66 @@ export function HookAgentSection({
           />
         </div>
       </div>
+
+      <div className={cn(surfaceClassName, 'xl:col-span-2')}>
+        <SynchronousResponseHeader
+          syncResponse={mapping.syncResponse}
+          onToggle={(syncResponse) => onChange(nextMappingWithSynchronousResponse(mapping, syncResponse))}
+        />
+        <div className={cn('mt-5 grid gap-4 lg:grid-cols-[minmax(12rem,16rem)_minmax(0,1fr)]', !mapping.syncResponse && 'opacity-75')}>
+          <div>
+            <HookMappingFieldHeading
+              label="Schema Repair Tier"
+              help="Optional tier used to reformat responses that do not match the JSON Schema."
+            />
+            <Select
+              value={mapping.responseValidationModelTier ?? ''}
+              disabled={!mapping.syncResponse}
+              onChange={(event) => onChange({ ...mapping, responseValidationModelTier: toNullableString(event.target.value) })}
+              className={controlClassName}
+            >
+              <option value="">Default</option>
+              {getExplicitModelTierOptions().map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </Select>
+            <p className={fieldHelpClassName}>
+              Leave empty to reuse the hook model tier or the balanced tier.
+            </p>
+          </div>
+          <div>
+            <HookMappingFieldHeading
+              label="Response JSON Schema"
+              help="Optional schema for the synchronous HTTP response body. The final agent output is validated and repaired up to three times."
+            />
+            <Textarea
+              rows={7}
+              value={mapping.responseJsonSchema ?? ''}
+              disabled={!mapping.syncResponse}
+              onChange={(event) => onChange({ ...mapping, responseJsonSchema: toNullableString(event.target.value) })}
+              placeholder={'{\n  "type": "object",\n  "required": ["version", "response"],\n  "properties": {\n    "version": { "const": "1.0" },\n    "response": { "type": "object" }\n  }\n}'}
+              className="min-h-[12rem] rounded-2xl border-border/80 bg-background/80 font-mono text-sm shadow-none"
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
+}
+
+function nextMappingWithSynchronousResponse(
+  mapping: HookMappingDraft,
+  syncResponse: boolean,
+): HookMappingDraft {
+  if (syncResponse) {
+    return { ...mapping, syncResponse };
+  }
+  return {
+    ...mapping,
+    syncResponse,
+    responseJsonSchema: null,
+    responseValidationModelTier: null,
+  };
 }
 
 function DeliveryHeader({

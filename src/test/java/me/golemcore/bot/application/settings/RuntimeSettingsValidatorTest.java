@@ -273,12 +273,30 @@ class RuntimeSettingsValidatorTest {
                 .mappings(List.of(UserPreferences.HookMapping.builder()
                         .name("build")
                         .model("default")
+                        .responseValidationModelTier("SMART")
+                        .syncResponse(true)
                         .build()))
                 .build();
 
         validator.validateWebhookConfig(webhookConfig);
 
         assertNull(webhookConfig.getMappings().getFirst().getModel());
+        assertEquals("smart", webhookConfig.getMappings().getFirst().getResponseValidationModelTier());
+    }
+
+    @Test
+    void shouldRejectWebhookResponseSchemaWithoutSynchronousResponse() {
+        UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
+                .mappings(List.of(UserPreferences.HookMapping.builder()
+                        .name("build")
+                        .responseJsonSchema(Map.of("type", "object"))
+                        .build()))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateWebhookConfig(webhookConfig));
+
+        assertEquals("webhooks.mapping.responseJsonSchema requires syncResponse=true", error.getMessage());
     }
 
     @Test

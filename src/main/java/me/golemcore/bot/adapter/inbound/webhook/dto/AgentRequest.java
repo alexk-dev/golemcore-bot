@@ -65,6 +65,16 @@ public class AgentRequest {
     /** URL to POST the agent response to when processing completes. */
     private String callbackUrl;
 
+    /** Wait for the agent response and return it in the HTTP response body. */
+    @Builder.Default
+    private boolean syncResponse = false;
+
+    /** Optional JSON Schema that the synchronous response must satisfy. */
+    private Map<String, Object> responseJsonSchema;
+
+    /** Optional explicit tier for response schema repair calls. */
+    private String responseValidationModelTier;
+
     /** Maximum execution time in seconds. */
     @Builder.Default
     private int timeoutSeconds = 300;

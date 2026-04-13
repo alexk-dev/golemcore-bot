@@ -132,6 +132,9 @@ Full agent turn. Runs a complete agent pipeline (LLM + tools) in an isolated ses
 | `chatId` | string | No | `"hook:<uuid>"` | Session identifier |
 | `model` | string | No | — | Model tier (`balanced`, `smart`, `coding`, `deep`) |
 | `callbackUrl` | string | No | — | URL to POST results to when done |
+| `syncResponse` | boolean | No | `false` | Wait for the agent result and return it in the HTTP response |
+| `responseJsonSchema` | object | No | — | JSON Schema for the synchronous HTTP response body |
+| `responseValidationModelTier` | string | No | — | Model tier used for response schema repair calls |
 | `deliver` | boolean | No | `false` | Route response to a messaging channel |
 | `channel` | string | No | — | Target channel type (e.g. `"telegram"`) |
 | `to` | string | No | — | Target chat ID on delivery channel |
@@ -172,6 +175,65 @@ On failure:
   "durationMs": 300000
 }
 ```
+
+**Synchronous response**:
+
+Set `syncResponse=true` to wait for the completed agent output and return `200 OK` from the original HTTP call:
+
+```json
+{
+  "status": "completed",
+  "runId": "550e8400-e29b-41d4-a716-446655440000",
+  "chatId": "hook:...",
+  "response": "Here is the summary..."
+}
+```
+
+If `responseJsonSchema` is provided, the schema describes the top-level HTTP response body. The bot adds schema instructions to the system prompt, validates the final agent output, and makes up to three repair calls when the output does not match the schema. The repair calls use `responseValidationModelTier` when set, otherwise the hook model tier or `balanced`.
+
+Example Alice-style response contract:
+
+```json
+{
+  "message": "Answer the user in Alice skill format",
+  "syncResponse": true,
+  "model": "smart",
+  "responseValidationModelTier": "balanced",
+  "responseJsonSchema": {
+    "type": "object",
+    "required": ["version", "response"],
+    "additionalProperties": false,
+    "properties": {
+      "version": { "const": "1.0" },
+      "response": {
+        "type": "object",
+        "required": ["text", "tts", "end_session"],
+        "additionalProperties": false,
+        "properties": {
+          "text": { "type": "string" },
+          "tts": { "type": "string" },
+          "end_session": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
+```
+
+For schema-backed synchronous runs, the successful HTTP body is the validated JSON payload itself:
+
+```json
+{
+  "version": "1.0",
+  "response": {
+    "text": "Response text",
+    "tts": "Text for speech",
+    "end_session": true
+  }
+}
+```
+
+When `callbackUrl` is also set, callback delivery remains independent and contains the raw completed agent text. The JSON Schema contract applies to the original synchronous HTTP response body.
 
 **Use cases:**
 - Automated code review on PR open
@@ -260,6 +322,9 @@ Custom mappings transform raw JSON payloads from external services into structur
 | `hmacPrefix` | string | — | Prefix to strip from signature (e.g. `"sha256="`) |
 | `messageTemplate` | string | — | Template with `{json.path}` placeholders |
 | `model` | string | — | Model tier override (for agent action) |
+| `syncResponse` | boolean | `false` | Return the final agent result in the HTTP response |
+| `responseJsonSchema` | object | — | JSON Schema for the synchronous HTTP response body |
+| `responseValidationModelTier` | string | — | Model tier used for schema repair calls |
 | `deliver` | boolean | `false` | Route response to a messaging channel |
 | `channel` | string | — | Target channel type for delivery |
 | `to` | string | — | Target chat ID for delivery |

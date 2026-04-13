@@ -16,6 +16,9 @@ export interface HookMapping {
   deliver: boolean;
   channel: string | null;
   to: string | null;
+  syncResponse: boolean;
+  responseJsonSchema: string | null;
+  responseValidationModelTier: string | null;
 }
 
 export type HookMappingDraft = HookMapping;
@@ -115,6 +118,9 @@ function normalizeMapping(raw: unknown): HookMapping {
     deliver: Boolean(record.deliver),
     channel: toNullableString(record.channel),
     to: toNullableString(record.to),
+    syncResponse: Boolean(record.syncResponse),
+    responseJsonSchema: toSchemaEditorValue(record.responseJsonSchema),
+    responseValidationModelTier: toNullableString(record.responseValidationModelTier),
   };
 }
 
@@ -131,6 +137,9 @@ function toBackendMapping(mapping: HookMapping): UnknownRecord {
     deliver: mapping.deliver,
     channel: toNullableString(mapping.channel),
     to: toNullableString(mapping.to),
+    syncResponse: mapping.syncResponse,
+    responseJsonSchema: toBackendJsonSchema(mapping.responseJsonSchema),
+    responseValidationModelTier: toNullableString(mapping.responseValidationModelTier),
   };
 }
 
@@ -184,6 +193,9 @@ export function createEmptyWebhookMapping(): HookMappingDraft {
     deliver: false,
     channel: null,
     to: null,
+    syncResponse: false,
+    responseJsonSchema: null,
+    responseValidationModelTier: null,
   };
 }
 
@@ -264,6 +276,26 @@ function validateMappingDelivery(mapping: HookMapping, index: number, issues: st
   }
 }
 
+function validateMappingResponseSchema(mapping: HookMapping, index: number, issues: string[]): void {
+  if (mapping.action !== 'agent') {
+    return;
+  }
+
+  if (mapping.responseJsonSchema == null || mapping.responseJsonSchema.trim().length === 0) {
+    return;
+  }
+
+  const prefix = `Mapping #${index + 1}`;
+  if (!mapping.syncResponse) {
+    issues.push(`${prefix}: synchronous response is required when response JSON Schema is configured.`);
+  }
+  try {
+    JSON.parse(mapping.responseJsonSchema);
+  } catch {
+    issues.push(`${prefix}: response JSON Schema must be valid JSON.`);
+  }
+}
+
 export function validateWebhookConfig(config: WebhookConfig): WebhookValidationResult {
   const issues: string[] = [];
   const seenNames = new Set<string>();
@@ -274,12 +306,34 @@ export function validateWebhookConfig(config: WebhookConfig): WebhookValidationR
     validateMappingName(mapping, index, seenNames, issues);
     validateMappingAuth(mapping, index, issues);
     validateMappingDelivery(mapping, index, issues);
+    validateMappingResponseSchema(mapping, index, issues);
   });
 
   return {
     valid: issues.length === 0,
     issues,
   };
+}
+
+function toSchemaEditorValue(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return toNullableTemplate(value);
+  }
+  if (value == null) {
+    return null;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return null;
+  }
+}
+
+function toBackendJsonSchema(value: string | null | undefined): unknown {
+  if (value == null || value.trim().length === 0) {
+    return null;
+  }
+  return JSON.parse(value);
 }
 
 export async function getWebhookConfig(): Promise<WebhookConfig> {

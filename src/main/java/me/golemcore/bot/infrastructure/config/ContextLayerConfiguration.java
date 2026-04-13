@@ -15,6 +15,7 @@ import me.golemcore.bot.domain.context.layer.RagLayer;
 import me.golemcore.bot.domain.context.layer.SkillLayer;
 import me.golemcore.bot.domain.context.layer.TierAwarenessLayer;
 import me.golemcore.bot.domain.context.layer.ToolLayer;
+import me.golemcore.bot.domain.context.layer.WebhookResponseSchemaLayer;
 import me.golemcore.bot.domain.context.layer.WorkspaceInstructionsLayer;
 import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
@@ -107,6 +108,11 @@ public class ContextLayerConfiguration {
     @Bean
     HiveLayer hiveLayer() {
         return new HiveLayer();
+    }
+
+    @Bean
+    WebhookResponseSchemaLayer webhookResponseSchemaLayer() {
+        return new WebhookResponseSchemaLayer();
     }
 
     @Bean

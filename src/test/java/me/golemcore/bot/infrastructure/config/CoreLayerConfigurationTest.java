@@ -111,6 +111,7 @@ class CoreLayerConfigurationTest {
                 contextLayerConfiguration.autoModeLayer(mock(me.golemcore.bot.domain.service.AutoModeService.class)));
         assertNotNull(contextLayerConfiguration.planModeLayer(mock(PlanService.class)));
         assertNotNull(contextLayerConfiguration.hiveLayer());
+        assertNotNull(contextLayerConfiguration.webhookResponseSchemaLayer());
         assertNotNull(contextLayerConfiguration.contextAssembler(
                 mock(me.golemcore.bot.domain.context.resolution.SkillResolver.class),
                 mock(me.golemcore.bot.domain.context.resolution.TierResolver.class),

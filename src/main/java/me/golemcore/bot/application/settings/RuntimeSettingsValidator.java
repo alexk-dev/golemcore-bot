@@ -462,7 +462,17 @@ public class RuntimeSettingsValidator {
                 continue;
             }
             mapping.setModel(normalizeOptionalSelectableTier(mapping.getModel(), "webhooks.mapping.model"));
+            mapping.setResponseValidationModelTier(normalizeOptionalSelectableTier(
+                    mapping.getResponseValidationModelTier(),
+                    "webhooks.mapping.responseValidationModelTier"));
+            if (hasResponseJsonSchema(mapping.getResponseJsonSchema()) && !mapping.isSyncResponse()) {
+                throw new IllegalArgumentException("webhooks.mapping.responseJsonSchema requires syncResponse=true");
+            }
         }
+    }
+
+    private boolean hasResponseJsonSchema(Map<String, Object> responseJsonSchema) {
+        return responseJsonSchema != null && !responseJsonSchema.isEmpty();
     }
 
     public RuntimeConfig.ToolsConfig ensureToolsConfig(RuntimeConfig config) {

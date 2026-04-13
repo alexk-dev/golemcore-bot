@@ -223,6 +223,15 @@ public final class ContextAttributes {
     /** String ? webhook delivery target chat identifier. */
     public static final String WEBHOOK_DELIVER_TO = "webhook.deliver.to";
 
+    /** Map<String,Object> ? JSON Schema required for webhook response payloads. */
+    public static final String WEBHOOK_RESPONSE_JSON_SCHEMA = "webhook.response.jsonSchema";
+
+    /** String ? rendered JSON Schema text for webhook prompt assembly. */
+    public static final String WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT = "webhook.response.jsonSchemaText";
+
+    /** String ? model tier used for webhook response schema repair calls. */
+    public static final String WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER = "webhook.response.validationModelTier";
+
     /**
      * String ? transport chat id used for outbound delivery (for example Telegram
      * chat id when logical session key differs).

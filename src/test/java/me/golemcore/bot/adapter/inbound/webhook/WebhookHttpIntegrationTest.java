@@ -59,6 +59,7 @@ class WebhookHttpIntegrationTest {
                 mock(WebhookChannelAdapter.class),
                 new WebhookPayloadTransformer(),
                 mock(WebhookDeliveryTracker.class),
+                mock(WebhookResponseSchemaService.class),
                 mock(ApplicationEventPublisher.class),
                 new InputSanitizer());
 
