@@ -103,10 +103,11 @@ class HiveSsoServiceTest {
                 "https://hive.example.com",
                 "code-1",
                 "golem_1",
-                "https://bot.example.com/dashboard/api/auth/hive/callback"))
+                "https://bot.example.com/dashboard/api/auth/hive/callback",
+                "verifier-1"))
                 .thenReturn(new HiveSsoTokenResponse("access", "admin", "Hive Admin", java.util.List.of("ADMIN")));
 
-        HiveSsoTokenResponse response = service.exchange("code-1");
+        HiveSsoTokenResponse response = service.exchange("code-1", "verifier-1");
 
         assertEquals("access", response.accessToken());
     }
@@ -118,7 +119,8 @@ class HiveSsoServiceTest {
                 .dashboardBaseUrl("https://bot.example.com/dashboard")
                 .build());
 
-        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.exchange("code-1"));
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.exchange("code-1", "verifier-1"));
 
         assertEquals("Hive SSO is disabled in bot settings", error.getMessage());
     }
@@ -129,7 +131,8 @@ class HiveSsoServiceTest {
                 .ssoEnabled(true)
                 .build());
 
-        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.exchange("code-1"));
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.exchange("code-1", "verifier-1"));
 
         assertEquals("Bot dashboard public URL is not configured", error.getMessage());
     }

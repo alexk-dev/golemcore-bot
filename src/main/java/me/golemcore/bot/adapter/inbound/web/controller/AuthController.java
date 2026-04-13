@@ -68,7 +68,7 @@ public class AuthController {
 
     @PostMapping("/hive/exchange")
     public Mono<ResponseEntity<LoginResponse>> exchangeHiveSso(@RequestBody HiveSsoExchangeRequest request) {
-        HiveSsoTokenResponse tokenResponse = hiveSsoService.exchange(request.getCode());
+        HiveSsoTokenResponse tokenResponse = hiveSsoService.exchange(request.getCode(), request.getCodeVerifier());
         DashboardAuthService.TokenPair tokens = authService.authenticateHiveSso(tokenResponse);
         if (tokens == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Hive SSO operator is not allowed");

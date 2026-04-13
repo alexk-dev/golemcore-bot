@@ -7,11 +7,36 @@ import LoginForm from '../components/auth/LoginForm';
 
 type LoginMethod = 'choice' | 'password';
 
+const PKCE_CODE_BYTE_LENGTH = 32;
+const HIVE_SSO_PKCE_PREFIX = 'hive-sso-pkce:';
+const S256_CHALLENGE_METHOD = 'S256';
+
 function shouldOfferHiveSsoChoice(hiveSso: HiveSsoStatus | null): boolean {
   if (hiveSso == null) {
     return false;
   }
   return hiveSso.enabled && hiveSso.available && hiveSso.loginUrl != null;
+}
+
+function encodeBase64Url(bytes: Uint8Array): string {
+  const binary = String.fromCharCode(...bytes);
+  return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
+}
+
+function createPkceRandomValue(): string {
+  const bytes = new Uint8Array(PKCE_CODE_BYTE_LENGTH);
+  window.crypto.getRandomValues(bytes);
+  return encodeBase64Url(bytes);
+}
+
+async function createS256Challenge(codeVerifier: string): Promise<string> {
+  const data = new TextEncoder().encode(codeVerifier);
+  const digest = await window.crypto.subtle.digest('SHA-256', data);
+  return encodeBase64Url(new Uint8Array(digest));
+}
+
+function buildPkceStorageKey(state: string): string {
+  return `${HIVE_SSO_PKCE_PREFIX}${state}`;
 }
 
 export default function LoginPage(): ReactElement {
@@ -57,12 +82,28 @@ export default function LoginPage(): ReactElement {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const code = params.get('code');
+    const state = params.get('state');
     if (code == null || code.length === 0 || ssoExchangeCodeRef.current === code) {
       return;
     }
+    if (state == null || state.length === 0) {
+      setError('Hive SSO state is missing');
+      setLoginMethod('password');
+      nav('/login', { replace: true });
+      return;
+    }
+    const storageKey = buildPkceStorageKey(state);
+    const codeVerifier = window.sessionStorage.getItem(storageKey);
+    if (codeVerifier == null || codeVerifier.length === 0) {
+      setError('Hive SSO verifier is missing');
+      setLoginMethod('password');
+      nav('/login', { replace: true });
+      return;
+    }
     ssoExchangeCodeRef.current = code;
+    window.sessionStorage.removeItem(storageKey);
     setLoading(true);
-    exchangeHiveSsoCode(code)
+    exchangeHiveSsoCode(code, codeVerifier)
       .then((result) => {
         setAccessToken(result.accessToken);
         nav('/', { replace: true });
@@ -75,6 +116,27 @@ export default function LoginPage(): ReactElement {
       })
       .finally(() => setLoading(false));
   }, [location.search, nav, setAccessToken]);
+
+  const handleHiveSsoLogin = async (): Promise<void> => {
+    if (hiveSsoLoginUrl == null) {
+      return;
+    }
+    try {
+      const codeVerifier = createPkceRandomValue();
+      const state = createPkceRandomValue();
+      const codeChallenge = await createS256Challenge(codeVerifier);
+      window.sessionStorage.setItem(buildPkceStorageKey(state), codeVerifier);
+      const authorizeUrl = new URL(hiveSsoLoginUrl, window.location.origin);
+      authorizeUrl.searchParams.set('code_challenge', codeChallenge);
+      authorizeUrl.searchParams.set('code_challenge_method', S256_CHALLENGE_METHOD);
+      authorizeUrl.searchParams.set('state', state);
+      window.location.assign(authorizeUrl.toString());
+    } catch (error: unknown) {
+      console.error('Failed to prepare Hive SSO PKCE challenge', error);
+      setError('Hive SSO setup failed');
+      setLoginMethod('password');
+    }
+  };
 
   const handleSubmit = async (password: string, mfaCode?: string): Promise<void> => {
     setLoading(true);
@@ -97,9 +159,9 @@ export default function LoginPage(): ReactElement {
           <h4 className="text-center mb-4">GolemCore Dashboard</h4>
           {shouldShowSsoChoice && loginMethod === 'choice' && (
             <div className="d-grid gap-2 mb-3">
-              <a className="btn btn-primary" href={hiveSsoLoginUrl ?? undefined}>
+              <Button type="button" variant="primary" onClick={() => { void handleHiveSsoLogin(); }}>
                 Continue with Hive SSO
-              </a>
+              </Button>
               <Button type="button" variant="secondary" onClick={() => setLoginMethod('password')}>
                 Use password instead
               </Button>

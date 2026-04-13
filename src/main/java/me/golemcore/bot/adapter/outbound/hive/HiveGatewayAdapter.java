@@ -74,9 +74,18 @@ public class HiveGatewayAdapter implements HiveGatewayPort {
     }
 
     @Override
-    public HiveSsoTokenResponse exchangeSsoCode(String serverUrl, String code, String clientId, String redirectUri) {
-        HiveApiClient.OAuth2TokenResponse response = hiveApiClient.exchangeSsoCode(serverUrl, code, clientId,
-                redirectUri);
+    public HiveSsoTokenResponse exchangeSsoCode(
+            String serverUrl,
+            String code,
+            String clientId,
+            String redirectUri,
+            String codeVerifier) {
+        HiveApiClient.OAuth2TokenResponse response = hiveApiClient.exchangeSsoCode(
+                serverUrl,
+                code,
+                clientId,
+                redirectUri,
+                codeVerifier);
         HiveApiClient.LoginResponse login = response.login();
         HiveApiClient.OperatorResponse operator = login.operator();
         return new HiveSsoTokenResponse(

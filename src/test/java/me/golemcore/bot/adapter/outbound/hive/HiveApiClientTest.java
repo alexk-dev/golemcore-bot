@@ -130,6 +130,42 @@ class HiveApiClientTest {
     }
 
     @Test
+    void shouldExchangeSsoCodeWithPkceVerifier() throws Exception {
+        server.enqueue(new MockResponse.Builder().code(200).body("""
+                {
+                  "login": {
+                    "accessToken": "hive-access",
+                    "operator": {
+                      "id": "op-1",
+                      "username": "admin",
+                      "displayName": "Hive Admin",
+                      "roles": ["ADMIN"]
+                    }
+                  },
+                  "code": "code-1"
+                }
+                """).build());
+
+        HiveApiClient.OAuth2TokenResponse response = hiveApiClient.exchangeSsoCode(
+                server.url("/").toString(),
+                "code-1",
+                "golem_1",
+                "https://bot.example.com/dashboard/api/auth/hive/callback",
+                "verifier-1");
+
+        RecordedRequest recordedRequest = server.takeRequest();
+        JsonNode payload = new ObjectMapper().readTree(recordedRequest.getBody().utf8());
+        assertEquals("/api/v1/oauth2/token", recordedRequest.getTarget());
+        assertEquals("code-1", payload.get("code").asText());
+        assertEquals("golem_1", payload.get("clientId").asText());
+        assertEquals("https://bot.example.com/dashboard/api/auth/hive/callback",
+                payload.get("redirectUri").asText());
+        assertEquals("verifier-1", payload.get("codeVerifier").asText());
+        assertEquals("hive-access", response.login().accessToken());
+        assertEquals("admin", response.login().operator().username());
+    }
+
+    @Test
     void shouldFetchPolicyPackageWithBearerToken() throws Exception {
         server.enqueue(new MockResponse.Builder().code(200).body("""
                 {

@@ -130,11 +130,16 @@ public class HiveApiClient {
                 HivePolicyApplyResult.class);
     }
 
-    public OAuth2TokenResponse exchangeSsoCode(String serverUrl, String code, String clientId, String redirectUri) {
+    public OAuth2TokenResponse exchangeSsoCode(
+            String serverUrl,
+            String code,
+            String clientId,
+            String redirectUri,
+            String codeVerifier) {
         return postJson(
                 serverUrl,
                 "/api/v1/oauth2/token",
-                new OAuth2TokenRequest(code, clientId, redirectUri),
+                new OAuth2TokenRequest(code, clientId, redirectUri, codeVerifier),
                 null,
                 OAuth2TokenResponse.class);
     }
@@ -327,7 +332,7 @@ public class HiveApiClient {
     private record RefreshTokenRequest(String refreshToken) {
     }
 
-    private record OAuth2TokenRequest(String code, String clientId, String redirectUri) {
+    private record OAuth2TokenRequest(String code, String clientId, String redirectUri, String codeVerifier) {
     }
 
     public record OperatorResponse(String id, String username, String displayName, List<String> roles) {

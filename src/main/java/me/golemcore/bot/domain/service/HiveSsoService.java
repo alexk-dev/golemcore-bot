@@ -34,7 +34,7 @@ public class HiveSsoService {
         return new HiveSsoStatus(true, true, buildAuthorizeUrl(sessionState.get(), dashboardBaseUrl), null);
     }
 
-    public HiveSsoTokenResponse exchange(String code) {
+    public HiveSsoTokenResponse exchange(String code, String codeVerifier) {
         RuntimeConfig.HiveConfig hiveConfig = runtimeConfigService.getHiveConfig();
         if (!Boolean.TRUE.equals(hiveConfig.getSsoEnabled())) {
             throw new IllegalStateException("Hive SSO is disabled in bot settings");
@@ -49,7 +49,8 @@ public class HiveSsoService {
                 sessionState.getServerUrl(),
                 code,
                 sessionState.getGolemId(),
-                buildRedirectUri(dashboardBaseUrl));
+                buildRedirectUri(dashboardBaseUrl),
+                codeVerifier);
     }
 
     private String buildAuthorizeUrl(HiveSessionState sessionState, String dashboardBaseUrl) {

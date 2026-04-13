@@ -5,4 +5,5 @@ import lombok.Data;
 @Data
 public class HiveSsoExchangeRequest {
     private String code;
+    private String codeVerifier;
 }

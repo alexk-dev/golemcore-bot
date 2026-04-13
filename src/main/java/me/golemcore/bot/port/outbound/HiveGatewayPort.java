@@ -34,7 +34,12 @@ public interface HiveGatewayPort {
             Long uptimeSeconds,
             String dashboardBaseUrl);
 
-    HiveSsoTokenResponse exchangeSsoCode(String serverUrl, String code, String clientId, String redirectUri);
+    HiveSsoTokenResponse exchangeSsoCode(
+            String serverUrl,
+            String code,
+            String clientId,
+            String redirectUri,
+            String codeVerifier);
 
     HiveCardDetail getCard(String serverUrl, String golemId, String accessToken, String cardId);
 

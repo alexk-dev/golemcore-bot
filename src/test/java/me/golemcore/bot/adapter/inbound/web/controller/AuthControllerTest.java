@@ -95,11 +95,12 @@ class AuthControllerTest {
                 .accessToken("local-access")
                 .refreshToken("local-refresh")
                 .build();
-        when(hiveSsoService.exchange("code-1")).thenReturn(tokenResponse);
+        when(hiveSsoService.exchange("code-1", "verifier-1")).thenReturn(tokenResponse);
         when(authService.authenticateHiveSso(tokenResponse)).thenReturn(tokens);
 
         me.golemcore.bot.adapter.inbound.web.dto.HiveSsoExchangeRequest request = new me.golemcore.bot.adapter.inbound.web.dto.HiveSsoExchangeRequest();
         request.setCode("code-1");
+        request.setCodeVerifier("verifier-1");
 
         StepVerifier.create(controller.exchangeHiveSso(request))
                 .assertNext(response -> {

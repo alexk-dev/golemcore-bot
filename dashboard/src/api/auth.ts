@@ -27,10 +27,10 @@ export async function getHiveSsoStatus(): Promise<HiveSsoStatus> {
   return data;
 }
 
-export async function exchangeHiveSsoCode(code: string): Promise<{ accessToken: string }> {
+export async function exchangeHiveSsoCode(code: string, codeVerifier: string): Promise<{ accessToken: string }> {
   const { data } = await axios.post<{ accessToken: string }>(
     '/api/auth/hive/exchange',
-    { code },
+    { code, codeVerifier },
     { withCredentials: true }
   );
   return data;
