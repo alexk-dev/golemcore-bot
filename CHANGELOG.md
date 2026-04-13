@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.62.0 - 2026-04-13
+#### Features
+- (**webhook**) honor sync schema model settings (#276) - (53094c5) - Alex Kuleshov
+#### Miscellaneous
+- (**deps**) bump docker/build-push-action from 7.0.0 to 7.1.0 (#272) - (2780e5c) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
