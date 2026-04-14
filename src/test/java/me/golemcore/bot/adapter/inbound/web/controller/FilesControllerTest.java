@@ -10,10 +10,10 @@ import me.golemcore.bot.domain.service.DashboardFileService;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.multipart.FilePart;
-import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
@@ -225,7 +225,7 @@ class FilesControllerTest {
 
     @Test
     void shouldReturnBadRequestForInvalidDownloadPath() {
-        when(toolArtifactService.getDownload("../etc/passwd")).thenThrow(new IllegalArgumentException("Invalid path"));
+        when(dashboardFileService.getDownload("../etc/passwd")).thenThrow(new IllegalArgumentException("Invalid path"));
 
         StepVerifier.create(filesController.download("../etc/passwd"))
                 .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
@@ -234,7 +234,8 @@ class FilesControllerTest {
 
     @Test
     void shouldThrowWhenDownloadEndpointHasUnexpectedServiceFailure() {
-        when(toolArtifactService.getDownload("broken.bin")).thenThrow(new IllegalStateException("Storage unavailable"));
+        when(dashboardFileService.getDownload("broken.bin"))
+                .thenThrow(new IllegalStateException("Storage unavailable"));
 
         assertThrows(IllegalStateException.class, () -> filesController.download("broken.bin"));
     }
@@ -396,7 +397,7 @@ class FilesControllerTest {
     }
 
     @Test
-    void shouldDeletePathWhenPathIsValid() {
+    void shouldDeletePathWhenPathExists() {
         doNothing().when(dashboardFileService).deletePath("src/App.tsx");
 
         StepVerifier.create(filesController.deletePath("src/App.tsx"))

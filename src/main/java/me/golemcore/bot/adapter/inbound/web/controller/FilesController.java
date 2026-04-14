@@ -145,11 +145,7 @@ public class FilesController {
         if (path != null && path.startsWith(".golemcore/tool-artifacts/")) {
             return toolArtifactService.getDownload(path);
         }
-        ToolArtifactDownload workspaceDownload = dashboardFileService.getDownload(path);
-        if (workspaceDownload != null) {
-            return workspaceDownload;
-        }
-        return toolArtifactService.getDownload(path);
+        return dashboardFileService.getDownload(path);
     }
 
     private ResponseEntity<byte[]> buildDownloadResponse(ToolArtifactDownload download) {
