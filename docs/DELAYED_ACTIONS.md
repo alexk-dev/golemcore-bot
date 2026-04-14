@@ -721,7 +721,7 @@ Recommended new config block:
 delayedActions:
   enabled: true
   tickSeconds: 1
-  maxPendingPerSession: 50
+  maxPendingPerSession: 3
   maxDelay: "P30D"
   defaultMaxAttempts: 4
   leaseDuration: "PT2M"
@@ -732,7 +732,9 @@ delayedActions:
 Recommended behavior:
 
 - disable tool exposure when `enabled = false`
-- reject new actions beyond `maxPendingPerSession`
+- reject new actions beyond `maxPendingPerSession` (capped at 3 active actions per session)
+- keep only the latest active action for each duplicate delayed action identity
+- clear active delayed actions for the session when `/stop` is requested
 - reject schedules beyond `maxDelay`
 - prune old terminal actions after `retentionAfterCompletion`
 
