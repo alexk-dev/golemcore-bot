@@ -7,6 +7,7 @@ import {
   useFileTree,
   useRenameFilePath,
   useSaveFileContent,
+  useUploadFileContent,
 } from './useFiles';
 import { useIdeCloseWorkflow } from './useIdeCloseWorkflow';
 import { useIdeQuickOpen, type QuickOpenItem } from './useIdeQuickOpen';
@@ -17,6 +18,14 @@ import { type IdeTabState, useIdeStore } from '../store/ideStore';
 import { buildIdeTabLabels, getFilename } from '../components/ide/ideTabLabels';
 
 const SIDEBAR_WIDTH_CSS_VARIABLE = '--ide-sidebar-width';
+const DEFAULT_TREE_DEPTH = 2;
+
+export interface EditorSettingsState {
+  fontSize: number;
+  wordWrap: boolean;
+  minimap: boolean;
+  setMinimap: (value: boolean) => void;
+}
 
 export interface UseIdeWorkspaceResult {
   openedTabs: IdeTabState[];
@@ -47,6 +56,10 @@ export interface UseIdeWorkspaceResult {
   debouncedTreeSearchQuery: string;
   quickOpenQuery: string;
   isQuickOpenVisible: boolean;
+  isCommandPaletteVisible: boolean;
+  isEditorSearchVisible: boolean;
+  isEditorSettingsVisible: boolean;
+  includeIgnored: boolean;
   quickOpenItems: QuickOpenItem[];
   activeLine: number;
   activeColumn: number;
@@ -54,8 +67,13 @@ export interface UseIdeWorkspaceResult {
   activeFileSize: number;
   activeUpdatedAt: string | null;
   sidebarWidth: number;
+  editorSearchQuery: string;
+  editorSettings: EditorSettingsState;
   setActivePath: (path: string | null) => void;
   setTreeSearchQuery: (value: string) => void;
+  setEditorSearchQuery: (value: string) => void;
+  setEditorFontSize: (fontSize: number) => void;
+  setEditorWordWrap: (wordWrap: boolean) => void;
   refreshTree: () => void;
   saveActiveTab: () => void;
   requestCloseActiveTab: () => void;
@@ -70,6 +88,13 @@ export interface UseIdeWorkspaceResult {
   updateQuickOpenQuery: (value: string) => void;
   openFileFromQuickOpen: (path: string) => void;
   toggleQuickOpenPinned: (path: string) => void;
+  toggleCommandPalette: () => void;
+  closeCommandPalette: () => void;
+  toggleEditorSearch: () => void;
+  toggleEditorSettings: () => void;
+  toggleIncludeIgnored: () => void;
+  loadDirectory: (path: string) => void;
+  uploadFiles: (targetPath: string, files: FileList) => void;
   setEditorCursor: (line: number, column: number) => void;
   startSidebarResize: (clientX: number) => void;
   increaseSidebarWidth: () => void;
@@ -157,9 +182,24 @@ function resolveLanguage(filePath: string | null): string {
   return aliases[extension] ?? (extension.length > 0 ? extension : 'plain');
 }
 
+function clampFontSize(fontSize: number): number {
+  if (Number.isNaN(fontSize)) {
+    return 14;
+  }
+  return Math.min(22, Math.max(11, fontSize));
+}
+
 export function useIdeWorkspace(): UseIdeWorkspaceResult {
   const [activeLine, setActiveLine] = useState<number>(1);
   const [activeColumn, setActiveColumn] = useState<number>(1);
+  const [includeIgnored, setIncludeIgnored] = useState<boolean>(false);
+  const [isCommandPaletteVisible, setCommandPaletteVisible] = useState<boolean>(false);
+  const [isEditorSearchVisible, setEditorSearchVisible] = useState<boolean>(false);
+  const [isEditorSettingsVisible, setEditorSettingsVisible] = useState<boolean>(false);
+  const [editorSearchQuery, setEditorSearchQuery] = useState<string>('');
+  const [editorFontSize, setEditorFontSizeState] = useState<number>(14);
+  const [editorWordWrap, setEditorWordWrap] = useState<boolean>(true);
+  const [editorMinimap, setEditorMinimap] = useState<boolean>(true);
 
   const openedTabs = useIdeStore((state) => state.openedTabs);
   const activePath = useIdeStore((state) => state.activePath);
@@ -176,10 +216,11 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
   const activatePreviousTab = useIdeStore((state) => state.activatePreviousTab);
   const activateNextTab = useIdeStore((state) => state.activateNextTab);
 
-  const treeQuery = useFileTree('');
+  const treeQuery = useFileTree('', { depth: DEFAULT_TREE_DEPTH, includeIgnored });
   const contentQuery = useFileContent(activePath ?? '');
   const createMutation = useCreateFileContent();
   const saveMutation = useSaveFileContent();
+  const uploadMutation = useUploadFileContent();
   const renameMutation = useRenameFilePath();
   const deleteMutation = useDeleteFilePath();
 
@@ -211,10 +252,16 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     () => resolveActiveUpdatedAt(contentQuery.data, activeTab?.path),
     [activeTab?.path, contentQuery.data],
   );
+
   const saveTab = useCallback(async (tab: IdeTabState): Promise<boolean> => {
+    if (!tab.editable) {
+      toast.error(`${tab.path} cannot be edited inline`);
+      return false;
+    }
+
     try {
       const saved = await saveMutation.mutateAsync({ path: tab.path, content: tab.content });
-      markSaved(saved.path, saved.content);
+      markSaved(saved.path, saved.content ?? '');
       toast.success(`Saved ${saved.path}`);
       return true;
     } catch {
@@ -239,6 +286,7 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
   }, [closeWorkflow.closeCandidate, tabLabels]);
 
   const canSaveActiveTab = activeTab != null
+    && activeTab.editable
     && activeTab.isDirty
     && !saveMutation.isPending
     && !closeWorkflow.isCloseWithSavePending;
@@ -255,7 +303,10 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     isCreatePending: createMutation.isPending,
     isRenamePending: renameMutation.isPending,
     isDeletePending: deleteMutation.isPending,
-    onCreateFile: async (path: string) => createMutation.mutateAsync({ path, content: '' }),
+    onCreateFile: async (path: string) => {
+      const created = await createMutation.mutateAsync({ path, content: '' });
+      return { path: created.path, content: created.content ?? '' };
+    },
     onRenamePath: async (sourcePath: string, targetPath: string) => {
       await renameMutation.mutateAsync({ sourcePath, targetPath });
     },
@@ -269,6 +320,11 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
         content,
         savedContent: content,
         isDirty: false,
+        mimeType: 'text/plain',
+        binary: false,
+        image: false,
+        editable: true,
+        downloadUrl: `/api/files/download?path=${encodeURIComponent(path)}`,
       });
     },
     onPathRenamed: renamePathReferences,
@@ -284,7 +340,7 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
   }, [contentQuery]);
 
   const updateActiveTabContent = useCallback((nextValue: string): void => {
-    if (activeTab == null) {
+    if (activeTab?.editable !== true) {
       return;
     }
     updateTabContent(activeTab.path, nextValue);
@@ -293,6 +349,59 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
   const setEditorCursor = useCallback((line: number, column: number): void => {
     setActiveLine(line);
     setActiveColumn(column);
+  }, []);
+
+  const toggleCommandPalette = useCallback((): void => {
+    setCommandPaletteVisible((current) => !current);
+  }, []);
+
+  const closeCommandPalette = useCallback((): void => {
+    setCommandPaletteVisible(false);
+  }, []);
+
+  const toggleEditorSearch = useCallback((): void => {
+    setEditorSearchVisible((current) => !current);
+  }, []);
+
+  const toggleEditorSettings = useCallback((): void => {
+    setEditorSettingsVisible((current) => !current);
+  }, []);
+
+  const toggleIncludeIgnored = useCallback((): void => {
+    setIncludeIgnored((current) => !current);
+  }, []);
+
+  const loadDirectory = useCallback((_path: string): void => {
+    void treeQuery.refetch();
+  }, [treeQuery]);
+
+  const uploadFiles = useCallback((targetPath: string, files: FileList): void => {
+    Array.from(files).forEach((file) => {
+      void (async () => {
+        try {
+          const uploaded = await uploadMutation.mutateAsync({ path: targetPath, file });
+          upsertTab({
+            path: uploaded.path,
+            title: getFilename(uploaded.path),
+            content: uploaded.content ?? '',
+            savedContent: uploaded.content ?? '',
+            isDirty: false,
+            mimeType: uploaded.mimeType,
+            binary: uploaded.binary,
+            image: uploaded.image,
+            editable: uploaded.editable,
+            downloadUrl: uploaded.downloadUrl,
+          });
+          toast.success(`Uploaded ${uploaded.path}`);
+        } catch {
+          toast.error(`Failed to upload ${file.name}`);
+        }
+      })();
+    });
+  }, [uploadMutation, upsertTab]);
+
+  const setEditorFontSize = useCallback((fontSize: number): void => {
+    setEditorFontSizeState(clampFontSize(fontSize));
   }, []);
 
   useSyncContentToTabs({
@@ -304,6 +413,7 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
   useGlobalIdeShortcuts({
     onSave: saveActiveTab,
     onQuickOpen: quickOpen.openQuickOpen,
+    onCommandPalette: toggleCommandPalette,
     onCloseActiveTab: closeWorkflow.requestCloseActiveTab,
     onActivatePreviousTab: activatePreviousTab,
     onActivateNextTab: activateNextTab,
@@ -311,7 +421,8 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
 
   useBeforeUnloadGuard(hasDirtyTabs);
 
-  const isFileOpening = activePath != null && activeTab == null && contentQuery.isLoading; const hasFileLoadError = activePath != null && activeTab == null && contentQuery.isError;
+  const isFileOpening = activePath != null && activeTab == null && contentQuery.isLoading;
+  const hasFileLoadError = activePath != null && activeTab == null && contentQuery.isError;
 
   return {
     openedTabs,
@@ -336,6 +447,10 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     debouncedTreeSearchQuery: quickOpen.debouncedTreeSearchQuery,
     quickOpenQuery: quickOpen.quickOpenQuery,
     isQuickOpenVisible: quickOpen.isQuickOpenVisible,
+    isCommandPaletteVisible,
+    isEditorSearchVisible,
+    isEditorSettingsVisible,
+    includeIgnored,
     quickOpenItems: quickOpen.quickOpenItems,
     activeLine,
     activeColumn,
@@ -343,8 +458,18 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     activeFileSize,
     activeUpdatedAt,
     sidebarWidth: sidebar.width,
+    editorSearchQuery,
+    editorSettings: {
+      fontSize: editorFontSize,
+      wordWrap: editorWordWrap,
+      minimap: editorMinimap,
+      setMinimap: setEditorMinimap,
+    },
     setActivePath,
     setTreeSearchQuery: quickOpen.setTreeSearchQuery,
+    setEditorSearchQuery,
+    setEditorFontSize,
+    setEditorWordWrap,
     refreshTree,
     saveActiveTab,
     requestCloseActiveTab: closeWorkflow.requestCloseActiveTab,
@@ -359,6 +484,13 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     updateQuickOpenQuery: quickOpen.updateQuickOpenQuery,
     openFileFromQuickOpen: quickOpen.openFileFromQuickOpen,
     toggleQuickOpenPinned: quickOpen.toggleQuickOpenPinned,
+    toggleCommandPalette,
+    closeCommandPalette,
+    toggleEditorSearch,
+    toggleEditorSettings,
+    toggleIncludeIgnored,
+    loadDirectory,
+    uploadFiles,
     setEditorCursor,
     startSidebarResize: sidebar.startResize,
     increaseSidebarWidth: sidebar.increase,

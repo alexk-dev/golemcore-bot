@@ -420,6 +420,106 @@ class DashboardFileServiceTest {
         assertTrue(exception.getMessage().contains("inside workspace"));
     }
 
+    @Test
+    void shouldReturnLazyTreeWithDirectoryChildHintsWhenDepthIsOne() throws IOException {
+        writeTextFile("src/main/App.java", "class App {}");
+        writeTextFile("README.md", "docs");
+
+        List<DashboardFileNode> tree = dashboardFileService.getTree("", 1, false);
+
+        DashboardFileNode src = tree.stream()
+                .filter(node -> "src".equals(node.getPath()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("directory", src.getType());
+        assertTrue(src.isHasChildren());
+        assertTrue(src.getChildren().isEmpty());
+
+        DashboardFileNode readme = tree.stream()
+                .filter(node -> "README.md".equals(node.getPath()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("file", readme.getType());
+        assertEquals("text/markdown", readme.getMimeType());
+        assertFalse(readme.isBinary());
+        assertFalse(readme.isImage());
+    }
+
+    @Test
+    void shouldHideGeneratedAndIgnoredDirectoriesByDefault() throws IOException {
+        writeTextFile("src/App.java", "class App {}");
+        writeTextFile("node_modules/pkg/index.js", "module.exports = {}");
+        writeTextFile("target/classes/App.class", "compiled");
+        writeTextFile(".git/config", "[core]");
+
+        List<DashboardFileNode> tree = dashboardFileService.getTree("", 1, false);
+
+        List<String> names = tree.stream().map(DashboardFileNode::getName).toList();
+        assertEquals(List.of("src"), names);
+    }
+
+    @Test
+    void shouldIncludeGeneratedDirectoriesWhenRequested() throws IOException {
+        writeTextFile("src/App.java", "class App {}");
+        writeTextFile("node_modules/pkg/index.js", "module.exports = {}");
+        writeTextFile("target/classes/App.class", "compiled");
+
+        List<DashboardFileNode> tree = dashboardFileService.getTree("", 1, true);
+
+        List<String> names = tree.stream().map(DashboardFileNode::getName).toList();
+        assertTrue(names.contains("src"));
+        assertTrue(names.contains("node_modules"));
+        assertTrue(names.contains("target"));
+    }
+
+    @Test
+    void shouldReturnImageMetadataWithoutReadingImageAsUtf8() throws IOException {
+        byte[] pngBytes = new byte[] {
+                (byte) 0x89, 0x50, 0x4E, 0x47,
+                0x0D, 0x0A, 0x1A, 0x0A,
+                0x00, 0x00, 0x00, 0x0D
+        };
+        Path path = workspaceRoot.resolve("images/logo.png");
+        Files.createDirectories(path.getParent());
+        Files.write(path, pngBytes);
+
+        DashboardFileContent content = dashboardFileService.getContent("images/logo.png");
+
+        assertEquals("images/logo.png", content.getPath());
+        assertEquals(pngBytes.length, content.getSize());
+        assertEquals("image/png", content.getMimeType());
+        assertTrue(content.isBinary());
+        assertTrue(content.isImage());
+        assertFalse(content.isEditable());
+        assertEquals("/api/files/download?path=images%2Flogo.png", content.getDownloadUrl());
+    }
+
+    @Test
+    void shouldDownloadWorkspaceFileWhenPathIsValid() throws IOException {
+        writeTextFile("reports/output.txt", "download me");
+
+        me.golemcore.bot.domain.model.ToolArtifactDownload download = dashboardFileService
+                .getDownload("reports/output.txt");
+
+        assertEquals("reports/output.txt", download.getPath());
+        assertEquals("output.txt", download.getFilename());
+        assertEquals("text/plain", download.getMimeType());
+        assertEquals("download me", new String(download.getData(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void shouldUploadFileIntoTargetDirectory() {
+        byte[] data = "uploaded".getBytes(StandardCharsets.UTF_8);
+
+        DashboardFileContent uploaded = dashboardFileService.uploadFile("uploads", "notes.txt", data, "text/plain");
+
+        assertEquals("uploads/notes.txt", uploaded.getPath());
+        assertEquals("uploaded", uploaded.getContent());
+        assertEquals("text/plain", uploaded.getMimeType());
+        assertTrue(uploaded.isEditable());
+        assertTrue(Files.exists(workspaceRoot.resolve("uploads/notes.txt")));
+    }
+
     private Path writeTextFile(String relativePath, String content) throws IOException {
         Path path = workspaceRoot.resolve(relativePath);
         Path parent = path.getParent();

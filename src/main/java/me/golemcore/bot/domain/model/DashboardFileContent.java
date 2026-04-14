@@ -14,4 +14,9 @@ public class DashboardFileContent {
     private String content;
     private long size;
     private String updatedAt;
+    private String mimeType;
+    private boolean binary;
+    private boolean image;
+    private boolean editable;
+    private String downloadUrl;
 }

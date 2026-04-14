@@ -3,7 +3,12 @@ import { createNewTab, type IdeTabState } from '../store/ideStore';
 
 export interface ContentPayload {
   path: string;
-  content: string;
+  content: string | null;
+  mimeType: string | null;
+  binary: boolean;
+  image: boolean;
+  editable: boolean;
+  downloadUrl: string | null;
 }
 
 export interface UseSyncContentToTabsOptions {
@@ -16,28 +21,41 @@ function findTabByPath(tabs: IdeTabState[], path: string): IdeTabState | undefin
   return tabs.find((tab) => tab.path === path);
 }
 
+function normalizeContent(contentData: ContentPayload): string {
+  return contentData.content ?? '';
+}
+
 export function useSyncContentToTabs({
   contentData,
   openedTabs,
   upsertTab,
 }: UseSyncContentToTabsOptions): void {
   useEffect(() => {
-    // Synchronize loaded API content into tab state when file becomes active.
+    // Synchronize loaded API content and metadata into tab state when file becomes active.
     if (contentData == null) {
       return;
     }
 
+    const nextContent = normalizeContent(contentData);
+    const metadata = {
+      mimeType: contentData.mimeType,
+      binary: contentData.binary,
+      image: contentData.image,
+      editable: contentData.editable,
+      downloadUrl: contentData.downloadUrl,
+    };
     const existing = findTabByPath(openedTabs, contentData.path);
     if (existing == null) {
-      upsertTab(createNewTab(contentData.path, contentData.content));
+      upsertTab(createNewTab(contentData.path, nextContent, metadata));
       return;
     }
 
-    if (!existing.isDirty && existing.savedContent !== contentData.content) {
+    if (!existing.isDirty && existing.savedContent !== nextContent) {
       upsertTab({
         ...existing,
-        content: contentData.content,
-        savedContent: contentData.content,
+        ...metadata,
+        content: nextContent,
+        savedContent: nextContent,
         isDirty: false,
       });
     }
@@ -47,6 +65,7 @@ export function useSyncContentToTabs({
 export interface UseGlobalIdeShortcutsOptions {
   onSave: () => void;
   onQuickOpen: () => void;
+  onCommandPalette: () => void;
   onCloseActiveTab: () => void;
   onActivatePreviousTab: () => void;
   onActivateNextTab: () => void;
@@ -68,12 +87,13 @@ function isEditableElement(target: EventTarget | null): boolean {
 export function useGlobalIdeShortcuts({
   onSave,
   onQuickOpen,
+  onCommandPalette,
   onCloseActiveTab,
   onActivatePreviousTab,
   onActivateNextTab,
 }: UseGlobalIdeShortcutsOptions): void {
   useEffect(() => {
-    // Register global save/quick-open/tab shortcuts for editor workflow.
+    // Register global save/quick-open/command-palette/tab shortcuts for editor workflow.
     const onKeyDown = (event: KeyboardEvent): void => {
       const key = event.key.toLowerCase();
       const withPrimaryModifier = event.ctrlKey || event.metaKey;
@@ -81,6 +101,12 @@ export function useGlobalIdeShortcuts({
       if (withPrimaryModifier && key === 's') {
         event.preventDefault();
         onSave();
+        return;
+      }
+
+      if (withPrimaryModifier && key === 'p' && event.shiftKey) {
+        event.preventDefault();
+        onCommandPalette();
         return;
       }
 
@@ -118,7 +144,7 @@ export function useGlobalIdeShortcuts({
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [onActivateNextTab, onActivatePreviousTab, onCloseActiveTab, onQuickOpen, onSave]);
+  }, [onActivateNextTab, onActivatePreviousTab, onCloseActiveTab, onCommandPalette, onQuickOpen, onSave]);
 }
 
 export function useBeforeUnloadGuard(hasDirtyTabs: boolean): void {
