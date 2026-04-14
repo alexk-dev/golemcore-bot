@@ -155,6 +155,58 @@ class DelayedSessionActionServiceTest {
     }
 
     @Test
+    void shouldAllowDuplicateReplacementWhenSessionIsAtActiveLimit() {
+        DelayedSessionAction first = service.schedule(DelayedSessionAction.builder()
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.REMIND_LATER)
+                .deliveryMode(DelayedActionDeliveryMode.DIRECT_MESSAGE)
+                .runAt(NOW.plusSeconds(31))
+                .dedupeKey("same-key")
+                .payload(Map.of("message", "Reminder 1"))
+                .build());
+        service.schedule(DelayedSessionAction.builder()
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.REMIND_LATER)
+                .deliveryMode(DelayedActionDeliveryMode.DIRECT_MESSAGE)
+                .runAt(NOW.plusSeconds(32))
+                .payload(Map.of("message", "Reminder 2"))
+                .build());
+        service.schedule(DelayedSessionAction.builder()
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.REMIND_LATER)
+                .deliveryMode(DelayedActionDeliveryMode.DIRECT_MESSAGE)
+                .runAt(NOW.plusSeconds(33))
+                .payload(Map.of("message", "Reminder 3"))
+                .build());
+
+        DelayedSessionAction latest = service.schedule(DelayedSessionAction.builder()
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.REMIND_LATER)
+                .deliveryMode(DelayedActionDeliveryMode.DIRECT_MESSAGE)
+                .runAt(NOW.plusSeconds(60))
+                .dedupeKey("same-key")
+                .payload(Map.of("message", "Reminder latest"))
+                .build());
+
+        List<DelayedSessionAction> actions = service.listActions("telegram", "conv-1");
+        assertEquals(3, actions.size());
+        assertTrue(service.get(first.getId()).isEmpty());
+        DelayedSessionAction deduped = actions.stream()
+                .filter(action -> "same-key".equals(action.getDedupeKey()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(latest.getId(), deduped.getId());
+    }
+
+    @Test
     void shouldClearActiveActionsForSession() {
         DelayedSessionAction first = service.schedule(DelayedSessionAction.builder()
                 .channelType("telegram")
