@@ -23,9 +23,11 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolDefinition;
 
 import java.lang.reflect.Array;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Estimates LLM request size for compaction preflight decisions.
@@ -110,7 +112,7 @@ public class ContextTokenEstimator {
             return 0;
         }
         long tokens = 0;
-        IdentityHashMap<Object, Boolean> visited = new IdentityHashMap<>();
+        Set<Object> visited = newVisitedSet();
         for (Message.ToolCall toolCall : toolCalls) {
             if (toolCall == null) {
                 continue;
@@ -127,7 +129,7 @@ public class ContextTokenEstimator {
             return 0;
         }
         long tokens = 0;
-        IdentityHashMap<Object, Boolean> visited = new IdentityHashMap<>();
+        Set<Object> visited = newVisitedSet();
         for (ToolDefinition tool : tools) {
             if (tool == null) {
                 continue;
@@ -141,25 +143,29 @@ public class ContextTokenEstimator {
     }
 
     private int estimateMetadata(Map<String, Object> metadata) {
-        return estimateObjectMap(metadata, new IdentityHashMap<>(), 0);
+        return estimateObjectMap(metadata, newVisitedSet(), 0);
     }
 
-    private int estimateObjectMap(Map<String, ?> values, IdentityHashMap<Object, Boolean> visited, int depth) {
+    private int estimateObjectMap(Map<String, ?> values, Set<Object> visited, int depth) {
         if (values == null || values.isEmpty()) {
             return 0;
         }
-        if (depth > MAX_NESTED_DEPTH || visited.put(values, Boolean.TRUE) != null) {
+        if (depth > MAX_NESTED_DEPTH || !visited.add(values)) {
             return 0;
         }
-        long tokens = 2;
-        for (Map.Entry<String, ?> entry : values.entrySet()) {
-            tokens += estimateText(entry.getKey());
-            tokens += estimateObject(entry.getValue(), visited, depth + 1);
+        try {
+            long tokens = 2;
+            for (Map.Entry<String, ?> entry : values.entrySet()) {
+                tokens += estimateText(entry.getKey());
+                tokens += estimateObject(entry.getValue(), visited, depth + 1);
+            }
+            return saturatingToInt(tokens);
+        } finally {
+            visited.remove(values);
         }
-        return saturatingToInt(tokens);
     }
 
-    private int estimateObject(Object value, IdentityHashMap<Object, Boolean> visited, int depth) {
+    private int estimateObject(Object value, Set<Object> visited, int depth) {
         if (value == null) {
             return 0;
         }
@@ -173,27 +179,39 @@ public class ContextTokenEstimator {
             return 0;
         }
         if (value instanceof Map<?, ?> mapValue) {
-            if (visited.put(mapValue, Boolean.TRUE) != null) {
+            if (!visited.add(mapValue)) {
                 return 0;
             }
-            return estimateRawMap(mapValue, visited, depth + 1);
+            try {
+                return estimateRawMap(mapValue, visited, depth + 1);
+            } finally {
+                visited.remove(mapValue);
+            }
         }
         if (value instanceof Iterable<?> iterableValue) {
-            if (visited.put(iterableValue, Boolean.TRUE) != null) {
+            if (!visited.add(iterableValue)) {
                 return 0;
             }
-            return estimateIterable(iterableValue, visited, depth + 1);
+            try {
+                return estimateIterable(iterableValue, visited, depth + 1);
+            } finally {
+                visited.remove(iterableValue);
+            }
         }
         if (value.getClass().isArray()) {
-            if (visited.put(value, Boolean.TRUE) != null) {
+            if (!visited.add(value)) {
                 return 0;
             }
-            return estimateArray(value, visited, depth + 1);
+            try {
+                return estimateArray(value, visited, depth + 1);
+            } finally {
+                visited.remove(value);
+            }
         }
         return estimateText(String.valueOf(value));
     }
 
-    private int estimateArray(Object array, IdentityHashMap<Object, Boolean> visited, int depth) {
+    private int estimateArray(Object array, Set<Object> visited, int depth) {
         int length = Array.getLength(array);
         if (length == 0) {
             return 2;
@@ -239,7 +257,7 @@ public class ContextTokenEstimator {
         return Math.max(2, (int) Math.ceil(tokens));
     }
 
-    private int estimateRawMap(Map<?, ?> values, IdentityHashMap<Object, Boolean> visited, int depth) {
+    private int estimateRawMap(Map<?, ?> values, Set<Object> visited, int depth) {
         long tokens = 2;
         for (Map.Entry<?, ?> entry : values.entrySet()) {
             tokens += estimateObject(entry.getKey(), visited, depth);
@@ -248,7 +266,7 @@ public class ContextTokenEstimator {
         return saturatingToInt(tokens);
     }
 
-    private int estimateIterable(Iterable<?> values, IdentityHashMap<Object, Boolean> visited, int depth) {
+    private int estimateIterable(Iterable<?> values, Set<Object> visited, int depth) {
         long tokens = 2;
         for (Object value : values) {
             tokens += estimateObject(value, visited, depth);
@@ -260,10 +278,7 @@ public class ContextTokenEstimator {
         if (value == null || value.isEmpty()) {
             return 0;
         }
-        int latin = 0;
-        int medium = 0;
-        int cjk = 0;
-        int other = 0;
+        double tokens = 0.0d;
 
         int length = value.length();
         for (int index = 0; index < length;) {
@@ -271,31 +286,34 @@ public class ContextTokenEstimator {
             index += Character.charCount(codePoint);
 
             if (Character.isWhitespace(codePoint)) {
-                latin++;
+                tokens += 1.0d / CHARS_PER_TOKEN_LATIN;
                 continue;
             }
             // Character.UnicodeScript.of accepts any scalar value returned by
             // String.codePointAt, so no exception handling is needed here.
-            switch (Character.UnicodeScript.of(codePoint)) {
-            case LATIN, COMMON, INHERITED -> latin++;
-            case CYRILLIC, GREEK, HEBREW, ARABIC,
-                    DEVANAGARI, BENGALI, TAMIL, TELUGU, KANNADA, MALAYALAM, GUJARATI, GURMUKHI, ORIYA,
-                    THAI, LAO, KHMER, MYANMAR ->
-                medium++;
-            case HAN, HIRAGANA, KATAKANA, HANGUL, BOPOMOFO -> cjk++;
-            default -> other++;
-            }
+            tokens += tokenContribution(Character.UnicodeScript.of(codePoint));
         }
-
-        double tokens = latin / CHARS_PER_TOKEN_LATIN
-                + medium / CHARS_PER_TOKEN_MEDIUM
-                + cjk / CHARS_PER_TOKEN_CJK
-                + other / CHARS_PER_TOKEN_OTHER;
 
         if (tokens <= 0.0d) {
             return 0;
         }
         return Math.max(1, (int) Math.ceil(tokens));
+    }
+
+    private double tokenContribution(Character.UnicodeScript script) {
+        return switch (script) {
+        case LATIN, COMMON, INHERITED -> 1.0d / CHARS_PER_TOKEN_LATIN;
+        case CYRILLIC, GREEK, HEBREW, ARABIC,
+                DEVANAGARI, BENGALI, TAMIL, TELUGU, KANNADA, MALAYALAM, GUJARATI, GURMUKHI, ORIYA,
+                THAI, LAO, KHMER, MYANMAR ->
+            1.0d / CHARS_PER_TOKEN_MEDIUM;
+        case HAN, HIRAGANA, KATAKANA, HANGUL, BOPOMOFO -> 1.0d / CHARS_PER_TOKEN_CJK;
+        default -> 1.0d / CHARS_PER_TOKEN_OTHER;
+        };
+    }
+
+    private Set<Object> newVisitedSet() {
+        return Collections.newSetFromMap(new IdentityHashMap<>());
     }
 
     private int saturatingToInt(long value) {

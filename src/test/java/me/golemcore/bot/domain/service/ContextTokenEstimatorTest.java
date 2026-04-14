@@ -6,6 +6,8 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -132,7 +134,7 @@ class ContextTokenEstimatorTest {
 
     @Test
     void shouldTolerateCyclicMetadataWithoutStackOverflow() {
-        java.util.Map<String, Object> cyclic = new java.util.HashMap<>();
+        Map<String, Object> cyclic = new HashMap<>();
         cyclic.put("self", cyclic);
         cyclic.put("name", "loop");
 
@@ -145,6 +147,66 @@ class ContextTokenEstimatorTest {
         // Must not throw / overflow.
         int tokens = estimator.estimateMessages(List.of(message));
         assertTrue(tokens > 0);
+    }
+
+    @Test
+    void shouldCountSharedMetadataObjectsForEverySerializedOccurrence() {
+        Map<String, Object> shared = new HashMap<>();
+        shared.put("payload", "x".repeat(800));
+
+        Message singleOccurrence = Message.builder()
+                .role("user")
+                .content("hi")
+                .metadata(Map.of("first", shared))
+                .build();
+        Message repeatedOccurrence = Message.builder()
+                .role("user")
+                .content("hi")
+                .metadata(Map.of("first", shared, "second", shared))
+                .build();
+
+        int singleTokens = estimator.estimateMessages(List.of(singleOccurrence));
+        int repeatedTokens = estimator.estimateMessages(List.of(repeatedOccurrence));
+
+        assertTrue(repeatedTokens > singleTokens + 150,
+                "shared metadata objects are serialized once per occurrence; repeated=" + repeatedTokens
+                        + " must materially exceed single=" + singleTokens);
+    }
+
+    @Test
+    void shouldCountSharedToolSchemasForEveryToolDefinition() {
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", Map.of(
+                "body", Map.of(
+                        "type", "string",
+                        "description", "x".repeat(800))));
+        ToolDefinition firstTool = ToolDefinition.builder()
+                .name("first")
+                .description("First tool")
+                .inputSchema(schema)
+                .build();
+        ToolDefinition secondTool = ToolDefinition.builder()
+                .name("second")
+                .description("Second tool")
+                .inputSchema(schema)
+                .build();
+
+        LlmRequest singleTool = LlmRequest.builder()
+                .messages(List.of(Message.builder().role("user").content("hi").build()))
+                .tools(List.of(firstTool))
+                .build();
+        LlmRequest repeatedSchema = LlmRequest.builder()
+                .messages(List.of(Message.builder().role("user").content("hi").build()))
+                .tools(List.of(firstTool, secondTool))
+                .build();
+
+        int singleTokens = estimator.estimateRequest(singleTool);
+        int repeatedTokens = estimator.estimateRequest(repeatedSchema);
+
+        assertTrue(repeatedTokens > singleTokens + 150,
+                "each tool definition serializes its schema independently; repeated=" + repeatedTokens
+                        + " must materially exceed single=" + singleTokens);
     }
 
     @Test
@@ -204,7 +266,7 @@ class ContextTokenEstimatorTest {
     @Test
     void shouldEstimateObjectArraysByIteratingElements() {
         String[] strings = new String[50];
-        java.util.Arrays.fill(strings, "abcdefghij");
+        Arrays.fill(strings, "abcdefghij");
         Message message = Message.builder()
                 .role("user")
                 .content("x")
@@ -225,12 +287,12 @@ class ContextTokenEstimatorTest {
                 .content("x".repeat(50_000))
                 .metadata(Map.of("array", new int[] { 1, 2, 3 }))
                 .build();
-        Map<String, ToolResult> toolResults = new java.util.HashMap<>();
+        Map<String, ToolResult> toolResults = new HashMap<>();
         toolResults.put("null-result", null);
         LlmRequest request = LlmRequest.builder()
                 .systemPrompt("prompt")
-                .messages(java.util.Arrays.asList(null, huge))
-                .tools(java.util.Arrays.asList(null, ToolDefinition.simple("noop", "No operation")))
+                .messages(Arrays.asList(null, huge))
+                .tools(Arrays.asList(null, ToolDefinition.simple("noop", "No operation")))
                 .toolResults(toolResults)
                 .build();
 

@@ -120,8 +120,9 @@ public final class LlmErrorClassifier {
     }
 
     /**
-     * Classify a diagnostic string. Free-form text is intentionally not parsed;
-     * only embedded code markers are trusted.
+     * Classify a diagnostic string. Embedded code markers are trusted first; if no
+     * code is present, shared provider context-overflow patterns are parsed so
+     * existing diagnostics can still trigger overflow recovery.
      */
     public static String classifyFromDiagnostic(String diagnostic) {
         if (diagnostic == null || diagnostic.isBlank()) {

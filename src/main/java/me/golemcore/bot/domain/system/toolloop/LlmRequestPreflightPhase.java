@@ -116,7 +116,7 @@ class LlmRequestPreflightPhase {
             return request;
         } catch (RuntimeException e) {
             if (!terminalPublishStarted) {
-                diagnostics.recordCompactionError();
+                diagnostics.recordPreflightError();
                 diagnostics.publish(context, true);
             }
             throw e;
@@ -168,6 +168,14 @@ class LlmRequestPreflightPhase {
      * skipped on one of the exit paths. The class is private to the phase and reset
      * on every {@link LlmRequestPreflightPhase#preflight} entry, so stale state
      * from an earlier turn cannot leak forward.
+     *
+     * <p>
+     * {@code compactionOutcome=error} is a preflight diagnostic outcome: it means
+     * an uncaught failure happened somewhere in preflight (request rebuild,
+     * estimate, budget resolution, or compaction), not necessarily that the
+     * compaction service itself failed. If that happens before the first loop
+     * attempt, {@code attempt=0} is the pre-loop sentinel.
+     * </p>
      */
     private static final class PreflightDiagnostics {
 
@@ -192,7 +200,6 @@ class LlmRequestPreflightPhase {
         }
 
         void recordCompactionSkipped(String outcome) {
-            this.compactionAttempted = false;
             this.compactionOutcome = outcome;
         }
 
@@ -207,7 +214,7 @@ class LlmRequestPreflightPhase {
             this.compactionOutcome = outcome;
         }
 
-        void recordCompactionError() {
+        void recordPreflightError() {
             this.compactionAttempted = this.compactionAttempted || overThreshold;
             this.compactionOutcome = CompactionFinishedPayloads.OUTCOME_ERROR;
         }

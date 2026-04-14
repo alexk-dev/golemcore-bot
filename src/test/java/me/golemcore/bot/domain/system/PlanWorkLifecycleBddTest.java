@@ -158,7 +158,7 @@ class PlanWorkLifecycleBddTest {
                 .modelSelectionService(modelSelectionService)
                 .planService(planService)
                 .contextCompactionPolicy(new ContextCompactionPolicy(
-                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
+                        mock(RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneOffset.UTC))
                 .build();
 

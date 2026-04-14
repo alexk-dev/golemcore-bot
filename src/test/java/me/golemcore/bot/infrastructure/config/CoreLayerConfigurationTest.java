@@ -7,22 +7,37 @@ import static org.mockito.Mockito.mock;
 import java.time.Clock;
 import java.util.List;
 import me.golemcore.bot.application.update.UpdateService;
+import me.golemcore.bot.domain.component.MemoryComponent;
+import me.golemcore.bot.domain.component.SkillComponent;
+import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.PromptComposer;
+import me.golemcore.bot.domain.context.resolution.SkillResolver;
+import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
+import me.golemcore.bot.domain.service.DelayedActionPolicyService;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.service.SkillTemplateEngine;
+import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UpdateActivityGate;
 import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.PlanFinalizationSystem;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
+import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import me.golemcore.bot.port.outbound.ScheduleCronPort;
@@ -98,42 +113,40 @@ class CoreLayerConfigurationTest {
         ContextLayerConfiguration contextLayerConfiguration = new ContextLayerConfiguration();
 
         assertNotNull(contextLayerConfiguration.promptComposer());
-        assertNotNull(
-                contextLayerConfiguration.skillResolver(mock(me.golemcore.bot.domain.component.SkillComponent.class)));
+        assertNotNull(contextLayerConfiguration.skillResolver(mock(SkillComponent.class)));
         assertNotNull(contextLayerConfiguration.tierResolver(
                 mock(UserPreferencesService.class),
-                mock(me.golemcore.bot.domain.service.ModelSelectionService.class),
+                mock(ModelSelectionService.class),
                 mock(RuntimeConfigService.class),
-                mock(me.golemcore.bot.domain.component.SkillComponent.class)));
+                mock(SkillComponent.class)));
         assertNotNull(contextLayerConfiguration.identityLayer(
-                mock(me.golemcore.bot.domain.service.PromptSectionService.class),
+                mock(PromptSectionService.class),
                 mock(UserPreferencesService.class)));
         assertNotNull(contextLayerConfiguration.workspaceInstructionsLayer(
-                mock(me.golemcore.bot.domain.service.WorkspaceInstructionService.class)));
+                mock(WorkspaceInstructionService.class)));
         assertNotNull(contextLayerConfiguration.memoryLayer(
-                mock(me.golemcore.bot.domain.component.MemoryComponent.class),
+                mock(MemoryComponent.class),
                 mock(RuntimeConfigService.class),
-                mock(me.golemcore.bot.domain.service.MemoryPresetService.class)));
-        assertNotNull(contextLayerConfiguration.ragLayer(mock(me.golemcore.bot.port.outbound.RagPort.class)));
+                mock(MemoryPresetService.class)));
+        assertNotNull(contextLayerConfiguration.ragLayer(mock(RagPort.class)));
         assertNotNull(contextLayerConfiguration.skillLayer(
-                mock(me.golemcore.bot.domain.component.SkillComponent.class),
-                mock(me.golemcore.bot.domain.service.SkillTemplateEngine.class)));
+                mock(SkillComponent.class),
+                mock(SkillTemplateEngine.class)));
         assertNotNull(contextLayerConfiguration.toolLayer(
-                mock(me.golemcore.bot.domain.service.ToolCallExecutionService.class),
-                mock(me.golemcore.bot.port.outbound.McpPort.class),
+                mock(ToolCallExecutionService.class),
+                mock(McpPort.class),
                 mock(PlanService.class),
-                mock(me.golemcore.bot.domain.service.DelayedActionPolicyService.class)));
+                mock(DelayedActionPolicyService.class)));
         assertNotNull(contextLayerConfiguration.tierAwarenessLayer(mock(UserPreferencesService.class)));
-        assertNotNull(
-                contextLayerConfiguration.autoModeLayer(mock(me.golemcore.bot.domain.service.AutoModeService.class)));
+        assertNotNull(contextLayerConfiguration.autoModeLayer(mock(AutoModeService.class)));
         assertNotNull(contextLayerConfiguration.planModeLayer(mock(PlanService.class)));
         assertNotNull(contextLayerConfiguration.hiveLayer());
         assertNotNull(contextLayerConfiguration.webhookResponseSchemaLayer());
         assertNotNull(contextLayerConfiguration.contextAssembler(
-                mock(me.golemcore.bot.domain.context.resolution.SkillResolver.class),
-                mock(me.golemcore.bot.domain.context.resolution.TierResolver.class),
-                List.of(mock(me.golemcore.bot.domain.context.ContextLayer.class)),
-                mock(me.golemcore.bot.domain.context.PromptComposer.class)));
+                mock(SkillResolver.class),
+                mock(TierResolver.class),
+                List.of(mock(ContextLayer.class)),
+                mock(PromptComposer.class)));
     }
 
 }

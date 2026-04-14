@@ -130,6 +130,14 @@ class LlmErrorClassifierTest {
     }
 
     @Test
+    void shouldClassifyContextOverflowDiagnosticWithoutEmbeddedCode() {
+        String code = LlmErrorClassifier.classifyFromDiagnostic(
+                "LLM call failed: This model's maximum context length is 128000 tokens");
+
+        assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code);
+    }
+
+    @Test
     void shouldHandleDiagnosticAndCodeHelpersEdgeCases() {
         assertEquals(LlmErrorClassifier.UNKNOWN, LlmErrorClassifier.classifyFromDiagnostic(null));
         assertEquals(LlmErrorClassifier.UNKNOWN, LlmErrorClassifier.classifyFromDiagnostic("  "));
@@ -208,6 +216,8 @@ class LlmErrorClassifierTest {
     }
 
     private static final class ValueEqualException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
         ValueEqualException(String message) {
             super(message);
         }

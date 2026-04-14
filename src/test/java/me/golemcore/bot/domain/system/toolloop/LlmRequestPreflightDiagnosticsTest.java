@@ -91,6 +91,39 @@ class LlmRequestPreflightDiagnosticsTest extends LlmRequestPreflightPhaseFixture
     }
 
     @Test
+    void shouldPreserveCompactionAttemptedWhenFinalAttemptSkipsDueToExhaustedMessages() {
+        AgentContext context = buildContext(5);
+        AtomicInteger call = new AtomicInteger();
+        when(compactionService.compact(any(), any(), anyInt()))
+                .thenAnswer(invocation -> {
+                    int n = call.incrementAndGet();
+                    if (n == 1) {
+                        context.getSession().getMessages().clear();
+                        context.getSession().addMessage(Message.builder().role("user").content("kept-1").build());
+                        context.getSession().addMessage(Message.builder().role("assistant").content("kept-2").build());
+                        return compactionResult(3);
+                    }
+                    context.getSession().getMessages().clear();
+                    context.getSession().addMessage(Message.builder().role("user").content("kept-1").build());
+                    return compactionResult(1);
+                });
+
+        phase.preflight(context, () -> LlmRequest.builder()
+                .systemPrompt("x".repeat(4_000))
+                .messages(new ArrayList<>(context.getSession().getMessages()))
+                .build(), 1);
+
+        verify(compactionService, times(2)).compact(any(), any(), anyInt());
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
+        assertEquals(3, diagnostics.get("attempt"),
+                "third attempt should reach skipped_no_messages after prior compactions exhausted the session");
+        assertEquals(true, diagnostics.get("compactionAttempted"),
+                "a final skip must not erase earlier successful compaction attempts");
+        assertEquals(4, diagnostics.get("compactionRemoved"));
+        assertEquals("skipped_no_messages", diagnostics.get("compactionOutcome"));
+    }
+
+    @Test
     void shouldKeepUsedSummaryWhenAnyCompactionAttemptUsedSummary() {
         AgentContext context = buildContext(10);
         AtomicInteger call = new AtomicInteger();
@@ -224,6 +257,18 @@ class LlmRequestPreflightDiagnosticsTest extends LlmRequestPreflightPhaseFixture
         assertEquals(false, diagnostics.get("overThreshold"));
         assertEquals("not_attempted", diagnostics.get("compactionOutcome"),
                 "not_attempted is an intentional preflight-diagnostics-only outcome");
+    }
+
+    private static CompactionResult compactionResult(int removed) {
+        return CompactionResult.builder()
+                .removed(removed)
+                .usedSummary(false)
+                .details(CompactionDetails.builder()
+                        .reason(CompactionReason.REQUEST_PREFLIGHT)
+                        .summaryLength(0)
+                        .fileChanges(List.of())
+                        .build())
+                .build();
     }
 
     @Test
