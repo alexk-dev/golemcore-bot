@@ -2,7 +2,6 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -10,19 +9,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Resolves context-budget thresholds for both conversation-history compaction
  * and full LLM request preflight.
  */
-@Service
 @Slf4j
 public class ContextBudgetPolicy {
 
     private static final String TRIGGER_MODE_MODEL_RATIO = "model_ratio";
     private static final String TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
     private static final double TOKEN_THRESHOLD_MODEL_MAX_SAFETY_RATIO = 0.8d;
-    private static final double DEFAULT_FULL_REQUEST_RATIO = 0.95d;
+    private static final double DEFAULT_RATIO_FALLBACK = 0.95d;
 
     private final RuntimeConfigService runtimeConfigService;
     private final ModelSelectionService modelSelectionService;
     private final AtomicBoolean fullRequestResolutionDisabledLogged = new AtomicBoolean();
     private final AtomicBoolean fullRequestBypassLogged = new AtomicBoolean();
+    private final AtomicBoolean historyResolutionDisabledLogged = new AtomicBoolean();
+    private final AtomicBoolean historyBypassLogged = new AtomicBoolean();
 
     public ContextBudgetPolicy(RuntimeConfigService runtimeConfigService, ModelSelectionService modelSelectionService) {
         this.runtimeConfigService = runtimeConfigService;
@@ -34,7 +34,12 @@ public class ContextBudgetPolicy {
      * tool loop builds the full provider request.
      */
     public int resolveHistoryThreshold(AgentContext context) {
-        if (runtimeConfigService == null) {
+        if (runtimeConfigService == null || modelSelectionService == null) {
+            if (historyResolutionDisabledLogged.compareAndSet(false, true)) {
+                log.warn("[AutoCompact] History threshold resolution disabled: "
+                        + "runtimeConfigService={}, modelSelectionService={} — auto-compaction will not fire",
+                        runtimeConfigService != null, modelSelectionService != null);
+            }
             return Integer.MAX_VALUE;
         }
         if (TRIGGER_MODE_MODEL_RATIO.equals(runtimeConfigService.getCompactionTriggerMode())) {
@@ -72,7 +77,7 @@ public class ContextBudgetPolicy {
         } else {
             double ratio = runtimeConfigService.getCompactionModelThresholdRatio();
             if (ratio <= 0.0d || ratio > 1.0d) {
-                ratio = DEFAULT_FULL_REQUEST_RATIO;
+                ratio = DEFAULT_RATIO_FALLBACK;
             }
             threshold = Math.max(1L, (long) Math.floor(modelMax * ratio));
         }
@@ -82,37 +87,68 @@ public class ContextBudgetPolicy {
     private int resolveHistoryModelRatioThreshold(AgentContext context) {
         try {
             int modelMax = modelSelectionService.resolveMaxInputTokensForContext(context);
-            double ratio = runtimeConfigService.getCompactionModelThresholdRatio();
-            return Math.max(1, (int) Math.floor(modelMax * ratio));
+            if (modelMax > 0) {
+                historyBypassLogged.set(false);
+                double ratio = runtimeConfigService.getCompactionModelThresholdRatio();
+                if (ratio <= 0.0d || ratio > 1.0d) {
+                    ratio = DEFAULT_RATIO_FALLBACK;
+                }
+                return saturatingToPositiveInt((long) Math.floor(modelMax * ratio));
+            }
         } catch (RuntimeException e) {
-            log.debug("[AutoCompact] Failed to resolve model max tokens for ratio mode, using config default", e);
+            log.warn("[AutoCompact] Failed to resolve model max tokens for ratio mode, using config fallback", e);
         }
-        return runtimeConfigService.getCompactionMaxContextTokens();
+        return resolveHistoryConfiguredFallback();
     }
 
     private int resolveHistoryTokenThreshold(AgentContext context) {
         try {
             int modelMax = modelSelectionService.resolveMaxInputTokensForContext(context);
-            int modelThreshold = (int) (modelMax * TOKEN_THRESHOLD_MODEL_MAX_SAFETY_RATIO);
-            return Math.min(modelThreshold, runtimeConfigService.getCompactionMaxContextTokens());
+            if (modelMax > 0) {
+                historyBypassLogged.set(false);
+                long modelThreshold = Math.max(1L,
+                        (long) Math.floor(modelMax * TOKEN_THRESHOLD_MODEL_MAX_SAFETY_RATIO));
+                int configured = runtimeConfigService.getCompactionMaxContextTokens();
+                long threshold = configured > 0 ? Math.min(modelThreshold, configured) : modelThreshold;
+                return saturatingToPositiveInt(threshold);
+            }
         } catch (RuntimeException e) {
-            log.debug("[AutoCompact] Failed to resolve model max tokens for token-threshold mode, using config default",
+            log.warn("[AutoCompact] Failed to resolve model max tokens for token-threshold mode, using config fallback",
                     e);
         }
-        return runtimeConfigService.getCompactionMaxContextTokens();
+        return resolveHistoryConfiguredFallback();
+    }
+
+    private int resolveHistoryConfiguredFallback() {
+        int configured = runtimeConfigService.getCompactionMaxContextTokens();
+        if (configured > 0) {
+            historyBypassLogged.set(false);
+            return configured;
+        }
+        if (historyBypassLogged.compareAndSet(false, true)) {
+            log.warn("[AutoCompact] History threshold bypass: model registry returned no max-input-tokens and "
+                    + "runtimeConfig.compactionMaxContextTokens is unset — auto-compaction will not fire. "
+                    + "Configure one of the two to re-enable history compaction.");
+        }
+        return Integer.MAX_VALUE;
     }
 
     private int resolveFullRequestModelMaxTokens(AgentContext context) {
         try {
             int modelMax = modelSelectionService.resolveMaxInputTokensForContext(context);
             if (modelMax > 0) {
+                // Reset the bypass flag so a later flip back to broken config
+                // re-fires the warn. Otherwise an intermittent misconfig goes
+                // silent after the first incident.
+                fullRequestBypassLogged.set(false);
                 return modelMax;
             }
         } catch (RuntimeException e) {
-            log.debug("[ToolLoop] Failed to resolve model max tokens for request preflight", e);
+            log.warn("[ToolLoop] Failed to resolve model max tokens for request preflight, using config fallback", e);
         }
         int configuredThreshold = runtimeConfigService.getCompactionMaxContextTokens();
         if (configuredThreshold > 0) {
+            fullRequestBypassLogged.set(false);
             return configuredThreshold;
         }
         if (fullRequestBypassLogged.compareAndSet(false, true)) {

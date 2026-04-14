@@ -41,6 +41,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Thin orchestrator for the tool loop (single-turn internal loop).
@@ -94,9 +95,13 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         ContextTokenEstimator contextTokenEstimator = builder.contextTokenEstimator != null
                 ? builder.contextTokenEstimator
                 : new ContextTokenEstimator();
-        ContextBudgetPolicy contextBudgetPolicy = builder.contextBudgetPolicy != null
-                ? builder.contextBudgetPolicy
-                : new ContextBudgetPolicy(builder.runtimeConfigService, builder.modelSelectionService);
+        // Preflight's budget resolver has exactly one production assembly site
+        // (ToolLoopAutoConfiguration). Forcing callers to wire it removes the
+        // temptation to let the fallback quietly cover a broken bean graph —
+        // any missing wiring now fails loudly at startup instead of at the
+        // first LLM call.
+        ContextBudgetPolicy contextBudgetPolicy = Objects.requireNonNull(builder.contextBudgetPolicy,
+                "contextBudgetPolicy required; wire it explicitly on the builder");
         LlmRequestPreflightPhase preflightPhase = new LlmRequestPreflightPhase(
                 builder.runtimeConfigService,
                 builder.compactionOrchestrationService,

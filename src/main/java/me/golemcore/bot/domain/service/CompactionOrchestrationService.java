@@ -79,13 +79,14 @@ public class CompactionOrchestrationService {
                     false,
                     0,
                     runtimeConfigService.getCompactionDetailsMaxItemsPerCategory());
-            persistDetails(session, emptyDetails);
-            return CompactionResult.builder()
+            CompactionResult emptyResult = CompactionResult.builder()
                     .removed(0)
                     .usedSummary(false)
                     .summaryMessage(null)
                     .details(emptyDetails)
                     .build();
+            persistDetails(session, emptyResult);
+            return emptyResult;
         }
 
         long startedAt = clock.millis();
@@ -123,62 +124,29 @@ public class CompactionOrchestrationService {
             Map<String, Object> metadata = summaryMessage.getMetadata() != null
                     ? new LinkedHashMap<>(summaryMessage.getMetadata())
                     : new LinkedHashMap<>();
-            metadata.put(METADATA_KEY_COMPACTION_DETAILS, toDetailsMap(details));
+            metadata.put(METADATA_KEY_COMPACTION_DETAILS, CompactionPayloadMapper.toDetailsMap(details));
             summaryMessage.setMetadata(metadata);
         }
 
-        persistDetails(session, details);
-        sessionPort.save(session);
-
-        return CompactionResult.builder()
+        CompactionResult result = CompactionResult.builder()
                 .removed(preparation.messagesToCompact().size())
                 .usedSummary(usedSummary)
                 .summaryMessage(summaryMessage)
                 .details(details)
                 .build();
+        persistDetails(session, result);
+        sessionPort.save(session);
+        return result;
     }
 
-    private void persistDetails(AgentSession session, CompactionDetails details) {
-        if (session == null || details == null) {
+    private void persistDetails(AgentSession session, CompactionResult result) {
+        if (session == null || result == null || result.details() == null) {
             return;
         }
         if (session.getMetadata() == null) {
             session.setMetadata(new LinkedHashMap<>());
         }
-        session.getMetadata().put(ContextAttributes.COMPACTION_LAST_DETAILS, toDetailsMap(details));
-    }
-
-    private Map<String, Object> toDetailsMap(CompactionDetails details) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("schemaVersion", details.schemaVersion());
-        result.put("reason", details.reason() != null ? details.reason().name() : null);
-        result.put("summarizedCount", details.summarizedCount());
-        result.put("keptCount", details.keptCount());
-        result.put("usedLlmSummary", details.usedLlmSummary());
-        result.put("summaryLength", details.summaryLength());
-        result.put("toolCount", details.toolCount());
-        result.put("readFilesCount", details.readFilesCount());
-        result.put("modifiedFilesCount", details.modifiedFilesCount());
-        result.put("durationMs", details.durationMs());
-        result.put("toolNames", details.toolNames());
-        result.put("readFiles", details.readFiles());
-        result.put("modifiedFiles", details.modifiedFiles());
-        result.put("splitTurnDetected", details.splitTurnDetected());
-        result.put("fallbackUsed", details.fallbackUsed());
-
-        List<Map<String, Object>> fileChanges = new ArrayList<>();
-        if (details.fileChanges() != null) {
-            for (CompactionDetails.FileChangeStat fileChange : details.fileChanges()) {
-                Map<String, Object> fileChangeMap = new LinkedHashMap<>();
-                fileChangeMap.put("path", fileChange.path());
-                fileChangeMap.put("addedLines", fileChange.addedLines());
-                fileChangeMap.put("removedLines", fileChange.removedLines());
-                fileChangeMap.put("deleted", fileChange.deleted());
-                fileChanges.add(fileChangeMap);
-            }
-        }
-        result.put("fileChanges", fileChanges);
-
-        return result;
+        session.getMetadata().put(ContextAttributes.COMPACTION_LAST_DETAILS,
+                CompactionPayloadMapper.toPayload(result));
     }
 }

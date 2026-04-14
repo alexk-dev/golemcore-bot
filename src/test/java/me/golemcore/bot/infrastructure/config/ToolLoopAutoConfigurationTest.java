@@ -62,6 +62,16 @@ class ToolLoopAutoConfigurationTest {
     }
 
     @Test
+    void shouldCreateContextBudgetPolicy() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+
+        ContextBudgetPolicy policy = configuration.contextBudgetPolicy(runtimeConfigService, modelSelectionService);
+
+        assertNotNull(policy);
+    }
+
+    @Test
     void shouldCreateDefaultToolLoopSystem() {
         LlmPort llmPort = mock(LlmPort.class);
         ToolExecutorPort toolExecutorPort = mock(ToolExecutorPort.class);

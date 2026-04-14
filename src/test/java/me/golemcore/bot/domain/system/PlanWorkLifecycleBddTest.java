@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.context.layer.WorkspaceInstructionsLayer;
 import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -156,6 +157,7 @@ class PlanWorkLifecycleBddTest {
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(new BotProperties.ToolLoopProperties()))
                 .modelSelectionService(modelSelectionService)
                 .planService(planService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
                 .clock(Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneOffset.UTC))
                 .build();
 

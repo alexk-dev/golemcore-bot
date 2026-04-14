@@ -7,6 +7,7 @@ import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import org.junit.jupiter.api.Test;
 
@@ -88,6 +89,7 @@ class DefaultToolLoopSystemCompactionTest extends DefaultToolLoopSystemFixture {
                 .runtimeConfigService(runtimeConfigService)
                 .compactionOrchestrationService(compactionService)
                 .contextTokenEstimator(new ContextTokenEstimator())
+                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
 
@@ -164,6 +166,7 @@ class DefaultToolLoopSystemCompactionTest extends DefaultToolLoopSystemFixture {
                 .runtimeConfigService(runtimeConfigService)
                 .compactionOrchestrationService(compactionService)
                 .contextTokenEstimator(new ContextTokenEstimator())
+                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
 

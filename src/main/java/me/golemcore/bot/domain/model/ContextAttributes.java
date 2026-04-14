@@ -376,6 +376,9 @@ public final class ContextAttributes {
     /** Map<String,Object> ? latest LLM request token preflight diagnostics. */
     public static final String LLM_REQUEST_PREFLIGHT = "llm.request.preflight";
 
+    /** Map<String,Object> ? latest LLM context-overflow recovery diagnostics. */
+    public static final String LLM_CONTEXT_OVERFLOW_RECOVERY = "llm.context.overflow.recovery";
+
     /** List<Map<String,Object>> ? per-turn edited file stats for UI hints. */
     public static final String TURN_FILE_CHANGES = "turn.file.changes";
 

@@ -64,6 +64,13 @@ public class ToolLoopAutoConfiguration {
     }
 
     @Bean
+    public ContextBudgetPolicy contextBudgetPolicy(
+            RuntimeConfigService runtimeConfigService,
+            ModelSelectionService modelSelectionService) {
+        return new ContextBudgetPolicy(runtimeConfigService, modelSelectionService);
+    }
+
+    @Bean
     public ToolLoopSystem toolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutorPort,
             HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, ToolRuntimeSettingsPort settingsPort,
             ModelSelectionService modelSelectionService, PlanService planService,

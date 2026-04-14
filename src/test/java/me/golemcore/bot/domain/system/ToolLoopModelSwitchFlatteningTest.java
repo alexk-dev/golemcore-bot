@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
@@ -100,6 +101,7 @@ class ToolLoopModelSwitchFlatteningTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
                 .clock(Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC))
                 .build();
 
@@ -198,6 +200,7 @@ class ToolLoopModelSwitchFlatteningTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
                 .clock(Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC))
                 .build();
 

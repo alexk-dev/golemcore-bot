@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.CompactionPayloadMapper;
 import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -66,6 +67,10 @@ class LlmRequestPreflightPhase {
 
     private static final String COMPACTION_OUTCOME_SKIPPED_DISABLED = "skipped_disabled";
     private static final String COMPACTION_OUTCOME_SKIPPED_NO_MESSAGES = "skipped_no_messages";
+    private static final String OVERFLOW_OUTCOME_SKIPPED_DISABLED = "skipped_disabled";
+    private static final String OVERFLOW_OUTCOME_SKIPPED_TOO_SMALL = "skipped_too_small";
+    private static final String OVERFLOW_OUTCOME_COMPACTED = "compacted";
+    private static final String OVERFLOW_OUTCOME_ATTEMPTED_NO_CHANGE = "attempted_no_change";
 
     private final RuntimeConfigService runtimeConfigService;
     private final CompactionOrchestrationService compactionOrchestrationService;
@@ -87,7 +92,7 @@ class LlmRequestPreflightPhase {
             // message list shrinks, and threshold can shift if the model
             // selection changed (e.g. tier upgrade mid-turn).
             int estimatedTokens = contextTokenEstimator.estimateRequest(request);
-            int threshold = resolveThreshold(context);
+            int threshold = contextBudgetPolicy.resolveFullRequestThreshold(context);
             if (estimatedTokens <= threshold) {
                 publishDiagnostics(context, estimatedTokens, threshold, attempt, true);
                 return request;
@@ -113,7 +118,7 @@ class LlmRequestPreflightPhase {
         }
 
         int finalEstimatedTokens = contextTokenEstimator.estimateRequest(request);
-        int finalThreshold = resolveThreshold(context);
+        int finalThreshold = contextBudgetPolicy.resolveFullRequestThreshold(context);
         publishDiagnostics(context, finalEstimatedTokens, finalThreshold, PREFLIGHT_MAX_ATTEMPTS, true);
         if (finalEstimatedTokens > finalThreshold) {
             log.warn("[ToolLoop] LLM request remains above context budget after {} preflight compaction attempts "
@@ -130,6 +135,13 @@ class LlmRequestPreflightPhase {
      * @return the {@link CompactionResult} if at least one message was removed,
      *         otherwise {@code null}.
      */
+    // finishedEmitted is written just before each normal exit — dead by
+    // data-flow analysis today, but structurally load-bearing: any future code
+    // added after the assignment and before `return`/throw will need the flag
+    // to keep the "exactly one FINISHED per STARTED" invariant. Suppressing
+    // the PMD warning instead of deleting the assignments preserves that
+    // defensive posture.
+    @SuppressWarnings("PMD.UnusedAssignment")
     CompactionResult runCompaction(AgentContext context, CompactionReason reason, int keepLast, int llmCall,
             Map<String, Object> extraStartedPayload) {
         // Guard clauses cover the "nothing to do" cases: no context, no
@@ -206,7 +218,7 @@ class LlmRequestPreflightPhase {
                 // dropped) and expose file changes so the turn summary picks
                 // them up even if compaction replaced the messages that
                 // originally recorded them.
-                context.setAttribute(ContextAttributes.COMPACTION_LAST_DETAILS, compactionResult.details());
+                CompactionPayloadMapper.publishToContext(context, compactionResult);
                 context.setAttribute(ContextAttributes.TURN_FILE_CHANGES, compactionResult.details().fileChanges());
             }
 
@@ -227,7 +239,15 @@ class LlmRequestPreflightPhase {
     }
 
     boolean recoverFromContextOverflow(AgentContext context, int llmCall, int retryAttempt) {
+        // Don't write a diagnostic on the retry-blocked path: a successful
+        // recovery from retryAttempt=0 may have already published a
+        // "compacted" record that operators need to see. Overwriting it with
+        // "skipped_already_retried" would erase the only evidence that
+        // recovery happened for this LLM call.
         if (retryAttempt > 0) {
+            return false;
+        }
+        if (context == null || context.getSession() == null || context.getSession().getMessages() == null) {
             return false;
         }
         if (runtimeConfigService == null || !runtimeConfigService.isCompactionEnabled()) {
@@ -236,22 +256,44 @@ class LlmRequestPreflightPhase {
                         + "(runtimeConfig.compactionEnabled=false) — overflow recovery will not fire. "
                         + "Enable compaction or lower the context-budget threshold to recover automatically.");
             }
-            return false;
-        }
-        if (context == null || context.getSession() == null || context.getSession().getMessages() == null) {
+            writeOverflowRecoveryDiagnostic(context, false, 0, false, OVERFLOW_OUTCOME_SKIPPED_DISABLED, llmCall);
             return false;
         }
         int keepLast = runtimeConfigService.getCompactionKeepLastMessages();
         if (context.getSession().getMessages().size() <= keepLast) {
+            writeOverflowRecoveryDiagnostic(context, false, 0, false, OVERFLOW_OUTCOME_SKIPPED_TOO_SMALL, llmCall);
             return false;
         }
         CompactionResult compactionResult = runCompaction(
                 context, CompactionReason.CONTEXT_OVERFLOW_RECOVERY, keepLast, llmCall, null);
-        return compactionResult != null;
+        if (compactionResult != null) {
+            writeOverflowRecoveryDiagnostic(context, true, compactionResult.removed(), compactionResult.usedSummary(),
+                    OVERFLOW_OUTCOME_COMPACTED, llmCall);
+            return true;
+        }
+        writeOverflowRecoveryDiagnostic(context, true, 0, false, OVERFLOW_OUTCOME_ATTEMPTED_NO_CHANGE, llmCall);
+        return false;
+    }
+
+    private void writeOverflowRecoveryDiagnostic(AgentContext context, boolean attempted, int removed,
+            boolean usedSummary, String outcome, int llmCall) {
+        Map<String, Object> diagnostics = new LinkedHashMap<>();
+        diagnostics.put("recoveryAttempted", attempted);
+        diagnostics.put("recoveryRemoved", Math.max(0, removed));
+        diagnostics.put("recoveryUsedSummary", usedSummary);
+        diagnostics.put("recoveryOutcome", outcome);
+        diagnostics.put("llmCall", llmCall);
+        context.setAttribute(ContextAttributes.LLM_CONTEXT_OVERFLOW_RECOVERY, diagnostics);
     }
 
     private static String progressReasonFor(CompactionReason reason) {
-        return reason == CompactionReason.REQUEST_PREFLIGHT ? "request_preflight_compaction" : "compaction";
+        if (reason == CompactionReason.REQUEST_PREFLIGHT) {
+            return "request_preflight_compaction";
+        }
+        if (reason == CompactionReason.CONTEXT_OVERFLOW_RECOVERY) {
+            return "context_overflow_recovery";
+        }
+        return "compaction";
     }
 
     private boolean preflightCompact(AgentContext context, int estimatedTokens, int threshold, int attempt,
@@ -324,10 +366,6 @@ class LlmRequestPreflightPhase {
         diagnostics.remove("compactionUsedSummary");
         diagnostics.remove("compactionOutcome");
         context.setAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT, diagnostics);
-    }
-
-    private int resolveThreshold(AgentContext context) {
-        return contextBudgetPolicy.resolveFullRequestThreshold(context);
     }
 
     private void publishDiagnostics(AgentContext context, int estimatedTokens, int threshold, int attempt,

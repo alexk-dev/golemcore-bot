@@ -7,6 +7,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -102,6 +103,7 @@ abstract class DefaultToolLoopSystemFixture {
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .planService(planService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
     }
@@ -154,6 +156,7 @@ abstract class DefaultToolLoopSystemFixture {
                 .modelSelectionService(modelSelectionService)
                 .planService(planService)
                 .runtimeEventService(runtimeEventService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
     }
@@ -169,6 +172,7 @@ abstract class DefaultToolLoopSystemFixture {
                 .modelSelectionService(modelSelectionService)
                 .planService(planService)
                 .runtimeConfigService(runtimeConfigService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
     }
@@ -185,6 +189,7 @@ abstract class DefaultToolLoopSystemFixture {
                 .planService(planService)
                 .runtimeConfigService(runtimeConfigService)
                 .turnProgressService(turnProgressService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
     }
@@ -200,6 +205,7 @@ abstract class DefaultToolLoopSystemFixture {
                 .modelSelectionService(modelSelectionService)
                 .planService(planService)
                 .toolFailureRecoveryService(recoveryService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
     }

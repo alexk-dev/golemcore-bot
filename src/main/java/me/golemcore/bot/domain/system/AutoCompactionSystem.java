@@ -21,9 +21,9 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
-import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.CompactionPayloadMapper;
 import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -32,7 +32,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Map;
 
 /**
  * System for automatic conversation history compaction when context size
@@ -78,8 +77,6 @@ public class AutoCompactionSystem implements AgentSystem {
         java.util.List<Message> messages = context.getMessages();
 
         int estimatedTokens = contextTokenEstimator.estimateMessages(messages);
-
-        String triggerMode = runtimeConfigService.getCompactionTriggerMode();
         int threshold = contextBudgetPolicy.resolveHistoryThreshold(context);
 
         if (estimatedTokens <= threshold) {
@@ -87,7 +84,7 @@ public class AutoCompactionSystem implements AgentSystem {
         }
 
         log.info("[AutoCompact] Context too large: ~{} tokens (threshold {}, mode={}), {} messages. Compacting...",
-                estimatedTokens, threshold, triggerMode, messages.size());
+                estimatedTokens, threshold, runtimeConfigService.getCompactionTriggerMode(), messages.size());
 
         int keepLast = runtimeConfigService.getCompactionKeepLastMessages();
         CompactionResult result = compactionOrchestrationService.compact(
@@ -95,9 +92,7 @@ public class AutoCompactionSystem implements AgentSystem {
                 CompactionReason.AUTO_THRESHOLD,
                 keepLast);
 
-        if (result.details() != null) {
-            context.setAttribute(ContextAttributes.COMPACTION_LAST_DETAILS, toDetailsPayload(result));
-        }
+        CompactionPayloadMapper.publishToContext(context, result);
 
         if (result.removed() > 0) {
             context.setMessages(new ArrayList<>(context.getSession().getMessages()));
@@ -107,24 +102,5 @@ public class AutoCompactionSystem implements AgentSystem {
         }
 
         return context;
-    }
-
-    private Map<String, Object> toDetailsPayload(CompactionResult result) {
-        Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("removed", result.removed());
-        payload.put("usedSummary", result.usedSummary());
-        if (result.details() != null) {
-            payload.put("reason", result.details().reason() != null ? result.details().reason().name() : null);
-            payload.put("summarizedCount", result.details().summarizedCount());
-            payload.put("keptCount", result.details().keptCount());
-            payload.put("splitTurnDetected", result.details().splitTurnDetected());
-            payload.put("summaryLength", result.details().summaryLength());
-            payload.put("durationMs", result.details().durationMs());
-            payload.put("toolCount", result.details().toolCount());
-            payload.put("readFilesCount", result.details().readFilesCount());
-            payload.put("modifiedFilesCount", result.details().modifiedFilesCount());
-            payload.put("fileChanges", result.details().fileChanges());
-        }
-        return payload;
     }
 }

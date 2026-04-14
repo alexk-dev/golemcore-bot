@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
@@ -134,6 +135,7 @@ class ToolLoopPlanModeInterceptionTest {
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .planService(planService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -207,6 +209,7 @@ class ToolLoopPlanModeInterceptionTest {
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
                 .planService(planService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 

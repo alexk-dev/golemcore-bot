@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
+import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.TraceBudgetService;
 import me.golemcore.bot.domain.service.TraceService;
@@ -82,6 +83,7 @@ class DefaultToolLoopSystemTraceTest extends DefaultToolLoopSystemFixture {
                 .runtimeConfigService(runtimeConfigService)
                 .turnProgressService(turnProgressService)
                 .traceService(traceService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
 
@@ -160,6 +162,7 @@ class DefaultToolLoopSystemTraceTest extends DefaultToolLoopSystemFixture {
                 .runtimeConfigService(runtimeConfigService)
                 .turnProgressService(turnProgressService)
                 .traceService(traceService)
+                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
 

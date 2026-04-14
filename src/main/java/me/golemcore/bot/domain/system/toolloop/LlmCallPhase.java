@@ -403,24 +403,32 @@ class LlmCallPhase {
                 Map<String, Object> requestContextAttributes = buildRequestContextAttributes(context, selection,
                         attempt);
                 TraceContext llmSpan = startChildSpan(context, "llm.chat", TraceSpanKind.LLM, requestContextAttributes);
-                appendRequestContextEvent(context, llmSpan, requestContextAttributes);
-                LlmRequest request = buildRequestWithPreflight(context,
-                        llmSpan != null ? llmSpan : context.getTraceContext(), selection, attempt);
-                captureLlmSnapshot(context, llmSpan, tracingConfig, "request", request);
-                try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(llmSpan, context))) {
-                    LlmResponse response = llmPort.chat(request).get();
-                    captureLlmSnapshot(context, llmSpan, tracingConfig, "response", response);
-                    finishChildSpan(context, llmSpan, TraceStatusCode.OK, null);
-                    return response;
-                } catch (InterruptedException e) {
-                    finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
+                // Span finish must cover preflight/buildRequest too: if those throw,
+                // the caller's RuntimeException handler will swallow the exception
+                // without ever finishing this span, leaving an orphan in the trace.
+                boolean succeeded = false;
+                Throwable failureCause = null;
+                try {
+                    appendRequestContextEvent(context, llmSpan, requestContextAttributes);
+                    LlmRequest request = buildRequestWithPreflight(context,
+                            llmSpan != null ? llmSpan : context.getTraceContext(), selection, attempt);
+                    captureLlmSnapshot(context, llmSpan, tracingConfig, "request", request);
+                    try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(llmSpan, context))) {
+                        LlmResponse response = llmPort.chat(request).get();
+                        captureLlmSnapshot(context, llmSpan, tracingConfig, "response", response);
+                        succeeded = true;
+                        return response;
+                    }
+                } catch (InterruptedException | ExecutionException | RuntimeException e) {
+                    failureCause = e;
                     throw e;
-                } catch (ExecutionException e) {
-                    finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
-                    throw e;
-                } catch (RuntimeException e) {
-                    finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
-                    throw e;
+                } finally {
+                    if (succeeded) {
+                        finishChildSpan(context, llmSpan, TraceStatusCode.OK, null);
+                    } else {
+                        finishChildSpan(context, llmSpan, TraceStatusCode.ERROR,
+                                failureCause != null ? failureCause.getMessage() : null);
+                    }
                 }
             }
 

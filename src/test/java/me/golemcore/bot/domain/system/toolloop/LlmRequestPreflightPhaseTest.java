@@ -21,6 +21,7 @@ import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.service.TurnProgressService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
@@ -40,8 +41,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -56,6 +61,7 @@ class LlmRequestPreflightPhaseTest {
     private TurnProgressService turnProgressService;
     private ContextBudgetPolicy contextBudgetPolicy;
     private LlmRequestPreflightPhase phase;
+    private final List<AttachedAppender> attachedAppenders = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -91,7 +97,7 @@ class LlmRequestPreflightPhaseTest {
         LlmRequest result = phase.preflight(context, () -> request, 1);
 
         assertSame(request, result);
-        verify(compactionService, never()).compact(any(), any(), org.mockito.ArgumentMatchers.anyInt());
+        verify(compactionService, never()).compact(any(), any(), anyInt());
         Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
         assertNotNull(diagnostics);
         assertEquals(false, diagnostics.get("overThreshold"));
@@ -149,7 +155,7 @@ class LlmRequestPreflightPhaseTest {
         LlmRequest result = phase.preflight(context, () -> request, 1);
 
         assertSame(request, result);
-        verify(compactionService, never()).compact(any(), any(), org.mockito.ArgumentMatchers.anyInt());
+        verify(compactionService, never()).compact(any(), any(), anyInt());
         Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
         assertEquals(false, diagnostics.get("compactionAttempted"));
         assertTrue(Boolean.TRUE.equals(diagnostics.get("overThreshold")));
@@ -175,7 +181,7 @@ class LlmRequestPreflightPhaseTest {
     @Test
     void shouldResetCumulativeRemovedBetweenPreflightCalls() {
         AgentContext context = buildContext(10);
-        when(compactionService.compact(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+        when(compactionService.compact(any(), any(), anyInt()))
                 .thenReturn(CompactionResult.builder()
                         .removed(3)
                         .usedSummary(false)
@@ -209,7 +215,7 @@ class LlmRequestPreflightPhaseTest {
     void shouldAccumulateCompactionRemovedAcrossAttempts() {
         AgentContext context = buildContext(10);
         AtomicInteger call = new AtomicInteger();
-        when(compactionService.compact(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+        when(compactionService.compact(any(), any(), anyInt()))
                 .thenAnswer(invocation -> {
                     int n = call.incrementAndGet();
                     int removed = n == 1 ? 5 : 0;
@@ -240,7 +246,7 @@ class LlmRequestPreflightPhaseTest {
     @Test
     void shouldReportCompactionOutcomeAttemptedAndNoChangeWhenServiceReturnsZeroRemoved() {
         AgentContext context = buildContext(4);
-        when(compactionService.compact(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+        when(compactionService.compact(any(), any(), anyInt()))
                 .thenReturn(CompactionResult.builder()
                         .removed(0)
                         .usedSummary(false)
@@ -260,7 +266,7 @@ class LlmRequestPreflightPhaseTest {
     @Test
     void shouldEmitMatchingCompactionFinishedEventEvenWhenServiceRemovesNothing() {
         AgentContext context = buildContext(4);
-        when(compactionService.compact(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+        when(compactionService.compact(any(), any(), anyInt()))
                 .thenReturn(CompactionResult.builder()
                         .removed(0)
                         .usedSummary(false)
@@ -295,7 +301,7 @@ class LlmRequestPreflightPhaseTest {
     void shouldEmitFinishedWithOutcomeErrorWhenCompactionServiceThrows() {
         AgentContext context = buildContext(4);
         IllegalStateException boom = new IllegalStateException("persistence offline");
-        when(compactionService.compact(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+        when(compactionService.compact(any(), any(), anyInt()))
                 .thenThrow(boom);
         LlmRequest request = LlmRequest.builder()
                 .systemPrompt("x".repeat(4_000))
@@ -421,13 +427,12 @@ class LlmRequestPreflightPhaseTest {
         // touches — throwing would leak a hanging STARTED event. This test
         // simulates exactly that by spying on AgentContext and throwing on the
         // COMPACTION_LAST_DETAILS setAttribute call.
-        AgentContext context = org.mockito.Mockito.spy(buildContext(5));
-        org.mockito.Mockito.doThrow(new IllegalStateException("downstream attribute guard tripped"))
+        AgentContext context = spy(buildContext(5));
+        doThrow(new IllegalStateException("downstream attribute guard tripped"))
                 .when(context)
-                .setAttribute(org.mockito.ArgumentMatchers.eq(ContextAttributes.COMPACTION_LAST_DETAILS),
-                        org.mockito.ArgumentMatchers.any());
+                .setAttribute(eq(ContextAttributes.COMPACTION_LAST_DETAILS), any());
 
-        when(compactionService.compact(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+        when(compactionService.compact(any(), any(), anyInt()))
                 .thenReturn(CompactionResult.builder()
                         .removed(3)
                         .usedSummary(false)
@@ -475,7 +480,7 @@ class LlmRequestPreflightPhaseTest {
         // a crashed compaction can't distinguish "nothing happened" from
         // "everything was retained".
         int observedSizeAtFailure = context.getSession().getMessages().size();
-        when(compactionService.compact(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+        when(compactionService.compact(any(), any(), anyInt()))
                 .thenThrow(new IllegalStateException("boom"));
         LlmRequest request = LlmRequest.builder()
                 .systemPrompt("x".repeat(4_000))
@@ -523,13 +528,238 @@ class LlmRequestPreflightPhaseTest {
                         + "otherwise a misconfigured model registry turns preflight into a no-op with no diagnostics");
     }
 
+    @Test
+    void shouldNotRecoverFromContextOverflowWhenRetryAttemptAboveZero() {
+        AgentContext context = buildContext(5);
+
+        boolean recovered = phase.recoverFromContextOverflow(context, 1, 1);
+
+        assertFalse(recovered,
+                "overflow recovery must fire at most once per LLM call — retryAttempt>0 means "
+                        + "we already tried; retrying again would loop on an unrecoverable error");
+        verify(compactionService, never()).compact(any(), any(), anyInt());
+    }
+
+    @Test
+    void shouldLogOnceAndSkipOverflowRecoveryWhenCompactionDisabled() {
+        AgentContext context = buildContext(5);
+        when(runtimeConfigService.isCompactionEnabled()).thenReturn(false);
+        ListAppender<ILoggingEvent> appender = attachPhaseLogAppender();
+
+        boolean first = phase.recoverFromContextOverflow(context, 1, 0);
+        boolean second = phase.recoverFromContextOverflow(context, 2, 0);
+
+        assertFalse(first);
+        assertFalse(second);
+        verify(compactionService, never()).compact(any(), any(), anyInt());
+        long warnings = appender.list.stream()
+                .filter(event -> event.getLevel() == Level.WARN)
+                .filter(event -> event.getFormattedMessage().contains("Context overflow detected"))
+                .count();
+        assertEquals(1, warnings,
+                "disabled-compaction overflow must warn exactly once across repeated failures — "
+                        + "otherwise a stuck config floods logs on every oversized turn");
+    }
+
+    @Test
+    void shouldSkipOverflowRecoveryWhenSessionHasTooFewMessages() {
+        AgentContext context = buildContext(2);
+        when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(5);
+
+        boolean recovered = phase.recoverFromContextOverflow(context, 1, 0);
+
+        assertFalse(recovered,
+                "if the session is already smaller than keepLast, there's nothing to compact");
+        verify(compactionService, never()).compact(any(), any(), anyInt());
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_CONTEXT_OVERFLOW_RECOVERY);
+        assertNotNull(diagnostics,
+                "overflow recovery diagnostic must record skipped-too-small so operators can distinguish "
+                        + "'recovery didn't fire because session too small' from 'recovery never ran'");
+        assertEquals(false, diagnostics.get("recoveryAttempted"));
+        assertEquals("skipped_too_small", diagnostics.get("recoveryOutcome"));
+        assertEquals(0, diagnostics.get("recoveryRemoved"));
+        assertEquals(1, diagnostics.get("llmCall"));
+    }
+
+    @Test
+    void shouldReWarnAboutPreflightBypassAfterConfigRecoversAndBreaksAgain() {
+        AgentContext context = buildContext(2);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(0);
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(0);
+        ListAppender<ILoggingEvent> appender = attachPreflightLogAppender();
+        LlmRequest request = LlmRequest.builder()
+                .systemPrompt("short")
+                .messages(List.of(Message.builder().role("user").content("hi").build()))
+                .build();
+
+        phase.preflight(context, () -> request, 1);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(1_000);
+        phase.preflight(context, () -> request, 2);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(0);
+        phase.preflight(context, () -> request, 3);
+
+        long bypassWarnings = appender.list.stream()
+                .filter(event -> event.getLevel() == Level.WARN)
+                .filter(event -> event.getFormattedMessage().contains("Preflight threshold bypass"))
+                .count();
+        assertEquals(2, bypassWarnings,
+                "bypass warn must re-fire after config recovers and breaks again — "
+                        + "otherwise intermittent misconfig goes silent after the first incident");
+    }
+
+    @Test
+    void shouldPreserveSuccessfulRecoveryDiagnosticWhenRetryBlocked() {
+        AgentContext context = buildContext(6);
+        when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(2);
+        when(compactionService.compact("session-1", CompactionReason.CONTEXT_OVERFLOW_RECOVERY, 2))
+                .thenAnswer(invocation -> {
+                    context.getSession().getMessages().clear();
+                    context.getSession().addMessage(Message.builder().role("user").content("kept").build());
+                    context.getSession().addMessage(Message.builder().role("assistant").content("kept2").build());
+                    return CompactionResult.builder()
+                            .removed(4)
+                            .usedSummary(true)
+                            .details(CompactionDetails.builder()
+                                    .reason(CompactionReason.CONTEXT_OVERFLOW_RECOVERY)
+                                    .summaryLength(10)
+                                    .fileChanges(List.of())
+                                    .build())
+                            .build();
+                });
+
+        assertTrue(phase.recoverFromContextOverflow(context, 9, 0),
+                "first call must successfully compact");
+        assertFalse(phase.recoverFromContextOverflow(context, 10, 1),
+                "second call is retry-blocked and must return false");
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_CONTEXT_OVERFLOW_RECOVERY);
+        assertNotNull(diagnostics);
+        assertEquals("compacted", diagnostics.get("recoveryOutcome"),
+                "retry-blocked call must NOT overwrite the prior successful recovery diagnostic — "
+                        + "operators need to see the successful recovery record survive a downstream retry");
+        assertEquals(4, diagnostics.get("recoveryRemoved"),
+                "prior recoveryRemoved count must survive the retry-blocked call");
+        assertEquals(9, diagnostics.get("llmCall"),
+                "prior llmCall identifier must survive the retry-blocked call");
+    }
+
+    @Test
+    void shouldRecoverFromContextOverflowByRunningCompaction() {
+        AgentContext context = buildContext(6);
+        when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(2);
+        when(compactionService.compact("session-1", CompactionReason.CONTEXT_OVERFLOW_RECOVERY, 2))
+                .thenAnswer(invocation -> {
+                    context.getSession().getMessages().clear();
+                    context.getSession().addMessage(Message.builder().role("user").content("kept").build());
+                    context.getSession().addMessage(Message.builder().role("assistant").content("kept2").build());
+                    return CompactionResult.builder()
+                            .removed(4)
+                            .usedSummary(true)
+                            .details(CompactionDetails.builder()
+                                    .reason(CompactionReason.CONTEXT_OVERFLOW_RECOVERY)
+                                    .summaryLength(10)
+                                    .fileChanges(List.of())
+                                    .build())
+                            .build();
+                });
+
+        boolean recovered = phase.recoverFromContextOverflow(context, 9, 0);
+
+        assertTrue(recovered);
+        verify(compactionService).compact("session-1", CompactionReason.CONTEXT_OVERFLOW_RECOVERY, 2);
+        assertEquals(2, context.getMessages().size(),
+                "context.messages must be resynced with the now-shorter session");
+        verify(turnProgressService).flushBufferedTools(context, "context_overflow_recovery");
+        List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        assertTrue(events.stream().anyMatch(event -> RuntimeEventType.COMPACTION_STARTED.equals(event.type())));
+        assertTrue(events.stream().anyMatch(event -> RuntimeEventType.COMPACTION_FINISHED.equals(event.type())));
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_CONTEXT_OVERFLOW_RECOVERY);
+        assertNotNull(diagnostics, "overflow recovery must publish a dedicated diagnostic attribute "
+                + "so dashboards can see it without scanning runtime events");
+        assertEquals(true, diagnostics.get("recoveryAttempted"));
+        assertEquals(4, diagnostics.get("recoveryRemoved"));
+        assertEquals(true, diagnostics.get("recoveryUsedSummary"));
+        assertEquals("compacted", diagnostics.get("recoveryOutcome"));
+        assertEquals(9, diagnostics.get("llmCall"));
+    }
+
+    @Test
+    void shouldRecordOverflowRecoveryOutcomeWhenCompactionRemovesNothing() {
+        AgentContext context = buildContext(6);
+        when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(2);
+        when(compactionService.compact(any(), any(), anyInt()))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
+
+        phase.recoverFromContextOverflow(context, 3, 0);
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_CONTEXT_OVERFLOW_RECOVERY);
+        assertNotNull(diagnostics);
+        assertEquals(true, diagnostics.get("recoveryAttempted"));
+        assertEquals(0, diagnostics.get("recoveryRemoved"));
+        assertEquals("attempted_no_change", diagnostics.get("recoveryOutcome"));
+    }
+
+    @Test
+    void shouldRecordOverflowRecoveryOutcomeWhenCompactionDisabled() {
+        AgentContext context = buildContext(6);
+        when(runtimeConfigService.isCompactionEnabled()).thenReturn(false);
+
+        phase.recoverFromContextOverflow(context, 1, 0);
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_CONTEXT_OVERFLOW_RECOVERY);
+        assertNotNull(diagnostics,
+                "overflow recovery diagnostic must record the skipped-disabled terminal state too — "
+                        + "operators need to see 'recovery didn't fire because compaction is off'");
+        assertEquals(false, diagnostics.get("recoveryAttempted"));
+        assertEquals("skipped_disabled", diagnostics.get("recoveryOutcome"));
+    }
+
+    @Test
+    void shouldReturnFalseFromOverflowRecoveryWhenCompactionRemovesNothing() {
+        AgentContext context = buildContext(6);
+        when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(2);
+        when(compactionService.compact(any(), any(), anyInt()))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
+
+        boolean recovered = phase.recoverFromContextOverflow(context, 1, 0);
+
+        assertFalse(recovered,
+                "a no-op compaction means the state is unrecoverable — caller must surface the "
+                        + "original overflow error instead of silently retrying");
+    }
+
+    @AfterEach
+    void detachAppenders() {
+        // Appenders attached to singleton loggers leak between tests and let log
+        // events pile up across the suite — detach + stop is the only reliable
+        // way to reset state between methods.
+        for (AttachedAppender attached : attachedAppenders) {
+            attached.logger().detachAppender(attached.appender());
+            attached.appender().stop();
+        }
+        attachedAppenders.clear();
+    }
+
     private ListAppender<ILoggingEvent> attachPreflightLogAppender() {
-        Logger logger = (Logger) LoggerFactory.getLogger(ContextBudgetPolicy.class);
+        return attachAppender((Logger) LoggerFactory.getLogger(ContextBudgetPolicy.class));
+    }
+
+    private ListAppender<ILoggingEvent> attachPhaseLogAppender() {
+        return attachAppender((Logger) LoggerFactory.getLogger(LlmRequestPreflightPhase.class));
+    }
+
+    private ListAppender<ILoggingEvent> attachAppender(Logger logger) {
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.setContext(logger.getLoggerContext());
         appender.start();
         logger.addAppender(appender);
+        attachedAppenders.add(new AttachedAppender(logger, appender));
         return appender;
+    }
+
+    private record AttachedAppender(Logger logger, ListAppender<ILoggingEvent> appender) {
     }
 
     private AgentContext buildContext(int messages) {

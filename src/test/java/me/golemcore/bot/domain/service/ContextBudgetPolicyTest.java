@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -75,5 +76,59 @@ class ContextBudgetPolicyTest {
 
         assertEquals(12_345, policy.resolveHistoryThreshold(AgentContext.builder().build()));
         assertEquals(11_321, policy.resolveFullRequestThreshold(AgentContext.builder().build()));
+    }
+
+    @Test
+    void shouldClampInvalidRatioToDefaultInHistoryPath() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("model_ratio");
+        when(runtimeConfigService.getCompactionModelThresholdRatio()).thenReturn(-0.5d);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(20_000);
+
+        int threshold = policy.resolveHistoryThreshold(AgentContext.builder().build());
+
+        assertEquals(19_000, threshold);
+    }
+
+    @Test
+    void shouldClampRatioAboveOneToDefaultInHistoryPath() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("model_ratio");
+        when(runtimeConfigService.getCompactionModelThresholdRatio()).thenReturn(2.5d);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(20_000);
+
+        int threshold = policy.resolveHistoryThreshold(AgentContext.builder().build());
+
+        assertEquals(19_000, threshold);
+    }
+
+    @Test
+    void shouldBypassHistoryThresholdWhenModelAndConfiguredThresholdAreMissing() {
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(0);
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(0);
+
+        int threshold = policy.resolveHistoryThreshold(AgentContext.builder().build());
+
+        assertEquals(Integer.MAX_VALUE, threshold);
+    }
+
+    @Test
+    void shouldBypassHistoryThresholdWhenModelLookupFailsAndConfiguredIsZero() {
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenThrow(new IllegalStateException("missing model"));
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(0);
+
+        int threshold = policy.resolveHistoryThreshold(AgentContext.builder().build());
+
+        assertEquals(Integer.MAX_VALUE, threshold);
+    }
+
+    @Test
+    void shouldFloorHistoryTokenThresholdToAtLeastOne() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(1);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(1);
+
+        int threshold = policy.resolveHistoryThreshold(AgentContext.builder().build());
+
+        assertTrue(threshold >= 1, "expected floor clamp to 1, got " + threshold);
     }
 }
