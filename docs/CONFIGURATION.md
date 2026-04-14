@@ -452,6 +452,8 @@ Hive runtime settings live in `preferences/hive.json` and are also available in 
     "serverUrl": "https://hive.example.com",
     "displayName": "Build Runner",
     "hostLabel": "builder-lab-a",
+    "dashboardBaseUrl": "https://bot.example.com/dashboard",
+    "ssoEnabled": true,
     "autoConnect": true,
     "managedByProperties": false
   }
@@ -462,6 +464,7 @@ Rules:
 
 - `RuntimeConfig.HiveConfig` is the effective UI/runtime configuration.
 - `bot.hive.*` acts as a managed bootstrap override.
+- `BOT_HIVE_DASHBOARD_PUBLIC_URL` maps to the runtime `hive.dashboardBaseUrl` value used for Hive SSO redirects. `BOT_HIVE_DASHBOARD_BASE_URL` is still supported as a legacy alias.
 - When managed bootstrap is active, the dashboard Hive tab becomes read-only and the backend rejects edits to the Hive section.
 - Rotating machine auth state does not belong in `hive.json`; it lives in `preferences/hive-session.json`.
 - Buffered control channel commands live in `preferences/hive-control-inbox.json`.

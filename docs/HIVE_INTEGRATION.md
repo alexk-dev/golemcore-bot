@@ -30,9 +30,12 @@ The bot supports these managed bootstrap properties:
 - `bot.hive.join-code`
 - `bot.hive.display-name`
 - `bot.hive.host-label`
+- `bot.hive.dashboard-public-url`
 - `bot.hive.auto-connect-on-startup`
+- `bot.hive.sso-enabled`
 
 If any of these are set, Hive settings are treated as property-managed.
+Use `BOT_HIVE_DASHBOARD_PUBLIC_URL` to configure the externally reachable bot dashboard URL for Hive SSO redirects. `BOT_HIVE_DASHBOARD_BASE_URL` remains supported as a legacy alias.
 
 ## Join Code Format
 

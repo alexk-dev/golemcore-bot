@@ -38,11 +38,20 @@ public class BotPropertiesHiveBootstrapSettingsAdapter implements HiveBootstrapS
 
     @Override
     public String dashboardBaseUrl() {
-        return botProperties.getHive().getDashboardBaseUrl();
+        return firstConfigured(
+                botProperties.getHive().getDashboardPublicUrl(),
+                botProperties.getHive().getDashboardBaseUrl());
     }
 
     @Override
     public Boolean ssoEnabled() {
         return botProperties.getHive().getSsoEnabled();
+    }
+
+    private String firstConfigured(String primary, String fallback) {
+        if (primary != null && !primary.isBlank()) {
+            return primary;
+        }
+        return fallback;
     }
 }
