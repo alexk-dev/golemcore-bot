@@ -55,15 +55,6 @@ final class UpdateVersionSupport {
         return compareVersions(remoteVersion, currentVersion) > 0;
     }
 
-    boolean isSameMajorUpdate(String currentVersion, String remoteVersion) {
-        Semver current = parseSemver(currentVersion);
-        Semver remote = parseSemver(remoteVersion);
-        if (current == null || remote == null) {
-            return false;
-        }
-        return current.major() == remote.major();
-    }
-
     int compareVersions(String left, String right) {
         Semver leftSemver = parseSemver(left);
         Semver rightSemver = parseSemver(right);
