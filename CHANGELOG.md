@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.63.5 - 2026-04-14
+#### Bug Fixes
+- (**dashboard**) mobile topbar, collapsible chat, a11y & input zoom (#287) - (74e7a63) - Alex Kuleshov
+#### Miscellaneous
+- (**deps**) bump follow-redirects from 1.15.11 to 1.16.0 in /dashboard (#285) - (4986210) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
