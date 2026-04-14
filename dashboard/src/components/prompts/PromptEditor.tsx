@@ -37,8 +37,8 @@ function PromptPreviewPanel({
   onPreview,
 }: PromptPreviewPanelProps): ReactElement {
   return (
-    <div className="space-y-3 rounded-[1.5rem] border border-border/80 bg-slate-950/95 p-4 text-slate-100 xl:sticky xl:top-6">
-      <div className="flex items-center justify-between gap-3">
+    <div className="mobile-break-code space-y-3 rounded-[1.5rem] border border-border/80 bg-slate-950/95 p-4 text-slate-100 xl:sticky xl:top-6">
+      <div className="prompt-editor-preview-header flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-slate-100">Preview</div>
           <p className="mt-1 text-sm leading-6 text-slate-400">
@@ -180,7 +180,7 @@ function PromptEditorActionBar({
         <p className="text-sm leading-6 text-muted-foreground">{deleteHelpText}</p>
         {isDirty && <p className="text-sm font-medium text-amber-700 dark:text-amber-200">Unsaved changes</p>}
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="prompt-editor-action-group flex flex-wrap gap-2">
         <Button
           variant="ghost"
           onClick={onReset}
@@ -237,7 +237,7 @@ export function PromptEditor({
     : 'Built-in identity and rules prompts are protected and cannot be deleted.';
 
   return (
-    <div className="space-y-4">
+    <div className="prompts-editor-panel space-y-4">
       <Card className="overflow-hidden">
         <CardHeader>
           <div className="space-y-2">
@@ -262,7 +262,7 @@ export function PromptEditor({
 
           <PromptEditorMetadataBar draft={draft} onChange={onChange} />
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)]">
+          <div className="mobile-min-w-0 grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)]">
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Content

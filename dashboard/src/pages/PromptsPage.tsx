@@ -10,7 +10,7 @@ import { extractErrorMessage } from '../utils/extractErrorMessage';
 
 function PromptsPageSkeleton(): ReactElement {
   return (
-    <div className="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
+    <div className="prompts-workspace-grid grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
       <Card>
         <CardContent className="space-y-3 p-5">
           <Skeleton className="h-8 w-32" />
@@ -74,7 +74,7 @@ export default function PromptsPage(): ReactElement {
           </Alert>
         )}
 
-        <div className="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
+        <div className="prompts-workspace-grid grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
           <PromptsSidebar
             sections={workspace.sections}
             selectedName={workspace.selectedName}

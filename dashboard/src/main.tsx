@@ -7,6 +7,7 @@ import App from './App';
 import './styles/tailwind.css';
 import './styles/custom.scss';
 import './styles/ide.scss';
+import './styles/responsive.scss';
 
 const queryClient = new QueryClient({
   defaultOptions: {

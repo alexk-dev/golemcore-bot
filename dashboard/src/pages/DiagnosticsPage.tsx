@@ -76,7 +76,7 @@ export default function DiagnosticsPage(): ReactElement {
   }
 
   return (
-    <div>
+    <div className="mobile-break-code">
       <div className="section-header d-flex align-items-center justify-content-between">
         <h4 className="mb-0">Diagnostics</h4>
         <Button type="button" size="sm" variant="secondary" onClick={() => { void refetch(); }} disabled={isFetching}>

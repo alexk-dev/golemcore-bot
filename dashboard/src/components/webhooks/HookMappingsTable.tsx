@@ -170,7 +170,7 @@ export function HookExampleCards({ bearerToken, showBearerToken, activeMapping }
         <div className="small text-body-secondary mb-2">
           {preview.description}
         </div>
-        <pre className="mb-0 webhook-code-block"><code>{preview.command}</code></pre>
+        <pre className="mb-0 webhook-code-block mobile-break-code"><code>{preview.command}</code></pre>
 
         <div className="mt-3 pt-3 border-top">
           <h3 className="h6 mb-2">Template Paths</h3>

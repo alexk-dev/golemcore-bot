@@ -1,0 +1,90 @@
+// ==================== Mobile Responsive Fixes ====================
+
+.mobile-min-w-0,
+.mobile-min-w-0 > * {
+  min-width: 0;
+}
+
+.mobile-break-code code,
+.mobile-break-code pre,
+.diagnostics-table code,
+.logs-detail-meta code {
+  display: inline-block;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.diagnostics-table code,
+.logs-detail-meta code {
+  min-width: 0;
+}
+
+@media (max-width: 767.98px) {
+  .sidebar-overlay {
+    left: var(--sidebar-width);
+    width: calc(100vw - var(--sidebar-width));
+    inset-inline-end: 0;
+  }
+
+  .prompts-workspace-grid,
+  .prompts-workspace-grid > *,
+  .prompts-sidebar-panel,
+  .prompts-sidebar-panel > *,
+  .prompts-editor-panel,
+  .prompts-editor-panel > *,
+  .prompt-catalog-item {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .prompt-create-row,
+  .prompt-catalog-item-main,
+  .prompt-catalog-item-actions,
+  .prompt-editor-preview-header,
+  .prompt-editor-action-group {
+    min-width: 0;
+  }
+
+  .prompt-create-row,
+  .prompt-catalog-item-main,
+  .prompt-editor-preview-header,
+  .prompt-editor-action-group {
+    flex-wrap: wrap;
+  }
+
+  .prompt-create-row .btn,
+  .prompt-editor-preview-header .btn,
+  .prompt-editor-action-group .btn {
+    flex: 1 1 auto;
+  }
+
+  .prompt-catalog-item-main > button {
+    flex-basis: min(100%, 14rem);
+  }
+
+  .prompt-catalog-item-title {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .prompt-catalog-item-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .webhook-code-block {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .webhook-code-block code {
+    display: block;
+  }
+
+  .logs-detail-meta {
+    align-items: flex-start;
+  }
+}
