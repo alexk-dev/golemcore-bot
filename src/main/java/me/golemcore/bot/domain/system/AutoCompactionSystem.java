@@ -24,9 +24,8 @@ import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.CompactionPayloadMapper;
-import me.golemcore.bot.domain.service.ContextBudgetPolicy;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -48,9 +47,8 @@ import java.util.ArrayList;
 public class AutoCompactionSystem implements AgentSystem {
 
     private final CompactionOrchestrationService compactionOrchestrationService;
-    private final RuntimeConfigService runtimeConfigService;
     private final ContextTokenEstimator contextTokenEstimator;
-    private final ContextBudgetPolicy contextBudgetPolicy;
+    private final ContextCompactionPolicy contextCompactionPolicy;
 
     @Override
     public String getName() {
@@ -64,7 +62,7 @@ public class AutoCompactionSystem implements AgentSystem {
 
     @Override
     public boolean isEnabled() {
-        return runtimeConfigService.isCompactionEnabled();
+        return contextCompactionPolicy.isCompactionEnabled();
     }
 
     @Override
@@ -77,16 +75,16 @@ public class AutoCompactionSystem implements AgentSystem {
         java.util.List<Message> messages = context.getMessages();
 
         int estimatedTokens = contextTokenEstimator.estimateMessages(messages);
-        int threshold = contextBudgetPolicy.resolveHistoryThreshold(context);
+        int threshold = contextCompactionPolicy.resolveHistoryThreshold(context);
 
         if (estimatedTokens <= threshold) {
             return context;
         }
 
-        log.info("[AutoCompact] Context too large: ~{} tokens (threshold {}, mode={}), {} messages. Compacting...",
-                estimatedTokens, threshold, runtimeConfigService.getCompactionTriggerMode(), messages.size());
+        log.info("[AutoCompact] Context too large: ~{} tokens (threshold {}), {} messages. Compacting...",
+                estimatedTokens, threshold, messages.size());
 
-        int keepLast = runtimeConfigService.getCompactionKeepLastMessages();
+        int keepLast = contextCompactionPolicy.resolveCompactionKeepLast();
         CompactionResult result = compactionOrchestrationService.compact(
                 context.getSession().getId(),
                 CompactionReason.AUTO_THRESHOLD,

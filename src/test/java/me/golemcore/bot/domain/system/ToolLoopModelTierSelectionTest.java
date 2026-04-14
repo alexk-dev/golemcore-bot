@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
-import me.golemcore.bot.domain.service.ContextBudgetPolicy;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
@@ -72,7 +72,8 @@ class ToolLoopModelTierSelectionTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC))
                 .build();
 

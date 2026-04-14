@@ -49,6 +49,7 @@ class ToolExecutionPhaseTest {
                 modelSelectionService,
                 null,
                 mock(LlmRequestPreflightPhase.class),
+                mock(ContextCompactionCoordinator.class),
                 null,
                 null,
                 null,

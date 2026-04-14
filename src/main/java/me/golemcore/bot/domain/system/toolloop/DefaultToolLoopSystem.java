@@ -23,7 +23,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
-import me.golemcore.bot.domain.service.ContextBudgetPolicy;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
@@ -100,19 +100,22 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         // temptation to let the fallback quietly cover a broken bean graph —
         // any missing wiring now fails loudly at startup instead of at the
         // first LLM call.
-        ContextBudgetPolicy contextBudgetPolicy = Objects.requireNonNull(builder.contextBudgetPolicy,
-                "contextBudgetPolicy required; wire it explicitly on the builder");
-        LlmRequestPreflightPhase preflightPhase = new LlmRequestPreflightPhase(
-                builder.runtimeConfigService,
+        ContextCompactionPolicy contextCompactionPolicy = Objects.requireNonNull(builder.contextCompactionPolicy,
+                "contextCompactionPolicy required; wire it explicitly on the builder");
+        ContextCompactionCoordinator compactionCoordinator = new ContextCompactionCoordinator(
+                contextCompactionPolicy,
                 builder.compactionOrchestrationService,
-                contextTokenEstimator,
                 builder.runtimeEventService,
-                builder.turnProgressService,
-                contextBudgetPolicy);
+                builder.turnProgressService);
+        LlmRequestPreflightPhase preflightPhase = new LlmRequestPreflightPhase(
+                contextTokenEstimator,
+                contextCompactionPolicy,
+                compactionCoordinator);
 
         this.llmCallPhase = new LlmCallPhase(
                 builder.llmPort, builder.viewBuilder, builder.modelSelectionService,
                 builder.runtimeConfigService, preflightPhase,
+                compactionCoordinator,
                 builder.runtimeEventService, builder.turnProgressService,
                 builder.traceService, builder.clock);
 
@@ -340,7 +343,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private RuntimeConfigService runtimeConfigService;
         private CompactionOrchestrationService compactionOrchestrationService;
         private ContextTokenEstimator contextTokenEstimator;
-        private ContextBudgetPolicy contextBudgetPolicy;
+        private ContextCompactionPolicy contextCompactionPolicy;
         private RuntimeEventService runtimeEventService;
         private TurnProgressService turnProgressService;
         private TraceService traceService;
@@ -416,8 +419,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         /**
          * Sets the context budget policy used by auto/preflight compaction (optional).
          */
-        public Builder contextBudgetPolicy(ContextBudgetPolicy contextBudgetPolicy) {
-            this.contextBudgetPolicy = contextBudgetPolicy;
+        public Builder contextCompactionPolicy(ContextCompactionPolicy contextCompactionPolicy) {
+            this.contextCompactionPolicy = contextCompactionPolicy;
             return this;
         }
 

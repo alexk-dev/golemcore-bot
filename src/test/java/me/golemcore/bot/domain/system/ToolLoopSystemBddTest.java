@@ -10,7 +10,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.ToolFailureKind;
-import me.golemcore.bot.domain.service.ContextBudgetPolicy;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
@@ -131,7 +131,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -256,7 +257,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -388,7 +390,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -474,7 +477,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -567,7 +571,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(fastClock)
                 .build();
 
@@ -637,7 +642,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -723,7 +729,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -795,7 +802,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -867,7 +875,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -965,7 +974,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 

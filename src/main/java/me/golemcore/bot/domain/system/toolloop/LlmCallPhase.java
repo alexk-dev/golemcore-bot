@@ -76,6 +76,7 @@ class LlmCallPhase {
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
     private final LlmRequestPreflightPhase preflightPhase;
+    private final ContextCompactionCoordinator compactionCoordinator;
     private final RuntimeEventService runtimeEventService;
     private final TurnProgressService turnProgressService;
     private final TraceService traceService;
@@ -85,6 +86,7 @@ class LlmCallPhase {
     LlmCallPhase(LlmPort llmPort, ConversationViewBuilder viewBuilder, ModelSelectionService modelSelectionService,
             RuntimeConfigService runtimeConfigService,
             LlmRequestPreflightPhase preflightPhase,
+            ContextCompactionCoordinator compactionCoordinator,
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
             TraceService traceService, Clock clock) {
         this.llmPort = llmPort;
@@ -92,6 +94,7 @@ class LlmCallPhase {
         this.modelSelectionService = modelSelectionService;
         this.runtimeConfigService = runtimeConfigService;
         this.preflightPhase = Objects.requireNonNull(preflightPhase, "preflightPhase");
+        this.compactionCoordinator = Objects.requireNonNull(compactionCoordinator, "compactionCoordinator");
         this.runtimeEventService = runtimeEventService;
         this.turnProgressService = turnProgressService;
         this.traceService = traceService;
@@ -341,7 +344,7 @@ class LlmCallPhase {
                 String code = LlmErrorClassifier.classifyFromThrowable(error);
 
                 if (LlmErrorClassifier.isContextOverflowCode(code)
-                        && preflightPhase.recoverFromContextOverflow(context, turnState.getLlmCalls(),
+                        && compactionCoordinator.recoverFromContextOverflow(context, turnState.getLlmCalls(),
                                 turnState.getRetryAttempt())) {
                     turnState.incrementRetryAttempt();
                     turnState.setLastRetryCode(code);

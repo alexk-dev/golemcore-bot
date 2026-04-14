@@ -12,7 +12,7 @@ import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
-import me.golemcore.bot.domain.service.ContextBudgetPolicy;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
@@ -771,7 +771,7 @@ class ToolLoopResilienceBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnProperties))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(toolLoopProperties))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
                 .runtimeConfigService(runtimeConfigService)
                 .compactionOrchestrationService(compactionOrchestrationService)
                 .runtimeEventService(runtimeEventService)

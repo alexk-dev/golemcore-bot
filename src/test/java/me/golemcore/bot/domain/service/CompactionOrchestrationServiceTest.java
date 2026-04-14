@@ -231,6 +231,18 @@ class CompactionOrchestrationServiceTest {
 
         Object persisted = session.getMetadata().get(ContextAttributes.COMPACTION_LAST_DETAILS);
         assertTrue(persisted instanceof Map<?, ?>);
+        // Lock the session-metadata schema to the canonical payload shape so a
+        // future refactor of persistDetails (e.g. flipping back to details-only)
+        // can't silently revert the M-2 unification. Mirrors
+        // CompactionPayloadMapperTest.EXPECTED_PAYLOAD_KEYS.
+        assertEquals(
+                List.of("removed", "usedSummary", "schemaVersion", "reason", "summarizedCount", "keptCount",
+                        "usedLlmSummary", "summaryLength", "toolCount", "readFilesCount", "modifiedFilesCount",
+                        "durationMs", "toolNames", "readFiles", "modifiedFiles", "splitTurnDetected",
+                        "fallbackUsed", "fileChanges"),
+                List.copyOf(((Map<?, ?>) persisted).keySet()),
+                "session.metadata[compaction.last.details] must use the canonical payload shape from "
+                        + "CompactionPayloadMapper — session metadata and context attribute share one schema");
 
         ArgumentCaptor<AgentSession> sessionCaptor = ArgumentCaptor.forClass(AgentSession.class);
         verify(sessionPort).save(sessionCaptor.capture());

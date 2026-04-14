@@ -3,14 +3,15 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.AgentContext;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Resolves context-budget thresholds for both conversation-history compaction
+ * Resolves context compaction settings for both conversation-history compaction
  * and full LLM request preflight.
  */
 @Slf4j
-public class ContextBudgetPolicy {
+public class ContextCompactionPolicy {
 
     private static final String TRIGGER_MODE_MODEL_RATIO = "model_ratio";
     private static final String TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
@@ -19,14 +20,43 @@ public class ContextBudgetPolicy {
 
     private final RuntimeConfigService runtimeConfigService;
     private final ModelSelectionService modelSelectionService;
-    private final AtomicBoolean fullRequestResolutionDisabledLogged = new AtomicBoolean();
     private final AtomicBoolean fullRequestBypassLogged = new AtomicBoolean();
-    private final AtomicBoolean historyResolutionDisabledLogged = new AtomicBoolean();
     private final AtomicBoolean historyBypassLogged = new AtomicBoolean();
 
-    public ContextBudgetPolicy(RuntimeConfigService runtimeConfigService, ModelSelectionService modelSelectionService) {
-        this.runtimeConfigService = runtimeConfigService;
-        this.modelSelectionService = modelSelectionService;
+    public ContextCompactionPolicy(RuntimeConfigService runtimeConfigService,
+            ModelSelectionService modelSelectionService) {
+        this.runtimeConfigService = Objects.requireNonNull(runtimeConfigService, "runtimeConfigService");
+        this.modelSelectionService = Objects.requireNonNull(modelSelectionService, "modelSelectionService");
+    }
+
+    /**
+     * Global switch shared by all compaction entry points.
+     */
+    public boolean isCompactionEnabled() {
+        return runtimeConfigService.isCompactionEnabled();
+    }
+
+    /**
+     * Keep-last policy shared by auto history compaction and provider
+     * context-overflow recovery. Both paths currently retain the same number of
+     * trailing messages because the operator configures a single
+     * {@code compactionKeepLastMessages} value; preflight is intentionally the only
+     * branch that deviates (it halves per attempt, see
+     * {@link #resolvePreflightKeepLast}).
+     */
+    public int resolveCompactionKeepLast() {
+        return runtimeConfigService.getCompactionKeepLastMessages();
+    }
+
+    /**
+     * Keep-last policy for request preflight. Each retry becomes more aggressive
+     * while still leaving at least one message eligible for compaction.
+     */
+    public int resolvePreflightKeepLast(int totalMessages, int attempt) {
+        int configuredKeepLast = Math.max(1, runtimeConfigService.getCompactionKeepLastMessages());
+        int divisor = 1 << Math.max(0, Math.min(16, attempt - 1));
+        int reducedKeepLast = Math.max(1, configuredKeepLast / divisor);
+        return Math.max(1, Math.min(reducedKeepLast, Math.max(1, totalMessages - 1)));
     }
 
     /**
@@ -34,14 +64,6 @@ public class ContextBudgetPolicy {
      * tool loop builds the full provider request.
      */
     public int resolveHistoryThreshold(AgentContext context) {
-        if (runtimeConfigService == null || modelSelectionService == null) {
-            if (historyResolutionDisabledLogged.compareAndSet(false, true)) {
-                log.warn("[AutoCompact] History threshold resolution disabled: "
-                        + "runtimeConfigService={}, modelSelectionService={} — auto-compaction will not fire",
-                        runtimeConfigService != null, modelSelectionService != null);
-            }
-            return Integer.MAX_VALUE;
-        }
         if (TRIGGER_MODE_MODEL_RATIO.equals(runtimeConfigService.getCompactionTriggerMode())) {
             return resolveHistoryModelRatioThreshold(context);
         }
@@ -50,22 +72,42 @@ public class ContextBudgetPolicy {
 
     /**
      * Budget used by LLM request preflight for the fully serialized request shape.
-     * It reserves output room so input does not consume the whole model window.
+     * When the model registry knows the provider's max-input-tokens we apply
+     * ratio/safety math and reserve output room so input does not consume the whole
+     * model window. When the registry is silent, the configured fallback
+     * ({@code runtimeConfig.compactionMaxContextTokens}) is treated as a
+     * user-declared wire cap and returned verbatim — treating it as modelMax would
+     * silently shrink the operator's intended budget by the output reserve.
      */
     public int resolveFullRequestThreshold(AgentContext context) {
-        if (runtimeConfigService == null || modelSelectionService == null) {
-            if (fullRequestResolutionDisabledLogged.compareAndSet(false, true)) {
-                log.warn("[ToolLoop] Preflight threshold resolution disabled: "
-                        + "runtimeConfigService={}, modelSelectionService={} — all requests will bypass size check",
-                        runtimeConfigService != null, modelSelectionService != null);
-            }
-            return Integer.MAX_VALUE;
+        int registryModelMax = resolveRegistryModelMax(context);
+        if (registryModelMax > 0) {
+            fullRequestBypassLogged.set(false);
+            return computeFullRequestThresholdFromModelMax(registryModelMax);
         }
-        int modelMax = resolveFullRequestModelMaxTokens(context);
-        if (modelMax == Integer.MAX_VALUE) {
-            return Integer.MAX_VALUE;
+        int configuredThreshold = runtimeConfigService.getCompactionMaxContextTokens();
+        if (configuredThreshold > 0) {
+            fullRequestBypassLogged.set(false);
+            return configuredThreshold;
         }
+        if (fullRequestBypassLogged.compareAndSet(false, true)) {
+            log.warn("[ToolLoop] Preflight threshold bypass: model registry returned no max-input-tokens and "
+                    + "runtimeConfig.compactionMaxContextTokens is unset — all requests will pass through without "
+                    + "a size check. Configure one of the two to re-enable preflight compaction.");
+        }
+        return Integer.MAX_VALUE;
+    }
 
+    private int resolveRegistryModelMax(AgentContext context) {
+        try {
+            return Math.max(0, modelSelectionService.resolveMaxInputTokensForContext(context));
+        } catch (RuntimeException e) {
+            log.warn("[ToolLoop] Failed to resolve model max tokens for request preflight, using config fallback", e);
+            return 0;
+        }
+    }
+
+    private int computeFullRequestThresholdFromModelMax(int modelMax) {
         int modelSafeThreshold = Math.max(1, modelMax - resolveOutputReserveTokens(modelMax));
         String triggerMode = runtimeConfigService.getCompactionTriggerMode();
         int configuredThreshold = runtimeConfigService.getCompactionMaxContextTokens();
@@ -129,32 +171,6 @@ public class ContextBudgetPolicy {
             log.warn("[AutoCompact] History threshold bypass: model registry returned no max-input-tokens and "
                     + "runtimeConfig.compactionMaxContextTokens is unset — auto-compaction will not fire. "
                     + "Configure one of the two to re-enable history compaction.");
-        }
-        return Integer.MAX_VALUE;
-    }
-
-    private int resolveFullRequestModelMaxTokens(AgentContext context) {
-        try {
-            int modelMax = modelSelectionService.resolveMaxInputTokensForContext(context);
-            if (modelMax > 0) {
-                // Reset the bypass flag so a later flip back to broken config
-                // re-fires the warn. Otherwise an intermittent misconfig goes
-                // silent after the first incident.
-                fullRequestBypassLogged.set(false);
-                return modelMax;
-            }
-        } catch (RuntimeException e) {
-            log.warn("[ToolLoop] Failed to resolve model max tokens for request preflight, using config fallback", e);
-        }
-        int configuredThreshold = runtimeConfigService.getCompactionMaxContextTokens();
-        if (configuredThreshold > 0) {
-            fullRequestBypassLogged.set(false);
-            return configuredThreshold;
-        }
-        if (fullRequestBypassLogged.compareAndSet(false, true)) {
-            log.warn("[ToolLoop] Preflight threshold bypass: model registry returned no max-input-tokens and "
-                    + "runtimeConfig.compactionMaxContextTokens is unset — all requests will pass through without "
-                    + "a size check. Configure one of the two to re-enable preflight compaction.");
         }
         return Integer.MAX_VALUE;
     }

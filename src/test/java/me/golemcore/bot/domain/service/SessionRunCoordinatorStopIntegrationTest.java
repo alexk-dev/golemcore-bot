@@ -155,7 +155,7 @@ class SessionRunCoordinatorStopIntegrationTest {
                 .modelSelectionService(modelSelectionService)
                 .runtimeConfigService(runtimeConfigService)
                 .runtimeEventService(new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC)))
-                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
                 .clock(Clock.fixed(NOW, ZoneOffset.UTC))
                 .build();
     }

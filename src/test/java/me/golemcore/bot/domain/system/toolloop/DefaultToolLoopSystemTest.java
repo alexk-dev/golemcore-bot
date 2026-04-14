@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.ContextBudgetPolicy;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -58,10 +58,10 @@ class DefaultToolLoopSystemTest extends DefaultToolLoopSystemFixture {
     }
 
     @Test
-    void builder_shouldFailFastWhenContextBudgetPolicyMissing() {
+    void builder_shouldFailFastWhenContextCompactionPolicyMissing() {
         // Locks the explicit-wiring invariant: a future refactor that
-        // reintroduces a silent fallback (e.g. `new ContextBudgetPolicy(null,
-        // null)`) must fail this test instead of quietly masking a broken
+        // reintroduces a silent fallback budget policy must fail this test
+        // instead of quietly masking a broken
         // bean graph at runtime.
         NullPointerException thrown = assertThrows(NullPointerException.class, () -> DefaultToolLoopSystem.builder()
                 .llmPort(llmPort)
@@ -72,7 +72,7 @@ class DefaultToolLoopSystemTest extends DefaultToolLoopSystemFixture {
                 .clock(clock)
                 .build());
 
-        assertTrue(thrown.getMessage() != null && thrown.getMessage().contains("contextBudgetPolicy"),
+        assertTrue(thrown.getMessage() != null && thrown.getMessage().contains("contextCompactionPolicy"),
                 "NPE message must name the missing collaborator so operators can fix wiring quickly");
     }
 
@@ -84,7 +84,7 @@ class DefaultToolLoopSystemTest extends DefaultToolLoopSystemFixture {
                 .historyWriter(historyWriter)
                 .viewBuilder(viewBuilder)
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
 
@@ -105,7 +105,7 @@ class DefaultToolLoopSystemTest extends DefaultToolLoopSystemFixture {
                 .historyWriter(historyWriter)
                 .viewBuilder(viewBuilder)
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
-                .contextBudgetPolicy(new ContextBudgetPolicy(runtimeConfigService, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
 

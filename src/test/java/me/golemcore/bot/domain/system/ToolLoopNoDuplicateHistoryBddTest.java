@@ -7,7 +7,7 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.ContextBudgetPolicy;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.VoiceResponseHandler;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -108,7 +108,8 @@ class ToolLoopNoDuplicateHistoryBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(new BotProperties.TurnProperties()))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(new BotProperties.ToolLoopProperties()))
                 .modelSelectionService(modelSelectionService)
-                .contextBudgetPolicy(new ContextBudgetPolicy(null, modelSelectionService))
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(NOW, ZoneOffset.UTC))
                 .build();
 
