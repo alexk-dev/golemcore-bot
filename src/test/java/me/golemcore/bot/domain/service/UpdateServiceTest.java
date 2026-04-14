@@ -222,14 +222,15 @@ class UpdateServiceTest {
     }
 
     @Test
-    void shouldSuggestDockerRolloutWhenMajorReleaseIsFound(@TempDir Path tempDir) {
+    void shouldDiscoverMajorUpdateWhenRemoteVersionIsNewer(@TempDir Path tempDir) {
         enableUpdates(tempDir);
         StubReleaseSource source = new StubReleaseSource();
         source.enqueueRelease("1.0.0", "bot-1.0.0.jar", "2026-02-22T10:00:00Z");
         TestableUpdateService service = createTestableService(source);
 
-        assertTrue(service.check().getMessage().contains("Docker image upgrade"));
-        assertNull(service.getStatus().getAvailable());
+        assertEquals("Update available: 1.0.0", service.check().getMessage());
+        assertEquals(UpdateState.AVAILABLE, service.getStatus().getState());
+        assertEquals("1.0.0", service.getStatus().getAvailable().getVersion());
     }
 
     @Test

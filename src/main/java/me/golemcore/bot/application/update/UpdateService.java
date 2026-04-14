@@ -409,13 +409,6 @@ public class UpdateService {
                 return new CheckResolution(null, "Already up to date", currentVersion);
             }
 
-            if (!updateVersionSupport.isSameMajorUpdate(currentVersion, latestRelease.getVersion())) {
-                availableRelease = Optional.empty();
-                transientState = UpdateState.IDLE;
-                return new CheckResolution(null, "New major version found. Use Docker image upgrade.",
-                        latestRelease.getVersion());
-            }
-
             availableRelease = Optional.of(latestRelease);
             activeTarget = Optional.of(toVersionInfo(latestRelease));
             transientState = UpdateState.IDLE;
