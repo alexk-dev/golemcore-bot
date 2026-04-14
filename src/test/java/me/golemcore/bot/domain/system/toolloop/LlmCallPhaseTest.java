@@ -13,6 +13,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
@@ -29,10 +30,15 @@ class LlmCallPhaseTest {
     @BeforeEach
     void setUp() {
         clock = Clock.fixed(Instant.parse("2026-04-09T12:00:00Z"), ZoneOffset.UTC);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        org.mockito.Mockito
+                .when(modelSelectionService.resolveMaxInputTokensForContext(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(2_000_000_000);
         phase = new LlmCallPhase(
                 mock(LlmPort.class),
                 mock(ConversationViewBuilder.class),
-                mock(me.golemcore.bot.domain.service.ModelSelectionService.class),
+                modelSelectionService,
+                null,
                 null,
                 null,
                 null,

@@ -117,6 +117,7 @@ class ToolLoopSystemBddTest {
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
@@ -240,6 +241,7 @@ class ToolLoopSystemBddTest {
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
@@ -370,6 +372,7 @@ class ToolLoopSystemBddTest {
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection("google/gemini-3.1-preview", null));
 
@@ -454,6 +457,7 @@ class ToolLoopSystemBddTest {
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
@@ -546,6 +550,7 @@ class ToolLoopSystemBddTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
@@ -614,6 +619,7 @@ class ToolLoopSystemBddTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
@@ -698,6 +704,7 @@ class ToolLoopSystemBddTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
@@ -768,6 +775,7 @@ class ToolLoopSystemBddTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
@@ -838,6 +846,7 @@ class ToolLoopSystemBddTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
@@ -933,6 +942,7 @@ class ToolLoopSystemBddTest {
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 

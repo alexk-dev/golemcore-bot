@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -39,10 +40,14 @@ class ToolExecutionPhaseTest {
         toolExecutor = mock(ToolExecutorPort.class);
         failurePolicy = mock(ToolFailurePolicy.class);
         historyWriter = mock(HistoryWriter.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenReturn(2_000_000_000);
         llmCallPhase = new LlmCallPhase(
                 mock(LlmPort.class),
                 mock(ConversationViewBuilder.class),
-                mock(ModelSelectionService.class),
+                modelSelectionService,
+                null,
                 null,
                 null,
                 null,

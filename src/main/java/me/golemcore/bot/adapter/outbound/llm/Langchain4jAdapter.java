@@ -508,15 +508,42 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 return true;
             }
             String msg = current.getMessage();
-            if (msg != null && (msg.contains("rate_limit") || msg.contains("token_quota_exceeded")
-                    || msg.contains("too_many_tokens") || msg.contains("Too Many Requests")
-                    || msg.contains("429") || msg.contains("model_cooldown")
-                    || msg.contains("cooling down"))) {
+            if (msg != null && !isContextOverflowError(current)
+                    && (msg.contains("rate_limit") || msg.contains("token_quota_exceeded")
+                            || msg.contains("Too Many Requests")
+                            || msg.contains("429") || msg.contains("model_cooldown")
+                            || msg.contains("cooling down"))) {
                 return true;
             }
             current = current.getCause();
         }
         return false;
+    }
+
+    private boolean isContextOverflowError(Throwable e) {
+        Throwable current = e;
+        while (current != null) {
+            String msg = current.getMessage();
+            if (msg != null && isContextOverflowMessage(msg)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isContextOverflowMessage(String message) {
+        String normalized = message.toLowerCase(Locale.ROOT);
+        return normalized.contains("context length")
+                || normalized.contains("context_length")
+                || normalized.contains("context window")
+                || normalized.contains("maximum context")
+                || normalized.contains("too many tokens")
+                || normalized.contains("too_many_tokens")
+                || normalized.contains("token limit exceeded")
+                || normalized.contains("input tokens exceed")
+                || normalized.contains("prompt is too long")
+                || normalized.contains("request too large");
     }
 
     /**

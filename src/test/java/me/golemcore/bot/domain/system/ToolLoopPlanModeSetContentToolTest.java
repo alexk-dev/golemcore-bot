@@ -77,6 +77,8 @@ class ToolLoopPlanModeSetContentToolTest {
 
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
 

@@ -45,6 +45,7 @@ class ToolLoopModelTierSelectionTest {
                 .build();
 
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier("coding")).thenReturn(
                 new ModelSelectionService.ModelSelection("my-coding-model", "low"));
 

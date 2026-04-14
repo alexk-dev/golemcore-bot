@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -92,6 +93,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.llmCallPhase = new LlmCallPhase(
                 builder.llmPort, builder.viewBuilder, builder.modelSelectionService,
                 builder.runtimeConfigService, builder.compactionOrchestrationService,
+                builder.contextTokenEstimator,
                 builder.runtimeEventService, builder.turnProgressService,
                 builder.traceService, builder.clock);
 
@@ -318,6 +320,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private PlanService planService;
         private RuntimeConfigService runtimeConfigService;
         private CompactionOrchestrationService compactionOrchestrationService;
+        private ContextTokenEstimator contextTokenEstimator;
         private RuntimeEventService runtimeEventService;
         private TurnProgressService turnProgressService;
         private TraceService traceService;
@@ -381,6 +384,12 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         /** Sets the compaction orchestration service (optional). */
         public Builder compactionOrchestrationService(CompactionOrchestrationService compactionOrchestrationService) {
             this.compactionOrchestrationService = compactionOrchestrationService;
+            return this;
+        }
+
+        /** Sets the token estimator used by request preflight checks (optional). */
+        public Builder contextTokenEstimator(ContextTokenEstimator contextTokenEstimator) {
+            this.contextTokenEstimator = contextTokenEstimator;
             return this;
         }
 

@@ -122,6 +122,7 @@ class ToolLoopPlanModeInterceptionTest {
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection("gpt-4o", null));
 
@@ -194,6 +195,7 @@ class ToolLoopPlanModeInterceptionTest {
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection("gpt-4o", null));
 

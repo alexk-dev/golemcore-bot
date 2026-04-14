@@ -75,6 +75,7 @@ class ToolLoopModelSwitchFlatteningTest {
                 .build();
 
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier("coding")).thenReturn(
                 new ModelSelectionService.ModelSelection("new", null));
 
@@ -166,6 +167,7 @@ class ToolLoopModelSwitchFlatteningTest {
                 .build();
 
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier("coding"))
                 .thenReturn(new ModelSelectionService.ModelSelection("openai/gpt-5.1", null))
                 .thenReturn(new ModelSelectionService.ModelSelection("google/gemini-3.1-preview", null));

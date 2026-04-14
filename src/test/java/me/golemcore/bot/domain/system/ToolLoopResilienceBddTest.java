@@ -756,6 +756,8 @@ class ToolLoopResilienceBddTest {
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenReturn(2_000_000_000);
         RuntimeEventService runtimeEventService = new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC));
 
         return DefaultToolLoopSystem.builder()

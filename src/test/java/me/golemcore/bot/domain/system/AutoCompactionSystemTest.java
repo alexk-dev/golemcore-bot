@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,12 +39,14 @@ class AutoCompactionSystemTest {
     private CompactionOrchestrationService compactionOrchestrationService;
     private RuntimeConfigService runtimeConfigService;
     private ModelSelectionService modelSelectionService;
+    private ContextTokenEstimator contextTokenEstimator;
     private AutoCompactionSystem system;
 
     @BeforeEach
     void setUp() {
         compactionOrchestrationService = mock(CompactionOrchestrationService.class);
         modelSelectionService = mock(ModelSelectionService.class);
+        contextTokenEstimator = new ContextTokenEstimator();
         runtimeConfigService = mock(RuntimeConfigService.class);
 
         when(modelSelectionService.resolveMaxInputTokensForContext(any(AgentContext.class))).thenReturn(128000);
@@ -53,7 +56,8 @@ class AutoCompactionSystemTest {
         when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(1000);
         when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(5);
 
-        system = new AutoCompactionSystem(compactionOrchestrationService, runtimeConfigService, modelSelectionService);
+        system = new AutoCompactionSystem(compactionOrchestrationService, runtimeConfigService, modelSelectionService,
+                contextTokenEstimator);
     }
 
     @Test
@@ -123,7 +127,7 @@ class AutoCompactionSystemTest {
         when(compactionOrchestrationService.compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5))
                 .thenReturn(CompactionResult.builder().removed(3).usedSummary(true).build());
 
-        List<Message> messages = buildLargeMessageList(10, 500);
+        List<Message> messages = buildLargeMessageList(100, 500);
         AgentContext context = buildContext(messages);
 
         system.process(context);
@@ -188,7 +192,7 @@ class AutoCompactionSystemTest {
         when(compactionOrchestrationService.compact(SESSION_ID, CompactionReason.AUTO_THRESHOLD, 5))
                 .thenReturn(CompactionResult.builder().removed(1).usedSummary(true).build());
 
-        List<Message> messages = buildLargeMessageList(50, 50);
+        List<Message> messages = buildLargeMessageList(100, 500);
         AgentContext context = buildContext(messages);
 
         system.process(context);

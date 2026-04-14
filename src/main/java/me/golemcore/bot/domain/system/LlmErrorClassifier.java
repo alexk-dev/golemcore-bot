@@ -287,10 +287,15 @@ public final class LlmErrorClassifier {
 
         String normalized = message.toLowerCase(Locale.ROOT);
         if (normalized.contains("context length")
+                || normalized.contains("context_length")
                 || normalized.contains("context window")
                 || normalized.contains("maximum context")
+                || normalized.contains("too many tokens")
+                || normalized.contains("too_many_tokens")
                 || normalized.contains("token limit exceeded")
-                || normalized.contains("prompt is too long")) {
+                || normalized.contains("input tokens exceed")
+                || normalized.contains("prompt is too long")
+                || normalized.contains("request too large")) {
             return CONTEXT_LENGTH_EXCEEDED;
         }
 

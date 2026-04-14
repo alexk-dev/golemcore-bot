@@ -140,6 +140,20 @@ class LlmErrorClassifierTest {
         assertEquals("[llm.x] details", LlmErrorClassifier.withCode("llm.x", "[llm.x] details"));
     }
 
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "too_many_tokens",
+            "too many tokens",
+            "context_length_exceeded",
+            "input tokens exceed model limit",
+            "request too large"
+    })
+    void shouldClassifyCommonTokenOverflowMessages(String message) {
+        String code = LlmErrorClassifier.classifyFromThrowable(new RuntimeException(message));
+
+        assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code);
+    }
+
     @Test
     void shouldReturnUnknownWhenThrowableChainHasNoKnownSignals() {
         String code = LlmErrorClassifier

@@ -36,6 +36,7 @@ import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -79,6 +80,7 @@ class LlmCallPhase {
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
     private final CompactionOrchestrationService compactionOrchestrationService;
+    private final ContextTokenEstimator contextTokenEstimator;
     private final RuntimeEventService runtimeEventService;
     private final TurnProgressService turnProgressService;
     private final TraceService traceService;
@@ -88,6 +90,7 @@ class LlmCallPhase {
     LlmCallPhase(LlmPort llmPort, ConversationViewBuilder viewBuilder, ModelSelectionService modelSelectionService,
             RuntimeConfigService runtimeConfigService,
             CompactionOrchestrationService compactionOrchestrationService,
+            ContextTokenEstimator contextTokenEstimator,
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
             TraceService traceService, Clock clock) {
         this.llmPort = llmPort;
@@ -95,6 +98,8 @@ class LlmCallPhase {
         this.modelSelectionService = modelSelectionService;
         this.runtimeConfigService = runtimeConfigService;
         this.compactionOrchestrationService = compactionOrchestrationService;
+        this.contextTokenEstimator = contextTokenEstimator != null ? contextTokenEstimator
+                : new ContextTokenEstimator();
         this.runtimeEventService = runtimeEventService;
         this.turnProgressService = turnProgressService;
         this.traceService = traceService;
@@ -369,38 +374,6 @@ class LlmCallPhase {
                         failLlmInvocation(context, error, turnState.getLlmCalls(), turnState.getToolExecutions()));
             }
 
-            // ==================== LLM call execution ====================
-
-            private LlmResponse executeLlmCall(AgentContext context, int attempt,
-                    RuntimeConfig.TracingConfig tracingConfig)
-                    throws InterruptedException, ExecutionException {
-                ModelSelectionService.ModelSelection selection = selectModel(context.getModelTier());
-                Map<String, Object> requestContextAttributes = buildRequestContextAttributes(context, selection,
-                        attempt);
-                TraceContext llmSpan = startChildSpan(context, "llm.chat", TraceSpanKind.LLM, requestContextAttributes);
-                appendRequestContextEvent(context, llmSpan, requestContextAttributes);
-                LlmRequest request = buildRequest(context, llmSpan != null ? llmSpan : context.getTraceContext(),
-                        selection);
-                captureLlmSnapshot(context, llmSpan, tracingConfig, "request", request);
-                try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(llmSpan, context))) {
-                    LlmResponse response = llmPort.chat(request).get();
-                    captureLlmSnapshot(context, llmSpan, tracingConfig, "response", response);
-                    finishChildSpan(context, llmSpan, TraceStatusCode.OK, null);
-                    return response;
-                } catch (InterruptedException e) {
-                    finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
-                    throw e;
-                } catch (ExecutionException e) {
-                    finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
-                    throw e;
-                } catch (RuntimeException e) {
-                    finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
-                    throw e;
-                }
-            }
-
-            // ==================== Retry and compaction ====================
-
             private void scheduleRetry(AgentContext context, int llmCalls, int attempt, int maxAttempts,
                     long baseDelayMs,
                     String code) {
@@ -427,6 +400,48 @@ class LlmCallPhase {
                 log.info("[ToolLoop] LLM retry succeeded (code={}, retry={}/{}, llmCall={}, model={})",
                         code != null && !code.isBlank() ? code : "unknown", retryAttempt, maxRetries, llmCalls,
                         model != null ? model : "unknown");
+            }
+
+            // ==================== LLM call execution ====================
+
+            private LlmResponse executeLlmCall(AgentContext context, int attempt,
+                    RuntimeConfig.TracingConfig tracingConfig)
+                    throws InterruptedException, ExecutionException {
+                ModelSelectionService.ModelSelection selection = selectModel(context.getModelTier());
+                Map<String, Object> requestContextAttributes = buildRequestContextAttributes(context, selection,
+                        attempt);
+                TraceContext llmSpan = startChildSpan(context, "llm.chat", TraceSpanKind.LLM, requestContextAttributes);
+                appendRequestContextEvent(context, llmSpan, requestContextAttributes);
+                LlmRequest request = buildRequestWithPreflight(context,
+                        llmSpan != null ? llmSpan : context.getTraceContext(), selection, attempt);
+                captureLlmSnapshot(context, llmSpan, tracingConfig, "request", request);
+                try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(llmSpan, context))) {
+                    LlmResponse response = llmPort.chat(request).get();
+                    captureLlmSnapshot(context, llmSpan, tracingConfig, "response", response);
+                    finishChildSpan(context, llmSpan, TraceStatusCode.OK, null);
+                    return response;
+                } catch (InterruptedException e) {
+                    finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
+                    throw e;
+                } catch (ExecutionException e) {
+                    finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
+                    throw e;
+                } catch (RuntimeException e) {
+                    finishChildSpan(context, llmSpan, TraceStatusCode.ERROR, e.getMessage());
+                    throw e;
+                }
+            }
+
+            private LlmRequest buildRequestWithPreflight(AgentContext context, TraceContext traceContext,
+                    ModelSelectionService.ModelSelection selection, int llmCall) {
+                LlmRequestPreflightPhase preflightPhase = new LlmRequestPreflightPhase(
+                        modelSelectionService,
+                        runtimeConfigService,
+                        compactionOrchestrationService,
+                        contextTokenEstimator,
+                        runtimeEventService,
+                        turnProgressService);
+                return preflightPhase.preflight(context, () -> buildRequest(context, traceContext, selection), llmCall);
             }
 
             private boolean tryRecoverFromContextOverflow(AgentContext context, int llmCalls, int retryAttempt) {
@@ -457,7 +472,7 @@ class LlmCallPhase {
                 CompactionResult compactionResult = compactionOrchestrationService.compact(
                         context.getSession().getId(), CompactionReason.CONTEXT_OVERFLOW_RECOVERY, keepLast);
 
-                if (compactionResult.removed() <= 0 || !compactionResult.usedSummary()) {
+                if (compactionResult.removed() <= 0) {
                     return false;
                 }
 

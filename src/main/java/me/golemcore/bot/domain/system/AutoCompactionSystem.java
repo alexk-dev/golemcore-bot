@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +53,7 @@ public class AutoCompactionSystem implements AgentSystem {
     private final CompactionOrchestrationService compactionOrchestrationService;
     private final RuntimeConfigService runtimeConfigService;
     private final ModelSelectionService modelSelectionService;
+    private final ContextTokenEstimator contextTokenEstimator;
 
     @Override
     public String getName() {
@@ -77,10 +79,7 @@ public class AutoCompactionSystem implements AgentSystem {
     public AgentContext process(AgentContext context) {
         java.util.List<Message> messages = context.getMessages();
 
-        long totalChars = messages.stream()
-                .mapToLong(m -> m.getContent() != null ? m.getContent().length() : 0)
-                .sum();
-        int estimatedTokens = (int) (totalChars / 3.5) + 8000;
+        int estimatedTokens = contextTokenEstimator.estimateMessages(messages);
 
         String triggerMode = runtimeConfigService.getCompactionTriggerMode();
         int threshold = resolveMaxTokens(context);

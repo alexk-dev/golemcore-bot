@@ -14,13 +14,13 @@ class Langchain4jAdapterRetryTest {
     private static final String IS_RATE_LIMIT_ERROR = "isRateLimitError";
 
     @Test
-    void isRateLimitError_detectsTokenQuotaExceeded() {
+    void isRateLimitError_ignoresTokenOverflowQuotaExceeded() {
         Langchain4jAdapter adapter = createMinimalAdapter();
 
         RuntimeException ex = new RuntimeException("LLM chat failed: {\"message\":\"Tokens per minute limit exceeded\","
                 + "\"type\":\"too_many_tokens_error\",\"code\":\"token_quota_exceeded\"}");
 
-        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR, ex));
+        assertFalse((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR, ex));
     }
 
     @Test
@@ -51,7 +51,7 @@ class Langchain4jAdapterRetryTest {
     void isRateLimitError_detectsNestedCause() {
         Langchain4jAdapter adapter = createMinimalAdapter();
 
-        RuntimeException cause = new RuntimeException("token_quota_exceeded");
+        RuntimeException cause = new RuntimeException("rate_limit: token_quota_exceeded");
         RuntimeException ex = new RuntimeException("LLM failed", cause);
 
         assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR, ex));

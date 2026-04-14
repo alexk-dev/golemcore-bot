@@ -140,6 +140,8 @@ class SessionRunCoordinatorStopIntegrationTest {
         BotProperties.TurnProperties turnProperties = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties toolLoopProperties = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
 

@@ -94,6 +94,7 @@ class ToolLoopNoDuplicateHistoryBddTest {
                 new ToolExecutionOutcome("tc1", "shell", ToolResult.success("hello\n"), "hello\n", false, null));
 
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 

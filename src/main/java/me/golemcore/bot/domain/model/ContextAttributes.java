@@ -373,6 +373,9 @@ public final class ContextAttributes {
     /** Map<String,Object> ? latest structured compaction details. */
     public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";
 
+    /** Map<String,Object> ? latest LLM request token preflight diagnostics. */
+    public static final String LLM_REQUEST_PREFLIGHT = "llm.request.preflight";
+
     /** List<Map<String,Object>> ? per-turn edited file stats for UI hints. */
     public static final String TURN_FILE_CHANGES = "turn.file.changes";
 

@@ -142,6 +142,8 @@ class PlanWorkLifecycleBddTest {
 
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
 
@@ -223,6 +225,8 @@ class PlanWorkLifecycleBddTest {
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-balanced", "medium"));
         WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
