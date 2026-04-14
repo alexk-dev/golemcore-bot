@@ -57,6 +57,9 @@ class LlmRequestPreflightPhase {
 
     private static final String COMPACTION_OUTCOME_SKIPPED_DISABLED = "skipped_disabled";
     private static final String COMPACTION_OUTCOME_SKIPPED_NO_MESSAGES = "skipped_no_messages";
+    // Preflight-diagnostics-only outcome. No COMPACTION_FINISHED event is emitted
+    // when a request is already within budget, so this intentionally does not live
+    // in CompactionFinishedPayloads.
     private static final String COMPACTION_OUTCOME_NOT_ATTEMPTED = "not_attempted";
 
     private final ContextTokenEstimator contextTokenEstimator;
@@ -65,47 +68,59 @@ class LlmRequestPreflightPhase {
 
     LlmRequest preflight(AgentContext context, Supplier<LlmRequest> requestSupplier, int llmCall) {
         PreflightDiagnostics diagnostics = new PreflightDiagnostics();
-        LlmRequest request = requestSupplier.get();
-        for (int attempt = 1; attempt <= PREFLIGHT_MAX_ATTEMPTS; attempt++) {
-            // Re-estimate on every attempt: after a successful compaction the
-            // message list shrinks, and threshold can shift if the model
-            // selection changed (e.g. tier upgrade mid-turn).
-            int estimatedTokens = contextTokenEstimator.estimateRequest(request);
-            int threshold = contextCompactionPolicy.resolveFullRequestThreshold(context);
-            diagnostics.recordAttempt(estimatedTokens, threshold, attempt);
-            if (estimatedTokens <= threshold) {
-                diagnostics.publish(context, true);
-                return request;
+        boolean terminalPublishStarted = false;
+        try {
+            LlmRequest request = requestSupplier.get();
+            for (int attempt = 1; attempt <= PREFLIGHT_MAX_ATTEMPTS; attempt++) {
+                // Re-estimate on every attempt: after a successful compaction the
+                // message list shrinks, and threshold can shift if the model
+                // selection changed (e.g. tier upgrade mid-turn).
+                int estimatedTokens = contextTokenEstimator.estimateRequest(request);
+                int threshold = contextCompactionPolicy.resolveFullRequestThreshold(context);
+                diagnostics.recordAttempt(estimatedTokens, threshold, attempt);
+                if (estimatedTokens <= threshold) {
+                    terminalPublishStarted = true;
+                    diagnostics.publish(context, true);
+                    return request;
+                }
+                // runCompactionAttempt returns false when compaction is disabled,
+                // there's nothing to compact, or the last attempt was a no-op.
+                // In those cases we stop retrying and send the request anyway so
+                // the provider can reject with a precise error — better than
+                // spinning forever on an unfixable state.
+                if (!runCompactionAttempt(context, diagnostics, estimatedTokens, threshold, attempt, llmCall)) {
+                    terminalPublishStarted = true;
+                    diagnostics.publish(context, true);
+                    log.warn("[ToolLoop] LLM request still exceeds context budget after preflight check "
+                            + "(~{} tokens > threshold {}), sending request so provider can fail fast",
+                            estimatedTokens, threshold);
+                    return request;
+                }
+                // Compaction mutated the session; ask the caller to rebuild the
+                // request from the now-shorter message list. The supplier is
+                // responsible for pulling fresh state — we never reuse the old
+                // LlmRequest instance because it still points at the pre-compact
+                // messages.
+                request = requestSupplier.get();
             }
-            // runCompactionAttempt returns false when compaction is disabled,
-            // there's nothing to compact, or the last attempt was a no-op.
-            // In those cases we stop retrying and send the request anyway so
-            // the provider can reject with a precise error — better than
-            // spinning forever on an unfixable state.
-            if (!runCompactionAttempt(context, diagnostics, estimatedTokens, threshold, attempt, llmCall)) {
-                diagnostics.publish(context, true);
-                log.warn("[ToolLoop] LLM request still exceeds context budget after preflight check "
-                        + "(~{} tokens > threshold {}), sending request so provider can fail fast",
-                        estimatedTokens, threshold);
-                return request;
-            }
-            // Compaction mutated the session; ask the caller to rebuild the
-            // request from the now-shorter message list. The supplier is
-            // responsible for pulling fresh state — we never reuse the old
-            // LlmRequest instance because it still points at the pre-compact
-            // messages.
-            request = requestSupplier.get();
-        }
 
-        int finalEstimatedTokens = contextTokenEstimator.estimateRequest(request);
-        int finalThreshold = contextCompactionPolicy.resolveFullRequestThreshold(context);
-        diagnostics.recordAttempt(finalEstimatedTokens, finalThreshold, PREFLIGHT_MAX_ATTEMPTS);
-        diagnostics.publish(context, true);
-        if (finalEstimatedTokens > finalThreshold) {
-            log.warn("[ToolLoop] LLM request remains above context budget after {} preflight compaction attempts "
-                    + "(~{} tokens > threshold {})", PREFLIGHT_MAX_ATTEMPTS, finalEstimatedTokens, finalThreshold);
+            int finalEstimatedTokens = contextTokenEstimator.estimateRequest(request);
+            int finalThreshold = contextCompactionPolicy.resolveFullRequestThreshold(context);
+            diagnostics.recordAttempt(finalEstimatedTokens, finalThreshold, PREFLIGHT_MAX_ATTEMPTS);
+            terminalPublishStarted = true;
+            diagnostics.publish(context, true);
+            if (finalEstimatedTokens > finalThreshold) {
+                log.warn("[ToolLoop] LLM request remains above context budget after {} preflight compaction attempts "
+                        + "(~{} tokens > threshold {})", PREFLIGHT_MAX_ATTEMPTS, finalEstimatedTokens, finalThreshold);
+            }
+            return request;
+        } catch (RuntimeException e) {
+            if (!terminalPublishStarted) {
+                diagnostics.recordCompactionError();
+                diagnostics.publish(context, true);
+            }
+            throw e;
         }
-        return request;
     }
 
     private boolean runCompactionAttempt(AgentContext context, PreflightDiagnostics diagnostics, int estimatedTokens,
@@ -149,10 +164,10 @@ class LlmRequestPreflightPhase {
     /**
      * Mutable per-call diagnostic state. Centralising every field in one place
      * guarantees that all publish sites emit the same schema — there is only one
-     * {@link #toMap()} method, so a new field can never be accidentally skipped on
-     * one of the exit paths. The class is private to the phase and reset on every
-     * {@link LlmRequestPreflightPhase#preflight} entry, so stale state from an
-     * earlier turn cannot leak forward.
+     * {@link #toMap(boolean)} method, so a new field can never be accidentally
+     * skipped on one of the exit paths. The class is private to the phase and reset
+     * on every {@link LlmRequestPreflightPhase#preflight} entry, so stale state
+     * from an earlier turn cannot leak forward.
      */
     private static final class PreflightDiagnostics {
 
@@ -188,8 +203,13 @@ class LlmRequestPreflightPhase {
                         + "This indicates a programming error upstream of this call site.", removedThisAttempt);
             }
             this.compactionRemoved += Math.max(0, removedThisAttempt);
-            this.compactionUsedSummary = usedSummary;
+            this.compactionUsedSummary = this.compactionUsedSummary || usedSummary;
             this.compactionOutcome = outcome;
+        }
+
+        void recordCompactionError() {
+            this.compactionAttempted = this.compactionAttempted || overThreshold;
+            this.compactionOutcome = CompactionFinishedPayloads.OUTCOME_ERROR;
         }
 
         void publish(AgentContext context, boolean terminal) {

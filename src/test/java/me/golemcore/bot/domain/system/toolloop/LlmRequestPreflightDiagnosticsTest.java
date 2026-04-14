@@ -17,9 +17,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class LlmRequestPreflightDiagnosticsTest extends LlmRequestPreflightPhaseFixture {
@@ -88,6 +91,104 @@ class LlmRequestPreflightDiagnosticsTest extends LlmRequestPreflightPhaseFixture
     }
 
     @Test
+    void shouldKeepUsedSummaryWhenAnyCompactionAttemptUsedSummary() {
+        AgentContext context = buildContext(10);
+        AtomicInteger call = new AtomicInteger();
+        when(compactionService.compact(any(), any(), anyInt()))
+                .thenAnswer(invocation -> {
+                    int n = call.incrementAndGet();
+                    return CompactionResult.builder()
+                            .removed(n == 1 ? 5 : 0)
+                            .usedSummary(n == 1)
+                            .details(CompactionDetails.builder()
+                                    .reason(CompactionReason.REQUEST_PREFLIGHT)
+                                    .summaryLength(n == 1 ? 42 : 0)
+                                    .fileChanges(List.of())
+                                    .build())
+                            .build();
+                });
+
+        phase.preflight(context, () -> LlmRequest.builder()
+                .systemPrompt("x".repeat(4_000))
+                .messages(new ArrayList<>(context.getSession().getMessages()))
+                .build(), 1);
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
+        assertEquals(true, diagnostics.get("compactionUsedSummary"),
+                "compactionUsedSummary must mean summary was used at least once in the preflight series");
+        assertEquals(5, diagnostics.get("compactionRemoved"));
+        assertEquals("attempted_no_change", diagnostics.get("compactionOutcome"));
+    }
+
+    @Test
+    void shouldPublishErrorDiagnosticsAndOverwriteStaleStateWhenCompactionThrows() {
+        AgentContext context = buildContext(4);
+        context.setAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT, Map.of(
+                "attempt", 99,
+                "compactionOutcome", "stale_previous_turn"));
+        IllegalStateException boom = new IllegalStateException("persistence offline");
+        when(compactionService.compact(any(), any(), anyInt())).thenThrow(boom);
+        LlmRequest request = LlmRequest.builder()
+                .systemPrompt("x".repeat(4_000))
+                .messages(new ArrayList<>(context.getSession().getMessages()))
+                .build();
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> phase.preflight(context, () -> request, 1));
+
+        assertEquals(boom, thrown);
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
+        assertNotNull(diagnostics);
+        assertEquals(1, diagnostics.get("attempt"),
+                "failed preflight must publish its own attempt, not leave stale diagnostics behind");
+        assertEquals(true, diagnostics.get("terminal"));
+        assertEquals(true, diagnostics.get("overThreshold"));
+        assertEquals(true, diagnostics.get("compactionAttempted"));
+        assertEquals("error", diagnostics.get("compactionOutcome"));
+    }
+
+    @Test
+    void shouldPublishTerminalDiagnosticsAfterExhaustingCompactionAttempts() {
+        AgentContext context = buildContext(10);
+        AtomicInteger call = new AtomicInteger();
+        when(compactionService.compact(any(), any(), anyInt()))
+                .thenAnswer(invocation -> CompactionResult.builder()
+                        .removed(call.incrementAndGet())
+                        .usedSummary(false)
+                        .details(CompactionDetails.builder()
+                                .reason(CompactionReason.REQUEST_PREFLIGHT)
+                                .summaryLength(0)
+                                .fileChanges(List.of())
+                                .build())
+                        .build());
+
+        phase.preflight(context, () -> LlmRequest.builder()
+                .systemPrompt("x".repeat(4_000))
+                .messages(new ArrayList<>(context.getSession().getMessages()))
+                .build(), 1);
+
+        verify(compactionService, times(3)).compact(any(), any(), anyInt());
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
+        assertEquals(Set.of(
+                "estimatedTokens",
+                "threshold",
+                "attempt",
+                "maxAttempts",
+                "overThreshold",
+                "terminal",
+                "compactionAttempted",
+                "compactionRemoved",
+                "compactionUsedSummary",
+                "compactionOutcome"), diagnostics.keySet());
+        assertEquals(3, diagnostics.get("attempt"));
+        assertEquals(6, diagnostics.get("compactionRemoved"),
+                "removed count must accumulate across all three exhausted attempts");
+        assertEquals(true, diagnostics.get("terminal"));
+        assertEquals(true, diagnostics.get("overThreshold"));
+        assertEquals("compacted", diagnostics.get("compactionOutcome"));
+    }
+
+    @Test
     void shouldReportCompactionOutcomeAttemptedAndNoChangeWhenServiceReturnsZeroRemoved() {
         AgentContext context = buildContext(4);
         when(compactionService.compact(any(), any(), anyInt()))
@@ -121,6 +222,8 @@ class LlmRequestPreflightDiagnosticsTest extends LlmRequestPreflightPhaseFixture
         assertEquals(true, diagnostics.get("terminal"),
                 "terminal must mean this was the last publication for this preflight() call");
         assertEquals(false, diagnostics.get("overThreshold"));
+        assertEquals("not_attempted", diagnostics.get("compactionOutcome"),
+                "not_attempted is an intentional preflight-diagnostics-only outcome");
     }
 
     @Test
