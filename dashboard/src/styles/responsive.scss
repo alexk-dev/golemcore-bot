@@ -1,0 +1,52 @@
+// ==================== Mobile Responsive Fixes ====================
+
+.break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.diagnostics-table code,
+.logs-detail-meta code,
+.webhook-code-block code {
+  min-width: 0;
+}
+
+.diagnostics-table code,
+.logs-detail-meta code {
+  display: inline-block;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 767.98px) {
+  .app-shell > .sidebar,
+  .sidebar {
+    width: min(var(--sidebar-width), 85vw);
+    min-width: min(var(--sidebar-width), 85vw);
+  }
+
+  .sidebar-overlay {
+    left: min(var(--sidebar-width), 85vw);
+    right: 0;
+    width: auto;
+  }
+
+  .webhook-code-block {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .webhook-code-block code {
+    display: block;
+    white-space: inherit;
+    overflow-wrap: inherit;
+    word-break: inherit;
+  }
+
+  .logs-detail-meta {
+    align-items: flex-start;
+  }
+}
