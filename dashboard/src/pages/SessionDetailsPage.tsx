@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert, Badge, Card, Placeholder, Spinner } from 'react-bootstrap';
+import { Alert, Badge, Card, Placeholder, Spinner } from '../components/ui/tailwind-components';
 import { Link, Navigate, useParams } from 'react-router-dom';
 
 import { SessionTraceTab } from '../components/sessions/SessionTraceTab';

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Form, Button, Alert, Card } from 'react-bootstrap';
+import { Form, Button, Alert, Card } from '../ui/tailwind-components';
 import { setupMfa, enableMfa, disableMfa } from '../../api/auth';
 import toast from 'react-hot-toast';
 

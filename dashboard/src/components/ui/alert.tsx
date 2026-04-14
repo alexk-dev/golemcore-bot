@@ -11,6 +11,7 @@ const alertVariants = cva(
         secondary: 'border-border/80 bg-muted/70 text-foreground',
         info: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-900 dark:text-cyan-100',
         warning: 'border-amber-500/20 bg-amber-500/10 text-amber-900 dark:text-amber-100',
+        success: 'border-green-500/20 bg-green-500/10 text-green-900 dark:text-green-100',
         danger: 'border-destructive/20 bg-destructive/10 text-red-900 dark:text-red-100',
       },
     },

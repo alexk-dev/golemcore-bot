@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Badge, ListGroup, Modal, Spinner } from 'react-bootstrap';
+import { Badge, ListGroup, Modal, Spinner } from '../ui/tailwind-components';
 import { Link } from 'react-router-dom';
 import type { SchedulerRunDetail, SchedulerRunMessage, SchedulerRunSummary } from '../../api/scheduler';
 import { formatTimestamp } from './schedulerFormUtils';

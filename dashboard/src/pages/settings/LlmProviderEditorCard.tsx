@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button, Card, Col, Form, Row } from 'react-bootstrap';
+import { Button, Card, Col, Form, Row } from '../../components/ui/tailwind-components';
 import type { LlmProviderConfig } from '../../api/settingsTypes';
 import {
   API_TYPE_DETAILS,

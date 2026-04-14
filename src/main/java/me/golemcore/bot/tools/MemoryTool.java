@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.springframework.stereotype.Component;
@@ -46,7 +47,7 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 public class MemoryTool implements ToolComponent {
 
-    public static final String TOOL_NAME = "memory";
+    public static final String TOOL_NAME = ToolNames.MEMORY;
 
     private static final String OP_ADD = "memory_add";
     private static final String OP_READ = "memory_read";

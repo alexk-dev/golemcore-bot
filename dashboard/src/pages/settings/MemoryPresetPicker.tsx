@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button, Form } from 'react-bootstrap';
+import { Button, Form } from '../../components/ui/tailwind-components';
 import type { MemoryPreset } from '../../api/settingsTypes';
 import HelpTip from '../../components/common/HelpTip';
 

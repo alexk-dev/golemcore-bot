@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { Offcanvas } from 'react-bootstrap';
+import { Offcanvas } from '../ui/tailwind-components';
 import { useChatSessionStore } from '../../store/chatSessionStore';
 import { useContextPanelStore } from '../../store/contextPanelStore';
 import { useChatRuntimeStore } from '../../store/chatRuntimeStore';

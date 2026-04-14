@@ -5,11 +5,19 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.AgentRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WakeRequest;
 import me.golemcore.bot.adapter.inbound.webhook.dto.WebhookResponse;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.service.MemoryPresetService;
+import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.security.InputSanitizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,19 +26,26 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -47,7 +62,11 @@ class WebhookControllerTest {
     private WebhookChannelAdapter channelAdapter;
     private WebhookPayloadTransformer transformer;
     private WebhookDeliveryTracker deliveryTracker;
+    private WebhookResponseSchemaService responseSchemaService;
+    private MemoryPresetService memoryPresetService;
     private ApplicationEventPublisher eventPublisher;
+    private SessionPort sessionPort;
+    private TraceService traceService;
     private InputSanitizer inputSanitizer;
     private WebhookController controller;
 
@@ -58,15 +77,21 @@ class WebhookControllerTest {
         channelAdapter = mock(WebhookChannelAdapter.class);
         transformer = mock(WebhookPayloadTransformer.class);
         deliveryTracker = mock(WebhookDeliveryTracker.class);
+        responseSchemaService = mock(WebhookResponseSchemaService.class);
+        memoryPresetService = new MemoryPresetService();
         eventPublisher = mock(ApplicationEventPublisher.class);
+        sessionPort = mock(SessionPort.class);
+        traceService = mock(TraceService.class);
         inputSanitizer = new InputSanitizer();
 
         controller = new WebhookController(
                 preferencesService, authenticator, channelAdapter,
-                transformer, deliveryTracker, eventPublisher, inputSanitizer);
+                transformer, deliveryTracker, responseSchemaService, memoryPresetService, eventPublisher,
+                sessionPort, traceService, inputSanitizer);
 
         when(preferencesService.getPreferences()).thenReturn(buildEnabledPrefs());
         when(authenticator.authenticateBearer(any())).thenReturn(true);
+        when(sessionPort.get(anyString())).thenReturn(Optional.empty());
     }
 
     // ==================== /wake ====================
@@ -180,13 +205,58 @@ class WebhookControllerTest {
                 .model("smart")
                 .build();
 
-        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
-        assertNotNull(response.getBody().getRunId());
-        assertNotNull(response.getBody().getChatId());
-        assertEquals("accepted", response.getBody().getStatus());
+        assertNotNull(webhookBody(response).getRunId());
+        assertNotNull(webhookBody(response).getChatId());
+        assertEquals("accepted", webhookBody(response).getStatus());
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals(MemoryPresetIds.DISABLED,
+                captor.getValue().message().getMetadata().get(ContextAttributes.MEMORY_PRESET_ID));
+    }
+
+    @Test
+    void agentShouldUseConfiguredMemoryPresetMetadata() {
+        UserPreferences prefs = UserPreferences.builder()
+                .webhooks(UserPreferences.WebhookConfig.builder()
+                        .enabled(true)
+                        .token(Secret.of(TOKEN))
+                        .memoryPreset("general_chat")
+                        .build())
+                .build();
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        AgentRequest request = AgentRequest.builder()
+                .message("Summarize issues")
+                .build();
+
+        controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("general_chat",
+                captor.getValue().message().getMetadata().get(ContextAttributes.MEMORY_PRESET_ID));
+    }
+
+    @Test
+    void agentShouldRejectUnknownMemoryPresetOverride() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Summarize issues")
+                .memoryPreset("unknown")
+                .build();
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("'memoryPreset' must be a known memory preset id", webhookBody(response).getErrorMessage());
+        verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), any(), any(), any());
     }
 
     @Test
@@ -196,17 +266,17 @@ class WebhookControllerTest {
                 .chatId("my-session")
                 .build();
 
-        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
-        assertEquals("my-session", response.getBody().getChatId());
+        assertEquals("my-session", webhookBody(response).getChatId());
     }
 
     @Test
     void agentShouldReturnBadRequestWhenMessageMissing() {
         AgentRequest request = AgentRequest.builder().message(null).build();
 
-        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
@@ -229,6 +299,224 @@ class WebhookControllerTest {
                 eq("https://example.com/callback"), eq("coding"));
         verify(channelAdapter).registerPendingRun(anyString(), anyString(),
                 eq("https://example.com/callback"), eq("coding"), eq("delivery-1"));
+    }
+
+    @Test
+    void agentShouldReturnSynchronousResponseWhenRequested() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer directly")
+                .responseValidationModelTier("turbo")
+                .syncResponse(true)
+                .build();
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture("Direct answer"));
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(MediaType.TEXT_PLAIN, response.getHeaders().getContentType());
+        assertEquals("Direct answer", response.getBody());
+        assertNotNull(response.getHeaders().getFirst("X-Golemcore-Run-Id"));
+        assertNotNull(response.getHeaders().getFirst("X-Golemcore-Chat-Id"));
+        verify(responseSchemaService, never()).validateSchemaDefinition(any());
+        verify(responseSchemaService, never()).renderSchema(any());
+        verify(responseSchemaService, never()).validateAndRepair(any(), any(), any(), any(), any());
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        Map<String, Object> metadata = captor.getValue().message().getMetadata();
+        assertFalse(metadata.containsKey(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA));
+        assertFalse(metadata.containsKey(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT));
+        assertFalse(metadata.containsKey(ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER));
+    }
+
+    @Test
+    void agentShouldReturnSchemaPayloadForSynchronousJsonSchema() {
+        Map<String, Object> schema = responseEnvelopeSchema();
+        Map<String, Object> payload = Map.of(
+                "version", "1.0",
+                "response", Map.of("text", "Ready", "tts", "Ready", "end_session", true));
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer in configured schema")
+                .model("coding")
+                .syncResponse(true)
+                .responseJsonSchema(schema)
+                .responseValidationModelTier("smart")
+                .build();
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture("Ready"));
+        when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
+        when(responseSchemaService.validateAndRepair(eq("Ready"), eq(schema), eq("smart"), eq("smart"), any()))
+                .thenReturn(new WebhookResponseSchemaService.SchemaResult(payload, 1));
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(payload, response.getBody());
+        assertEquals(List.of("1"), response.getHeaders().get("X-Golemcore-Schema-Repair-Attempts"));
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(), any(), eq("smart"), any());
+        verify(responseSchemaService).validateSchemaDefinition(schema);
+        ArgumentCaptor<Duration> repairBudgetCaptor = ArgumentCaptor.forClass(Duration.class);
+        verify(responseSchemaService).validateAndRepair(eq("Ready"), eq(schema), eq("smart"), eq("smart"),
+                repairBudgetCaptor.capture());
+        assertTrue(repairBudgetCaptor.getValue().compareTo(Duration.ZERO) > 0);
+        assertTrue(repairBudgetCaptor.getValue().compareTo(Duration.ofSeconds(300)) <= 0);
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        Message message = captor.getValue().message();
+        assertEquals(schema, message.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA));
+        assertEquals("{\"type\":\"object\"}",
+                message.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT));
+        assertEquals("smart", message.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER));
+        assertEquals("smart", message.getMetadata().get(ContextAttributes.WEBHOOK_MODEL_TIER));
+    }
+
+    @Test
+    void agentShouldUseModelTierForSynchronousSchemaWhenValidationTierIsDefault() {
+        Map<String, Object> schema = responseEnvelopeSchema();
+        Map<String, Object> payload = Map.of(
+                "version", "1.0",
+                "response", Map.of("text", "Ready", "tts", "Ready", "end_session", true));
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer in configured schema")
+                .model("coding")
+                .syncResponse(true)
+                .responseJsonSchema(schema)
+                .build();
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture("Ready"));
+        when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
+        when(responseSchemaService.validateAndRepair(eq("Ready"), eq(schema), isNull(), eq("coding"), any()))
+                .thenReturn(new WebhookResponseSchemaService.SchemaResult(payload, 0));
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(), any(), eq("coding"), any());
+        verify(responseSchemaService).validateAndRepair(eq("Ready"), eq(schema), isNull(), eq("coding"), any());
+    }
+
+    @Test
+    void agentShouldRecordSynchronousSchemaValidationTraceSpan() {
+        Map<String, Object> schema = responseEnvelopeSchema();
+        Map<String, Object> payload = Map.of(
+                "version", "1.0",
+                "response", Map.of("text", "Ready", "tts", "Ready", "end_session", true));
+        AgentSession session = AgentSession.builder()
+                .id("webhook:trace-chat")
+                .channelType("webhook")
+                .chatId("trace-chat")
+                .build();
+        TraceContext schemaSpan = TraceContext.builder()
+                .traceId("trace-1")
+                .spanId("schema-span")
+                .parentSpanId("root-span")
+                .rootKind("INGRESS")
+                .build();
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer in configured schema")
+                .chatId("trace-chat")
+                .syncResponse(true)
+                .responseJsonSchema(schema)
+                .responseValidationModelTier("smart")
+                .build();
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture("Ready"));
+        when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
+        when(responseSchemaService.validateAndRepair(eq("Ready"), eq(schema), eq("smart"), any(), any()))
+                .thenReturn(new WebhookResponseSchemaService.SchemaResult(payload, 0));
+        when(sessionPort.get("webhook:trace-chat")).thenReturn(Optional.of(session));
+        when(traceService.startSpan(eq(session), any(), eq("webhook.response.schema.validation"),
+                eq(TraceSpanKind.INTERNAL), any(), any()))
+                .thenReturn(schemaSpan);
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(traceService).appendEvent(eq(session), eq(schemaSpan), eq("schema.validation.started"), any(), any());
+        verify(traceService).appendEvent(eq(session), eq(schemaSpan), eq("schema.validation.finished"), any(),
+                argThat(attributes -> Boolean.TRUE.equals(attributes.get("success"))
+                        && Integer.valueOf(0).equals(attributes.get("repair_attempts"))));
+        verify(traceService).finishSpan(eq(session), eq(schemaSpan), eq(TraceStatusCode.OK), isNull(), any());
+        verify(sessionPort).save(session);
+    }
+
+    @Test
+    void agentShouldRejectInvalidResponseSchemaBeforeDispatch() {
+        Map<String, Object> schema = Map.of("type", "invalid");
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer in JSON")
+                .syncResponse(true)
+                .responseJsonSchema(schema)
+                .build();
+        doThrow(new WebhookResponseSchemaService.SchemaProcessingException("Invalid responseJsonSchema"))
+                .when(responseSchemaService).validateSchemaDefinition(schema);
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("Invalid responseJsonSchema", webhookBody(response).getErrorMessage());
+        verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    void agentShouldRejectResponseSchemaWithoutSynchronousResponse() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer in JSON")
+                .responseJsonSchema(responseEnvelopeSchema())
+                .build();
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("'responseJsonSchema' requires syncResponse=true", webhookBody(response).getErrorMessage());
+        verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    void agentShouldRejectEmptyResponseSchemaBeforeDispatch() {
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer in configured schema")
+                .syncResponse(true)
+                .responseJsonSchema(Map.of())
+                .build();
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("'responseJsonSchema' must not be empty", webhookBody(response).getErrorMessage());
+        verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    void agentShouldReturnGatewayTimeoutWhenSchemaRepairBudgetExpires() {
+        Map<String, Object> schema = responseEnvelopeSchema();
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer in configured schema")
+                .syncResponse(true)
+                .responseJsonSchema(schema)
+                .build();
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture("Ready"));
+        when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
+        when(responseSchemaService.validateAndRepair(eq("Ready"), eq(schema), any(), any(), any()))
+                .thenThrow(new WebhookResponseSchemaService.SchemaTimeoutException("Response schema repair timed out"));
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.GATEWAY_TIMEOUT, response.getStatusCode());
+        assertEquals("Synchronous webhook response timed out", webhookBody(response).getErrorMessage());
     }
 
     @Test
@@ -283,7 +571,7 @@ class WebhookControllerTest {
         when(deliveryTracker.registerPendingDelivery(anyString(), anyString(), anyString(), anyString()))
                 .thenReturn("delivery-special");
 
-        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
@@ -298,11 +586,11 @@ class WebhookControllerTest {
                 .model("turbo")
                 .build();
 
-        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("'model' must be a known tier id", response.getBody().getErrorMessage());
+        assertEquals("'model' must be a known tier id", webhookBody(response).getErrorMessage());
         verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), any(), any(), any());
     }
 
@@ -315,12 +603,12 @@ class WebhookControllerTest {
         doThrow(new IllegalArgumentException("callbackUrl must be a valid http(s) URL"))
                 .when(deliveryTracker).validateCallbackUrl("ftp://example.com/callback");
 
-        ResponseEntity<WebhookResponse> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("error", response.getBody().getStatus());
-        assertEquals("callbackUrl must be a valid http(s) URL", response.getBody().getErrorMessage());
+        assertEquals("error", webhookBody(response).getStatus());
+        assertEquals("callbackUrl must be a valid http(s) URL", webhookBody(response).getErrorMessage());
 
         verify(channelAdapter, never()).registerPendingRun(anyString(), anyString(), anyString(), anyString(),
                 anyString());
@@ -341,7 +629,7 @@ class WebhookControllerTest {
                 .thenReturn("Push to myapp");
 
         byte[] body = "{}".getBytes();
-        ResponseEntity<WebhookResponse> response = controller.customHook("github-push", body, new HttpHeaders())
+        ResponseEntity<?> response = controller.customHook("github-push", body, new HttpHeaders())
                 .block();
 
         assertNotNull(response);
@@ -351,7 +639,7 @@ class WebhookControllerTest {
     @Test
     void customHookShouldReturn404ForUnknownMapping() {
         byte[] body = "{}".getBytes();
-        ResponseEntity<WebhookResponse> response = controller.customHook("unknown", body, new HttpHeaders()).block();
+        ResponseEntity<?> response = controller.customHook("unknown", body, new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
@@ -369,7 +657,7 @@ class WebhookControllerTest {
         when(authenticator.authenticate(any(), any(), any())).thenReturn(false);
 
         byte[] body = "{}".getBytes();
-        ResponseEntity<WebhookResponse> response = controller.customHook("auth-fail", body, new HttpHeaders()).block();
+        ResponseEntity<?> response = controller.customHook("auth-fail", body, new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
@@ -394,7 +682,7 @@ class WebhookControllerTest {
         when(authenticator.authenticate(any(), any(), any())).thenReturn(true);
 
         byte[] body = "this payload is way too large for the limit".getBytes();
-        ResponseEntity<WebhookResponse> response = controller.customHook("big", body, new HttpHeaders()).block();
+        ResponseEntity<?> response = controller.customHook("big", body, new HttpHeaders()).block();
 
         assertNotNull(response);
         assertEquals(HttpStatusCode.valueOf(413), response.getStatusCode());
@@ -413,12 +701,76 @@ class WebhookControllerTest {
         when(transformer.transform(any(), any())).thenReturn("Process: deploy");
 
         byte[] body = "{\"event\":\"deploy\"}".getBytes();
-        ResponseEntity<WebhookResponse> response = controller.customHook("agent-hook", body, new HttpHeaders())
+        ResponseEntity<?> response = controller.customHook("agent-hook", body, new HttpHeaders())
                 .block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
-        assertNotNull(response.getBody().getRunId());
+        assertNotNull(webhookBody(response).getRunId());
+    }
+
+    @Test
+    void customHookAgentActionShouldReturnSynchronousResponseWhenConfigured() {
+        UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
+                .name("agent-hook")
+                .action("agent")
+                .messageTemplate("Process: {event}")
+                .syncResponse(true)
+                .build();
+        when(preferencesService.getPreferences()).thenReturn(buildPrefsWithMapping(mapping));
+        when(authenticator.authenticate(any(), any(), any())).thenReturn(true);
+        when(transformer.transform(any(), any())).thenReturn("Process: deploy");
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture("Deployment done"));
+
+        byte[] body = "{\"event\":\"deploy\"}".getBytes();
+        ResponseEntity<?> response = controller.customHook("agent-hook", body, new HttpHeaders())
+                .block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(MediaType.TEXT_PLAIN, response.getHeaders().getContentType());
+        assertEquals("Deployment done", response.getBody());
+        verify(responseSchemaService, never()).validateSchemaDefinition(any());
+        verify(responseSchemaService, never()).renderSchema(any());
+        verify(responseSchemaService, never()).validateAndRepair(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void customHookAgentActionShouldUseSchemaTierForSynchronousSchemaResponse() {
+        Map<String, Object> schema = responseEnvelopeSchema();
+        Map<String, Object> payload = Map.of(
+                "version", "1.0",
+                "response", Map.of("text", "Deployment done", "tts", "Deployment done", "end_session", true));
+        UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
+                .name("agent-hook")
+                .action("agent")
+                .messageTemplate("Process: {event}")
+                .model("balanced")
+                .syncResponse(true)
+                .responseJsonSchema(schema)
+                .responseValidationModelTier("special5")
+                .build();
+        when(preferencesService.getPreferences()).thenReturn(buildPrefsWithMapping(mapping));
+        when(authenticator.authenticate(any(), any(), any())).thenReturn(true);
+        when(transformer.transform(any(), any())).thenReturn("Process: deploy");
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture("Deployment done"));
+        when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
+        when(responseSchemaService.validateAndRepair(
+                eq("Deployment done"), eq(schema), eq("special5"), eq("special5"), any()))
+                .thenReturn(new WebhookResponseSchemaService.SchemaResult(payload, 1));
+
+        byte[] body = "{\"event\":\"deploy\"}".getBytes();
+        ResponseEntity<?> response = controller.customHook("agent-hook", body, new HttpHeaders())
+                .block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(payload, response.getBody());
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(), any(), eq("special5"), any());
+        verify(responseSchemaService).validateAndRepair(
+                eq("Deployment done"), eq(schema), eq("special5"), eq("special5"), any());
     }
 
     @Test
@@ -461,12 +813,12 @@ class WebhookControllerTest {
         when(transformer.transform(any(), any())).thenReturn("Process: deploy");
 
         byte[] body = "{\"event\":\"deploy\"}".getBytes();
-        ResponseEntity<WebhookResponse> response = controller.customHook("agent-hook", body, new HttpHeaders())
+        ResponseEntity<?> response = controller.customHook("agent-hook", body, new HttpHeaders())
                 .block();
 
         assertNotNull(response);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("Webhook mapping model must be a known tier id", response.getBody().getErrorMessage());
+        assertEquals("Webhook mapping model must be a known tier id", webhookBody(response).getErrorMessage());
     }
 
     private UserPreferences buildEnabledPrefs() {
@@ -494,5 +846,18 @@ class WebhookControllerTest {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to serialize test payload", e);
         }
+    }
+
+    private WebhookResponse webhookBody(ResponseEntity<?> response) {
+        return (WebhookResponse) response.getBody();
+    }
+
+    private Map<String, Object> responseEnvelopeSchema() {
+        return Map.of(
+                "type", "object",
+                "required", List.of("version", "response"),
+                "properties", Map.of(
+                        "version", Map.of("const", "1.0"),
+                        "response", Map.of("type", "object")));
     }
 }

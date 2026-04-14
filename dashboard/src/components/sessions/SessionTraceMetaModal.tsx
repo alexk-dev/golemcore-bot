@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { ListGroup, Modal } from 'react-bootstrap';
+import { ListGroup, Modal } from '../ui/tailwind-components';
 
 import type { SessionTraceFeedMeta } from '../../lib/sessionTraceFeed';
 

@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Card, Spinner } from 'react-bootstrap';
+import { Button, Card, Spinner } from '../components/ui/tailwind-components';
 import { useSearchParams } from 'react-router-dom';
 import type {
   SchedulerReportChannelOption,

@@ -7,8 +7,8 @@ import { SessionTraceBubble } from './SessionTraceBubble';
 import { SessionTraceMetaModal } from './SessionTraceMetaModal';
 import { SessionTracePayloadModal } from './SessionTracePayloadModal';
 
-vi.mock('react-bootstrap', async () => {
-  const actual = await vi.importActual('react-bootstrap');
+vi.mock('../ui/tailwind-components', async () => {
+  const actual = await vi.importActual('../ui/tailwind-components');
 
   interface ModalProps {
     show?: boolean;

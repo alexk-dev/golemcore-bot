@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button, Form } from 'react-bootstrap';
+import { Button, Form } from '../../components/ui/tailwind-components';
 
 export interface ProviderModelSelectionFormProps {
   models: string[];

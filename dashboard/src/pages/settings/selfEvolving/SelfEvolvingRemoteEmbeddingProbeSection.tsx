@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react';
-import { Alert, Button, Spinner } from 'react-bootstrap';
+import { Alert, Button, Spinner } from '../../../components/ui/tailwind-components';
 
 import {
   probeSelfEvolvingRemoteEmbedding,

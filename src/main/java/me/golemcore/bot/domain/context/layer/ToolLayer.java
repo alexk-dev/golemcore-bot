@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolNames;
@@ -60,7 +61,6 @@ public class ToolLayer implements ContextLayer {
 
     private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
     private static final String TOOL_PLAN_GET = "plan_get";
-    private static final String TOOL_HIVE_LIFECYCLE_SIGNAL = ToolNames.HIVE_LIFECYCLE_SIGNAL;
 
     private final ToolCallExecutionService toolCallExecutionService;
     private final McpPort mcpPort;
@@ -158,10 +158,28 @@ public class ToolLayer implements ContextLayer {
                     : null;
             return delayedActionPolicyService.canScheduleActions(channelType);
         }
-        if (TOOL_HIVE_LIFECYCLE_SIGNAL.equals(toolName)) {
+        if (ToolNames.MEMORY.equals(toolName) && isMemoryPresetDisabled(context)) {
+            return false;
+        }
+        if (isHiveSdlcTool(toolName)) {
             return hiveSessionActive;
         }
         return true;
+    }
+
+    private boolean isMemoryPresetDisabled(AgentContext context) {
+        String memoryPreset = context != null ? context.getAttribute(ContextAttributes.MEMORY_PRESET_ID) : null;
+        return memoryPreset != null && MemoryPresetIds.DISABLED.equalsIgnoreCase(memoryPreset.trim());
+    }
+
+    private boolean isHiveSdlcTool(String toolName) {
+        return ToolNames.HIVE_LIFECYCLE_SIGNAL.equals(toolName)
+                || ToolNames.HIVE_GET_CURRENT_CONTEXT.equals(toolName)
+                || ToolNames.HIVE_GET_CARD.equals(toolName)
+                || ToolNames.HIVE_SEARCH_CARDS.equals(toolName)
+                || ToolNames.HIVE_POST_THREAD_MESSAGE.equals(toolName)
+                || ToolNames.HIVE_REQUEST_REVIEW.equals(toolName)
+                || ToolNames.HIVE_CREATE_FOLLOWUP_CARD.equals(toolName);
     }
 
     private void putToolDefinition(Map<String, ToolDefinition> toolsByName,

@@ -23,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.service.SessionModelSettingsSupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 
 /**
@@ -51,6 +52,15 @@ public class TierAwarenessLayer implements ContextLayer {
 
     @Override
     public boolean appliesTo(AgentContext context) {
+        if (context == null) {
+            return false;
+        }
+        if (context.getSession() != null
+                && SessionModelSettingsSupport.hasModelSettings(context.getSession())) {
+            return !SessionModelSettingsSupport.readForce(context.getSession())
+                    && context.getActiveSkill() != null
+                    && context.getActiveSkill().getModelTier() != null;
+        }
         if (userPreferencesService.getPreferences().isTierForce()) {
             return false;
         }

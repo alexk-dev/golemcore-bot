@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button } from 'react-bootstrap';
+import { Button } from '../../components/ui/tailwind-components';
 
 import type { HiveStatusResponse } from '../../api/hive';
 
@@ -17,10 +17,10 @@ interface HiveActionButtonsProps {
 }
 
 function canJoinHive(status: HiveStatusResponse | undefined, isManaged: boolean, joinCode: string): boolean {
-  if (status?.sessionPresent === true) {
-    return false;
+  if (isManaged) {
+    return status?.sessionPresent !== true && status?.managedJoinCodeAvailable === true;
   }
-  return isManaged ? status?.managedJoinCodeAvailable === true : joinCode.trim().length > 0;
+  return joinCode.trim().length > 0;
 }
 
 function canReconnectHive(status: HiveStatusResponse | undefined, isManaged: boolean): boolean {

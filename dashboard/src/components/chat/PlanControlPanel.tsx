@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Badge, Button, Form, Spinner } from 'react-bootstrap';
+import { Badge, Button, Form, Spinner } from '../ui/tailwind-components';
 import type { PlanControlState, PlanSummary } from '../../api/plans';
 import { getExplicitModelTierOptions, getModelTierMeta } from '../../lib/modelTiers';
 import {

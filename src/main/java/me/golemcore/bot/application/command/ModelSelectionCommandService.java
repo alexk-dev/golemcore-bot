@@ -1,16 +1,21 @@
 package me.golemcore.bot.application.command;
 
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionModelSettingsSupport;
+import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.port.outbound.SessionPort;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RequiredArgsConstructor
 public class ModelSelectionCommandService {
@@ -21,12 +26,12 @@ public class ModelSelectionCommandService {
     private final UserPreferencesService preferencesService;
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
+    private final SessionPort sessionPort;
 
     public TierOutcome handleTier(TierRequest request) {
-        if (request instanceof ShowTierStatus) {
-            UserPreferences preferences = preferencesService.getPreferences();
-            String tier = preferences.getModelTier() != null ? preferences.getModelTier() : "balanced";
-            return new CurrentTier(tier, preferences.isTierForce());
+        if (request instanceof ShowTierStatus showTierStatus) {
+            TierSettings tierSettings = resolveTierSettings(showTierStatus.sessionId());
+            return new CurrentTier(tierSettings.tier(), tierSettings.force());
         }
 
         if (!(request instanceof SetTierSelection setTier)) {
@@ -37,11 +42,17 @@ public class ModelSelectionCommandService {
             return new InvalidTier();
         }
 
-        UserPreferences preferences = preferencesService.getPreferences();
         boolean force = setTier.force();
-        preferences.setModelTier(tierArg);
-        preferences.setTierForce(force);
-        preferencesService.savePreferences(preferences);
+        Optional<AgentSession> session = resolveSession(setTier.sessionId());
+        if (session.isPresent()) {
+            SessionModelSettingsSupport.writeModelSettings(session.get(), tierArg, force);
+            sessionPort.save(session.get());
+        } else {
+            UserPreferences preferences = preferencesService.getPreferences();
+            preferences.setModelTier(tierArg);
+            preferences.setTierForce(force);
+            preferencesService.savePreferences(preferences);
+        }
         return new TierUpdated(tierArg, force);
     }
 
@@ -181,6 +192,41 @@ public class ModelSelectionCommandService {
         return preferences.getTierOverrides();
     }
 
+    private TierSettings resolveTierSettings(String sessionId) {
+        Optional<AgentSession> session = resolveSession(sessionId);
+        if (session.isPresent() && SessionModelSettingsSupport.hasModelSettings(session.get())) {
+            String tier = SessionModelSettingsSupport.readModelTier(session.get());
+            return new TierSettings(tier != null ? tier : "balanced",
+                    SessionModelSettingsSupport.readForce(session.get()));
+        }
+
+        UserPreferences preferences = preferencesService.getPreferences();
+        String tier = preferences.getModelTier() != null ? preferences.getModelTier() : "balanced";
+        return new TierSettings(tier, preferences.isTierForce());
+    }
+
+    private Optional<AgentSession> resolveSession(String sessionId) {
+        if (sessionPort == null || StringValueSupport.isBlank(sessionId)) {
+            return Optional.empty();
+        }
+
+        Optional<AgentSession> existing = sessionPort.get(sessionId);
+        if (existing.isPresent()) {
+            return existing;
+        }
+
+        int separatorIndex = sessionId.indexOf(':');
+        if (separatorIndex <= 0 || separatorIndex + 1 >= sessionId.length()) {
+            return Optional.empty();
+        }
+        String channelType = sessionId.substring(0, separatorIndex);
+        String chatId = sessionId.substring(separatorIndex + 1);
+        return Optional.ofNullable(sessionPort.getOrCreate(channelType, chatId));
+    }
+
+    private record TierSettings(String tier, boolean force) {
+    }
+
     public sealed
 
     interface TierRequest
@@ -188,16 +234,26 @@ public class ModelSelectionCommandService {
     {
         }
 
-    public record ShowTierStatus() implements TierRequest {}
+    public record ShowTierStatus(String sessionId) implements TierRequest {
 
-    public record SetTierSelection(String tier, boolean force) implements TierRequest {}
+        public ShowTierStatus() {
+            this(null);
+        }
+    }
 
-    public sealed
+    public record SetTierSelection(String tier, boolean force, String sessionId) implements TierRequest {
 
-        interface TierOutcome
-        permits CurrentTier, TierUpdated, InvalidTier
-        {
-            }
+    public SetTierSelection(String tier, boolean force) {
+            this(tier, force, null);
+        }
+}
+
+public sealed
+
+interface TierOutcome
+permits CurrentTier, TierUpdated, InvalidTier
+{
+    }
 
     public record CurrentTier(String tier, boolean force) implements TierOutcome {}
 
@@ -207,10 +263,10 @@ public class ModelSelectionCommandService {
 
     public sealed
 
-            interface ModelRequest
-            permits ShowModelSelection, ListAvailableModels, SetModelOverride, SetReasoningLevel, ResetModelOverride
-            {
-                }
+    interface ModelRequest
+    permits ShowModelSelection, ListAvailableModels, SetModelOverride, SetReasoningLevel, ResetModelOverride
+    {
+        }
 
     public record ShowModelSelection() implements ModelRequest {}
 
@@ -224,12 +280,12 @@ public class ModelSelectionCommandService {
 
     public sealed
 
-                interface ModelOutcome
-            permits ModelSelectionOverview, AvailableModels, InvalidModelTier, ModelOverrideSet,
+        interface ModelOutcome
+        permits ModelSelectionOverview, AvailableModels, InvalidModelTier, ModelOverrideSet,
             ProviderNotConfigured, InvalidModel, MissingModelOverride, MissingReasoningSupport,
             InvalidReasoningLevel, ModelReasoningSet, ModelOverrideReset
-                {
-                    }
+        {
+    }
 
     public record ModelSelectionOverview(List<TierSelection> tiers) implements ModelOutcome {}
 

@@ -1,6 +1,6 @@
 # GolemCore Bot
 
-> AI-native runtime for the GolemCore ecosystem — build, run, extend, and inspect channel-connected agents with skills, plugins, MCP, memory, and Hive.
+> Agent Platform for AI-Native Companies — build, run, extend, and inspect channel-connected agents with skills, plugins, MCP, memory, and Hive.
 
 [![CI](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/alexk-dev/golemcore-bot/actions/workflows/docker-publish.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -10,7 +10,7 @@
 
 ## What it is
 
-GolemCore Bot is the runtime layer for the GolemCore ecosystem.
+GolemCore Bot is the agent platform for AI-native companies building on the GolemCore ecosystem.
 
 Use it to run channel-connected agents, extend them with skills, plugins, and MCP servers, and operate them with memory, delayed follow-ups, trace inspection, and Hive-connected control flows.
 
@@ -147,6 +147,10 @@ For runtime config details, storage layout, and browser or sandbox notes, see **
 ---
 
 ## Documentation
+
+Documentation site: https://docs.golemcore.me/
+
+The source docs below are kept in this repo for local and offline reference:
 
 1. **[Quick Start](docs/QUICKSTART.md)**
 2. **[Skills](docs/SKILLS.md)**

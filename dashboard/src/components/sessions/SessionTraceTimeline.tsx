@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Badge, Card, Table } from 'react-bootstrap';
+import { Badge, Card, Table } from '../ui/tailwind-components';
 
 import type { SessionTraceSpan } from '../../api/sessions';
 import { formatTraceDuration, formatTraceTime, getTraceStatusVariant } from '../../lib/traceFormat';

@@ -103,6 +103,12 @@ public final class ContextAttributes {
      */
     public static final String MODEL_TIER_REASONING = "model.tier.reasoning";
 
+    /** String - session-scoped default model tier for this conversation. */
+    public static final String SESSION_MODEL_TIER = "session.modelTier";
+
+    /** Boolean - session-scoped lock for the selected model tier. */
+    public static final String SESSION_MODEL_TIER_FORCE = "session.modelTier.force";
+
     /** Boolean — plan mode is active for the current session. */
     public static final String PLAN_MODE_ACTIVE = "plan.mode.active";
 
@@ -222,6 +228,21 @@ public final class ContextAttributes {
 
     /** String ? webhook delivery target chat identifier. */
     public static final String WEBHOOK_DELIVER_TO = "webhook.deliver.to";
+
+    /** String - explicit model tier requested by a webhook agent run. */
+    public static final String WEBHOOK_MODEL_TIER = "webhook.modelTier";
+
+    /** String - memory preset id applied to the current turn. */
+    public static final String MEMORY_PRESET_ID = "memory.presetId";
+
+    /** Map<String,Object> ? JSON Schema required for webhook response payloads. */
+    public static final String WEBHOOK_RESPONSE_JSON_SCHEMA = "webhook.response.jsonSchema";
+
+    /** String ? rendered JSON Schema text for webhook prompt assembly. */
+    public static final String WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT = "webhook.response.jsonSchemaText";
+
+    /** String ? model tier used for webhook response schema repair calls. */
+    public static final String WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER = "webhook.response.validationModelTier";
 
     /**
      * String ? transport chat id used for outbound delivery (for example Telegram

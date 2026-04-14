@@ -3,12 +3,21 @@ package me.golemcore.bot.adapter.outbound.hive;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
+import me.golemcore.bot.domain.model.hive.HiveCardDetail;
+import me.golemcore.bot.domain.model.hive.HiveCardSearchRequest;
+import me.golemcore.bot.domain.model.hive.HiveCardSummary;
+import me.golemcore.bot.domain.model.hive.HiveCreateCardRequest;
 import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;
 import me.golemcore.bot.domain.model.hive.HivePolicyPackage;
+import me.golemcore.bot.domain.model.hive.HiveRequestReviewRequest;
+import me.golemcore.bot.domain.model.hive.HiveThreadMessage;
 import me.golemcore.bot.domain.service.HiveJoinCodeParser;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -68,7 +77,8 @@ public class HiveApiClient {
             Integer targetPolicyVersion,
             Integer appliedPolicyVersion,
             String syncStatus,
-            String lastPolicyErrorDigest) {
+            String lastPolicyErrorDigest,
+            String dashboardBaseUrl) {
         HeartbeatRequest request = new HeartbeatRequest(
                 status,
                 null,
@@ -87,7 +97,8 @@ public class HiveApiClient {
                 targetPolicyVersion,
                 appliedPolicyVersion,
                 syncStatus,
-                lastPolicyErrorDigest);
+                lastPolicyErrorDigest,
+                dashboardBaseUrl);
         postJson(serverUrl,
                 "/api/v1/golems/" + golemId + "/heartbeat",
                 request,
@@ -119,16 +130,86 @@ public class HiveApiClient {
                 HivePolicyApplyResult.class);
     }
 
+    public OAuth2TokenResponse exchangeSsoCode(
+            String serverUrl,
+            String code,
+            String clientId,
+            String redirectUri,
+            String codeVerifier) {
+        return postJson(
+                serverUrl,
+                "/api/v1/oauth2/token",
+                new OAuth2TokenRequest(code, clientId, redirectUri, codeVerifier),
+                null,
+                OAuth2TokenResponse.class);
+    }
+
     public void publishEventsBatch(
             String serverUrl,
             String golemId,
             String accessToken,
             List<HiveEventPayload> events) {
         postJson(serverUrl,
-                "/api/v1/golems/" + golemId + "/events:batch",
+                "/api/v1/golems/" + encodePathSegment(golemId) + "/events:batch",
                 new HiveEventBatchRequest(HIVE_EVENT_SCHEMA_VERSION, golemId, events),
                 accessToken,
                 JsonNode.class);
+    }
+
+    public HiveCardDetail getCard(String serverUrl, String golemId, String accessToken, String cardId) {
+        return getJson(serverUrl,
+                "/api/v1/golems/" + encodePathSegment(golemId) + "/sdlc/cards/" + encodePathSegment(cardId),
+                accessToken,
+                HiveCardDetail.class);
+    }
+
+    public List<HiveCardSummary> searchCards(
+            String serverUrl,
+            String golemId,
+            String accessToken,
+            HiveCardSearchRequest request) {
+        HiveCardSummary[] response = getJson(serverUrl,
+                "/api/v1/golems/" + encodePathSegment(golemId) + "/sdlc/cards" + buildCardSearchQuery(request),
+                accessToken,
+                HiveCardSummary[].class);
+        return response != null ? List.of(response) : List.of();
+    }
+
+    public HiveCardDetail createCard(String serverUrl, String golemId, String accessToken,
+            HiveCreateCardRequest request) {
+        return postJson(serverUrl,
+                "/api/v1/golems/" + encodePathSegment(golemId) + "/sdlc/cards",
+                request,
+                accessToken,
+                HiveCardDetail.class);
+    }
+
+    public HiveThreadMessage postThreadMessage(
+            String serverUrl,
+            String golemId,
+            String accessToken,
+            String threadId,
+            String body) {
+        return postJson(serverUrl,
+                "/api/v1/golems/" + encodePathSegment(golemId) + "/sdlc/threads/" + encodePathSegment(threadId)
+                        + "/messages",
+                new ThreadMessageRequest(body),
+                accessToken,
+                HiveThreadMessage.class);
+    }
+
+    public HiveCardDetail requestReview(
+            String serverUrl,
+            String golemId,
+            String accessToken,
+            String cardId,
+            HiveRequestReviewRequest request) {
+        return postJson(serverUrl,
+                "/api/v1/golems/" + encodePathSegment(golemId) + "/sdlc/cards/" + encodePathSegment(cardId)
+                        + ":request-review",
+                request,
+                accessToken,
+                HiveCardDetail.class);
     }
 
     private <T> T postJson(
@@ -188,6 +269,40 @@ public class HiveApiClient {
         }
     }
 
+    private String buildCardSearchQuery(HiveCardSearchRequest request) {
+        if (request == null) {
+            return "?includeArchived=false";
+        }
+        List<String> queryParts = new ArrayList<>();
+        appendQueryParam(queryParts, "serviceId", request.serviceId());
+        appendQueryParam(queryParts, "boardId", request.boardId());
+        appendQueryParam(queryParts, "kind", request.kind());
+        appendQueryParam(queryParts, "parentCardId", request.parentCardId());
+        appendQueryParam(queryParts, "epicCardId", request.epicCardId());
+        appendQueryParam(queryParts, "reviewOfCardId", request.reviewOfCardId());
+        appendQueryParam(queryParts, "objectiveId", request.objectiveId());
+        appendQueryParam(queryParts, "includeArchived", Boolean.toString(request.includeArchived()));
+        return queryParts.isEmpty() ? "" : "?" + String.join("&", queryParts);
+    }
+
+    private void appendQueryParam(List<String> queryParts, String name, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        queryParts.add(encodeQueryParam(name) + "=" + encodeQueryParam(value));
+    }
+
+    private String encodePathSegment(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Hive API path segment is required");
+        }
+        return encodeQueryParam(value.trim()).replace("+", "%20");
+    }
+
+    private String encodeQueryParam(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
     private String extractMessage(String responseBody) {
         if (responseBody == null || responseBody.isBlank()) {
             return "Hive API request failed";
@@ -197,6 +312,10 @@ public class HiveApiClient {
             JsonNode message = root.path("message");
             if (message.isTextual() && !message.asText().isBlank()) {
                 return message.asText();
+            }
+            JsonNode error = root.path("error");
+            if (error.isTextual() && !error.asText().isBlank()) {
+                return error.asText();
             }
         } catch (IOException ignored) {
             // Fall back to the raw response body.
@@ -217,6 +336,21 @@ public class HiveApiClient {
     private record RefreshTokenRequest(String refreshToken) {
     }
 
+    private record OAuth2TokenRequest(String code, String clientId, String redirectUri, String codeVerifier) {
+    }
+
+    public record OperatorResponse(String id, String username, String displayName, List<String> roles) {
+    }
+
+    public record LoginResponse(String accessToken, OperatorResponse operator) {
+    }
+
+    public record OAuth2TokenResponse(LoginResponse login, String code) {
+    }
+
+    private record ThreadMessageRequest(String body) {
+    }
+
     private record HeartbeatRequest(
             String status,
             String currentRunState,
@@ -235,7 +369,8 @@ public class HiveApiClient {
             Integer targetPolicyVersion,
             Integer appliedPolicyVersion,
             String syncStatus,
-            String lastPolicyErrorDigest) {
+            String lastPolicyErrorDigest,
+            String dashboardBaseUrl) {
     }
 
     private record PolicyApplyResultRequest(

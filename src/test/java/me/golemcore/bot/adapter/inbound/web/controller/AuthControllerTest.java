@@ -1,7 +1,9 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.domain.model.AdminCredentials;
+import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
 import me.golemcore.bot.domain.service.DashboardAuthService;
+import me.golemcore.bot.domain.service.HiveSsoService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -29,12 +31,14 @@ import java.util.Map;
 class AuthControllerTest {
 
     private DashboardAuthService authService;
+    private HiveSsoService hiveSsoService;
     private AuthController controller;
 
     @BeforeEach
     void setUp() {
         authService = mock(DashboardAuthService.class);
-        controller = new AuthController(authService);
+        hiveSsoService = mock(HiveSsoService.class);
+        controller = new AuthController(authService, hiveSsoService);
     }
 
     @Test
@@ -59,6 +63,50 @@ class AuthControllerTest {
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertTrue(response.getBody().isMfaRequired());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnHiveSsoStatus() {
+        when(hiveSsoService.getStatus()).thenReturn(new HiveSsoService.HiveSsoStatus(
+                true,
+                true,
+                "https://hive.example.com/api/v1/oauth2/authorize",
+                null));
+
+        StepVerifier.create(controller.hiveSsoStatus())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertTrue(response.getBody().isAvailable());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExchangeHiveSsoCode() {
+        HiveSsoTokenResponse tokenResponse = new HiveSsoTokenResponse(
+                "hive-access",
+                "admin",
+                "Hive Admin",
+                java.util.List.of("ADMIN"));
+        DashboardAuthService.TokenPair tokens = DashboardAuthService.TokenPair.builder()
+                .accessToken("local-access")
+                .refreshToken("local-refresh")
+                .build();
+        when(hiveSsoService.exchange("code-1", "verifier-1")).thenReturn(tokenResponse);
+        when(authService.authenticateHiveSso(tokenResponse)).thenReturn(tokens);
+
+        me.golemcore.bot.adapter.inbound.web.dto.HiveSsoExchangeRequest request = new me.golemcore.bot.adapter.inbound.web.dto.HiveSsoExchangeRequest();
+        request.setCode("code-1");
+        request.setCodeVerifier("verifier-1");
+
+        StepVerifier.create(controller.exchangeHiveSso(request))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("local-access", response.getBody().getAccessToken());
                 })
                 .verifyComplete();
     }

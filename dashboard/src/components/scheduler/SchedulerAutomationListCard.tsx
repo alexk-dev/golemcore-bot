@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Badge, Button, Card } from 'react-bootstrap';
+import { Badge, Button, Card } from '../ui/tailwind-components';
 import type { Goal, GoalTask } from '../../api/goals';
 import { getGoalAnchorId, getTaskAnchorId } from './automationLinks';
 

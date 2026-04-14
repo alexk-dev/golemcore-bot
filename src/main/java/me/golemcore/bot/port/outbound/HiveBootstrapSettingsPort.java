@@ -11,4 +11,8 @@ public interface HiveBootstrapSettingsPort {
     String displayName();
 
     String hostLabel();
+
+    String dashboardBaseUrl();
+
+    Boolean ssoEnabled();
 }

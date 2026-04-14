@@ -1,5 +1,5 @@
 import type { Dispatch, ReactElement, SetStateAction } from 'react';
-import { Col, Form, Row } from 'react-bootstrap';
+import { Col, Form, Row } from '../../../components/ui/tailwind-components';
 
 import type { SelfEvolvingConfig } from '../../../api/settingsTypes';
 import HelpTip from '../../../components/common/HelpTip';

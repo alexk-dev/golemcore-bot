@@ -952,10 +952,37 @@ public class RuntimeConfig {
         private String serverUrl;
         private String displayName;
         private String hostLabel;
+        private String dashboardBaseUrl;
+        @Builder.Default
+        private Boolean ssoEnabled = true;
         @Builder.Default
         private Boolean autoConnect = false;
         @Builder.Default
         private Boolean managedByProperties = false;
+        @Builder.Default
+        private HiveSdlcConfig sdlc = new HiveSdlcConfig();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class HiveSdlcConfig {
+        @Builder.Default
+        private Boolean currentContextEnabled = true;
+        @Builder.Default
+        private Boolean cardReadEnabled = true;
+        @Builder.Default
+        private Boolean cardSearchEnabled = true;
+        @Builder.Default
+        private Boolean threadMessageEnabled = true;
+        @Builder.Default
+        private Boolean reviewRequestEnabled = true;
+        @Builder.Default
+        private Boolean followupCardCreateEnabled = true;
+        @Builder.Default
+        private Boolean lifecycleSignalEnabled = true;
     }
 
     @Data

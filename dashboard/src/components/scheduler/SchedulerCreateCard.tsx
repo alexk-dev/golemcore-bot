@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button, Card } from 'react-bootstrap';
+import { Button, Card } from '../ui/tailwind-components';
 import type { SchedulerGoal, SchedulerTask, SchedulerTargetType } from '../../api/scheduler';
 import type {
   SchedulerFrequency,

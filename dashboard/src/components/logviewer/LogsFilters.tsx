@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
+import { Button, Card, Col, Form, InputGroup, Row } from '../ui/tailwind-components';
 import { LOG_LEVELS } from './logConstants';
 import { levelVariant } from './logUtils';
 import type { LogLevelFilter, LogLevel } from './logTypes';

@@ -17,7 +17,7 @@ import {
   type ExplicitModelTierId,
 } from '../../lib/modelTiers';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
-import { Badge, Button, Card, Col, Form, Row } from '../../lib/react-bootstrap';
+import { Badge, Button, Card, Col, Form, Row } from '../../components/ui/tailwind-components';
 import { HiveManagedPolicyNotice } from './HiveManagedPolicyNotice';
 import { getHiveManagedPolicyDetails } from './hiveManagedPolicySupport';
 

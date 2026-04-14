@@ -1,5 +1,5 @@
 import type { ReactElement, RefObject } from 'react';
-import { Card, Col, Row } from 'react-bootstrap';
+import { Card, Col, Row } from '../ui/tailwind-components';
 import type {
   SchedulerRunDetail,
   SchedulerRunSummary,

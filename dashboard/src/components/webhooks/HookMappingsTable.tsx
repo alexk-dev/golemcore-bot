@@ -1,4 +1,4 @@
-import { Badge, Button, Card } from 'react-bootstrap';
+import { Badge, Button, Card } from '../ui/tailwind-components';
 import type { HookMapping } from '../../api/webhooks';
 import { createAbsoluteHookUrl } from './webhookConfigUtils';
 import { HOOK_TEMPLATE_EXAMPLES, HOOK_TEMPLATE_PATH_HINT } from './hookTemplateExamples';

@@ -26,8 +26,12 @@ import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.MemoryPack;
+import me.golemcore.bot.domain.model.MemoryPreset;
+import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.MemoryScopeSupport;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 
@@ -49,6 +53,7 @@ public class MemoryLayer implements ContextLayer {
 
     private final MemoryComponent memoryComponent;
     private final RuntimeConfigService runtimeConfigService;
+    private final MemoryPresetService memoryPresetService;
 
     @Override
     public String getName() {
@@ -62,11 +67,17 @@ public class MemoryLayer implements ContextLayer {
 
     @Override
     public boolean appliesTo(AgentContext context) {
-        return true;
+        return !isMemoryDisabled(context);
     }
 
     @Override
     public ContextLayerResult assemble(AgentContext context) {
+        if (isMemoryDisabled(context)) {
+            context.setMemoryContext("");
+            return ContextLayerResult.empty(getName());
+        }
+        RuntimeConfig.MemoryConfig memoryConfig = resolveMemoryPresetConfig(context);
+
         String userQuery = getLastUserMessageText(context);
         String sessionScope = MemoryScopeSupport.resolveScopeFromSessionOrGlobal(
                 context.getSession());
@@ -84,12 +95,12 @@ public class MemoryLayer implements ContextLayer {
                         : null)
                 .scope(sessionScope)
                 .scopeChain(scopeChain)
-                .softPromptBudgetTokens(runtimeConfigService.getMemorySoftPromptBudgetTokens())
-                .maxPromptBudgetTokens(runtimeConfigService.getMemoryMaxPromptBudgetTokens())
-                .workingTopK(runtimeConfigService.getMemoryWorkingTopK())
-                .episodicTopK(runtimeConfigService.getMemoryEpisodicTopK())
-                .semanticTopK(runtimeConfigService.getMemorySemanticTopK())
-                .proceduralTopK(runtimeConfigService.getMemoryProceduralTopK())
+                .softPromptBudgetTokens(resolveSoftPromptBudget(memoryConfig))
+                .maxPromptBudgetTokens(resolveMaxPromptBudget(memoryConfig))
+                .workingTopK(resolveWorkingTopK(memoryConfig))
+                .episodicTopK(resolveEpisodicTopK(memoryConfig))
+                .semanticTopK(resolveSemanticTopK(memoryConfig))
+                .proceduralTopK(resolveProceduralTopK(memoryConfig))
                 .build();
 
         String memoryContext = "";
@@ -131,5 +142,66 @@ public class MemoryLayer implements ContextLayer {
             }
         }
         return null;
+    }
+
+    private boolean isMemoryDisabled(AgentContext context) {
+        RuntimeConfig.MemoryConfig memoryConfig = resolveMemoryPresetConfig(context);
+        if (memoryConfig != null) {
+            return Boolean.FALSE.equals(memoryConfig.getEnabled());
+        }
+        String memoryPreset = context != null ? context.getAttribute(ContextAttributes.MEMORY_PRESET_ID) : null;
+        return memoryPreset != null && MemoryPresetIds.DISABLED.equalsIgnoreCase(memoryPreset.trim());
+    }
+
+    private RuntimeConfig.MemoryConfig resolveMemoryPresetConfig(AgentContext context) {
+        String memoryPreset = context != null ? context.getAttribute(ContextAttributes.MEMORY_PRESET_ID) : null;
+        if (memoryPreset == null || memoryPreset.isBlank()) {
+            return null;
+        }
+        return memoryPresetService.findById(memoryPreset)
+                .map(MemoryPreset::getMemory)
+                .orElse(null);
+    }
+
+    private int resolveSoftPromptBudget(RuntimeConfig.MemoryConfig memoryConfig) {
+        if (memoryConfig != null && memoryConfig.getSoftPromptBudgetTokens() != null) {
+            return memoryConfig.getSoftPromptBudgetTokens();
+        }
+        return runtimeConfigService.getMemorySoftPromptBudgetTokens();
+    }
+
+    private int resolveMaxPromptBudget(RuntimeConfig.MemoryConfig memoryConfig) {
+        if (memoryConfig != null && memoryConfig.getMaxPromptBudgetTokens() != null) {
+            return memoryConfig.getMaxPromptBudgetTokens();
+        }
+        return runtimeConfigService.getMemoryMaxPromptBudgetTokens();
+    }
+
+    private int resolveWorkingTopK(RuntimeConfig.MemoryConfig memoryConfig) {
+        if (memoryConfig != null && memoryConfig.getWorkingTopK() != null) {
+            return memoryConfig.getWorkingTopK();
+        }
+        return runtimeConfigService.getMemoryWorkingTopK();
+    }
+
+    private int resolveEpisodicTopK(RuntimeConfig.MemoryConfig memoryConfig) {
+        if (memoryConfig != null && memoryConfig.getEpisodicTopK() != null) {
+            return memoryConfig.getEpisodicTopK();
+        }
+        return runtimeConfigService.getMemoryEpisodicTopK();
+    }
+
+    private int resolveSemanticTopK(RuntimeConfig.MemoryConfig memoryConfig) {
+        if (memoryConfig != null && memoryConfig.getSemanticTopK() != null) {
+            return memoryConfig.getSemanticTopK();
+        }
+        return runtimeConfigService.getMemorySemanticTopK();
+    }
+
+    private int resolveProceduralTopK(RuntimeConfig.MemoryConfig memoryConfig) {
+        if (memoryConfig != null && memoryConfig.getProceduralTopK() != null) {
+            return memoryConfig.getProceduralTopK();
+        }
+        return runtimeConfigService.getMemoryProceduralTopK();
     }
 }

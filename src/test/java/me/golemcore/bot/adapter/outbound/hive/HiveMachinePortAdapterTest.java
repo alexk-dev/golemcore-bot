@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anySet;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -159,7 +159,8 @@ class HiveMachinePortAdapterTest {
                 4,
                 3,
                 "OUT_OF_SYNC",
-                "provider-missing");
+                "provider-missing",
+                "https://bot.example.com/dashboard");
 
         verify(hiveApiClient).heartbeat(
                 "https://hive.example.com",
@@ -174,7 +175,8 @@ class HiveMachinePortAdapterTest {
                 4,
                 3,
                 "OUT_OF_SYNC",
-                "provider-missing");
+                "provider-missing",
+                "https://bot.example.com/dashboard");
     }
 
     @Test
@@ -193,7 +195,8 @@ class HiveMachinePortAdapterTest {
                 eq(4),
                 eq(3),
                 eq("OUT_OF_SYNC"),
-                eq("provider-missing"));
+                eq("provider-missing"),
+                eq("https://bot.example.com/dashboard"));
 
         HiveMachinePort.HiveMachineException exception = assertThrows(
                 HiveMachinePort.HiveMachineException.class,
@@ -210,7 +213,8 @@ class HiveMachinePortAdapterTest {
                         4,
                         3,
                         "OUT_OF_SYNC",
-                        "provider-missing"));
+                        "provider-missing",
+                        "https://bot.example.com/dashboard"));
 
         assertEquals(500, exception.getStatusCode());
         assertSame(cause, exception.getCause());

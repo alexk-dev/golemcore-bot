@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react';
-import { Alert, Badge, Button, ButtonGroup, Card, Spinner } from 'react-bootstrap';
+import { Alert, Badge, Button, ButtonGroup, Card, Spinner } from '../ui/tailwind-components';
 
 import type { MessageInfo, SessionTrace, SessionTraceSummary, SessionTraceSummaryItem } from '../../api/sessions';
 import { formatTraceBytes, formatTraceDuration, formatTraceTimestamp, getTraceStatusVariant } from '../../lib/traceFormat';

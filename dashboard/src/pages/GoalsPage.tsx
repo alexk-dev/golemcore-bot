@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useState } from 'react';
-import { Button, Card, Spinner } from 'react-bootstrap';
+import { Button, Card, Spinner } from '../components/ui/tailwind-components';
 import { useNavigate } from 'react-router-dom';
 import type { Goal, GoalTask } from '../api/goals';
 import { GoalsWorkspace } from '../components/scheduler/GoalsWorkspace';

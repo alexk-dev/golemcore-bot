@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Form } from 'react-bootstrap';
+import { Form } from '../../components/ui/tailwind-components';
 
 import type { SystemUpdateStatusResponse } from '../../api/system';
 import { isValidTimeInput, normalizeIntervalValue, type UpdateSettingsFormState } from './updateSettingsUtils';

@@ -1,9 +1,17 @@
 package me.golemcore.bot.adapter.outbound.hive;
 
+import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.hive.HiveAuthSession;
 import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
+import me.golemcore.bot.domain.model.hive.HiveCardDetail;
+import me.golemcore.bot.domain.model.hive.HiveCardSearchRequest;
+import me.golemcore.bot.domain.model.hive.HiveCardSummary;
+import me.golemcore.bot.domain.model.hive.HiveCreateCardRequest;
+import me.golemcore.bot.domain.model.hive.HiveRequestReviewRequest;
+import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
+import me.golemcore.bot.domain.model.hive.HiveThreadMessage;
 import me.golemcore.bot.port.outbound.HiveGatewayPort;
 import org.springframework.stereotype.Component;
 
@@ -46,7 +54,8 @@ public class HiveGatewayAdapter implements HiveGatewayPort {
             String status,
             String healthSummary,
             String lastErrorSummary,
-            Long uptimeSeconds) {
+            Long uptimeSeconds,
+            String dashboardBaseUrl) {
         hiveApiClient.heartbeat(
                 serverUrl,
                 golemId,
@@ -60,7 +69,59 @@ public class HiveGatewayAdapter implements HiveGatewayPort {
                 null,
                 null,
                 null,
-                null);
+                null,
+                dashboardBaseUrl);
+    }
+
+    @Override
+    public HiveSsoTokenResponse exchangeSsoCode(
+            String serverUrl,
+            String code,
+            String clientId,
+            String redirectUri,
+            String codeVerifier) {
+        HiveApiClient.OAuth2TokenResponse response = hiveApiClient.exchangeSsoCode(
+                serverUrl,
+                code,
+                clientId,
+                redirectUri,
+                codeVerifier);
+        HiveApiClient.LoginResponse login = response.login();
+        HiveApiClient.OperatorResponse operator = login.operator();
+        return new HiveSsoTokenResponse(
+                login.accessToken(),
+                operator.username(),
+                operator.displayName(),
+                operator.roles());
+    }
+
+    @Override
+    public HiveCardDetail getCard(String serverUrl, String golemId, String accessToken, String cardId) {
+        return hiveApiClient.getCard(serverUrl, golemId, accessToken, cardId);
+    }
+
+    @Override
+    public List<HiveCardSummary> searchCards(String serverUrl, String golemId, String accessToken,
+            HiveCardSearchRequest request) {
+        return hiveApiClient.searchCards(serverUrl, golemId, accessToken, request);
+    }
+
+    @Override
+    public HiveCardDetail createCard(String serverUrl, String golemId, String accessToken,
+            HiveCreateCardRequest request) {
+        return hiveApiClient.createCard(serverUrl, golemId, accessToken, request);
+    }
+
+    @Override
+    public HiveThreadMessage postThreadMessage(String serverUrl, String golemId, String accessToken, String threadId,
+            String body) {
+        return hiveApiClient.postThreadMessage(serverUrl, golemId, accessToken, threadId, body);
+    }
+
+    @Override
+    public HiveCardDetail requestReview(String serverUrl, String golemId, String accessToken, String cardId,
+            HiveRequestReviewRequest request) {
+        return hiveApiClient.requestReview(serverUrl, golemId, accessToken, cardId, request);
     }
 
     @Override

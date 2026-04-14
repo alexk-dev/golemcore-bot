@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { ProgressBar, Spinner } from 'react-bootstrap';
+import { ProgressBar, Spinner } from '../../../components/ui/tailwind-components';
 
 interface SelfEvolvingEmbeddingInstallModalProps {
   show: boolean;

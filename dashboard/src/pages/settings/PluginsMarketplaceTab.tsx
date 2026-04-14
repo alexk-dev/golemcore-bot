@@ -8,7 +8,7 @@ import {
   InputGroup,
   Row,
   Spinner,
-} from 'react-bootstrap';
+} from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 import {
   FiPackage,

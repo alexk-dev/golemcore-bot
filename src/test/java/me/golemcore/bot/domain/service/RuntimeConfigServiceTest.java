@@ -1538,6 +1538,61 @@ class RuntimeConfigServiceTest {
         assertTrue(service.getHiveConfig().getEnabled());
         assertEquals("https://hive.example.com", service.getHiveConfig().getServerUrl());
         assertTrue(service.isHiveManagedByProperties());
+        assertTrue(service.isHiveSdlcCurrentContextEnabled());
+        assertTrue(service.isHiveSdlcCardReadEnabled());
+        assertTrue(service.isHiveSdlcCardSearchEnabled());
+        assertTrue(service.isHiveSdlcThreadMessageEnabled());
+        assertTrue(service.isHiveSdlcReviewRequestEnabled());
+        assertTrue(service.isHiveSdlcFollowupCardCreateEnabled());
+        assertTrue(service.isHiveSdlcLifecycleSignalEnabled());
+    }
+
+    @Test
+    void shouldDisableHiveSdlcFunctionsWhenHiveIsDisabled() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getHive().setEnabled(false);
+        config.getHive().setSdlc(RuntimeConfig.HiveSdlcConfig.builder()
+                .currentContextEnabled(true)
+                .cardReadEnabled(true)
+                .cardSearchEnabled(true)
+                .threadMessageEnabled(true)
+                .reviewRequestEnabled(true)
+                .followupCardCreateEnabled(true)
+                .lifecycleSignalEnabled(true)
+                .build());
+        service.updateRuntimeConfig(config);
+
+        assertFalse(service.isHiveSdlcCurrentContextEnabled());
+        assertFalse(service.isHiveSdlcCardReadEnabled());
+        assertFalse(service.isHiveSdlcCardSearchEnabled());
+        assertFalse(service.isHiveSdlcThreadMessageEnabled());
+        assertFalse(service.isHiveSdlcReviewRequestEnabled());
+        assertFalse(service.isHiveSdlcFollowupCardCreateEnabled());
+        assertFalse(service.isHiveSdlcLifecycleSignalEnabled());
+    }
+
+    @Test
+    void shouldRespectDisabledHiveSdlcFunctionTogglesWhenHiveIsEnabled() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getHive().setEnabled(true);
+        config.getHive().setSdlc(RuntimeConfig.HiveSdlcConfig.builder()
+                .currentContextEnabled(false)
+                .cardReadEnabled(false)
+                .cardSearchEnabled(false)
+                .threadMessageEnabled(false)
+                .reviewRequestEnabled(false)
+                .followupCardCreateEnabled(false)
+                .lifecycleSignalEnabled(false)
+                .build());
+        service.updateRuntimeConfig(config);
+
+        assertFalse(service.isHiveSdlcCurrentContextEnabled());
+        assertFalse(service.isHiveSdlcCardReadEnabled());
+        assertFalse(service.isHiveSdlcCardSearchEnabled());
+        assertFalse(service.isHiveSdlcThreadMessageEnabled());
+        assertFalse(service.isHiveSdlcReviewRequestEnabled());
+        assertFalse(service.isHiveSdlcFollowupCardCreateEnabled());
+        assertFalse(service.isHiveSdlcLifecycleSignalEnabled());
     }
 
     // ==================== Section Validation ====================

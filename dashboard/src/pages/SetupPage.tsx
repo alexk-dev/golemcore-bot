@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert, Badge, Button, Card, Spinner } from 'react-bootstrap';
+import { Alert, Badge, Button, Card, Spinner } from '../components/ui/tailwind-components';
 import { useNavigate } from 'react-router-dom';
 import { useRuntimeConfig } from '../hooks/useSettings';
 import { extractErrorMessage } from '../utils/extractErrorMessage';

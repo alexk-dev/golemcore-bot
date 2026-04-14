@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Row, Spinner } from 'react-bootstrap';
+import { Button, Card, Col, Row, Spinner } from '../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { SaveStateHint, SettingsSaveBar } from '../components/common/SettingsSaveBar';
@@ -25,7 +25,7 @@ import {
   type WebhookConfig,
   validateWebhookConfig,
 } from '../api/webhooks';
-import { useRuntimeConfig } from '../hooks/useSettings';
+import { useMemoryPresets, useRuntimeConfig } from '../hooks/useSettings';
 import { useSystemChannels } from '../hooks/useSystem';
 import { useUpdateWebhookConfig, useWebhookConfig } from '../hooks/useWebhooks';
 import { filterAndSortChannels, resolveLinkedTelegramUserId } from '../utils/channelUtils';
@@ -67,6 +67,7 @@ function ErrorState({ onRetry }: ErrorStateProps): ReactElement {
 export default function WebhooksPage(): ReactElement {
   const webhookConfigQuery = useWebhookConfig();
   const runtimeConfigQuery = useRuntimeConfig();
+  const memoryPresetsQuery = useMemoryPresets();
   const systemChannelsQuery = useSystemChannels();
   const updateWebhookConfigMutation = useUpdateWebhookConfig();
 
@@ -153,6 +154,8 @@ export default function WebhooksPage(): ReactElement {
             form={form}
             onChange={setForm}
             showToken={showWebhookToken}
+            memoryPresets={memoryPresetsQuery.data ?? []}
+            memoryPresetsLoading={memoryPresetsQuery.isLoading}
             onToggleShowToken={() => setShowWebhookToken((current) => !current)}
           />
         </Col>

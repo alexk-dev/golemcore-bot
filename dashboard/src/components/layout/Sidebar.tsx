@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Badge, Nav } from 'react-bootstrap';
+import { Badge, Nav } from '../ui/tailwind-components';
 import {
   FiActivity,
   FiBarChart2,

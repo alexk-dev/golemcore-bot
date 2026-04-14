@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Alert, Button, Card, Spinner } from 'react-bootstrap';
+import { Alert, Button, Card, Spinner } from '../../components/ui/tailwind-components';
 
 import type { SystemUpdateConfigResponse, SystemUpdateStatusResponse } from '../../api/system';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
