@@ -473,7 +473,7 @@ class FilesControllerTest {
     @Test
     void shouldUploadFileIntoWorkspaceDirectory() {
         FilePart filePart = mock(FilePart.class);
-        org.springframework.core.io.buffer.DefaultDataBufferFactory bufferFactory = new DefaultDataBufferFactory();
+        DefaultDataBufferFactory bufferFactory = new DefaultDataBufferFactory();
         when(filePart.filename()).thenReturn("notes.txt");
         when(filePart.content()).thenReturn(Flux.just(bufferFactory.wrap("uploaded".getBytes(StandardCharsets.UTF_8))));
 

@@ -52,7 +52,7 @@ final class DashboardFileMetadataSupport {
         String normalized = filename.trim().replace("\\", "/");
         int slashIndex = normalized.lastIndexOf('/');
         String leafName = slashIndex >= 0 ? normalized.substring(slashIndex + 1) : normalized;
-        if (leafName.isBlank() || leafName.equals(".") || leafName.equals("..")) {
+        if (leafName.isBlank() || ".".equals(leafName) || "..".equals(leafName)) {
             throw new IllegalArgumentException("Filename is required");
         }
         return leafName;
