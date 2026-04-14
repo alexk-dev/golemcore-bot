@@ -8,7 +8,6 @@ import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.net.URLEncoder;
 import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -17,16 +16,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class DashboardFileService {
 
-    private static final long MAX_EDITABLE_FILE_SIZE = 1024L * 1024L * 2L;
     private static final int DEFAULT_TREE_DEPTH = Integer.MAX_VALUE;
-    private static final Set<String> DEFAULT_IGNORED_DIRECTORIES = Set.of(
-            ".git", ".gradle", ".idea", "build", "dist", "node_modules", "target");
 
     private final WorkspacePathService workspacePathService;
     private final WorkspaceFilePort workspaceFilePort;
@@ -63,12 +58,12 @@ public class DashboardFileService {
 
         try {
             long size = workspaceFilePort.size(path);
-            String mimeType = resolveMimeType(path, null);
-            boolean image = isImageMimeType(mimeType);
-            if (size > MAX_EDITABLE_FILE_SIZE && isTextLikeFile(path, mimeType)) {
+            String mimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, null);
+            boolean image = DashboardFileMetadataSupport.isImageMimeType(mimeType);
+            if (DashboardFileMetadataSupport.shouldRejectEditableFileSize(workspacePathService, path, mimeType, size)) {
                 throw new IllegalArgumentException("File too large for editor (max 2 MB)");
             }
-            boolean editable = isEditableFile(path, mimeType, size);
+            boolean editable = DashboardFileMetadataSupport.isEditableFile(workspacePathService, path, mimeType, size);
             String updatedAt = workspaceFilePort.getLastModifiedTime(path);
             if (!editable) {
                 return buildContent(path, null, size, updatedAt, mimeType, true, image, false);
@@ -136,7 +131,7 @@ public class DashboardFileService {
             throw new IllegalArgumentException("File data is required");
         }
 
-        String safeFilename = sanitizeFilename(filename);
+        String safeFilename = DashboardFileMetadataSupport.sanitizeFilename(filename);
         String basePath = targetDirectory == null ? "" : targetDirectory.trim();
         String relativePath = basePath.isBlank() ? safeFilename : basePath + "/" + safeFilename;
         Path path = resolveSafePath(relativePath);
@@ -146,9 +141,11 @@ public class DashboardFileService {
                 workspaceFilePort.createDirectories(parent);
             }
             workspaceFilePort.write(path, data);
-            String resolvedMimeType = resolveMimeType(path, mimeType);
-            boolean image = isImageMimeType(resolvedMimeType);
-            boolean editable = isEditableFile(path, resolvedMimeType, data.length);
+            String resolvedMimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path,
+                    mimeType);
+            boolean image = DashboardFileMetadataSupport.isImageMimeType(resolvedMimeType);
+            boolean editable = DashboardFileMetadataSupport.isEditableFile(workspacePathService, path, resolvedMimeType,
+                    data.length);
             String content = editable ? new String(data, StandardCharsets.UTF_8) : null;
             return buildContent(path, content, data.length, Instant.now().toString(), resolvedMimeType,
                     !editable, image, editable);
@@ -175,7 +172,7 @@ public class DashboardFileService {
             return ToolArtifactDownload.builder()
                     .path(toRelativePath(path))
                     .filename(requireFileName(path))
-                    .mimeType(resolveMimeType(path, null))
+                    .mimeType(DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, null))
                     .size(data.length)
                     .data(data)
                     .build();
@@ -242,7 +239,7 @@ public class DashboardFileService {
 
     private DashboardFileContent buildSavedTextContent(Path path, String content) throws IOException {
         long size = workspaceFilePort.size(path);
-        String mimeType = resolveMimeType(path, null);
+        String mimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, null);
         return buildContent(path, content, size, Instant.now().toString(), mimeType, false, false, true);
     }
 
@@ -264,7 +261,7 @@ public class DashboardFileService {
                 .binary(binary)
                 .image(image)
                 .editable(editable)
-                .downloadUrl(buildDownloadUrl(toRelativePath(path)))
+                .downloadUrl(DashboardFileMetadataSupport.buildDownloadUrl(toRelativePath(path)))
                 .build();
     }
 
@@ -283,7 +280,8 @@ public class DashboardFileService {
         try {
             List<Path> sorted = workspaceFilePort.list(dir).stream()
                     .filter(path -> !workspaceFilePort.isSymbolicLink(path))
-                    .filter(path -> includeIgnored || !isIgnoredDirectory(path))
+                    .filter(path -> includeIgnored || !DashboardFileMetadataSupport
+                            .isIgnoredDirectory(workspaceFilePort, workspacePathService, path))
                     .sorted(Comparator
                             .comparing((Path p) -> !workspaceFilePort.isDirectory(p))
                             .thenComparing(p -> requireFileName(p).toLowerCase(Locale.ROOT)))
@@ -320,9 +318,9 @@ public class DashboardFileService {
 
     private DashboardFileNode buildFileNode(Path path) throws IOException {
         long size = workspaceFilePort.size(path);
-        String mimeType = resolveMimeType(path, null);
-        boolean image = isImageMimeType(mimeType);
-        boolean editable = isEditableFile(path, mimeType, size);
+        String mimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, null);
+        boolean image = DashboardFileMetadataSupport.isImageMimeType(mimeType);
+        boolean editable = DashboardFileMetadataSupport.isEditableFile(workspacePathService, path, mimeType, size);
         return DashboardFileNode.builder()
                 .path(toRelativePath(path))
                 .name(requireFileName(path))
@@ -341,87 +339,8 @@ public class DashboardFileService {
     private boolean hasVisibleChildren(Path directory, boolean includeIgnored) throws IOException {
         return workspaceFilePort.list(directory).stream()
                 .filter(path -> !workspaceFilePort.isSymbolicLink(path))
-                .anyMatch(path -> includeIgnored || !isIgnoredDirectory(path));
-    }
-
-    private boolean isIgnoredDirectory(Path path) {
-        return workspaceFilePort.isDirectory(path)
-                && DEFAULT_IGNORED_DIRECTORIES.contains(requireFileName(path).toLowerCase(Locale.ROOT));
-    }
-
-    private boolean isEditableFile(Path path, String mimeType, long size) {
-        if (size > MAX_EDITABLE_FILE_SIZE || isImageMimeType(mimeType)) {
-            return false;
-        }
-        return isTextLikeFile(path, mimeType);
-    }
-
-    private boolean isTextLikeFile(Path path, String mimeType) {
-        if (mimeType != null && mimeType.startsWith("text/")) {
-            return true;
-        }
-        String filename = requireFileName(path).toLowerCase(Locale.ROOT);
-        return filename.endsWith(".java")
-                || filename.endsWith(".js")
-                || filename.endsWith(".jsx")
-                || filename.endsWith(".ts")
-                || filename.endsWith(".tsx")
-                || filename.endsWith(".json")
-                || filename.endsWith(".md")
-                || filename.endsWith(".yml")
-                || filename.endsWith(".yaml")
-                || filename.endsWith(".xml")
-                || filename.endsWith(".html")
-                || filename.endsWith(".css")
-                || filename.endsWith(".scss")
-                || filename.endsWith(".sh")
-                || filename.endsWith(".py")
-                || filename.endsWith(".go")
-                || filename.endsWith(".rs")
-                || filename.endsWith(".kt")
-                || filename.endsWith(".sql")
-                || filename.endsWith(".toml")
-                || filename.endsWith(".ini")
-                || filename.endsWith(".txt");
-    }
-
-    private boolean isImageMimeType(String mimeType) {
-        return mimeType != null && mimeType.startsWith("image/");
-    }
-
-    private String sanitizeFilename(String filename) {
-        String normalized = filename.trim().replace("\\", "/");
-        int slashIndex = normalized.lastIndexOf('/');
-        String leafName = slashIndex >= 0 ? normalized.substring(slashIndex + 1) : normalized;
-        if (leafName.isBlank() || leafName.equals(".") || leafName.equals("..")) {
-            throw new IllegalArgumentException("Filename is required");
-        }
-        return leafName;
-    }
-
-    private String buildDownloadUrl(String relativePath) {
-        String encoded = URLEncoder.encode(relativePath, StandardCharsets.UTF_8).replace("+", "%20");
-        return "/api/files/download?path=" + encoded;
-    }
-
-    private String resolveMimeType(Path path, String requestedMimeType) {
-        String mimeType = workspacePathService.resolveMimeType(path, requestedMimeType);
-        String filename = requireFileName(path).toLowerCase(Locale.ROOT);
-        if ("application/octet-stream".equals(mimeType)) {
-            if (filename.endsWith(".md")) {
-                return "text/markdown";
-            }
-            if (filename.endsWith(".ts") || filename.endsWith(".tsx")) {
-                return "text/typescript";
-            }
-            if (filename.endsWith(".js") || filename.endsWith(".jsx")) {
-                return "text/javascript";
-            }
-            if (filename.endsWith(".java")) {
-                return "text/x-java-source";
-            }
-        }
-        return mimeType;
+                .anyMatch(path -> includeIgnored || !DashboardFileMetadataSupport.isIgnoredDirectory(workspaceFilePort,
+                        workspacePathService, path));
     }
 
     private Path getWorkspaceRoot() {
