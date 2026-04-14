@@ -148,8 +148,8 @@ export function PromptsSidebar({
   }, [canReorder]);
 
   return (
-    <div className="prompts-sidebar-panel space-y-4">
-      <Card className="overflow-hidden">
+    <div className="min-w-0 space-y-4">
+      <Card className="min-w-0 overflow-hidden">
         <CardHeader>
           <div>
             <CardTitle>Catalog</CardTitle>

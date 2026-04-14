@@ -37,15 +37,15 @@ function PromptPreviewPanel({
   onPreview,
 }: PromptPreviewPanelProps): ReactElement {
   return (
-    <div className="mobile-break-code space-y-3 rounded-[1.5rem] border border-border/80 bg-slate-950/95 p-4 text-slate-100 xl:sticky xl:top-6">
-      <div className="prompt-editor-preview-header flex items-center justify-between gap-3">
-        <div>
+    <div className="space-y-3 rounded-[1.5rem] border border-border/80 bg-slate-950/95 p-4 text-slate-100 xl:sticky xl:top-6">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-100">Preview</div>
           <p className="mt-1 text-sm leading-6 text-slate-400">
             Render the current draft when you want to inspect the final payload.
           </p>
         </div>
-        <Button variant="secondary" onClick={onPreview} disabled={isPreviewing}>
+        <Button variant="secondary" onClick={onPreview} disabled={isPreviewing} className="flex-1 sm:flex-none">
           <FiEye size={14} />
           {isPreviewing ? 'Rendering...' : 'Preview'}
         </Button>
@@ -58,7 +58,7 @@ function PromptPreviewPanel({
       )}
 
       {preview.length > 0 ? (
-        <pre className="min-h-[24rem] overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/80 p-4 font-mono text-sm leading-7 text-slate-100">
+        <pre className="min-h-[24rem] overflow-x-auto whitespace-pre-wrap break-anywhere rounded-2xl border border-slate-800 bg-slate-950/80 p-4 font-mono text-sm leading-7 text-slate-100">
           {preview}
         </pre>
       ) : (
@@ -180,17 +180,19 @@ function PromptEditorActionBar({
         <p className="text-sm leading-6 text-muted-foreground">{deleteHelpText}</p>
         {isDirty && <p className="text-sm font-medium text-amber-700 dark:text-amber-200">Unsaved changes</p>}
       </div>
-      <div className="prompt-editor-action-group flex flex-wrap gap-2">
+      <div className="flex min-w-0 flex-wrap gap-2">
         <Button
           variant="ghost"
           onClick={onReset}
           disabled={!isDirty || isSaving}
+          className="flex-1 sm:flex-none"
         >
           Reset
         </Button>
         <Button
           onClick={onSave}
           disabled={!isDirty || isSaving || isDeleting}
+          className="flex-1 sm:flex-none"
         >
           <FiSave size={14} />
           {isSaving ? 'Saving...' : 'Save'}
@@ -200,6 +202,7 @@ function PromptEditorActionBar({
           onClick={onDelete}
           disabled={!isDeletable || isDeleting}
           title={deleteHelpText}
+          className="flex-1 sm:flex-none"
         >
           <FiTrash2 size={14} />
           {isDeleting ? 'Deleting...' : 'Delete'}
@@ -237,7 +240,7 @@ export function PromptEditor({
     : 'Built-in identity and rules prompts are protected and cannot be deleted.';
 
   return (
-    <div className="prompts-editor-panel space-y-4">
+    <div className="min-w-0 space-y-4">
       <Card className="overflow-hidden">
         <CardHeader>
           <div className="space-y-2">
@@ -262,7 +265,7 @@ export function PromptEditor({
 
           <PromptEditorMetadataBar draft={draft} onChange={onChange} />
 
-          <div className="mobile-min-w-0 grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)]">
+          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)]">
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Content
