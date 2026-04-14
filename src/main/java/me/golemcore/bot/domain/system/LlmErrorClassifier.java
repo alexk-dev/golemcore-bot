@@ -6,7 +6,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.SocketTimeoutException;
 import java.net.http.HttpTimeoutException;
-import java.util.HashSet;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
@@ -89,10 +90,14 @@ public final class LlmErrorClassifier {
             return UNKNOWN;
         }
 
-        Set<Throwable> visited = new HashSet<>();
+        // Identity-based visited set: provider exception types may override
+        // equals/hashCode on message content, which would collapse two distinct
+        // wrapped causes into a single visited entry and short-circuit the walk
+        // before we reach the real signal frame. Cycle detection only needs
+        // "have I seen this exact object before", not value equality.
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         Throwable current = throwable;
-        while (current != null && !visited.contains(current)) {
-            visited.add(current);
+        while (current != null && visited.add(current)) {
 
             String embedded = extractCode(current.getMessage());
             if (embedded != null && !embedded.isBlank()) {
@@ -286,16 +291,7 @@ public final class LlmErrorClassifier {
         }
 
         String normalized = message.toLowerCase(Locale.ROOT);
-        if (normalized.contains("context length")
-                || normalized.contains("context_length")
-                || normalized.contains("context window")
-                || normalized.contains("maximum context")
-                || normalized.contains("too many tokens")
-                || normalized.contains("too_many_tokens")
-                || normalized.contains("token limit exceeded")
-                || normalized.contains("input tokens exceed")
-                || normalized.contains("prompt is too long")
-                || normalized.contains("request too large")) {
+        if (LlmErrorPatterns.matchesContextOverflow(normalized)) {
             return CONTEXT_LENGTH_EXCEEDED;
         }
 

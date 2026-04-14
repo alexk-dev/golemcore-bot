@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
@@ -90,10 +91,23 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.planService = builder.planService;
         this.clock = builder.clock;
 
+        ContextTokenEstimator contextTokenEstimator = builder.contextTokenEstimator != null
+                ? builder.contextTokenEstimator
+                : new ContextTokenEstimator();
+        ContextBudgetPolicy contextBudgetPolicy = builder.contextBudgetPolicy != null
+                ? builder.contextBudgetPolicy
+                : new ContextBudgetPolicy(builder.runtimeConfigService, builder.modelSelectionService);
+        LlmRequestPreflightPhase preflightPhase = new LlmRequestPreflightPhase(
+                builder.runtimeConfigService,
+                builder.compactionOrchestrationService,
+                contextTokenEstimator,
+                builder.runtimeEventService,
+                builder.turnProgressService,
+                contextBudgetPolicy);
+
         this.llmCallPhase = new LlmCallPhase(
                 builder.llmPort, builder.viewBuilder, builder.modelSelectionService,
-                builder.runtimeConfigService, builder.compactionOrchestrationService,
-                builder.contextTokenEstimator,
+                builder.runtimeConfigService, preflightPhase,
                 builder.runtimeEventService, builder.turnProgressService,
                 builder.traceService, builder.clock);
 
@@ -321,6 +335,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private RuntimeConfigService runtimeConfigService;
         private CompactionOrchestrationService compactionOrchestrationService;
         private ContextTokenEstimator contextTokenEstimator;
+        private ContextBudgetPolicy contextBudgetPolicy;
         private RuntimeEventService runtimeEventService;
         private TurnProgressService turnProgressService;
         private TraceService traceService;
@@ -390,6 +405,14 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         /** Sets the token estimator used by request preflight checks (optional). */
         public Builder contextTokenEstimator(ContextTokenEstimator contextTokenEstimator) {
             this.contextTokenEstimator = contextTokenEstimator;
+            return this;
+        }
+
+        /**
+         * Sets the context budget policy used by auto/preflight compaction (optional).
+         */
+        public Builder contextBudgetPolicy(ContextBudgetPolicy contextBudgetPolicy) {
+            this.contextBudgetPolicy = contextBudgetPolicy;
             return this;
         }
 

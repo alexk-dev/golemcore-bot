@@ -23,6 +23,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class LlmErrorClassifierTest {
@@ -142,16 +143,73 @@ class LlmErrorClassifierTest {
 
     @ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {
-            "too_many_tokens",
-            "too many tokens",
             "context_length_exceeded",
-            "input tokens exceed model limit",
-            "request too large"
+            "This model's maximum context length is 128000 tokens",
+            "prompt is too long: 200000 tokens > 199999 maximum",
+            "input length and max_tokens exceed context limit",
+            "The input token count (200000) exceeds the maximum number of tokens allowed",
+            "Please reduce the length of the messages or completion",
+            "Request too large for gpt-4"
     })
     void shouldClassifyCommonTokenOverflowMessages(String message) {
         String code = LlmErrorClassifier.classifyFromThrowable(new RuntimeException(message));
 
         assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code);
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "Rate limit reached for gpt-4 on tokens per min. token_quota_exceeded",
+            "Too many tokens per minute",
+            "429 Too Many Requests: too_many_tokens in the last minute"
+    })
+    void shouldNotClassifyTpmRateLimitMessagesAsContextOverflow(String message) {
+        String code = LlmErrorClassifier.classifyFromThrowable(new RuntimeException(message));
+
+        assertNotEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code,
+                "TPM / per-minute throttling must not be misclassified as context overflow");
+    }
+
+    @Test
+    void shouldWalkCauseChainEvenWhenExceptionsCollapseByValueEquality() {
+        // Future provider exception types may override equals/hashCode based on
+        // message content. A value-equality visited set would then collapse two
+        // distinct wrapped causes into a single entry and short-circuit the cause
+        // walk before reaching the real signal. This test builds a chain where the
+        // outer frame equals() the inner one but the rate-limit signal lives on
+        // the inner frame — only an identity-based visited set walks through.
+        ValueEqualException outer = new ValueEqualException("boom");
+        ValueEqualException innerWithSignal = new ValueEqualException("boom",
+                new RateLimitException("rate-limited downstream"));
+        outer.initCause(innerWithSignal);
+
+        String code = LlmErrorClassifier.classifyFromThrowable(outer);
+
+        assertEquals(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, code,
+                "classifier must walk past an equals()-collapsing wrapper to reach the real signal");
+    }
+
+    private static final class ValueEqualException extends RuntimeException {
+        ValueEqualException(String message) {
+            super(message);
+        }
+
+        ValueEqualException(String message, Throwable cause) {
+            super(message, cause);
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof ValueEqualException otherException)) {
+                return false;
+            }
+            return java.util.Objects.equals(getMessage(), otherException.getMessage());
+        }
+
+        @Override
+        public int hashCode() {
+            return java.util.Objects.hashCode(getMessage());
+        }
     }
 
     @Test

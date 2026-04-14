@@ -145,6 +145,7 @@ class ToolLoopResilienceBddTest {
         when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(10);
         when(runtimeConfigService.getTurnDeadline()).thenReturn(java.time.Duration.ofMinutes(5));
         when(runtimeConfigService.isTurnAutoRetryEnabled()).thenReturn(false);
+        when(runtimeConfigService.isCompactionEnabled()).thenReturn(true);
         when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(2);
 
         CompactionOrchestrationService compactionOrchestrationService = mock(CompactionOrchestrationService.class);
@@ -487,6 +488,7 @@ class ToolLoopResilienceBddTest {
         when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(10);
         when(runtimeConfigService.getTurnDeadline()).thenReturn(java.time.Duration.ofMinutes(5));
         when(runtimeConfigService.isTurnAutoRetryEnabled()).thenReturn(false);
+        when(runtimeConfigService.isCompactionEnabled()).thenReturn(true);
         when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(2);
 
         CompactionOrchestrationService compactionOrchestrationService = mock(CompactionOrchestrationService.class);

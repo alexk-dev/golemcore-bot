@@ -24,8 +24,8 @@ import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
-import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,12 +48,10 @@ import java.util.Map;
 @Slf4j
 public class AutoCompactionSystem implements AgentSystem {
 
-    private static final String TRIGGER_MODE_MODEL_RATIO = "model_ratio";
-
     private final CompactionOrchestrationService compactionOrchestrationService;
     private final RuntimeConfigService runtimeConfigService;
-    private final ModelSelectionService modelSelectionService;
     private final ContextTokenEstimator contextTokenEstimator;
+    private final ContextBudgetPolicy contextBudgetPolicy;
 
     @Override
     public String getName() {
@@ -82,7 +80,7 @@ public class AutoCompactionSystem implements AgentSystem {
         int estimatedTokens = contextTokenEstimator.estimateMessages(messages);
 
         String triggerMode = runtimeConfigService.getCompactionTriggerMode();
-        int threshold = resolveMaxTokens(context);
+        int threshold = contextBudgetPolicy.resolveHistoryThreshold(context);
 
         if (estimatedTokens <= threshold) {
             return context;
@@ -109,40 +107,6 @@ public class AutoCompactionSystem implements AgentSystem {
         }
 
         return context;
-    }
-
-    private int resolveMaxTokens(AgentContext context) {
-        if (TRIGGER_MODE_MODEL_RATIO.equals(runtimeConfigService.getCompactionTriggerMode())) {
-            return resolveModelRatioThreshold(context);
-        }
-        return resolveTokenThreshold(context);
-    }
-
-    private int resolveModelRatioThreshold(AgentContext context) {
-        try {
-            int modelMax = modelSelectionService.resolveMaxInputTokensForContext(context);
-            double ratio = runtimeConfigService.getCompactionModelThresholdRatio();
-            return Math.max(1, (int) Math.floor(modelMax * ratio));
-        } catch (Exception e) {
-            log.debug("[AutoCompact] Failed to resolve model max tokens for ratio mode, using config default", e);
-        }
-        return runtimeConfigService.getCompactionMaxContextTokens();
-    }
-
-    /**
-     * Resolve the legacy token threshold mode. Preserves the old behavior: cap the
-     * configured threshold by 80% of the resolved model context window.
-     */
-    private int resolveTokenThreshold(AgentContext context) {
-        try {
-            int modelMax = modelSelectionService.resolveMaxInputTokensForContext(context);
-            int modelThreshold = (int) (modelMax * 0.8);
-            return Math.min(modelThreshold, runtimeConfigService.getCompactionMaxContextTokens());
-        } catch (Exception e) {
-            log.debug("[AutoCompact] Failed to resolve model max tokens for token-threshold mode, using config default",
-                    e);
-        }
-        return runtimeConfigService.getCompactionMaxContextTokens();
     }
 
     private Map<String, Object> toDetailsPayload(CompactionResult result) {

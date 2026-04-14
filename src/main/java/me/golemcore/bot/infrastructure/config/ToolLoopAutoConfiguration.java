@@ -1,6 +1,7 @@
 package me.golemcore.bot.infrastructure.config;
 
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
@@ -71,6 +72,7 @@ public class ToolLoopAutoConfiguration {
             TelemetryRollupPort telemetryRollupPort,
             CompactionOrchestrationService compactionOrchestrationService,
             ContextTokenEstimator contextTokenEstimator,
+            ContextBudgetPolicy contextBudgetPolicy,
             RuntimeEventService runtimeEventService,
             TurnProgressService turnProgressService,
             TraceService traceService,
@@ -88,6 +90,7 @@ public class ToolLoopAutoConfiguration {
                 .runtimeConfigService(runtimeConfigService)
                 .compactionOrchestrationService(compactionOrchestrationService)
                 .contextTokenEstimator(contextTokenEstimator)
+                .contextBudgetPolicy(contextBudgetPolicy)
                 .runtimeEventService(runtimeEventService)
                 .turnProgressService(turnProgressService)
                 .traceService(traceService)

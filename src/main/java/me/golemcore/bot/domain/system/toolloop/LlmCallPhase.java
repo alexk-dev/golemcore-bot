@@ -20,8 +20,6 @@ package me.golemcore.bot.domain.system.toolloop;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.AgentContext;
-import me.golemcore.bot.domain.model.CompactionReason;
-import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
@@ -35,8 +33,6 @@ import me.golemcore.bot.domain.model.TurnLimitReason;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
-import me.golemcore.bot.domain.service.CompactionOrchestrationService;
-import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -53,10 +49,10 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -79,8 +75,7 @@ class LlmCallPhase {
     private final ConversationViewBuilder viewBuilder;
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
-    private final CompactionOrchestrationService compactionOrchestrationService;
-    private final ContextTokenEstimator contextTokenEstimator;
+    private final LlmRequestPreflightPhase preflightPhase;
     private final RuntimeEventService runtimeEventService;
     private final TurnProgressService turnProgressService;
     private final TraceService traceService;
@@ -89,17 +84,14 @@ class LlmCallPhase {
 
     LlmCallPhase(LlmPort llmPort, ConversationViewBuilder viewBuilder, ModelSelectionService modelSelectionService,
             RuntimeConfigService runtimeConfigService,
-            CompactionOrchestrationService compactionOrchestrationService,
-            ContextTokenEstimator contextTokenEstimator,
+            LlmRequestPreflightPhase preflightPhase,
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
             TraceService traceService, Clock clock) {
         this.llmPort = llmPort;
         this.viewBuilder = viewBuilder;
         this.modelSelectionService = modelSelectionService;
         this.runtimeConfigService = runtimeConfigService;
-        this.compactionOrchestrationService = compactionOrchestrationService;
-        this.contextTokenEstimator = contextTokenEstimator != null ? contextTokenEstimator
-                : new ContextTokenEstimator();
+        this.preflightPhase = Objects.requireNonNull(preflightPhase, "preflightPhase");
         this.runtimeEventService = runtimeEventService;
         this.turnProgressService = turnProgressService;
         this.traceService = traceService;
@@ -349,7 +341,7 @@ class LlmCallPhase {
                 String code = LlmErrorClassifier.classifyFromThrowable(error);
 
                 if (LlmErrorClassifier.isContextOverflowCode(code)
-                        && tryRecoverFromContextOverflow(context, turnState.getLlmCalls(),
+                        && preflightPhase.recoverFromContextOverflow(context, turnState.getLlmCalls(),
                                 turnState.getRetryAttempt())) {
                     turnState.incrementRetryAttempt();
                     turnState.setLastRetryCode(code);
@@ -434,74 +426,8 @@ class LlmCallPhase {
 
             private LlmRequest buildRequestWithPreflight(AgentContext context, TraceContext traceContext,
                     ModelSelectionService.ModelSelection selection, int llmCall) {
-                LlmRequestPreflightPhase preflightPhase = new LlmRequestPreflightPhase(
-                        modelSelectionService,
-                        runtimeConfigService,
-                        compactionOrchestrationService,
-                        contextTokenEstimator,
-                        runtimeEventService,
-                        turnProgressService);
-                return preflightPhase.preflight(context, () -> buildRequest(context, traceContext, selection), llmCall);
-            }
-
-            private boolean tryRecoverFromContextOverflow(AgentContext context, int llmCalls, int retryAttempt) {
-                if (compactionOrchestrationService == null || context.getSession() == null
-                        || context.getSession().getMessages() == null
-                        || context.getSession().getMessages().isEmpty()) {
-                    return false;
-                }
-                if (retryAttempt > 0) {
-                    return false;
-                }
-                int keepLast = runtimeConfigService != null ? runtimeConfigService.getCompactionKeepLastMessages() : 20;
-                List<Message> sessionMessages = context.getSession().getMessages();
-                int total = sessionMessages.size();
-                if (total <= keepLast) {
-                    return false;
-                }
-
-                flushProgress(context, "compaction");
-                emitRuntimeEvent(context, RuntimeEventType.COMPACTION_STARTED,
-                        eventPayload("llmCall", llmCalls, "messages", total - keepLast, "keepLast", keepLast,
-                                "reason", CompactionReason.CONTEXT_OVERFLOW_RECOVERY.name(),
-                                "rawCutIndex", Math.max(0, total - keepLast),
-                                "adjustedCutIndex", Math.max(0, total - keepLast),
-                                "splitTurnDetected", false,
-                                "toCompactCount", Math.max(0, total - keepLast)));
-
-                CompactionResult compactionResult = compactionOrchestrationService.compact(
-                        context.getSession().getId(), CompactionReason.CONTEXT_OVERFLOW_RECOVERY, keepLast);
-
-                if (compactionResult.removed() <= 0) {
-                    return false;
-                }
-
-                context.setMessages(new ArrayList<>(context.getSession().getMessages()));
-                context.setAttribute(ContextAttributes.LLM_ERROR, null);
-                context.setAttribute(ContextAttributes.LLM_ERROR_CODE, null);
-                if (compactionResult.details() != null) {
-                    context.setAttribute(ContextAttributes.COMPACTION_LAST_DETAILS, compactionResult.details());
-                    context.setAttribute(ContextAttributes.TURN_FILE_CHANGES, compactionResult.details().fileChanges());
-                }
-
-                emitRuntimeEvent(context, RuntimeEventType.COMPACTION_FINISHED,
-                        eventPayload("summaryLength",
-                                compactionResult.details() != null ? compactionResult.details().summaryLength() : 0,
-                                "removed", compactionResult.removed(), "kept", keepLast,
-                                "splitTurnDetected",
-                                compactionResult.details() != null && compactionResult.details().splitTurnDetected(),
-                                "usedSummary", compactionResult.usedSummary(),
-                                "reason", CompactionReason.CONTEXT_OVERFLOW_RECOVERY.name(),
-                                "toolCount",
-                                compactionResult.details() != null ? compactionResult.details().toolCount() : 0,
-                                "readFilesCount",
-                                compactionResult.details() != null ? compactionResult.details().readFilesCount() : 0,
-                                "modifiedFilesCount",
-                                compactionResult.details() != null ? compactionResult.details().modifiedFilesCount()
-                                        : 0,
-                                "durationMs",
-                                compactionResult.details() != null ? compactionResult.details().durationMs() : 0));
-                return true;
+                return preflightPhase.preflight(context,
+                        () -> buildRequest(context, traceContext, selection), llmCall);
             }
 
             // ==================== Empty response handling ====================

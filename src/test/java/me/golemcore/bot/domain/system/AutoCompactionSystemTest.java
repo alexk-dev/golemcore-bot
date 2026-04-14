@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextBudgetPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -40,6 +41,7 @@ class AutoCompactionSystemTest {
     private RuntimeConfigService runtimeConfigService;
     private ModelSelectionService modelSelectionService;
     private ContextTokenEstimator contextTokenEstimator;
+    private ContextBudgetPolicy contextBudgetPolicy;
     private AutoCompactionSystem system;
 
     @BeforeEach
@@ -56,8 +58,9 @@ class AutoCompactionSystemTest {
         when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(1000);
         when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(5);
 
-        system = new AutoCompactionSystem(compactionOrchestrationService, runtimeConfigService, modelSelectionService,
-                contextTokenEstimator);
+        contextBudgetPolicy = new ContextBudgetPolicy(runtimeConfigService, modelSelectionService);
+        system = new AutoCompactionSystem(compactionOrchestrationService, runtimeConfigService, contextTokenEstimator,
+                contextBudgetPolicy);
     }
 
     @Test
