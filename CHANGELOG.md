@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.63.1 - 2026-04-14
+#### Bug Fixes
+- allow major self-update releases (#279) - (bc8c4bc) - Alex Kuleshov
+#### Documentation
+- update README documentation site (#277) - (f8e8330) - Alex Kuleshov
+#### Refactoring
+- replace dashboard bootstrap shim with tailwind UI (#274) - (5e6fe83) - GolemCore AI Agent #1
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
