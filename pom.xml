@@ -524,6 +524,53 @@
     </build>
 
     <profiles>
+        <!-- Mutation testing profile for CI-only focused checks. -->
+        <profile>
+            <id>pitests</id>
+            <properties>
+                <pitest.version>1.23.0</pitest.version>
+                <pitest.junit5.plugin.version>1.2.3</pitest.junit5.plugin.version>
+                <pitest.mutationThreshold>85</pitest.mutationThreshold>
+                <pitest.threads>4</pitest.threads>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.pitest</groupId>
+                        <artifactId>pitest-maven</artifactId>
+                        <version>${pitest.version}</version>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.pitest</groupId>
+                                <artifactId>pitest-junit5-plugin</artifactId>
+                                <version>${pitest.junit5.plugin.version}</version>
+                            </dependency>
+                        </dependencies>
+                        <configuration>
+                            <targetClasses>
+                                <param>me.golemcore.bot.domain.*</param>
+                            </targetClasses>
+                            <targetTests>
+                                <param>me.golemcore.bot.domain.*</param>
+                            </targetTests>
+                            <threads>${pitest.threads}</threads>
+                            <mutationThreshold>${pitest.mutationThreshold}</mutationThreshold>
+                            <timeoutFactor>2.0</timeoutFactor>
+                            <timeoutConstant>8000</timeoutConstant>
+                            <timestampedReports>false</timestampedReports>
+                            <failWhenNoMutations>true</failWhenNoMutations>
+                            <outputFormats>
+                                <outputFormat>HTML</outputFormat>
+                                <outputFormat>XML</outputFormat>
+                            </outputFormats>
+                            <jvmArgs>
+                                <jvmArg>-Xmx2g</jvmArg>
+                            </jvmArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- Strict profile for CI/CD - fails build on code quality issues -->
         <profile>
             <id>strict</id>
