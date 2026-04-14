@@ -172,9 +172,10 @@ class ToolFailureRecoveryServiceTest {
         ToolExecutionOutcome outcome = new ToolExecutionOutcome("tc-1", "shell", failureResult,
                 "No such file or directory", false, null);
 
-        // Act - exhaust the budget (2 attempts)
-        service.evaluate(toolCall, outcome, recoveryCounts);
-        service.evaluate(toolCall, outcome, recoveryCounts);
+        // Act - exhaust the budget (6 attempts)
+        for (int attempt = 0; attempt < 6; attempt++) {
+            service.evaluate(toolCall, outcome, recoveryCounts);
+        }
         ToolFailureRecoveryDecision decision = service.evaluate(toolCall, outcome, recoveryCounts);
 
         // Assert
@@ -426,28 +427,26 @@ class ToolFailureRecoveryServiceTest {
     }
 
     // -----------------------------------------------------------------------
-    // 11. Recovery budget tracking: first two attempts get hints, third stops
+    // 11. Recovery budget tracking: first six attempts get hints, seventh stops
     // -----------------------------------------------------------------------
 
     @Test
-    void shouldAllowTwoRecoveryAttemptsBeforeStopping() {
+    void shouldAllowSixRecoveryAttemptsBeforeStopping() {
         // Arrange
         Message.ToolCall toolCall = shellToolCall("cat /missing/file.txt");
         ToolResult failureResult = ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory");
         ToolExecutionOutcome outcome = new ToolExecutionOutcome("tc-1", "shell", failureResult,
                 "No such file or directory", false, null);
 
-        // Act & Assert - first attempt: InjectHint
-        ToolFailureRecoveryDecision first = service.evaluate(toolCall, outcome, recoveryCounts);
-        assertInstanceOf(ToolFailureRecoveryDecision.InjectHint.class, first);
+        // Act & Assert - first six attempts: InjectHint
+        for (int attempt = 0; attempt < 6; attempt++) {
+            ToolFailureRecoveryDecision decision = service.evaluate(toolCall, outcome, recoveryCounts);
+            assertInstanceOf(ToolFailureRecoveryDecision.InjectHint.class, decision);
+        }
 
-        // Act & Assert - second attempt: InjectHint
-        ToolFailureRecoveryDecision second = service.evaluate(toolCall, outcome, recoveryCounts);
-        assertInstanceOf(ToolFailureRecoveryDecision.InjectHint.class, second);
-
-        // Act & Assert - third attempt: Stop (budget exhausted)
-        ToolFailureRecoveryDecision third = service.evaluate(toolCall, outcome, recoveryCounts);
-        assertInstanceOf(ToolFailureRecoveryDecision.Stop.class, third);
+        // Act & Assert - seventh attempt: Stop (budget exhausted)
+        ToolFailureRecoveryDecision seventh = service.evaluate(toolCall, outcome, recoveryCounts);
+        assertInstanceOf(ToolFailureRecoveryDecision.Stop.class, seventh);
     }
 
     @Test
@@ -465,8 +464,8 @@ class ToolFailureRecoveryServiceTest {
                 .evaluate(toolCall, outcome, recoveryCounts);
 
         // Assert
-        assertTrue(first.hint().contains("Recovery attempt 1 of 2"));
-        assertTrue(second.hint().contains("Recovery attempt 2 of 2"));
+        assertTrue(first.hint().contains("Recovery attempt 1 of 6"));
+        assertTrue(second.hint().contains("Recovery attempt 2 of 6"));
     }
 
     // -----------------------------------------------------------------------
@@ -485,15 +484,16 @@ class ToolFailureRecoveryServiceTest {
                 "No such file or directory", false, null);
 
         // Act - exhaust budget for command A
-        service.evaluate(toolCallA, outcomeA, recoveryCounts);
-        service.evaluate(toolCallA, outcomeA, recoveryCounts);
-        ToolFailureRecoveryDecision thirdA = service.evaluate(toolCallA, outcomeA, recoveryCounts);
+        for (int attempt = 0; attempt < 6; attempt++) {
+            service.evaluate(toolCallA, outcomeA, recoveryCounts);
+        }
+        ToolFailureRecoveryDecision exhaustedA = service.evaluate(toolCallA, outcomeA, recoveryCounts);
 
         // Command B should still have its own budget
         ToolFailureRecoveryDecision firstB = service.evaluate(toolCallB, outcomeB, recoveryCounts);
 
         // Assert
-        assertInstanceOf(ToolFailureRecoveryDecision.Stop.class, thirdA);
+        assertInstanceOf(ToolFailureRecoveryDecision.Stop.class, exhaustedA);
         assertInstanceOf(ToolFailureRecoveryDecision.InjectHint.class, firstB);
     }
 

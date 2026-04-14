@@ -51,6 +51,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -939,42 +940,24 @@ class DefaultToolLoopSystemTest {
     @Test
     void shouldStopWhenRecoverableShellFailureExhaustsRecoveryBudget() {
         AgentContext context = buildContext();
-        Message.ToolCall firstCall = toolCall(TOOL_CALL_ID, "shell");
-        firstCall.setArguments(Map.of("command", "cat missing.txt"));
-        Message.ToolCall secondCall = toolCall("tc-2", "shell");
-        secondCall.setArguments(Map.of("command", "cat missing.txt"));
-        Message.ToolCall thirdCall = toolCall("tc-3", "shell");
-        thirdCall.setArguments(Map.of("command", "cat missing.txt"));
-        Message.ToolCall fourthCall = toolCall("tc-4", "shell");
-        fourthCall.setArguments(Map.of("command", "cat missing.txt"));
-
-        when(llmPort.chat(any()))
-                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(firstCall))))
-                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(secondCall))))
-                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(thirdCall))))
-                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(fourthCall))));
-
-        ToolExecutionOutcome failureOne = new ToolExecutionOutcome(
-                TOOL_CALL_ID, "shell",
-                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
-                "No such file or directory", false, null);
-        ToolExecutionOutcome failureTwo = new ToolExecutionOutcome(
-                "tc-2", "shell",
-                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
-                "No such file or directory", false, null);
-        ToolExecutionOutcome failureThree = new ToolExecutionOutcome(
-                "tc-3", "shell",
-                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
-                "No such file or directory", false, null);
-        ToolExecutionOutcome failureFour = new ToolExecutionOutcome(
-                "tc-4", "shell",
-                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
-                "No such file or directory", false, null);
+        List<Message.ToolCall> calls = new ArrayList<>();
+        List<ToolExecutionOutcome> failures = new ArrayList<>();
+        for (int index = 1; index <= 8; index++) {
+            String callId = index == 1 ? TOOL_CALL_ID : "tc-" + index;
+            Message.ToolCall call = toolCall(callId, "shell");
+            call.setArguments(Map.of("command", "cat missing.txt"));
+            calls.add(call);
+            failures.add(new ToolExecutionOutcome(
+                    callId, "shell",
+                    ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "No such file or directory"),
+                    "No such file or directory", false, null));
+        }
+        AtomicInteger llmCallIndex = new AtomicInteger();
+        when(llmPort.chat(any())).thenAnswer(invocation -> CompletableFuture.completedFuture(
+                toolCallResponse(List.of(calls.get(llmCallIndex.getAndIncrement())))));
+        AtomicInteger toolCallIndex = new AtomicInteger();
         when(toolExecutor.execute(any(), any()))
-                .thenReturn(failureOne)
-                .thenReturn(failureTwo)
-                .thenReturn(failureThree)
-                .thenReturn(failureFour);
+                .thenAnswer(invocation -> failures.get(toolCallIndex.getAndIncrement()));
 
         ToolFailureRecoveryService recoveryService = new ToolFailureRecoveryService();
         DefaultToolLoopSystem recoverySystem = buildSystemWithRecovery(recoveryService);
@@ -982,8 +965,8 @@ class DefaultToolLoopSystemTest {
         ToolLoopTurnResult result = recoverySystem.processTurn(context);
 
         assertTrue(result.finalAnswerReady());
-        assertEquals(4, result.llmCalls());
-        verify(historyWriter, times(2)).appendInternalRecoveryHint(eq(context), any());
+        assertEquals(8, result.llmCalls());
+        verify(historyWriter, times(6)).appendInternalRecoveryHint(eq(context), any());
         LlmResponse llmResponse = context.getAttribute(ContextAttributes.LLM_RESPONSE);
         assertNotNull(llmResponse);
         assertTrue(llmResponse.getContent().contains("repeated tool failure (shell)"));

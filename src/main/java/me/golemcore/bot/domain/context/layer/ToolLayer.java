@@ -61,6 +61,12 @@ public class ToolLayer implements ContextLayer {
 
     private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
     private static final String TOOL_PLAN_GET = "plan_get";
+    private static final String SHELL_TOOL_POLICY = """
+
+            ## Shell Tool Policy
+
+            Prefer `command -v` before using shell tools. Avoid issuing the same missing command twice without proving the binary is available.
+            """;
 
     private final ToolCallExecutionService toolCallExecutionService;
     private final McpPort mcpPort;
@@ -136,6 +142,9 @@ public class ToolLayer implements ContextLayer {
         for (ToolDefinition tool : tools) {
             sb.append("- **").append(tool.getName()).append("**: ");
             sb.append(tool.getDescription()).append("\n");
+        }
+        if (toolsByName.containsKey(ToolNames.SHELL)) {
+            sb.append(SHELL_TOOL_POLICY);
         }
 
         String content = sb.toString();

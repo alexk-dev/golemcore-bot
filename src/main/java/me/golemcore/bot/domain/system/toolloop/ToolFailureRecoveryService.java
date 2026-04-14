@@ -46,7 +46,7 @@ import java.util.Map;
 @Component
 public class ToolFailureRecoveryService {
 
-    private static final int SHELL_RECOVERY_MAX_ATTEMPTS = 2;
+    private static final int SHELL_RECOVERY_MAX_ATTEMPTS = 6;
     private static final int MAX_COMMAND_FINGERPRINT_LENGTH = 120;
 
     /**

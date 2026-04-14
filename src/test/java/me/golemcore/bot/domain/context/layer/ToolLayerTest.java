@@ -68,6 +68,43 @@ class ToolLayerTest {
     }
 
     @Test
+    void shouldIncludeShellPolicyWhenShellToolIsAdvertised() {
+        ToolComponent tool = mock(ToolComponent.class);
+        when(tool.isEnabled()).thenReturn(true);
+        when(tool.getToolName()).thenReturn(ToolNames.SHELL);
+        when(tool.getDefinition()).thenReturn(
+                ToolDefinition.builder().name(ToolNames.SHELL).description("Run shell commands").build());
+
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(tool));
+
+        AgentContext context = AgentContext.builder().build();
+        ContextLayerResult result = layer.assemble(context);
+
+        assertTrue(result.hasContent());
+        assertTrue(result.getContent().contains("## Shell Tool Policy"));
+        assertTrue(result.getContent().contains("command -v"));
+        assertTrue(result.getContent().contains("same missing command twice"));
+    }
+
+    @Test
+    void shouldNotIncludeShellPolicyWhenShellToolIsNotAdvertised() {
+        ToolComponent tool = mock(ToolComponent.class);
+        when(tool.isEnabled()).thenReturn(true);
+        when(tool.getToolName()).thenReturn("filesystem");
+        when(tool.getDefinition()).thenReturn(
+                ToolDefinition.builder().name("filesystem").description("Work with files").build());
+
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(tool));
+
+        AgentContext context = AgentContext.builder().build();
+        ContextLayerResult result = layer.assemble(context);
+
+        assertTrue(result.hasContent());
+        assertFalse(result.getContent().contains("## Shell Tool Policy"));
+        assertFalse(result.getContent().contains("command -v"));
+    }
+
+    @Test
     void shouldFilterDisabledTools() {
         ToolComponent enabled = mock(ToolComponent.class);
         when(enabled.isEnabled()).thenReturn(true);

@@ -195,7 +195,7 @@ class ToolFailurePolicyTest {
         assertInstanceOf(ToolFailurePolicy.Verdict.RecoveryHint.class, second);
         ToolFailurePolicy.Verdict.RecoveryHint hint = (ToolFailurePolicy.Verdict.RecoveryHint) second;
         assertTrue(hint.hint().contains("Shell recovery note"));
-        assertTrue(hint.hint().contains("Recovery attempt 1 of 2"));
+        assertTrue(hint.hint().contains("Recovery attempt 1 of 6"));
     }
 
     // -----------------------------------------------------------------------
@@ -220,17 +220,18 @@ class ToolFailurePolicyTest {
         ToolFailurePolicy.Verdict v2 = policy.evaluate(turnState, toolCall, outcome);
         assertInstanceOf(ToolFailurePolicy.Verdict.RecoveryHint.class, v2);
 
-        // Act — occurrence 3: RecoveryHint (count=3, recovery attempt 2)
-        ToolFailurePolicy.Verdict v3 = policy.evaluate(turnState, toolCall, outcome);
-        assertInstanceOf(ToolFailurePolicy.Verdict.RecoveryHint.class, v3);
+        // Act - occurrences 3-7: RecoveryHint (recovery attempts 2-6)
+        for (int attempt = 0; attempt < 5; attempt++) {
+            ToolFailurePolicy.Verdict recoveryHint = policy.evaluate(turnState, toolCall, outcome);
+            assertInstanceOf(ToolFailurePolicy.Verdict.RecoveryHint.class, recoveryHint);
+        }
 
-        // Act — occurrence 4: StopTurn (count=4, recovery attempt 3 exceeds budget of
-        // 2)
-        ToolFailurePolicy.Verdict v4 = policy.evaluate(turnState, toolCall, outcome);
+        // Act - occurrence 8: StopTurn (recovery attempt 7 exceeds budget of 6)
+        ToolFailurePolicy.Verdict v8 = policy.evaluate(turnState, toolCall, outcome);
 
         // Assert
-        assertInstanceOf(ToolFailurePolicy.Verdict.StopTurn.class, v4);
-        ToolFailurePolicy.Verdict.StopTurn stop = (ToolFailurePolicy.Verdict.StopTurn) v4;
+        assertInstanceOf(ToolFailurePolicy.Verdict.StopTurn.class, v8);
+        ToolFailurePolicy.Verdict.StopTurn stop = (ToolFailurePolicy.Verdict.StopTurn) v8;
         assertTrue(stop.reason().contains("repeated tool failure"));
         assertTrue(stop.reason().contains("shell"));
     }
