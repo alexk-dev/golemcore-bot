@@ -50,6 +50,7 @@ import java.util.UUID;
 public class DelayedSessionActionService {
 
     private static final int REGISTRY_VERSION = 1;
+    private static final int MAX_ACTIVE_ACTIONS_PER_SESSION = 3;
 
     private final DelayedActionRegistryPort delayedActionRegistryPort;
     private final RuntimeConfigService runtimeConfigService;
@@ -78,17 +79,15 @@ public class DelayedSessionActionService {
             Instant now = clock.instant();
             DelayedSessionAction normalized = normalizeForCreate(candidate, now);
 
-            if (normalized.getDedupeKey() != null) {
-                DelayedSessionAction existing = findActiveByDedupeKeyLocked(normalized.getDedupeKey());
-                if (existing != null) {
-                    return copyAction(existing);
-                }
-            }
+            int removedDuplicates = removeActiveDuplicatesLocked(normalized);
 
             int pendingForSession = countPendingForSessionLocked(
                     normalized.getChannelType(),
                     normalized.getConversationKey());
-            if (pendingForSession >= runtimeConfigService.getDelayedActionsMaxPendingPerSession()) {
+            if (pendingForSession >= resolveMaxActiveActionsPerSession()) {
+                if (removedDuplicates > 0) {
+                    persistLocked();
+                }
                 throw new IllegalStateException("Maximum pending delayed actions reached for this session");
             }
 
@@ -158,11 +157,7 @@ public class DelayedSessionActionService {
             if (!isUserMutable(action, channelType, conversationKey, now)) {
                 return false;
             }
-            action.setStatus(DelayedActionStatus.CANCELLED);
-            action.setLeaseUntil(null);
-            action.setUpdatedAt(now);
-            action.setCompletedAt(now);
-            action.setExpiresAt(resolveRetentionExpiry(now));
+            cancelActionLocked(action, now);
             persistLocked();
             return true;
         }
@@ -205,16 +200,32 @@ public class DelayedSessionActionService {
                 if (action.getRunAt() != null && !action.getRunAt().isAfter(now)) {
                     continue;
                 }
-                action.setStatus(DelayedActionStatus.CANCELLED);
-                action.setLeaseUntil(null);
-                action.setUpdatedAt(now);
-                action.setCompletedAt(now);
-                action.setExpiresAt(resolveRetentionExpiry(now));
+                cancelActionLocked(action, now);
                 changed = true;
             }
             if (changed) {
                 persistLocked();
             }
+        }
+    }
+
+    public int clearActiveActions(String channelType, String conversationKey) {
+        ensureLoaded();
+        String normalizedChannel = normalizeChannelType(channelType);
+        String normalizedConversation = normalizeConversationKey(conversationKey);
+        synchronized (lock) {
+            List<String> actionIds = actions.values().stream()
+                    .filter(action -> !action.isTerminal())
+                    .filter(action -> matchesSession(action, normalizedChannel, normalizedConversation))
+                    .map(DelayedSessionAction::getId)
+                    .toList();
+            for (String actionId : actionIds) {
+                actions.remove(actionId);
+            }
+            if (!actionIds.isEmpty()) {
+                persistLocked();
+            }
+            return actionIds.size();
         }
     }
 
@@ -312,12 +323,73 @@ public class DelayedSessionActionService {
                 .count();
     }
 
-    private DelayedSessionAction findActiveByDedupeKeyLocked(String dedupeKey) {
-        return actions.values().stream()
+    private int removeActiveDuplicatesLocked(DelayedSessionAction normalized) {
+        String candidateIdentity = buildDedupeIdentity(normalized);
+        if (candidateIdentity == null) {
+            return 0;
+        }
+        List<String> duplicateIds = actions.values().stream()
                 .filter(action -> !action.isTerminal())
-                .filter(action -> dedupeKey.equals(action.getDedupeKey()))
-                .findFirst()
-                .orElse(null);
+                .filter(action -> !Objects.equals(action.getId(), normalized.getId()))
+                .filter(action -> candidateIdentity.equals(buildDedupeIdentity(action)))
+                .map(DelayedSessionAction::getId)
+                .toList();
+        for (String duplicateId : duplicateIds) {
+            actions.remove(duplicateId);
+        }
+        return duplicateIds.size();
+    }
+
+    private void cancelActionLocked(DelayedSessionAction action, Instant now) {
+        action.setStatus(DelayedActionStatus.CANCELLED);
+        action.setLeaseUntil(null);
+        action.setUpdatedAt(now);
+        action.setCompletedAt(now);
+        action.setExpiresAt(resolveRetentionExpiry(now));
+    }
+
+    private int resolveMaxActiveActionsPerSession() {
+        return Math.min(runtimeConfigService.getDelayedActionsMaxPendingPerSession(), MAX_ACTIVE_ACTIONS_PER_SESSION);
+    }
+
+    private String buildDedupeIdentity(DelayedSessionAction action) {
+        if (action == null) {
+            return null;
+        }
+        String channelType = normalizeChannelType(action.getChannelType());
+        String conversationKey = normalizeConversationKey(action.getConversationKey());
+        if (StringValueSupport.isBlank(channelType) || StringValueSupport.isBlank(conversationKey)) {
+            return null;
+        }
+        if (!StringValueSupport.isBlank(action.getDedupeKey())) {
+            return "explicit:" + channelType + ":" + conversationKey + ":" + action.getDedupeKey().trim();
+        }
+        return String.join(":",
+                "auto",
+                channelType,
+                conversationKey,
+                action.getKind() != null ? action.getKind().name() : "unknown",
+                action.getDeliveryMode() != null ? action.getDeliveryMode().name() : "unknown",
+                normalizedValue(action.getJobId()),
+                payloadValue(action, "message"),
+                payloadValue(action, "instruction"),
+                payloadValue(action, "artifactPath"),
+                payloadValue(action, "artifactName"),
+                payloadValue(action, "originalSummary"));
+    }
+
+    private String payloadValue(DelayedSessionAction action, String key) {
+        if (action == null || action.getPayload() == null) {
+            return "";
+        }
+        return normalizedValue(action.getPayload().get(key));
+    }
+
+    private String normalizedValue(Object value) {
+        if (value == null) {
+            return "";
+        }
+        return String.valueOf(value).trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
     private boolean isUserMutable(DelayedSessionAction action, String channelType, String conversationKey,

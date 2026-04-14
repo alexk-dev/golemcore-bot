@@ -166,7 +166,7 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_PLAN_STOP_ON_FAILURE = true;
     private static final boolean DEFAULT_DELAYED_ACTIONS_ENABLED = true;
     private static final int DEFAULT_DELAYED_ACTIONS_TICK_SECONDS = 1;
-    private static final int DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION = 50;
+    private static final int DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION = 3;
     private static final Duration DEFAULT_DELAYED_ACTIONS_MAX_DELAY = Duration.ofDays(30);
     private static final int DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS = 4;
     private static final Duration DEFAULT_DELAYED_ACTIONS_LEASE_DURATION = Duration.ofMinutes(2);
@@ -864,7 +864,8 @@ public class RuntimeConfigService {
             return DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION;
         }
         Integer val = delayedConfig.getMaxPendingPerSession();
-        return val != null && val > 0 ? val : DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION;
+        return val != null && val > 0 ? Math.min(val, DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION)
+                : DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION;
     }
 
     public Duration getDelayedActionsMaxDelay() {
@@ -1946,7 +1947,8 @@ public class RuntimeConfigService {
             cfg.getDelayedActions().setTickSeconds(DEFAULT_DELAYED_ACTIONS_TICK_SECONDS);
         }
         Integer delayedMaxPending = cfg.getDelayedActions().getMaxPendingPerSession();
-        if (delayedMaxPending == null || delayedMaxPending < 1) {
+        if (delayedMaxPending == null || delayedMaxPending < 1
+                || delayedMaxPending > DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION) {
             cfg.getDelayedActions().setMaxPendingPerSession(DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION);
         }
         if (cfg.getDelayedActions().getMaxDelay() == null || cfg.getDelayedActions().getMaxDelay().isBlank()) {

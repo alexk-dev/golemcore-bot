@@ -728,7 +728,7 @@ class RuntimeConfigServiceTest {
 
         assertTrue(service.isDelayedActionsEnabled());
         assertEquals(1, service.getDelayedActionsTickSeconds());
-        assertEquals(50, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(3, service.getDelayedActionsMaxPendingPerSession());
         assertEquals(java.time.Duration.ofDays(30), service.getDelayedActionsMaxDelay());
         assertEquals(4, service.getDelayedActionsDefaultMaxAttempts());
         assertEquals(java.time.Duration.ofMinutes(2), service.getDelayedActionsLeaseDuration());
@@ -752,7 +752,7 @@ class RuntimeConfigServiceTest {
 
         assertFalse(service.isDelayedActionsEnabled());
         assertEquals(9, service.getDelayedActionsTickSeconds());
-        assertEquals(12, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(3, service.getDelayedActionsMaxPendingPerSession());
         assertEquals(java.time.Duration.ofHours(6), service.getDelayedActionsMaxDelay());
         assertEquals(7, service.getDelayedActionsDefaultMaxAttempts());
         assertEquals(java.time.Duration.ofMinutes(5), service.getDelayedActionsLeaseDuration());
@@ -776,7 +776,7 @@ class RuntimeConfigServiceTest {
 
         assertTrue(service.isDelayedActionsEnabled());
         assertEquals(1, service.getDelayedActionsTickSeconds());
-        assertEquals(50, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(3, service.getDelayedActionsMaxPendingPerSession());
         assertEquals(java.time.Duration.ofDays(30), service.getDelayedActionsMaxDelay());
         assertEquals(4, service.getDelayedActionsDefaultMaxAttempts());
         assertEquals(java.time.Duration.ofMinutes(2), service.getDelayedActionsLeaseDuration());
@@ -803,7 +803,7 @@ class RuntimeConfigServiceTest {
         RuntimeConfig updated = service.getRuntimeConfig();
         assertTrue(updated.getDelayedActions().getEnabled());
         assertEquals(1, updated.getDelayedActions().getTickSeconds());
-        assertEquals(50, updated.getDelayedActions().getMaxPendingPerSession());
+        assertEquals(3, updated.getDelayedActions().getMaxPendingPerSession());
         assertEquals("PT720H", updated.getDelayedActions().getMaxDelay());
         assertEquals(4, updated.getDelayedActions().getDefaultMaxAttempts());
         assertEquals("PT2M", updated.getDelayedActions().getLeaseDuration());
