@@ -327,7 +327,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
      *
      * <p>
      * Required fields: llmPort, toolExecutor, historyWriter, viewBuilder,
-     * modelSelectionService, clock. All other fields are optional.
+     * modelSelectionService, contextCompactionPolicy, clock. All other fields are
+     * optional.
      */
     @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
     public static class Builder {
@@ -417,7 +418,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         }
 
         /**
-         * Sets the context budget policy used by auto/preflight compaction (optional).
+         * Sets the context compaction policy used by preflight and overflow recovery
+         * (required).
          */
         public Builder contextCompactionPolicy(ContextCompactionPolicy contextCompactionPolicy) {
             this.contextCompactionPolicy = contextCompactionPolicy;

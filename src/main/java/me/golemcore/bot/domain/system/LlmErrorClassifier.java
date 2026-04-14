@@ -104,14 +104,14 @@ public final class LlmErrorClassifier {
                 return embedded;
             }
 
-            String byType = classifyKnownThrowable(current);
-            if (!UNKNOWN.equals(byType)) {
-                return byType;
-            }
-
             String byMessage = classifyFromMessage(current.getMessage());
             if (!UNKNOWN.equals(byMessage)) {
                 return byMessage;
+            }
+
+            String byType = classifyKnownThrowable(current);
+            if (!UNKNOWN.equals(byType)) {
+                return byType;
             }
 
             current = current.getCause();

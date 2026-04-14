@@ -59,18 +59,6 @@ public class ToolLoopAutoConfiguration {
     }
 
     @Bean
-    public static ContextTokenEstimator contextTokenEstimator() {
-        return new ContextTokenEstimator();
-    }
-
-    @Bean
-    public ContextCompactionPolicy contextCompactionPolicy(
-            RuntimeConfigService runtimeConfigService,
-            ModelSelectionService modelSelectionService) {
-        return new ContextCompactionPolicy(runtimeConfigService, modelSelectionService);
-    }
-
-    @Bean
     public ToolLoopSystem toolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutorPort,
             HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, ToolRuntimeSettingsPort settingsPort,
             ModelSelectionService modelSelectionService, PlanService planService,

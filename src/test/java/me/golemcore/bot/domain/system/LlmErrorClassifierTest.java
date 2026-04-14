@@ -157,6 +157,24 @@ class LlmErrorClassifierTest {
         assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code);
     }
 
+    @Test
+    void shouldPreferContextOverflowMessageOverGenericInvalidRequestType() {
+        String code = LlmErrorClassifier.classifyFromThrowable(new InvalidRequestException(
+                "This model's maximum context length is 128000 tokens"));
+
+        assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code,
+                "typed provider invalid-request exceptions still need context-overflow recovery");
+    }
+
+    @Test
+    void shouldPreferContextOverflowMessageOverGenericHttpBadRequestStatus() {
+        String code = LlmErrorClassifier.classifyFromThrowable(new HttpException(
+                400, "prompt is too long: 200000 tokens > 128000 maximum"));
+
+        assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code,
+                "HTTP 400 is the transport shape; the body message carries the actionable overflow signal");
+    }
+
     @ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {
             "Rate limit reached for gpt-4 on tokens per min. token_quota_exceeded",

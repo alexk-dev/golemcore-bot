@@ -8,6 +8,9 @@ import java.time.Clock;
 import java.util.List;
 import me.golemcore.bot.application.update.UpdateService;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
+import me.golemcore.bot.domain.service.ContextTokenEstimator;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
@@ -75,6 +78,19 @@ class CoreLayerConfigurationTest {
 
         assertNotNull(agentLoop);
         assertInstanceOf(PlanFinalizationSystem.class, planFinalizationSystem);
+    }
+
+    @Test
+    void shouldCreateSharedCompactionBeans() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+
+        ContextTokenEstimator estimator = CoreLayerConfiguration.contextTokenEstimator();
+        ContextCompactionPolicy policy = configuration.contextCompactionPolicy(runtimeConfigService,
+                modelSelectionService);
+
+        assertNotNull(estimator);
+        assertNotNull(policy);
     }
 
     @Test

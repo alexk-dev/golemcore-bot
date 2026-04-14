@@ -62,17 +62,6 @@ class ToolLoopAutoConfigurationTest {
     }
 
     @Test
-    void shouldCreateContextCompactionPolicy() {
-        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
-        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
-
-        ContextCompactionPolicy policy = configuration.contextCompactionPolicy(runtimeConfigService,
-                modelSelectionService);
-
-        assertNotNull(policy);
-    }
-
-    @Test
     void shouldCreateDefaultToolLoopSystem() {
         LlmPort llmPort = mock(LlmPort.class);
         ToolExecutorPort toolExecutorPort = mock(ToolExecutorPort.class);
