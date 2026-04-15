@@ -137,6 +137,111 @@ class DefaultConversationViewBuilderTest {
     }
 
     @Test
+    void shouldNotMaskWhenPreviousModelMissingAndNoToolMessagesPresent() {
+        // Guards hasToolMessages against BooleanTrueReturnValsMutator: if the
+        // method were replaced with `return true`, this plain-text session
+        // would be masked when it should not be.
+        DefaultConversationViewBuilder builder = new DefaultConversationViewBuilder(new FlatteningToolMessageMasker());
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("1")
+                .metadata(new HashMap<>())
+                .messages(new ArrayList<>())
+                .build();
+
+        Message plainUser = Message.builder()
+                .role("user")
+                .content("hello")
+                .timestamp(Instant.parse("2026-01-01T00:00:00Z"))
+                .build();
+        Message plainAssistant = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .content("hi back")
+                .timestamp(Instant.parse("2026-01-01T00:00:01Z"))
+                .build();
+        session.addMessage(plainUser);
+        session.addMessage(plainAssistant);
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        ConversationView view = builder.buildView(ctx, "new");
+
+        assertEquals(2, view.messages().size());
+        assertTrue(view.diagnostics().isEmpty(), "no masking should occur without tool messages");
+        assertEquals("user", view.messages().get(0).getRole());
+        assertEquals(ROLE_ASSISTANT, view.messages().get(1).getRole());
+    }
+
+    @Test
+    void shouldNotMaskWhenPreviousModelMissingAndMessageListEmpty() {
+        // Guards the messages.stream() short-circuit path on an empty list so
+        // that PIT cannot silently replace the `anyMatch` result with a
+        // hard-coded value.
+        DefaultConversationViewBuilder builder = new DefaultConversationViewBuilder(new FlatteningToolMessageMasker());
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("1")
+                .metadata(new HashMap<>())
+                .messages(new ArrayList<>())
+                .build();
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+
+        ConversationView view = builder.buildView(ctx, "new");
+
+        assertTrue(view.messages().isEmpty());
+        assertTrue(view.diagnostics().isEmpty());
+    }
+
+    @Test
+    void shouldMaskWhenPreviousModelMissingAndOnlyToolCallsPresent() {
+        // Assistant message carries toolCalls but no tool-role sibling yet —
+        // ensures the `m.hasToolCalls()` arm of the `||` in hasToolMessages is
+        // exercised independently. Kills NegateConditionalsMutator on that
+        // branch: if the `||` were flipped to `&&`, masking would not trigger.
+        DefaultConversationViewBuilder builder = new DefaultConversationViewBuilder(new FlatteningToolMessageMasker());
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("1")
+                .metadata(new HashMap<>())
+                .messages(new ArrayList<>())
+                .build();
+
+        Message assistantWithToolCall = Message.builder()
+                .role(ROLE_ASSISTANT)
+                .content("Calling tool")
+                .toolCalls(List.of(Message.ToolCall.builder().id(TOOL_CALL_ID).name(TOOL_NAME)
+                        .arguments(Map.of("command", "echo hi"))
+                        .build()))
+                .timestamp(Instant.parse("2026-01-01T00:00:00Z"))
+                .build();
+        session.addMessage(assistantWithToolCall);
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        ConversationView view = builder.buildView(ctx, "new");
+
+        assertEquals(1, view.messages().size());
+        assertFalse(view.diagnostics().isEmpty(), "tool-call-only message must trigger masking");
+        assertFalse(view.messages().get(0).hasToolCalls(), "toolCalls should be masked out");
+    }
+
+    @Test
     void shouldMaskWhenPreviousModelMissingButToolMessagesPresentAndTargetModelProvided() {
         DefaultConversationViewBuilder builder = new DefaultConversationViewBuilder(new FlatteningToolMessageMasker());
 

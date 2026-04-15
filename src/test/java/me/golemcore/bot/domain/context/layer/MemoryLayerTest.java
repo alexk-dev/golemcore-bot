@@ -23,6 +23,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -319,6 +320,48 @@ class MemoryLayerTest {
         assertEquals(42, query.getEpisodicTopK());
         assertEquals(77, query.getSemanticTopK());
         assertEquals(99, query.getProceduralTopK());
+    }
+
+    @Test
+    void shouldPassNullQueryTextWhenMessagesListIsEmpty() {
+        // Exercises getLastUserMessageText's null return for the empty-list
+        // branch — guards against EmptyObjectReturnValsMutator replacing
+        // `return null` with `return ""`.
+        MemoryPack pack = MemoryPack.builder().renderedContext("").build();
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(pack);
+
+        AgentContext context = AgentContext.builder()
+                .messages(List.of())
+                .session(AgentSession.builder().channelType("web").chatId("1").build())
+                .build();
+
+        layer.assemble(context);
+
+        ArgumentCaptor<MemoryQuery> captor = ArgumentCaptor.forClass(MemoryQuery.class);
+        verify(memoryComponent).buildMemoryPack(captor.capture());
+        assertNull(captor.getValue().getQueryText());
+    }
+
+    @Test
+    void shouldPassNullQueryTextWhenOnlyAssistantMessagesExist() {
+        // Exercises getLastUserMessageText's null return for the loop-exhausted
+        // branch (no user message found) — guards the second `return null`
+        // against the same mutator.
+        MemoryPack pack = MemoryPack.builder().renderedContext("").build();
+        when(memoryComponent.buildMemoryPack(any())).thenReturn(pack);
+
+        AgentContext context = AgentContext.builder()
+                .messages(List.of(
+                        Message.builder().role("assistant").content("hello").build(),
+                        Message.builder().role("assistant").content("again").build()))
+                .session(AgentSession.builder().channelType("web").chatId("1").build())
+                .build();
+
+        layer.assemble(context);
+
+        ArgumentCaptor<MemoryQuery> captor = ArgumentCaptor.forClass(MemoryQuery.class);
+        verify(memoryComponent).buildMemoryPack(captor.capture());
+        assertNull(captor.getValue().getQueryText());
     }
 
     @Test

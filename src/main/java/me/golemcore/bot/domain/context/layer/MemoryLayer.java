@@ -149,12 +149,12 @@ public class MemoryLayer implements ContextLayer {
         if (memoryConfig != null) {
             return Boolean.FALSE.equals(memoryConfig.getEnabled());
         }
-        String memoryPreset = context != null ? context.getAttribute(ContextAttributes.MEMORY_PRESET_ID) : null;
+        String memoryPreset = context.getAttribute(ContextAttributes.MEMORY_PRESET_ID);
         return memoryPreset != null && MemoryPresetIds.DISABLED.equalsIgnoreCase(memoryPreset.trim());
     }
 
     private RuntimeConfig.MemoryConfig resolveMemoryPresetConfig(AgentContext context) {
-        String memoryPreset = context != null ? context.getAttribute(ContextAttributes.MEMORY_PRESET_ID) : null;
+        String memoryPreset = context.getAttribute(ContextAttributes.MEMORY_PRESET_ID);
         if (memoryPreset == null || memoryPreset.isBlank()) {
             return null;
         }
