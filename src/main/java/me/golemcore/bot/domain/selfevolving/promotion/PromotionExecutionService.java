@@ -99,9 +99,6 @@ public class PromotionExecutionService {
     }
 
     private String buildTargetBundleId(EvolutionCandidate candidate, PromotionTarget target) {
-        if (candidate == null || StringValueSupport.isBlank(candidate.getId())) {
-            return candidate != null ? candidate.getBaseVersion() : null;
-        }
         return candidate.getId() + ":" + target.rolloutStage();
     }
 

@@ -228,4 +228,195 @@ class TierResolverTest {
     void shouldHandleNullContext() {
         resolver.resolve(null); // should not throw
     }
+
+    // --- Reflection tier resolution ------------------------------------------
+
+    @Test
+    void shouldApplyConfiguredReflectionOverrideWhenPriorityFlagIsTrue() {
+        // priority=true + configured override beats everything else, even a
+        // skill.getReflectionTier() that would otherwise win.
+        Skill skill = Skill.builder().name("auto").description("auto")
+                .reflectionTier("skill_power").build();
+        when(skillComponent.findByName("auto")).thenReturn(java.util.Optional.of(skill));
+
+        AgentContext context = AgentContext.builder()
+                .currentIteration(0)
+                .attributes(new HashMap<>(Map.of(
+                        ContextAttributes.AUTO_REFLECTION_ACTIVE, Boolean.TRUE,
+                        ContextAttributes.AUTO_REFLECTION_TIER, "override_power",
+                        ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, Boolean.TRUE,
+                        ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "auto")))
+                .build();
+
+        resolver.resolve(context);
+
+        assertEquals("override_power", context.getModelTier());
+        assertEquals("reflection_override", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldPreferSkillReflectionTierWhenPriorityFlagIsFalse() {
+        Skill skill = Skill.builder().name("auto").description("auto")
+                .reflectionTier("skill_reflection_tier").build();
+        when(skillComponent.findByName("auto")).thenReturn(java.util.Optional.of(skill));
+
+        AgentContext context = AgentContext.builder()
+                .currentIteration(0)
+                .attributes(new HashMap<>(Map.of(
+                        ContextAttributes.AUTO_REFLECTION_ACTIVE, Boolean.TRUE,
+                        ContextAttributes.AUTO_REFLECTION_TIER, "override_ignored",
+                        ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "auto")))
+                .build();
+
+        resolver.resolve(context);
+
+        assertEquals("skill_reflection_tier", context.getModelTier());
+        assertEquals("skill_reflection", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldFallBackToConfiguredReflectionOverrideWhenNoSkillReflectionTier() {
+        // Skill has no reflectionTier so the second branch falls through to
+        // the configured override.
+        Skill skill = Skill.builder().name("auto").description("auto").build();
+        when(skillComponent.findByName("auto")).thenReturn(java.util.Optional.of(skill));
+
+        AgentContext context = AgentContext.builder()
+                .currentIteration(0)
+                .attributes(new HashMap<>(Map.of(
+                        ContextAttributes.AUTO_REFLECTION_ACTIVE, Boolean.TRUE,
+                        ContextAttributes.AUTO_REFLECTION_TIER, "override_power",
+                        ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "auto")))
+                .build();
+
+        resolver.resolve(context);
+
+        assertEquals("override_power", context.getModelTier());
+        assertEquals("reflection_override", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldFallBackToRuntimeReflectionTierWhenNoOverridesPresent() {
+        when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn("runtime_tier");
+        Skill skill = Skill.builder().name("auto").description("auto").build();
+        when(skillComponent.findByName("auto")).thenReturn(java.util.Optional.of(skill));
+
+        AgentContext context = AgentContext.builder()
+                .currentIteration(0)
+                .attributes(new HashMap<>(Map.of(
+                        ContextAttributes.AUTO_REFLECTION_ACTIVE, Boolean.TRUE,
+                        ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "auto")))
+                .build();
+
+        resolver.resolve(context);
+
+        assertEquals("runtime_tier", context.getModelTier());
+        assertEquals("runtime_reflection", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldFallBackToSkillModelTierWhenNoReflectionOverridesAndNoRuntimeTier() {
+        Skill skill = Skill.builder().name("auto").description("auto").modelTier("skill_default").build();
+        when(skillComponent.findByName("auto")).thenReturn(java.util.Optional.of(skill));
+
+        AgentContext context = AgentContext.builder()
+                .currentIteration(0)
+                .attributes(new HashMap<>(Map.of(
+                        ContextAttributes.AUTO_REFLECTION_ACTIVE, Boolean.TRUE,
+                        ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "auto")))
+                .build();
+
+        resolver.resolve(context);
+
+        assertEquals("skill_default", context.getModelTier());
+        assertEquals("skill", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldFallBackToUserPreferenceWhenReflectionHasNoTierSource() {
+        // No skill, no override, no runtime tier — should fall back to the
+        // user preference (the fallbackTier parameter).
+        when(userPreferencesService.getPreferences())
+                .thenReturn(UserPreferences.builder().modelTier("user_fallback").build());
+
+        AgentContext context = AgentContext.builder()
+                .currentIteration(0)
+                .attributes(new HashMap<>(Map.of(
+                        ContextAttributes.AUTO_REFLECTION_ACTIVE, Boolean.TRUE)))
+                .build();
+
+        resolver.resolve(context);
+
+        assertEquals("user_fallback", context.getModelTier());
+        assertEquals("user_pref", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldDetectReflectionContextFromLastMessageMetadata() {
+        // Drives the Message-metadata branch of isAutoReflectionContext rather
+        // than the context-attribute branch.
+        Message autoMsg = Message.builder().role("user").content("run")
+                .metadata(new HashMap<>(Map.of(ContextAttributes.AUTO_REFLECTION_ACTIVE, Boolean.TRUE,
+                        ContextAttributes.AUTO_REFLECTION_TIER, "msg_override")))
+                .build();
+        when(userPreferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
+
+        AgentContext context = AgentContext.builder()
+                .currentIteration(0)
+                .messages(List.of(autoMsg))
+                .build();
+
+        resolver.resolve(context);
+
+        assertEquals("msg_override", context.getModelTier());
+        assertEquals("reflection_override", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldReadReflectionPriorityFromMessageMetadataString() {
+        // The priority flag is allowed to arrive as a String (e.g. from webhook
+        // payloads) and must be parsed. Exercises the String branch of
+        // resolveReflectionTierPriority.
+        Skill skill = Skill.builder().name("auto").description("auto")
+                .reflectionTier("skill_ignored").build();
+        when(skillComponent.findByName("auto")).thenReturn(java.util.Optional.of(skill));
+
+        Message autoMsg = Message.builder().role("user").content("run")
+                .metadata(new HashMap<>(Map.of(
+                        ContextAttributes.AUTO_REFLECTION_ACTIVE, Boolean.TRUE,
+                        ContextAttributes.AUTO_REFLECTION_TIER, "override_via_msg",
+                        ContextAttributes.AUTO_REFLECTION_TIER_PRIORITY, "true",
+                        ContextAttributes.AUTO_RUN_ACTIVE_SKILL, "auto")))
+                .build();
+
+        AgentContext context = AgentContext.builder()
+                .currentIteration(0)
+                .messages(List.of(autoMsg))
+                .build();
+
+        resolver.resolve(context);
+
+        assertEquals("override_via_msg", context.getModelTier());
+        assertEquals("reflection_override", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
+
+    @Test
+    void shouldResolveReflectionSkillFromActiveSkillNameAttribute() {
+        // Exercises the ACTIVE_SKILL_NAME branch of resolveReflectionSkillName.
+        Skill skill = Skill.builder().name("fallback-skill").description("fallback")
+                .reflectionTier("fallback_tier").build();
+        when(skillComponent.findByName("fallback-skill")).thenReturn(java.util.Optional.of(skill));
+
+        AgentContext context = AgentContext.builder()
+                .currentIteration(0)
+                .attributes(new HashMap<>(Map.of(
+                        ContextAttributes.AUTO_REFLECTION_ACTIVE, Boolean.TRUE,
+                        ContextAttributes.ACTIVE_SKILL_NAME, "fallback-skill")))
+                .build();
+
+        resolver.resolve(context);
+
+        assertEquals("fallback_tier", context.getModelTier());
+        assertEquals("skill_reflection", context.getAttribute(ContextAttributes.MODEL_TIER_SOURCE));
+    }
 }

@@ -12,6 +12,10 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class PromotionWorkflowStoreTest {
     private PromotionWorkflowStatePort promotionWorkflowStatePort;
@@ -83,5 +87,51 @@ class PromotionWorkflowStoreTest {
 
         assertTrue(store.getCandidates().isEmpty());
         assertTrue(store.getPromotionDecisions().isEmpty());
+    }
+
+    @Test
+    void shouldCacheCandidatesAcrossSuccessiveReads() {
+        // Pins the `candidateCache.set(cached)` call — if removed by a mutant,
+        // the mocked port's loadCandidates would be called more than once.
+        PromotionWorkflowStatePort mockPort = mock(PromotionWorkflowStatePort.class);
+        when(mockPort.loadCandidates()).thenReturn(new ArrayList<>(List.of(
+                EvolutionCandidate.builder().id("cached-1").build())));
+        PromotionWorkflowStore store = new PromotionWorkflowStore(mockPort);
+
+        store.getCandidates();
+        store.getCandidates();
+        store.getCandidates();
+
+        verify(mockPort, times(1)).loadCandidates();
+    }
+
+    @Test
+    void shouldCachePromotionDecisionsAcrossSuccessiveReads() {
+        // Pins `decisionCache.set(cached)` call for the same reason.
+        PromotionWorkflowStatePort mockPort = mock(PromotionWorkflowStatePort.class);
+        when(mockPort.loadPromotionDecisions()).thenReturn(new ArrayList<>(List.of(
+                PromotionDecision.builder().id("d-cached").candidateId("c").build())));
+        PromotionWorkflowStore store = new PromotionWorkflowStore(mockPort);
+
+        store.getPromotionDecisions();
+        store.getPromotionDecisions();
+
+        verify(mockPort, times(1)).loadPromotionDecisions();
+    }
+
+    @Test
+    void shouldReturnDefensiveCopyOfCachedCandidates() {
+        // Callers must not be able to mutate the cached list — the copy is
+        // taken through `new ArrayList<>(cached)` on every read.
+        PromotionWorkflowStatePort mockPort = mock(PromotionWorkflowStatePort.class);
+        when(mockPort.loadCandidates()).thenReturn(new ArrayList<>(List.of(
+                EvolutionCandidate.builder().id("cached-1").build())));
+        PromotionWorkflowStore store = new PromotionWorkflowStore(mockPort);
+
+        List<EvolutionCandidate> first = store.getCandidates();
+        first.clear();
+        List<EvolutionCandidate> second = store.getCandidates();
+
+        assertEquals(1, second.size());
     }
 }

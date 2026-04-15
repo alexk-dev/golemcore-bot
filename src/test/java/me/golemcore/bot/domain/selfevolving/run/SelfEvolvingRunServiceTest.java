@@ -13,6 +13,7 @@ import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.adapter.outbound.selfevolving.JsonRunJournalAdapter;
 import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.selfevolving.RunJournalPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -309,6 +310,186 @@ class SelfEvolvingRunServiceTest {
 
         assertEquals("local-golem", run.getGolemId());
         assertEquals("bundle-global", run.getArtifactBundleId());
+    }
+
+    @Test
+    void shouldFindCorrectRunAmongMultipleCachedRuns() {
+        // Guards the findRun lambda against a mutation that returns true for
+        // every candidate — with multiple persisted runs, such a mutant would
+        // return the wrong element.
+        Map<String, String> persistedFiles = new ConcurrentHashMap<>();
+        StoragePort persistedStorage = mapBackedStorage(persistedFiles);
+        SelfEvolvingRunService persistedService = new SelfEvolvingRunService(
+                new JsonRunJournalAdapter(persistedStorage), artifactBundleService, clock);
+
+        AgentContext ctxA = AgentContext.builder()
+                .session(AgentSession.builder().id("session-A").metadata(Map.of()).build())
+                .build();
+        AgentContext ctxB = AgentContext.builder()
+                .session(AgentSession.builder().id("session-B").metadata(Map.of()).build())
+                .build();
+        when(artifactBundleService.snapshot(ctxA)).thenReturn(ArtifactBundleRecord.builder().id("bA").build());
+        when(artifactBundleService.snapshot(ctxB)).thenReturn(ArtifactBundleRecord.builder().id("bB").build());
+
+        RunRecord runA = persistedService.startRun(ctxA);
+        RunRecord runB = persistedService.startRun(ctxB);
+
+        Optional<RunRecord> found = persistedService.findRun(runB.getId());
+        assertTrue(found.isPresent());
+        assertEquals(runB.getId(), found.get().getId());
+        assertEquals("local-session-B", found.get().getGolemId());
+        // Also confirm run A is still reachable and not overwritten.
+        assertEquals(runA.getId(), persistedService.findRun(runA.getId()).get().getId());
+    }
+
+    @Test
+    void shouldReturnMutableListForAppliedTacticIdsEvenWhenAttributeMissing() {
+        // Kills the mutant that replaces `new ArrayList<>()` with
+        // `Collections.emptyList()` in resolveAppliedTacticIds — the empty-list
+        // singleton would reject the add() call below.
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-mut").metadata(Map.of()).build())
+                .turnOutcome(TurnOutcome.builder().finishReason(FinishReason.SUCCESS).build())
+                .build();
+        RunRecord run = RunRecord.builder()
+                .id("run-mut")
+                .artifactBundleId("bundle-mut")
+                .status("RUNNING")
+                .build();
+        when(artifactBundleService.refresh("bundle-mut", context))
+                .thenReturn(ArtifactBundleRecord.builder().id("bundle-mut").build());
+
+        RunRecord completed = service.completeRun(run, context);
+
+        assertNotNull(completed.getAppliedTacticIds());
+        assertTrue(completed.getAppliedTacticIds().isEmpty());
+        completed.getAppliedTacticIds().add("post-hoc");
+        assertEquals(List.of("post-hoc"), completed.getAppliedTacticIds());
+    }
+
+    @Test
+    void shouldAssignRunIdToVerdictWhenRunIdIsMissingOnPayload() {
+        // saveVerdict must stamp the runId on the incoming verdict, even if
+        // the caller passed one without the field populated. Guards the
+        // removed-call-to-setRunId mutation.
+        Map<String, String> persistedFiles = new ConcurrentHashMap<>();
+        StoragePort persistedStorage = mapBackedStorage(persistedFiles);
+        SelfEvolvingRunService writerService = new SelfEvolvingRunService(
+                new JsonRunJournalAdapter(persistedStorage), artifactBundleService, clock);
+        RunVerdict verdictWithoutRunId = RunVerdict.builder()
+                .id("verdict-no-id")
+                .outcomeStatus("COMPLETED")
+                .createdAt(FIXED_INSTANT)
+                .build();
+
+        writerService.saveVerdict("run-stamped", verdictWithoutRunId);
+
+        assertEquals("run-stamped", verdictWithoutRunId.getRunId());
+        Optional<RunVerdict> stored = writerService.findVerdict("run-stamped");
+        assertTrue(stored.isPresent());
+        assertEquals("run-stamped", stored.get().getRunId());
+    }
+
+    @Test
+    void shouldCacheRunsAfterFirstLoad() {
+        // getRuns() must populate the in-memory cache on first call so that
+        // subsequent calls do not hit the journal port again. Kills the
+        // removed-call-to-runCache::set mutant.
+        RunJournalPort mockJournal = mock(RunJournalPort.class);
+        when(mockJournal.loadRuns()).thenReturn(new java.util.ArrayList<>(List.of(
+                RunRecord.builder().id("r-1").build())));
+        SelfEvolvingRunService cachedService = new SelfEvolvingRunService(mockJournal, artifactBundleService, clock);
+
+        cachedService.getRuns();
+        cachedService.getRuns();
+        cachedService.getRuns();
+
+        verify(mockJournal, org.mockito.Mockito.times(1)).loadRuns();
+    }
+
+    @Test
+    void shouldCacheVerdictsAfterFirstLoad() {
+        // Same caching contract for the verdict map — guards against
+        // removed-call-to-verdictCache::set on the getVerdicts() lazy-init
+        // path.
+        RunJournalPort mockJournal = mock(RunJournalPort.class);
+        when(mockJournal.loadRuns()).thenReturn(new java.util.ArrayList<>());
+        when(mockJournal.loadVerdicts()).thenReturn(new java.util.LinkedHashMap<>(Map.of(
+                "run-v", RunVerdict.builder().id("v").runId("run-v").build())));
+        SelfEvolvingRunService cachedService = new SelfEvolvingRunService(mockJournal, artifactBundleService, clock);
+
+        cachedService.findVerdict("run-v");
+        cachedService.findVerdict("run-v");
+        cachedService.findVerdict("run-v");
+
+        verify(mockJournal, org.mockito.Mockito.times(1)).loadVerdicts();
+    }
+
+    @Test
+    void shouldRefreshVerdictCacheAfterSave() {
+        // Guards the removed-call-to-verdictCache::set mutation inside
+        // saveVerdict: after a save, a subsequent findVerdict must see the
+        // new entry without touching the journal a second time.
+        RunJournalPort mockJournal = mock(RunJournalPort.class);
+        when(mockJournal.loadRuns()).thenReturn(new java.util.ArrayList<>());
+        when(mockJournal.loadVerdicts()).thenReturn(new java.util.LinkedHashMap<>());
+        SelfEvolvingRunService cachedService = new SelfEvolvingRunService(mockJournal, artifactBundleService, clock);
+
+        cachedService.saveVerdict("run-fresh",
+                RunVerdict.builder().id("v-fresh").outcomeStatus("COMPLETED").build());
+
+        Optional<RunVerdict> found = cachedService.findVerdict("run-fresh");
+        assertTrue(found.isPresent());
+        // loadVerdicts is called at most once — subsequent reads must come
+        // from the cache populated by saveVerdict.
+        verify(mockJournal, org.mockito.Mockito.atMostOnce()).loadVerdicts();
+    }
+
+    @Test
+    void shouldPersistRunFromCompleteRunViaSave() {
+        // Guards against removed-call-to-save on completeRun: after
+        // completion, the updated status must be visible through findRun
+        // (which reads the cached/persisted state).
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-persist").metadata(Map.of()).build())
+                .turnOutcome(TurnOutcome.builder().finishReason(FinishReason.SUCCESS).build())
+                .build();
+        when(artifactBundleService.snapshot(context))
+                .thenReturn(ArtifactBundleRecord.builder().id("bundle-persist").build());
+        when(artifactBundleService.refresh("bundle-persist", context))
+                .thenReturn(ArtifactBundleRecord.builder().id("bundle-persist-2").build());
+
+        RunRecord started = service.startRun(context);
+        service.completeRun(started, context);
+
+        Optional<RunRecord> found = service.findRun(started.getId());
+        assertTrue(found.isPresent());
+        assertEquals("COMPLETED", found.get().getStatus());
+        assertEquals("bundle-persist-2", found.get().getArtifactBundleId());
+    }
+
+    @Test
+    void shouldInvokeJournalSaveOnCompleteRunEvenWhenSharedRunReferenceWouldMaskTheRemoval() {
+        // The mutated run object is shared with the cache, so naive status
+        // assertions would pass even if completeRun skipped save(run). Verify
+        // the journal port directly to kill the removed-call mutant.
+        RunJournalPort mockJournal = mock(RunJournalPort.class);
+        when(mockJournal.loadRuns()).thenReturn(new java.util.ArrayList<>());
+        SelfEvolvingRunService cachedService = new SelfEvolvingRunService(mockJournal, artifactBundleService, clock);
+
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-save").metadata(Map.of()).build())
+                .turnOutcome(TurnOutcome.builder().finishReason(FinishReason.SUCCESS).build())
+                .build();
+        when(artifactBundleService.snapshot(context))
+                .thenReturn(ArtifactBundleRecord.builder().id("bundle-save").build());
+        when(artifactBundleService.refresh("bundle-save", context))
+                .thenReturn(ArtifactBundleRecord.builder().id("bundle-save-2").build());
+
+        RunRecord started = cachedService.startRun(context);
+        cachedService.completeRun(started, context);
+
+        verify(mockJournal, org.mockito.Mockito.times(2)).saveRuns(org.mockito.ArgumentMatchers.any());
     }
 
     @Test

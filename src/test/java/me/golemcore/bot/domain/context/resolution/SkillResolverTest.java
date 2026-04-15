@@ -126,6 +126,116 @@ class SkillResolverTest {
         assertEquals(existing, context.getActiveSkill());
     }
 
+    @Test
+    void shouldRecordExplicitToolSourceAfterTransitionRequest() {
+        // Guards formatActiveSkillSource — both the "return null" mutant and the
+        // negated null-check: if the method returned null or the empty string,
+        // ACTIVE_SKILL_SOURCE would not be set to "explicit_tool".
+        Skill coding = Skill.builder().name("coding").description("Code").available(true).build();
+        when(skillComponent.findByName("coding")).thenReturn(Optional.of(coding));
+
+        AgentContext context = contextWithSession();
+        context.setSkillTransitionRequest(SkillTransitionRequest.explicit("coding"));
+
+        resolver.resolve(context);
+
+        assertEquals("explicit_tool", context.getAttribute(ContextAttributes.ACTIVE_SKILL_SOURCE));
+    }
+
+    @Test
+    void shouldRecordSkillPipelineSourceAfterPipelineTransitionRequest() {
+        // Uses the pipeline() factory so the lowercased reason name differs
+        // from the explicit path — kills return-value mutations that collapse
+        // both branches to the same constant.
+        Skill research = Skill.builder().name("research").description("Research").available(true).build();
+        when(skillComponent.findByName("research")).thenReturn(Optional.of(research));
+
+        AgentContext context = contextWithSession();
+        context.setSkillTransitionRequest(SkillTransitionRequest.pipeline("research"));
+
+        resolver.resolve(context);
+
+        assertEquals("skill_pipeline", context.getAttribute(ContextAttributes.ACTIVE_SKILL_SOURCE));
+    }
+
+    @Test
+    void shouldDefaultToMessageMetadataSourceWhenResolvingViaContextAttribute() {
+        // Kills resolveExplicitSkillSource "replaced return value with empty
+        // string" mutant — asserts the explicit default "message_metadata".
+        Skill research = Skill.builder().name("research").description("Research").available(true).build();
+        when(skillComponent.findByName("research")).thenReturn(Optional.of(research));
+
+        AgentContext context = contextWithSession();
+        context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, "research");
+
+        resolver.resolve(context);
+
+        assertEquals("message_metadata", context.getAttribute(ContextAttributes.ACTIVE_SKILL_SOURCE));
+    }
+
+    @Test
+    void shouldPreserveExistingSkillSourceAttributeWhenResolvingViaContextAttribute() {
+        // Guards the `return existing;` branch of resolveExplicitSkillSource:
+        // if the field were replaced with null/empty, the pre-set source would
+        // be overwritten by "message_metadata".
+        Skill research = Skill.builder().name("research").description("Research").available(true).build();
+        when(skillComponent.findByName("research")).thenReturn(Optional.of(research));
+
+        AgentContext context = contextWithSession();
+        context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, "research");
+        context.setAttribute(ContextAttributes.ACTIVE_SKILL_SOURCE, "preexisting_source");
+
+        resolver.resolve(context);
+
+        assertEquals("preexisting_source", context.getAttribute(ContextAttributes.ACTIVE_SKILL_SOURCE));
+    }
+
+    @Test
+    void shouldRecordSessionStateSourceAfterStickyResolution() {
+        // Exercises the session-state arm of applyActiveSkillByName and kills
+        // return-value mutants in that branch.
+        Skill coding = Skill.builder().name("coding").description("Code").available(true).build();
+        when(skillComponent.findByName("coding")).thenReturn(Optional.of(coding));
+
+        AgentContext context = contextWithSession();
+        context.getSession().getMetadata().put(ContextAttributes.ACTIVE_SKILL_NAME, "coding");
+
+        resolver.resolve(context);
+
+        assertEquals("session_state", context.getAttribute(ContextAttributes.ACTIVE_SKILL_SOURCE));
+    }
+
+    @Test
+    void shouldIgnoreSessionActiveSkillWhenMetadataValueIsNotString() {
+        // Guards readSessionActiveSkillName "return value replaced with empty
+        // string" mutant on the non-String branch — if it returned "" instead
+        // of null, applyActiveSkillByName would short-circuit on the blank
+        // check but the test intent (no sticky skill resolved) still holds.
+        // Combined with the blank-value guard below, this pins the branch.
+        AgentContext context = contextWithSession();
+        context.getSession().getMetadata().put(ContextAttributes.ACTIVE_SKILL_NAME, 42);
+
+        resolver.resolve(context);
+
+        assertNull(context.getActiveSkill());
+    }
+
+    @Test
+    void shouldIgnoreSessionActiveSkillWhenMetadataIsMissing() {
+        // Session has no metadata at all — kills the early-null branch of
+        // readSessionActiveSkillName.
+        AgentSession session = AgentSession.builder()
+                .channelType("web")
+                .chatId("chat-1")
+                .build();
+        session.setMetadata(null);
+        AgentContext context = AgentContext.builder().session(session).build();
+
+        resolver.resolve(context);
+
+        assertNull(context.getActiveSkill());
+    }
+
     private AgentContext contextWithSession() {
         AgentSession session = AgentSession.builder()
                 .channelType("web")

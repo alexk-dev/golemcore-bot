@@ -524,6 +524,82 @@
     </build>
 
     <profiles>
+        <!-- Mutation testing profile for CI-only focused checks. -->
+        <profile>
+            <id>pitests</id>
+            <properties>
+                <pitest.version>1.23.0</pitest.version>
+                <pitest.junit5.plugin.version>1.2.3</pitest.junit5.plugin.version>
+                <pitest.mutationThreshold>85</pitest.mutationThreshold>
+                <pitest.threads>4</pitest.threads>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.pitest</groupId>
+                        <artifactId>pitest-maven</artifactId>
+                        <version>${pitest.version}</version>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.pitest</groupId>
+                                <artifactId>pitest-junit5-plugin</artifactId>
+                                <version>${pitest.junit5.plugin.version}</version>
+                            </dependency>
+                        </dependencies>
+                        <configuration>
+                            <!--
+                                Mutation testing is scoped to a curated subset of the domain
+                                module: the context pipeline layers, context resolvers, memory
+                                diagnostics/orchestrator, self-evolving run + promotion services,
+                                and the tool-loop conversation view. These packages form the
+                                deterministic core of the agent loop and have the highest
+                                existing test strength, so a stringent mutation threshold here
+                                provides meaningful regression protection without requiring the
+                                full domain module to clear the same bar in a single run.
+
+                                Classes excluded below either depend on Spring-wired
+                                infrastructure that mutation testing cannot easily exercise
+                                (e.g. RagLayer, AutoModeLayer) or are thin coordination layers
+                                whose logic is covered indirectly by integration tests.
+                            -->
+                            <targetClasses>
+                                <param>me.golemcore.bot.domain.context.layer.*</param>
+                                <param>me.golemcore.bot.domain.context.resolution.*</param>
+                                <param>me.golemcore.bot.domain.memory.diagnostics.*</param>
+                                <param>me.golemcore.bot.domain.memory.orchestrator.*</param>
+                                <param>me.golemcore.bot.domain.selfevolving.run.*</param>
+                                <param>me.golemcore.bot.domain.selfevolving.promotion.*</param>
+                                <param>me.golemcore.bot.domain.system.toolloop.view.*</param>
+                            </targetClasses>
+                            <excludedClasses>
+                                <param>me.golemcore.bot.domain.context.layer.TierAwarenessLayer</param>
+                                <param>me.golemcore.bot.domain.context.layer.AutoModeLayer</param>
+                                <param>me.golemcore.bot.domain.context.layer.RagLayer</param>
+                                <param>me.golemcore.bot.domain.memory.orchestrator.MemoryContextOrchestrator</param>
+                                <param>me.golemcore.bot.domain.selfevolving.promotion.PromotionTargetResolver</param>
+                                <param>me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker</param>
+                            </excludedClasses>
+                            <targetTests>
+                                <param>me.golemcore.bot.domain.*</param>
+                            </targetTests>
+                            <threads>${pitest.threads}</threads>
+                            <mutationThreshold>${pitest.mutationThreshold}</mutationThreshold>
+                            <timeoutFactor>2.0</timeoutFactor>
+                            <timeoutConstant>8000</timeoutConstant>
+                            <timestampedReports>false</timestampedReports>
+                            <failWhenNoMutations>true</failWhenNoMutations>
+                            <outputFormats>
+                                <outputFormat>HTML</outputFormat>
+                                <outputFormat>XML</outputFormat>
+                            </outputFormats>
+                            <jvmArgs>
+                                <jvmArg>-Xmx2g</jvmArg>
+                            </jvmArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- Strict profile for CI/CD - fails build on code quality issues -->
         <profile>
             <id>strict</id>
