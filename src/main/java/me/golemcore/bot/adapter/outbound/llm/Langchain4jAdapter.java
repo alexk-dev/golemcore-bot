@@ -23,12 +23,10 @@ import me.golemcore.bot.domain.model.LlmChunk;
 import me.golemcore.bot.domain.model.LlmProviderMetadataKeys;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
-import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.system.LlmErrorPatterns;
@@ -36,9 +34,7 @@ import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.http.client.HttpClientBuilderLoader;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
@@ -50,7 +46,6 @@ import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiResponsesStreamingChatModel;
-import dev.langchain4j.model.output.TokenUsage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -817,7 +812,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return Langchain4jResponseMapper.withProviderMetadata(response, extraMetadata);
     }
 
-    private String convertArgsToJson(Object args) {
+    String convertArgsToJson(Object args) {
         if (args instanceof Map<?, ?> rawMap) {
             Map<String, Object> casted = new LinkedHashMap<>();
             for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
@@ -830,7 +825,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return Langchain4jToolArgumentJson.toJson(null, objectMapper);
     }
 
-    private Map<String, Object> parseJsonArgs(Object json) {
+    Map<String, Object> parseJsonArgs(Object json) {
         return Langchain4jToolArgumentJson.parse(json instanceof String stringValue ? stringValue : null, objectMapper);
     }
 
