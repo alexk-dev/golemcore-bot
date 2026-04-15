@@ -97,9 +97,6 @@ public class SelfEvolvingRunService {
     }
 
     private List<String> resolveAppliedTacticIds(AgentContext context) {
-        if (context == null) {
-            return new ArrayList<>();
-        }
         List<String> applied = context.getAttribute(ContextAttributes.APPLIED_TACTIC_IDS);
         if (applied == null || applied.isEmpty()) {
             return new ArrayList<>();

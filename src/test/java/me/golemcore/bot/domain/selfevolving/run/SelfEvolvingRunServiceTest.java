@@ -469,6 +469,30 @@ class SelfEvolvingRunServiceTest {
     }
 
     @Test
+    void shouldInvokeJournalSaveOnCompleteRunEvenWhenSharedRunReferenceWouldMaskTheRemoval() {
+        // The mutated run object is shared with the cache, so naive status
+        // assertions would pass even if completeRun skipped save(run). Verify
+        // the journal port directly to kill the removed-call mutant.
+        RunJournalPort mockJournal = mock(RunJournalPort.class);
+        when(mockJournal.loadRuns()).thenReturn(new java.util.ArrayList<>());
+        SelfEvolvingRunService cachedService = new SelfEvolvingRunService(mockJournal, artifactBundleService, clock);
+
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("session-save").metadata(Map.of()).build())
+                .turnOutcome(TurnOutcome.builder().finishReason(FinishReason.SUCCESS).build())
+                .build();
+        when(artifactBundleService.snapshot(context))
+                .thenReturn(ArtifactBundleRecord.builder().id("bundle-save").build());
+        when(artifactBundleService.refresh("bundle-save", context))
+                .thenReturn(ArtifactBundleRecord.builder().id("bundle-save-2").build());
+
+        RunRecord started = cachedService.startRun(context);
+        cachedService.completeRun(started, context);
+
+        verify(mockJournal, org.mockito.Mockito.times(2)).saveRuns(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void shouldLoadRunsAsEmptyWhenStoredJsonIsInvalid() {
         StoragePort brokenStorage = mock(StoragePort.class);
         when(brokenStorage.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture("{"));
