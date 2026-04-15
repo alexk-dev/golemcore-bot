@@ -574,6 +574,12 @@
                                 <param>me.golemcore.bot.*Configuration</param>
                                 <param>me.golemcore.bot.*$*Builder</param>
                                 <param>me.golemcore.bot.*MapperImpl</param>
+                                <!-- Generated protobuf classes: not hand-written, PIT
+                                     should not mutate them. -->
+                                <param>me.golemcore.bot.proto.*</param>
+                                <param>me.golemcore.bot.proto.*$*</param>
+                                <param>me.golemcore.bot.adapter.inbound.web.proto.*</param>
+                                <param>me.golemcore.bot.adapter.inbound.web.proto.*$*</param>
                             </excludedClasses>
                             <targetTests>
                                 <param>me.golemcore.bot.*</param>

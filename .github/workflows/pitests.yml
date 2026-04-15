@@ -8,9 +8,9 @@ on:
 
 env:
   PLUGIN_API_REPO_REF: 67cd0d10a997f494dcaf4686438e5c6bcfc8ac65
-  # Full-product baseline locked from run 24462559861: 65% mutation score,
-  # 83% line coverage. Raise as coverage grows toward the old 85% bar.
-  PITEST_MUTATION_THRESHOLD: 65
+  # Full-product baseline (post proto exclusion): ~71% mutation score.
+  # Threshold tracks the current gate; raise as coverage grows toward 85%.
+  PITEST_MUTATION_THRESHOLD: 70
 
 jobs:
   pitests:
