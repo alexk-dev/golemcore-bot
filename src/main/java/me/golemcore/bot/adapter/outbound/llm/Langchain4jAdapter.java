@@ -27,11 +27,11 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.system.LlmErrorPatterns;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.port.outbound.ToolArtifactReadPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.ChatMessage;
@@ -118,7 +118,6 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigPort modelConfig;
-    private final ToolArtifactService toolArtifactService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Langchain4jMessageConverter messageConverter;
     private final Langchain4jToolSchemaConverter toolSchemaConverter;
@@ -130,11 +129,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private final Map<String, StreamingChatModel> responsesStreamingModels = new java.util.concurrent.ConcurrentHashMap<>();
 
     public Langchain4jAdapter(RuntimeConfigService runtimeConfigService, ModelConfigPort modelConfig,
-            ToolArtifactService toolArtifactService) {
+            ToolArtifactReadPort toolArtifactReadPort) {
         this.runtimeConfigService = runtimeConfigService;
         this.modelConfig = modelConfig;
-        this.toolArtifactService = toolArtifactService;
-        this.messageConverter = new Langchain4jMessageConverter(toolArtifactService, objectMapper);
+        this.messageConverter = new Langchain4jMessageConverter(toolArtifactReadPort, objectMapper);
         this.toolSchemaConverter = new Langchain4jToolSchemaConverter();
         this.responseMapper = new Langchain4jResponseMapper(objectMapper);
     }

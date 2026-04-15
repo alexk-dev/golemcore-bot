@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.port.outbound.ToolArtifactReadPort;
 import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import org.springframework.stereotype.Service;
 
@@ -21,7 +22,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class ToolArtifactService {
+public class ToolArtifactService implements ToolArtifactReadPort {
 
     private static final String TOOL_ARTIFACTS_DIR = ".golemcore/tool-artifacts";
     private static final int MAX_FILENAME_LENGTH = 120;
@@ -71,6 +72,7 @@ public class ToolArtifactService {
         }
     }
 
+    @Override
     public ToolArtifactDownload getDownload(String relativePath) {
         if (relativePath == null || relativePath.isBlank()) {
             throw new IllegalArgumentException("Path is required");

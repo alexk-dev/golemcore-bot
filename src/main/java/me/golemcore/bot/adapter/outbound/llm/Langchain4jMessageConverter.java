@@ -41,7 +41,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
-import me.golemcore.bot.domain.service.ToolArtifactService;
+import me.golemcore.bot.port.outbound.ToolArtifactReadPort;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -52,7 +52,7 @@ class Langchain4jMessageConverter {
     private static final String SYNTH_ID_PREFIX = "synth_call_";
     private static final String TOOL_ATTACHMENT_REOPEN_HINT = "Re-open the file with a tool if deeper inspection is needed.";
 
-    private final ToolArtifactService toolArtifactService;
+    private final ToolArtifactReadPort toolArtifactReadPort;
     private final ObjectMapper objectMapper;
 
     MessageConversionResult convertMessages(String systemPrompt, List<Message> requestMessages,
@@ -293,7 +293,7 @@ class Langchain4jMessageConverter {
             contents.add(TextContent.from(text));
         }
 
-        if (!hydrateImages || toolArtifactService == null) {
+        if (!hydrateImages || toolArtifactReadPort == null) {
             return contents.isEmpty() ? null : UserMessage.from(contents);
         }
 
@@ -312,7 +312,7 @@ class Langchain4jMessageConverter {
             }
 
             try {
-                ToolArtifactDownload download = toolArtifactService.getDownload(internalFilePath);
+                ToolArtifactDownload download = toolArtifactReadPort.getDownload(internalFilePath);
                 String mimeType = download.getMimeType();
                 if (mimeType == null || !mimeType.startsWith("image/")) {
                     continue;

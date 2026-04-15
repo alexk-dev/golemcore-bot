@@ -1631,30 +1631,46 @@ public class RuntimeConfigService {
      * Generate a new single-use invite code.
      */
     public RuntimeConfig.InviteCode generateInviteCode() {
-        return RuntimeConfigInviteCodeSupport.generateInviteCode(getRuntimeConfig(), runtimeConfigPersistencePort);
+        RuntimeConfig cfg = getRuntimeConfig();
+        RuntimeConfig.InviteCode inviteCode = RuntimeConfigInviteCodeSupport.generateInviteCode(cfg);
+        runtimeConfigPersistencePort.persist(cfg);
+        return inviteCode;
     }
 
     /**
      * Revoke (remove) an invite code.
      */
     public boolean revokeInviteCode(String code) {
-        return RuntimeConfigInviteCodeSupport.revokeInviteCode(getRuntimeConfig(), runtimeConfigPersistencePort, code);
+        RuntimeConfig cfg = getRuntimeConfig();
+        boolean removed = RuntimeConfigInviteCodeSupport.revokeInviteCode(cfg, code);
+        if (removed) {
+            runtimeConfigPersistencePort.persist(cfg);
+        }
+        return removed;
     }
 
     /**
      * Redeem a single-use invite code, adding the user to allowed users.
      */
     public boolean redeemInviteCode(String code, String userId) {
-        return RuntimeConfigInviteCodeSupport.redeemInviteCode(getRuntimeConfig(), runtimeConfigPersistencePort,
-                code, userId);
+        RuntimeConfig cfg = getRuntimeConfig();
+        boolean redeemed = RuntimeConfigInviteCodeSupport.redeemInviteCode(cfg, code, userId);
+        if (redeemed) {
+            runtimeConfigPersistencePort.persist(cfg);
+        }
+        return redeemed;
     }
 
     /**
      * Remove a Telegram user from allowed users list.
      */
     public boolean removeTelegramAllowedUser(String userId) {
-        return RuntimeConfigInviteCodeSupport.removeTelegramAllowedUser(getRuntimeConfig(),
-                runtimeConfigPersistencePort, userId);
+        RuntimeConfig cfg = getRuntimeConfig();
+        boolean removed = RuntimeConfigInviteCodeSupport.removeTelegramAllowedUser(cfg, userId);
+        if (removed) {
+            runtimeConfigPersistencePort.persist(cfg);
+        }
+        return removed;
     }
 
     // ==================== Persistence ====================
