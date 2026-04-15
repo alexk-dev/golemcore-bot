@@ -5,6 +5,13 @@ import { Select, Textarea } from '../ui/field';
 import { HookMappingFieldHeading } from './HookMappingFieldHeading';
 import { controlClassName, fieldHelpClassName, surfaceClassName, toNullableString } from './HookMappingFormUtils';
 
+/**
+ * Renders synchronous response schema controls for webhook mappings.
+ *
+ * The repair tier is intentionally described as repair-only: the main webhook
+ * answer still uses the mapping model tier, while this tier is used only if the
+ * raw answer fails JSON Schema validation.
+ */
 export interface WebhookResponseSchemaSectionProps {
   mapping: HookMappingDraft;
   onChange: (nextMapping: HookMappingDraft) => void;
@@ -64,6 +71,10 @@ export function WebhookResponseSchemaSection({
   );
 }
 
+/**
+ * Keeps responseValidationModelTier coupled to an actual schema so empty schema
+ * editors cannot leave stale repair-tier settings in the saved mapping.
+ */
 function nextMappingWithResponseJsonSchema(mapping: HookMappingDraft, value: string): HookMappingDraft {
   const responseJsonSchema = toNullableString(value);
   if (responseJsonSchema != null) {

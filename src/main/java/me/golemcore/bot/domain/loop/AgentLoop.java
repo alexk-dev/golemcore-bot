@@ -352,6 +352,9 @@ public class AgentLoop {
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_REFLECTION_TIER);
         copyStringMetadataAttribute(message, context, ContextAttributes.WEBHOOK_MODEL_TIER);
+        // Webhook response schema fields are pipeline contracts, not merely message
+        // metadata. Copy them to AgentContext attributes so context layers can still
+        // see them after skill transitions, compaction, or other message mutations.
         copyMetadataAttribute(message, context, ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA);
         copyStringMetadataAttribute(message, context, ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT);
         copyStringMetadataAttribute(message, context, ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER);
@@ -393,6 +396,10 @@ public class AgentLoop {
         context.setAttribute(key, value);
     }
 
+    /**
+     * Copies non-string metadata values into runtime attributes. Used for webhook
+     * schema maps that must be available to multiple pipeline systems.
+     */
     private void copyMetadataAttribute(Message message, AgentContext context, String key) {
         if (message == null || message.getMetadata() == null || context == null || key == null || key.isBlank()) {
             return;

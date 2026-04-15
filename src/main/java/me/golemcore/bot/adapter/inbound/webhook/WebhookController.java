@@ -212,6 +212,8 @@ public class WebhookController {
             String responseValidationModelTier;
             String memoryPreset;
             try {
+                // Agent tier controls the main webhook turn only. Schema repair tier is
+                // resolved separately below and must not override this value.
                 agentModelTier = normalizeOptionalModelTier(request.getModel(), "'model'");
                 responseValidationModelTier = normalizeResponseValidationModelTier(
                         request.getResponseJsonSchema(),
@@ -364,6 +366,8 @@ public class WebhookController {
 
         String runId = UUID.randomUUID().toString();
         String chatId = "hook:" + mapping.getName() + ":" + UUID.randomUUID();
+        // Keep the main agent tier separate from responseValidationModelTier; the
+        // latter is reserved for schema repair calls after the agent response exists.
         String agentModelTier = normalizeOptionalModelTier(mapping.getModel(), "Webhook mapping model");
         String memoryPreset = resolveWebhookMemoryPreset(null, config);
         String responseValidationModelTier = normalizeResponseValidationModelTier(
@@ -444,6 +448,28 @@ public class WebhookController {
         responseSchemaService.validateSchemaDefinition(responseJsonSchema);
     }
 
+    /**
+     * Waits for a synchronous webhook response and applies the optional JSON Schema
+     * post-processing contract.
+     *
+     * @param responseFuture
+     *            future completed by {@link WebhookChannelAdapter}
+     * @param runId
+     *            webhook run id
+     * @param chatId
+     *            webhook chat/session id
+     * @param timeoutSeconds
+     *            total synchronous response timeout
+     * @param responseJsonSchema
+     *            optional response schema
+     * @param responseValidationModelTier
+     *            optional repair tier override
+     * @param fallbackModelTier
+     *            main agent tier used as repair fallback
+     * @param triggerMessage
+     *            original webhook message carrying trace metadata
+     * @return plain text response or validated JSON payload response
+     */
     private ResponseEntity<?> buildSynchronousResponse(CompletableFuture<String> responseFuture, String runId,
             String chatId, int timeoutSeconds, Map<String, Object> responseJsonSchema,
             String responseValidationModelTier, String fallbackModelTier, Message triggerMessage) {
@@ -457,6 +483,8 @@ public class WebhookController {
 
             schemaTrace = startSchemaValidationTrace(
                     triggerMessage, chatId, responseJsonSchema, responseValidationModelTier, fallbackModelTier);
+            // Validation is local; only failed validation invokes a minimal repair LLM
+            // request containing schema, validation errors, and the raw response.
             WebhookResponseSchemaService.SchemaResult result = responseSchemaService.validateAndRepair(
                     response,
                     responseJsonSchema,
