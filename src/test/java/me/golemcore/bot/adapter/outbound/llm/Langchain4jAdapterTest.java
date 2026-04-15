@@ -9,9 +9,9 @@ import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
+import me.golemcore.bot.port.outbound.ToolArtifactReadPort;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.Content;
@@ -87,14 +87,14 @@ class Langchain4jAdapterTest {
 
     private ModelConfigPort modelConfig;
     private RuntimeConfigService runtimeConfigService;
-    private ToolArtifactService toolArtifactService;
+    private ToolArtifactReadPort toolArtifactReadPort;
     private Langchain4jAdapter adapter;
 
     @BeforeEach
     void setUp() {
         modelConfig = mock(ModelConfigPort.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
-        toolArtifactService = mock(ToolArtifactService.class);
+        toolArtifactReadPort = mock(ToolArtifactReadPort.class);
         when(modelConfig.supportsTemperature(anyString())).thenReturn(true);
         when(modelConfig.supportsVision(anyString())).thenReturn(false);
         when(modelConfig.getProvider(anyString())).thenReturn(OPENAI);
@@ -108,7 +108,7 @@ class Langchain4jAdapterTest {
         when(runtimeConfigService.getLlmProviderConfig(anyString()))
                 .thenReturn(RuntimeConfig.LlmProviderConfig.builder().legacyApi(true).build());
 
-        adapter = new Langchain4jAdapter(runtimeConfigService, modelConfig, toolArtifactService) {
+        adapter = new Langchain4jAdapter(runtimeConfigService, modelConfig, toolArtifactReadPort) {
             @Override
             protected void sleepBeforeRetry(long backoffMs) {
                 // No-op for deterministic fast retry tests.
@@ -702,7 +702,7 @@ class Langchain4jAdapterTest {
         ChatModel mockModel = mock(ChatModel.class);
         injectChatModel(mockModel, "openai/gpt-4.1");
         when(modelConfig.supportsVision("openai/gpt-4.1")).thenReturn(true);
-        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/pinchtab/capture.png"))
+        when(toolArtifactReadPort.getDownload(".golemcore/tool-artifacts/session/pinchtab/capture.png"))
                 .thenReturn(ToolArtifactDownload.builder()
                         .path(".golemcore/tool-artifacts/session/pinchtab/capture.png")
                         .filename("capture.png")
@@ -977,7 +977,7 @@ class Langchain4jAdapterTest {
     @Test
     void shouldInjectToolImageAsMultimodalContextForVisionModels() {
         when(modelConfig.supportsVision("openai/gpt-4.1")).thenReturn(true);
-        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/pinchtab/capture.png"))
+        when(toolArtifactReadPort.getDownload(".golemcore/tool-artifacts/session/pinchtab/capture.png"))
                 .thenReturn(ToolArtifactDownload.builder()
                         .path(".golemcore/tool-artifacts/session/pinchtab/capture.png")
                         .filename("capture.png")
@@ -1075,7 +1075,7 @@ class Langchain4jAdapterTest {
     @Test
     void shouldIgnoreBrokenToolImageAttachmentDownload() {
         when(modelConfig.supportsVision("openai/gpt-4.1")).thenReturn(true);
-        when(toolArtifactService.getDownload(".golemcore/tool-artifacts/session/pinchtab/missing.png"))
+        when(toolArtifactReadPort.getDownload(".golemcore/tool-artifacts/session/pinchtab/missing.png"))
                 .thenThrow(new IllegalArgumentException("File not found"));
 
         Message assistantMsg = Message.builder()

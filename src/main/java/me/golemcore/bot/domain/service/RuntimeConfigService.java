@@ -18,9 +18,7 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import java.security.SecureRandom;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -59,9 +57,6 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class RuntimeConfigService {
 
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-    private static final String INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    private static final int INVITE_CODE_LENGTH = 20;
     private static final String REASONING_NONE = "none";
     private static final String DEFAULT_BALANCED_MODEL = null;
     private static final String DEFAULT_BALANCED_REASONING = REASONING_NONE;
@@ -1636,23 +1631,9 @@ public class RuntimeConfigService {
      * Generate a new single-use invite code.
      */
     public RuntimeConfig.InviteCode generateInviteCode() {
-        StringBuilder code = new StringBuilder(INVITE_CODE_LENGTH);
-        for (int i = 0; i < INVITE_CODE_LENGTH; i++) {
-            code.append(INVITE_CHARS.charAt(SECURE_RANDOM.nextInt(INVITE_CHARS.length())));
-        }
-
-        RuntimeConfig.InviteCode inviteCode = RuntimeConfig.InviteCode.builder()
-                .code(code.toString())
-                .used(false)
-                .createdAt(Instant.now())
-                .build();
-
         RuntimeConfig cfg = getRuntimeConfig();
-        List<RuntimeConfig.InviteCode> inviteCodes = ensureMutableInviteCodes(cfg.getTelegram());
-        inviteCodes.add(inviteCode);
+        RuntimeConfig.InviteCode inviteCode = RuntimeConfigInviteCodeSupport.generateInviteCode(cfg);
         runtimeConfigPersistencePort.persist(cfg);
-
-        log.info("[RuntimeConfig] Generated invite code: {}", inviteCode.getCode());
         return inviteCode;
     }
 
@@ -1661,11 +1642,9 @@ public class RuntimeConfigService {
      */
     public boolean revokeInviteCode(String code) {
         RuntimeConfig cfg = getRuntimeConfig();
-        List<RuntimeConfig.InviteCode> codes = ensureMutableInviteCodes(cfg.getTelegram());
-        boolean removed = codes.removeIf(ic -> ic.getCode().equals(code));
+        boolean removed = RuntimeConfigInviteCodeSupport.revokeInviteCode(cfg, code);
         if (removed) {
             runtimeConfigPersistencePort.persist(cfg);
-            log.info("[RuntimeConfig] Revoked invite code: {}", code);
         }
         return removed;
     }
@@ -1675,29 +1654,11 @@ public class RuntimeConfigService {
      */
     public boolean redeemInviteCode(String code, String userId) {
         RuntimeConfig cfg = getRuntimeConfig();
-        List<RuntimeConfig.InviteCode> codes = ensureMutableInviteCodes(cfg.getTelegram());
-
-        List<String> allowed = ensureMutableAllowedUsers(cfg.getTelegram());
-        if (!allowed.isEmpty() && !allowed.contains(userId)) {
-            log.warn("[RuntimeConfig] Invite redemption denied for user {}: invited user already registered", userId);
-            return false;
+        boolean redeemed = RuntimeConfigInviteCodeSupport.redeemInviteCode(cfg, code, userId);
+        if (redeemed) {
+            runtimeConfigPersistencePort.persist(cfg);
         }
-
-        for (RuntimeConfig.InviteCode ic : codes) {
-            if (ic.getCode().equals(code)) {
-                if (ic.isUsed()) {
-                    return false;
-                }
-                ic.setUsed(true);
-                if (!allowed.contains(userId)) {
-                    allowed.add(userId);
-                }
-                runtimeConfigPersistencePort.persist(cfg);
-                log.info("[RuntimeConfig] Redeemed invite code {} for user {}", code, userId);
-                return true;
-            }
-        }
-        return false;
+        return redeemed;
     }
 
     /**
@@ -1705,71 +1666,11 @@ public class RuntimeConfigService {
      */
     public boolean removeTelegramAllowedUser(String userId) {
         RuntimeConfig cfg = getRuntimeConfig();
-        RuntimeConfig.TelegramConfig telegramConfig = cfg.getTelegram();
-        List<String> allowedUsers = ensureMutableAllowedUsers(telegramConfig);
-        if (allowedUsers.isEmpty()) {
-            return false;
-        }
-        boolean removed = allowedUsers.removeIf(existingUserId -> existingUserId.equals(userId));
+        boolean removed = RuntimeConfigInviteCodeSupport.removeTelegramAllowedUser(cfg, userId);
         if (removed) {
-            int revokedCodes = revokeActiveInviteCodes(telegramConfig);
             runtimeConfigPersistencePort.persist(cfg);
-            log.info("[RuntimeConfig] Removed telegram allowed user: {} (revoked {} active invite codes)",
-                    userId, revokedCodes);
         }
         return removed;
-    }
-
-    private List<String> ensureMutableAllowedUsers(RuntimeConfig.TelegramConfig telegramConfig) {
-        List<String> allowedUsers = telegramConfig.getAllowedUsers();
-        if (allowedUsers == null) {
-            List<String> mutableAllowedUsers = new ArrayList<>();
-            telegramConfig.setAllowedUsers(mutableAllowedUsers);
-            return mutableAllowedUsers;
-        }
-        if (!(allowedUsers instanceof ArrayList<?>)) {
-            List<String> mutableAllowedUsers = new ArrayList<>(allowedUsers);
-            telegramConfig.setAllowedUsers(mutableAllowedUsers);
-            return mutableAllowedUsers;
-        }
-        return allowedUsers;
-    }
-
-    private List<RuntimeConfig.InviteCode> ensureMutableInviteCodes(RuntimeConfig.TelegramConfig telegramConfig) {
-        List<RuntimeConfig.InviteCode> inviteCodes = telegramConfig.getInviteCodes();
-        if (inviteCodes == null) {
-            List<RuntimeConfig.InviteCode> mutableInviteCodes = new ArrayList<>();
-            telegramConfig.setInviteCodes(mutableInviteCodes);
-            return mutableInviteCodes;
-        }
-        if (!(inviteCodes instanceof ArrayList<?>)) {
-            List<RuntimeConfig.InviteCode> mutableInviteCodes = new ArrayList<>(inviteCodes);
-            telegramConfig.setInviteCodes(mutableInviteCodes);
-            return mutableInviteCodes;
-        }
-        return inviteCodes;
-    }
-
-    private int revokeActiveInviteCodes(RuntimeConfig.TelegramConfig telegramConfig) {
-        List<RuntimeConfig.InviteCode> inviteCodes = ensureMutableInviteCodes(telegramConfig);
-        if (inviteCodes.isEmpty()) {
-            return 0;
-        }
-
-        List<RuntimeConfig.InviteCode> retainedInviteCodes = new ArrayList<>(inviteCodes.size());
-        int revokedCount = 0;
-        for (RuntimeConfig.InviteCode inviteCode : inviteCodes) {
-            if (inviteCode != null && !inviteCode.isUsed()) {
-                revokedCount++;
-                continue;
-            }
-            retainedInviteCodes.add(inviteCode);
-        }
-
-        if (revokedCount > 0) {
-            telegramConfig.setInviteCodes(retainedInviteCodes);
-        }
-        return revokedCount;
     }
 
     // ==================== Persistence ====================
@@ -1801,8 +1702,8 @@ public class RuntimeConfigService {
         }
         if (cfg.getTelegram() != null) {
             cfg.getTelegram().setAuthMode("invite_only");
-            ensureMutableAllowedUsers(cfg.getTelegram());
-            ensureMutableInviteCodes(cfg.getTelegram());
+            RuntimeConfigInviteCodeSupport.ensureMutableAllowedUsers(cfg.getTelegram());
+            RuntimeConfigInviteCodeSupport.ensureMutableInviteCodes(cfg.getTelegram());
         }
         if (cfg.getTools() == null) {
             cfg.setTools(RuntimeConfig.ToolsConfig.builder().build());
