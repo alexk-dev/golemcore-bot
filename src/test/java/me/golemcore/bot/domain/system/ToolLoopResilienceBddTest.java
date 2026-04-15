@@ -12,6 +12,7 @@ import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
@@ -145,6 +146,7 @@ class ToolLoopResilienceBddTest {
         when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(10);
         when(runtimeConfigService.getTurnDeadline()).thenReturn(java.time.Duration.ofMinutes(5));
         when(runtimeConfigService.isTurnAutoRetryEnabled()).thenReturn(false);
+        when(runtimeConfigService.isCompactionEnabled()).thenReturn(true);
         when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(2);
 
         CompactionOrchestrationService compactionOrchestrationService = mock(CompactionOrchestrationService.class);
@@ -487,6 +489,7 @@ class ToolLoopResilienceBddTest {
         when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(10);
         when(runtimeConfigService.getTurnDeadline()).thenReturn(java.time.Duration.ofMinutes(5));
         when(runtimeConfigService.isTurnAutoRetryEnabled()).thenReturn(false);
+        when(runtimeConfigService.isCompactionEnabled()).thenReturn(true);
         when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(2);
 
         CompactionOrchestrationService compactionOrchestrationService = mock(CompactionOrchestrationService.class);
@@ -756,6 +759,8 @@ class ToolLoopResilienceBddTest {
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenReturn(2_000_000_000);
         RuntimeEventService runtimeEventService = new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC));
 
         return DefaultToolLoopSystem.builder()
@@ -766,6 +771,7 @@ class ToolLoopResilienceBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnProperties))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(toolLoopProperties))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
                 .runtimeConfigService(runtimeConfigService)
                 .compactionOrchestrationService(compactionOrchestrationService)
                 .runtimeEventService(runtimeEventService)

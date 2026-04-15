@@ -4,6 +4,9 @@ import java.time.Clock;
 import java.util.List;
 import me.golemcore.bot.application.update.UpdateService;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
+import me.golemcore.bot.domain.service.ContextTokenEstimator;
+import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
@@ -31,6 +34,18 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration(proxyBeanMethods = false)
 public class CoreLayerConfiguration {
+
+    @Bean
+    static ContextTokenEstimator contextTokenEstimator() {
+        return new ContextTokenEstimator();
+    }
+
+    @Bean
+    ContextCompactionPolicy contextCompactionPolicy(
+            RuntimeConfigService runtimeConfigService,
+            ModelSelectionService modelSelectionService) {
+        return new ContextCompactionPolicy(runtimeConfigService, modelSelectionService);
+    }
 
     @Bean
     ScheduleService scheduleService(

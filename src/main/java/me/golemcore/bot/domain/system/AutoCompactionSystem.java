@@ -21,17 +21,16 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
-import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.CompactionPayloadMapper;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
+import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Map;
 
 /**
  * System for automatic conversation history compaction when context size
@@ -47,11 +46,9 @@ import java.util.Map;
 @Slf4j
 public class AutoCompactionSystem implements AgentSystem {
 
-    private static final String TRIGGER_MODE_MODEL_RATIO = "model_ratio";
-
     private final CompactionOrchestrationService compactionOrchestrationService;
-    private final RuntimeConfigService runtimeConfigService;
-    private final ModelSelectionService modelSelectionService;
+    private final ContextTokenEstimator contextTokenEstimator;
+    private final ContextCompactionPolicy contextCompactionPolicy;
 
     @Override
     public String getName() {
@@ -65,7 +62,7 @@ public class AutoCompactionSystem implements AgentSystem {
 
     @Override
     public boolean isEnabled() {
-        return runtimeConfigService.isCompactionEnabled();
+        return contextCompactionPolicy.isCompactionEnabled();
     }
 
     @Override
@@ -77,30 +74,23 @@ public class AutoCompactionSystem implements AgentSystem {
     public AgentContext process(AgentContext context) {
         java.util.List<Message> messages = context.getMessages();
 
-        long totalChars = messages.stream()
-                .mapToLong(m -> m.getContent() != null ? m.getContent().length() : 0)
-                .sum();
-        int estimatedTokens = (int) (totalChars / 3.5) + 8000;
-
-        String triggerMode = runtimeConfigService.getCompactionTriggerMode();
-        int threshold = resolveMaxTokens(context);
+        int estimatedTokens = contextTokenEstimator.estimateMessages(messages);
+        int threshold = contextCompactionPolicy.resolveHistoryThreshold(context);
 
         if (estimatedTokens <= threshold) {
             return context;
         }
 
-        log.info("[AutoCompact] Context too large: ~{} tokens (threshold {}, mode={}), {} messages. Compacting...",
-                estimatedTokens, threshold, triggerMode, messages.size());
+        log.info("[AutoCompact] Context too large: ~{} tokens (threshold {}), {} messages. Compacting...",
+                estimatedTokens, threshold, messages.size());
 
-        int keepLast = runtimeConfigService.getCompactionKeepLastMessages();
+        int keepLast = contextCompactionPolicy.resolveCompactionKeepLast();
         CompactionResult result = compactionOrchestrationService.compact(
                 context.getSession().getId(),
                 CompactionReason.AUTO_THRESHOLD,
                 keepLast);
 
-        if (result.details() != null) {
-            context.setAttribute(ContextAttributes.COMPACTION_LAST_DETAILS, toDetailsPayload(result));
-        }
+        CompactionPayloadMapper.publishToContext(context, result);
 
         if (result.removed() > 0) {
             context.setMessages(new ArrayList<>(context.getSession().getMessages()));
@@ -110,58 +100,5 @@ public class AutoCompactionSystem implements AgentSystem {
         }
 
         return context;
-    }
-
-    private int resolveMaxTokens(AgentContext context) {
-        if (TRIGGER_MODE_MODEL_RATIO.equals(runtimeConfigService.getCompactionTriggerMode())) {
-            return resolveModelRatioThreshold(context);
-        }
-        return resolveTokenThreshold(context);
-    }
-
-    private int resolveModelRatioThreshold(AgentContext context) {
-        try {
-            int modelMax = modelSelectionService.resolveMaxInputTokensForContext(context);
-            double ratio = runtimeConfigService.getCompactionModelThresholdRatio();
-            return Math.max(1, (int) Math.floor(modelMax * ratio));
-        } catch (Exception e) {
-            log.debug("[AutoCompact] Failed to resolve model max tokens for ratio mode, using config default", e);
-        }
-        return runtimeConfigService.getCompactionMaxContextTokens();
-    }
-
-    /**
-     * Resolve the legacy token threshold mode. Preserves the old behavior: cap the
-     * configured threshold by 80% of the resolved model context window.
-     */
-    private int resolveTokenThreshold(AgentContext context) {
-        try {
-            int modelMax = modelSelectionService.resolveMaxInputTokensForContext(context);
-            int modelThreshold = (int) (modelMax * 0.8);
-            return Math.min(modelThreshold, runtimeConfigService.getCompactionMaxContextTokens());
-        } catch (Exception e) {
-            log.debug("[AutoCompact] Failed to resolve model max tokens for token-threshold mode, using config default",
-                    e);
-        }
-        return runtimeConfigService.getCompactionMaxContextTokens();
-    }
-
-    private Map<String, Object> toDetailsPayload(CompactionResult result) {
-        Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("removed", result.removed());
-        payload.put("usedSummary", result.usedSummary());
-        if (result.details() != null) {
-            payload.put("reason", result.details().reason() != null ? result.details().reason().name() : null);
-            payload.put("summarizedCount", result.details().summarizedCount());
-            payload.put("keptCount", result.details().keptCount());
-            payload.put("splitTurnDetected", result.details().splitTurnDetected());
-            payload.put("summaryLength", result.details().summaryLength());
-            payload.put("durationMs", result.details().durationMs());
-            payload.put("toolCount", result.details().toolCount());
-            payload.put("readFilesCount", result.details().readFilesCount());
-            payload.put("modifiedFilesCount", result.details().modifiedFilesCount());
-            payload.put("fileChanges", result.details().fileChanges());
-        }
-        return payload;
     }
 }

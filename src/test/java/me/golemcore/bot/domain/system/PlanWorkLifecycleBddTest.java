@@ -26,6 +26,7 @@ import me.golemcore.bot.domain.context.layer.WorkspaceInstructionsLayer;
 import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -142,6 +143,8 @@ class PlanWorkLifecycleBddTest {
 
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
 
@@ -154,6 +157,8 @@ class PlanWorkLifecycleBddTest {
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(new BotProperties.ToolLoopProperties()))
                 .modelSelectionService(modelSelectionService)
                 .planService(planService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneOffset.UTC))
                 .build();
 
@@ -223,6 +228,8 @@ class PlanWorkLifecycleBddTest {
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-balanced", "medium"));
         WorkspaceInstructionService workspaceInstructionService = mock(WorkspaceInstructionService.class);
