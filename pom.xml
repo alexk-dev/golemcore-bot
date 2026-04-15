@@ -524,13 +524,19 @@
     </build>
 
     <profiles>
-        <!-- Mutation testing profile for CI-only focused checks. -->
+        <!-- Mutation testing profile. Opt-in via `./mvnw -P pitests test-compile
+             org.pitest:pitest-maven:mutationCoverage`, or via the "PIT Tests"
+             GitHub Actions workflow. Scoped to the full product — every
+             `me.golemcore.bot.*` class — so survivors surface across the whole
+             codebase rather than just a curated domain subset. The threshold
+             is informational (0) because the full-product baseline has not
+             been established yet; raise it in follow-ups as coverage grows. -->
         <profile>
             <id>pitests</id>
             <properties>
                 <pitest.version>1.23.0</pitest.version>
                 <pitest.junit5.plugin.version>1.2.3</pitest.junit5.plugin.version>
-                <pitest.mutationThreshold>85</pitest.mutationThreshold>
+                <pitest.mutationThreshold>0</pitest.mutationThreshold>
                 <pitest.threads>4</pitest.threads>
             </properties>
             <build>
@@ -548,39 +554,29 @@
                         </dependencies>
                         <configuration>
                             <!--
-                                Mutation testing is scoped to a curated subset of the domain
-                                module: the context pipeline layers, context resolvers, memory
-                                diagnostics/orchestrator, self-evolving run + promotion services,
-                                and the tool-loop conversation view. These packages form the
-                                deterministic core of the agent loop and have the highest
-                                existing test strength, so a stringent mutation threshold here
-                                provides meaningful regression protection without requiring the
-                                full domain module to clear the same bar in a single run.
+                                Full-product mutation scope: every class under
+                                `me.golemcore.bot` is mutated. The exclusions below are
+                                intentional:
 
-                                Classes excluded below either depend on Spring-wired
-                                infrastructure that mutation testing cannot easily exercise
-                                (e.g. RagLayer, AutoModeLayer) or are thin coordination layers
-                                whose logic is covered indirectly by integration tests.
+                                  * The application entrypoint and Spring `@Configuration`
+                                    classes carry no meaningful logic for PIT to mutate.
+                                  * Generated sources (MapStruct, Lombok @Builder helpers)
+                                    are wrapped in `*MapperImpl` / `*$Builder` and PIT
+                                    cannot drive them from unit tests.
                             -->
                             <targetClasses>
-                                <param>me.golemcore.bot.domain.context.layer.*</param>
-                                <param>me.golemcore.bot.domain.context.resolution.*</param>
-                                <param>me.golemcore.bot.domain.memory.diagnostics.*</param>
-                                <param>me.golemcore.bot.domain.memory.orchestrator.*</param>
-                                <param>me.golemcore.bot.domain.selfevolving.run.*</param>
-                                <param>me.golemcore.bot.domain.selfevolving.promotion.*</param>
-                                <param>me.golemcore.bot.domain.system.toolloop.view.*</param>
+                                <param>me.golemcore.bot.*</param>
                             </targetClasses>
                             <excludedClasses>
-                                <param>me.golemcore.bot.domain.context.layer.TierAwarenessLayer</param>
-                                <param>me.golemcore.bot.domain.context.layer.AutoModeLayer</param>
-                                <param>me.golemcore.bot.domain.context.layer.RagLayer</param>
-                                <param>me.golemcore.bot.domain.memory.orchestrator.MemoryContextOrchestrator</param>
-                                <param>me.golemcore.bot.domain.selfevolving.promotion.PromotionTargetResolver</param>
-                                <param>me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker</param>
+                                <param>me.golemcore.bot.BotApplication</param>
+                                <param>me.golemcore.bot.config.*</param>
+                                <param>me.golemcore.bot.*Config</param>
+                                <param>me.golemcore.bot.*Configuration</param>
+                                <param>me.golemcore.bot.*$*Builder</param>
+                                <param>me.golemcore.bot.*MapperImpl</param>
                             </excludedClasses>
                             <targetTests>
-                                <param>me.golemcore.bot.domain.*</param>
+                                <param>me.golemcore.bot.*</param>
                             </targetTests>
                             <threads>${pitest.threads}</threads>
                             <mutationThreshold>${pitest.mutationThreshold}</mutationThreshold>
