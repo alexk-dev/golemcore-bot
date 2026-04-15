@@ -8,9 +8,8 @@ on:
 
 env:
   PLUGIN_API_REPO_REF: 67cd0d10a997f494dcaf4686438e5c6bcfc8ac65
-  # Full-product baseline (post proto exclusion): ~71% mutation score.
-  # Threshold tracks the current gate; raise as coverage grows toward 85%.
-  PITEST_MUTATION_THRESHOLD: 70
+  # Full-product mutation gate. Keep this aligned with the required quality bar.
+  PITEST_MUTATION_THRESHOLD: 85
 
 jobs:
   pitests:
