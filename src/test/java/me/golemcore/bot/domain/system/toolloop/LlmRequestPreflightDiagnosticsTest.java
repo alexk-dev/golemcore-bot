@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.system.toolloop;
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.CompactionDetails;
 import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
@@ -471,6 +472,53 @@ class LlmRequestPreflightDiagnosticsTest extends LlmRequestPreflightPhaseFixture
         AgentContext context = AgentContext.builder()
                 .messages(new ArrayList<>())
                 .build();
+        LlmRequest request = LlmRequest.builder()
+                .systemPrompt("x".repeat(4_000))
+                .build();
+
+        phase.preflight(context, () -> request, 1);
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
+        assertEquals("skipped_no_messages", diagnostics.get("compactionOutcome"));
+        assertEquals(false, diagnostics.get("compactionAttempted"));
+    }
+
+    @Test
+    void shouldPublishSkippedNoMessagesWhenSessionMessagesAreNull() {
+        // AgentSession loaded from cold storage may surface a null messages
+        // field (Lombok @Builder.Default defaults to an empty ArrayList,
+        // but callers can still override with .messages(null)). The
+        // runCompactionAttempt guard must treat it identically to an empty
+        // list and record skipped_no_messages, closing the getMessages()==null
+        // arm of the compound null-check.
+        AgentSession session = AgentSession.builder()
+                .id("session-null-msgs")
+                .chatId("chat-null-msgs")
+                .messages(null)
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+        LlmRequest request = LlmRequest.builder()
+                .systemPrompt("x".repeat(4_000))
+                .build();
+
+        phase.preflight(context, () -> request, 1);
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
+        assertEquals("skipped_no_messages", diagnostics.get("compactionOutcome"));
+        assertEquals(false, diagnostics.get("compactionAttempted"));
+    }
+
+    @Test
+    void shouldPublishSkippedNoMessagesWhenSessionMessagesListIsEmpty() {
+        // A freshly created session with an empty messages list must take
+        // the isEmpty() arm of the runCompactionAttempt guard. Without this,
+        // an oversized system prompt alone would send us into a compaction
+        // attempt with nothing to compact. Closes the messages.isEmpty() true
+        // branch.
+        AgentContext context = buildContext(0);
         LlmRequest request = LlmRequest.builder()
                 .systemPrompt("x".repeat(4_000))
                 .build();

@@ -272,6 +272,41 @@ class ContextCompactionCoordinatorTest {
     }
 
     @Test
+    void runCompaction_shouldReturnNullWhenOrchestrationServiceIsNull() {
+        // Degenerate wiring: the domain factory may instantiate the coordinator
+        // without an orchestrator (e.g. compaction feature fully disabled).
+        // runCompaction must bail at the gate instead of NPEing on compact().
+        ContextCompactionCoordinator degenerate = new ContextCompactionCoordinator(
+                new ContextCompactionPolicy(runtimeConfigService, mock(ModelSelectionService.class)),
+                null,
+                new RuntimeEventService(Clock.fixed(NOW, ZoneOffset.UTC)),
+                turnProgressService);
+        AgentContext context = buildContext(4);
+
+        assertEquals(null, degenerate.runCompaction(context, CompactionReason.MANUAL_COMMAND, 2, 1, null));
+    }
+
+    @Test
+    void runCompaction_shouldReturnNullWhenSessionMessagesAreNull() {
+        // AgentSession.builder().messages(null) explicitly overrides Lombok's
+        // @Builder.Default so the field stays null. The compound null-check
+        // in runCompaction's guard must treat that identically to empty and
+        // bail without touching the orchestrator.
+        AgentSession session = AgentSession.builder()
+                .id("session-null-msgs")
+                .chatId("chat-null-msgs")
+                .messages(null)
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+
+        assertEquals(null, coordinator.runCompaction(context, CompactionReason.MANUAL_COMMAND, 2, 1, null));
+        verify(compactionService, never()).compact(any(), any(), anyInt());
+    }
+
+    @Test
     void runCompaction_shouldReturnNullForNullContext() {
         // Every null guard inside runCompaction matters: the coordinator is
         // wired into the pipeline before session validation and must never
@@ -354,8 +389,13 @@ class ContextCompactionCoordinatorTest {
 
     @Test
     void recoverFromContextOverflow_shouldReturnFalseWhenSessionMessagesNull() {
+        // Pass messages(null) explicitly so Lombok @Builder.Default does not
+        // mask the null field with an empty ArrayList. This closes the
+        // getMessages()==null true arm of the compound guard; without the
+        // explicit override the test would fall through to the size <=
+        // keepLast branch instead.
         AgentContext context = AgentContext.builder()
-                .session(AgentSession.builder().id("s").chatId("c").build())
+                .session(AgentSession.builder().id("s").chatId("c").messages(null).build())
                 .messages(new ArrayList<>())
                 .build();
 
