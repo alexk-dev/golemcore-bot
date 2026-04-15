@@ -29,9 +29,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -158,11 +160,24 @@ class OllamaProcessAdapterTest {
         OllamaProcessAdapter adapter = new OllamaProcessAdapter(fakeBinary.toString());
 
         adapter.startServe("http://127.0.0.1:11434");
-        for (int index = 0; index < 20 && adapter.isOwnedProcessAlive(); index++) {
-            Thread.sleep(50);
-        }
+        waitUntilProcessStops(adapter);
 
         assertEquals(0, adapter.getOwnedProcessExitCode());
+        adapter.stopOwnedProcess();
+    }
+
+    @Test
+    void shouldReturnNonZeroOwnedProcessExitCodeAfterProcessFinishes() throws Exception {
+        Path fakeBinary = createExecutable("fake-ollama-failed-exit", """
+                #!/bin/sh
+                exit 7
+                """);
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter(fakeBinary.toString());
+
+        adapter.startServe("http://127.0.0.1:11434");
+        waitUntilProcessStops(adapter);
+
+        assertEquals(7, adapter.getOwnedProcessExitCode());
         adapter.stopOwnedProcess();
     }
 
@@ -185,14 +200,39 @@ class OllamaProcessAdapterTest {
     }
 
     @Test
+    void shouldReturnEndpointUnchangedWhenUriPortIsZero() {
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter("ollama");
+
+        Map<String, String> environment = adapter.buildEnvironment("http://localhost:0");
+
+        assertEquals("http://localhost:0", environment.get("OLLAMA_HOST"));
+    }
+
+    @Test
+    void shouldStartServeWithNormalizedOllamaHostEnvironment() throws Exception {
+        Path hostOutput = tempDir.resolve("ollama-host.txt");
+        Path fakeBinary = createExecutable("fake-ollama-env", """
+                #!/bin/sh
+                printf '%s' "$OLLAMA_HOST" > "$(dirname "$0")/ollama-host.txt"
+                exit 0
+                """);
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter(fakeBinary.toString());
+
+        adapter.startServe("http://127.0.0.1:11435");
+        waitUntilProcessStops(adapter);
+
+        assertEquals("127.0.0.1:11435", Files.readString(hostOutput));
+        adapter.stopOwnedProcess();
+    }
+
+    @Test
     void shouldReturnNullVersionWhenVersionProbeTimesOut() throws IOException {
         Path fakeBinary = createExecutable("fake-ollama-slow", """
                 #!/bin/sh
-                sleep 5
-                echo 'ollama version is 0.19.0'
+                exec sleep 5
                 """);
 
-        OllamaProcessAdapter adapter = new OllamaProcessAdapter(fakeBinary.toString());
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter(fakeBinary.toString(), Duration.ofMillis(100));
 
         assertFalse(adapter.isBinaryAvailable());
         assertEquals(null, adapter.getInstalledVersion());
@@ -279,6 +319,62 @@ class OllamaProcessAdapterTest {
     }
 
     @Test
+    void shouldForceStopOwnedProcessWhenGracefulStopTimesOut() throws Exception {
+        Path pidFile = tempDir.resolve("ollama-ignore-term.pid");
+        Path readyMarker = tempDir.resolve("ollama-ignore-term-ready.txt");
+        Path fakeBinary = createExecutable("fake-ollama-ignore-term", """
+                #!/bin/sh
+                printf '%s' "$$" > "$(dirname "$0")/ollama-ignore-term.pid"
+                trap '' TERM
+                printf ready > "$(dirname "$0")/ollama-ignore-term-ready.txt"
+                while true; do
+                  read line || true
+                done
+                """);
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter(fakeBinary.toString(), Duration.ofSeconds(2),
+                Duration.ofMillis(100));
+
+        adapter.startServe("http://127.0.0.1:11434");
+        waitUntilFileExists(readyMarker);
+        ProcessHandle processHandle = ProcessHandle.of(Long.parseLong(Files.readString(pidFile))).orElseThrow();
+        try {
+            assertTrue(processHandle.isAlive());
+
+            adapter.stopOwnedProcess();
+            processHandle.onExit().get(1, TimeUnit.SECONDS);
+
+            assertFalse(processHandle.isAlive());
+        } finally {
+            if (processHandle.isAlive()) {
+                processHandle.destroyForcibly();
+            }
+        }
+    }
+
+    @Test
+    void shouldRequestGracefulStopBeforeForceKill() throws Exception {
+        Path readyMarker = tempDir.resolve("ollama-ready.txt");
+        Path stopMarker = tempDir.resolve("ollama-stopped.txt");
+        Path fakeBinary = createExecutable("fake-ollama-graceful-stop", """
+                #!/bin/sh
+                trap 'printf stopped > "$(dirname "$0")/ollama-stopped.txt"; exit 0' TERM
+                printf ready > "$(dirname "$0")/ollama-ready.txt"
+                while true; do
+                  sleep 1
+                done
+                """);
+        OllamaProcessAdapter adapter = new OllamaProcessAdapter(fakeBinary.toString());
+
+        adapter.startServe("http://127.0.0.1:11434");
+        waitUntilFileExists(readyMarker);
+        assertTrue(adapter.isOwnedProcessAlive());
+        adapter.stopOwnedProcess();
+
+        assertEquals("stopped", Files.readString(stopMarker));
+        assertFalse(adapter.isOwnedProcessAlive());
+    }
+
+    @Test
     void shouldForceStopOwnedProcessWhenStopThreadIsInterrupted() throws Exception {
         Path fakeBinary = createExecutable("fake-ollama-interrupted-stop", """
                 #!/bin/sh
@@ -303,5 +399,17 @@ class OllamaProcessAdapterTest {
         Set<PosixFilePermission> permissions = PosixFilePermissions.fromString("rwxr-xr-x");
         Files.setPosixFilePermissions(script, permissions);
         return script;
+    }
+
+    private void waitUntilProcessStops(OllamaProcessAdapter adapter) throws InterruptedException {
+        for (int index = 0; index < 20 && adapter.isOwnedProcessAlive(); index++) {
+            Thread.sleep(50);
+        }
+    }
+
+    private void waitUntilFileExists(Path path) throws InterruptedException {
+        for (int index = 0; index < 20 && !Files.exists(path); index++) {
+            Thread.sleep(50);
+        }
     }
 }

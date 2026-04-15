@@ -584,6 +584,14 @@
                             <targetTests>
                                 <param>me.golemcore.bot.*</param>
                             </targetTests>
+                            <excludedTestClasses>
+                                <!-- Broad Spring context checks are valuable in the
+                                     standard test suite but add weak, expensive
+                                     coverage signals for mutation testing. Keep PIT
+                                     focused on assertion-dense unit and slice tests. -->
+                                <param>me.golemcore.bot.ApplicationSmokeTest</param>
+                                <param>me.golemcore.bot.integration.*</param>
+                            </excludedTestClasses>
                             <threads>${pitest.threads}</threads>
                             <mutationThreshold>${pitest.mutationThreshold}</mutationThreshold>
                             <timeoutFactor>2.0</timeoutFactor>
