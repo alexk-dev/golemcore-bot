@@ -1,5 +1,5 @@
-import type { ReactElement } from 'react';
-import { FiPlus, FiRefreshCw, FiSearch } from 'react-icons/fi';
+import type { ChangeEvent, ReactElement } from 'react';
+import { FiDownload, FiEyeOff, FiEye, FiPlus, FiRefreshCw, FiSearch, FiUpload } from 'react-icons/fi';
 import type { FileTreeNode } from '../../api/files';
 import { Button } from '../ui/button';
 import { Input } from '../ui/field';
@@ -14,13 +14,19 @@ export interface IdeFileExplorerProps {
   dirtyPaths: Set<string>;
   searchInputValue: string;
   searchQuery: string;
+  includeIgnored: boolean;
+  isDownloadingActiveFile: boolean;
   onSearchQueryChange: (value: string) => void;
   onRefresh: () => void;
   onCreateAtRoot: () => void;
   onOpenFile: (path: string) => void;
+  onLoadDirectory: (path: string) => void;
   onRequestCreate: (targetPath: string) => void;
   onRequestRename: (targetPath: string) => void;
   onRequestDelete: (targetPath: string) => void;
+  onToggleIncludeIgnored: () => void;
+  onDownloadActiveFile: () => void;
+  onUploadFiles: (targetPath: string, files: FileList) => void;
 }
 
 export function IdeFileExplorer({
@@ -32,14 +38,29 @@ export function IdeFileExplorer({
   dirtyPaths,
   searchInputValue,
   searchQuery,
+  includeIgnored,
+  isDownloadingActiveFile,
   onSearchQueryChange,
   onRefresh,
   onCreateAtRoot,
   onOpenFile,
+  onLoadDirectory,
   onRequestCreate,
   onRequestRename,
   onRequestDelete,
+  onToggleIncludeIgnored,
+  onDownloadActiveFile,
+  onUploadFiles,
 }: IdeFileExplorerProps): ReactElement {
+  const handleUploadChange = (event: ChangeEvent<HTMLInputElement>): void => {
+    const files = event.target.files;
+    if (files == null || files.length === 0) {
+      return;
+    }
+    onUploadFiles('', files);
+    event.target.value = '';
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-border/80 px-3 py-3">
@@ -76,6 +97,28 @@ export function IdeFileExplorer({
           >
             <FiPlus size={14} />
           </Button>
+
+          <label className="inline-flex h-8 cursor-pointer items-center justify-center rounded-lg border border-border/90 bg-card/80 px-3 text-xs font-semibold text-foreground shadow-soft transition-colors hover:border-primary/40 hover:bg-card" title="Upload files">
+            <FiUpload size={14} />
+            <input className="sr-only" type="file" multiple onChange={handleUploadChange} aria-label="Upload files" />
+          </label>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={onToggleIncludeIgnored}>
+            {includeIgnored ? <FiEye size={13} /> : <FiEyeOff size={13} />}
+            {includeIgnored ? 'Showing ignored files' : 'Ignored files hidden'}
+          </button>
+          {selectedPath != null && (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 hover:text-foreground disabled:opacity-60"
+              onClick={onDownloadActiveFile}
+              disabled={isDownloadingActiveFile}
+            >
+              <FiDownload size={13} />
+              Download active
+            </button>
+          )}
         </div>
       </div>
 
@@ -105,6 +148,7 @@ export function IdeFileExplorer({
             dirtyPaths={dirtyPaths}
             searchQuery={searchQuery}
             onOpenFile={onOpenFile}
+            onLoadDirectory={onLoadDirectory}
             onRequestCreate={onRequestCreate}
             onRequestRename={onRequestRename}
             onRequestDelete={onRequestDelete}

@@ -10,10 +10,14 @@ import me.golemcore.bot.domain.service.DashboardFileService;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.multipart.FilePart;
+import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -221,7 +225,7 @@ class FilesControllerTest {
 
     @Test
     void shouldReturnBadRequestForInvalidDownloadPath() {
-        when(toolArtifactService.getDownload("../etc/passwd")).thenThrow(new IllegalArgumentException("Invalid path"));
+        when(dashboardFileService.getDownload("../etc/passwd")).thenThrow(new IllegalArgumentException("Invalid path"));
 
         StepVerifier.create(filesController.download("../etc/passwd"))
                 .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
@@ -230,7 +234,8 @@ class FilesControllerTest {
 
     @Test
     void shouldThrowWhenDownloadEndpointHasUnexpectedServiceFailure() {
-        when(toolArtifactService.getDownload("broken.bin")).thenThrow(new IllegalStateException("Storage unavailable"));
+        when(dashboardFileService.getDownload("broken.bin"))
+                .thenThrow(new IllegalStateException("Storage unavailable"));
 
         assertThrows(IllegalStateException.class, () -> filesController.download("broken.bin"));
     }
@@ -392,7 +397,7 @@ class FilesControllerTest {
     }
 
     @Test
-    void shouldDeletePathWhenPathIsValid() {
+    void shouldDeletePathWhenPathExists() {
         doNothing().when(dashboardFileService).deletePath("src/App.tsx");
 
         StepVerifier.create(filesController.deletePath("src/App.tsx"))
@@ -418,6 +423,92 @@ class FilesControllerTest {
                 .deletePath("src/App.tsx");
 
         assertThrows(IllegalStateException.class, () -> filesController.deletePath("src/App.tsx"));
+    }
+
+    @Test
+    void shouldReturnBadRequestForInvalidLazyTreePath() {
+        when(dashboardFileService.getTree("../etc", 1, false))
+                .thenThrow(new IllegalArgumentException("Invalid path"));
+
+        StepVerifier.create(filesController.getTree("../etc", 1, false))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnLazyTreePayloadWithMetadata() {
+        DashboardFileNode node = DashboardFileNode.builder()
+                .path("src")
+                .name("src")
+                .type("directory")
+                .hasChildren(true)
+                .children(List.of())
+                .build();
+
+        when(dashboardFileService.getTree("", 1, false)).thenReturn(List.of(node));
+
+        StepVerifier.create(filesController.getTree("", 1, false))
+                .assertNext(response -> {
+                    assertStatus(response, HttpStatus.OK);
+                    assertNotNull(response.getBody());
+                    assertEquals(1, response.getBody().size());
+                    assertEquals("src", response.getBody().get(0).getPath());
+                    assertTrue(response.getBody().get(0).isHasChildren());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnWorkspaceFileDownloadWhenPathIsValid() {
+        ToolArtifactDownload download = ToolArtifactDownload.builder()
+                .path("src/App.tsx")
+                .filename("App.tsx")
+                .mimeType("text/typescript")
+                .size(4L)
+                .data("test".getBytes(StandardCharsets.UTF_8))
+                .build();
+
+        when(dashboardFileService.getDownload("src/App.tsx")).thenReturn(download);
+
+        StepVerifier.create(filesController.download("src/App.tsx"))
+                .assertNext(response -> {
+                    assertStatus(response, HttpStatus.OK);
+                    assertNotNull(response.getBody());
+                    assertEquals("test", new String(response.getBody(), StandardCharsets.UTF_8));
+                    assertEquals("text/typescript", response.getHeaders().getContentType().toString());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldUploadFileIntoWorkspaceDirectory() {
+        FilePart filePart = mock(FilePart.class);
+        DefaultDataBufferFactory bufferFactory = new DefaultDataBufferFactory();
+        when(filePart.filename()).thenReturn("notes.txt");
+        when(filePart.content()).thenReturn(Flux.just(bufferFactory.wrap("uploaded".getBytes(StandardCharsets.UTF_8))));
+
+        DashboardFileContent uploaded = DashboardFileContent.builder()
+                .path("docs/notes.txt")
+                .content("uploaded")
+                .size(8L)
+                .mimeType("text/plain")
+                .editable(true)
+                .binary(false)
+                .image(false)
+                .updatedAt("2026-02-23T00:00:00Z")
+                .build();
+
+        when(dashboardFileService.uploadFile("docs", "notes.txt", "uploaded".getBytes(StandardCharsets.UTF_8), null))
+                .thenReturn(uploaded);
+
+        StepVerifier.create(filesController.upload("docs", filePart))
+                .assertNext(response -> {
+                    assertStatus(response, HttpStatus.OK);
+                    assertNotNull(response.getBody());
+                    assertEquals("docs/notes.txt", response.getBody().getPath());
+                    assertEquals("uploaded", response.getBody().getContent());
+                })
+                .verifyComplete();
     }
 
     private void assertStatus(ResponseEntity<?> response, HttpStatus expected) {

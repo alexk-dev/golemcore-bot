@@ -289,3 +289,22 @@
     display: none !important;
   }
 }
+
+
+.ide-file-preview-image {
+  max-width: min(100%, 980px);
+  max-height: min(70vh, 720px);
+  object-fit: contain;
+  border: 1px solid var(--gc-border-color);
+  border-radius: 1rem;
+  background: var(--gc-body-bg);
+  box-shadow: 0 1rem 2.5rem rgba(15, 23, 42, 0.16);
+}
+
+.ide-editor-settings input[type="number"] {
+  color: var(--gc-body-color);
+}
+
+.ide-breadcrumbs button:disabled {
+  cursor: default;
+}

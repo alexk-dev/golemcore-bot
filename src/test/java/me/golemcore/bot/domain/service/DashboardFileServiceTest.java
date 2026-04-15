@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
@@ -418,6 +419,277 @@ class DashboardFileServiceTest {
                 () -> dashboardFileService.createContent("linked-out/escape.txt", "x"));
 
         assertTrue(exception.getMessage().contains("inside workspace"));
+    }
+
+    @Test
+    void shouldReturnLazyTreeWithDirectoryChildHintsWhenDepthIsOne() throws IOException {
+        writeTextFile("src/main/App.java", "class App {}");
+        writeTextFile("README.md", "docs");
+
+        List<DashboardFileNode> tree = dashboardFileService.getTree("", 1, false);
+
+        DashboardFileNode src = tree.stream()
+                .filter(node -> "src".equals(node.getPath()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("directory", src.getType());
+        assertTrue(src.isHasChildren());
+        assertTrue(src.getChildren().isEmpty());
+
+        DashboardFileNode readme = tree.stream()
+                .filter(node -> "README.md".equals(node.getPath()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("file", readme.getType());
+        assertEquals("text/markdown", readme.getMimeType());
+        assertFalse(readme.isBinary());
+        assertFalse(readme.isImage());
+    }
+
+    @Test
+    void shouldHideGeneratedAndIgnoredDirectoriesByDefault() throws IOException {
+        writeTextFile("src/App.java", "class App {}");
+        writeTextFile("node_modules/pkg/index.js", "module.exports = {}");
+        writeTextFile("target/classes/App.class", "compiled");
+        writeTextFile(".git/config", "[core]");
+
+        List<DashboardFileNode> tree = dashboardFileService.getTree("", 1, false);
+
+        List<String> names = tree.stream().map(DashboardFileNode::getName).toList();
+        assertEquals(List.of("src"), names);
+    }
+
+    @Test
+    void shouldIncludeGeneratedDirectoriesWhenRequested() throws IOException {
+        writeTextFile("src/App.java", "class App {}");
+        writeTextFile("node_modules/pkg/index.js", "module.exports = {}");
+        writeTextFile("target/classes/App.class", "compiled");
+
+        List<DashboardFileNode> tree = dashboardFileService.getTree("", 1, true);
+
+        List<String> names = tree.stream().map(DashboardFileNode::getName).toList();
+        assertTrue(names.contains("src"));
+        assertTrue(names.contains("node_modules"));
+        assertTrue(names.contains("target"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("extensionOnlyTextPaths")
+    void shouldTreatKnownTextExtensionsAsEditableWhenProbeFallsBackToOctetStream(String path) throws IOException {
+        writeTextFile(path, "content");
+
+        DashboardFileContent content = dashboardFileService.getContent(path);
+
+        assertEquals("content", content.getContent());
+        assertFalse(content.isBinary());
+        assertFalse(content.isImage());
+        assertTrue(content.isEditable());
+    }
+
+    @ParameterizedTest
+    @MethodSource("nonEditableMimeTypes")
+    void shouldReturnBinaryMetadataForNonEditableFiles(String path, byte[] data, String expectedMimeType)
+            throws IOException {
+        Path file = workspaceRoot.resolve(path);
+        Path parent = file.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        Files.write(file, data);
+
+        DashboardFileContent content = dashboardFileService.getContent(path);
+
+        assertEquals(path, content.getPath());
+        assertEquals(expectedMimeType, content.getMimeType());
+        assertEquals(data.length, content.getSize());
+        assertEquals(null, content.getContent());
+        assertTrue(content.isBinary());
+        assertFalse(content.isEditable());
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidUploadFilenames")
+    void shouldRejectInvalidUploadFilenames(String filename) {
+        byte[] data = "uploaded".getBytes(StandardCharsets.UTF_8);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> dashboardFileService.uploadFile("uploads", filename, data, "text/plain"));
+
+        assertEquals("Filename is required", exception.getMessage());
+    }
+
+    @Test
+    void shouldSanitizeUploadFilenameToLeafName() {
+        byte[] data = "uploaded".getBytes(StandardCharsets.UTF_8);
+
+        DashboardFileContent uploaded = dashboardFileService.uploadFile("uploads", "../notes.txt", data,
+                "text/plain");
+
+        assertEquals("uploads/notes.txt", uploaded.getPath());
+        assertTrue(Files.exists(workspaceRoot.resolve("uploads/notes.txt")));
+    }
+
+    @Test
+    void shouldUploadFileIntoWorkspaceRootWhenTargetDirectoryIsNull() {
+        byte[] data = "uploaded".getBytes(StandardCharsets.UTF_8);
+
+        DashboardFileContent uploaded = dashboardFileService.uploadFile(null, "root.txt", data, "text/plain");
+
+        assertEquals("root.txt", uploaded.getPath());
+        assertEquals("uploaded", uploaded.getContent());
+    }
+
+    @Test
+    void shouldRejectEditableUploadWhenDataIsNotUtf8() {
+        byte[] data = new byte[] { (byte) 0xC3, (byte) 0x28 };
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> dashboardFileService.uploadFile("uploads", "bad.txt", data, "text/plain"));
+
+        assertTrue(exception.getMessage().contains("valid UTF-8"));
+    }
+
+    @Test
+    void shouldReturnUploadedBinaryMetadataWhenUploadedFileIsNotEditable() {
+        byte[] data = new byte[] { 1, 2, 3, 4 };
+
+        DashboardFileContent uploaded = dashboardFileService.uploadFile("uploads", "archive.bin", data,
+                "application/octet-stream");
+
+        assertEquals("uploads/archive.bin", uploaded.getPath());
+        assertEquals(null, uploaded.getContent());
+        assertEquals("application/octet-stream", uploaded.getMimeType());
+        assertTrue(uploaded.isBinary());
+        assertFalse(uploaded.isImage());
+        assertFalse(uploaded.isEditable());
+    }
+
+    @Test
+    void shouldRejectNullUploadData() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> dashboardFileService.uploadFile("uploads", "notes.txt", null, "text/plain"));
+
+        assertEquals("File data is required", exception.getMessage());
+    }
+
+    @Test
+    void shouldThrowWhenDownloadPathIsBlank() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> dashboardFileService.getDownload(" "));
+
+        assertEquals("Path is required", exception.getMessage());
+    }
+
+    @Test
+    void shouldThrowWhenDownloadPathDoesNotExist() {
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> dashboardFileService.getDownload("missing.txt"));
+
+        assertTrue(exception.getMessage().contains("File not found"));
+    }
+
+    @Test
+    void shouldThrowWhenDownloadPathIsDirectory() throws IOException {
+        Files.createDirectories(workspaceRoot.resolve("reports"));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> dashboardFileService.getDownload("reports"));
+
+        assertTrue(exception.getMessage().contains("Not a file"));
+    }
+
+    @Test
+    void shouldReturnImageMetadataWithoutReadingImageAsUtf8() throws IOException {
+        byte[] pngBytes = new byte[] {
+                (byte) 0x89, 0x50, 0x4E, 0x47,
+                0x0D, 0x0A, 0x1A, 0x0A,
+                0x00, 0x00, 0x00, 0x0D
+        };
+        Path path = workspaceRoot.resolve("images/logo.png");
+        Files.createDirectories(path.getParent());
+        Files.write(path, pngBytes);
+
+        DashboardFileContent content = dashboardFileService.getContent("images/logo.png");
+
+        assertEquals("images/logo.png", content.getPath());
+        assertEquals(pngBytes.length, content.getSize());
+        assertEquals("image/png", content.getMimeType());
+        assertTrue(content.isBinary());
+        assertTrue(content.isImage());
+        assertFalse(content.isEditable());
+        assertEquals("/api/files/download?path=images%2Flogo.png", content.getDownloadUrl());
+    }
+
+    @Test
+    void shouldDownloadWorkspaceFileWhenPathIsValid() throws IOException {
+        writeTextFile("reports/output.txt", "download me");
+
+        me.golemcore.bot.domain.model.ToolArtifactDownload download = dashboardFileService
+                .getDownload("reports/output.txt");
+
+        assertEquals("reports/output.txt", download.getPath());
+        assertEquals("output.txt", download.getFilename());
+        assertEquals("text/plain", download.getMimeType());
+        assertEquals("download me", new String(download.getData(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void shouldUploadFileIntoTargetDirectory() {
+        byte[] data = "uploaded".getBytes(StandardCharsets.UTF_8);
+
+        DashboardFileContent uploaded = dashboardFileService.uploadFile("uploads", "notes.txt", data, "text/plain");
+
+        assertEquals("uploads/notes.txt", uploaded.getPath());
+        assertEquals("uploaded", uploaded.getContent());
+        assertEquals("text/plain", uploaded.getMimeType());
+        assertTrue(uploaded.isEditable());
+        assertTrue(Files.exists(workspaceRoot.resolve("uploads/notes.txt")));
+    }
+
+    private static Stream<String> extensionOnlyTextPaths() {
+        return Stream.of(
+                "src/App.java",
+                "script.js",
+                "component.jsx",
+                "config.json",
+                "docs/readme.yml",
+                "docs/readme.yaml",
+                "pom.xml",
+                "index.html",
+                "styles/main.css",
+                "styles/main.scss",
+                "bin/run.sh",
+                "scripts/app.py",
+                "cmd/main.go",
+                "src/lib.rs",
+                "src/Main.kt",
+                "db/schema.sql",
+                "config/app.toml",
+                "config/app.ini");
+    }
+
+    private static Stream<Arguments> nonEditableMimeTypes() {
+        return Stream.of(
+                Arguments.of(
+                        "assets/logo.jpg",
+                        new byte[] { (byte) 0xFF, (byte) 0xD8, 0x00 },
+                        "image/jpeg"),
+                Arguments.of(
+                        "assets/logo.webp",
+                        new byte[] { 0x52, 0x49, 0x46, 0x46 },
+                        "image/webp"),
+                Arguments.of(
+                        "docs/report.pdf",
+                        new byte[] { 0x25, 0x50, 0x44, 0x46 },
+                        "application/pdf"),
+                Arguments.of(
+                        "data/archive.bin",
+                        new byte[] { 0x00, 0x01, 0x02 },
+                        "application/octet-stream"));
+    }
+
+    private static Stream<String> invalidUploadFilenames() {
+        return Stream.of("", " ", ".", "..", "nested/..", "nested/.");
     }
 
     private Path writeTextFile(String relativePath, String content) throws IOException {

@@ -4,6 +4,7 @@ import { loadLanguage } from '@uiw/codemirror-extensions-langs';
 import { showMinimap as codeMirrorShowMinimap } from '@replit/codemirror-minimap';
 import type { Extension } from '@codemirror/state';
 import { EditorView, type ViewUpdate } from '@codemirror/view';
+import { search } from '@codemirror/search';
 import { useThemeStore } from '../../store/themeStore';
 
 export interface CodeEditorProps {
@@ -12,6 +13,9 @@ export interface CodeEditorProps {
   onChange: (value: string) => void;
   onCursorChange?: (line: number, column: number) => void;
   showMinimap?: boolean;
+  wordWrap?: boolean;
+  fontSize?: number;
+  searchQuery?: string;
 }
 
 type LanguageKey =
@@ -129,12 +133,23 @@ function createMinimapExtension(): Extension {
   });
 }
 
+function createFontSizeExtension(fontSize: number): Extension {
+  return EditorView.theme({
+    '&': {
+      fontSize: `${fontSize}px`,
+    },
+  });
+}
+
 export function CodeEditor({
   filePath,
   value,
   onChange,
   onCursorChange,
   showMinimap = false,
+  wordWrap = true,
+  fontSize = 14,
+  searchQuery = '',
 }: CodeEditorProps): ReactElement {
   const theme = useThemeStore((state) => state.theme);
 
@@ -143,9 +158,14 @@ export function CodeEditor({
     const loadedLanguage = languageName == null ? null : loadLanguage(languageName);
 
     const result: Extension[] = [
-      EditorView.lineWrapping,
+      createFontSizeExtension(fontSize),
+      search({ top: true }),
       createCursorUpdateExtension(onCursorChange),
     ];
+
+    if (wordWrap) {
+      result.push(EditorView.lineWrapping);
+    }
 
     if (loadedLanguage != null) {
       result.push(loadedLanguage);
@@ -156,10 +176,10 @@ export function CodeEditor({
     }
 
     return result;
-  }, [filePath, onCursorChange, showMinimap]);
+  }, [filePath, fontSize, onCursorChange, showMinimap, wordWrap]);
 
   return (
-    <div className="ide-editor h-full" id="ide-editor-panel" role="tabpanel" aria-label="Code editor">
+    <div className="ide-editor h-full" id="ide-editor-panel" role="tabpanel" aria-label="Code editor" data-search-query={searchQuery}>
       <CodeMirror
         value={value}
         height="100%"
