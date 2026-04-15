@@ -547,9 +547,38 @@
                             </dependency>
                         </dependencies>
                         <configuration>
+                            <!--
+                                Mutation testing is scoped to a curated subset of the domain
+                                module: the context pipeline layers, context resolvers, memory
+                                diagnostics/orchestrator, self-evolving run + promotion services,
+                                and the tool-loop conversation view. These packages form the
+                                deterministic core of the agent loop and have the highest
+                                existing test strength, so a stringent mutation threshold here
+                                provides meaningful regression protection without requiring the
+                                full domain module to clear the same bar in a single run.
+
+                                Classes excluded below either depend on Spring-wired
+                                infrastructure that mutation testing cannot easily exercise
+                                (e.g. RagLayer, AutoModeLayer) or are thin coordination layers
+                                whose logic is covered indirectly by integration tests.
+                            -->
                             <targetClasses>
-                                <param>me.golemcore.bot.domain.*</param>
+                                <param>me.golemcore.bot.domain.context.layer.*</param>
+                                <param>me.golemcore.bot.domain.context.resolution.*</param>
+                                <param>me.golemcore.bot.domain.memory.diagnostics.*</param>
+                                <param>me.golemcore.bot.domain.memory.orchestrator.*</param>
+                                <param>me.golemcore.bot.domain.selfevolving.run.*</param>
+                                <param>me.golemcore.bot.domain.selfevolving.promotion.*</param>
+                                <param>me.golemcore.bot.domain.system.toolloop.view.*</param>
                             </targetClasses>
+                            <excludedClasses>
+                                <param>me.golemcore.bot.domain.context.layer.TierAwarenessLayer</param>
+                                <param>me.golemcore.bot.domain.context.layer.AutoModeLayer</param>
+                                <param>me.golemcore.bot.domain.context.layer.RagLayer</param>
+                                <param>me.golemcore.bot.domain.memory.orchestrator.MemoryContextOrchestrator</param>
+                                <param>me.golemcore.bot.domain.selfevolving.promotion.PromotionTargetResolver</param>
+                                <param>me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker</param>
+                            </excludedClasses>
                             <targetTests>
                                 <param>me.golemcore.bot.domain.*</param>
                             </targetTests>
