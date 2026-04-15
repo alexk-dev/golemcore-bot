@@ -439,6 +439,188 @@ class AgentLoopTest {
     }
 
     @Test
+    void shouldCopyWebhookResponseSchemaMetadataIntoRuntimeAttributes() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+        AgentSession session = AgentSession.builder()
+                .id("webhook:hook:test")
+                .channelType("webhook")
+                .chatId("hook:test")
+                .messages(new ArrayList<>())
+                .build();
+        when(sessionPort.getOrCreate("webhook", "hook:test")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn("webhook");
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        List<Object> observedSchemas = new ArrayList<>();
+        List<String> observedSchemaTexts = new ArrayList<>();
+        List<String> observedValidationTiers = new ArrayList<>();
+        AgentSystem inspector = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "inspector";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                observedSchemas.add(context.getAttribute(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA));
+                observedSchemaTexts.add(context.getAttribute(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT));
+                observedValidationTiers.add(
+                        context.getAttribute(ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER));
+                return context;
+            }
+        };
+
+        AgentLoop loop = createLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(inspector),
+                List.of(channel),
+                mockRuntimeConfigService(1),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Map<String, Object> schema = Map.of("type", "object");
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("trace schema")
+                .channelType("webhook")
+                .chatId("hook:test")
+                .senderId("u1")
+                .metadata(Map.of(
+                        ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA, schema,
+                        ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT, "{\"type\":\"object\"}",
+                        ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER, "smart"))
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        assertEquals(schema, observedSchemas.get(0));
+        assertEquals("{\"type\":\"object\"}", observedSchemaTexts.get(0));
+        assertEquals("smart", observedValidationTiers.get(0));
+    }
+
+    @Test
+    void shouldKeepWebhookResponseSchemaInstructionsAcrossSkillTransitionIteration() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+        AgentSession session = AgentSession.builder()
+                .id("webhook:hook:test")
+                .channelType("webhook")
+                .chatId("hook:test")
+                .messages(new ArrayList<>())
+                .build();
+        when(sessionPort.getOrCreate("webhook", "hook:test")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn("webhook");
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        List<Boolean> promptInjectedByIteration = new ArrayList<>();
+        AgentSystem contextSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "ContextBuildingSystem";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                Object schemaText = context.getAttribute(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT);
+                if (schemaText instanceof String text && !text.isBlank()) {
+                    context.setSystemPrompt("# Webhook Response JSON Contract\n" + text);
+                }
+                promptInjectedByIteration.add(context.getSystemPrompt() != null
+                        && context.getSystemPrompt().contains("Webhook Response JSON Contract"));
+                return context;
+            }
+        };
+        AgentSystem transitionSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "transition";
+            }
+
+            @Override
+            public int getOrder() {
+                return 2;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                if (context.getCurrentIteration() == 0) {
+                    context.getMessages().add(Message.builder()
+                            .role("assistant")
+                            .content("Intermediate answer without schema metadata")
+                            .timestamp(clock.instant())
+                            .build());
+                    context.setSkillTransitionRequest(SkillTransitionRequest.pipeline("next-skill"));
+                    return context;
+                }
+                context.clearSkillTransitionRequest();
+                context.setOutgoingResponse(OutgoingResponse.textOnly("done"));
+                return context;
+            }
+        };
+
+        AgentLoop loop = createLoop(
+                sessionPort,
+                rateLimitPort,
+                List.of(contextSystem, transitionSystem),
+                List.of(channel),
+                mockRuntimeConfigService(2),
+                preferencesService,
+                llmPort,
+                clock);
+
+        Message inbound = Message.builder()
+                .role(ROLE_USER)
+                .content("trace schema")
+                .channelType("webhook")
+                .chatId("hook:test")
+                .senderId("u1")
+                .metadata(Map.of(
+                        ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT, "{\"type\":\"object\"}"))
+                .timestamp(clock.instant())
+                .build();
+
+        loop.processMessage(inbound);
+
+        assertEquals(List.of(true, true), promptInjectedByIteration);
+    }
+
+    @Test
     void shouldRecordWebhookResponseSchemaInstructionTraceEvent() {
         SessionPort sessionPort = mock(SessionPort.class);
         RateLimitPort rateLimitPort = mock(RateLimitPort.class);
