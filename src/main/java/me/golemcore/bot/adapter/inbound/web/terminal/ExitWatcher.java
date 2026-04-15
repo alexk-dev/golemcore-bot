@@ -16,6 +16,7 @@ final class ExitWatcher {
 
     private final TerminalConnection.ExitWaitStrategy strategy;
     private final IntConsumer onExit;
+    private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private final Thread thread;
 
@@ -27,7 +28,9 @@ final class ExitWatcher {
     }
 
     void start() {
-        thread.start();
+        if (started.compareAndSet(false, true)) {
+            thread.start();
+        }
     }
 
     void stop() {

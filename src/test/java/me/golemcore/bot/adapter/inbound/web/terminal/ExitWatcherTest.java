@@ -59,7 +59,34 @@ class ExitWatcherTest {
         watcher.stop();
         releaseStrategy.countDown();
 
-        Thread.sleep(100);
-        assertEquals(0, callbackInvocations.get(), "callback must not fire after stop()");
+        // Verify the callback stays silent for the full window — if stop() races the
+        // loop, a faulty implementation would fire sometime within this budget.
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(300);
+        while (System.nanoTime() < deadline) {
+            assertEquals(0, callbackInvocations.get(), "callback must not fire after stop()");
+            Thread.sleep(20);
+        }
+    }
+
+    @Test
+    void shouldIgnoreRedundantStartCalls() throws Exception {
+        AtomicInteger strategyCalls = new AtomicInteger(0);
+        CountDownLatch exitLatch = new CountDownLatch(1);
+        TerminalConnection.ExitWaitStrategy strategy = () -> {
+            if (strategyCalls.incrementAndGet() >= 2) {
+                return TerminalConnection.ExitWaitOutcome.exited(0);
+            }
+            return TerminalConnection.ExitWaitOutcome.TIMEOUT;
+        };
+
+        ExitWatcher watcher = new ExitWatcher(strategy, code -> exitLatch.countDown());
+        watcher.start();
+        watcher.start();
+        try {
+            assertTrue(exitLatch.await(2, TimeUnit.SECONDS),
+                    "a second start() must be a no-op, not a thread-state exception");
+        } finally {
+            watcher.stop();
+        }
     }
 }

@@ -52,7 +52,7 @@ public class TerminalSessionLimiter {
         activeByUser.compute(username, (key, existing) -> {
             AtomicInteger counter = existing != null ? existing : new AtomicInteger(0);
             if (counter.get() >= maxPerUser) {
-                return existing;
+                return counter;
             }
             counter.incrementAndGet();
             granted.set(new Lease(username, this));
@@ -84,8 +84,7 @@ public class TerminalSessionLimiter {
             if (counter == null) {
                 return null;
             }
-            int newValue = counter.updateAndGet(value -> value > 0 ? value - 1 : 0);
-            if (newValue <= 0) {
+            if (counter.decrementAndGet() <= 0) {
                 return null;
             }
             return counter;

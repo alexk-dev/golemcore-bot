@@ -245,7 +245,10 @@ public class BotProperties {
          * Whether the browser terminal WebSocket endpoint is exposed. Defaults to
          * {@code true}; override via {@code BOT_DASHBOARD_TERMINAL_ENABLED} or
          * {@code bot.dashboard.terminal.enabled} when the host operator wants to lock
-         * the shell down.
+         * the shell down. Operators running in shared or production environments should
+         * disable it unless interactive browser-shell access is an intentional
+         * requirement — the endpoint grants authenticated dashboard users a live pty
+         * bound to the bot's host process.
          */
         private boolean enabled = true;
 
