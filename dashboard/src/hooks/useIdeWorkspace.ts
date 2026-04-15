@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
   useCreateFileContent,
@@ -9,10 +10,13 @@ import {
   useSaveFileContent,
   useUploadFileContent,
 } from './useFiles';
+import { getFileTree, type FileTreeNode } from '../api/files';
+import { mergeDirectoryChildren } from './ideTreeMerge';
 import { useIdeCloseWorkflow } from './useIdeCloseWorkflow';
 import { useIdeQuickOpen, type QuickOpenItem } from './useIdeQuickOpen';
 import { useBeforeUnloadGuard, useGlobalIdeShortcuts, useSyncContentToTabs } from './useIdeLifecycle';
 import { useIdeTreeActions, type TreeActionState } from './useIdeTreeActions';
+import { useProtectedFileDownload } from './useProtectedFileDownload';
 import { useResizableSidebar } from './useResizableSidebar';
 import { type IdeTabState, useIdeStore } from '../store/ideStore';
 import { buildIdeTabLabels, getFilename } from '../components/ide/ideTabLabels';
@@ -42,6 +46,7 @@ export interface UseIdeWorkspaceResult {
   closeCandidateLabel: string;
   treeAction: TreeActionState | null;
   treeQuery: ReturnType<typeof useFileTree>;
+  treeNodes: FileTreeNode[];
   contentQuery: ReturnType<typeof useFileContent>;
   saveMutation: ReturnType<typeof useSaveFileContent>;
   hasDirtyTabs: boolean;
@@ -95,6 +100,8 @@ export interface UseIdeWorkspaceResult {
   toggleIncludeIgnored: () => void;
   loadDirectory: (path: string) => void;
   uploadFiles: (targetPath: string, files: FileList) => void;
+  downloadActiveFile: () => void;
+  isDownloadingActiveFile: boolean;
   setEditorCursor: (line: number, column: number) => void;
   startSidebarResize: (clientX: number) => void;
   increaseSidebarWidth: () => void;
@@ -200,6 +207,9 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
   const [editorFontSize, setEditorFontSizeState] = useState<number>(14);
   const [editorWordWrap, setEditorWordWrap] = useState<boolean>(true);
   const [editorMinimap, setEditorMinimap] = useState<boolean>(true);
+  const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
+  const queryClient = useQueryClient();
+  const activeFileDownload = useProtectedFileDownload();
 
   const openedTabs = useIdeStore((state) => state.openedTabs);
   const activePath = useIdeStore((state) => state.activePath);
@@ -233,7 +243,7 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
   });
 
   const quickOpen = useIdeQuickOpen(
-    treeQuery.data,
+    treeNodes,
     setActivePath,
     recentPaths,
     pinnedPathList,
@@ -252,6 +262,13 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     () => resolveActiveUpdatedAt(contentQuery.data, activeTab?.path),
     [activeTab?.path, contentQuery.data],
   );
+
+  useEffect(() => {
+    // Keep the editable tree model synchronized with the root lazy tree response.
+    if (treeQuery.data != null) {
+      setTreeNodes(treeQuery.data);
+    }
+  }, [treeQuery.data]);
 
   const saveTab = useCallback(async (tab: IdeTabState): Promise<boolean> => {
     if (!tab.editable) {
@@ -371,9 +388,19 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     setIncludeIgnored((current) => !current);
   }, []);
 
-  const loadDirectory = useCallback((_path: string): void => {
-    void treeQuery.refetch();
-  }, [treeQuery]);
+  const loadDirectory = useCallback((path: string): void => {
+    void (async () => {
+      try {
+        const children = await queryClient.fetchQuery({
+          queryKey: ['files', 'tree', path, 1, includeIgnored],
+          queryFn: () => getFileTree(path, { depth: 1, includeIgnored }),
+        });
+        setTreeNodes((current) => mergeDirectoryChildren(current, path, children));
+      } catch {
+        toast.error(`Failed to load ${path}`);
+      }
+    })();
+  }, [includeIgnored, queryClient]);
 
   const uploadFiles = useCallback((targetPath: string, files: FileList): void => {
     Array.from(files).forEach((file) => {
@@ -399,6 +426,13 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
       })();
     });
   }, [uploadMutation, upsertTab]);
+
+  const downloadActiveFile = useCallback((): void => {
+    if (activePath == null) {
+      return;
+    }
+    void activeFileDownload.downloadFile(activePath);
+  }, [activeFileDownload, activePath]);
 
   const setEditorFontSize = useCallback((fontSize: number): void => {
     setEditorFontSizeState(clampFontSize(fontSize));
@@ -433,6 +467,7 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     closeCandidateLabel,
     treeAction: treeActions.treeAction,
     treeQuery,
+    treeNodes,
     contentQuery,
     saveMutation,
     hasDirtyTabs,
@@ -491,6 +526,8 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     toggleIncludeIgnored,
     loadDirectory,
     uploadFiles,
+    downloadActiveFile,
+    isDownloadingActiveFile: activeFileDownload.isDownloading,
     setEditorCursor,
     startSidebarResize: sidebar.startResize,
     increaseSidebarWidth: sidebar.increase,

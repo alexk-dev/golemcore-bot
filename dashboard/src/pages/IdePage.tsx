@@ -23,16 +23,16 @@ export default function IdePage(): ReactElement {
     activePath, activeTab, activeColumn, activeFileSize, activeLanguage, activeLine, activeUpdatedAt,
     canSaveActiveTab, cancelCloseCandidate, cancelTreeAction, closeCandidate, closeCandidateLabel,
     closeCandidateWithoutSaving, closeCommandPalette, closeQuickOpen, debouncedTreeSearchQuery, decreaseSidebarWidth,
-    dirtyPaths, dirtyTabsCount, editorTabs, editorSearchQuery, editorSettings, hasDirtyTabs, hasFileLoadError,
-    includeIgnored, increaseSidebarWidth, isCloseWithSavePending, isCommandPaletteVisible, isEditorSearchVisible,
-    isEditorSettingsVisible, isFileOpening, isQuickOpenVisible, isTreeActionPending, loadDirectory,
-    openFileFromQuickOpen, openQuickOpen, quickOpenItems, quickOpenQuery, refreshTree, requestCloseTab,
-    requestCreateFromTree, requestDeleteFromTree, requestRenameFromTree, retryLoadContent, saveActiveTab,
-    saveAndCloseCandidate, saveMutation, setActivePath, setEditorCursor, setEditorFontSize, setEditorSearchQuery,
-    setEditorWordWrap, setTreeSearchQuery, sidebarWidth, startSidebarResize, submitCreateFromTree,
-    submitDeleteFromTree, submitRenameFromTree, toggleEditorSearch, toggleEditorSettings,
-    toggleIncludeIgnored, toggleQuickOpenPinned, treeAction, treeQuery, treeSearchQuery, updateActiveTabContent,
-    updateQuickOpenQuery, uploadFiles,
+    dirtyPaths, dirtyTabsCount, downloadActiveFile, editorTabs, editorSearchQuery, editorSettings, hasDirtyTabs,
+    hasFileLoadError, includeIgnored, increaseSidebarWidth, isCloseWithSavePending, isCommandPaletteVisible,
+    isDownloadingActiveFile, isEditorSearchVisible, isEditorSettingsVisible, isFileOpening, isQuickOpenVisible,
+    isTreeActionPending, loadDirectory, openFileFromQuickOpen, openQuickOpen, quickOpenItems, quickOpenQuery,
+    refreshTree, requestCloseTab, requestCreateFromTree, requestDeleteFromTree, requestRenameFromTree,
+    retryLoadContent, saveActiveTab, saveAndCloseCandidate, saveMutation, setActivePath, setEditorCursor,
+    setEditorFontSize, setEditorSearchQuery, setEditorWordWrap, setTreeSearchQuery, sidebarWidth,
+    startSidebarResize, submitCreateFromTree, submitDeleteFromTree, submitRenameFromTree, toggleEditorSearch,
+    toggleEditorSettings, toggleIncludeIgnored, toggleQuickOpenPinned, treeAction, treeNodes, treeQuery,
+    treeSearchQuery, updateActiveTabContent, updateQuickOpenQuery, uploadFiles,
   } = ide;
   const isMobileLayout = useMediaQuery('(max-width: 991.98px)');
   const mobileExplorer = useIdeMobileExplorer(isMobileLayout);
@@ -44,8 +44,6 @@ export default function IdePage(): ReactElement {
 
     return editorTabs.find((tab) => tab.path === activePath)?.fullTitle ?? activePath;
   }, [activePath, editorTabs]);
-
-  const activeDownloadUrl = activePath == null ? null : `/api/files/download?path=${encodeURIComponent(activePath)}`;
   const handleOpenFile = useMemo(() => mobileExplorer.wrapAction(setActivePath), [mobileExplorer, setActivePath]);
   const handleRequestCreate = useMemo(
     () => mobileExplorer.wrapAction(requestCreateFromTree),
@@ -61,7 +59,7 @@ export default function IdePage(): ReactElement {
   );
 
   const explorerProps = useMemo<IdeFileExplorerProps>(() => ({
-    nodes: treeQuery.data,
+    nodes: treeNodes,
     isLoading: treeQuery.isLoading,
     isError: treeQuery.isError,
     isRefreshing: treeQuery.isFetching,
@@ -70,6 +68,7 @@ export default function IdePage(): ReactElement {
     searchInputValue: treeSearchQuery,
     searchQuery: debouncedTreeSearchQuery,
     includeIgnored,
+    isDownloadingActiveFile,
     onSearchQueryChange: setTreeSearchQuery,
     onRefresh: refreshTree,
     onCreateAtRoot: () => handleRequestCreate(''),
@@ -79,21 +78,24 @@ export default function IdePage(): ReactElement {
     onRequestRename: handleRequestRename,
     onRequestDelete: handleRequestDelete,
     onToggleIncludeIgnored: toggleIncludeIgnored,
+    onDownloadActiveFile: downloadActiveFile,
     onUploadFiles: uploadFiles,
   }), [
     activePath,
     debouncedTreeSearchQuery,
     dirtyPaths,
+    downloadActiveFile,
     handleOpenFile,
     handleRequestCreate,
     handleRequestDelete,
     handleRequestRename,
     includeIgnored,
+    isDownloadingActiveFile,
     loadDirectory,
     refreshTree,
     setTreeSearchQuery,
     toggleIncludeIgnored,
-    treeQuery.data,
+    treeNodes,
     treeQuery.isError,
     treeQuery.isFetching,
     treeQuery.isLoading,
@@ -190,7 +192,7 @@ export default function IdePage(): ReactElement {
                     image: activeTab.image,
                     editable: activeTab.editable,
                     downloadUrl: activeTab.downloadUrl,
-                  }} downloadUrl={activeDownloadUrl ?? activeTab.downloadUrl ?? '#'} />
+                  }} />
                 ) : (
                   <CodeEditor
                     filePath={activeTab?.path ?? null}
@@ -227,12 +229,14 @@ export default function IdePage(): ReactElement {
         show={isCommandPaletteVisible}
         canSaveActiveTab={canSaveActiveTab}
         hasActiveTab={activeTab != null}
-        activeDownloadUrl={activeDownloadUrl}
+        activePath={activePath}
+        isDownloadingActiveFile={isDownloadingActiveFile}
         onClose={closeCommandPalette}
         onSaveActiveTab={saveActiveTab}
         onOpenQuickOpen={openQuickOpen}
         onToggleEditorSearch={toggleEditorSearch}
         onToggleSettings={toggleEditorSettings}
+        onDownloadActiveFile={downloadActiveFile}
       />
 
       <QuickOpenModal

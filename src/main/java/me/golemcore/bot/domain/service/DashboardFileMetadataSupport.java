@@ -6,6 +6,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 final class DashboardFileMetadataSupport {
@@ -13,6 +14,29 @@ final class DashboardFileMetadataSupport {
     private static final long MAX_EDITABLE_FILE_SIZE = 1024L * 1024L * 2L;
     private static final Set<String> DEFAULT_IGNORED_DIRECTORIES = Set.of(
             ".git", ".gradle", ".idea", "build", "dist", "node_modules", "target");
+    private static final Map<String, String> TEXT_EXTENSION_MIME_TYPES = Map.ofEntries(
+            Map.entry(".css", "text/css"),
+            Map.entry(".go", "text/x-go"),
+            Map.entry(".html", "text/html"),
+            Map.entry(".ini", "text/plain"),
+            Map.entry(".java", "text/x-java-source"),
+            Map.entry(".js", "text/javascript"),
+            Map.entry(".json", "application/json"),
+            Map.entry(".jsx", "text/javascript"),
+            Map.entry(".kt", "text/x-kotlin"),
+            Map.entry(".md", "text/markdown"),
+            Map.entry(".py", "text/x-python"),
+            Map.entry(".rs", "text/x-rustsrc"),
+            Map.entry(".scss", "text/x-scss"),
+            Map.entry(".sh", "text/x-shellscript"),
+            Map.entry(".sql", "application/sql"),
+            Map.entry(".toml", "application/toml"),
+            Map.entry(".ts", "text/typescript"),
+            Map.entry(".tsx", "text/typescript"),
+            Map.entry(".txt", "text/plain"),
+            Map.entry(".xml", "application/xml"),
+            Map.entry(".yaml", "application/yaml"),
+            Map.entry(".yml", "application/yaml"));
 
     private DashboardFileMetadataSupport() {
     }
@@ -70,18 +94,7 @@ final class DashboardFileMetadataSupport {
         String mimeType = workspacePathService.resolveMimeType(path, requestedMimeType);
         String filename = requireFileName(workspacePathService, path);
         if ("application/octet-stream".equals(mimeType)) {
-            if (filename.endsWith(".md")) {
-                return "text/markdown";
-            }
-            if (filename.endsWith(".ts") || filename.endsWith(".tsx")) {
-                return "text/typescript";
-            }
-            if (filename.endsWith(".js") || filename.endsWith(".jsx")) {
-                return "text/javascript";
-            }
-            if (filename.endsWith(".java")) {
-                return "text/x-java-source";
-            }
+            return findTextMimeType(filename, mimeType);
         }
         return mimeType;
     }
@@ -91,28 +104,15 @@ final class DashboardFileMetadataSupport {
             return true;
         }
         String filename = requireFileName(workspacePathService, path);
-        return filename.endsWith(".java")
-                || filename.endsWith(".js")
-                || filename.endsWith(".jsx")
-                || filename.endsWith(".ts")
-                || filename.endsWith(".tsx")
-                || filename.endsWith(".json")
-                || filename.endsWith(".md")
-                || filename.endsWith(".yml")
-                || filename.endsWith(".yaml")
-                || filename.endsWith(".xml")
-                || filename.endsWith(".html")
-                || filename.endsWith(".css")
-                || filename.endsWith(".scss")
-                || filename.endsWith(".sh")
-                || filename.endsWith(".py")
-                || filename.endsWith(".go")
-                || filename.endsWith(".rs")
-                || filename.endsWith(".kt")
-                || filename.endsWith(".sql")
-                || filename.endsWith(".toml")
-                || filename.endsWith(".ini")
-                || filename.endsWith(".txt");
+        return TEXT_EXTENSION_MIME_TYPES.keySet().stream().anyMatch(filename::endsWith);
+    }
+
+    private static String findTextMimeType(String filename, String fallbackMimeType) {
+        return TEXT_EXTENSION_MIME_TYPES.entrySet().stream()
+                .filter(entry -> filename.endsWith(entry.getKey()))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(fallbackMimeType);
     }
 
     private static String requireFileName(WorkspacePathService workspacePathService, Path path) {

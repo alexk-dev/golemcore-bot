@@ -15,6 +15,7 @@ export interface IdeFileExplorerProps {
   searchInputValue: string;
   searchQuery: string;
   includeIgnored: boolean;
+  isDownloadingActiveFile: boolean;
   onSearchQueryChange: (value: string) => void;
   onRefresh: () => void;
   onCreateAtRoot: () => void;
@@ -24,6 +25,7 @@ export interface IdeFileExplorerProps {
   onRequestRename: (targetPath: string) => void;
   onRequestDelete: (targetPath: string) => void;
   onToggleIncludeIgnored: () => void;
+  onDownloadActiveFile: () => void;
   onUploadFiles: (targetPath: string, files: FileList) => void;
 }
 
@@ -37,6 +39,7 @@ export function IdeFileExplorer({
   searchInputValue,
   searchQuery,
   includeIgnored,
+  isDownloadingActiveFile,
   onSearchQueryChange,
   onRefresh,
   onCreateAtRoot,
@@ -46,6 +49,7 @@ export function IdeFileExplorer({
   onRequestRename,
   onRequestDelete,
   onToggleIncludeIgnored,
+  onDownloadActiveFile,
   onUploadFiles,
 }: IdeFileExplorerProps): ReactElement {
   const handleUploadChange = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -105,10 +109,15 @@ export function IdeFileExplorer({
             {includeIgnored ? 'Showing ignored files' : 'Ignored files hidden'}
           </button>
           {selectedPath != null && (
-            <a className="inline-flex items-center gap-1 hover:text-foreground" href={`/api/files/download?path=${encodeURIComponent(selectedPath)}`} download>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 hover:text-foreground disabled:opacity-60"
+              onClick={onDownloadActiveFile}
+              disabled={isDownloadingActiveFile}
+            >
               <FiDownload size={13} />
               Download active
-            </a>
+            </button>
           )}
         </div>
       </div>

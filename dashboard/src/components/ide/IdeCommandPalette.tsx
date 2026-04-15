@@ -7,24 +7,28 @@ export interface IdeCommandPaletteProps {
   show: boolean;
   canSaveActiveTab: boolean;
   hasActiveTab: boolean;
-  activeDownloadUrl: string | null;
+  activePath: string | null;
+  isDownloadingActiveFile: boolean;
   onClose: () => void;
   onSaveActiveTab: () => void;
   onOpenQuickOpen: () => void;
   onToggleEditorSearch: () => void;
   onToggleSettings: () => void;
+  onDownloadActiveFile: () => void;
 }
 
 export function IdeCommandPalette({
   show,
   canSaveActiveTab,
   hasActiveTab,
-  activeDownloadUrl,
+  activePath,
+  isDownloadingActiveFile,
   onClose,
   onSaveActiveTab,
   onOpenQuickOpen,
   onToggleEditorSearch,
   onToggleSettings,
+  onDownloadActiveFile,
 }: IdeCommandPaletteProps): ReactElement {
   const handleSave = (): void => {
     onSaveActiveTab();
@@ -43,6 +47,11 @@ export function IdeCommandPalette({
 
   const handleSettings = (): void => {
     onToggleSettings();
+    onClose();
+  };
+
+  const handleDownload = (): void => {
+    onDownloadActiveFile();
     onClose();
   };
 
@@ -69,13 +78,16 @@ export function IdeCommandPalette({
             <FiSettings size={14} />
             Toggle Editor Settings
           </Button>
-          {activeDownloadUrl != null && (
-            <a href={activeDownloadUrl} download className="no-underline">
-              <Button variant="secondary" className="w-full justify-start">
-                <FiDownload size={14} />
-                Download Active File
-              </Button>
-            </a>
+          {activePath != null && (
+            <Button
+              variant="secondary"
+              className="w-full justify-start"
+              onClick={handleDownload}
+              disabled={isDownloadingActiveFile}
+            >
+              <FiDownload size={14} />
+              Download Active File
+            </Button>
           )}
           {!hasActiveTab && (
             <div className="flex items-center gap-2 rounded-2xl border border-border/80 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">

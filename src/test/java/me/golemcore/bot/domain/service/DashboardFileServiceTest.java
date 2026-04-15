@@ -540,6 +540,16 @@ class DashboardFileServiceTest {
     }
 
     @Test
+    void shouldRejectEditableUploadWhenDataIsNotUtf8() {
+        byte[] data = new byte[] { (byte) 0xC3, (byte) 0x28 };
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> dashboardFileService.uploadFile("uploads", "bad.txt", data, "text/plain"));
+
+        assertTrue(exception.getMessage().contains("valid UTF-8"));
+    }
+
+    @Test
     void shouldReturnUploadedBinaryMetadataWhenUploadedFileIsNotEditable() {
         byte[] data = new byte[] { 1, 2, 3, 4 };
 

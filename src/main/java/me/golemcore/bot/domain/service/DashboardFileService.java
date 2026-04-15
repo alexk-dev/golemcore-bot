@@ -8,6 +8,10 @@ import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -148,18 +152,18 @@ public class DashboardFileService {
             throw new IllegalArgumentException("Path must be inside workspace");
         }
 
+        String resolvedMimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, mimeType);
+        boolean image = DashboardFileMetadataSupport.isImageMimeType(resolvedMimeType);
+        boolean editable = DashboardFileMetadataSupport.isEditableFile(workspacePathService, path, resolvedMimeType,
+                data.length);
+        String content = editable ? decodeUtf8(data) : null;
+
         try {
             Path parent = path.getParent();
             if (parent != null) {
                 workspaceFilePort.createDirectories(parent);
             }
             workspaceFilePort.write(path, data);
-            String resolvedMimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path,
-                    mimeType);
-            boolean image = DashboardFileMetadataSupport.isImageMimeType(resolvedMimeType);
-            boolean editable = DashboardFileMetadataSupport.isEditableFile(workspacePathService, path, resolvedMimeType,
-                    data.length);
-            String content = editable ? new String(data, StandardCharsets.UTF_8) : null;
             return baseContentBuilder(path, data.length, Instant.now().toString(), resolvedMimeType)
                     .content(content)
                     .binary(!editable)
@@ -263,6 +267,17 @@ public class DashboardFileService {
                 .image(false)
                 .editable(true)
                 .build();
+    }
+
+    private String decodeUtf8(byte[] data) {
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        try {
+            return decoder.decode(ByteBuffer.wrap(data)).toString();
+        } catch (CharacterCodingException e) {
+            throw new IllegalArgumentException("File is not valid UTF-8 text");
+        }
     }
 
     private DashboardFileContent.DashboardFileContentBuilder baseContentBuilder(

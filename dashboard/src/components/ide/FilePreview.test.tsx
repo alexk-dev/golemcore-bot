@@ -1,10 +1,18 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { FileContent } from '../../api/files';
 import { FilePreview } from './FilePreview';
 
+vi.mock('../../hooks/useProtectedFileObjectUrl', () => ({
+  useProtectedFileObjectUrl: () => ({ objectUrl: 'blob:preview', loading: false, error: false }),
+}));
+
+vi.mock('../../hooks/useProtectedFileDownload', () => ({
+  useProtectedFileDownload: () => ({ isDownloading: false, downloadFile: vi.fn() }),
+}));
+
 describe('FilePreview', () => {
-  it('renders image files as previews with download action', () => {
+  it('renders image files as protected object URL previews with download action', () => {
     const file: FileContent = {
       path: 'images/logo.png',
       content: null,
@@ -17,10 +25,10 @@ describe('FilePreview', () => {
       downloadUrl: '/api/files/download?path=images%2Flogo.png',
     };
 
-    const html = renderToStaticMarkup(<FilePreview file={file} downloadUrl="/download/logo.png" />);
+    const html = renderToStaticMarkup(<FilePreview file={file} />);
 
     expect(html).toContain('Image preview');
-    expect(html).toContain('src="/download/logo.png"');
+    expect(html).toContain('src="blob:preview"');
     expect(html).toContain('Download');
   });
 
@@ -37,7 +45,7 @@ describe('FilePreview', () => {
       downloadUrl: '/api/files/download?path=archives%2Fapp.zip',
     };
 
-    const html = renderToStaticMarkup(<FilePreview file={file} downloadUrl="/download/app.zip" />);
+    const html = renderToStaticMarkup(<FilePreview file={file} />);
 
     expect(html).toContain('Binary file');
     expect(html).toContain('This file cannot be edited inline.');

@@ -1,11 +1,12 @@
 import type { ReactElement } from 'react';
 import { FiDownload, FiFile, FiImage } from 'react-icons/fi';
 import type { FileContent } from '../../api/files';
+import { useProtectedFileObjectUrl } from '../../hooks/useProtectedFileObjectUrl';
+import { useProtectedFileDownload } from '../../hooks/useProtectedFileDownload';
 import { Button } from '../ui/button';
 
 export interface FilePreviewProps {
   file: FileContent;
-  downloadUrl: string;
 }
 
 function formatFileSize(fileSizeBytes: number): string {
@@ -18,7 +19,13 @@ function formatFileSize(fileSizeBytes: number): string {
   return `${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-export function FilePreview({ file, downloadUrl }: FilePreviewProps): ReactElement {
+export function FilePreview({ file }: FilePreviewProps): ReactElement {
+  const preview = useProtectedFileObjectUrl(file.path);
+  const download = useProtectedFileDownload();
+  const handleDownload = (): void => {
+    void download.downloadFile(file.path);
+  };
+
   if (file.image) {
     return (
       <div className="ide-file-preview flex h-full min-h-0 flex-col items-center justify-center gap-4 p-6">
@@ -26,17 +33,21 @@ export function FilePreview({ file, downloadUrl }: FilePreviewProps): ReactEleme
           <FiImage size={16} />
           Image preview
         </div>
-        <img className="ide-file-preview-image" src={downloadUrl} alt={file.path} />
+        {preview.objectUrl != null ? (
+          <img className="ide-file-preview-image" src={preview.objectUrl} alt={file.path} />
+        ) : (
+          <div className="rounded-2xl border border-border/80 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            {preview.error ? 'Failed to load preview.' : 'Loading preview...'}
+          </div>
+        )}
         <div className="text-center text-xs text-muted-foreground">
           <div>{file.path}</div>
           <div>{file.mimeType ?? 'image'} · {formatFileSize(file.size)}</div>
         </div>
-        <a href={downloadUrl} download>
-          <Button size="sm" variant="secondary">
-            <FiDownload size={14} />
-            Download
-          </Button>
-        </a>
+        <Button size="sm" variant="secondary" onClick={handleDownload} disabled={download.isDownloading}>
+          <FiDownload size={14} />
+          Download
+        </Button>
       </div>
     );
   }
@@ -54,12 +65,10 @@ export function FilePreview({ file, downloadUrl }: FilePreviewProps): ReactEleme
         <div>{file.path}</div>
         <div>{file.mimeType ?? 'application/octet-stream'} · {formatFileSize(file.size)}</div>
       </div>
-      <a href={downloadUrl} download>
-        <Button size="sm" variant="secondary">
-          <FiDownload size={14} />
-          Download
-        </Button>
-      </a>
+      <Button size="sm" variant="secondary" onClick={handleDownload} disabled={download.isDownloading}>
+        <FiDownload size={14} />
+        Download
+      </Button>
     </div>
   );
 }
