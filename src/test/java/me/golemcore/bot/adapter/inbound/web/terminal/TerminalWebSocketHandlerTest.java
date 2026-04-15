@@ -129,6 +129,10 @@ class TerminalWebSocketHandlerTest {
     }
 
     private void awaitLeaseReleased(String username) {
+        // The handler releases the lease from a reactor doFinally that may run on a
+        // parallel scheduler thread, so by the time StepVerifier.verify() returns the
+        // side effect can still be in flight. Poll briefly so the assertion observes
+        // the post-finally state without depending on scheduler timing.
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (System.nanoTime() < deadline && limiter.activeCount(username) > 0) {
             try {

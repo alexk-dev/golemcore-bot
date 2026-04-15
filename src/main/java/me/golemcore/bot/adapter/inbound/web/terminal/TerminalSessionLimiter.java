@@ -9,13 +9,16 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Tracks concurrent terminal sessions per dashboard user and enforces the
  * configured feature flag, per-user concurrency cap, idle timeout, and absolute
  * session duration. Leases released through {@link Lease#release()} free the
- * slot for the same user to reconnect.
+ * slot for the same user to reconnect. User entries are evicted once their last
+ * lease is released so long-lived instances do not accumulate stale keys.
  */
 @Component
 @RequiredArgsConstructor
@@ -45,17 +48,22 @@ public class TerminalSessionLimiter {
         if (maxPerUser <= 0) {
             return Optional.empty();
         }
-        AtomicInteger counter = activeByUser.computeIfAbsent(username, k -> new AtomicInteger(0));
-        while (true) {
-            int current = counter.get();
-            if (current >= maxPerUser) {
-                log.warn("[Terminal] Rejected new session for user={}: cap {} reached", username, maxPerUser);
-                return Optional.empty();
+        AtomicReference<Lease> granted = new AtomicReference<>();
+        activeByUser.compute(username, (key, existing) -> {
+            AtomicInteger counter = existing != null ? existing : new AtomicInteger(0);
+            if (counter.get() >= maxPerUser) {
+                return existing;
             }
-            if (counter.compareAndSet(current, current + 1)) {
-                return Optional.of(new Lease(username, counter));
-            }
+            counter.incrementAndGet();
+            granted.set(new Lease(username, this));
+            return counter;
+        });
+        Lease lease = granted.get();
+        if (lease == null) {
+            log.warn("[Terminal] Rejected new session for user={}: cap {} reached", username, maxPerUser);
+            return Optional.empty();
         }
+        return Optional.of(lease);
     }
 
     public int activeCount(String username) {
@@ -63,14 +71,35 @@ public class TerminalSessionLimiter {
         return counter == null ? 0 : counter.get();
     }
 
+    /**
+     * Number of distinct users currently holding at least one lease. Exposed for
+     * tests so that entry-eviction can be asserted without reflection.
+     */
+    int trackedUserCount() {
+        return activeByUser.size();
+    }
+
+    private void releaseSlot(String username) {
+        activeByUser.compute(username, (key, counter) -> {
+            if (counter == null) {
+                return null;
+            }
+            int newValue = counter.updateAndGet(value -> value > 0 ? value - 1 : 0);
+            if (newValue <= 0) {
+                return null;
+            }
+            return counter;
+        });
+    }
+
     public static final class Lease {
         private final String username;
-        private final AtomicInteger counter;
-        private boolean released;
+        private final TerminalSessionLimiter limiter;
+        private final AtomicBoolean released = new AtomicBoolean(false);
 
-        private Lease(String username, AtomicInteger counter) {
+        private Lease(String username, TerminalSessionLimiter limiter) {
             this.username = username;
-            this.counter = counter;
+            this.limiter = limiter;
         }
 
         public String username() {
@@ -78,11 +107,9 @@ public class TerminalSessionLimiter {
         }
 
         public void release() {
-            if (released) {
-                return;
+            if (released.compareAndSet(false, true)) {
+                limiter.releaseSlot(username);
             }
-            released = true;
-            counter.updateAndGet(value -> value > 0 ? value - 1 : 0);
         }
     }
 }

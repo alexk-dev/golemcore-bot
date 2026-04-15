@@ -75,7 +75,6 @@ export function useFileMentions({
       return;
     }
     rootFetchedRef.current = true;
-    fetchedDirsRef.current.add('');
     getFileTree('', { depth: INITIAL_FETCH_DEPTH })
       .then((tree) => {
         mergeTree(tree);

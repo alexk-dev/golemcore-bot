@@ -5,7 +5,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -80,5 +87,58 @@ class TerminalSessionLimiterTest {
         TerminalSessionLimiter limiter = new TerminalSessionLimiter(botProperties);
         assertEquals(Duration.ofMinutes(15), limiter.idleTimeout());
         assertEquals(Duration.ofHours(4), limiter.maxSessionDuration());
+    }
+
+    @Test
+    void shouldEvictUserEntryWhenAllLeasesReleased() {
+        TerminalSessionLimiter limiter = new TerminalSessionLimiter(botProperties);
+        assertEquals(0, limiter.trackedUserCount(), "no users tracked before any acquire");
+
+        TerminalSessionLimiter.Lease first = limiter.tryAcquire("admin").orElseThrow();
+        TerminalSessionLimiter.Lease second = limiter.tryAcquire("admin").orElseThrow();
+        assertEquals(1, limiter.trackedUserCount(), "one user tracked while leases are held");
+
+        first.release();
+        assertEquals(1, limiter.trackedUserCount(), "user still tracked while one lease remains");
+        second.release();
+        assertEquals(0, limiter.trackedUserCount(), "user entry should be evicted when all leases released");
+    }
+
+    @Test
+    void shouldTreatDoubleReleaseAsIdempotentUnderConcurrency() throws Exception {
+        TerminalSessionLimiter limiter = new TerminalSessionLimiter(botProperties);
+        TerminalSessionLimiter.Lease leaseA = limiter.tryAcquire("admin").orElseThrow();
+        TerminalSessionLimiter.Lease leaseB = limiter.tryAcquire("admin").orElseThrow();
+        assertEquals(2, limiter.activeCount("admin"));
+
+        int threads = 32;
+        ExecutorService exec = Executors.newFixedThreadPool(threads);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<?>> futures = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                futures.add(exec.submit(() -> {
+                    try {
+                        start.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                    leaseA.release();
+                }));
+            }
+            start.countDown();
+            for (Future<?> future : futures) {
+                future.get(5, TimeUnit.SECONDS);
+            }
+        } finally {
+            exec.shutdownNow();
+        }
+
+        assertEquals(1, limiter.activeCount("admin"),
+                "leaseB must still be held — concurrent double release of leaseA must decrement at most once");
+        leaseB.release();
+        assertEquals(0, limiter.activeCount("admin"));
+        assertEquals(0, limiter.trackedUserCount());
     }
 }

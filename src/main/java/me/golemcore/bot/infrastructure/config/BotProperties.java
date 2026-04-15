@@ -241,9 +241,23 @@ public class BotProperties {
 
     @Data
     public static class TerminalProperties {
-        private boolean enabled = false;
+        /**
+         * Whether the browser terminal WebSocket endpoint is exposed. Defaults to
+         * {@code true}; override via {@code BOT_DASHBOARD_TERMINAL_ENABLED} or
+         * {@code bot.dashboard.terminal.enabled} when the host operator wants to lock
+         * the shell down.
+         */
+        private boolean enabled = true;
+
         private int maxSessionsPerUser = 2;
+
+        /**
+         * Wall-clock window of inbound inactivity after which the session is torn down.
+         * Measured from the last inbound frame (input or resize); streams of pure
+         * output do <em>not</em> reset the timer.
+         */
         private java.time.Duration idleTimeout = java.time.Duration.ofMinutes(30);
+
         private java.time.Duration maxSessionDuration = java.time.Duration.ofHours(8);
     }
 

@@ -72,21 +72,17 @@ public final class TerminalConnection {
     private final ObjectMapper objectMapper;
     private final Consumer<String> outboundSink;
     private final TerminalSession session;
-    private final ExitWaitStrategy exitWaitStrategy;
+    private final ExitWatcher exitWatcher;
     private final AtomicBoolean closed = new AtomicBoolean(false);
-    private final Thread exitWatcher;
 
     private TerminalConnection(
             ObjectMapper objectMapper,
             Consumer<String> outboundSink,
-            TerminalSession session,
-            ExitWaitStrategy exitWaitStrategy) {
+            TerminalSession session) {
         this.objectMapper = objectMapper;
         this.outboundSink = outboundSink;
         this.session = session;
-        this.exitWaitStrategy = exitWaitStrategy;
-        this.exitWatcher = new Thread(this::watchForExit, "terminal-exit-watcher");
-        this.exitWatcher.setDaemon(true);
+        this.exitWatcher = new ExitWatcher(defaultStrategy(session), this::emitExit);
     }
 
     public static TerminalConnection open(
@@ -106,23 +102,8 @@ public final class TerminalConnection {
                         self.emitOutput(bytes);
                     }
                 });
-        ExitWaitStrategy strategy = defaultStrategy(session);
-        TerminalConnection connection = new TerminalConnection(objectMapper, outboundSink, session, strategy);
+        TerminalConnection connection = new TerminalConnection(objectMapper, outboundSink, session);
         connectionRef[0] = connection;
-        connection.exitWatcher.start();
-        return connection;
-    }
-
-    /**
-     * Package-private factory for tests: bypasses the real pty and uses the
-     * supplied {@link ExitWaitStrategy} so we can simulate long-lived sessions
-     * without actually blocking the test thread.
-     */
-    static TerminalConnection openWithStrategy(
-            ObjectMapper objectMapper,
-            Consumer<String> outboundSink,
-            ExitWaitStrategy strategy) {
-        TerminalConnection connection = new TerminalConnection(objectMapper, outboundSink, null, strategy);
         connection.exitWatcher.start();
         return connection;
     }
@@ -160,23 +141,18 @@ public final class TerminalConnection {
     }
 
     public boolean isAlive() {
-        return !closed.get() && session != null && session.isAlive();
+        return !closed.get() && session.isAlive();
     }
 
     public void close() {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        exitWatcher.interrupt();
-        if (session != null) {
-            session.close();
-        }
+        exitWatcher.stop();
+        session.close();
     }
 
     private void handleInput(Map<String, Object> parsed) {
-        if (session == null) {
-            return;
-        }
         Object data = parsed.get("data");
         if (!(data instanceof String encoded)) {
             return;
@@ -192,9 +168,6 @@ public final class TerminalConnection {
     }
 
     private void handleResize(Map<String, Object> parsed) {
-        if (session == null) {
-            return;
-        }
         Integer cols = asInt(parsed.get("cols"));
         Integer rows = asInt(parsed.get("rows"));
         if (cols == null || rows == null || cols <= 0 || rows <= 0) {
@@ -221,6 +194,9 @@ public final class TerminalConnection {
     }
 
     private void emitExit(int code) {
+        if (closed.get()) {
+            return;
+        }
         Map<String, Object> frame = new LinkedHashMap<>();
         frame.put("type", TYPE_EXIT);
         frame.put("code", code);
@@ -252,21 +228,5 @@ public final class TerminalConnection {
             return number.intValue();
         }
         return null;
-    }
-
-    private void watchForExit() {
-        try {
-            while (!closed.get()) {
-                ExitWaitOutcome outcome = exitWaitStrategy.awaitExit();
-                if (outcome.isTerminated()) {
-                    if (!closed.get()) {
-                        emitExit(outcome.exitCode());
-                    }
-                    return;
-                }
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 }
