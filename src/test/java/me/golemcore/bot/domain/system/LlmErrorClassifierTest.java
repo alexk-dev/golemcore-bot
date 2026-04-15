@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.system;
 
+import me.golemcore.bot.domain.model.LlmResponse;
 import dev.langchain4j.exception.AuthenticationException;
 import dev.langchain4j.exception.ContentFilteredException;
 import dev.langchain4j.exception.HttpException;
@@ -23,7 +24,10 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LlmErrorClassifierTest {
 
@@ -129,6 +133,14 @@ class LlmErrorClassifierTest {
     }
 
     @Test
+    void shouldClassifyContextOverflowDiagnosticWithoutEmbeddedCode() {
+        String code = LlmErrorClassifier.classifyFromDiagnostic(
+                "LLM call failed: This model's maximum context length is 128000 tokens");
+
+        assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code);
+    }
+
+    @Test
     void shouldHandleDiagnosticAndCodeHelpersEdgeCases() {
         assertEquals(LlmErrorClassifier.UNKNOWN, LlmErrorClassifier.classifyFromDiagnostic(null));
         assertEquals(LlmErrorClassifier.UNKNOWN, LlmErrorClassifier.classifyFromDiagnostic("  "));
@@ -138,6 +150,195 @@ class LlmErrorClassifierTest {
         assertEquals("[llm.x]", LlmErrorClassifier.withCode("llm.x", ""));
         assertEquals("[llm.x] details", LlmErrorClassifier.withCode("llm.x", "details"));
         assertEquals("[llm.x] details", LlmErrorClassifier.withCode("llm.x", "[llm.x] details"));
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "context_length_exceeded",
+            "This model's maximum context length is 128000 tokens",
+            "prompt is too long: 200000 tokens > 199999 maximum",
+            "input length and max_tokens exceed context limit",
+            "The input token count (200000) exceeds the maximum number of tokens allowed",
+            "Please reduce the length of the messages or completion",
+            "Request too large for gpt-4"
+    })
+    void shouldClassifyCommonTokenOverflowMessages(String message) {
+        String code = LlmErrorClassifier.classifyFromThrowable(new RuntimeException(message));
+
+        assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code);
+    }
+
+    @Test
+    void shouldPreferContextOverflowMessageOverGenericInvalidRequestType() {
+        String code = LlmErrorClassifier.classifyFromThrowable(new InvalidRequestException(
+                "This model's maximum context length is 128000 tokens"));
+
+        assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code,
+                "typed provider invalid-request exceptions still need context-overflow recovery");
+    }
+
+    @Test
+    void shouldPreferContextOverflowMessageOverGenericHttpBadRequestStatus() {
+        String code = LlmErrorClassifier.classifyFromThrowable(new HttpException(
+                400, "prompt is too long: 200000 tokens > 128000 maximum"));
+
+        assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code,
+                "HTTP 400 is the transport shape; the body message carries the actionable overflow signal");
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "Rate limit reached for gpt-4 on tokens per min. token_quota_exceeded",
+            "Too many tokens per minute",
+            "429 Too Many Requests: too_many_tokens in the last minute"
+    })
+    void shouldNotClassifyTpmRateLimitMessagesAsContextOverflow(String message) {
+        String code = LlmErrorClassifier.classifyFromThrowable(new RuntimeException(message));
+
+        assertNotEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED, code,
+                "TPM / per-minute throttling must not be misclassified as context overflow");
+    }
+
+    @Test
+    void shouldWalkCauseChainEvenWhenExceptionsCollapseByValueEquality() {
+        // Future provider exception types may override equals/hashCode based on
+        // message content. A value-equality visited set would then collapse two
+        // distinct wrapped causes into a single entry and short-circuit the cause
+        // walk before reaching the real signal. This test builds a chain where the
+        // outer frame equals() the inner one but the rate-limit signal lives on
+        // the inner frame - only an identity-based visited set walks through.
+        ValueEqualException outer = new ValueEqualException("boom");
+        ValueEqualException innerWithSignal = new ValueEqualException("boom",
+                new RateLimitException("rate-limited downstream"));
+        outer.initCause(innerWithSignal);
+
+        String code = LlmErrorClassifier.classifyFromThrowable(outer);
+
+        assertEquals(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, code,
+                "classifier must walk past an equals()-collapsing wrapper to reach the real signal");
+    }
+
+    private static final class ValueEqualException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        ValueEqualException(String message) {
+            super(message);
+        }
+
+        ValueEqualException(String message, Throwable cause) {
+            super(message, cause);
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof ValueEqualException otherException)) {
+                return false;
+            }
+            return java.util.Objects.equals(getMessage(), otherException.getMessage());
+        }
+
+        @Override
+        public int hashCode() {
+            return java.util.Objects.hashCode(getMessage());
+        }
+    }
+
+    @Test
+    void classifyEmptyFinalResponse_shouldMapEachBranchToStableCode() {
+        // Null response, null content, blank content, and non-empty-content
+        // all have distinct stable codes that the ToolLoop relies on to
+        // decide whether to retry, surface a fallback message, or bail out.
+        assertEquals(LlmErrorClassifier.NO_ASSISTANT_MESSAGE,
+                LlmErrorClassifier.classifyEmptyFinalResponse(null));
+        assertEquals(LlmErrorClassifier.EMPTY_ASSISTANT_CONTENT,
+                LlmErrorClassifier.classifyEmptyFinalResponse(LlmResponse.builder().content(null).build()));
+        assertEquals(LlmErrorClassifier.EMPTY_ASSISTANT_CONTENT,
+                LlmErrorClassifier.classifyEmptyFinalResponse(LlmResponse.builder().content("   ").build()));
+        assertEquals(LlmErrorClassifier.UNKNOWN,
+                LlmErrorClassifier.classifyEmptyFinalResponse(LlmResponse.builder().content("hello").build()));
+    }
+
+    @Test
+    void classifyFromThrowable_shouldReturnUnknownForNullThrowable() {
+        assertEquals(LlmErrorClassifier.UNKNOWN, LlmErrorClassifier.classifyFromThrowable(null));
+    }
+
+    @Test
+    void extractCode_shouldReturnNullForBlankOrEmpty() {
+        assertNull(LlmErrorClassifier.extractCode(null));
+        assertNull(LlmErrorClassifier.extractCode("   "));
+        assertNull(LlmErrorClassifier.extractCode(""));
+        // A "[]" message produces an empty code substring - extractCode
+        // returns null here (end <= 1) so classifyFromThrowable doesn't
+        // treat the empty bracket as a valid embedded signal.
+        assertNull(LlmErrorClassifier.extractCode("[]"));
+    }
+
+    @Test
+    void isTransientCode_shouldCoverEachPositiveCodeAndRejectNonMatches() {
+        // Full enumeration of the retriable set. The adapter-level retry
+        // predicate branches on this method, so every code must flip
+        // independently instead of being covered in aggregate.
+        assertTrue(LlmErrorClassifier.isTransientCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT));
+        assertTrue(LlmErrorClassifier.isTransientCode(LlmErrorClassifier.LANGCHAIN4J_TIMEOUT));
+        assertTrue(LlmErrorClassifier.isTransientCode(LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER));
+        assertTrue(LlmErrorClassifier.isTransientCode(LlmErrorClassifier.REQUEST_TIMEOUT));
+        assertTrue(LlmErrorClassifier.isTransientCode(LlmErrorClassifier.LANGCHAIN4J_RETRIABLE));
+
+        assertFalse(LlmErrorClassifier.isTransientCode(null));
+        assertFalse(LlmErrorClassifier.isTransientCode(""));
+        assertFalse(LlmErrorClassifier.isTransientCode("   "));
+        assertFalse(LlmErrorClassifier.isTransientCode(LlmErrorClassifier.LANGCHAIN4J_NON_RETRIABLE));
+        assertFalse(LlmErrorClassifier.isTransientCode(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED));
+        assertFalse(LlmErrorClassifier.isTransientCode(LlmErrorClassifier.UNKNOWN));
+    }
+
+    @Test
+    void shouldIgnoreBracketedBlankCodeAndFallThroughToMessageClassification() {
+        // extractCode returns a non-null-but-blank string for "[ ] details"
+        // (end=2, substring=" "). Both classifyFromThrowable and
+        // classifyFromDiagnostic must treat that as "no valid code" and fall
+        // through to message-based classification instead of returning the
+        // blank code verbatim as the final signal.
+        RateLimitException wrapped = new RateLimitException("[ ] rate-limited downstream");
+        assertEquals(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT,
+                LlmErrorClassifier.classifyFromThrowable(wrapped),
+                "blank bracketed code must not short-circuit throwable classification");
+
+        assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED,
+                LlmErrorClassifier.classifyFromDiagnostic(
+                        "[ ] This model's maximum context length is 128000 tokens"),
+                "blank bracketed code must not short-circuit diagnostic classification");
+    }
+
+    @Test
+    void withCode_shouldWrapBlankMessageAsBareCode() {
+        assertEquals("[llm.x]", LlmErrorClassifier.withCode("llm.x", "   "),
+                "a whitespace-only message must collapse to the bare bracketed code, "
+                        + "matching the null case - operators should not see [llm.x]    trailing whitespace");
+    }
+
+    @Test
+    void classifyFromThrowable_shouldTreatBlankMessageAsUnknownSignal() {
+        // A throwable with a whitespace-only message hits the
+        // classifyFromMessage blank branch - it must fall through to
+        // classifyKnownThrowable without throwing on the trim step.
+        Throwable blankMessage = new RuntimeException("   ");
+
+        String code = LlmErrorClassifier.classifyFromThrowable(blankMessage);
+
+        assertEquals(LlmErrorClassifier.UNKNOWN, code,
+                "blank-message RuntimeException with no typed signal must map to UNKNOWN");
+    }
+
+    @Test
+    void isContextOverflowCode_shouldMatchOnlyContextLengthExceeded() {
+        assertTrue(LlmErrorClassifier.isContextOverflowCode(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED));
+
+        assertFalse(LlmErrorClassifier.isContextOverflowCode(null));
+        assertFalse(LlmErrorClassifier.isContextOverflowCode(""));
+        assertFalse(LlmErrorClassifier.isContextOverflowCode("   "));
+        assertFalse(LlmErrorClassifier.isContextOverflowCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT));
     }
 
     @Test

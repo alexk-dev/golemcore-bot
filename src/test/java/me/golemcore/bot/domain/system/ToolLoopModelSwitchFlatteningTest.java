@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
@@ -75,6 +76,7 @@ class ToolLoopModelSwitchFlatteningTest {
                 .build();
 
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier("coding")).thenReturn(
                 new ModelSelectionService.ModelSelection("new", null));
 
@@ -99,6 +101,8 @@ class ToolLoopModelSwitchFlatteningTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC))
                 .build();
 
@@ -166,6 +170,7 @@ class ToolLoopModelSwitchFlatteningTest {
                 .build();
 
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier("coding"))
                 .thenReturn(new ModelSelectionService.ModelSelection("openai/gpt-5.1", null))
                 .thenReturn(new ModelSelectionService.ModelSelection("google/gemini-3.1-preview", null));
@@ -196,6 +201,8 @@ class ToolLoopModelSwitchFlatteningTest {
                         new me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker()))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(Instant.parse("2026-02-01T00:00:00Z"), ZoneOffset.UTC))
                 .build();
 

@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
@@ -117,6 +118,7 @@ class ToolLoopSystemBddTest {
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
@@ -129,6 +131,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -240,6 +244,7 @@ class ToolLoopSystemBddTest {
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
@@ -252,6 +257,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -370,6 +377,7 @@ class ToolLoopSystemBddTest {
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection("google/gemini-3.1-preview", null));
 
@@ -382,6 +390,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -454,6 +464,7 @@ class ToolLoopSystemBddTest {
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
@@ -466,6 +477,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -546,6 +559,7 @@ class ToolLoopSystemBddTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
@@ -557,6 +571,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(fastClock)
                 .build();
 
@@ -614,6 +630,7 @@ class ToolLoopSystemBddTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
@@ -625,6 +642,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -698,6 +717,7 @@ class ToolLoopSystemBddTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
@@ -709,6 +729,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -768,6 +790,7 @@ class ToolLoopSystemBddTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
@@ -779,6 +802,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -838,6 +863,7 @@ class ToolLoopSystemBddTest {
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
         DefaultToolLoopSystem toolLoop = DefaultToolLoopSystem.builder()
@@ -849,6 +875,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 
@@ -933,6 +961,7 @@ class ToolLoopSystemBddTest {
         BotProperties.TurnProperties turn = new BotProperties.TurnProperties();
         BotProperties.ToolLoopProperties settings = new BotProperties.ToolLoopProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any())).thenReturn(
                 new ModelSelectionService.ModelSelection(null, null));
 
@@ -945,6 +974,8 @@ class ToolLoopSystemBddTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turn))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
                 .build();
 

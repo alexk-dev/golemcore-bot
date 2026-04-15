@@ -5,6 +5,7 @@
 @layer base {
   :root {
     --sidebar-width: 18rem;
+    --topbar-height: 64px;
     --font-sans: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
     --font-display: "Space Grotesk", "Avenir Next", "Trebuchet MS", sans-serif;
     --font-mono: "JetBrains Mono", "SFMono-Regular", "SF Mono", monospace;

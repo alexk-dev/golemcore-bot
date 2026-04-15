@@ -31,6 +31,7 @@ import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.system.LlmErrorPatterns;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -71,13 +72,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.time.Duration;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -138,6 +140,13 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final java.util.regex.Pattern RESET_SECONDS_PATTERN = java.util.regex.Pattern
             .compile("\"reset_seconds\"\\s*:\\s*(\\d+)");
     private static final String TOOL_ATTACHMENT_REOPEN_HINT = "Re-open the file with a tool if deeper inspection is needed.";
+    private static final Set<String> RATE_LIMIT_MARKERS = Set.of(
+            "rate_limit",
+            "rate limit",
+            "token_quota_exceeded",
+            "too many requests",
+            "model_cooldown",
+            "cooling down");
 
     private record MessageConversionResult(List<ChatMessage> messages, boolean hydratedToolImages) {
     }
@@ -500,21 +509,49 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     }
 
     private boolean isRateLimitError(Throwable e) {
-        // Walk the cause chain looking for rate limit indicators
-        Throwable current = e;
-        while (current != null) {
-            // langchain4j maps HTTP 429 to RateLimitException regardless of body content
+        // Use identity semantics for the visited set: the intent is "have I seen this
+        // exact cause object before" (cycle guard), not value equality. A future
+        // provider exception that overrides equals/hashCode - or a wrapped cause that
+        // happens to compare equal to an earlier frame - must not collapse into a
+        // single visited entry and prematurely terminate the cause walk.
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable current = e; current != null && visited.add(current); current = current.getCause()) {
+            // langchain4j maps HTTP 429 to RateLimitException regardless of body content.
             if (current instanceof dev.langchain4j.exception.RateLimitException) {
                 return true;
             }
-            String msg = current.getMessage();
-            if (msg != null && (msg.contains("rate_limit") || msg.contains("token_quota_exceeded")
-                    || msg.contains("too_many_tokens") || msg.contains("Too Many Requests")
-                    || msg.contains("429") || msg.contains("model_cooldown")
-                    || msg.contains("cooling down"))) {
+            String raw = current.getMessage();
+            if (raw == null) {
+                continue;
+            }
+            String normalized = raw.toLowerCase(Locale.ROOT);
+            // Context-overflow errors sometimes carry rate-limit-adjacent wording
+            // ("too many tokens") - they must NOT be retried as rate limits.
+            if (LlmErrorPatterns.matchesContextOverflow(normalized)) {
+                continue;
+            }
+            if (containsAny(normalized, RATE_LIMIT_MARKERS) || looksLikeHttp429(normalized)) {
                 return true;
             }
-            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static boolean looksLikeHttp429(String normalized) {
+        // Avoid matching an arbitrary "429" in stack traces, byte counts, or IDs.
+        return normalized.contains("http 429")
+                || normalized.contains("status 429")
+                || normalized.contains("status: 429")
+                || normalized.contains("status_code=429")
+                || normalized.contains("code 429")
+                || normalized.contains("429 too many");
+    }
+
+    private static boolean containsAny(String haystack, Set<String> needles) {
+        for (String needle : needles) {
+            if (haystack.contains(needle)) {
+                return true;
+            }
         }
         return false;
     }
@@ -705,7 +742,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     @Override
     public List<String> getSupportedModels() {
-        // Build from models.json — provider/modelName for each configured provider
+        // Build from models.json - provider/modelName for each configured provider.
         List<String> models = new ArrayList<>();
         Map<String, ModelCatalogEntry> modelsConfig = modelConfig
                 .getAllModels();

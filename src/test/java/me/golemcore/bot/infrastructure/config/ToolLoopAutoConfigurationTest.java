@@ -1,6 +1,8 @@
 package me.golemcore.bot.infrastructure.config;
 
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
+import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -72,6 +74,8 @@ class ToolLoopAutoConfigurationTest {
         UsageTrackingPort usageTrackingPort = mock(UsageTrackingPort.class);
         TelemetryRollupPort telemetryRollupStore = mock(TelemetryRollupPort.class);
         CompactionOrchestrationService compactionOrchestrationService = mock(CompactionOrchestrationService.class);
+        ContextTokenEstimator contextTokenEstimator = mock(ContextTokenEstimator.class);
+        ContextCompactionPolicy contextCompactionPolicy = mock(ContextCompactionPolicy.class);
         RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
         TurnProgressService turnProgressService = mock(TurnProgressService.class);
         TraceService traceService = mock(TraceService.class);
@@ -89,6 +93,8 @@ class ToolLoopAutoConfigurationTest {
                 usageTrackingPort,
                 telemetryRollupStore,
                 compactionOrchestrationService,
+                contextTokenEstimator,
+                contextCompactionPolicy,
                 runtimeEventService,
                 turnProgressService,
                 traceService,

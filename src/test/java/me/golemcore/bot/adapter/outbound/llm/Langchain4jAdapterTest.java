@@ -307,7 +307,7 @@ class Langchain4jAdapterTest {
                 new RuntimeException("rate_limit exceeded")));
         assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
                 new RuntimeException("token_quota_exceeded")));
-        assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
+        assertFalse((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
                 new RuntimeException("too_many_tokens")));
         assertTrue((boolean) ReflectionTestUtils.invokeMethod(adapter, IS_RATE_LIMIT_ERROR,
                 new RuntimeException("Too Many Requests")));
