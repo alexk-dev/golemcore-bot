@@ -24,7 +24,11 @@ vi.mock('../../lib/telemetry/TelemetryContext', () => ({
 vi.mock('../../store/chatSessionStore', () => ({
   useChatSessionStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
     activeSessionId: 'session-1',
+    openSessionIds: ['session-1'],
     setActiveSessionId: vi.fn(),
+    openSession: vi.fn(),
+    closeSession: vi.fn(),
+    startNewSession: vi.fn(() => 'session-2'),
     clientInstanceId: 'client-1',
   }),
 }));

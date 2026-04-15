@@ -4,6 +4,7 @@ import { useAvailableModels } from '../../hooks/useModels';
 import type { CommandSuggestion, OutboundChatPayload } from './chatInputTypes';
 import { type AddImageFilesResult, useChatAttachments } from './useChatAttachments';
 import { useChatCommands } from './useChatCommands';
+import { useFileMentions } from './useFileMentions';
 import { useSpeechRecognition } from './useSpeechRecognition';
 import { useTextareaAutoResize } from './useTextareaAutoResize';
 import { ChatComposerToggle } from './ChatComposerToggle';
@@ -49,6 +50,11 @@ export default function ChatInput({
     availableModels,
     isDisabled,
   );
+  const fileMentions = useFileMentions({
+    text,
+    setText,
+    textareaRef: localInputRef,
+  });
 
   // Merge refs: auto-resize ref + local ref for focus management.
   const setTextareaRef = useCallback((el: HTMLTextAreaElement | null): void => {
@@ -189,6 +195,7 @@ export default function ChatInput({
         composerCollapsed={composerCollapsed}
         onToggleComposerCollapsed={onToggleComposerCollapsed}
       />
+      {!composerCollapsed && fileMentions.menu != null ? fileMentions.menu : null}
       {!composerCollapsed && (
         <ChatInputForm
           shellClasses={shellClasses}

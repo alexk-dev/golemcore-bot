@@ -12,8 +12,11 @@ import { createUuid } from '../../utils/uuid';
 import ChatInput from './ChatInput';
 import ContextPanel from './ContextPanel';
 import { ChatConversation } from './ChatConversation';
+import { ChatSessionTabs } from './ChatSessionTabs';
+import { useChatSessionHotkeys } from './useChatSessionHotkeys';
 import { ChatToolbar } from './ChatToolbar';
 import type { OutboundChatPayload } from './chatInputTypes';
+import { parseRunCommand, routeRunCommandToTerminal } from './chatRunCommand';
 import { useChatSessionHistory } from './useChatSessionHistory';
 import { useTelemetry } from '../../lib/telemetry/TelemetryContext';
 import { normalizeExplicitModelTier } from '../../lib/modelTiers';
@@ -46,9 +49,13 @@ function normalizeTier(value: string | null | undefined): string {
   return normalizeExplicitModelTier(value);
 }
 
-export default function ChatWindow(): ReactElement {
+export interface ChatWindowProps {
+  embedded?: boolean;
+}
+
+export default function ChatWindow({ embedded = false }: ChatWindowProps = {}): ReactElement {
   const chatSessionId = useChatSessionStore((state) => state.activeSessionId);
-  const setChatSessionId = useChatSessionStore((state) => state.setActiveSessionId);
+  const startNewChatSession = useChatSessionStore((state) => state.startNewSession);
   const clientInstanceId = useChatSessionStore((state) => state.clientInstanceId);
   const createSessionMutation = useCreateSession();
   const { data: modelsConfig } = useModelsConfig();
@@ -71,6 +78,7 @@ export default function ChatWindow(): ReactElement {
   const composerCollapsed = useChatUiStore((state) => state.composerCollapsed);
   const toggleComposerCollapsed = useChatUiStore((state) => state.toggleComposerCollapsed);
   const telemetry = useTelemetry();
+  useChatSessionHotkeys();
   const [tier, setTier] = useState('balanced');
   const [tierForce, setTierForce] = useState(false);
 
@@ -154,9 +162,8 @@ export default function ChatWindow(): ReactElement {
   }, []);
 
   const startNewConversation = useCallback((): void => {
-    const newSessionId = createUuid();
+    const newSessionId = startNewChatSession();
     resetSession(newSessionId);
-    setChatSessionId(newSessionId);
     createSessionMutation.mutate({
       channelType: 'web',
       clientInstanceId,
@@ -167,10 +174,17 @@ export default function ChatWindow(): ReactElement {
         // Keep the local conversation even if eager session creation fails.
       },
     });
-  }, [clientInstanceId, createSessionMutation, resetSession, setChatSessionId]);
+  }, [clientInstanceId, createSessionMutation, resetSession, startNewChatSession]);
 
   const handleSend = useCallback((payload: OutboundChatPayload): void => {
     const trimmed = payload.text.trim();
+    if (payload.attachments.length === 0) {
+      const runCommand = parseRunCommand(trimmed);
+      if (runCommand !== null) {
+        routeRunCommandToTerminal(runCommand);
+        return;
+      }
+    }
     const localCommand = getLocalCommand(trimmed);
     if (localCommand === 'new' && payload.attachments.length === 0) {
       startNewConversation();
@@ -280,9 +294,18 @@ export default function ChatWindow(): ReactElement {
 
   const messages = useMemo(() => sessionState.messages, [sessionState.messages]);
 
+  const layoutClassName = [
+    'chat-page-layout',
+    composerCollapsed ? 'chat-page-layout--composer-collapsed' : '',
+    embedded ? 'chat-page-layout--embedded' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div className={`chat-page-layout${composerCollapsed ? ' chat-page-layout--composer-collapsed' : ''}`}>
+    <div className={layoutClassName}>
       <div className="chat-container">
+        <ChatSessionTabs />
         <ChatToolbar
           chatSessionId={chatSessionId}
           connected={isConnected}
@@ -321,13 +344,15 @@ export default function ChatWindow(): ReactElement {
         </div>
       </div>
 
-      <ContextPanel
-        tier={tier}
-        tierForce={tierForce}
-        chatSessionId={chatSessionId}
-        onTierChange={handleTierChange}
-        onForceChange={handleForceChange}
-      />
+      {embedded ? null : (
+        <ContextPanel
+          tier={tier}
+          tierForce={tierForce}
+          chatSessionId={chatSessionId}
+          onTierChange={handleTierChange}
+          onForceChange={handleForceChange}
+        />
+      )}
 
       <Offcanvas
         show={mobileDrawerOpen}

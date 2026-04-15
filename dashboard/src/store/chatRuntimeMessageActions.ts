@@ -2,8 +2,10 @@ import type {
   AssistantHint,
   ChatMessage,
   ChatRuntimeSessionState,
+  OpenedTabContext,
 } from '../components/chat/chatRuntimeTypes';
 import type { OutboundChatPayload } from '../components/chat/chatInputTypes';
+import { useIdeStore } from './ideStore';
 import {
   applyAssistantTextUpdate,
   applyLiveProgressUpdate,
@@ -133,12 +135,20 @@ function sendMessage(get: ChatRuntimeGet, set: ChatRuntimeSet, args: SendMessage
     get().markMessageAsFailed(args.sessionId, args.clientMessageId);
     return false;
   }
+  const ide = useIdeStore.getState();
+  const openedTabs: OpenedTabContext[] = ide.openedTabs.map((tab) => ({
+    path: tab.path,
+    title: tab.title,
+    isDirty: tab.isDirty,
+  }));
   const sent = transport.sendMessage({
     text: args.payload.text,
     attachments: args.payload.attachments,
     sessionId: args.sessionId,
     clientInstanceId: args.clientInstanceId,
     clientMessageId: args.clientMessageId,
+    openedTabs,
+    activePath: ide.activePath,
   });
   if (!sent) {
     get().markMessageAsFailed(args.sessionId, args.clientMessageId);

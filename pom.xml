@@ -232,6 +232,11 @@
             <version>3.51.3.0</version>
             <scope>runtime</scope>
         </dependency>
+        <dependency>
+            <groupId>org.jetbrains.pty4j</groupId>
+            <artifactId>pty4j</artifactId>
+            <version>0.13.10</version>
+        </dependency>
 
         <!-- Testing -->
         <dependency>

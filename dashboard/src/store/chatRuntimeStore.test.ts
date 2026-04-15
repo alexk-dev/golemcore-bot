@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OutboundChatPayload } from '../components/chat/chatInputTypes';
-import type { ChatMessage } from '../components/chat/chatRuntimeTypes';
+import type { ChatMessage, ChatSendPayload } from '../components/chat/chatRuntimeTypes';
 import { useChatRuntimeStore } from './chatRuntimeStore';
+import { useIdeStore, createNewTab } from './ideStore';
 
 function createOutboundPayload(): OutboundChatPayload {
   return {
@@ -31,6 +32,12 @@ function createOptimisticMessage(overrides: Partial<ChatMessage>): ChatMessage {
 describe('chatRuntimeStore', () => {
   beforeEach(() => {
     useChatRuntimeStore.getState().resetAll();
+    useIdeStore.setState({
+      openedTabs: [],
+      activePath: null,
+      recentPaths: [],
+      pinnedPaths: [],
+    });
   });
 
   it('marks optimistic messages as failed when there is no active transport', () => {
@@ -71,8 +78,39 @@ describe('chatRuntimeStore', () => {
       sessionId: 'chat-1',
       clientInstanceId: 'client-instance',
       clientMessageId: 'client-1',
+      openedTabs: [],
+      activePath: null,
     });
     expect(useChatRuntimeStore.getState().sessions['chat-1'].running).toBe(true);
+  });
+
+  it('forwards IDE openedTabs and activePath to the transport when sending a message', () => {
+    const sendMessage = vi.fn<(payload: ChatSendPayload) => boolean>(() => true);
+    useChatRuntimeStore.getState().registerTransport({
+      sendBind: () => true,
+      sendMessage,
+      stop: () => true,
+    });
+
+    useIdeStore.getState().upsertTab(createNewTab('src/a.ts', 'aaa'));
+    useIdeStore.getState().upsertTab(createNewTab('src/b.ts', 'bbb'));
+    useIdeStore.getState().setActivePath('src/b.ts');
+
+    useChatRuntimeStore.getState().sendMessage(
+      'chat-1',
+      'client-instance',
+      'client-1',
+      createOutboundPayload(),
+    );
+
+    const call = sendMessage.mock.calls[0]?.[0];
+    expect(call).toMatchObject({
+      openedTabs: [
+        { path: 'src/a.ts', title: 'a.ts', isDirty: false },
+        { path: 'src/b.ts', title: 'b.ts', isDirty: false },
+      ],
+      activePath: 'src/b.ts',
+    });
   });
 
   it('keeps live optimistic messages when persisted history is hydrated later', () => {

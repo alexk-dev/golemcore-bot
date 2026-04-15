@@ -15,7 +15,7 @@ const SkillsPage = lazy(() => import('./pages/SkillsPage'));
 const SessionsPage = lazy(() => import('./pages/SessionsPage'));
 const SessionDetailsPage = lazy(() => import('./pages/SessionDetailsPage'));
 const DiagnosticsPage = lazy(() => import('./pages/DiagnosticsPage'));
-const IdePage = lazy(() => import('./pages/IdePage'));
+const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
 const LogsPage = lazy(() => import('./pages/LogsPage'));
 const GoalsPage = lazy(() => import('./pages/GoalsPage'));
 const SchedulerPage = lazy(() => import('./pages/SchedulerPage'));
@@ -59,7 +59,8 @@ export default function App() {
                 <Suspense fallback={<RouteFallback />}>
                   <Routes>
                     <Route path="/" element={<ChatPage />} />
-                    <Route path="/chat" element={<ChatPage />} />
+                    <Route path="/chat" element={<Navigate to="/workspace?focus=chat" replace />} />
+                    <Route path="/workspace" element={<WorkspacePage />} />
                     <Route path="/setup" element={<SetupPage />} />
                     <Route path="/analytics" element={<AnalyticsPage />} />
                     <Route path="/self-evolving" element={<SelfEvolvingPage />} />
@@ -72,7 +73,7 @@ export default function App() {
                     <Route path="/sessions/:sessionId/:tab" element={<SessionDetailsPage />} />
                     <Route path="/goals" element={<GoalsPage />} />
                     <Route path="/diagnostics" element={<DiagnosticsPage />} />
-                    <Route path="/ide" element={<IdePage />} />
+                    <Route path="/ide" element={<Navigate to="/workspace?focus=editor" replace />} />
                     <Route path="/logs" element={<LogsPage />} />
                     <Route path="/scheduler" element={<SchedulerPage />} />
                     <Route path="/webhooks" element={<WebhooksPage />} />

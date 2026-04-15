@@ -63,12 +63,20 @@ export interface ChatBindPayload {
   clientInstanceId: string;
 }
 
+export interface OpenedTabContext {
+  path: string;
+  title: string;
+  isDirty: boolean;
+}
+
 export interface ChatSendPayload {
   text: string;
   attachments: ChatAttachmentPayload[];
   sessionId: string;
   clientInstanceId: string;
   clientMessageId: string;
+  openedTabs?: OpenedTabContext[];
+  activePath?: string | null;
 }
 
 export interface ChatRuntimeSessionState {
