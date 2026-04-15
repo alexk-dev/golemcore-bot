@@ -242,6 +242,44 @@ class DefaultConversationViewBuilderTest {
     }
 
     @Test
+    void shouldNotMaskWhenSessionMetadataIsNullAndMessagesArePlain() {
+        // Pins readPreviousModel's `return null` branch (metadata == null):
+        // the distinction between returning null vs returning "" matters in
+        // needsMasking, which treats a null previousModel as "no prior model"
+        // (only masks when tool messages exist) but treats "" as a real
+        // different model (always masks when target differs). A plain-text
+        // session with null metadata must NOT be masked when assembled — if
+        // PIT replaced the return with "", the builder would mask and the
+        // diagnostics would no longer be empty.
+        DefaultConversationViewBuilder builder = new DefaultConversationViewBuilder(new FlatteningToolMessageMasker());
+
+        AgentSession session = AgentSession.builder()
+                .id("s1")
+                .channelType("telegram")
+                .chatId("1")
+                .metadata(null)
+                .messages(new ArrayList<>())
+                .build();
+        Message plainUser = Message.builder()
+                .role("user")
+                .content("hello")
+                .timestamp(Instant.parse("2026-01-01T00:00:00Z"))
+                .build();
+        session.addMessage(plainUser);
+
+        AgentContext ctx = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        ConversationView view = builder.buildView(ctx, "new");
+
+        assertEquals(1, view.messages().size());
+        assertTrue(view.diagnostics().isEmpty(),
+                "null metadata must be read as null, not \"\", so plain messages stay unmasked");
+    }
+
+    @Test
     void shouldMaskWhenPreviousModelMissingButToolMessagesPresentAndTargetModelProvided() {
         DefaultConversationViewBuilder builder = new DefaultConversationViewBuilder(new FlatteningToolMessageMasker());
 
