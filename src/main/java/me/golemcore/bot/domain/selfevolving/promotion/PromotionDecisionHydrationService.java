@@ -80,6 +80,10 @@ public class PromotionDecisionHydrationService {
         }
 
         PromotionTarget target = resolveTarget(decision);
+        if (StringValueSupport.isBlank(decision.getToState())) {
+            decision.setToState(target.legacyState());
+            mutated = true;
+        }
         if (StringValueSupport.isBlank(decision.getToLifecycleState())) {
             decision.setToLifecycleState(target.lifecycleState());
             mutated = true;
@@ -96,9 +100,9 @@ public class PromotionDecisionHydrationService {
     }
 
     private PromotionTarget resolveTarget(PromotionDecision decision) {
-        String toState = decision != null ? decision.getToState() : null;
-        String toLifecycleState = decision != null ? decision.getToLifecycleState() : null;
-        String toRolloutStage = decision != null ? decision.getToRolloutStage() : null;
+        String toState = decision.getToState();
+        String toLifecycleState = decision.getToLifecycleState();
+        String toRolloutStage = decision.getToRolloutStage();
         return new PromotionTarget(
                 !StringValueSupport.isBlank(toState)
                         ? toState
