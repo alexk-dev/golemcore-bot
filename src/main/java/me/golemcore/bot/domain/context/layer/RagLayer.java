@@ -76,7 +76,7 @@ public class RagLayer implements ContextLayer {
             return ContextLayerResult.builder()
                     .layerName(getName())
                     .content(content)
-                    .estimatedTokens((int) Math.ceil(content.length() / 3.5))
+                    .estimatedTokens(TokenEstimator.estimate(content))
                     .build();
         } catch (Exception e) { // NOSONAR — best-effort RAG retrieval
             log.warn("[RagLayer] RAG query failed: {}", e.getMessage());

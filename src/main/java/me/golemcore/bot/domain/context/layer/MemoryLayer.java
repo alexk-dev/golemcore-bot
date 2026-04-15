@@ -127,7 +127,7 @@ public class MemoryLayer implements ContextLayer {
         return ContextLayerResult.builder()
                 .layerName(getName())
                 .content(content)
-                .estimatedTokens((int) Math.ceil(content.length() / 3.5))
+                .estimatedTokens(TokenEstimator.estimate(content))
                 .build();
     }
 

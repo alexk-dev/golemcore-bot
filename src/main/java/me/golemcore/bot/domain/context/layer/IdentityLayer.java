@@ -89,11 +89,7 @@ public class IdentityLayer implements ContextLayer {
         return ContextLayerResult.builder()
                 .layerName(getName())
                 .content(content)
-                .estimatedTokens(estimateTokens(content))
+                .estimatedTokens(TokenEstimator.estimate(content))
                 .build();
-    }
-
-    private int estimateTokens(String text) {
-        return (int) Math.ceil(text.length() / 3.5);
     }
 }

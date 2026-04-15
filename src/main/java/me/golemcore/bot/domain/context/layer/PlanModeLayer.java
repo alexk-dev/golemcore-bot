@@ -89,7 +89,7 @@ public class PlanModeLayer implements ContextLayer {
         return ContextLayerResult.builder()
                 .layerName(getName())
                 .content(planContext)
-                .estimatedTokens((int) Math.ceil(planContext.length() / 3.5))
+                .estimatedTokens(TokenEstimator.estimate(planContext))
                 .build();
     }
 }
