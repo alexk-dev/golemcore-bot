@@ -130,7 +130,7 @@ test.beforeAll(async () => {
   await fs.mkdir(OUT_DIR, { recursive: true });
 });
 
-test('chat collapse toggle persists and hides conversation', async ({ browser }) => {
+test('chat composer toggle hides input while keeping conversation readable', async ({ browser }) => {
   const context = await browser.newContext({
     viewport: { width: 375, height: 667 },
     isMobile: true,
@@ -140,28 +140,37 @@ test('chat collapse toggle persists and hides conversation', async ({ browser })
   await installDashboardApiMocks(page);
   await page.goto('/', { waitUntil: 'networkidle' }).catch(() => {});
   await page.waitForTimeout(400);
+  await page.getByRole('button', { name: 'Plan next step' }).click();
 
-  await page.getByRole('button', { name: /Collapse chat window/i }).click();
+  await page.getByRole('button', { name: /Hide message composer/i }).click();
   await page.waitForTimeout(150);
-  const shotCollapsed = path.join(OUT_DIR, 'chat-collapsed.png');
+  const shotCollapsed = path.join(OUT_DIR, 'chat-composer-collapsed.png');
   await page.screenshot({ path: shotCollapsed, fullPage: false });
 
   const collapsedState = await page.evaluate(() => {
-    const toolbar = document.querySelector('.chat-toolbar');
     const layout = document.querySelector('.chat-page-layout');
-    const input = document.querySelector('.chat-input-area');
+    const conversation = document.querySelector('.chat-window');
+    const form = document.querySelector('#chat-composer-form');
+    const toggle = document.querySelector('.chat-composer-toggle');
     return {
-      toolbarHasCollapsedClass: toolbar?.classList.contains('chat-toolbar--collapsed') ?? false,
-      layoutHasCollapsedClass: layout?.classList.contains('chat-page-layout--collapsed') ?? false,
-      inputPresent: input != null,
+      layoutHasComposerCollapsedClass: layout?.classList.contains('chat-page-layout--composer-collapsed') ?? false,
+      conversationPresent: conversation != null,
+      formPresent: form != null,
+      togglePresent: toggle != null,
     };
   });
 
-  if (!collapsedState.toolbarHasCollapsedClass) {
-    throw new Error('chat-toolbar--collapsed class should be applied after click');
+  if (!collapsedState.layoutHasComposerCollapsedClass) {
+    throw new Error('chat-page-layout--composer-collapsed class should be applied after click');
   }
-  if (collapsedState.inputPresent) {
-    throw new Error('chat input should be hidden when collapsed');
+  if (!collapsedState.conversationPresent) {
+    throw new Error('conversation should remain visible when composer is collapsed');
+  }
+  if (collapsedState.formPresent) {
+    throw new Error('message composer form should be hidden when collapsed');
+  }
+  if (!collapsedState.togglePresent) {
+    throw new Error('composer toggle should remain available when collapsed');
   }
 
   await context.close();
