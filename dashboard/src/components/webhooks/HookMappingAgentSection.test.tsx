@@ -70,6 +70,27 @@ describe('HookAgentSection', () => {
     expect(html).toContain('JSON Schema Draft 2020-12');
   });
 
+  it('describes schema tier as repair-only', () => {
+    const html = renderToStaticMarkup(
+      <HookAgentSection
+        mapping={{
+          ...createEmptyWebhookMapping(),
+          name: 'sync-hook',
+          action: 'agent',
+          syncResponse: true,
+          responseJsonSchema: '{"type":"object"}',
+        }}
+        onChange={() => undefined}
+        availableChannels={[]}
+        channelsLoading={false}
+      />,
+    );
+
+    expect(html).toContain('Schema Repair Tier');
+    expect(html).toContain('used only for JSON Schema repair attempts');
+    expect(html).not.toContain('schema-constrained responses');
+  });
+
   it('keeps schema response tier disabled until a response JSON Schema is configured', () => {
     const withoutSchema = renderSection({
       ...createEmptyWebhookMapping(),

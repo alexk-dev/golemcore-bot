@@ -16,5 +16,11 @@ public class DashboardFileNode {
     private String name;
     private String type;
     private Long size;
+    private String mimeType;
+    private String updatedAt;
+    private boolean binary;
+    private boolean image;
+    private boolean editable;
+    private boolean hasChildren;
     private List<DashboardFileNode> children;
 }

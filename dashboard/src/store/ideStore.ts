@@ -10,6 +10,11 @@ export interface IdeTabState {
   content: string;
   savedContent: string;
   isDirty: boolean;
+  mimeType: string | null;
+  binary: boolean;
+  image: boolean;
+  editable: boolean;
+  downloadUrl: string | null;
 }
 
 interface IdeStoreState {
@@ -337,12 +342,27 @@ export const useIdeStore = create<IdeStoreState>((set, get) => ({
   },
 }));
 
-export function createNewTab(path: string, content: string): IdeTabState {
+export function createNewTab(
+  path: string,
+  content: string,
+  metadata?: {
+    mimeType?: string | null;
+    binary?: boolean;
+    image?: boolean;
+    editable?: boolean;
+    downloadUrl?: string | null;
+  },
+): IdeTabState {
   return {
     path,
     title: getFilename(path),
     content,
     savedContent: content,
     isDirty: false,
+    mimeType: metadata?.mimeType ?? null,
+    binary: metadata?.binary ?? false,
+    image: metadata?.image ?? false,
+    editable: metadata?.editable ?? true,
+    downloadUrl: metadata?.downloadUrl ?? null,
   };
 }

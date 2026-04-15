@@ -1,29 +1,23 @@
 import type { ReactElement } from 'react';
-import { FiChevronDown, FiChevronUp, FiLayout, FiMessageSquare, FiPlus } from 'react-icons/fi';
+import { FiLayout, FiMessageSquare, FiPlus } from 'react-icons/fi';
 
 interface ChatToolbarProps {
   chatSessionId: string;
   connected: boolean;
   panelOpen: boolean;
-  collapsed: boolean;
   onNewChat: () => void;
   onToggleContext: () => void;
-  onToggleCollapsed: () => void;
 }
 
 export function ChatToolbar({
   chatSessionId,
   connected,
   panelOpen,
-  collapsed,
   onNewChat,
   onToggleContext,
-  onToggleCollapsed,
 }: ChatToolbarProps): ReactElement {
-  const collapseLabel = collapsed ? 'Expand chat window' : 'Collapse chat window';
-  const CollapseIcon = collapsed ? FiChevronDown : FiChevronUp;
   return (
-    <div className={`chat-toolbar${collapsed ? ' chat-toolbar--collapsed' : ''}`}>
+    <div className="chat-toolbar">
       <div className="chat-toolbar-inner">
         <div className="chat-toolbar-main">
           <div className="chat-toolbar-title-group">
@@ -64,20 +58,6 @@ export function ChatToolbar({
               <FiLayout size={14} />
             </span>
             <span>{panelOpen ? 'Hide context' : 'Show context'}</span>
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-secondary chat-toolbar-btn chat-toolbar-btn--collapse"
-            onClick={onToggleCollapsed}
-            title={collapseLabel}
-            aria-label={collapseLabel}
-            aria-expanded={!collapsed}
-            aria-controls="chat-workspace-body"
-          >
-            <span className="chat-toolbar-btn-icon" aria-hidden="true">
-              <CollapseIcon size={14} />
-            </span>
-            <span>{collapsed ? 'Expand' : 'Collapse'}</span>
           </button>
         </div>
       </div>

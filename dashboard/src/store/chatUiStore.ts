@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-const STORAGE_KEY = 'gc.chat.collapsed';
+const STORAGE_KEY = 'gc.chat.composerCollapsed';
 
 function loadInitial(): boolean {
   if (typeof window === 'undefined') {
@@ -20,22 +20,22 @@ function persist(value: boolean): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, value ? '1' : '0');
   } catch {
-    // Ignore quota or privacy-mode failures; collapse state stays in memory.
+    // Ignore quota or privacy-mode failures; composer collapse state stays in memory.
   }
 }
 
 interface ChatUiState {
-  collapsed: boolean;
-  toggleCollapsed: () => void;
+  composerCollapsed: boolean;
+  toggleComposerCollapsed: () => void;
 }
 
 export const useChatUiStore = create<ChatUiState>((set) => ({
-  collapsed: loadInitial(),
-  toggleCollapsed: (): void => {
+  composerCollapsed: loadInitial(),
+  toggleComposerCollapsed: (): void => {
     set((state) => {
-      const next = !state.collapsed;
+      const next = !state.composerCollapsed;
       persist(next);
-      return { collapsed: next };
+      return { composerCollapsed: next };
     });
   },
 }));

@@ -10,6 +10,7 @@ export interface FileTreePanelProps {
   dirtyPaths: Set<string>;
   searchQuery: string;
   onOpenFile: (path: string) => void;
+  onLoadDirectory: (path: string) => void;
   onRequestCreate: (targetPath: string) => void;
   onRequestRename: (targetPath: string) => void;
   onRequestDelete: (targetPath: string) => void;
@@ -21,6 +22,7 @@ interface ArboristFileNode {
   kind: 'file' | 'directory';
   path: string;
   isDirty: boolean;
+  hasChildren: boolean;
   children?: ArboristFileNode[];
 }
 
@@ -40,6 +42,7 @@ function mapNodes(inputNodes: FileTreeNode[], dirtyPaths: Set<string>): Arborist
       kind: node.type,
       path: node.path,
       isDirty: node.type === 'file' && dirtyPaths.has(node.path),
+      hasChildren: node.hasChildren,
     };
     if (children.length > 0) {
       mappedNode.children = children;
@@ -67,7 +70,7 @@ function FileTreeNodeRenderer({ node, style, dragHandle }: NodeRendererProps<Arb
   return (
     <div style={style} ref={dragHandle} className={`ide-tree-node ${node.isSelected ? 'selected' : ''}`}>
       <span className="ide-tree-chevron" aria-hidden>
-        {node.data.kind === 'directory'
+        {node.data.kind === 'directory' && node.data.hasChildren
           ? (node.isOpen ? <FiChevronDown size={12} /> : <FiChevronRight size={12} />)
           : null}
       </span>
@@ -84,6 +87,7 @@ export function FileTreePanel({
   dirtyPaths,
   searchQuery,
   onOpenFile,
+  onLoadDirectory,
   onRequestCreate,
   onRequestRename,
   onRequestDelete,
@@ -126,6 +130,7 @@ export function FileTreePanel({
       return;
     }
 
+    onLoadDirectory(node.data.path);
     node.open();
   };
 
