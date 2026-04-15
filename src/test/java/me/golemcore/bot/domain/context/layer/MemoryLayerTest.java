@@ -226,6 +226,29 @@ class MemoryLayerTest {
     }
 
     @Test
+    void shouldFallBackToAttributeCheckWhenPresetServiceHasNoMatchingPreset() {
+        // Pins the second branch of isMemoryDisabled: when no MemoryConfig is
+        // resolved (preset service returns empty) but MEMORY_PRESET_ID attribute
+        // still equals "disabled" (case-insensitive), memory must be disabled.
+        // Covers the NO_COVERAGE line
+        // `return memoryPreset != null &&
+        // MemoryPresetIds.DISABLED.equalsIgnoreCase(...)`.
+        MemoryPresetService emptyPresetService = mock(MemoryPresetService.class);
+        when(emptyPresetService.findById(any())).thenReturn(java.util.Optional.empty());
+        MemoryLayer fallbackLayer = new MemoryLayer(memoryComponent, runtimeConfigService, emptyPresetService);
+
+        AgentContext disabledContext = AgentContext.builder()
+                .attributes(Map.of(ContextAttributes.MEMORY_PRESET_ID, "  DISABLED  "))
+                .build();
+        AgentContext otherContext = AgentContext.builder()
+                .attributes(Map.of(ContextAttributes.MEMORY_PRESET_ID, "general_chat"))
+                .build();
+
+        assertFalse(fallbackLayer.appliesTo(disabledContext));
+        assertTrue(fallbackLayer.appliesTo(otherContext));
+    }
+
+    @Test
     void shouldKeepMemoryEnabledForNonDisabledPreset() {
         // Guards isMemoryDisabled against NegateConditionalsMutator on the
         // MemoryPresetIds.DISABLED equality check: any other preset must NOT
