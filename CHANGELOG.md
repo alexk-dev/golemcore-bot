@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.63.7 - 2026-04-15
+#### Bug Fixes
+- (**webhook**) preserve schema response context (#288) - (d492ba6) - GolemCore AI Agent #1
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
