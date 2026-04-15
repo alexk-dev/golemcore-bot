@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:ui-smoke": "playwright test tests/e2e/dashboard-menu-smoke.playwright.ts"
+    "test:e2e:ui-smoke": "playwright test tests/e2e/dashboard-menu-smoke.playwright.ts tests/e2e/dashboard-mobile-responsive.playwright.ts",
+    "test:e2e:mobile-responsive": "playwright test tests/e2e/dashboard-mobile-responsive.playwright.ts"
   },
   "dependencies": {
     "@replit/codemirror-minimap": "^0.5.2",
