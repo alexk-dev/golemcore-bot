@@ -90,6 +90,32 @@ class LlmRequestPreflightCompactionEventsTest extends LlmRequestPreflightPhaseFi
     }
 
     @Test
+    void shouldEmitEmptyErrorMessageWhenThrowableCarriesNoMessage() {
+        // Exceptions produced by low-level adapters (e.g. NullPointerException
+        // without args, or AbstractMethodError) surface with a null message.
+        // The error-path payload builder must still publish a usable
+        // errorMessage key so dashboards can safely read it as a String
+        // without branching on presence.
+        NullPointerException messageless = new NullPointerException();
+        when(compactionService.compact(any(), any(), anyInt()))
+                .thenThrow(messageless);
+        AgentContext context = buildContext(4);
+        LlmRequest request = LlmRequest.builder()
+                .systemPrompt("x".repeat(4_000))
+                .messages(new ArrayList<>(context.getSession().getMessages()))
+                .build();
+
+        assertThrows(NullPointerException.class, () -> phase.preflight(context, () -> request, 1));
+
+        List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        RuntimeEvent finished = firstFinishedEvent(events);
+        assertEquals("error", finished.payload().get("outcome"));
+        assertEquals("java.lang.NullPointerException", finished.payload().get("errorType"));
+        assertEquals("", finished.payload().get("errorMessage"),
+                "null Throwable#getMessage must normalize to empty string, never null");
+    }
+
+    @Test
     void shouldIncludeOutcomeCompactedInFinishedPayloadOnSuccess() {
         AgentContext context = buildContext(4);
         AtomicInteger requests = new AtomicInteger();

@@ -54,7 +54,7 @@ class CompactionPayloadMapperTest {
         Map<String, Object> payload = CompactionPayloadMapper.toPayload(result);
 
         assertEquals(EXPECTED_PAYLOAD_KEYS, List.copyOf(payload.keySet()),
-                "Payload key set/order is a public contract — update every reader if this changes");
+                "Payload key set/order is a public contract - update every reader if this changes");
     }
 
     @Test
@@ -90,10 +90,69 @@ class CompactionPayloadMapperTest {
     }
 
     @Test
+    void toPayload_shouldEmitRemovedAndUsedSummaryWhenDetailsAreNull() {
+        // Guards the documented contract: a CompactionResult with null details
+        // still produces a meaningful payload (just the two top-level fields).
+        // publishToContext explicitly drops this case to avoid noisy attribute
+        // writes, but toPayload stays symmetric so callers that want the
+        // partial shape can still get it.
+        CompactionResult partial = CompactionResult.builder()
+                .removed(7)
+                .usedSummary(false)
+                .details(null)
+                .build();
+
+        Map<String, Object> payload = CompactionPayloadMapper.toPayload(partial);
+
+        assertEquals(7, payload.get("removed"));
+        assertEquals(false, payload.get("usedSummary"));
+        assertNull(payload.get("schemaVersion"),
+                "null-details result must not populate detail fields");
+    }
+
+    @Test
+    void toDetailsMap_shouldEmitNullReasonAsNullInMap() {
+        // Locks the "details present but reason null" branch: callers must
+        // never see a broken enum.name() lookup, they get a literal null so
+        // downstream serializers can distinguish "unknown reason" from
+        // "reason key missing".
+        CompactionDetails details = CompactionDetails.builder()
+                .schemaVersion(1)
+                .reason(null)
+                .fileChanges(List.of())
+                .build();
+
+        Map<String, Object> map = CompactionPayloadMapper.toDetailsMap(details);
+
+        assertTrue(map.containsKey("reason"),
+                "reason key must always be present in the canonical shape");
+        assertNull(map.get("reason"));
+    }
+
+    @Test
+    void toDetailsMap_shouldEmitEmptyFileChangesListWhenSourceIsNull() {
+        // Locks the "details.fileChanges() == null" branch: the payload must
+        // still publish an (empty) fileChanges list so dashboards can rely on
+        // a uniform shape instead of branching on presence.
+        CompactionDetails details = CompactionDetails.builder()
+                .schemaVersion(1)
+                .reason(CompactionReason.AUTO_THRESHOLD)
+                .fileChanges(null)
+                .build();
+
+        Map<String, Object> map = CompactionPayloadMapper.toDetailsMap(details);
+
+        Object fileChanges = map.get("fileChanges");
+        assertInstanceOf(List.class, fileChanges);
+        assertTrue(((List<?>) fileChanges).isEmpty(),
+                "null source must become an empty list, not propagate null into the map");
+    }
+
+    @Test
     void toPayload_shouldReturnMutableMapForHappyPath() {
         Map<String, Object> payload = CompactionPayloadMapper.toPayload(sampleResult());
 
-        // Same mutability invariant as the null case — both branches must
+        // Same mutability invariant as the null case - both branches must
         // return the same kind of Map, otherwise callers hit random UOEs.
         payload.put("probe", "ok");
         assertEquals("ok", payload.get("probe"));
@@ -153,7 +212,7 @@ class CompactionPayloadMapperTest {
         assertInstanceOf(Map.class, stored);
         Map<?, ?> storedMap = (Map<?, ?>) stored;
         assertEquals(EXPECTED_PAYLOAD_KEYS, List.copyOf(storedMap.keySet()),
-                "publishToContext must use the same canonical shape as toPayload — "
+                "publishToContext must use the same canonical shape as toPayload - "
                         + "otherwise downstream systems that read from context see a different schema "
                         + "than dashboards that read from session metadata");
     }
@@ -187,7 +246,7 @@ class CompactionPayloadMapperTest {
     @Test
     void publishToContext_shouldTolerateNullContext() {
         CompactionPayloadMapper.publishToContext(null, sampleResult());
-        // No assertion beyond "did not throw" — the method must degrade
+        // No assertion beyond "did not throw" - the method must degrade
         // gracefully when a caller passes a half-constructed pipeline.
     }
 

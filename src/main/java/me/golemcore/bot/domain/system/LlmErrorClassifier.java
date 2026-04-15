@@ -15,6 +15,17 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * Classifies LLM failures into stable machine-readable reason codes.
+ *
+ * <p>
+ * Two entry points exist: {@link #classifyFromThrowable(Throwable)} walks an
+ * exception cause chain using identity-based visited tracking (to survive
+ * value-equal wrappers) and consults both message heuristics and typed
+ * langchain4j exception classes; {@link #classifyFromDiagnostic(String)} parses
+ * a free-form diagnostic string and falls back to the same shared message
+ * patterns. Known failures map to the {@code public static final} code
+ * constants below; embedded {@code [llm.*]} codes are trusted verbatim for
+ * backward compatibility with diagnostics that were already annotated upstream.
+ * </p>
  */
 public final class LlmErrorClassifier {
 
@@ -171,6 +182,13 @@ public final class LlmErrorClassifier {
         return message.substring(1, end);
     }
 
+    /**
+     * Return {@code true} if the given code indicates a transient failure that a
+     * retry may recover from. Used by the adapter-level retry predicate to decide
+     * whether to retry vs. bubble the error up to the tool loop. Keep this set
+     * narrow - marking a non-transient code as retriable will drive latency and
+     * cost up for errors that cannot recover.
+     */
     public static boolean isTransientCode(String code) {
         if (code == null || code.isBlank()) {
             return false;
@@ -182,6 +200,12 @@ public final class LlmErrorClassifier {
                 || LANGCHAIN4J_RETRIABLE.equals(code);
     }
 
+    /**
+     * Return {@code true} iff the code marks a request that exceeded the provider's
+     * context window. The tool loop treats this as a one-shot recovery signal - it
+     * runs overflow-recovery compaction exactly once and retries the LLM call,
+     * rather than cycling through the normal retry predicate.
+     */
     public static boolean isContextOverflowCode(String code) {
         if (code == null || code.isBlank()) {
             return false;

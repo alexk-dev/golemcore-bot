@@ -8,7 +8,7 @@ import java.util.Locale;
  * <p>
  * Kept in one place because adapter-level retry decisions and the canonical
  * {@link LlmErrorClassifier} must agree on what counts as a context-overflow
- * error — otherwise the two codepaths can diverge provider by provider.
+ * error - otherwise the two code paths can diverge provider by provider.
  * </p>
  */
 public final class LlmErrorPatterns {

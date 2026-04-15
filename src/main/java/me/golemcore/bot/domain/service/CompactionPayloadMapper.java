@@ -18,11 +18,10 @@ import java.util.Map;
  *
  * <p>
  * Publication ownership: the persistent write (session metadata) is done inside
- * {@link CompactionOrchestrationService#compact}. Per-turn callers that also
- * need the payload exposed through {@link AgentContext#getAttribute} — because
- * downstream systems within the same turn read it from there — go through
- * {@link #publishToContext} so there is exactly one code path that builds the
- * payload.
+ * {@link CompactionOrchestrationService#compact}. Per-turn callers should use
+ * {@link #publishToContext} when same-turn downstream systems also need the
+ * payload exposed through {@link AgentContext#getAttribute}; that keeps one
+ * code path responsible for building the payload.
  */
 public final class CompactionPayloadMapper {
 
@@ -37,7 +36,7 @@ public final class CompactionPayloadMapper {
      *
      * <p>
      * This does not replace the persistent write performed by
-     * {@link CompactionOrchestrationService#compact} — session metadata remains the
+     * {@link CompactionOrchestrationService#compact} - session metadata remains the
      * source of truth; this method only exposes a transient copy.
      */
     public static void publishToContext(AgentContext context, CompactionResult result) {
@@ -47,6 +46,11 @@ public final class CompactionPayloadMapper {
         context.setAttribute(ContextAttributes.COMPACTION_LAST_DETAILS, toPayload(result));
     }
 
+    /**
+     * Materialize a {@link CompactionResult} as the canonical flat payload that
+     * callers write into session metadata / context attributes. Null-safe: returns
+     * an empty map for a null result so downstream key lookups stay total.
+     */
     public static Map<String, Object> toPayload(CompactionResult result) {
         if (result == null) {
             return new LinkedHashMap<>();
@@ -60,6 +64,12 @@ public final class CompactionPayloadMapper {
         return payload;
     }
 
+    /**
+     * Flatten a {@link CompactionDetails} record into the canonical string-keyed
+     * map accepted by session metadata, context attributes, and dashboards.
+     * Null-safe: returns an empty map for null input. Enum fields are emitted as
+     * {@code name()} so the output is JSON-stable without a custom serializer.
+     */
     public static Map<String, Object> toDetailsMap(CompactionDetails details) {
         if (details == null) {
             return new LinkedHashMap<>();

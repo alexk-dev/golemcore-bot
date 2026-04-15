@@ -127,6 +127,22 @@ class ContextCompactionCoordinator {
         }
     }
 
+    /**
+     * One-shot compaction attempt triggered when the provider reports a
+     * context-overflow error. For first-attempt calls with a usable context and
+     * session, publishes a {@code llm.context.overflow.recovery} diagnostic
+     * attribute so dashboards can see whether recovery compacted, skipped, or
+     * failed. Later retry attempts and malformed contexts return without
+     * overwriting the previous diagnostic because no recovery cycle is run.
+     *
+     * @param retryAttempt
+     *            the tool-loop retry counter; recovery fires only when this is
+     *            {@code 0} - any value above zero means the previous recovery has
+     *            already run for this provider call and a second attempt would loop
+     *            on an unrecoverable state.
+     * @return {@code true} iff compaction removed at least one message, telling the
+     *         caller it is safe to retry the provider with the shorter session.
+     */
     boolean recoverFromContextOverflow(AgentContext context, int llmCall, int retryAttempt) {
         if (retryAttempt > 0) {
             return false;
@@ -148,8 +164,15 @@ class ContextCompactionCoordinator {
             writeOverflowRecoveryDiagnostic(context, false, 0, false, OVERFLOW_OUTCOME_SKIPPED_TOO_SMALL, llmCall);
             return false;
         }
-        CompactionResult compactionResult = runCompaction(
-                context, CompactionReason.CONTEXT_OVERFLOW_RECOVERY, keepLast, llmCall, null);
+        CompactionResult compactionResult;
+        try {
+            compactionResult = runCompaction(
+                    context, CompactionReason.CONTEXT_OVERFLOW_RECOVERY, keepLast, llmCall, null);
+        } catch (RuntimeException e) {
+            log.warn("[ToolLoop] Context overflow recovery compaction failed (llmCall={})", llmCall, e);
+            writeOverflowRecoveryDiagnostic(context, true, 0, false, CompactionFinishedPayloads.OUTCOME_ERROR, llmCall);
+            return false;
+        }
         if (compactionResult != null) {
             writeOverflowRecoveryDiagnostic(context, true, compactionResult.removed(), compactionResult.usedSummary(),
                     CompactionFinishedPayloads.OUTCOME_COMPACTED, llmCall);

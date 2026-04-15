@@ -46,8 +46,8 @@ import java.util.Set;
  *
  * <ul>
  * <li>Latin / digits / JSON punctuation: ~4.0 chars/token</li>
- * <li>Medium bucket — Cyrillic, Greek, Hebrew, Arabic + Indic and SE Asian
- * scripts (Devanagari, Bengali, Tamil, Thai, Lao, Khmer, …): ~2.0
+ * <li>Medium bucket - Cyrillic, Greek, Hebrew, Arabic + Indic and SE Asian
+ * scripts (Devanagari, Bengali, Tamil, Thai, Lao, Khmer, ...): ~2.0
  * chars/token</li>
  * <li>CJK (Han, Hiragana, Katakana, Hangul): ~1.0 chars/token</li>
  * <li>Anything else (symbols, emoji, misc scripts): ~2.0 chars/token</li>
@@ -63,9 +63,16 @@ public class ContextTokenEstimator {
     private static final int MESSAGE_OVERHEAD_TOKENS = 12;
     private static final int TOOL_DEFINITION_OVERHEAD_TOKENS = 96;
     private static final int REQUEST_BASE_OVERHEAD_TOKENS = 256;
+    private static final int OPAQUE_FALLBACK_TOKENS = 8;
+    private static final int PRIMITIVE_ARRAY_SAMPLE_SIZE = 16;
 
     private static final int MAX_NESTED_DEPTH = 32;
 
+    /**
+     * Estimate the combined token cost of a list of chat messages. Null or empty
+     * input returns zero. Per-message overhead is folded in so callers do not need
+     * to multiply by a separate factor.
+     */
     public int estimateMessages(List<Message> messages) {
         if (messages == null || messages.isEmpty()) {
             return 0;
@@ -77,6 +84,13 @@ public class ContextTokenEstimator {
         return saturatingToInt(tokens);
     }
 
+    /**
+     * Estimate the wire-format token cost of an outbound {@link LlmRequest}. Sums
+     * the base request overhead, system prompt, messages, and tool schemas -
+     * everything the adapter layer actually serializes to the provider.
+     * {@code toolResults} are intentionally excluded because they are internal
+     * bookkeeping and never leave the loop.
+     */
     public int estimateRequest(LlmRequest request) {
         if (request == null) {
             return 0;
@@ -84,7 +98,7 @@ public class ContextTokenEstimator {
         // Mirrors Langchain4jAdapter.convertMessages: only systemPrompt + messages
         // + tool schemas are serialized on the wire. request.toolResults is
         // internal bookkeeping (read by the tool loop for dedupe / plan
-        // finalization) and is not sent to providers — counting it inflates
+        // finalization) and is not sent to providers - counting it inflates
         // the budget and triggers phantom preflight compactions.
         long tokens = REQUEST_BASE_OVERHEAD_TOKENS;
         tokens += estimateText(request.getSystemPrompt());
@@ -208,7 +222,23 @@ public class ContextTokenEstimator {
                 visited.remove(value);
             }
         }
-        return estimateText(String.valueOf(value));
+        return estimateOpaqueFallback(value);
+    }
+
+    /**
+     * Catch-all for arbitrary POJOs reached via metadata / tool arguments. We call
+     * {@code toString()} once, but guard it - a tool may stash an object whose
+     * {@code toString()} throws (broken {@code @ToString}, lazy loader, circular
+     * reference), and a preflight-time crash would blow up every LLM call for that
+     * turn. Fall back to a fixed per-object token budget so the safety gate keeps
+     * working.
+     */
+    private int estimateOpaqueFallback(Object value) {
+        try {
+            return estimateText(String.valueOf(value));
+        } catch (RuntimeException e) {
+            return OPAQUE_FALLBACK_TOKENS;
+        }
     }
 
     private int estimateArray(Object array, Set<Object> visited, int depth) {
@@ -227,31 +257,30 @@ public class ContextTokenEstimator {
     }
 
     /**
-     * Width-based estimate for primitive arrays — avoids per-element boxing +
-     * String.valueOf allocations that would otherwise dominate cost for large
-     * numeric buffers in tool arguments.
+     * Sampled estimate for primitive arrays - measures the actual serialized width
+     * of a bounded head sample, then extrapolates across the full length. This
+     * keeps the estimate sensitive to the actual payload shape while avoiding
+     * per-element boxing for large numeric buffers.
+     *
+     * <p>
+     * {@code char[]} stays on the full decode path because it is semantically a
+     * String and a partial sample would lose surrogate-pair ordering.
      */
     private int estimatePrimitiveArray(Object array, int length) {
-        double averageCharWidth;
-        if (array instanceof boolean[]) {
-            averageCharWidth = 5.0d; // "true"/"false" + comma
-        } else if (array instanceof byte[]) {
-            averageCharWidth = 4.0d; // e.g. "127,"
-        } else if (array instanceof short[]) {
-            averageCharWidth = 5.0d;
-        } else if (array instanceof int[]) {
-            averageCharWidth = 6.0d;
-        } else if (array instanceof long[]) {
-            averageCharWidth = 8.0d;
-        } else if (array instanceof float[]) {
-            averageCharWidth = 10.0d;
-        } else if (array instanceof double[]) {
-            averageCharWidth = 12.0d;
-        } else if (array instanceof char[] charArray) {
+        if (array instanceof char[] charArray) {
             return saturatingToInt(2 + estimateText(new String(charArray)));
-        } else {
-            averageCharWidth = 6.0d;
         }
+        int sampleSize = Math.min(length, PRIMITIVE_ARRAY_SAMPLE_SIZE);
+        long sampleChars = 0;
+        for (int index = 0; index < sampleSize; index++) {
+            // Array.get boxes, but only for a bounded sample - the savings come
+            // from avoiding String.valueOf on the remaining elements.
+            Object element = Array.get(array, index);
+            sampleChars += String.valueOf(element).length() + 1;
+        }
+        double averageCharWidth = sampleSize > 0
+                ? (double) sampleChars / sampleSize
+                : 2.0d;
         double totalChars = length * averageCharWidth;
         double tokens = 2 + totalChars / CHARS_PER_TOKEN_LATIN;
         return Math.max(2, (int) Math.ceil(tokens));
@@ -289,6 +318,16 @@ public class ContextTokenEstimator {
                 tokens += 1.0d / CHARS_PER_TOKEN_LATIN;
                 continue;
             }
+            // Emoji, pictographs, dingbats, and regional indicators all live in
+            // UnicodeScript.COMMON, which would otherwise route them to the
+            // Latin bucket (~0.25 tokens/char). Real BPE tokenizers assign 1-3
+            // tokens per glyph, so we short-circuit them into the CJK bucket
+            // first - safer to over-estimate emoji density than let preflight
+            // miss an oversized request dominated by chat reactions.
+            if (isEmojiLike(codePoint)) {
+                tokens += 1.0d / CHARS_PER_TOKEN_CJK;
+                continue;
+            }
             // Character.UnicodeScript.of accepts any scalar value returned by
             // String.codePointAt, so no exception handling is needed here.
             tokens += tokenContribution(Character.UnicodeScript.of(codePoint));
@@ -298,6 +337,17 @@ public class ContextTokenEstimator {
             return 0;
         }
         return Math.max(1, (int) Math.ceil(tokens));
+    }
+
+    private static boolean isEmojiLike(int codePoint) {
+        // Covers the major emoji / pictograph / dingbat / regional-indicator
+        // blocks. Keeping this as a handful of range checks avoids the cost
+        // (and null-return surface) of Character.UnicodeBlock.of per codepoint,
+        // and stays accurate enough for a safety-gate estimator.
+        return (codePoint >= 0x2600 && codePoint <= 0x27BF)
+                || (codePoint >= 0x1F1E6 && codePoint <= 0x1F1FF)
+                || (codePoint >= 0x1F300 && codePoint <= 0x1F6FF)
+                || (codePoint >= 0x1F900 && codePoint <= 0x1FAFF);
     }
 
     private double tokenContribution(Character.UnicodeScript script) {

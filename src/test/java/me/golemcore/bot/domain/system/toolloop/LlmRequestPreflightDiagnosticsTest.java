@@ -60,6 +60,55 @@ class LlmRequestPreflightDiagnosticsTest extends LlmRequestPreflightPhaseFixture
     }
 
     @Test
+    void shouldPreserveCompactionAttemptedWhenFinalAttemptSkipsAfterSuccessfulCompactions() {
+        AgentContext context = buildContext(5);
+        AtomicInteger call = new AtomicInteger();
+        when(compactionService.compact(any(), any(), anyInt()))
+                .thenAnswer(invocation -> {
+                    int n = call.incrementAndGet();
+                    // Drain session messages so attempt 3 observes total <= 1 and hits
+                    // the "skipped_no_messages" path after two successful compactions.
+                    int removed;
+                    if (n == 1) {
+                        context.getSession().getMessages().subList(0, 3).clear();
+                        removed = 3;
+                    } else if (n == 2) {
+                        context.getSession().getMessages().remove(0);
+                        removed = 1;
+                    } else {
+                        removed = 0;
+                    }
+                    return CompactionResult.builder()
+                            .removed(removed)
+                            .usedSummary(false)
+                            .details(CompactionDetails.builder()
+                                    .reason(CompactionReason.REQUEST_PREFLIGHT)
+                                    .summaryLength(0)
+                                    .fileChanges(List.of())
+                                    .build())
+                            .build();
+                });
+
+        phase.preflight(context, () -> LlmRequest.builder()
+                // Fat system prompt keeps the request over threshold even after every
+                // attempt compacts messages, forcing the loop to reach attempt 3.
+                .systemPrompt("x".repeat(4_000))
+                .messages(new ArrayList<>(context.getSession().getMessages()))
+                .build(), 1);
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
+        assertEquals(3, diagnostics.get("attempt"),
+                "test must exercise all 3 attempts to cover the success-success-skip invariant");
+        assertEquals(true, diagnostics.get("compactionAttempted"),
+                "compactionAttempted must stay true after a skip that follows successful compactions - "
+                        + "the flag reports whether ANY attempt in the series ran, not just the last one");
+        assertEquals(4, diagnostics.get("compactionRemoved"),
+                "cumulative removed from attempts 1+2 must not be lost when attempt 3 skips");
+        assertEquals("skipped_no_messages", diagnostics.get("compactionOutcome"),
+                "outcome still reflects the terminal attempt's decision");
+    }
+
+    @Test
     void shouldAccumulateCompactionRemovedAcrossAttempts() {
         AgentContext context = buildContext(10);
         AtomicInteger call = new AtomicInteger();
@@ -359,5 +408,114 @@ class LlmRequestPreflightDiagnosticsTest extends LlmRequestPreflightPhaseFixture
         Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
         assertNotNull(diagnostics, "preflight must publish diagnostics");
         return diagnostics.keySet();
+    }
+
+    @Test
+    void shouldLogWarnAndClampWhenCompactionServiceReportsNegativeRemoved() {
+        // A buggy upstream compactor surfacing a negative removedThisAttempt
+        // must not corrupt the diagnostics total. The phase warns and clamps
+        // to zero at the recordCompactionRun site instead of letting the
+        // cumulative diagnostic total go negative.
+        AgentContext context = buildContext(4);
+        when(compactionService.compact(any(), any(), anyInt()))
+                .thenReturn(CompactionResult.builder()
+                        .removed(-5)
+                        .usedSummary(false)
+                        .build());
+
+        phase.preflight(context, () -> LlmRequest.builder()
+                .systemPrompt("x".repeat(4_000))
+                .messages(new ArrayList<>(context.getSession().getMessages()))
+                .build(), 1);
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
+        assertEquals(0, diagnostics.get("compactionRemoved"),
+                "negative removed must clamp to 0 in the cumulative total");
+        assertEquals(true, diagnostics.get("compactionAttempted"));
+    }
+
+    @Test
+    void shouldRecordErrorWithBothFlagsFalseWhenSupplierThrowsBeforeFirstAttempt() {
+        // The supplier throws before recordAttempt ever fires. That keeps
+        // overThreshold=false AND compactionAttempted=false inside the
+        // PreflightDiagnostics. recordPreflightError's `|| overThreshold`
+        // short-circuit must still publish a terminal error snapshot when both
+        // booleans are false.
+        AgentContext context = buildContext(3);
+        IllegalStateException boom = new IllegalStateException("supplier blew up");
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> phase.preflight(context, () -> {
+                    throw boom;
+                }, 1));
+
+        assertEquals(boom, thrown);
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
+        assertNotNull(diagnostics,
+                "preflight error before recordAttempt must still publish terminal diagnostics");
+        assertEquals(0, diagnostics.get("attempt"),
+                "attempt=0 is the pre-loop sentinel for pre-attempt failures");
+        assertEquals(false, diagnostics.get("compactionAttempted"),
+                "no compaction was attempted when the supplier blew up on the first call");
+        assertEquals(false, diagnostics.get("overThreshold"),
+                "overThreshold stays false when recordAttempt never runs");
+        assertEquals("error", diagnostics.get("compactionOutcome"));
+        assertEquals(true, diagnostics.get("terminal"));
+    }
+
+    @Test
+    void shouldPublishSkippedNoMessagesWhenSessionIsNull() {
+        // Null session on the context is a wiring bug upstream, but preflight
+        // must not NPE the pipeline - it must record skipped_no_messages and
+        // let the provider reject the oversized request downstream.
+        AgentContext context = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .build();
+        LlmRequest request = LlmRequest.builder()
+                .systemPrompt("x".repeat(4_000))
+                .build();
+
+        phase.preflight(context, () -> request, 1);
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
+        assertEquals("skipped_no_messages", diagnostics.get("compactionOutcome"));
+        assertEquals(false, diagnostics.get("compactionAttempted"));
+    }
+
+    @Test
+    void shouldFallOutOfAttemptLoopWhenEveryAttemptCompactsAndFinalRequestFits() {
+        // Forces the loop to run all three attempts. Each attempt sees a
+        // fat request and a non-zero removed count, then the supplier
+        // finally returns a small request on the 4th call, so the
+        // post-loop final check finds finalEstimatedTokens <= finalThreshold.
+        // This guards the "we exhausted attempts but the request now fits"
+        // branch that only fires when the shrink lands between the last loop
+        // iteration and the post-loop estimate.
+        AgentContext context = buildContext(8);
+        AtomicInteger supplierCalls = new AtomicInteger();
+        when(compactionService.compact(any(), any(), anyInt()))
+                .thenAnswer(invocation -> CompactionResult.builder()
+                        .removed(1)
+                        .usedSummary(false)
+                        .details(CompactionDetails.builder()
+                                .reason(CompactionReason.REQUEST_PREFLIGHT)
+                                .summaryLength(0)
+                                .fileChanges(List.of())
+                                .build())
+                        .build());
+
+        phase.preflight(context, () -> {
+            int call = supplierCalls.incrementAndGet();
+            return LlmRequest.builder()
+                    .systemPrompt(call <= 3 ? "x".repeat(4_000) : "small")
+                    .messages(new ArrayList<>(context.getSession().getMessages()))
+                    .build();
+        }, 1);
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
+        assertEquals(3, diagnostics.get("attempt"),
+                "loop must reach max attempts before the post-loop estimate");
+        assertEquals(false, diagnostics.get("overThreshold"),
+                "post-loop estimate observed the request now fits - overThreshold must flip to false");
     }
 }

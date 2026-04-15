@@ -242,7 +242,7 @@ class CompactionOrchestrationServiceTest {
                         "fallbackUsed", "fileChanges"),
                 List.copyOf(((Map<?, ?>) persisted).keySet()),
                 "session.metadata[compaction.last.details] must use the canonical payload shape from "
-                        + "CompactionPayloadMapper — session metadata and context attribute share one schema");
+                        + "CompactionPayloadMapper - session metadata and context attribute share one schema");
 
         ArgumentCaptor<AgentSession> sessionCaptor = ArgumentCaptor.forClass(AgentSession.class);
         verify(sessionPort).save(sessionCaptor.capture());
@@ -449,6 +449,248 @@ class CompactionOrchestrationServiceTest {
 
         assertTrue(result.usedSummary());
         assertFalse(summaryMessage.getMetadata().containsKey("compactionDetails"));
+        assertTrue(session.getMetadata().containsKey(ContextAttributes.COMPACTION_LAST_DETAILS));
+    }
+
+    @Test
+    void shouldTolerateSessionWithNullMessageList() {
+        // Session loaded from cold storage may have no messages yet (null
+        // field, not an empty list). The compact path must route through the
+        // empty-list fallback instead of throwing an NPE on getMessages(). Pass
+        // messages(null) explicitly so Lombok's @Builder.Default does not
+        // mask the null field with an empty ArrayList.
+        AgentSession session = AgentSession.builder()
+                .id("s-null-messages")
+                .messages(null)
+                .metadata(null)
+                .build();
+        when(sessionPort.get("s-null-messages")).thenReturn(Optional.of(session));
+        when(runtimeConfigService.isCompactionPreserveTurnBoundariesEnabled()).thenReturn(false);
+        when(runtimeConfigService.getCompactionDetailsMaxItemsPerCategory()).thenReturn(10);
+
+        CompactionPreparation preparation = CompactionPreparation.builder()
+                .sessionId("s-null-messages")
+                .reason(CompactionReason.MANUAL_COMMAND)
+                .messagesToCompact(List.of())
+                .messagesToKeep(List.of())
+                .splitTurnDetected(false)
+                .build();
+        when(preparationService.prepare("s-null-messages", List.of(), 5,
+                CompactionReason.MANUAL_COMMAND, false))
+                .thenReturn(preparation);
+
+        CompactionDetails emptyDetails = CompactionDetails.builder()
+                .schemaVersion(1)
+                .reason(CompactionReason.MANUAL_COMMAND)
+                .summarizedCount(0)
+                .keptCount(0)
+                .usedLlmSummary(false)
+                .summaryLength(0)
+                .toolCount(0)
+                .readFilesCount(0)
+                .modifiedFilesCount(0)
+                .durationMs(0)
+                .toolNames(List.of())
+                .readFiles(List.of())
+                .modifiedFiles(List.of())
+                .fileChanges(List.of())
+                .splitTurnDetected(false)
+                .fallbackUsed(false)
+                .build();
+        when(detailsExtractor.extract(any(), any(), any(Integer.class), any(Integer.class), any(Boolean.class),
+                any(Integer.class), any(Boolean.class), any(Boolean.class), any(Long.class), any(Integer.class)))
+                .thenReturn(emptyDetails);
+
+        CompactionResult result = service.compact("s-null-messages", CompactionReason.MANUAL_COMMAND, 5);
+
+        assertEquals(0, result.removed());
+        assertFalse(result.usedSummary());
+        assertNotNull(session.getMetadata());
+        assertTrue(session.getMetadata().containsKey(ContextAttributes.COMPACTION_LAST_DETAILS));
+    }
+
+    @Test
+    void shouldTreatNullSummaryAsFallbackPath() {
+        // compactionService.summarize() may legitimately return null when the
+        // provider gives an empty response. The orchestrator must treat that
+        // identically to blank: usedSummary=false, no summary message created,
+        // details.summaryLength=0 (not NPE from summary.length()).
+        Message m1 = user("u1");
+        Message m2 = assistant("a1");
+        AgentSession session = sessionWithMessages("s-null-summary", List.of(m1, m2));
+        when(sessionPort.get("s-null-summary")).thenReturn(Optional.of(session));
+        when(runtimeConfigService.isCompactionPreserveTurnBoundariesEnabled()).thenReturn(true);
+        when(runtimeConfigService.getCompactionDetailsMaxItemsPerCategory()).thenReturn(10);
+
+        CompactionPreparation preparation = CompactionPreparation.builder()
+                .sessionId("s-null-summary")
+                .reason(CompactionReason.MANUAL_COMMAND)
+                .messagesToCompact(List.of(m1))
+                .messagesToKeep(List.of(m2))
+                .splitTurnDetected(false)
+                .build();
+        when(preparationService.prepare("s-null-summary", session.getMessages(), 1,
+                CompactionReason.MANUAL_COMMAND, true))
+                .thenReturn(preparation);
+        when(compactionService.summarize(List.of(m1))).thenReturn(null);
+
+        CompactionDetails details = CompactionDetails.builder()
+                .schemaVersion(1)
+                .reason(CompactionReason.MANUAL_COMMAND)
+                .summarizedCount(1)
+                .keptCount(1)
+                .usedLlmSummary(false)
+                .summaryLength(0)
+                .toolCount(0)
+                .readFilesCount(0)
+                .modifiedFilesCount(0)
+                .durationMs(0)
+                .toolNames(List.of())
+                .readFiles(List.of())
+                .modifiedFiles(List.of())
+                .fileChanges(List.of())
+                .splitTurnDetected(false)
+                .fallbackUsed(true)
+                .build();
+        when(detailsExtractor.extract(
+                eq(CompactionReason.MANUAL_COMMAND),
+                eq(List.of(m1)),
+                eq(1),
+                eq(1),
+                eq(false),
+                eq(0),
+                eq(false),
+                eq(true),
+                eq(0L),
+                eq(10)))
+                .thenReturn(details);
+
+        CompactionResult result = service.compact("s-null-summary", CompactionReason.MANUAL_COMMAND, 1);
+
+        assertEquals(1, result.removed());
+        assertFalse(result.usedSummary());
+        assertNull(result.summaryMessage());
+        verify(compactionService, never()).createSummaryMessage(any());
+        verify(sessionPort).save(session);
+    }
+
+    @Test
+    void shouldAttachCompactionDetailsWhenSummaryMessageStartsWithNullMetadata() {
+        // compactionService.createSummaryMessage() may return a Message whose
+        // metadata field was never initialized (null, not empty). The
+        // orchestrator must still attach the compactionDetails entry by
+        // creating a fresh map - covers the metadata==null arm of the
+        // ternary in compact().
+        Message m1 = user("u1");
+        Message m2 = assistant("a1");
+        AgentSession session = sessionWithMessages("s-null-metadata", List.of(m1, m2));
+        when(sessionPort.get("s-null-metadata")).thenReturn(Optional.of(session));
+        when(runtimeConfigService.isCompactionPreserveTurnBoundariesEnabled()).thenReturn(true);
+        when(runtimeConfigService.getCompactionDetailsMaxItemsPerCategory()).thenReturn(10);
+        when(runtimeConfigService.isCompactionDetailsEnabled()).thenReturn(true);
+
+        CompactionPreparation preparation = CompactionPreparation.builder()
+                .sessionId("s-null-metadata")
+                .reason(CompactionReason.MANUAL_COMMAND)
+                .messagesToCompact(List.of(m1))
+                .messagesToKeep(List.of(m2))
+                .splitTurnDetected(false)
+                .build();
+        when(preparationService.prepare("s-null-metadata", session.getMessages(), 1,
+                CompactionReason.MANUAL_COMMAND, true))
+                .thenReturn(preparation);
+
+        when(compactionService.summarize(List.of(m1))).thenReturn("sum");
+        Message summaryMessage = Message.builder()
+                .role("system")
+                .content("[Conversation summary]\nsum")
+                .build();
+        assertNull(summaryMessage.getMetadata(), "precondition: summary message has null metadata");
+        when(compactionService.createSummaryMessage("sum")).thenReturn(summaryMessage);
+
+        CompactionDetails details = CompactionDetails.builder()
+                .schemaVersion(1)
+                .reason(CompactionReason.MANUAL_COMMAND)
+                .summarizedCount(1)
+                .keptCount(1)
+                .usedLlmSummary(true)
+                .summaryLength(3)
+                .toolCount(0)
+                .readFilesCount(0)
+                .modifiedFilesCount(0)
+                .durationMs(0)
+                .toolNames(List.of())
+                .readFiles(List.of())
+                .modifiedFiles(List.of())
+                .fileChanges(List.of())
+                .splitTurnDetected(false)
+                .fallbackUsed(false)
+                .build();
+        when(detailsExtractor.extract(any(), any(), any(Integer.class), any(Integer.class), any(Boolean.class),
+                any(Integer.class), any(Boolean.class), any(Boolean.class), any(Long.class), any(Integer.class)))
+                .thenReturn(details);
+
+        CompactionResult result = service.compact("s-null-metadata", CompactionReason.MANUAL_COMMAND, 1);
+
+        assertTrue(result.usedSummary());
+        assertNotNull(summaryMessage.getMetadata(),
+                "summary message metadata should be lazily created to hold compactionDetails");
+        assertTrue(summaryMessage.getMetadata().containsKey("compactionDetails"));
+    }
+
+    @Test
+    void shouldInitializeSessionMetadataWhenPersistingDetailsOnFreshSession() {
+        // A session that was never loaded with metadata (getMetadata() == null)
+        // must have its metadata map lazily created on first persistDetails
+        // write - otherwise the compaction.last.details key is lost.
+        Message m1 = user("u1");
+        Message m2 = assistant("a1");
+        AgentSession session = AgentSession.builder()
+                .id("s-fresh")
+                .messages(new ArrayList<>(List.of(m1, m2)))
+                // metadata omitted -> null
+                .build();
+        when(sessionPort.get("s-fresh")).thenReturn(Optional.of(session));
+        when(runtimeConfigService.isCompactionPreserveTurnBoundariesEnabled()).thenReturn(true);
+        when(runtimeConfigService.getCompactionDetailsMaxItemsPerCategory()).thenReturn(10);
+
+        CompactionPreparation preparation = CompactionPreparation.builder()
+                .sessionId("s-fresh")
+                .reason(CompactionReason.MANUAL_COMMAND)
+                .messagesToCompact(List.of())
+                .messagesToKeep(List.of(m1, m2))
+                .splitTurnDetected(false)
+                .build();
+        when(preparationService.prepare("s-fresh", session.getMessages(), 2,
+                CompactionReason.MANUAL_COMMAND, true))
+                .thenReturn(preparation);
+
+        CompactionDetails details = CompactionDetails.builder()
+                .schemaVersion(1)
+                .reason(CompactionReason.MANUAL_COMMAND)
+                .summarizedCount(0)
+                .keptCount(2)
+                .usedLlmSummary(false)
+                .summaryLength(0)
+                .toolCount(0)
+                .readFilesCount(0)
+                .modifiedFilesCount(0)
+                .durationMs(0)
+                .toolNames(List.of())
+                .readFiles(List.of())
+                .modifiedFiles(List.of())
+                .fileChanges(List.of())
+                .splitTurnDetected(false)
+                .fallbackUsed(false)
+                .build();
+        when(detailsExtractor.extract(any(), any(), any(Integer.class), any(Integer.class), any(Boolean.class),
+                any(Integer.class), any(Boolean.class), any(Boolean.class), any(Long.class), any(Integer.class)))
+                .thenReturn(details);
+
+        service.compact("s-fresh", CompactionReason.MANUAL_COMMAND, 2);
+
+        assertNotNull(session.getMetadata(),
+                "persistDetails must lazily initialize the session metadata map");
         assertTrue(session.getMetadata().containsKey(ContextAttributes.COMPACTION_LAST_DETAILS));
     }
 

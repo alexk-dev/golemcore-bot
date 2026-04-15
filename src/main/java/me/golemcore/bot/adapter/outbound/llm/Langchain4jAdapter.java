@@ -511,8 +511,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private boolean isRateLimitError(Throwable e) {
         // Use identity semantics for the visited set: the intent is "have I seen this
         // exact cause object before" (cycle guard), not value equality. A future
-        // provider exception that overrides equals/hashCode — or a wrapped cause that
-        // happens to compare equal to an earlier frame — must not collapse into a
+        // provider exception that overrides equals/hashCode - or a wrapped cause that
+        // happens to compare equal to an earlier frame - must not collapse into a
         // single visited entry and prematurely terminate the cause walk.
         Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Throwable current = e; current != null && visited.add(current); current = current.getCause()) {
@@ -526,7 +526,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             }
             String normalized = raw.toLowerCase(Locale.ROOT);
             // Context-overflow errors sometimes carry rate-limit-adjacent wording
-            // ("too many tokens") — they must NOT be retried as rate limits.
+            // ("too many tokens") - they must NOT be retried as rate limits.
             if (LlmErrorPatterns.matchesContextOverflow(normalized)) {
                 continue;
             }
@@ -742,7 +742,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     @Override
     public List<String> getSupportedModels() {
-        // Build from models.json — provider/modelName for each configured provider
+        // Build from models.json - provider/modelName for each configured provider.
         List<String> models = new ArrayList<>();
         Map<String, ModelCatalogEntry> modelsConfig = modelConfig
                 .getAllModels();

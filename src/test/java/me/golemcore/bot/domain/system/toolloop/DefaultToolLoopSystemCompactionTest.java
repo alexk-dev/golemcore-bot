@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
+import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -17,7 +18,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -236,6 +239,76 @@ class DefaultToolLoopSystemCompactionTest extends DefaultToolLoopSystemFixture {
         verify(compactionService).compact(
                 "sess-overflow-policy-only", CompactionReason.CONTEXT_OVERFLOW_RECOVERY, 2);
         verify(llmPort, times(2)).chat(any());
+    }
+
+    @Test
+    void shouldSurfaceOriginalOverflowWhenOverflowRecoveryCompactionThrows() {
+        AgentSession session = AgentSession.builder()
+                .id("sess-overflow-recovery-error")
+                .chatId("chat-1")
+                .messages(new ArrayList<>())
+                .build();
+        for (int i = 0; i < 4; i++) {
+            session.addMessage(Message.builder()
+                    .role(i % 2 == 0 ? "user" : "assistant")
+                    .content("message-" + i)
+                    .timestamp(clock.instant())
+                    .build());
+        }
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>(session.getMessages()))
+                .build();
+
+        when(runtimeConfigService.getTurnMaxLlmCalls()).thenReturn(4);
+        when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(4);
+        when(runtimeConfigService.getTurnDeadline()).thenReturn(Duration.ofMinutes(1));
+        when(runtimeConfigService.isTurnAutoRetryEnabled()).thenReturn(false);
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("model_ratio");
+        when(runtimeConfigService.getCompactionModelThresholdRatio()).thenReturn(0.8d);
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(10_000);
+        when(runtimeConfigService.getCompactionKeepLastMessages()).thenReturn(2);
+        when(runtimeConfigService.isCompactionEnabled()).thenReturn(true);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
+
+        CompactionOrchestrationService compactionService = mock(CompactionOrchestrationService.class);
+        when(compactionService.compact(
+                "sess-overflow-recovery-error", CompactionReason.CONTEXT_OVERFLOW_RECOVERY, 2))
+                .thenThrow(new IllegalStateException("summary store unavailable"));
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("context length exceeded")));
+
+        DefaultToolLoopSystem overflowSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(new DefaultRequestViewBuilder())
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .runtimeConfigService(runtimeConfigService)
+                .compactionOrchestrationService(compactionService)
+                .contextTokenEstimator(new ContextTokenEstimator())
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
+                .clock(clock)
+                .build();
+
+        ToolLoopTurnResult result = assertDoesNotThrow(() -> overflowSystem.processTurn(context),
+                "overflow recovery failure must not escape DefaultToolLoopSystem.processTurn");
+
+        assertFalse(result.finalAnswerReady());
+        assertEquals(1, result.llmCalls());
+        assertEquals(LlmErrorClassifier.CONTEXT_LENGTH_EXCEEDED,
+                context.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        verify(compactionService).compact(
+                "sess-overflow-recovery-error", CompactionReason.CONTEXT_OVERFLOW_RECOVERY, 2);
+        verify(llmPort).chat(any());
+
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_CONTEXT_OVERFLOW_RECOVERY);
+        assertNotNull(diagnostics);
+        assertEquals(true, diagnostics.get("recoveryAttempted"));
+        assertEquals("error", diagnostics.get("recoveryOutcome"));
+        assertEquals(0, diagnostics.get("recoveryRemoved"));
     }
 
     @Test

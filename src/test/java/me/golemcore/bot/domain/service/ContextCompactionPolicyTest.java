@@ -123,7 +123,7 @@ class ContextCompactionPolicyTest {
 
         assertEquals(12_345, policy.resolveHistoryThreshold(AgentContext.builder().build()));
         // The configured fallback is a user-declared wire cap, not a model
-        // max-input-tokens value. Preflight must return it verbatim — treating
+        // max-input-tokens value. Preflight must return it verbatim - treating
         // it as modelMax and subtracting an output reserve would silently
         // shrink the operator's intended budget by 1024-32768 tokens.
         assertEquals(12_345, policy.resolveFullRequestThreshold(AgentContext.builder().build()));
@@ -137,7 +137,7 @@ class ContextCompactionPolicyTest {
         int threshold = policy.resolveFullRequestThreshold(AgentContext.builder().build());
 
         assertEquals(200_000, threshold,
-                "configured fallback must be used verbatim — preflight must not subtract an output reserve "
+                "configured fallback must be used verbatim - preflight must not subtract an output reserve "
                         + "from a user-declared wire cap when the model registry is silent");
     }
 
@@ -182,6 +182,99 @@ class ContextCompactionPolicyTest {
         int threshold = policy.resolveHistoryThreshold(AgentContext.builder().build());
 
         assertEquals(Integer.MAX_VALUE, threshold);
+    }
+
+    @Test
+    void shouldResolveFullRequestBudgetUnderTokenThresholdModeWithConfiguredCap() {
+        // token_threshold mode with a non-zero configured cap: preflight must
+        // take the min of modelThreshold and the configured value so operators
+        // can hand-tighten the budget under the model safety ratio.
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(4_000);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(20_000);
+
+        int threshold = policy.resolveFullRequestThreshold(AgentContext.builder().build());
+
+        // modelThreshold = floor(20000 * SAFETY_RATIO); configured=4000 is
+        // smaller, so min wins. The exact safety ratio is internal, so the
+        // test only locks "configured applied, and never exceeds the model
+        // safety cap".
+        assertTrue(threshold <= 4_000, "must clamp to configured cap, got " + threshold);
+        assertTrue(threshold > 0, "must stay strictly positive, got " + threshold);
+    }
+
+    @Test
+    void shouldResolveFullRequestBudgetUnderTokenThresholdModeWithoutConfiguredCap() {
+        // token_threshold mode with configured=0: the configured ternary falls
+        // through to the raw modelThreshold path, so the test locks that
+        // branch and confirms the returned value still accounts for the
+        // output-reserve saturation at the return site.
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(0);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(20_000);
+
+        int threshold = policy.resolveFullRequestThreshold(AgentContext.builder().build());
+
+        assertTrue(threshold > 0);
+        assertTrue(threshold < 20_000,
+                "result must still be capped by the output-reserve; got " + threshold);
+    }
+
+    @Test
+    void shouldClampInvalidRatioToDefaultInFullRequestPath() {
+        // Mirrors the history-path invalid-ratio guard but on the full-request
+        // threshold computation - operators may misconfigure the ratio and the
+        // policy must fall back to the internal default instead of producing a
+        // zero/over-sized budget.
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("model_ratio");
+        when(runtimeConfigService.getCompactionModelThresholdRatio()).thenReturn(-1.0d);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(20_000);
+
+        int threshold = policy.resolveFullRequestThreshold(AgentContext.builder().build());
+
+        assertTrue(threshold > 0);
+    }
+
+    @Test
+    void shouldClampRatioAboveOneInFullRequestPath() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("model_ratio");
+        when(runtimeConfigService.getCompactionModelThresholdRatio()).thenReturn(3.0d);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(20_000);
+
+        int threshold = policy.resolveFullRequestThreshold(AgentContext.builder().build());
+
+        assertTrue(threshold > 0);
+    }
+
+    @Test
+    void shouldFallBackToConfiguredHistoryThresholdWhenTokenModeAndModelLookupFails() {
+        // token_threshold history mode: on model registry failure, the policy
+        // must route through the configured fallback rather than propagating
+        // the exception. Guards the resolveHistoryTokenThreshold catch arm.
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(7_777);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenThrow(new IllegalStateException("registry offline"));
+
+        int threshold = policy.resolveHistoryThreshold(AgentContext.builder().build());
+
+        assertEquals(7_777, threshold);
+    }
+
+    @Test
+    void shouldResolveHistoryTokenThresholdWithoutConfiguredCap() {
+        // token_threshold history mode with configured=0: the ternary at
+        // resolveHistoryTokenThreshold must fall through to the raw model
+        // threshold instead of clamping to 0. This branch is distinct from
+        // the "modelMax=0 + configured=0" bypass already covered.
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("token_threshold");
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(0);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(20_000);
+
+        int threshold = policy.resolveHistoryThreshold(AgentContext.builder().build());
+
+        assertTrue(threshold > 0);
+        assertTrue(threshold <= 20_000);
     }
 
     @Test

@@ -27,14 +27,14 @@ public final class ContextAttributes {
     private ContextAttributes() {
     }
 
-    /** Boolean — signal to stop the agent loop after current iteration. */
-    /** LlmResponse — response from LLM execution. */
+    /** Boolean - signal to stop the agent loop after current iteration. */
+    /** LlmResponse - response from LLM execution. */
     public static final String LLM_RESPONSE = "llm.response";
 
-    /** String — LLM error message. */
+    /** String - LLM error message. */
     public static final String LLM_ERROR = "llm.error";
 
-    /** String — machine-readable LLM error classification code. */
+    /** String - machine-readable LLM error classification code. */
     public static final String LLM_ERROR_CODE = "llm.error.code";
 
     /** String ? active request trace identifier. */
@@ -78,16 +78,16 @@ public final class ContextAttributes {
      */
     public static final String CONTEXT_SCOPED_TOOLS = "context.scoped.tools";
 
-    /** Boolean — tools were executed in this iteration. */
+    /** Boolean - tools were executed in this iteration. */
 
     /**
-     * String — LLM model name that last generated tool calls in the session
+     * String - LLM model name that last generated tool calls in the session
      * (persisted in session metadata).
      */
     public static final String LLM_MODEL = "llm.model";
 
     /**
-     * String — reasoning effort used for the current LLM call (e.g. "low",
+     * String - reasoning effort used for the current LLM call (e.g. "low",
      * "medium", "high").
      */
     public static final String LLM_REASONING = "llm.reasoning";
@@ -109,10 +109,10 @@ public final class ContextAttributes {
     /** Boolean - session-scoped lock for the selected model tier. */
     public static final String SESSION_MODEL_TIER_FORCE = "session.modelTier.force";
 
-    /** Boolean — plan mode is active for the current session. */
+    /** Boolean - plan mode is active for the current session. */
     public static final String PLAN_MODE_ACTIVE = "plan.mode.active";
 
-    /** String — plan ID that needs user approval before execution. */
+    /** String - plan ID that needs user approval before execution. */
     public static final String PLAN_APPROVAL_NEEDED = "plan.approval.needed";
 
     /**
@@ -141,7 +141,7 @@ public final class ContextAttributes {
     public static final String ITERATION_LIMIT_REACHED = "iteration.limit.reached";
 
     /**
-     * Boolean — tool loop stopped due to internal limit (LLM calls / tool
+     * Boolean - tool loop stopped due to internal limit (LLM calls / tool
      * executions / deadline).
      */
     public static final String TOOL_LOOP_LIMIT_REACHED = "toolloop.limit.reached";
@@ -152,16 +152,16 @@ public final class ContextAttributes {
     public static final String TOOL_LOOP_LIMIT_REASON = "toolloop.limit.reason";
 
     /**
-     * List<RuntimeEvent> — runtime execution events for the current turn.
+     * List<RuntimeEvent> - runtime execution events for the current turn.
      */
     public static final String RUNTIME_EVENTS = "runtime.events";
 
     /**
-     * Boolean — stop tool execution between tool calls for current turn.
+     * Boolean - stop tool execution between tool calls for current turn.
      */
     public static final String TURN_INTERRUPT_REQUESTED = "turn.interrupt.requested";
 
-    /** String — queue kind for inbound message while a turn is running. */
+    /** String - queue kind for inbound message while a turn is running. */
     public static final String TURN_QUEUE_KIND = "turn.queue.kind";
 
     /**
@@ -180,7 +180,7 @@ public final class ContextAttributes {
     public static final String TURN_QUEUE_KIND_DELAYED_ACTION = "delayed_action";
 
     /**
-     * Boolean — current turn scheduled an internal retry instead of user feedback.
+     * Boolean - current turn scheduled an internal retry instead of user feedback.
      */
     public static final String TURN_INTERNAL_RETRY_SCHEDULED = "turn.internal.retry.scheduled";
 
@@ -217,7 +217,7 @@ public final class ContextAttributes {
     /** Boolean ? current inbound message is an internal runtime-only message. */
     public static final String TURN_INPUT_INTERNAL = "turn.input.internal";
 
-    /** WebSocketSession — reference to WebSocket session for streaming. */
+    /** WebSocketSession - reference to WebSocket session for streaming. */
     public static final String WEB_STREAM_SINK = "web.stream.sink";
 
     /** Boolean ? webhook delivery should be routed to an external channel. */
@@ -373,10 +373,10 @@ public final class ContextAttributes {
     /** Map<String,Object> ? latest structured compaction details. */
     public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";
 
-    /** Map<String,Object> ? latest LLM request token preflight diagnostics. */
+    /** Map<String,Object> - latest LLM request token preflight diagnostics. */
     public static final String LLM_REQUEST_PREFLIGHT = "llm.request.preflight";
 
-    /** Map<String,Object> ? latest LLM context-overflow recovery diagnostics. */
+    /** Map<String,Object> - latest LLM context-overflow recovery diagnostics. */
     public static final String LLM_CONTEXT_OVERFLOW_RECOVERY = "llm.context.overflow.recovery";
 
     /** List<Map<String,Object>> ? per-turn edited file stats for UI hints. */

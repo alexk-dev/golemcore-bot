@@ -18,7 +18,19 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Central compaction pipeline: prepare boundaries, summarize, persist details.
+ * Central compaction pipeline shared by every trigger source (auto-compaction,
+ * manual command, preflight, context-overflow recovery).
+ *
+ * <p>
+ * The service coordinates four collaborators: a
+ * {@link CompactionPreparationService} that decides which messages to drop vs.
+ * keep, a {@link CompactionService} that produces the summary text, a
+ * {@link CompactionDetailsExtractor} that builds the structured audit trail,
+ * and the {@link SessionPort} that persists the compacted session. The flow
+ * produces a single {@link CompactionResult} whether the compaction removed
+ * messages, became a no-op, or failed to locate the session, so callers can
+ * record diagnostics from one result shape.
+ * </p>
  */
 @Service
 public class CompactionOrchestrationService {
@@ -46,6 +58,35 @@ public class CompactionOrchestrationService {
         this.clock = clock;
     }
 
+    /**
+     * Compact the named session, keeping at most {@code keepLast} trailing messages
+     * and summarizing the rest if the preparation service can identify messages
+     * that may be removed.
+     *
+     * <p>
+     * Returns a {@link CompactionResult} with:
+     * </p>
+     * <ul>
+     * <li>{@code removed = -1} when the session cannot be located - the caller
+     * still receives a well-formed result and records diagnostics rather than
+     * throwing.</li>
+     * <li>{@code removed = 0} with no-op details when there was nothing to remove
+     * (keepLast larger than the session, or the preparation service refused to
+     * split a turn).</li>
+     * <li>{@code removed > 0} when messages were dropped. A summary message is
+     * present only when the summarizer returns non-blank text; otherwise
+     * {@code usedSummary=false} and the kept messages are persisted without a
+     * synthetic summary.</li>
+     * </ul>
+     *
+     * @param sessionId
+     *            the session to compact
+     * @param reason
+     *            classification used downstream for telemetry and summary prompt
+     *            selection
+     * @param keepLast
+     *            trailing messages to retain intact
+     */
     public CompactionResult compact(String sessionId, CompactionReason reason, int keepLast) {
         Optional<AgentSession> sessionOptional = sessionPort.get(sessionId);
         if (sessionOptional.isEmpty()) {

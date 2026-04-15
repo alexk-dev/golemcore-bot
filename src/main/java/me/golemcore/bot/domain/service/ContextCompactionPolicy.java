@@ -76,7 +76,7 @@ public class ContextCompactionPolicy {
      * ratio/safety math and reserve output room so input does not consume the whole
      * model window. When the registry is silent, the configured fallback
      * ({@code runtimeConfig.compactionMaxContextTokens}) is treated as a
-     * user-declared wire cap and returned verbatim — treating it as modelMax would
+     * user-declared wire cap and returned verbatim - treating it as modelMax would
      * silently shrink the operator's intended budget by the output reserve.
      */
     public int resolveFullRequestThreshold(AgentContext context) {
@@ -92,7 +92,7 @@ public class ContextCompactionPolicy {
         }
         if (fullRequestBypassLogged.compareAndSet(false, true)) {
             log.warn("[ToolLoop] Preflight threshold bypass: model registry returned no max-input-tokens and "
-                    + "runtimeConfig.compactionMaxContextTokens is unset — all requests will pass through without "
+                    + "runtimeConfig.compactionMaxContextTokens is unset - all requests will pass through without "
                     + "a size check. Configure one of the two to re-enable preflight compaction.");
         }
         return Integer.MAX_VALUE;
@@ -169,7 +169,7 @@ public class ContextCompactionPolicy {
         }
         if (historyBypassLogged.compareAndSet(false, true)) {
             log.warn("[AutoCompact] History threshold bypass: model registry returned no max-input-tokens and "
-                    + "runtimeConfig.compactionMaxContextTokens is unset — auto-compaction will not fire. "
+                    + "runtimeConfig.compactionMaxContextTokens is unset - auto-compaction will not fire. "
                     + "Configure one of the two to re-enable history compaction.");
         }
         return Integer.MAX_VALUE;

@@ -51,7 +51,7 @@ class LlmRequestPreflightPhase {
     // Three attempts is the empirical sweet spot: one attempt handles normal
     // growth, two handles a long-tail turn where the first compaction couldn't
     // fit below threshold, three is the hard ceiling before we give up and let
-    // the provider reject. More attempts burn latency without paying off —
+    // the provider reject. More attempts burn latency without paying off -
     // keepLast halving saturates quickly.
     private static final int PREFLIGHT_MAX_ATTEMPTS = 3;
 
@@ -86,7 +86,7 @@ class LlmRequestPreflightPhase {
                 // runCompactionAttempt returns false when compaction is disabled,
                 // there's nothing to compact, or the last attempt was a no-op.
                 // In those cases we stop retrying and send the request anyway so
-                // the provider can reject with a precise error — better than
+                // the provider can reject with a precise error - better than
                 // spinning forever on an unfixable state.
                 if (!runCompactionAttempt(context, diagnostics, estimatedTokens, threshold, attempt, llmCall)) {
                     terminalPublishStarted = true;
@@ -98,7 +98,7 @@ class LlmRequestPreflightPhase {
                 }
                 // Compaction mutated the session; ask the caller to rebuild the
                 // request from the now-shorter message list. The supplier is
-                // responsible for pulling fresh state — we never reuse the old
+                // responsible for pulling fresh state - we never reuse the old
                 // LlmRequest instance because it still points at the pre-compact
                 // messages.
                 request = requestSupplier.get();
@@ -163,7 +163,7 @@ class LlmRequestPreflightPhase {
 
     /**
      * Mutable per-call diagnostic state. Centralising every field in one place
-     * guarantees that all publish sites emit the same schema — there is only one
+     * guarantees that all publish sites emit the same schema - there is only one
      * {@link #toMap(boolean)} method, so a new field can never be accidentally
      * skipped on one of the exit paths. The class is private to the phase and reset
      * on every {@link LlmRequestPreflightPhase#preflight} entry, so stale state
@@ -185,7 +185,7 @@ class LlmRequestPreflightPhase {
         private boolean overThreshold;
         private boolean compactionAttempted;
         // Cumulative across every preflight attempt within a single preflight()
-        // call — a later no-op attempt must not hide earlier successful
+        // call - a later no-op attempt must not hide earlier successful
         // removals. Reset-per-call happens implicitly because this instance is
         // freshly constructed at the top of preflight().
         private int compactionRemoved;

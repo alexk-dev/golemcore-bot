@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -214,6 +215,35 @@ class ContextCompactionCoordinatorTest {
     }
 
     @Test
+    void shouldRecordOverflowRecoveryErrorAndReturnFalseWhenCompactionThrows() {
+        AgentContext context = buildContext(6);
+        when(compactionService.compact("session-1", CompactionReason.CONTEXT_OVERFLOW_RECOVERY, 2))
+                .thenThrow(new IllegalStateException("summary store unavailable"));
+
+        boolean recovered = assertDoesNotThrow(
+                () -> coordinator.recoverFromContextOverflow(context, 4, 0),
+                "overflow recovery is a best-effort fallback; compaction failure must not escape and "
+                        + "hide the original provider context-overflow error");
+
+        assertFalse(recovered,
+                "failed recovery must return false so LlmCallPhase surfaces the original context overflow");
+        Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_CONTEXT_OVERFLOW_RECOVERY);
+        assertNotNull(diagnostics,
+                "failed overflow recovery must overwrite stale/null diagnostics with a terminal error snapshot");
+        assertEquals(true, diagnostics.get("recoveryAttempted"));
+        assertEquals(0, diagnostics.get("recoveryRemoved"));
+        assertEquals(false, diagnostics.get("recoveryUsedSummary"));
+        assertEquals("error", diagnostics.get("recoveryOutcome"));
+        assertEquals(4, diagnostics.get("llmCall"));
+
+        List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        assertTrue(events.stream()
+                .filter(event -> RuntimeEventType.COMPACTION_FINISHED.equals(event.type()))
+                .anyMatch(event -> "error".equals(event.payload().get("outcome"))),
+                "runCompaction must still emit the canonical COMPACTION_FINISHED error event");
+    }
+
+    @Test
     void shouldRecordOverflowRecoveryOutcomeWhenCompactionDisabled() {
         AgentContext context = buildContext(6);
         when(runtimeConfigService.isCompactionEnabled()).thenReturn(false);
@@ -239,6 +269,97 @@ class ContextCompactionCoordinatorTest {
         assertFalse(recovered,
                 "a no-op compaction means the state is unrecoverable - caller must surface the "
                         + "original overflow error instead of silently retrying");
+    }
+
+    @Test
+    void runCompaction_shouldReturnNullForNullContext() {
+        // Every null guard inside runCompaction matters: the coordinator is
+        // wired into the pipeline before session validation and must never
+        // throw at the gate even if the caller forgets to pass a context.
+        assertEquals(null, coordinator.runCompaction(null, CompactionReason.MANUAL_COMMAND, 2, 1, null));
+        verify(compactionService, never()).compact(any(), any(), anyInt());
+    }
+
+    @Test
+    void runCompaction_shouldReturnNullForSessionWithoutMessages() {
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("s").chatId("c").build())
+                .messages(new ArrayList<>())
+                .build();
+
+        assertEquals(null, coordinator.runCompaction(context, CompactionReason.MANUAL_COMMAND, 2, 1, null));
+        verify(compactionService, never()).compact(any(), any(), anyInt());
+    }
+
+    @Test
+    void runCompaction_shouldReturnNullForSingleMessageSession() {
+        // The keepLast floor is 1; compacting a session of 1 message would
+        // remove zero and waste a summarize call. Short-circuit guards that.
+        AgentContext context = buildContext(1);
+
+        assertEquals(null, coordinator.runCompaction(context, CompactionReason.MANUAL_COMMAND, 2, 1, null));
+        verify(compactionService, never()).compact(any(), any(), anyInt());
+    }
+
+    @Test
+    void runCompaction_shouldMergeExtraStartedPayloadIntoEvent() {
+        AgentContext context = buildContext(4);
+        when(compactionService.compact("session-1", CompactionReason.MANUAL_COMMAND, 2))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
+
+        coordinator.runCompaction(context, CompactionReason.MANUAL_COMMAND, 2, 3,
+                Map.of("probe", "diag", "rawCutIndex", 99));
+
+        List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        RuntimeEvent started = events.stream()
+                .filter(event -> RuntimeEventType.COMPACTION_STARTED.equals(event.type()))
+                .findFirst().orElseThrow();
+        assertEquals("diag", started.payload().get("probe"),
+                "extraStartedPayload entries must be merged into the STARTED event");
+        assertEquals(99, started.payload().get("rawCutIndex"),
+                "extraStartedPayload must be allowed to override base keys like rawCutIndex");
+        // progressReasonFor's default arm - MANUAL_COMMAND is neither
+        // REQUEST_PREFLIGHT nor CONTEXT_OVERFLOW_RECOVERY.
+        verify(turnProgressService).flushBufferedTools(context, "compaction");
+    }
+
+    @Test
+    void runCompaction_shouldTolerateNullRuntimeEventAndTurnProgressServices() {
+        // The coordinator is built from a domain factory that may assemble a
+        // degenerate wiring (e.g. disabled telemetry). runCompaction must keep
+        // working when either service is null - the feature may not emit
+        // events but the compaction itself must still run.
+        ContextCompactionCoordinator degenerate = new ContextCompactionCoordinator(
+                new ContextCompactionPolicy(runtimeConfigService, mock(ModelSelectionService.class)),
+                compactionService,
+                null,
+                null);
+        AgentContext context = buildContext(4);
+        when(compactionService.compact(any(), any(), anyInt()))
+                .thenReturn(CompactionResult.builder().removed(0).usedSummary(false).build());
+
+        assertDoesNotThrow(() -> degenerate.runCompaction(context, CompactionReason.MANUAL_COMMAND, 2, 1, null));
+    }
+
+    @Test
+    void recoverFromContextOverflow_shouldReturnFalseForNullContext() {
+        assertFalse(coordinator.recoverFromContextOverflow(null, 1, 0));
+    }
+
+    @Test
+    void recoverFromContextOverflow_shouldReturnFalseForNullSession() {
+        AgentContext context = AgentContext.builder().messages(new ArrayList<>()).build();
+        assertFalse(coordinator.recoverFromContextOverflow(context, 1, 0));
+    }
+
+    @Test
+    void recoverFromContextOverflow_shouldReturnFalseWhenSessionMessagesNull() {
+        AgentContext context = AgentContext.builder()
+                .session(AgentSession.builder().id("s").chatId("c").build())
+                .messages(new ArrayList<>())
+                .build();
+
+        assertFalse(coordinator.recoverFromContextOverflow(context, 1, 0));
     }
 
     @AfterEach

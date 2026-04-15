@@ -48,17 +48,17 @@ import java.util.Objects;
  *
  * <p>
  * Implements the Scenario A contract: the LLM returns tool calls, tools are
- * executed, and the LLM returns a final answer — all inside a single
+ * executed, and the LLM returns a final answer - all inside a single
  * {@link #processTurn} call.
  *
  * <p>
  * The orchestrator delegates to phase classes for implementation details:
  * <ul>
- * <li>{@link LlmCallPhase} — LLM invocation, retry, context overflow
+ * <li>{@link LlmCallPhase} - LLM invocation, retry, context overflow
  * recovery</li>
- * <li>{@link ToolExecutionPhase} — tool call iteration, plan intercept,
+ * <li>{@link ToolExecutionPhase} - tool call iteration, plan intercept,
  * tracing</li>
- * <li>{@link ToolFailurePolicy} — stop conditions, recovery decisions</li>
+ * <li>{@link ToolFailurePolicy} - stop conditions, recovery decisions</li>
  * </ul>
  *
  * <p>
@@ -97,7 +97,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 : new ContextTokenEstimator();
         // Preflight's budget resolver has exactly one production assembly site
         // (ToolLoopAutoConfiguration). Forcing callers to wire it removes the
-        // temptation to let the fallback quietly cover a broken bean graph —
+        // temptation to let the fallback quietly cover a broken bean graph -
         // any missing wiring now fails loudly at startup instead of at the
         // first LLM call.
         ContextCompactionPolicy contextCompactionPolicy = Objects.requireNonNull(builder.contextCompactionPolicy,

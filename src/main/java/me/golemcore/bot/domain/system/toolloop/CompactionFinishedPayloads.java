@@ -39,6 +39,11 @@ final class CompactionFinishedPayloads {
     private CompactionFinishedPayloads() {
     }
 
+    /**
+     * Build the payload for a successful compaction cycle. Copies counters out of
+     * {@link CompactionResult#details()} when available - missing details (e.g.
+     * legacy fallback path) leaves the counters at their base-zero defaults.
+     */
     static Map<String, Object> success(CompactionResult result, int keepLast, CompactionReason reason) {
         Map<String, Object> payload = base(keepLast, reason, OUTCOME_COMPACTED);
         payload.put("removed", result.removed());
@@ -54,10 +59,23 @@ final class CompactionFinishedPayloads {
         return payload;
     }
 
+    /**
+     * Build the payload for a compaction cycle that ran but removed nothing. The
+     * base schema is used verbatim - counters stay zero and outcome is
+     * {@link #OUTCOME_ATTEMPTED_NO_CHANGE} so dashboards can distinguish it from
+     * "compaction not attempted" diagnostics published by preflight.
+     */
     static Map<String, Object> noChange(int keepLast, CompactionReason reason) {
         return base(keepLast, reason, OUTCOME_ATTEMPTED_NO_CHANGE);
     }
 
+    /**
+     * Build the payload for a compaction cycle that threw. The payload carries the
+     * exception type and normalized message (empty string instead of null so
+     * downstream readers can treat the key as a {@link String} without extra
+     * null-guards), plus the session size observed at the moment the catch block
+     * fired.
+     */
     static Map<String, Object> error(int observedSessionSize, CompactionReason reason, Throwable error) {
         // The error path keeps kept=0 to match the removed=0/kept=0 convention
         // shared with the success no-op path, and surfaces the observed session

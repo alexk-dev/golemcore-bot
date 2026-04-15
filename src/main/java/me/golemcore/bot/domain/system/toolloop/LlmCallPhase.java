@@ -61,7 +61,7 @@ import java.util.concurrent.ExecutionException;
  * overflow recovery via compaction.
  *
  * <p>
- * This phase is stateless — all mutable state lives in {@link TurnState}.
+ * This phase is stateless - all mutable state lives in {@link TurnState}.
  *
  * @see DefaultToolLoopSystem
  * @see TurnState
@@ -112,11 +112,11 @@ class LlmCallPhase {
         record Success(LlmResponse response) implements LlmCallOutcome {
         }
 
-        /** A transient error was recovered via retry — caller should continue the loop. */
+        /** A transient error was recovered via retry - caller should continue the loop. */
         record RetryScheduled() implements LlmCallOutcome {
         }
 
-        /** The call failed permanently — return this result to the caller. */
+        /** The call failed permanently - return this result to the caller. */
         record Failed(ToolLoopTurnResult result) implements LlmCallOutcome {
         }
 
@@ -190,15 +190,15 @@ class LlmCallPhase {
 
         interface EmptyResponseCheck {
 
-        /** The response is not empty — proceed to finalize. */
+        /** The response is not empty - proceed to finalize. */
         record NotEmpty() implements EmptyResponseCheck {
         }
 
-        /** The response is empty but within retry budget — loop should continue. */
+        /** The response is empty but within retry budget - loop should continue. */
         record RetryScheduled() implements EmptyResponseCheck {
         }
 
-        /** Retry budget exhausted — return this failure result. */
+        /** Retry budget exhausted - return this failure result. */
         record Failed(ToolLoopTurnResult result) implements EmptyResponseCheck {
         }
     }
