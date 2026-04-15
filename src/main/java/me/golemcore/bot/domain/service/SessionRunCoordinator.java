@@ -137,6 +137,7 @@ public class SessionRunCoordinator {
     }
 
     public void requestStop(String channelType, String chatId) {
+        clearDelayedActionsForStop(channelType, chatId);
         requestStop(channelType, chatId, null, null);
     }
 
@@ -157,6 +158,20 @@ public class SessionRunCoordinator {
         markInterruptRequested(key);
         publishStopRequestedEvent(key);
         log.info("[Stop] stop requested while no active runner: channel={}, chatId={}", channelType, chatId);
+    }
+
+    private void clearDelayedActionsForStop(String channelType, String chatId) {
+        if (delayedSessionActionService == null) {
+            return;
+        }
+        try {
+            int cleared = delayedSessionActionService.clearActiveActions(channelType, chatId);
+            if (cleared > 0) {
+                log.info("[Stop] cleared {} delayed actions for channel={}, chatId={}", cleared, channelType, chatId);
+            }
+        } catch (RuntimeException e) { // NOSONAR - stop must remain available even if cleanup fails
+            log.warn("[Stop] failed to clear delayed actions: {}", e.getMessage());
+        }
     }
 
     int runnerCount() {

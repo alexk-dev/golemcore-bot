@@ -1248,7 +1248,7 @@ public class RuntimeConfig {
         @Builder.Default
         private Integer tickSeconds = 1;
         @Builder.Default
-        private Integer maxPendingPerSession = 50;
+        private Integer maxPendingPerSession = 3;
         @Builder.Default
         private String maxDelay = "P30D";
         @Builder.Default

@@ -6,7 +6,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.SocketTimeoutException;
 import java.net.http.HttpTimeoutException;
-import java.util.HashSet;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
@@ -14,6 +15,17 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * Classifies LLM failures into stable machine-readable reason codes.
+ *
+ * <p>
+ * Two entry points exist: {@link #classifyFromThrowable(Throwable)} walks an
+ * exception cause chain using identity-based visited tracking (to survive
+ * value-equal wrappers) and consults both message heuristics and typed
+ * langchain4j exception classes; {@link #classifyFromDiagnostic(String)} parses
+ * a free-form diagnostic string and falls back to the same shared message
+ * patterns. Known failures map to the {@code public static final} code
+ * constants below; embedded {@code [llm.*]} codes are trusted verbatim for
+ * backward compatibility with diagnostics that were already annotated upstream.
+ * </p>
  */
 public final class LlmErrorClassifier {
 
@@ -89,24 +101,28 @@ public final class LlmErrorClassifier {
             return UNKNOWN;
         }
 
-        Set<Throwable> visited = new HashSet<>();
+        // Identity-based visited set: provider exception types may override
+        // equals/hashCode on message content, which would collapse two distinct
+        // wrapped causes into a single visited entry and short-circuit the walk
+        // before we reach the real signal frame. Cycle detection only needs
+        // "have I seen this exact object before", not value equality.
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         Throwable current = throwable;
-        while (current != null && !visited.contains(current)) {
-            visited.add(current);
+        while (current != null && visited.add(current)) {
 
             String embedded = extractCode(current.getMessage());
             if (embedded != null && !embedded.isBlank()) {
                 return embedded;
             }
 
-            String byType = classifyKnownThrowable(current);
-            if (!UNKNOWN.equals(byType)) {
-                return byType;
-            }
-
             String byMessage = classifyFromMessage(current.getMessage());
             if (!UNKNOWN.equals(byMessage)) {
                 return byMessage;
+            }
+
+            String byType = classifyKnownThrowable(current);
+            if (!UNKNOWN.equals(byType)) {
+                return byType;
             }
 
             current = current.getCause();
@@ -115,8 +131,9 @@ public final class LlmErrorClassifier {
     }
 
     /**
-     * Classify a diagnostic string. Free-form text is intentionally not parsed;
-     * only embedded code markers are trusted.
+     * Classify a diagnostic string. Embedded code markers are trusted first; if no
+     * code is present, shared provider context-overflow patterns are parsed so
+     * existing diagnostics can still trigger overflow recovery.
      */
     public static String classifyFromDiagnostic(String diagnostic) {
         if (diagnostic == null || diagnostic.isBlank()) {
@@ -165,6 +182,13 @@ public final class LlmErrorClassifier {
         return message.substring(1, end);
     }
 
+    /**
+     * Return {@code true} if the given code indicates a transient failure that a
+     * retry may recover from. Used by the adapter-level retry predicate to decide
+     * whether to retry vs. bubble the error up to the tool loop. Keep this set
+     * narrow - marking a non-transient code as retriable will drive latency and
+     * cost up for errors that cannot recover.
+     */
     public static boolean isTransientCode(String code) {
         if (code == null || code.isBlank()) {
             return false;
@@ -176,6 +200,12 @@ public final class LlmErrorClassifier {
                 || LANGCHAIN4J_RETRIABLE.equals(code);
     }
 
+    /**
+     * Return {@code true} iff the code marks a request that exceeded the provider's
+     * context window. The tool loop treats this as a one-shot recovery signal - it
+     * runs overflow-recovery compaction exactly once and retries the LLM call,
+     * rather than cycling through the normal retry predicate.
+     */
     public static boolean isContextOverflowCode(String code) {
         if (code == null || code.isBlank()) {
             return false;
@@ -286,11 +316,7 @@ public final class LlmErrorClassifier {
         }
 
         String normalized = message.toLowerCase(Locale.ROOT);
-        if (normalized.contains("context length")
-                || normalized.contains("context window")
-                || normalized.contains("maximum context")
-                || normalized.contains("token limit exceeded")
-                || normalized.contains("prompt is too long")) {
+        if (LlmErrorPatterns.matchesContextOverflow(normalized)) {
             return CONTEXT_LENGTH_EXCEEDED;
         }
 

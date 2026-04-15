@@ -33,7 +33,7 @@ export function PromptCreateCard({
         <p className="mt-1 text-sm leading-6 text-muted-foreground">Use lowercase names with hyphens.</p>
       </div>
 
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 flex min-w-0 flex-wrap gap-2">
         <Input
           value={newPromptName}
           onChange={(event) => onNameChange(event.target.value)}
@@ -42,12 +42,13 @@ export function PromptCreateCard({
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
-          className="flex-1"
+          className="min-w-0 flex-1"
         />
         <Button
           size="sm"
           onClick={onCreate}
           disabled={isCreating || newPromptName.length === 0 || !isValidPromptName || hasExistingPrompt}
+          className="flex-1 sm:flex-none"
         >
           <FiPlus size={14} />
           Create
@@ -106,7 +107,7 @@ export function PromptCatalogItem({
       onDrop={(event) => onDrop(event, section.name)}
       onDragEnd={onDragEnd}
       className={cn(
-        'rounded-3xl border p-4 transition-all duration-200',
+        'min-w-0 rounded-3xl border p-4 transition-all duration-200',
         isSelected
           ? 'border-primary/60 bg-primary/10 shadow-soft'
           : 'border-border/80 bg-card/70 hover:border-primary/30 hover:bg-card',
@@ -114,8 +115,12 @@ export function PromptCatalogItem({
         isDropTarget && 'border-primary bg-primary/5 shadow-soft'
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <button type="button" onClick={() => onSelect(section)} className="min-w-0 flex-1 text-left">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => onSelect(section)}
+          className="min-w-[min(100%,14rem)] flex-1 text-left"
+        >
           <div className="flex items-center gap-2">
             <span
               className={cn(
@@ -126,14 +131,14 @@ export function PromptCatalogItem({
             >
               <FiMenu size={13} />
             </span>
-            <div className="truncate text-sm font-semibold text-foreground">{section.name}</div>
+            <div className="whitespace-normal break-anywhere text-sm font-semibold text-foreground">{section.name}</div>
           </div>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             {section.description.length > 0 ? section.description : 'No description'}
           </p>
         </button>
 
-        <div className="flex shrink-0 items-start gap-2">
+        <div className="flex min-w-0 shrink-0 flex-wrap items-start justify-end gap-2">
           <Badge variant={section.enabled ? 'success' : 'secondary'}>P{section.order}</Badge>
           <div className="flex items-center gap-1">
             <Button
