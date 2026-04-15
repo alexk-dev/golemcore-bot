@@ -325,7 +325,7 @@ class PromotionWorkflowStateServiceTest {
         EvolutionCandidate blankId = EvolutionCandidate.builder()
                 .id("   ")
                 .build();
-        java.util.List<EvolutionCandidate> input = new java.util.ArrayList<>();
+        List<EvolutionCandidate> input = new java.util.ArrayList<>();
         input.add(valid);
         input.add(null);
         input.add(blankId);
