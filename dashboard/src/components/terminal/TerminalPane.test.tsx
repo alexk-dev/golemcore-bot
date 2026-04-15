@@ -233,6 +233,68 @@ describe('TerminalPane', () => {
     unmount(harness);
   });
 
+  it('does not re-drain when unrelated store slices change', () => {
+    const store = useTerminalStore.getState();
+    const tabId = store.openTab();
+
+    const harness = mount(tabId);
+    const socket = sockets[0];
+    if (!socket) {
+      throw new Error('expected mock socket');
+    }
+    socket.readyState = 1;
+    socket.onopen?.();
+
+    act(() => {
+      useTerminalStore.getState().enqueueInput(tabId, 'first\n');
+    });
+    const countAfterFirst = socket.sent.filter((msg) => msg.includes('"type":"input"')).length;
+    expect(countAfterFirst).toBe(1);
+
+    act(() => {
+      useTerminalStore.getState().setConnectionStatus('connected');
+    });
+    const countAfterUnrelated = socket.sent.filter((msg) => msg.includes('"type":"input"')).length;
+    expect(countAfterUnrelated).toBe(1);
+
+    act(() => {
+      const otherTabId = useTerminalStore.getState().openTab();
+      useTerminalStore.getState().enqueueInput(otherTabId, 'other\n');
+    });
+    const countAfterOtherTab = socket.sent.filter((msg) => msg.includes('"type":"input"')).length;
+    expect(countAfterOtherTab).toBe(1);
+
+    unmount(harness);
+  });
+
+  it('produces identical input-frame shapes for onData and drained pending input', () => {
+    const store = useTerminalStore.getState();
+    const tabId = store.openTab();
+    store.enqueueInput(tabId, 'drained\n');
+
+    const harness = mount(tabId);
+    const terminal = terminalInstances[0];
+    const socket = sockets[0];
+    if (!terminal || !socket) {
+      throw new Error('expected mocks to be populated');
+    }
+    socket.readyState = 1;
+    socket.onopen?.();
+
+    terminal.onDataHandler?.('live\n');
+
+    const inputFrames = socket.sent
+      .map((raw) => JSON.parse(raw) as { type: string; data?: string })
+      .filter((frame) => frame.type === 'input');
+    expect(inputFrames).toHaveLength(2);
+    const [firstKeys, secondKeys] = inputFrames.map((frame) => Object.keys(frame).sort());
+    expect(firstKeys).toEqual(secondKeys);
+    expect(firstKeys).toEqual(['data', 'type']);
+    expect(inputFrames[0]?.data).toBeDefined();
+    expect(inputFrames[1]?.data).toBeDefined();
+    unmount(harness);
+  });
+
   it('disposes the terminal and closes the socket on unmount', () => {
     const harness = mount();
     const terminal = terminalInstances[0];

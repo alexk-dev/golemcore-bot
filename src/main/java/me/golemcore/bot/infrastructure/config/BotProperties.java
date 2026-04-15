@@ -236,6 +236,15 @@ public class BotProperties {
         private String corsAllowedOrigins = "";
         private int webSocketMaxFramePayloadLength = 80 * 1024 * 1024;
         private LogsProperties logs = new LogsProperties();
+        private TerminalProperties terminal = new TerminalProperties();
+    }
+
+    @Data
+    public static class TerminalProperties {
+        private boolean enabled = false;
+        private int maxSessionsPerUser = 2;
+        private java.time.Duration idleTimeout = java.time.Duration.ofMinutes(30);
+        private java.time.Duration maxSessionDuration = java.time.Duration.ofHours(8);
     }
 
     @Data

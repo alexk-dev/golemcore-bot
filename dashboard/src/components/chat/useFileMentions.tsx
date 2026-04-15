@@ -7,7 +7,7 @@ import {
   type MutableRefObject,
   type ReactElement,
 } from 'react';
-import { getFileTree } from '../../api/files';
+import { getFileTree, type FileTreeNode } from '../../api/files';
 import { FileMentionMenu } from './FileMentionMenu';
 import {
   filterFilesByQuery,
@@ -19,6 +19,16 @@ import {
 } from './fileMentions';
 
 const MAX_SUGGESTIONS = 8;
+const INITIAL_FETCH_DEPTH = 2;
+const LAZY_FETCH_DEPTH = 2;
+
+function extractDirectoryPrefix(query: string): string | null {
+  const lastSlash = query.lastIndexOf('/');
+  if (lastSlash < 0) {
+    return null;
+  }
+  return query.slice(0, lastSlash);
+}
 
 interface UseFileMentionsArgs {
   text: string;
@@ -37,28 +47,71 @@ export function useFileMentions({
   textareaRef,
 }: UseFileMentionsArgs): UseFileMentionsResult {
   const [files, setFiles] = useState<MentionFileEntry[]>([]);
-  const [filesLoaded, setFilesLoaded] = useState(false);
-  const fetchedRef = useRef(false);
+  const [initialLoaded, setInitialLoaded] = useState(false);
+  const rootFetchedRef = useRef(false);
+  const fetchedDirsRef = useRef<Set<string>>(new Set());
+  const inFlightDirsRef = useRef<Set<string>>(new Set());
 
   const caret = resolveCaret(textareaRef.current, text);
   const trigger = useMemo<MentionTrigger | null>(() => findMentionTrigger(text, caret), [text, caret]);
 
+  const mergeTree = useCallback((tree: FileTreeNode[]): void => {
+    const entries = flattenFileTree(tree);
+    setFiles((previous) => {
+      const byPath = new Map<string, MentionFileEntry>();
+      for (const entry of previous) {
+        byPath.set(entry.path, entry);
+      }
+      for (const entry of entries) {
+        byPath.set(entry.path, entry);
+      }
+      return Array.from(byPath.values());
+    });
+  }, []);
+
   useEffect(() => {
-    // Lazy-load the file tree the first time the user opens a @-mention.
-    if (!trigger || fetchedRef.current) {
+    // Fetch a shallow root snapshot on the first @-mention trigger.
+    if (!trigger || rootFetchedRef.current) {
       return;
     }
-    fetchedRef.current = true;
-    getFileTree('')
+    rootFetchedRef.current = true;
+    fetchedDirsRef.current.add('');
+    getFileTree('', { depth: INITIAL_FETCH_DEPTH })
       .then((tree) => {
-        setFiles(flattenFileTree(tree));
-        setFilesLoaded(true);
+        mergeTree(tree);
+        setInitialLoaded(true);
       })
       .catch((error: unknown) => {
         console.error('[file-mentions] failed to load file tree', error);
-        setFilesLoaded(true);
+        setInitialLoaded(true);
       });
-  }, [trigger]);
+  }, [trigger, mergeTree]);
+
+  useEffect(() => {
+    // Lazily fetch a directory subtree when the user types a deeper path segment.
+    if (!trigger) {
+      return;
+    }
+    const dirPrefix = extractDirectoryPrefix(trigger.query);
+    if (dirPrefix == null || dirPrefix.length === 0) {
+      return;
+    }
+    if (fetchedDirsRef.current.has(dirPrefix) || inFlightDirsRef.current.has(dirPrefix)) {
+      return;
+    }
+    inFlightDirsRef.current.add(dirPrefix);
+    getFileTree(dirPrefix, { depth: LAZY_FETCH_DEPTH })
+      .then((tree) => {
+        fetchedDirsRef.current.add(dirPrefix);
+        mergeTree(tree);
+      })
+      .catch((error: unknown) => {
+        console.error('[file-mentions] failed to lazy-load directory', dirPrefix, error);
+      })
+      .finally(() => {
+        inFlightDirsRef.current.delete(dirPrefix);
+      });
+  }, [trigger, mergeTree]);
 
   const suggestions = useMemo<MentionFileEntry[]>(() => {
     if (!trigger) {
@@ -90,7 +143,7 @@ export function useFileMentions({
     return { menu: null, isOpen: false };
   }
 
-  if (!filesLoaded && files.length === 0) {
+  if (!initialLoaded && files.length === 0) {
     return { menu: null, isOpen: false };
   }
 

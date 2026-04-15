@@ -5,9 +5,15 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileTreeNode } from '../../api/files';
 
-const getFileTreeMock = vi.fn<() => Promise<FileTreeNode[]>>();
+interface GetFileTreeOptions {
+  depth?: number;
+  includeIgnored?: boolean;
+}
+
+const getFileTreeMock =
+  vi.fn<(path: string, options?: GetFileTreeOptions) => Promise<FileTreeNode[]>>();
 vi.mock('../../api/files', () => ({
-  getFileTree: (...args: unknown[]) => getFileTreeMock(...(args as [])),
+  getFileTree: (path: string, options?: GetFileTreeOptions) => getFileTreeMock(path, options),
 }));
 
 import { useFileMentions } from './useFileMentions';
@@ -28,6 +34,19 @@ function file(path: string): FileTreeNode {
     editable: true,
     hasChildren: false,
     children: [],
+  };
+}
+
+function dir(path: string, children: FileTreeNode[] = []): FileTreeNode {
+  return {
+    path,
+    name: path.split('/').pop() ?? path,
+    type: 'directory',
+    binary: false,
+    image: false,
+    editable: false,
+    hasChildren: children.length > 0,
+    children,
   };
 }
 
@@ -120,7 +139,12 @@ async function flushPromises(): Promise<void> {
 describe('useFileMentions', () => {
   beforeEach(() => {
     getFileTreeMock.mockReset();
-    getFileTreeMock.mockResolvedValue([file('src/a.ts'), file('src/b.ts')]);
+    getFileTreeMock.mockImplementation((path: string) => {
+      if (path === '' || path == null) {
+        return Promise.resolve([dir('src', [file('src/a.ts'), file('src/b.ts')])]);
+      }
+      return Promise.resolve([]);
+    });
     document.body.innerHTML = '';
   });
 
@@ -148,6 +172,54 @@ describe('useFileMentions', () => {
     expect(getFileTreeMock).toHaveBeenCalled();
     const listbox = harness.container.querySelector('[role="listbox"]');
     expect(listbox).not.toBeNull();
+    const options = harness.container.querySelectorAll('[data-testid^="file-mention-option-"]');
+    expect(options.length).toBeGreaterThan(0);
+    unmountHarness(harness);
+  });
+
+  it('limits the initial fetch to a shallow depth', async () => {
+    const harness = mountHarness();
+    act(() => {
+      harness.control.setText('hi @');
+    });
+    await flushPromises();
+
+    expect(getFileTreeMock).toHaveBeenCalledTimes(1);
+    const [firstPath, firstOptions] = getFileTreeMock.mock.calls[0] ?? [];
+    expect(firstPath).toBe('');
+    expect(firstOptions?.depth).toBeGreaterThanOrEqual(1);
+    expect(firstOptions?.depth).toBeLessThanOrEqual(2);
+    unmountHarness(harness);
+  });
+
+  it('lazily fetches a directory subtree when the query drills into it', async () => {
+    getFileTreeMock.mockImplementation((path: string) => {
+      if (path === '') {
+        return Promise.resolve([dir('src', [dir('deep', [])])]);
+      }
+      if (path === 'src/deep') {
+        return Promise.resolve([file('src/deep/nested.ts')]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const harness = mountHarness();
+    act(() => {
+      harness.control.setText('hi @');
+    });
+    await flushPromises();
+
+    const pathsFetched = (): string[] =>
+      getFileTreeMock.mock.calls.map((call) => call[0]);
+    expect(pathsFetched()).toEqual(['']);
+
+    act(() => {
+      harness.control.setText('hi @src/deep/');
+    });
+    await flushPromises();
+
+    expect(pathsFetched()).toContain('src/deep');
+
     const options = harness.container.querySelectorAll('[data-testid^="file-mention-option-"]');
     expect(options.length).toBeGreaterThan(0);
     unmountHarness(harness);

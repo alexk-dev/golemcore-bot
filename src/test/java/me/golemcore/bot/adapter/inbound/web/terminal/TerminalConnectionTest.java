@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -90,6 +91,60 @@ class TerminalConnectionTest {
         try {
             connection.handleFrame("{\"type\":\"resize\",\"cols\":132,\"rows\":40}");
             assertTrue(connection.isAlive());
+        } finally {
+            connection.close();
+        }
+    }
+
+    @Test
+    void shouldLoopExitWaitUntilProcessActuallyTerminates() throws Exception {
+        // Guards against the historical 24h timeout regression: a long-running session
+        // that outlives the initial waitFor window must still emit a single exit frame.
+        List<String> outbound = new ArrayList<>();
+        AtomicInteger exitCodeSupplier = new AtomicInteger(42);
+        AtomicInteger waitInvocations = new AtomicInteger(0);
+
+        TerminalConnection.ExitWaitStrategy strategy = () -> {
+            int call = waitInvocations.incrementAndGet();
+            if (call < 3) {
+                return TerminalConnection.ExitWaitOutcome.TIMEOUT;
+            }
+            return TerminalConnection.ExitWaitOutcome.exited(exitCodeSupplier.get());
+        };
+
+        TerminalConnection connection = TerminalConnection.openWithStrategy(
+                objectMapper,
+                frame -> {
+                    synchronized (outbound) {
+                        outbound.add(frame);
+                    }
+                },
+                strategy);
+
+        try {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (System.nanoTime() < deadline) {
+                boolean hasExit;
+                synchronized (outbound) {
+                    hasExit = outbound.stream().anyMatch(frame -> frame.contains("\"type\":\"exit\""));
+                }
+                if (hasExit) {
+                    break;
+                }
+                Thread.sleep(20);
+            }
+            synchronized (outbound) {
+                long exitFrames = outbound.stream()
+                        .filter(frame -> frame.contains("\"type\":\"exit\""))
+                        .count();
+                assertEquals(1L, exitFrames, "expected exactly one exit frame after looped waits");
+                String exitFrame = outbound.stream()
+                        .filter(frame -> frame.contains("\"type\":\"exit\""))
+                        .findFirst()
+                        .orElseThrow();
+                assertTrue(exitFrame.contains("\"code\":42"), "expected exit code 42 in frame: " + exitFrame);
+            }
+            assertTrue(waitInvocations.get() >= 3, "strategy should be polled more than once");
         } finally {
             connection.close();
         }

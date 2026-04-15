@@ -29,17 +29,62 @@ public final class TerminalConnection {
     private static final String TYPE_OUTPUT = "output";
     private static final String TYPE_EXIT = "exit";
     private static final String TYPE_ERROR = "error";
+    private static final long EXIT_POLL_SECONDS = 5L;
+
+    /**
+     * Single-shot outcome from an exit-wait poll. Implementations must return
+     * {@link #TIMEOUT} when the process is still alive and an instance from
+     * {@link #exited(int)} when the process has terminated.
+     */
+    public static final class ExitWaitOutcome {
+        public static final ExitWaitOutcome TIMEOUT = new ExitWaitOutcome(false, 0);
+
+        private final boolean terminated;
+        private final int exitCode;
+
+        private ExitWaitOutcome(boolean terminated, int exitCode) {
+            this.terminated = terminated;
+            this.exitCode = exitCode;
+        }
+
+        public static ExitWaitOutcome exited(int exitCode) {
+            return new ExitWaitOutcome(true, exitCode);
+        }
+
+        public boolean isTerminated() {
+            return terminated;
+        }
+
+        public int exitCode() {
+            return exitCode;
+        }
+    }
+
+    /**
+     * Poll-style seam that lets the exit-watcher loop sleep in short chunks rather
+     * than relying on a single large {@code waitFor(..., DAYS)} call.
+     */
+    @FunctionalInterface
+    public interface ExitWaitStrategy {
+        ExitWaitOutcome awaitExit() throws InterruptedException;
+    }
 
     private final ObjectMapper objectMapper;
     private final Consumer<String> outboundSink;
     private final TerminalSession session;
+    private final ExitWaitStrategy exitWaitStrategy;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final Thread exitWatcher;
 
-    private TerminalConnection(ObjectMapper objectMapper, Consumer<String> outboundSink, TerminalSession session) {
+    private TerminalConnection(
+            ObjectMapper objectMapper,
+            Consumer<String> outboundSink,
+            TerminalSession session,
+            ExitWaitStrategy exitWaitStrategy) {
         this.objectMapper = objectMapper;
         this.outboundSink = outboundSink;
         this.session = session;
+        this.exitWaitStrategy = exitWaitStrategy;
         this.exitWatcher = new Thread(this::watchForExit, "terminal-exit-watcher");
         this.exitWatcher.setDaemon(true);
     }
@@ -61,10 +106,37 @@ public final class TerminalConnection {
                         self.emitOutput(bytes);
                     }
                 });
-        TerminalConnection connection = new TerminalConnection(objectMapper, outboundSink, session);
+        ExitWaitStrategy strategy = defaultStrategy(session);
+        TerminalConnection connection = new TerminalConnection(objectMapper, outboundSink, session, strategy);
         connectionRef[0] = connection;
         connection.exitWatcher.start();
         return connection;
+    }
+
+    /**
+     * Package-private factory for tests: bypasses the real pty and uses the
+     * supplied {@link ExitWaitStrategy} so we can simulate long-lived sessions
+     * without actually blocking the test thread.
+     */
+    static TerminalConnection openWithStrategy(
+            ObjectMapper objectMapper,
+            Consumer<String> outboundSink,
+            ExitWaitStrategy strategy) {
+        TerminalConnection connection = new TerminalConnection(objectMapper, outboundSink, null, strategy);
+        connection.exitWatcher.start();
+        return connection;
+    }
+
+    private static ExitWaitStrategy defaultStrategy(TerminalSession session) {
+        return () -> {
+            if (session.waitFor(EXIT_POLL_SECONDS, TimeUnit.SECONDS)) {
+                Integer code = session.exitCode();
+                return code == null
+                        ? ExitWaitOutcome.TIMEOUT
+                        : ExitWaitOutcome.exited(code);
+            }
+            return ExitWaitOutcome.TIMEOUT;
+        };
     }
 
     public void handleFrame(String frame) {
@@ -88,7 +160,7 @@ public final class TerminalConnection {
     }
 
     public boolean isAlive() {
-        return !closed.get() && session.isAlive();
+        return !closed.get() && session != null && session.isAlive();
     }
 
     public void close() {
@@ -96,10 +168,15 @@ public final class TerminalConnection {
             return;
         }
         exitWatcher.interrupt();
-        session.close();
+        if (session != null) {
+            session.close();
+        }
     }
 
     private void handleInput(Map<String, Object> parsed) {
+        if (session == null) {
+            return;
+        }
         Object data = parsed.get("data");
         if (!(data instanceof String encoded)) {
             return;
@@ -115,6 +192,9 @@ public final class TerminalConnection {
     }
 
     private void handleResize(Map<String, Object> parsed) {
+        if (session == null) {
+            return;
+        }
         Integer cols = asInt(parsed.get("cols"));
         Integer rows = asInt(parsed.get("rows"));
         if (cols == null || rows == null || cols <= 0 || rows <= 0) {
@@ -176,10 +256,13 @@ public final class TerminalConnection {
 
     private void watchForExit() {
         try {
-            if (session.waitFor(1L, TimeUnit.DAYS)) {
-                Integer code = session.exitCode();
-                if (code != null && !closed.get()) {
-                    emitExit(code);
+            while (!closed.get()) {
+                ExitWaitOutcome outcome = exitWaitStrategy.awaitExit();
+                if (outcome.isTerminated()) {
+                    if (!closed.get()) {
+                        emitExit(outcome.exitCode());
+                    }
+                    return;
                 }
             }
         } catch (InterruptedException e) {

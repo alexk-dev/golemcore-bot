@@ -107,15 +107,7 @@ export function TerminalPane({ tabId }: TerminalPaneProps = {}): ReactElement {
     };
 
     const inputSubscription = terminal.onData((chunk: string) => {
-      if (socket.readyState !== 1) {
-        return;
-      }
-      socket.send(
-        JSON.stringify({
-          type: 'input',
-          data: encodeBytesToBase64(chunk),
-        }),
-      );
+      sendInputChunk(chunk);
     });
 
     const resizeSubscription = terminal.onResize(({ cols, rows }) => {
@@ -134,20 +126,20 @@ export function TerminalPane({ tabId }: TerminalPaneProps = {}): ReactElement {
       drainPendingForTab();
     };
 
-    const unsubscribePending = useTerminalStore.subscribe((state, previousState) => {
-      if (tabId == null) {
-        return;
-      }
-      const current = state.pendingInput[tabId];
-      const previous = previousState.pendingInput[tabId];
-      if (current === previous || current == null || current.length === 0) {
-        return;
-      }
-      if (socket.readyState !== 1) {
-        return;
-      }
-      drainPendingForTab();
-    });
+    const unsubscribePending = tabId == null
+      ? (): void => {}
+      : useTerminalStore.subscribe(
+          (state) => state.pendingInput[tabId],
+          (current, previous) => {
+            if (current === previous || current == null || current.length === 0) {
+              return;
+            }
+            if (socket.readyState !== 1) {
+              return;
+            }
+            drainPendingForTab();
+          },
+        );
 
     socket.onmessage = (event: MessageEvent<string>): void => {
       const frame = parseInbound(event.data);

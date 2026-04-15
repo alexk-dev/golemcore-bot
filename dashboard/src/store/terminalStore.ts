@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
 import { createUuid } from '../utils/uuid';
 
 export type TerminalConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -36,7 +37,7 @@ function nextTitle(tabs: TerminalTab[]): string {
   return `Terminal ${candidate}`;
 }
 
-export const useTerminalStore = create<TerminalState>((set, get) => ({
+export const useTerminalStore = create<TerminalState>()(subscribeWithSelector((set, get) => ({
   tabs: [],
   activeTabId: null,
   connectionStatus: 'idle',
@@ -100,4 +101,4 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set({ pendingInput: rest });
     return current;
   },
-}));
+})));

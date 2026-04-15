@@ -7,9 +7,12 @@ export interface MentionFileEntry {
 
 export function flattenFileTree(tree: FileTreeNode[]): MentionFileEntry[] {
   const result: MentionFileEntry[] = [];
-  const stack: FileTreeNode[] = [...tree];
+  const stack: FileTreeNode[] = [];
+  for (let index = tree.length - 1; index >= 0; index -= 1) {
+    stack.push(tree[index]);
+  }
   while (stack.length > 0) {
-    const node = stack.shift();
+    const node = stack.pop();
     if (!node) {
       continue;
     }
@@ -19,8 +22,8 @@ export function flattenFileTree(tree: FileTreeNode[]): MentionFileEntry[] {
       }
       continue;
     }
-    if (node.children.length > 0) {
-      stack.unshift(...node.children);
+    for (let index = node.children.length - 1; index >= 0; index -= 1) {
+      stack.push(node.children[index]);
     }
   }
   return result;
