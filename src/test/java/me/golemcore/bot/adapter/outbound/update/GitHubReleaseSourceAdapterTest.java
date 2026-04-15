@@ -756,7 +756,9 @@ class GitHubReleaseSourceAdapterTest {
                 public void cancel() {
                 }
             });
-            subscriber.onNext(List.of(ByteBuffer.wrap(payload)));
+            if (payload.length > 0) {
+                subscriber.onNext(List.of(ByteBuffer.wrap(payload)));
+            }
             subscriber.onComplete();
             T decodedBody = subscriber.getBody().toCompletableFuture().join();
 
