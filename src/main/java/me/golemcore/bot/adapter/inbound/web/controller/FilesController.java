@@ -48,7 +48,7 @@ public class FilesController {
             List<DashboardFileNode> tree = dashboardFileService.getTree(path);
             List<FileTreeNodeDto> payload = tree.stream().map(this::toTreeDto).toList();
             return Mono.just(ResponseEntity.ok(payload));
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return Mono.just(ResponseEntity.badRequest().build());
         }
     }
@@ -62,7 +62,7 @@ public class FilesController {
             List<DashboardFileNode> tree = dashboardFileService.getTree(path, depth, includeIgnored);
             List<FileTreeNodeDto> payload = tree.stream().map(this::toTreeDto).toList();
             return Mono.just(ResponseEntity.ok(payload));
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return Mono.just(ResponseEntity.badRequest().build());
         }
     }
@@ -72,7 +72,7 @@ public class FilesController {
         try {
             DashboardFileContent content = dashboardFileService.getContent(path);
             return Mono.just(ResponseEntity.ok(toContentDto(content)));
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return Mono.just(ResponseEntity.badRequest().build());
         }
     }
@@ -82,7 +82,7 @@ public class FilesController {
         try {
             ToolArtifactDownload download = resolveDownload(path);
             return Mono.just(buildDownloadResponse(download));
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return Mono.just(ResponseEntity.badRequest().build());
         }
     }
@@ -102,7 +102,7 @@ public class FilesController {
         try {
             DashboardFileContent created = dashboardFileService.createContent(request.getPath(), request.getContent());
             return Mono.just(ResponseEntity.ok(toContentDto(created)));
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return Mono.just(ResponseEntity.badRequest().build());
         }
     }
@@ -112,7 +112,7 @@ public class FilesController {
         try {
             DashboardFileContent saved = dashboardFileService.saveContent(request.getPath(), request.getContent());
             return Mono.just(ResponseEntity.ok(toContentDto(saved)));
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return Mono.just(ResponseEntity.badRequest().build());
         }
     }
@@ -126,7 +126,7 @@ public class FilesController {
                     .targetPath(request.getTargetPath())
                     .build();
             return Mono.just(ResponseEntity.ok(payload));
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return Mono.just(ResponseEntity.badRequest().build());
         }
     }
@@ -136,7 +136,7 @@ public class FilesController {
         try {
             dashboardFileService.deletePath(path);
             return Mono.just(ResponseEntity.noContent().build());
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return Mono.just(ResponseEntity.badRequest().build());
         }
     }

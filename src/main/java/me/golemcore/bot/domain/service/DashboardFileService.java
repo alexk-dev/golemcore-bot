@@ -66,11 +66,21 @@ public class DashboardFileService {
             boolean editable = DashboardFileMetadataSupport.isEditableFile(workspacePathService, path, mimeType, size);
             String updatedAt = workspaceFilePort.getLastModifiedTime(path);
             if (!editable) {
-                return buildContent(path, null, size, updatedAt, mimeType, true, image, false);
+                return baseContentBuilder(path, size, updatedAt, mimeType)
+                        .content(null)
+                        .binary(true)
+                        .image(image)
+                        .editable(false)
+                        .build();
             }
 
             String content = workspaceFilePort.readString(path);
-            return buildContent(path, content, size, updatedAt, mimeType, false, false, true);
+            return baseContentBuilder(path, size, updatedAt, mimeType)
+                    .content(content)
+                    .binary(false)
+                    .image(false)
+                    .editable(true)
+                    .build();
         } catch (MalformedInputException e) {
             throw new IllegalArgumentException("File is not valid UTF-8 text");
         } catch (IOException e) {
@@ -132,9 +142,12 @@ public class DashboardFileService {
         }
 
         String safeFilename = DashboardFileMetadataSupport.sanitizeFilename(filename);
-        String basePath = targetDirectory == null ? "" : targetDirectory.trim();
-        String relativePath = basePath.isBlank() ? safeFilename : basePath + "/" + safeFilename;
-        Path path = resolveSafePath(relativePath);
+        Path targetDirectoryPath = resolveUploadDirectory(targetDirectory);
+        Path path = targetDirectoryPath.resolve(safeFilename).normalize();
+        if (!path.startsWith(getWorkspaceRoot())) {
+            throw new IllegalArgumentException("Path must be inside workspace");
+        }
+
         try {
             Path parent = path.getParent();
             if (parent != null) {
@@ -147,8 +160,12 @@ public class DashboardFileService {
             boolean editable = DashboardFileMetadataSupport.isEditableFile(workspacePathService, path, resolvedMimeType,
                     data.length);
             String content = editable ? new String(data, StandardCharsets.UTF_8) : null;
-            return buildContent(path, content, data.length, Instant.now().toString(), resolvedMimeType,
-                    !editable, image, editable);
+            return baseContentBuilder(path, data.length, Instant.now().toString(), resolvedMimeType)
+                    .content(content)
+                    .binary(!editable)
+                    .image(image)
+                    .editable(editable)
+                    .build();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to upload file", e);
         }
@@ -240,29 +257,31 @@ public class DashboardFileService {
     private DashboardFileContent buildSavedTextContent(Path path, String content) throws IOException {
         long size = workspaceFilePort.size(path);
         String mimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, null);
-        return buildContent(path, content, size, Instant.now().toString(), mimeType, false, false, true);
+        return baseContentBuilder(path, size, Instant.now().toString(), mimeType)
+                .content(content)
+                .binary(false)
+                .image(false)
+                .editable(true)
+                .build();
     }
 
-    private DashboardFileContent buildContent(
+    private DashboardFileContent.DashboardFileContentBuilder baseContentBuilder(
             Path path,
-            String content,
             long size,
             String updatedAt,
-            String mimeType,
-            boolean binary,
-            boolean image,
-            boolean editable) {
+            String mimeType) {
+        String relativePath = toRelativePath(path);
         return DashboardFileContent.builder()
-                .path(toRelativePath(path))
-                .content(content)
+                .path(relativePath)
                 .size(size)
                 .updatedAt(updatedAt)
                 .mimeType(mimeType)
-                .binary(binary)
-                .image(image)
-                .editable(editable)
-                .downloadUrl(DashboardFileMetadataSupport.buildDownloadUrl(toRelativePath(path)))
-                .build();
+                .downloadUrl(DashboardFileMetadataSupport.buildDownloadUrl(relativePath));
+    }
+
+    private Path resolveUploadDirectory(String targetDirectory) {
+        String basePath = targetDirectory == null ? "" : targetDirectory.trim();
+        return resolveSafePath(basePath);
     }
 
     private void deleteDirectoryRecursively(Path path) throws IOException {

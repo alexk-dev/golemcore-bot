@@ -426,6 +426,16 @@ class FilesControllerTest {
     }
 
     @Test
+    void shouldReturnBadRequestForInvalidLazyTreePath() {
+        when(dashboardFileService.getTree("../etc", 1, false))
+                .thenThrow(new IllegalArgumentException("Invalid path"));
+
+        StepVerifier.create(filesController.getTree("../etc", 1, false))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
+                .verifyComplete();
+    }
+
+    @Test
     void shouldReturnLazyTreePayloadWithMetadata() {
         DashboardFileNode node = DashboardFileNode.builder()
                 .path("src")
@@ -450,8 +460,7 @@ class FilesControllerTest {
 
     @Test
     void shouldReturnWorkspaceFileDownloadWhenPathIsValid() {
-        me.golemcore.bot.domain.model.ToolArtifactDownload download = me.golemcore.bot.domain.model.ToolArtifactDownload
-                .builder()
+        ToolArtifactDownload download = ToolArtifactDownload.builder()
                 .path("src/App.tsx")
                 .filename("App.tsx")
                 .mimeType("text/typescript")
