@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -57,6 +58,15 @@ class WebhookResponseSchemaLayerTest {
         assertFalse(layer.appliesTo(null));
         assertFalse(layer.appliesTo(emptyContext));
         assertFalse(layer.appliesTo(blankSchemaContext));
+    }
+
+    @Test
+    void shouldExposeStableLayerNameAndOrder() {
+        // Pins name() and order() so PIT return-value mutants (e.g. replacing
+        // with "" or with 0) are killed — the ContextAssembler relies on both
+        // as a contract for ordering and diagnostics.
+        assertEquals("webhook_response_schema", layer.getName());
+        assertEquals(76, layer.getOrder());
     }
 
     private String schemaText() {

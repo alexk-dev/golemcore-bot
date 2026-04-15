@@ -112,6 +112,51 @@ class MemoryDiagnosticsAssemblerTest {
         assertTrue(diagnostics.containsKey("sectionTypes"));
     }
 
+    @Test
+    void shouldReturnDisabledPromptDiagnosticsAsEnabledFalseMap() {
+        // Pins buildDisabledPromptDiagnostics so PIT cannot replace the
+        // `{enabled=false}` map with an empty one.
+        assertEquals(Map.of("enabled", false),
+                memoryDiagnosticsAssembler.buildDisabledPromptDiagnostics());
+    }
+
+    @Test
+    void shouldDefaultToBasicVerbosityWhenConfigIsBlank() {
+        // Exercises the `basic` default branch of normalizeVerbosity — with
+        // blank config the assembler still emits the full structured diagnostics
+        // map (enabled, structuredCandidates, disclosureMode, etc).
+        when(runtimeConfigService.getMemoryDiagnosticsVerbosity()).thenReturn("   ");
+
+        Map<String, Object> diagnostics = memoryDiagnosticsAssembler.buildPromptDiagnostics(
+                MemoryQuery.builder().scope("global").build(),
+                List.of(scored("sem-1", MemoryItem.Layer.SEMANTIC, 0.91)),
+                MemoryPack.builder()
+                        .disclosureMode("summary")
+                        .diagnostics(Map.of("selectedCount", 1))
+                        .build());
+
+        assertEquals(Boolean.TRUE, diagnostics.get("enabled"));
+        assertEquals(1, diagnostics.get("structuredCandidates"));
+        assertEquals("summary", diagnostics.get("disclosureMode"));
+        assertFalse(diagnostics.containsKey("queryScope"),
+                "basic verbosity must not include detailed query fields");
+    }
+
+    @Test
+    void shouldDefaultToBasicVerbosityWhenConfigIsNull() {
+        // Second branch of normalizeVerbosity — null config should behave
+        // identically to blank config.
+        when(runtimeConfigService.getMemoryDiagnosticsVerbosity()).thenReturn(null);
+
+        Map<String, Object> diagnostics = memoryDiagnosticsAssembler.buildPromptDiagnostics(
+                MemoryQuery.builder().scope("global").build(),
+                List.of(),
+                MemoryPack.builder().build());
+
+        assertEquals(Boolean.TRUE, diagnostics.get("enabled"));
+        assertFalse(diagnostics.containsKey("queryScope"));
+    }
+
     private MemoryScoredItem scored(String id, MemoryItem.Layer layer, double score) {
         return MemoryScoredItem.builder()
                 .score(score)
