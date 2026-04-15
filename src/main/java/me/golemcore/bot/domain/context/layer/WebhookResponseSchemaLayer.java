@@ -62,15 +62,26 @@ public class WebhookResponseSchemaLayer implements ContextLayer {
     }
 
     private String readSchemaText(AgentContext context) {
-        if (context == null || context.getMessages() == null || context.getMessages().isEmpty()) {
+        if (context == null) {
+            return null;
+        }
+        String attributeSchemaText = readText(
+                context.getAttribute(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT));
+        if (attributeSchemaText != null) {
+            return attributeSchemaText;
+        }
+        if (context.getMessages() == null || context.getMessages().isEmpty()) {
             return null;
         }
         Message last = context.getMessages().get(context.getMessages().size() - 1);
         if (last.getMetadata() == null) {
             return null;
         }
-        Object schemaText = last.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT);
-        if (schemaText instanceof String text && !text.isBlank()) {
+        return readText(last.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT));
+    }
+
+    private String readText(Object value) {
+        if (value instanceof String text && !text.isBlank()) {
             return text;
         }
         return null;

@@ -208,20 +208,15 @@ public class WebhookController {
             int timeout = request.getTimeoutSeconds() > 0
                     ? request.getTimeoutSeconds()
                     : config.getDefaultTimeoutSeconds();
-            String modelTier;
+            String agentModelTier;
             String responseValidationModelTier;
-            String effectiveModelTier;
             String memoryPreset;
             try {
-                modelTier = normalizeOptionalModelTier(request.getModel(), "'model'");
+                agentModelTier = normalizeOptionalModelTier(request.getModel(), "'model'");
                 responseValidationModelTier = normalizeResponseValidationModelTier(
                         request.getResponseJsonSchema(),
                         request.getResponseValidationModelTier(),
                         "'responseValidationModelTier'");
-                effectiveModelTier = resolveEffectiveWebhookModelTier(
-                        modelTier,
-                        request.getResponseJsonSchema(),
-                        responseValidationModelTier);
                 validateSynchronousResponseContract(
                         request.isSyncResponse(),
                         request.getResponseJsonSchema(),
@@ -241,8 +236,8 @@ public class WebhookController {
             metadata.put("webhook.runId", runId);
             metadata.put("webhook.timeoutSeconds", timeout);
             addMemoryPresetMetadata(metadata, memoryPreset);
-            if (effectiveModelTier != null) {
-                metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, effectiveModelTier);
+            if (agentModelTier != null) {
+                metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, agentModelTier);
             }
             addResponseContractMetadata(metadata, request.getResponseJsonSchema(), responseValidationModelTier);
             if (request.isDeliver()) {
@@ -262,14 +257,14 @@ public class WebhookController {
                         runId,
                         chatId,
                         request.getCallbackUrl(),
-                        effectiveModelTier);
+                        agentModelTier);
             }
 
             CompletableFuture<String> responseFuture = channelAdapter.registerPendingRun(
                     chatId,
                     runId,
                     request.getCallbackUrl(),
-                    effectiveModelTier,
+                    agentModelTier,
                     deliveryId);
 
             Message message = buildMessage(chatId, safeMessage, metadata, TraceNamingSupport.WEBHOOK_AGENT);
@@ -285,7 +280,7 @@ public class WebhookController {
                         timeout,
                         request.getResponseJsonSchema(),
                         responseValidationModelTier,
-                        effectiveModelTier,
+                        agentModelTier,
                         message);
             }
             return ResponseEntity.status(HttpStatus.ACCEPTED)
@@ -369,16 +364,12 @@ public class WebhookController {
 
         String runId = UUID.randomUUID().toString();
         String chatId = "hook:" + mapping.getName() + ":" + UUID.randomUUID();
-        String modelTier = normalizeOptionalModelTier(mapping.getModel(), "Webhook mapping model");
+        String agentModelTier = normalizeOptionalModelTier(mapping.getModel(), "Webhook mapping model");
         String memoryPreset = resolveWebhookMemoryPreset(null, config);
         String responseValidationModelTier = normalizeResponseValidationModelTier(
                 mapping.getResponseJsonSchema(),
                 mapping.getResponseValidationModelTier(),
                 "Webhook mapping responseValidationModelTier");
-        String effectiveModelTier = resolveEffectiveWebhookModelTier(
-                modelTier,
-                mapping.getResponseJsonSchema(),
-                responseValidationModelTier);
         validateSynchronousResponseContract(
                 mapping.isSyncResponse(),
                 mapping.getResponseJsonSchema(),
@@ -389,8 +380,8 @@ public class WebhookController {
         metadata.put("webhook.mapping", mapping.getName());
         metadata.put("webhook.timeoutSeconds", config.getDefaultTimeoutSeconds());
         addMemoryPresetMetadata(metadata, memoryPreset);
-        if (effectiveModelTier != null) {
-            metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, effectiveModelTier);
+        if (agentModelTier != null) {
+            metadata.put(ContextAttributes.WEBHOOK_MODEL_TIER, agentModelTier);
         }
         addResponseContractMetadata(metadata, mapping.getResponseJsonSchema(), responseValidationModelTier);
         if (mapping.isDeliver()) {
@@ -400,7 +391,7 @@ public class WebhookController {
         }
 
         CompletableFuture<String> responseFuture = channelAdapter.registerPendingRun(chatId, runId, null,
-                effectiveModelTier, null);
+                agentModelTier, null);
 
         Message message = buildMessage(chatId, text, metadata, TraceNamingSupport.WEBHOOK_AGENT);
         eventPublisher.publishEvent(new AgentLoop.InboundMessageEvent(message));
@@ -415,7 +406,7 @@ public class WebhookController {
                     config.getDefaultTimeoutSeconds(),
                     mapping.getResponseJsonSchema(),
                     responseValidationModelTier,
-                    effectiveModelTier,
+                    agentModelTier,
                     message);
         }
         return ResponseEntity.status(HttpStatus.ACCEPTED)
@@ -581,15 +572,6 @@ public class WebhookController {
             return fallbackModelTier;
         }
         return "balanced";
-    }
-
-    private String resolveEffectiveWebhookModelTier(String modelTier, Map<String, Object> responseJsonSchema,
-            String responseValidationModelTier) {
-        if (WebhookResponseSchemaService.hasSchema(responseJsonSchema)
-                && responseValidationModelTier != null && !responseValidationModelTier.isBlank()) {
-            return responseValidationModelTier;
-        }
-        return modelTier;
     }
 
     private String resolveWebhookMemoryPreset(String requestMemoryPreset, UserPreferences.WebhookConfig config) {

@@ -33,6 +33,21 @@ class WebhookResponseSchemaLayerTest {
     }
 
     @Test
+    void shouldApplyWhenSchemaTextIsCarriedByContextAttribute() {
+        AgentContext context = AgentContext.builder()
+                .messages(List.of(Message.builder().role("user").build()))
+                .build();
+        context.setAttribute(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT, schemaText());
+
+        ContextLayerResult result = layer.assemble(context);
+
+        assertTrue(layer.appliesTo(context));
+        assertTrue(result.hasContent());
+        assertTrue(result.getContent().contains("Webhook Response JSON Contract"));
+        assertTrue(result.getContent().contains("\"version\""));
+    }
+
+    @Test
     void shouldSkipWhenNoResponseSchemaIsPresent() {
         AgentContext context = AgentContext.builder()
                 .messages(List.of(Message.builder().role("user").build()))

@@ -333,6 +333,35 @@ class WebhookControllerTest {
     }
 
     @Test
+    void agentShouldPublishWebhookEventBeforeWaitingForSynchronousSchemaResponse() {
+        Map<String, Object> schema = responseEnvelopeSchema();
+        CompletableFuture<String> responseFuture = new CompletableFuture<>();
+        AgentRequest request = AgentRequest.builder()
+                .message("Answer in configured schema")
+                .syncResponse(true)
+                .responseJsonSchema(schema)
+                .timeoutSeconds(1)
+                .build();
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(responseFuture);
+        when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
+        org.mockito.stubbing.Answer<Void> completeResponseAfterDispatch = invocation -> {
+            responseFuture.complete("Ready");
+            return null;
+        };
+        org.mockito.Mockito.doAnswer(completeResponseAfterDispatch).when(eventPublisher).publishEvent((Object) any());
+        when(responseSchemaService.validateAndRepair(eq("Ready"), eq(schema), any(), any(), any()))
+                .thenReturn(new WebhookResponseSchemaService.SchemaResult(Map.of("version", "1.0"), 0));
+
+        ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(eventPublisher).publishEvent((Object) any());
+        assertEquals(Map.of("version", "1.0"), response.getBody());
+    }
+
+    @Test
     void agentShouldReturnSchemaPayloadForSynchronousJsonSchema() {
         Map<String, Object> schema = responseEnvelopeSchema();
         Map<String, Object> payload = Map.of(
@@ -348,7 +377,7 @@ class WebhookControllerTest {
         when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
                 .thenReturn(CompletableFuture.completedFuture("Ready"));
         when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
-        when(responseSchemaService.validateAndRepair(eq("Ready"), eq(schema), eq("smart"), eq("smart"), any()))
+        when(responseSchemaService.validateAndRepair(eq("Ready"), eq(schema), eq("smart"), eq("coding"), any()))
                 .thenReturn(new WebhookResponseSchemaService.SchemaResult(payload, 1));
 
         ResponseEntity<?> response = controller.agent(toJsonBytes(request), new HttpHeaders()).block();
@@ -357,10 +386,10 @@ class WebhookControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(payload, response.getBody());
         assertEquals(List.of("1"), response.getHeaders().get("X-Golemcore-Schema-Repair-Attempts"));
-        verify(channelAdapter).registerPendingRun(anyString(), anyString(), any(), eq("smart"), any());
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(), any(), eq("coding"), any());
         verify(responseSchemaService).validateSchemaDefinition(schema);
         ArgumentCaptor<Duration> repairBudgetCaptor = ArgumentCaptor.forClass(Duration.class);
-        verify(responseSchemaService).validateAndRepair(eq("Ready"), eq(schema), eq("smart"), eq("smart"),
+        verify(responseSchemaService).validateAndRepair(eq("Ready"), eq(schema), eq("smart"), eq("coding"),
                 repairBudgetCaptor.capture());
         assertTrue(repairBudgetCaptor.getValue().compareTo(Duration.ZERO) > 0);
         assertTrue(repairBudgetCaptor.getValue().compareTo(Duration.ofSeconds(300)) <= 0);
@@ -373,7 +402,7 @@ class WebhookControllerTest {
         assertEquals("{\"type\":\"object\"}",
                 message.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT));
         assertEquals("smart", message.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER));
-        assertEquals("smart", message.getMetadata().get(ContextAttributes.WEBHOOK_MODEL_TIER));
+        assertEquals("coding", message.getMetadata().get(ContextAttributes.WEBHOOK_MODEL_TIER));
     }
 
     @Test
@@ -737,7 +766,41 @@ class WebhookControllerTest {
     }
 
     @Test
-    void customHookAgentActionShouldUseSchemaTierForSynchronousSchemaResponse() {
+    void customHookShouldPublishWebhookEventBeforeWaitingForSynchronousSchemaResponse() {
+        Map<String, Object> schema = responseEnvelopeSchema();
+        CompletableFuture<String> responseFuture = new CompletableFuture<>();
+        UserPreferences.HookMapping mapping = UserPreferences.HookMapping.builder()
+                .name("agent-hook")
+                .action("agent")
+                .messageTemplate("Process: {event}")
+                .syncResponse(true)
+                .responseJsonSchema(schema)
+                .build();
+        when(preferencesService.getPreferences()).thenReturn(buildPrefsWithMapping(mapping));
+        when(authenticator.authenticate(any(), any(), any())).thenReturn(true);
+        when(transformer.transform(any(), any())).thenReturn("Process: deploy");
+        when(channelAdapter.registerPendingRun(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(responseFuture);
+        when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
+        org.mockito.stubbing.Answer<Void> completeResponseAfterDispatch = invocation -> {
+            responseFuture.complete("Deployment done");
+            return null;
+        };
+        org.mockito.Mockito.doAnswer(completeResponseAfterDispatch).when(eventPublisher).publishEvent((Object) any());
+        when(responseSchemaService.validateAndRepair(eq("Deployment done"), eq(schema), any(), any(), any()))
+                .thenReturn(new WebhookResponseSchemaService.SchemaResult(Map.of("version", "1.0"), 0));
+
+        byte[] body = "{\"event\":\"deploy\"}".getBytes();
+        ResponseEntity<?> response = controller.customHook("agent-hook", body, new HttpHeaders()).block();
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(eventPublisher).publishEvent((Object) any());
+        assertEquals(Map.of("version", "1.0"), response.getBody());
+    }
+
+    @Test
+    void customHookAgentActionShouldKeepHookTierForSynchronousSchemaResponse() {
         Map<String, Object> schema = responseEnvelopeSchema();
         Map<String, Object> payload = Map.of(
                 "version", "1.0",
@@ -758,7 +821,7 @@ class WebhookControllerTest {
                 .thenReturn(CompletableFuture.completedFuture("Deployment done"));
         when(responseSchemaService.renderSchema(schema)).thenReturn("{\"type\":\"object\"}");
         when(responseSchemaService.validateAndRepair(
-                eq("Deployment done"), eq(schema), eq("special5"), eq("special5"), any()))
+                eq("Deployment done"), eq(schema), eq("special5"), eq("balanced"), any()))
                 .thenReturn(new WebhookResponseSchemaService.SchemaResult(payload, 1));
 
         byte[] body = "{\"event\":\"deploy\"}".getBytes();
@@ -768,9 +831,9 @@ class WebhookControllerTest {
         assertNotNull(response);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(payload, response.getBody());
-        verify(channelAdapter).registerPendingRun(anyString(), anyString(), any(), eq("special5"), any());
+        verify(channelAdapter).registerPendingRun(anyString(), anyString(), any(), eq("balanced"), any());
         verify(responseSchemaService).validateAndRepair(
-                eq("Deployment done"), eq(schema), eq("special5"), eq("special5"), any());
+                eq("Deployment done"), eq(schema), eq("special5"), eq("balanced"), any());
     }
 
     @Test

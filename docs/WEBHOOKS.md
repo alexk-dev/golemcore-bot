@@ -136,7 +136,7 @@ Full agent turn. Runs a complete agent pipeline (LLM + tools) in an isolated ses
 | `callbackUrl` | string | No | — | URL to POST results to when done |
 | `syncResponse` | boolean | No | `false` | Wait for the agent result and return it in the HTTP response |
 | `responseJsonSchema` | object | No | — | JSON Schema for the synchronous HTTP response body |
-| `responseValidationModelTier` | string | No | — | Model tier used for schema-constrained response and repair calls |
+| `responseValidationModelTier` | string | No | — | Model tier used only for JSON Schema repair calls |
 | `deliver` | boolean | No | `false` | Route response to a messaging channel |
 | `channel` | string | No | — | Target channel type (e.g. `"telegram"`) |
 | `to` | string | No | — | Target chat ID on delivery channel |
@@ -186,7 +186,7 @@ Set `syncResponse=true` to wait for the completed agent output and return `200 O
 Here is the summary...
 ```
 
-If `responseJsonSchema` is provided, it must be a non-empty Draft 2020-12 JSON Schema for the top-level HTTP response body. The bot adds schema instructions to the system prompt, uses `responseValidationModelTier` as the schema-constrained response tier when set, validates the final agent output, and makes up to three repair calls when the output does not match the schema. Repair calls use `responseValidationModelTier` when set, otherwise the hook model tier or `balanced`.
+If `responseJsonSchema` is provided, it must be a non-empty Draft 2020-12 JSON Schema for the top-level HTTP response body. The bot adds schema instructions to the main agent prompt, validates the final agent output, and makes up to three repair calls when the output does not match the schema. The main agent turn uses `model` (or the normal tier resolution when `model` is omitted). `responseValidationModelTier` controls only the JSON Schema repair calls; repair falls back to the hook model tier or `balanced`.
 
 Example Alice-style response contract:
 
@@ -321,7 +321,7 @@ Custom mappings transform raw JSON payloads from external services into structur
 | `model` | string | — | Model tier override (for agent action) |
 | `syncResponse` | boolean | `false` | Return the final agent result in the HTTP response |
 | `responseJsonSchema` | object | — | JSON Schema for the synchronous HTTP response body |
-| `responseValidationModelTier` | string | — | Model tier used for schema-constrained response and repair calls |
+| `responseValidationModelTier` | string | — | Model tier used only for JSON Schema repair calls |
 | `deliver` | boolean | `false` | Route response to a messaging channel |
 | `channel` | string | — | Target channel type for delivery |
 | `to` | string | — | Target chat ID for delivery |
