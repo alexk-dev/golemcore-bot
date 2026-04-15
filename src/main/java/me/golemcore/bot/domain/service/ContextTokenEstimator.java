@@ -268,7 +268,7 @@ public class ContextTokenEstimator {
      */
     private int estimatePrimitiveArray(Object array, int length) {
         if (array instanceof char[] charArray) {
-            return saturatingToInt(2 + estimateText(new String(charArray)));
+            return saturatingToInt(2L + estimateText(new String(charArray)));
         }
         int sampleSize = Math.min(length, PRIMITIVE_ARRAY_SAMPLE_SIZE);
         long sampleChars = 0;
