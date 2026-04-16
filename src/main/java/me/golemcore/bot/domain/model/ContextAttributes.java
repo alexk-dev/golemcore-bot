@@ -92,6 +92,18 @@ public final class ContextAttributes {
      */
     public static final String LLM_REASONING = "llm.reasoning";
 
+    /**
+     * Boolean - true if the current turn was suspended by the resilience
+     * orchestrator (L5).
+     */
+    public static final String RESILIENCE_TURN_SUSPENDED = "resilience.turn.suspended";
+
+    /**
+     * String - the resilience layer that recovered the LLM call (e.g. "L1",
+     * "L4:model_downgrade").
+     */
+    public static final String RESILIENCE_RECOVERY_LAYER = "resilience.recovery.layer";
+
     /** String ? source that selected the current model tier for this turn. */
     public static final String MODEL_TIER_SOURCE = "model.tier.source";
 

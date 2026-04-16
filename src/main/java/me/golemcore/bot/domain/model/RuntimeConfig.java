@@ -105,6 +105,9 @@ public class RuntimeConfig {
     @Builder.Default
     private SelfEvolvingConfig selfEvolving = new SelfEvolvingConfig();
 
+    @Builder.Default
+    private ResilienceConfig resilience = new ResilienceConfig();
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -1296,6 +1299,49 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    public static class ResilienceConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+
+        // L1: Hot retry
+        @Builder.Default
+        private Integer hotRetryMaxAttempts = 5;
+        @Builder.Default
+        private Long hotRetryBaseDelayMs = 5000L;
+        @Builder.Default
+        private Long hotRetryCapMs = 60000L;
+
+        // L3: Circuit breaker
+        @Builder.Default
+        private Integer circuitBreakerFailureThreshold = 5;
+        @Builder.Default
+        private Long circuitBreakerWindowSeconds = 60L;
+        @Builder.Default
+        private Long circuitBreakerOpenDurationSeconds = 120L;
+
+        // L4: Graceful degradation
+        @Builder.Default
+        private Boolean degradationCompactContext = true;
+        @Builder.Default
+        private Integer degradationCompactMinMessages = 6;
+        @Builder.Default
+        private Boolean degradationDowngradeModel = true;
+        @Builder.Default
+        private String degradationFallbackModelTier = "fast";
+        @Builder.Default
+        private Boolean degradationStripTools = true;
+
+        // L5: Cold retry
+        @Builder.Default
+        private Boolean coldRetryEnabled = true;
+        @Builder.Default
+        private Integer coldRetryMaxAttempts = 4;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class DelayedActionsConfig {
         @Builder.Default
         private Boolean enabled = true;
@@ -1349,7 +1395,9 @@ public class RuntimeConfig {
                                                                                                                         "hive",
                                                                                                                         HiveConfig.class), SELF_EVOLVING(
                                                                                                                                 "self-evolving",
-                                                                                                                                SelfEvolvingConfig.class);
+                                                                                                                                SelfEvolvingConfig.class), RESILIENCE(
+                                                                                                                                        "resilience",
+                                                                                                                                        ResilienceConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

@@ -117,7 +117,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 builder.runtimeConfigService, preflightPhase,
                 compactionCoordinator,
                 builder.runtimeEventService, builder.turnProgressService,
-                builder.traceService, builder.clock);
+                builder.traceService, builder.resilienceOrchestrator, builder.clock);
 
         ToolFailurePolicy failurePolicy = new ToolFailurePolicy(
                 builder.toolFailureRecoveryService != null
@@ -349,6 +349,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private TurnProgressService turnProgressService;
         private TraceService traceService;
         private ToolFailureRecoveryService toolFailureRecoveryService;
+        private me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator resilienceOrchestrator;
         private Clock clock;
 
         /** Sets the LLM invocation port (required). */
@@ -449,6 +450,13 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
          */
         public Builder toolFailureRecoveryService(ToolFailureRecoveryService toolFailureRecoveryService) {
             this.toolFailureRecoveryService = toolFailureRecoveryService;
+            return this;
+        }
+
+        /** Sets the LLM resilience orchestrator (optional). */
+        public Builder resilienceOrchestrator(
+                me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator resilienceOrchestrator) {
+            this.resilienceOrchestrator = resilienceOrchestrator;
             return this;
         }
 

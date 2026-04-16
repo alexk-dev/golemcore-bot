@@ -98,7 +98,8 @@ class ToolLoopAutoConfigurationTest {
                 runtimeEventService,
                 turnProgressService,
                 traceService,
-                toolFailureRecoveryService);
+                toolFailureRecoveryService,
+                null);
 
         assertNotNull(system);
         assertInstanceOf(DefaultToolLoopSystem.class, system);
