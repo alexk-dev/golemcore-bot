@@ -207,6 +207,7 @@ public final class RuntimeLauncher {
             return false;
         }
 
+        // Variant A: equal versions keep using the persisted current jar.
         boolean bundledIsNewer = runtimeVersionSupport.compareVersions(bundledVersion, currentJarVersion) > 0;
         if (bundledIsNewer) {
             output.info("Ignoring current marker because bundled runtime " + bundledVersion
@@ -357,8 +358,7 @@ public final class RuntimeLauncher {
 
         @Override
         public String currentVersion() {
-            try (InputStream inputStream = RuntimeLauncher.class.getClassLoader()
-                    .getResourceAsStream(BUILD_INFO_RESOURCE)) {
+            try (InputStream inputStream = readBuildInfo()) {
                 if (inputStream == null) {
                     return "dev";
                 }
@@ -369,6 +369,17 @@ public final class RuntimeLauncher {
             } catch (IOException ignored) {
                 return "dev";
             }
+        }
+
+        private InputStream readBuildInfo() {
+            ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+            if (contextClassLoader != null) {
+                InputStream contextStream = contextClassLoader.getResourceAsStream(BUILD_INFO_RESOURCE);
+                if (contextStream != null) {
+                    return contextStream;
+                }
+            }
+            return ClassLoader.getSystemResourceAsStream(BUILD_INFO_RESOURCE);
         }
     }
 }

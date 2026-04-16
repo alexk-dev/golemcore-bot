@@ -48,13 +48,13 @@ public class UpdateRuntimeCleanupService {
 
         if (shouldDropStaleMarker(currentAsset, runningVersion)) {
             deleteIfExists(currentMarker);
-            deleteIfExists(jarsDir.resolve(currentAsset));
+            deleteAssetJarIfSafe(jarsDir, currentAsset);
             currentAsset = null;
         }
 
         if (shouldDropStaleMarker(stagedAsset, runningVersion)) {
             deleteIfExists(stagedMarker);
-            deleteIfExists(jarsDir.resolve(stagedAsset));
+            deleteAssetJarIfSafe(jarsDir, stagedAsset);
             stagedAsset = null;
         }
 
@@ -96,6 +96,30 @@ public class UpdateRuntimeCleanupService {
             return false;
         }
         return runtimeVersionSupport.compareVersions(runningVersion, assetVersion) > 0;
+    }
+
+    private void deleteAssetJarIfSafe(Path jarsDir, String assetName) {
+        Path assetPath = resolveAssetPath(jarsDir, assetName);
+        if (assetPath == null) {
+            return;
+        }
+        deleteIfExists(assetPath);
+    }
+
+    private Path resolveAssetPath(Path jarsDir, String assetName) {
+        if (!isValidAssetName(assetName)) {
+            return null;
+        }
+        Path normalizedJarsDir = jarsDir.toAbsolutePath().normalize();
+        Path assetPath = normalizedJarsDir.resolve(assetName).toAbsolutePath().normalize();
+        return assetPath.startsWith(normalizedJarsDir) ? assetPath : null;
+    }
+
+    private boolean isValidAssetName(String assetName) {
+        if (assetName == null || assetName.isBlank()) {
+            return false;
+        }
+        return !assetName.contains("/") && !assetName.contains("\\") && !assetName.contains("..");
     }
 
     private boolean shouldDeleteJar(Path path, Set<String> retainedAssets) {

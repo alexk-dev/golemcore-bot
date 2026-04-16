@@ -38,6 +38,46 @@ class UpdateRuntimeCleanupServiceTest {
     }
 
     @Test
+    void shouldIgnoreCurrentMarkerOutsideJarsDirWhenCleaningUp(@TempDir Path tempDir) throws Exception {
+        BotProperties botProperties = new BotProperties();
+        botProperties.getUpdate().setEnabled(true);
+        botProperties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        Path jarsDir = tempDir.resolve("jars");
+        Files.createDirectories(jarsDir);
+        Files.writeString(tempDir.resolve("bot-0.4.1.jar"), "outside", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("current.txt"), "../bot-0.4.1.jar\n", StandardCharsets.UTF_8);
+
+        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                new LocalTestWorkspaceFilePort());
+        service.cleanupAfterSuccessfulStartup("0.4.3");
+
+        assertFalse(Files.exists(tempDir.resolve("current.txt")));
+        assertTrue(Files.exists(tempDir.resolve("bot-0.4.1.jar")));
+    }
+
+    @Test
+    void shouldIgnoreStagedMarkerOutsideJarsDirWhenCleaningUp(@TempDir Path tempDir) throws Exception {
+        BotProperties botProperties = new BotProperties();
+        botProperties.getUpdate().setEnabled(true);
+        botProperties.getUpdate().setUpdatesPath(tempDir.toString());
+
+        Path jarsDir = tempDir.resolve("jars");
+        Files.createDirectories(jarsDir);
+        Files.writeString(tempDir.resolve("bot-0.4.1.jar"), "outside", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("staged.txt"), "../bot-0.4.1.jar\n", StandardCharsets.UTF_8);
+
+        UpdateRuntimeCleanupService service = new UpdateRuntimeCleanupService(
+                me.golemcore.bot.support.TestPorts.settings(botProperties),
+                new LocalTestWorkspaceFilePort());
+        service.cleanupAfterSuccessfulStartup("0.4.3");
+
+        assertFalse(Files.exists(tempDir.resolve("staged.txt")));
+        assertTrue(Files.exists(tempDir.resolve("bot-0.4.1.jar")));
+    }
+
+    @Test
     void shouldDeleteStaleCurrentMarkerAndJarWhenRunningImageIsNewer(@TempDir Path tempDir) throws Exception {
         BotProperties botProperties = new BotProperties();
         botProperties.getUpdate().setEnabled(true);
