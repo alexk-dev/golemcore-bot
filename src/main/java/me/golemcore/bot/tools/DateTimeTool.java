@@ -69,7 +69,12 @@ public class DateTimeTool implements ToolComponent {
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                String timezoneStr = (String) parameters.get("timezone");
+                Map<String, Object> safeParameters = parameters != null ? parameters : Map.of();
+                Object timezoneValue = safeParameters.get("timezone");
+                if (timezoneValue != null && !(timezoneValue instanceof String)) {
+                    return ToolResult.failure("Invalid timezone: " + timezoneValue);
+                }
+                String timezoneStr = timezoneValue instanceof String timezone ? timezone : null;
                 ZoneId zoneId;
 
                 if (timezoneStr != null && !timezoneStr.isBlank()) {

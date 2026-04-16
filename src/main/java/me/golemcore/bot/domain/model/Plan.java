@@ -63,6 +63,9 @@ public class Plan {
 
     @JsonIgnore
     public long getCompletedStepCount() {
+        if (steps == null) {
+            return 0;
+        }
         return steps.stream()
                 .filter(s -> s.getStatus() == PlanStep.StepStatus.COMPLETED)
                 .count();
@@ -70,6 +73,9 @@ public class Plan {
 
     @JsonIgnore
     public long getFailedStepCount() {
+        if (steps == null) {
+            return 0;
+        }
         return steps.stream()
                 .filter(s -> s.getStatus() == PlanStep.StepStatus.FAILED)
                 .count();

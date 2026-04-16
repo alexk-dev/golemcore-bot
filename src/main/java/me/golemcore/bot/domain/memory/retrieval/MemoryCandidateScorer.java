@@ -179,7 +179,7 @@ public class MemoryCandidateScorer {
         }
         String normalized = activeSkill.toLowerCase(Locale.ROOT);
         for (String tag : tags) {
-            if (normalized.equals(tag)) {
+            if (tag != null && normalized.equals(tag.toLowerCase(Locale.ROOT))) {
                 return 0.10;
             }
         }

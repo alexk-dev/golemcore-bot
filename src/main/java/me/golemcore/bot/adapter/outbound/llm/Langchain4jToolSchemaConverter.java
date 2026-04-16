@@ -162,6 +162,10 @@ class Langchain4jToolSchemaConverter {
             if (description != null && !description.isBlank()) {
                 builder.description(description);
             }
+            List<String> required = stringList(paramSchema.get("required"), toolName, path + ".required");
+            if (required != null && !required.isEmpty()) {
+                builder.required(required);
+            }
             if (paramSchema.containsKey(SCHEMA_KEY_PROPERTIES)) {
                 Map<String, Object> nestedProps = stringObjectMap(paramSchema.get(SCHEMA_KEY_PROPERTIES),
                         toolName, path + "." + SCHEMA_KEY_PROPERTIES);
