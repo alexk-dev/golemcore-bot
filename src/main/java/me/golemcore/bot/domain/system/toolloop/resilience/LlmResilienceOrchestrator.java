@@ -188,10 +188,25 @@ public class LlmResilienceOrchestrator {
             }
         }
 
-        if (config.getColdRetryEnabled()) {
-            String userMessage = suspendedTurnManager.suspend(context, errorCode, config);
-            log.info("[Resilience] L5 cold retry: turn suspended, provider={}, code={}", providerId, errorCode);
-            return new ResilienceOutcome.Suspended(userMessage);
+        if (Boolean.TRUE.equals(config.getColdRetryEnabled())) {
+            if (suspendedTurnManager == null) {
+                String reason = "Cold retry scheduling failed for provider " + providerId
+                        + " (code=" + errorCode + "): suspended turn manager is not configured";
+                log.warn("[Resilience] L5 cold retry unavailable: provider={}, code={}", providerId, errorCode);
+                return new ResilienceOutcome.Exhausted(reason);
+            }
+            try {
+                String userMessage = suspendedTurnManager.suspend(context, errorCode, config);
+                log.info("[Resilience] L5 cold retry: turn suspended, provider={}, code={}", providerId, errorCode);
+                return new ResilienceOutcome.Suspended(userMessage);
+            } catch (RuntimeException exception) {
+                String message = exception.getMessage() != null ? exception.getMessage() : exception.getClass()
+                        .getSimpleName();
+                log.warn("[Resilience] L5 cold retry scheduling failed: provider={}, code={}, error={}",
+                        providerId, errorCode, message, exception);
+                return new ResilienceOutcome.Exhausted("Cold retry scheduling failed for provider " + providerId
+                        + " (code=" + errorCode + "): " + message);
+            }
         }
 
         log.error("[Resilience] All layers exhausted: code={}, provider={}, attempt={}",

@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
@@ -178,6 +179,13 @@ class RecoveryStrategyTest {
                 .degradationFallbackModelTier(null)
                 .build();
         assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, nullFallback));
+    }
+
+    @Test
+    void modelDowngradeDefaultFallbackTierShouldBeKnown() {
+        RuntimeConfig.ResilienceConfig defaultConfig = RuntimeConfig.ResilienceConfig.builder().build();
+
+        assertTrue(ModelTierCatalog.isKnownTier(defaultConfig.getDegradationFallbackModelTier()));
     }
 
     @Test

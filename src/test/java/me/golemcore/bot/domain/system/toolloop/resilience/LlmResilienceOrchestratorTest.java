@@ -151,6 +151,25 @@ class LlmResilienceOrchestratorTest {
     }
 
     @Test
+    void shouldExhaustWhenColdRetrySchedulingFails() {
+        RuntimeConfig.ResilienceConfig coldRetry = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(true)
+                .build();
+        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.UNKNOWN, coldRetry))
+                .thenThrow(new IllegalStateException("Delayed actions disabled"));
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.UNKNOWN, 5, coldRetry);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.Exhausted exhausted = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
+        assertTrue(exhausted.reason().contains("Cold retry scheduling failed"));
+        assertTrue(exhausted.reason().contains("Delayed actions disabled"));
+    }
+
+    @Test
     void shouldResolveUnknownProviderWhenContextIsMissingOrModelAttributeIsBlank() {
         LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
         RuntimeConfig.ResilienceConfig exhaustedConfig = RuntimeConfig.ResilienceConfig.builder()
