@@ -1829,7 +1829,7 @@ class Langchain4jAdapterTest {
                         .apiType("anthropic")
                         .build());
 
-        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null);
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, "medium", "balanced");
         assertTrue(result instanceof AnthropicChatModel);
     }
 
@@ -1843,7 +1843,7 @@ class Langchain4jAdapterTest {
                         .apiType("gemini")
                         .build());
 
-        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null);
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, "medium", "balanced");
         assertTrue(result instanceof GoogleAiGeminiChatModel);
         assertEquals(Boolean.TRUE, ReflectionTestUtils.getField(result, "returnThinking"));
         assertEquals(Boolean.TRUE, ReflectionTestUtils.getField(result, "sendThinking"));
@@ -1862,7 +1862,7 @@ class Langchain4jAdapterTest {
         when(modelConfig.supportsTemperature("gemini-2.5-flash"))
                 .thenThrow(new IllegalArgumentException("raw model id lookup should not be used"));
 
-        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null);
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, "medium", "balanced");
 
         assertTrue(result instanceof GoogleAiGeminiChatModel);
     }
@@ -1940,7 +1940,7 @@ class Langchain4jAdapterTest {
                         .legacyApi(true)
                         .build());
 
-        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, "medium");
+        ChatModel result = ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, "medium", "balanced");
         assertTrue(result instanceof OpenAiChatModel);
     }
 
@@ -1954,7 +1954,7 @@ class Langchain4jAdapterTest {
                         .build());
 
         IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, null));
+                () -> ReflectionTestUtils.invokeMethod(adapter, "createModel", requestModel, "medium", "balanced"));
         assertTrue(error.getMessage().contains("Missing apiKey for Gemini provider"));
     }
 

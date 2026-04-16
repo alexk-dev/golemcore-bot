@@ -418,7 +418,7 @@ class RuntimeSettingsValidatorTest {
     void shouldRejectMoreThanFiveFallbacks() {
         when(modelSelectionService.validateModel(any(), any()))
                 .thenReturn(new ModelSelectionService.ValidationResult(true, null));
-        java.util.List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
+        List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
         for (int i = 0; i < 6; i++) {
             fallbacks.add(RuntimeConfig.TierFallback.builder().model("openai/gpt-5-mini").build());
         }

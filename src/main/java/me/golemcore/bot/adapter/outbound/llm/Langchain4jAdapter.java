@@ -272,13 +272,6 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return model.contains("/") ? model.substring(model.indexOf('/') + 1) : model;
     }
 
-    /**
-     * Create a model instance based on configuration.
-     */
-    private ChatModel createModel(String model, String reasoningEffort) {
-        return createModel(model, reasoningEffort, null);
-    }
-
     private ChatModel createModel(String model, String reasoningEffort, String modelTier) {
         String provider = getProvider(model);
         RuntimeConfig.LlmProviderConfig config = getProviderConfig(provider);

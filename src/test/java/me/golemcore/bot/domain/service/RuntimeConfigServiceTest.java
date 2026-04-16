@@ -442,7 +442,7 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldNormalizeTierBindingTruncatingFallbacksAboveFive() throws Exception {
-        java.util.List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
+        List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
         for (int i = 0; i < 7; i++) {
             fallbacks.add(RuntimeConfig.TierFallback.builder().model("openai/fallback-" + i).build());
         }
@@ -464,7 +464,7 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldDropFallbacksWithoutModelReferenceDuringNormalization() throws Exception {
-        java.util.List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
+        List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
         fallbacks.add(RuntimeConfig.TierFallback.builder().model("openai/keep").build());
         fallbacks.add(RuntimeConfig.TierFallback.builder().build());
         fallbacks.add(null);
