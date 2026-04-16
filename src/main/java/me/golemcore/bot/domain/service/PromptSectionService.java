@@ -324,14 +324,12 @@ public class PromptSectionService {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> yaml = yamlMapper.readValue(frontmatter, Map.class);
 
-                // YAML treats `description:` (no value) as a key mapped to null;
-                // coerce to empty string so the API string contract holds.
+                // Bare `description:` parses as null; coerce to empty string so the API
+                // contract holds.
                 Object rawDescription = yaml.get("description");
                 description = rawDescription == null ? "" : rawDescription.toString();
-                // Bare `order:` / `enabled:` round-trip as null through YAML; treat them as
-                // absent
-                // so one empty key does not abort parsing and silently drop the remaining
-                // fields.
+                // Bare or mistyped `order:` / `enabled:` must not abort the try and drop later
+                // keys.
                 Object rawOrder = yaml.get("order");
                 if (rawOrder instanceof Number orderNumber) {
                     order = orderNumber.intValue();

@@ -132,11 +132,8 @@ class PromptSectionServiceTest {
 
     @Test
     void reload_frontmatterWithBareOrderKeepsDefaultAndAppliesLaterKeys() {
-        // A bare `order:` parses as null. The loader must not let that abort parsing
-        // and drop
-        // later keys in the same frontmatter — the section should default order and
-        // still apply
-        // the remaining fields.
+        // Bare `order:` parses as null; it must not abort the try and drop `enabled`
+        // after it.
         String content = "---\ndescription: Foo\norder:\nenabled: false\n---\nBody.";
 
         when(storagePort.listObjects(PROMPTS_DIR, ""))
@@ -153,8 +150,8 @@ class PromptSectionServiceTest {
     }
 
     @Test
-    void reload_frontmatterWithBareEnabledKeepsDefaultAndAppliesLaterKeys() {
-        String content = "---\ndescription: Foo\nenabled:\norder: 55\n---\nBody.";
+    void reload_frontmatterWithBareEnabledDefaultsToTrue() {
+        String content = "---\ndescription: Foo\norder: 55\nenabled:\n---\nBody.";
 
         when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE)));
