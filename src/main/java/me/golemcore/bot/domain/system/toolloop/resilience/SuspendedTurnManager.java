@@ -19,17 +19,22 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
  */
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
 import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
+import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
+import me.golemcore.bot.domain.service.StringValueSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -100,28 +105,39 @@ public class SuspendedTurnManager {
         int maxAttempts = config.getColdRetryMaxAttempts();
         long delaySeconds = computeDelay(0);
 
-        String sessionId = context.getSession() != null ? context.getSession().getId() : null;
-        String chatId = context.getSession() != null ? context.getSession().getChatId() : null;
-        String channelType = context.getSession() != null
-                ? String.valueOf(context.getSession().getMetadata().getOrDefault("channelType", "unknown"))
+        String sessionId = context != null && context.getSession() != null ? context.getSession().getId() : null;
+        String chatId = context != null && context.getSession() != null
+                ? fallbackIdentity(SessionIdentitySupport.resolveTransportChatId(context.getSession()))
+                : "unknown";
+        String conversationKey = context != null && context.getSession() != null
+                ? fallbackIdentity(SessionIdentitySupport.resolveConversationKey(context.getSession()))
+                : "unknown";
+        String channelType = context != null && context.getSession() != null
+                ? fallbackIdentity(context.getSession().getChannelType())
                 : "unknown";
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("errorCode", errorCode);
         payload.put("suspendedAt", now.toString());
         payload.put("resumeAttempt", 0);
-        if (sessionId != null) {
+        if (!StringValueSupport.isBlank(sessionId)) {
             payload.put("sessionId", sessionId);
         }
+        String originalPrompt = findLastUserPrompt(context);
+        if (!StringValueSupport.isBlank(originalPrompt)) {
+            payload.put("originalPrompt", originalPrompt);
+        }
 
-        String dedupeKey = "resilience-cold-retry:" + (sessionId != null ? sessionId : chatId);
+        String dedupeKey = "resilience-cold-retry:" + (!StringValueSupport.isBlank(sessionId) ? sessionId
+                : conversationKey);
 
         DelayedSessionAction action = DelayedSessionAction.builder()
                 .id(UUID.randomUUID().toString())
                 .channelType(channelType)
-                .conversationKey(sessionId)
+                .conversationKey(conversationKey)
                 .transportChatId(chatId)
                 .kind(DelayedActionKind.RETRY_LLM_TURN)
+                .deliveryMode(DelayedActionDeliveryMode.INTERNAL_TURN)
                 .runAt(now.plusSeconds(delaySeconds))
                 .maxAttempts(maxAttempts)
                 .dedupeKey(dedupeKey)
@@ -148,7 +164,8 @@ public class SuspendedTurnManager {
      * Computes the delay for a given retry attempt using the backoff schedule.
      */
     public long computeDelay(int attempt) {
-        int index = Math.min(attempt, BACKOFF_SCHEDULE_SECONDS.length - 1);
+        int safeAttempt = Math.max(0, attempt);
+        int index = Math.min(safeAttempt, BACKOFF_SCHEDULE_SECONDS.length - 1);
         return BACKOFF_SCHEDULE_SECONDS[index];
     }
 
@@ -174,5 +191,32 @@ public class SuspendedTurnManager {
         action.setRunAt(clock.instant().plusSeconds(nextDelay));
         action.setUpdatedAt(clock.instant());
         return resumeAttempt;
+    }
+
+    private String fallbackIdentity(String value) {
+        return StringValueSupport.isBlank(value) ? "unknown" : value;
+    }
+
+    private String findLastUserPrompt(AgentContext context) {
+        if (context == null || context.getMessages() == null || context.getMessages().isEmpty()) {
+            return null;
+        }
+        List<Message> messages = context.getMessages();
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            Message message = messages.get(index);
+            if (message != null && "user".equals(message.getRole())
+                    && !StringValueSupport.isBlank(message.getContent())
+                    && !isInternalMessage(message)) {
+                return message.getContent();
+            }
+        }
+        return null;
+    }
+
+    private boolean isInternalMessage(Message message) {
+        if (message.getMetadata() == null) {
+            return false;
+        }
+        return Boolean.TRUE.equals(message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
     }
 }

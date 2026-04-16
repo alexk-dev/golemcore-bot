@@ -104,6 +104,21 @@ public final class ContextAttributes {
      */
     public static final String RESILIENCE_RECOVERY_LAYER = "resilience.recovery.layer";
 
+    /** Boolean - L4 context compaction degradation already ran for this turn. */
+    public static final String RESILIENCE_L4_COMPACTION_ATTEMPTED = "resilience.l4.compaction_attempted";
+
+    /** Boolean - L4 model downgrade degradation already ran for this turn. */
+    public static final String RESILIENCE_L4_MODEL_DOWNGRADE_ATTEMPTED = "resilience.l4.model_downgrade_attempted";
+
+    /** String - model tier active before an L4 downgrade changed it. */
+    public static final String RESILIENCE_L4_ORIGINAL_MODEL_TIER = "resilience.l4.original_model_tier";
+
+    /** Boolean - L4 tool stripping degradation already ran for this turn. */
+    public static final String RESILIENCE_L4_TOOL_STRIP_ATTEMPTED = "resilience.l4.tool_strip_attempted";
+
+    /** List<ToolDefinition> - tool definitions saved before L4 stripping. */
+    public static final String RESILIENCE_L4_ORIGINAL_TOOLS = "resilience.l4.original_tools";
+
     /** String ? source that selected the current model tier for this turn. */
     public static final String MODEL_TIER_SOURCE = "model.tier.source";
 

@@ -2046,6 +2046,22 @@ class RuntimeConfigServiceTest {
         assertEquals(1, mcp.getCatalog().size());
     }
 
+    @Test
+    void shouldReadResilienceDefaultsAndDisabledFlag() {
+        RuntimeConfig defaults = service.getRuntimeConfig();
+
+        assertTrue(service.isResilienceEnabled());
+        assertTrue(defaults.getResilience().getColdRetryEnabled());
+        assertEquals(5, defaults.getResilience().getHotRetryMaxAttempts());
+
+        RuntimeConfig disabled = service.snapshotRuntimeConfig();
+        disabled.getResilience().setEnabled(false);
+        service.updateRuntimeConfig(disabled);
+
+        assertFalse(service.isResilienceEnabled());
+        assertFalse(service.getResilienceConfig().getEnabled());
+    }
+
     @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })
     private void setCachedConfig(RuntimeConfig config) throws Exception {
         java.lang.reflect.Field field = RuntimeConfigService.class.getDeclaredField("configRef");

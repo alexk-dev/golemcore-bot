@@ -43,7 +43,6 @@ import org.slf4j.LoggerFactory;
 public class ContextCompactionRecoveryStrategy implements RecoveryStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(ContextCompactionRecoveryStrategy.class);
-    private static final String COMPACTION_ATTEMPTED_FLAG = "resilience.l4.compaction_attempted";
 
     private final ContextCompactionCoordinator compactionCoordinator;
 
@@ -64,7 +63,7 @@ public class ContextCompactionRecoveryStrategy implements RecoveryStrategy {
         if (!LlmErrorClassifier.isTransientCode(errorCode)) {
             return false;
         }
-        Boolean alreadyAttempted = context.getAttribute(COMPACTION_ATTEMPTED_FLAG);
+        Boolean alreadyAttempted = context.getAttribute(ContextAttributes.RESILIENCE_L4_COMPACTION_ATTEMPTED);
         if (Boolean.TRUE.equals(alreadyAttempted)) {
             return false;
         }
@@ -74,7 +73,7 @@ public class ContextCompactionRecoveryStrategy implements RecoveryStrategy {
 
     @Override
     public RecoveryResult apply(AgentContext context, String errorCode, RuntimeConfig.ResilienceConfig config) {
-        context.setAttribute(COMPACTION_ATTEMPTED_FLAG, true);
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_COMPACTION_ATTEMPTED, true);
         int beforeCount = context.getMessages() != null ? context.getMessages().size() : 0;
         boolean compacted = compactionCoordinator.recoverFromContextOverflow(context, 0, 0);
         int afterCount = context.getMessages() != null ? context.getMessages().size() : 0;

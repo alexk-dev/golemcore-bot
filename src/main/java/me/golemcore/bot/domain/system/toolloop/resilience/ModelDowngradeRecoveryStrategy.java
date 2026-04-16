@@ -45,8 +45,6 @@ import org.slf4j.LoggerFactory;
 public class ModelDowngradeRecoveryStrategy implements RecoveryStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(ModelDowngradeRecoveryStrategy.class);
-    private static final String DOWNGRADE_ATTEMPTED_FLAG = "resilience.l4.model_downgrade_attempted";
-    private static final String ORIGINAL_TIER_KEY = "resilience.l4.original_model_tier";
 
     @Override
     public String name() {
@@ -62,7 +60,7 @@ public class ModelDowngradeRecoveryStrategy implements RecoveryStrategy {
                 && !LlmErrorClassifier.LANGCHAIN4J_TIMEOUT.equals(errorCode)) {
             return false;
         }
-        Boolean alreadyAttempted = context.getAttribute(DOWNGRADE_ATTEMPTED_FLAG);
+        Boolean alreadyAttempted = context.getAttribute(ContextAttributes.RESILIENCE_L4_MODEL_DOWNGRADE_ATTEMPTED);
         if (Boolean.TRUE.equals(alreadyAttempted)) {
             return false;
         }
@@ -76,10 +74,10 @@ public class ModelDowngradeRecoveryStrategy implements RecoveryStrategy {
 
     @Override
     public RecoveryResult apply(AgentContext context, String errorCode, RuntimeConfig.ResilienceConfig config) {
-        context.setAttribute(DOWNGRADE_ATTEMPTED_FLAG, true);
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_MODEL_DOWNGRADE_ATTEMPTED, true);
         String originalTier = context.getModelTier();
         String fallbackTier = config.getDegradationFallbackModelTier();
-        context.setAttribute(ORIGINAL_TIER_KEY, originalTier);
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER, originalTier);
         context.setModelTier(fallbackTier);
         log.info("[Resilience] L4 model downgrade: {} → {}", originalTier, fallbackTier);
         return RecoveryResult.success("downgraded model tier from " + originalTier + " to " + fallbackTier);

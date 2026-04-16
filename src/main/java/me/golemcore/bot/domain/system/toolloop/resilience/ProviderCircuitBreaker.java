@@ -51,9 +51,9 @@ public class ProviderCircuitBreaker {
 
     static class ProviderState {
         volatile State state = State.CLOSED;
-        volatile int failureCount = 0;
-        volatile Instant windowStart;
-        volatile Instant openedAt;
+        int failureCount = 0;
+        Instant windowStart;
+        Instant openedAt;
 
         ProviderState(Instant now) {
             this.windowStart = now;
@@ -102,6 +102,12 @@ public class ProviderCircuitBreaker {
         Instant now = clock.instant();
         ProviderState ps = providers.computeIfAbsent(providerId, k -> new ProviderState(now));
 
+        synchronized (ps) {
+            recordFailureLocked(providerId, ps, now);
+        }
+    }
+
+    private void recordFailureLocked(String providerId, ProviderState ps, Instant now) {
         if (ps.state == State.HALF_OPEN) {
             ps.state = State.OPEN;
             ps.openedAt = now;

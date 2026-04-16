@@ -102,11 +102,17 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         // first LLM call.
         ContextCompactionPolicy contextCompactionPolicy = Objects.requireNonNull(builder.contextCompactionPolicy,
                 "contextCompactionPolicy required; wire it explicitly on the builder");
-        ContextCompactionCoordinator compactionCoordinator = new ContextCompactionCoordinator(
-                contextCompactionPolicy,
-                builder.compactionOrchestrationService,
-                builder.runtimeEventService,
-                builder.turnProgressService);
+        // The coordinator is shared by request preflight, context-overflow
+        // recovery, and the L4 resilience compaction strategy. Spring injects a
+        // singleton coordinator; tests and hand-built systems may still omit it,
+        // in which case we assemble the same collaborator locally.
+        ContextCompactionCoordinator compactionCoordinator = builder.contextCompactionCoordinator != null
+                ? builder.contextCompactionCoordinator
+                : new ContextCompactionCoordinator(
+                        contextCompactionPolicy,
+                        builder.compactionOrchestrationService,
+                        builder.runtimeEventService,
+                        builder.turnProgressService);
         LlmRequestPreflightPhase preflightPhase = new LlmRequestPreflightPhase(
                 contextTokenEstimator,
                 contextCompactionPolicy,
@@ -345,6 +351,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private CompactionOrchestrationService compactionOrchestrationService;
         private ContextTokenEstimator contextTokenEstimator;
         private ContextCompactionPolicy contextCompactionPolicy;
+        private ContextCompactionCoordinator contextCompactionCoordinator;
         private RuntimeEventService runtimeEventService;
         private TurnProgressService turnProgressService;
         private TraceService traceService;
@@ -424,6 +431,16 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
          */
         public Builder contextCompactionPolicy(ContextCompactionPolicy contextCompactionPolicy) {
             this.contextCompactionPolicy = contextCompactionPolicy;
+            return this;
+        }
+
+        /**
+         * Sets the coordinator shared with the resilience compaction strategy. Passing
+         * the same instance keeps LLM preflight and L4 recovery diagnostics consistent
+         * within a turn.
+         */
+        public Builder contextCompactionCoordinator(ContextCompactionCoordinator contextCompactionCoordinator) {
+            this.contextCompactionCoordinator = contextCompactionCoordinator;
             return this;
         }
 
