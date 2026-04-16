@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.ThreadLocalRandom;
+import java.security.SecureRandom;
 
 /**
  * L1 — Hot Retry with full jitter (AWS-style).
@@ -46,6 +46,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class LlmRetryPolicy {
 
     private static final Logger log = LoggerFactory.getLogger(LlmRetryPolicy.class);
+    private static final SecureRandom JITTER_RANDOM = new SecureRandom();
 
     /**
      * Returns true if the current attempt is within the retry budget.
@@ -71,8 +72,7 @@ public class LlmRetryPolicy {
         long capMs = config.getHotRetryCapMs();
         long exponential = (long) (baseMs * Math.pow(2.0, Math.max(0, attempt)));
         long ceiling = Math.min(capMs, exponential);
-        long delay = ThreadLocalRandom.current().nextLong(0, Math.max(1, ceiling));
-        return delay;
+        return JITTER_RANDOM.nextLong(Math.max(1, ceiling));
     }
 
     /**
