@@ -324,12 +324,19 @@ public class PromptSectionService {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> yaml = yamlMapper.readValue(frontmatter, Map.class);
 
-                description = (String) yaml.getOrDefault("description", "");
-                if (yaml.containsKey("order")) {
-                    order = ((Number) yaml.get("order")).intValue();
+                // Bare `description:` parses as null; coerce to empty string so the API
+                // contract holds.
+                Object rawDescription = yaml.get("description");
+                description = rawDescription == null ? "" : rawDescription.toString();
+                // Bare or mistyped `order:` / `enabled:` must not abort the try and drop later
+                // keys.
+                Object rawOrder = yaml.get("order");
+                if (rawOrder instanceof Number orderNumber) {
+                    order = orderNumber.intValue();
                 }
-                if (yaml.containsKey("enabled")) {
-                    enabled = (Boolean) yaml.get("enabled");
+                Object rawEnabled = yaml.get("enabled");
+                if (rawEnabled instanceof Boolean enabledFlag) {
+                    enabled = enabledFlag;
                 }
             } catch (IOException | RuntimeException e) {
                 log.warn("Failed to parse prompt section frontmatter: {}", file, e);
