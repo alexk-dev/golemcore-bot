@@ -73,7 +73,7 @@ class LlmCallPhaseTest {
         LlmCallPhase.EmptyResponseCheck outcome = phase.checkEmptyFinalResponse(turnState, response, historyWriter);
 
         assertInstanceOf(LlmCallPhase.EmptyResponseCheck.RetryScheduled.class, outcome);
-        org.junit.jupiter.api.Assertions.assertEquals(1, turnState.getEmptyFinalResponseRetries());
+        assertEquals(1, turnState.getEmptyFinalResponseRetries());
     }
 
     @Test
