@@ -32,7 +32,28 @@ class RuntimeLauncherTest {
     }
 
     @Test
-    void shouldLaunchUpdatedJarWhenCurrentMarkerPointsToExistingJar(@TempDir Path tempDir) throws Exception {
+    void shouldLaunchBundledRuntimeWhenImageVersionIsNewerThanCurrentMarker(@TempDir Path tempDir) throws Exception {
+        Path jarsDir = tempDir.resolve("jars");
+        Files.createDirectories(jarsDir);
+        Path jarPath = jarsDir.resolve("bot-0.4.1.jar");
+        Files.writeString(jarPath, "payload", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("current.txt"), "bot-0.4.1.jar\n", StandardCharsets.UTF_8);
+
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
+
+        int exitCode = launcher.run(new String[0]);
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-cp",
+                "@/app/jib-classpath-file",
+                "me.golemcore.bot.BotApplication"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldLaunchUpdatedJarWhenVersionsAreEqual(@TempDir Path tempDir) throws Exception {
         Path jarsDir = tempDir.resolve("jars");
         Files.createDirectories(jarsDir);
         Path jarPath = jarsDir.resolve("bot-0.4.2.jar");
@@ -40,7 +61,28 @@ class RuntimeLauncherTest {
         Files.writeString(tempDir.resolve("current.txt"), "bot-0.4.2.jar\n", StandardCharsets.UTF_8);
 
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
-        RuntimeLauncher launcher = createLauncher(tempDir, processStarter);
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
+
+        int exitCode = launcher.run(new String[] { "--spring.profiles.active=prod" });
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                jarPath.toAbsolutePath().normalize().toString(),
+                "--spring.profiles.active=prod"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldLaunchUpdatedJarWhenCurrentMarkerVersionIsNewerThanImageVersion(@TempDir Path tempDir) throws Exception {
+        Path jarsDir = tempDir.resolve("jars");
+        Files.createDirectories(jarsDir);
+        Path jarPath = jarsDir.resolve("bot-0.4.3.jar");
+        Files.writeString(jarPath, "payload", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("current.txt"), "bot-0.4.3.jar\n", StandardCharsets.UTF_8);
+
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
 
         int exitCode = launcher.run(new String[] { "--spring.profiles.active=prod" });
 
@@ -180,18 +222,36 @@ class RuntimeLauncherTest {
     }
 
     private RuntimeLauncher createLauncher(Path updatesDir, RecordingProcessStarter processStarter) {
-        return createLauncher(Map.of("UPDATE_PATH", updatesDir.toString()), processStarter, new NoOpLauncherOutput());
+        return createLauncher(updatesDir, processStarter, "0.4.2");
+    }
+
+    private RuntimeLauncher createLauncher(Path updatesDir, RecordingProcessStarter processStarter,
+            String runtimeVersion) {
+        return createLauncher(
+                Map.of("UPDATE_PATH", updatesDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                runtimeVersion);
     }
 
     private RuntimeLauncher createLauncher(
             Map<String, String> environment,
             RuntimeLauncher.ProcessStarter processStarter,
             RuntimeLauncher.LauncherOutput output) {
+        return createLauncher(environment, processStarter, output, "0.4.2");
+    }
+
+    private RuntimeLauncher createLauncher(
+            Map<String, String> environment,
+            RuntimeLauncher.ProcessStarter processStarter,
+            RuntimeLauncher.LauncherOutput output,
+            String runtimeVersion) {
         return new RuntimeLauncher(
                 "java",
                 processStarter,
                 new MapEnvironmentReader(environment),
-                output);
+                output,
+                new FixedRuntimeVersionReader(runtimeVersion));
     }
 
     private static class RecordingProcessStarter implements RuntimeLauncher.ProcessStarter {
@@ -316,6 +376,20 @@ class RuntimeLauncherTest {
         @Override
         public String get(String name) {
             return values.get(name);
+        }
+    }
+
+    private static final class FixedRuntimeVersionReader implements RuntimeLauncher.RuntimeVersionReader {
+
+        private final String version;
+
+        private FixedRuntimeVersionReader(String version) {
+            this.version = version;
+        }
+
+        @Override
+        public String currentVersion() {
+            return version;
         }
     }
 

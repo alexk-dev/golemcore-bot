@@ -1,12 +1,12 @@
 package me.golemcore.bot.domain.service;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import org.springframework.stereotype.Service;
@@ -22,9 +22,15 @@ public class UpdateRuntimeCleanupService {
 
     private final UpdateSettingsPort settingsPort;
     private final WorkspaceFilePort workspaceFilePort;
+    private final RuntimeVersionSupport runtimeVersionSupport = new RuntimeVersionSupport();
 
     @SuppressWarnings("PMD.NullAssignment")
     public void cleanupAfterSuccessfulStartup() {
+        cleanupAfterSuccessfulStartup(null);
+    }
+
+    @SuppressWarnings("PMD.NullAssignment")
+    public void cleanupAfterSuccessfulStartup(String runningVersion) {
         if (!settingsPort.update().enabled()) {
             return;
         }
@@ -39,6 +45,18 @@ public class UpdateRuntimeCleanupService {
         Path stagedMarker = updatesDir.resolve(STAGED_MARKER_NAME);
         String currentAsset = readMarker(currentMarker);
         String stagedAsset = readMarker(stagedMarker);
+
+        if (shouldDropStaleMarker(currentAsset, runningVersion)) {
+            deleteIfExists(currentMarker);
+            deleteIfExists(jarsDir.resolve(currentAsset));
+            currentAsset = null;
+        }
+
+        if (shouldDropStaleMarker(stagedAsset, runningVersion)) {
+            deleteIfExists(stagedMarker);
+            deleteIfExists(jarsDir.resolve(stagedAsset));
+            stagedAsset = null;
+        }
 
         if (currentAsset != null && currentAsset.equals(stagedAsset)) {
             deleteIfExists(stagedMarker);
@@ -63,6 +81,21 @@ public class UpdateRuntimeCleanupService {
         } catch (IOException e) {
             log.warn("[update] failed to cleanup old runtime jars: {}", e.getMessage());
         }
+    }
+
+    private boolean shouldDropStaleMarker(String assetName, String runningVersion) {
+        if (assetName == null || runningVersion == null || runningVersion.isBlank()) {
+            return false;
+        }
+        String assetVersion = runtimeVersionSupport.extractVersionFromAssetName(assetName);
+        if (assetVersion == null) {
+            return false;
+        }
+        if (!runtimeVersionSupport.isSemanticVersion(runtimeVersionSupport.normalizeVersion(runningVersion))
+                || !runtimeVersionSupport.isSemanticVersion(assetVersion)) {
+            return false;
+        }
+        return runtimeVersionSupport.compareVersions(runningVersion, assetVersion) > 0;
     }
 
     private boolean shouldDeleteJar(Path path, Set<String> retainedAssets) {
