@@ -138,21 +138,49 @@ tar -xzf target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz -C 
 /tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot
 ```
 
-### 3. Override the server port
+### 3. Inspect launcher help
 
-The launcher forwards JVM system properties to the spawned runtime process.
+The native launcher is picocli-based, so it has first-class CLI help:
 
 ```bash
-/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot -Dserver.port=9090
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot --help
 ```
 
-Spring application arguments also work:
+This documents launcher-only flags such as:
+
+- `--server-port=<port>`
+- `--storage-path=<path>`
+- `--updates-path=<path>`
+- `--bundled-jar=<path>`
+- `-J=<jvm-option>` / `--java-option=<jvm-option>`
+
+### 4. Override launcher-managed runtime parameters
+
+The launcher converts its own options into runtime JVM/system properties.
 
 ```bash
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot --server-port=9090
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot -J=-Xmx1g --server-port=9090
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot --storage-path=/srv/golemcore/workspace --updates-path=/srv/golemcore/updates
+```
+
+### 5. Forward Spring Boot arguments unchanged
+
+Unknown arguments are forwarded to Spring Boot, so standard application arguments still work:
+
+```bash
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot --spring.profiles.active=prod
 /tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot --server.port=9090
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot -Dspring.profiles.active=prod
 ```
 
-### 4. What the launcher does
+If you want to make the separation explicit, use `--`:
+
+```bash
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot --server-port=9090 -- --spring.profiles.active=prod
+```
+
+### 6. What the launcher does
 
 The local launcher uses `RuntimeLauncher` and starts runtime in this order:
 
@@ -160,7 +188,7 @@ The local launcher uses `RuntimeLauncher` and starts runtime in this order:
 2. bundled runtime jar from the app-image
 3. legacy Jib/classpath fallback
 
-So the existing self-update flow still works for native local bundles.
+So the existing self-update flow still works for native local bundles, now with documented launcher parameters.
 
 ## Your First Conversation
 

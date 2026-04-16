@@ -209,38 +209,66 @@ tar -xzf target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz -C 
 /opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot
 ```
 
-### Override server port and other runtime properties
+### Inspect launcher help
 
-The native launcher forwards JVM system properties to the spawned runtime process.
+The native launcher uses picocli, so operators can inspect its own documented parameters directly:
+
+```bash
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --help
+```
+
+Launcher-specific options include:
+
+- `--server-port=<port>`
+- `--storage-path=<path>`
+- `--updates-path=<path>`
+- `--bundled-jar=<path>`
+- `-J=<jvm-option>` / `--java-option=<jvm-option>`
+
+### Override launcher-managed runtime parameters
+
+The native launcher converts its own options into runtime JVM/system properties.
 
 Examples:
 
 ```bash
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot -Dserver.port=9090
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot -Dserver.port=9090 --spring.profiles.active=prod
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --server-port=9090
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot -J=-Xmx1g --server-port=9090
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --storage-path=/srv/golemcore/workspace --updates-path=/srv/golemcore/updates
 ```
 
-Spring application arguments also continue to work:
+### Forward Spring Boot arguments unchanged
+
+Unknown arguments still flow to Spring Boot as application arguments, so existing runtime flags continue to work:
 
 ```bash
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --spring.profiles.active=prod
 /opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --server.port=9090
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot -Dspring.profiles.active=prod
+```
+
+If you want to make the handoff explicit, use `--`:
+
+```bash
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --server-port=9090 -- --spring.profiles.active=prod
 ```
 
 ### How the launcher behaves
 
-The native bundle wraps `RuntimeLauncher`, which now resolves runtime in this order:
+The native bundle wraps `RuntimeLauncher`, which resolves runtime in this order:
 
 1. staged update selected by `updates/current.txt`
 2. bundled runtime jar from the app-image under `lib/runtime/`
 3. legacy Jib/classpath fallback
 
-That means the existing self-update flow still works for local bundles.
+That means the existing self-update flow still works for local bundles, now with a documented launcher CLI.
 
 ### Notes
 
 - `jpackage` from JDK 25 is required to build the app-image.
 - The generated archive is platform-specific.
 - The release workflow attaches these native archives to GitHub Releases together with the executable JAR.
+- The native launcher CLI is implemented with `picocli`.
 
 ---
 

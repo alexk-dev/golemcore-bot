@@ -99,6 +99,7 @@ The app-image contains:
 
 - a small launcher application produced by `jpackage`
 - the regular self-updatable runtime jar under `lib/runtime/`
+- a picocli-powered native launcher entrypoint with built-in help and launcher-only options
 - launcher wiring that points to that bundled runtime jar first
 
 So the startup order becomes:
@@ -107,21 +108,46 @@ So the startup order becomes:
 2. bundled runtime jar from the app-image
 3. legacy Jib/classpath fallback
 
-### Override startup parameters
+### Native launcher options
 
-The native launcher forwards JVM system properties to the actual runtime process, so you can override the server port and other Spring properties directly at launch time.
+The native launcher uses picocli, so it has first-class help and a small set of launcher-specific flags.
+
+Show help:
+
+```bash
+./golemcore-bot/bin/golemcore-bot --help
+```
+
+Common options:
+
+- `--server-port=<port>` — forwards `-Dserver.port=<port>` to the spawned runtime
+- `--storage-path=<path>` — forwards `-Dbot.storage.local.base-path=<path>`
+- `--updates-path=<path>` — forwards `-Dbot.update.updates-path=<path>`
+- `--bundled-jar=<path>` — overrides the bundled runtime jar path
+- `-J=<jvm-option>` / `--java-option=<jvm-option>` — forwards extra JVM options to the spawned runtime
 
 Examples:
 
 ```bash
-./golemcore-bot/bin/golemcore-bot -Dserver.port=9090
-./golemcore-bot/bin/golemcore-bot -Dserver.port=9090 --spring.profiles.active=prod
+./golemcore-bot/bin/golemcore-bot --server-port=9090
+./golemcore-bot/bin/golemcore-bot -J=-Xmx1g --server-port=9090
+./golemcore-bot/bin/golemcore-bot --storage-path=/srv/golemcore/workspace --updates-path=/srv/golemcore/updates
 ```
 
-You can also still use Spring application arguments:
+### Spring runtime arguments still work
+
+Unknown arguments are forwarded to Spring Boot unchanged, so existing application arguments continue to work:
 
 ```bash
+./golemcore-bot/bin/golemcore-bot --spring.profiles.active=prod
 ./golemcore-bot/bin/golemcore-bot --server.port=9090
+./golemcore-bot/bin/golemcore-bot -Dspring.profiles.active=prod
+```
+
+If you want to make the split explicit, you can also use `--` before Spring arguments:
+
+```bash
+./golemcore-bot/bin/golemcore-bot --server-port=9090 -- --spring.profiles.active=prod
 ```
 
 ### Why this matters
@@ -131,7 +157,7 @@ This keeps the existing self-update model based on:
 - `updates/current.txt`
 - `updates/jars/`
 
-while also letting the bot start cleanly from a native local bundle.
+while also letting the bot start cleanly from a native local bundle with documented launcher parameters.
 
 ---
 

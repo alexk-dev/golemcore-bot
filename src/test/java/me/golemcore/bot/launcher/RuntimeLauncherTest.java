@@ -13,11 +13,14 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertIterableEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Covers launcher restart behavior, staged update selection, and bundled
- * runtime discovery for both container and local native distribution layouts.
+ * Covers launcher restart behavior, staged update selection, bundled runtime
+ * discovery, and picocli-based native launcher argument parsing.
  */
 class RuntimeLauncherTest {
 
@@ -106,6 +109,64 @@ class RuntimeLauncherTest {
     }
 
     @Test
+    void shouldForwardPicocliJavaOptionsAndLauncherServerPort(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of());
+
+        int exitCode = launcher.run(new String[] {
+                "-J=-Xmx512m",
+                "--server-port=9191",
+                "--spring.main.web-application-type=none"
+        });
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Xmx512m",
+                "-Dserver.port=9191",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString(),
+                "--spring.main.web-application-type=none"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldForwardLauncherStorageAndUpdatesOptionsAsSystemProperties(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Path storagePath = tempDir.resolve("workspace");
+        Path updatesPath = tempDir.resolve("updates");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of());
+
+        int exitCode = launcher.run(new String[] {
+                "--storage-path=" + storagePath,
+                "--updates-path=" + updatesPath
+        });
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Dbot.storage.local.base-path=" + storagePath.toAbsolutePath().normalize(),
+                "-Dbot.update.updates-path=" + updatesPath.toAbsolutePath().normalize(),
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
     void shouldNotDuplicateForwardedServerPortWhenPassedAsApplicationArgument(@TempDir Path tempDir) throws Exception {
         Path bundledJar = tempDir.resolve("bot-bundled.jar");
         Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
@@ -123,9 +184,31 @@ class RuntimeLauncherTest {
         assertEquals(0, exitCode);
         assertEquals(List.of(
                 "java",
+                "-Dserver.port=9191",
                 "-jar",
-                bundledJar.toAbsolutePath().normalize().toString(),
-                "--server.port=9191"), processStarter.commands().getFirst());
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldUseExplicitBundledJarOption(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("configured.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
+
+        int exitCode = launcher.run(new String[] { "--bundled-jar=" + bundledJar });
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
     }
 
     @Test
@@ -311,7 +394,7 @@ class RuntimeLauncherTest {
                 Map.of());
 
         Path updatesDir = launcher.resolveUpdatesDir(new String[] {
-                "--bot.update.updates-path=" + argUpdatesDir
+                "--updates-path=" + argUpdatesDir
         });
 
         assertEquals(argUpdatesDir.toAbsolutePath().normalize(), updatesDir);
@@ -331,6 +414,75 @@ class RuntimeLauncherTest {
         Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
 
         assertEquals(storagePath.resolve("updates").toAbsolutePath().normalize(), updatesDir);
+    }
+
+    @Test
+    void shouldParsePicocliLauncherArguments() {
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                new RecordingProcessStarter(List.of(0)),
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
+
+        RuntimeLauncher.ParseOutcome parseOutcome = launcher.parseArguments(new String[] {
+                "--storage-path=/srv/workspace",
+                "--updates-path=/srv/updates",
+                "--bundled-jar=/opt/bot.jar",
+                "--server-port=9090",
+                "-J=-Xmx512m",
+                "-Dspring.profiles.active=prod",
+                "--spring.main.banner-mode=off"
+        });
+
+        assertFalse(parseOutcome.shouldExit());
+        RuntimeLauncher.LauncherArguments launcherArguments = parseOutcome.launcherArguments();
+        assertNotNull(launcherArguments);
+        assertEquals("/srv/workspace", launcherArguments.storagePath());
+        assertEquals("/srv/updates", launcherArguments.updatesPath());
+        assertEquals("/opt/bot.jar", launcherArguments.bundledJar());
+        assertEquals("9090", launcherArguments.serverPort());
+        assertIterableEquals(List.of("-Xmx512m", "-Dspring.profiles.active=prod"),
+                launcherArguments.explicitJavaOptions());
+        assertIterableEquals(List.of("--spring.main.banner-mode=off"), launcherArguments.applicationArguments());
+    }
+
+    @Test
+    void shouldReturnZeroWhenUsageHelpRequested() {
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                new RecordingProcessStarter(List.of(0)),
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
+
+        RuntimeLauncher.ParseOutcome parseOutcome = launcher.parseArguments(new String[] { "--help" });
+
+        assertTrue(parseOutcome.shouldExit());
+        assertEquals(0, parseOutcome.exitCode());
+    }
+
+    @Test
+    void shouldReturnCliErrorWhenUnknownLauncherOptionLooksLikeLauncherFlag() {
+        CapturingLauncherOutput output = new CapturingLauncherOutput();
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                new RecordingProcessStarter(List.of(0)),
+                output,
+                null,
+                null,
+                Map.of());
+
+        RuntimeLauncher.ParseOutcome parseOutcome = launcher.parseArguments(new String[] {
+                "--unknown-launcher-flag"
+        });
+
+        assertTrue(parseOutcome.shouldExit());
+        assertEquals(RuntimeLauncher.CLI_ERROR_EXIT_CODE, parseOutcome.exitCode());
+        assertTrue(output.errorMessages().stream()
+                .anyMatch(message -> message.contains("Missing required parameter for option '--unknown-launcher-flag'")));
     }
 
     @Test
@@ -418,8 +570,8 @@ class RuntimeLauncherTest {
     }
 
     /**
-     * Records every command sent to the child process and replays configured exit
-     * codes in sequence.
+     * Records every command sent to the child process and replays configured
+     * exit codes in sequence.
      */
     private static class RecordingProcessStarter implements RuntimeLauncher.ProcessStarter {
 
@@ -527,8 +679,8 @@ class RuntimeLauncherTest {
     }
 
     /**
-     * Simulates an interrupted wait so the launcher can prove it destroys the child
-     * process and preserves the interrupt flag.
+     * Simulates an interrupted wait so the launcher can prove it destroys the
+     * child process and preserves the interrupt flag.
      */
     private static final class InterruptingChildProcess implements RuntimeLauncher.ChildProcess {
 
@@ -600,20 +752,25 @@ class RuntimeLauncherTest {
     }
 
     /**
-     * Collects launcher errors for assertion-friendly verification.
+     * Collects launcher output for assertion-friendly verification.
      */
     private static final class CapturingLauncherOutput implements RuntimeLauncher.LauncherOutput {
 
+        private final List<String> capturedInfoMessages = new ArrayList<>();
         private final List<String> capturedErrorMessages = new ArrayList<>();
 
         @Override
         public void info(String message) {
-            // Info logs are not relevant for the failure assertions in this test.
+            capturedInfoMessages.add(message);
         }
 
         @Override
         public void error(String message) {
             capturedErrorMessages.add(message);
+        }
+
+        private List<String> infoMessages() {
+            return capturedInfoMessages;
         }
 
         private List<String> errorMessages() {

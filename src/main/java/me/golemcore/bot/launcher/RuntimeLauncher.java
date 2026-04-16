@@ -1,6 +1,8 @@
 package me.golemcore.bot.launcher;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -13,26 +15,32 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Stream;
 
+import picocli.CommandLine;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.IVersionProvider;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.Unmatched;
+
 /**
  * Supervises the actual bot runtime so self-update can restart into a staged
  * jar instead of relaunching the immutable container classpath.
  *
- * <p>
- * The launcher always evaluates the best available runtime source in this
+ * <p>The launcher always evaluates the best available runtime source in this
  * order:
  * <ol>
- * <li>a staged jar selected by {@code updates/current.txt}</li>
- * <li>a bundled runtime jar shipped next to the launcher</li>
- * <li>the image classpath produced by the container build</li>
+ *     <li>a staged jar selected by {@code updates/current.txt}</li>
+ *     <li>a bundled runtime jar shipped next to the launcher</li>
+ *     <li>the image classpath produced by the container build</li>
  * </ol>
  *
- * <p>
- * This keeps restart semantics stable for both container and local native
- * distribution layouts.
+ * <p>The native app-image entry point uses picocli so the local launcher can
+ * document its own options while forwarding unknown arguments to the spawned
+ * Spring Boot runtime.
  */
 public final class RuntimeLauncher {
 
     static final int RESTART_EXIT_CODE = 42;
+    static final int CLI_ERROR_EXIT_CODE = 2;
     static final String APPLICATION_MAIN_CLASS = "me.golemcore.bot.BotApplication";
     static final String CURRENT_MARKER_NAME = "current.txt";
     static final String JARS_DIR_NAME = "jars";
@@ -94,17 +102,21 @@ public final class RuntimeLauncher {
     /**
      * Runs the launcher loop until the child runtime exits normally.
      *
-     * <p>
-     * When the child returns {@link #RESTART_EXIT_CODE}, the loop resolves the
-     * runtime source again so newly staged jars become active immediately.
+     * <p>When the child returns {@link #RESTART_EXIT_CODE}, the loop resolves
+     * the runtime source again so newly staged jars become active immediately.
      *
-     * @param args
-     *            original launcher arguments
+     * @param args original launcher arguments
      * @return final child exit code or {@code 1} when the launcher itself fails
      */
     int run(String[] args) {
+        ParseOutcome parseOutcome = parseArguments(args);
+        if (parseOutcome.shouldExit()) {
+            return parseOutcome.exitCode();
+        }
+
+        LauncherArguments launcherArguments = parseOutcome.launcherArguments();
         while (true) {
-            LaunchCommand launchCommand = resolveLaunchCommand(args);
+            LaunchCommand launchCommand = resolveLaunchCommand(launcherArguments);
             ChildProcess childProcess;
             try {
                 output.info("Starting " + launchCommand.description());
@@ -139,60 +151,93 @@ public final class RuntimeLauncher {
     }
 
     /**
+     * Parses launcher-specific command-line options with picocli while leaving
+     * unknown arguments untouched for Spring Boot.
+     *
+     * @param args original launcher arguments
+     * @return parse outcome containing either normalized launcher arguments or
+     *         an exit decision for help / parse failures
+     */
+    ParseOutcome parseArguments(String[] args) {
+        LauncherCliArguments cliArguments = new LauncherCliArguments();
+        CommandLine commandLine = createCommandLine(cliArguments);
+        CommandLine.ParseResult parseResult;
+        try {
+            parseResult = commandLine.parseArgs(args);
+        } catch (CommandLine.ParameterException e) {
+            output.error(e.getMessage());
+            emitUsage(e.getCommandLine(), true);
+            return ParseOutcome.exit(CLI_ERROR_EXIT_CODE);
+        }
+
+        if (parseResult.isUsageHelpRequested()) {
+            emitUsage(commandLine, false);
+            return ParseOutcome.exit(0);
+        }
+        if (parseResult.isVersionHelpRequested()) {
+            emitVersion();
+            return ParseOutcome.exit(0);
+        }
+        return ParseOutcome.success(cliArguments.toLauncherArguments());
+    }
+
+    /**
      * Builds the exact child-process command for the current launcher cycle.
      *
-     * <p>
-     * The launcher prefers a staged update, then an explicitly or implicitly
-     * discovered bundled jar, and only falls back to the image classpath when no
-     * jar-based runtime is available.
+     * <p>The launcher prefers a staged update, then an explicitly or implicitly
+     * discovered bundled jar, and only falls back to the image classpath when
+     * no jar-based runtime is available.
      *
-     * @param args
-     *            original launcher arguments
+     * @param args original launcher arguments
      * @return immutable launch command description
      */
     LaunchCommand resolveLaunchCommand(String[] args) {
-        Path currentJar = resolveCurrentJar(args);
-        List<String> applicationArgs = resolveApplicationArgs(args);
+        return resolveLaunchCommand(parseArguments(args).launcherArguments());
+    }
+
+    private LaunchCommand resolveLaunchCommand(LauncherArguments launcherArguments) {
+        Path currentJar = resolveCurrentJar(launcherArguments);
         List<String> command = new ArrayList<>();
         command.add(javaCommand);
-        command.addAll(resolveForwardedJavaOptions(args));
+        command.addAll(resolveForwardedJavaOptions(launcherArguments));
 
         if (currentJar != null) {
             command.add("-jar");
             command.add(currentJar.toString());
-            command.addAll(applicationArgs);
+            command.addAll(launcherArguments.applicationArguments());
             return new LaunchCommand(List.copyOf(command), "updated runtime " + currentJar);
         }
 
-        Path bundledJar = resolveBundledJar();
+        Path bundledJar = resolveBundledJar(launcherArguments);
         if (bundledJar != null) {
             command.add("-jar");
             command.add(bundledJar.toString());
-            command.addAll(applicationArgs);
+            command.addAll(launcherArguments.applicationArguments());
             return new LaunchCommand(List.copyOf(command), "bundled runtime jar " + bundledJar);
         }
 
         command.add("-cp");
         command.add("@" + JIB_CLASSPATH_FILE);
         command.add(APPLICATION_MAIN_CLASS);
-        command.addAll(applicationArgs);
+        command.addAll(launcherArguments.applicationArguments());
         return new LaunchCommand(List.copyOf(command), "bundled runtime from image classpath");
     }
 
     /**
      * Resolves the staged runtime jar pointed to by {@code current.txt}.
      *
-     * <p>
-     * The marker content is validated aggressively so a corrupted or hostile marker
-     * cannot escape the updates directory via path traversal.
+     * <p>The marker content is validated aggressively so a corrupted or hostile
+     * marker cannot escape the updates directory via path traversal.
      *
-     * @param args
-     *            original launcher arguments
-     * @return staged runtime jar path, or {@code null} when no valid staged jar
-     *         exists
+     * @param args original launcher arguments
+     * @return staged runtime jar path, or {@code null} when no valid staged jar exists
      */
     Path resolveCurrentJar(String[] args) {
-        Path updatesDir = resolveUpdatesDir(args);
+        return resolveCurrentJar(parseArguments(args).launcherArguments());
+    }
+
+    private Path resolveCurrentJar(LauncherArguments launcherArguments) {
+        Path updatesDir = resolveUpdatesDir(launcherArguments);
         Path markerPath = updatesDir.resolve(CURRENT_MARKER_NAME);
         if (!Files.isRegularFile(markerPath)) {
             return null;
@@ -228,20 +273,21 @@ public final class RuntimeLauncher {
     /**
      * Resolves the updates directory using the same precedence as the runtime.
      *
-     * <p>
-     * Command-line properties win over JVM properties, which win over the ambient
-     * environment. When no explicit updates path exists, the launcher derives it
-     * from the storage root and finally falls back to the default workspace
-     * location under the user home directory.
+     * <p>Explicit launcher options win over JVM properties, which win over the
+     * ambient environment. When no explicit updates path exists, the launcher
+     * derives it from the storage root and finally falls back to the default
+     * workspace location under the user home directory.
      *
-     * @param args
-     *            original launcher arguments
+     * @param args original launcher arguments
      * @return normalized updates directory path
      */
     Path resolveUpdatesDir(String[] args) {
+        return resolveUpdatesDir(parseArguments(args).launcherArguments());
+    }
+
+    private Path resolveUpdatesDir(LauncherArguments launcherArguments) {
         String configuredUpdatesPath = firstNonBlank(
-                extractPropertyArg(args, UPDATE_PATH_PROPERTY),
-                extractSystemPropertyArg(args, UPDATE_PATH_PROPERTY),
+                launcherArguments.updatesPath(),
                 propertyReader.get(UPDATE_PATH_PROPERTY),
                 environmentReader.get(UPDATE_PATH_ENV));
         if (configuredUpdatesPath != null) {
@@ -249,8 +295,7 @@ public final class RuntimeLauncher {
         }
 
         String storageBasePath = firstNonBlank(
-                extractPropertyArg(args, STORAGE_PATH_PROPERTY),
-                extractSystemPropertyArg(args, STORAGE_PATH_PROPERTY),
+                launcherArguments.storagePath(),
                 propertyReader.get(STORAGE_PATH_PROPERTY),
                 environmentReader.get(STORAGE_PATH_ENV));
         if (storageBasePath != null) {
@@ -265,16 +310,20 @@ public final class RuntimeLauncher {
     /**
      * Resolves a bundled runtime jar shipped with the launcher itself.
      *
-     * <p>
-     * An explicit configuration value wins first. Otherwise the launcher inspects
-     * the code-source location and common app-image directories to support both
-     * direct jars and native distributions produced by {@code jpackage}.
+     * <p>An explicit launcher option or system property wins first. Otherwise
+     * the launcher inspects the code-source location and common app-image
+     * directories to support both direct jars and native distributions produced
+     * by {@code jpackage}.
      *
-     * @return bundled runtime jar path, or {@code null} when the launcher should
-     *         use classpath mode
+     * @return bundled runtime jar path, or {@code null} when the launcher should use classpath mode
      */
     Path resolveBundledJar() {
+        return resolveBundledJar(LauncherArguments.empty());
+    }
+
+    private Path resolveBundledJar(LauncherArguments launcherArguments) {
         String configuredBundledJar = firstNonBlank(
+                launcherArguments.bundledJar(),
                 propertyReader.get(BUNDLED_JAR_PROPERTY),
                 environmentReader.get(BUNDLED_JAR_ENV));
         if (configuredBundledJar != null) {
@@ -311,33 +360,55 @@ public final class RuntimeLauncher {
     /**
      * Collects JVM options that must be preserved across launcher restarts.
      *
-     * <p>
-     * Explicit {@code -D} arguments are forwarded verbatim. For a small set of
-     * critical properties the launcher also injects values from the current JVM
-     * when they were not supplied explicitly on the command line.
+     * <p>Explicit JVM options from picocli's {@code -J/--java-option} and
+     * pass-through {@code -D...} arguments are forwarded verbatim. For a small
+     * set of critical properties the launcher also injects values from the
+     * parsed launcher options or the current JVM when they were not supplied
+     * explicitly.
      *
-     * @param args
-     *            original launcher arguments
+     * @param launcherArguments normalized launcher arguments
      * @return JVM options for the child process
      */
-    private List<String> resolveForwardedJavaOptions(String[] args) {
-        List<String> forwardedOptions = new ArrayList<>();
-        Set<String> explicitSystemPropertyNames = new LinkedHashSet<>();
-        for (String arg : args) {
-            if (isSystemPropertyArg(arg)) {
-                forwardedOptions.add(arg);
-                explicitSystemPropertyNames.add(extractSystemPropertyName(arg));
-            }
-        }
+    private List<String> resolveForwardedJavaOptions(LauncherArguments launcherArguments) {
+        List<String> forwardedOptions = new ArrayList<>(launcherArguments.explicitJavaOptions());
+        Set<String> explicitSystemPropertyNames = extractSystemPropertyNames(forwardedOptions);
+
+        addExplicitSystemProperty(forwardedOptions, explicitSystemPropertyNames,
+                STORAGE_PATH_PROPERTY, launcherArguments.storagePath());
+        addExplicitSystemProperty(forwardedOptions, explicitSystemPropertyNames,
+                UPDATE_PATH_PROPERTY, launcherArguments.updatesPath());
+        addExplicitSystemProperty(forwardedOptions, explicitSystemPropertyNames,
+                SERVER_PORT_PROPERTY, launcherArguments.serverPort());
 
         for (String propertyName : FORWARDED_SYSTEM_PROPERTIES) {
-            boolean propertyExplicitlyConfigured = explicitSystemPropertyNames.contains(propertyName)
-                    || extractPropertyArg(args, propertyName) != null;
-            if (!propertyExplicitlyConfigured) {
+            if (!explicitSystemPropertyNames.contains(propertyName)) {
                 addForwardedSystemProperty(forwardedOptions, propertyName);
             }
         }
-        return forwardedOptions;
+        return List.copyOf(forwardedOptions);
+    }
+
+    private Set<String> extractSystemPropertyNames(List<String> explicitJavaOptions) {
+        Set<String> explicitSystemPropertyNames = new LinkedHashSet<>();
+        for (String explicitJavaOption : explicitJavaOptions) {
+            if (isSystemPropertyArg(explicitJavaOption)) {
+                explicitSystemPropertyNames.add(extractSystemPropertyName(explicitJavaOption));
+            }
+        }
+        return explicitSystemPropertyNames;
+    }
+
+    private void addExplicitSystemProperty(
+            List<String> forwardedOptions,
+            Set<String> explicitSystemPropertyNames,
+            String propertyName,
+            String propertyValue) {
+        String normalizedValue = trimToNull(propertyValue);
+        if (normalizedValue == null || explicitSystemPropertyNames.contains(propertyName)) {
+            return;
+        }
+        forwardedOptions.add(buildSystemPropertyOption(propertyName, normalizedValue));
+        explicitSystemPropertyNames.add(propertyName);
     }
 
     private void addForwardedSystemProperty(List<String> forwardedOptions, String propertyName) {
@@ -345,25 +416,6 @@ public final class RuntimeLauncher {
         if (propertyValue != null && !propertyValue.isBlank()) {
             forwardedOptions.add(buildSystemPropertyOption(propertyName, propertyValue));
         }
-    }
-
-    /**
-     * Filters out launcher-only JVM arguments so the remaining values can be passed
-     * to Spring Boot exactly as application arguments.
-     *
-     * @param args
-     *            original launcher arguments
-     * @return application arguments for the child runtime
-     */
-    private List<String> resolveApplicationArgs(String[] args) {
-        List<String> applicationArgs = new ArrayList<>();
-        for (String arg : args) {
-            if (isSystemPropertyArg(arg)) {
-                continue;
-            }
-            applicationArgs.add(arg);
-        }
-        return applicationArgs;
     }
 
     private static boolean isSystemPropertyArg(String arg) {
@@ -383,14 +435,11 @@ public final class RuntimeLauncher {
      * Searches app-image layouts that place the runtime jar in a nearby
      * {@code runtime} directory instead of next to the launcher artifact.
      *
-     * <p>
-     * This covers the directory shapes produced by local native bundles on Linux
-     * and macOS.
+     * <p>This covers the directory shapes produced by local native bundles on
+     * Linux and macOS.
      *
-     * @param resolvedLocation
-     *            launcher code-source location
-     * @return discovered bundled runtime jar, or {@code null} when none exists
-     *         nearby
+     * @param resolvedLocation launcher code-source location
+     * @return discovered bundled runtime jar, or {@code null} when none exists nearby
      */
     private Path findBundledRuntimeJarInCommonRuntimeDirs(Path resolvedLocation) {
         Path currentDirectory = Files.isDirectory(resolvedLocation)
@@ -429,8 +478,7 @@ public final class RuntimeLauncher {
     /**
      * Scans a single directory for a bundled runtime jar.
      *
-     * @param resolvedLocation
-     *            directory or file near the bundled runtime
+     * @param resolvedLocation directory or file near the bundled runtime
      * @return matching runtime jar, or {@code null} when no candidate is present
      */
     private Path findBundledRuntimeJar(Path resolvedLocation) {
@@ -483,8 +531,7 @@ public final class RuntimeLauncher {
      * Normalizes user-provided paths and expands the home placeholders commonly
      * produced by local launchers and shell invocations.
      *
-     * @param value
-     *            raw path-like value
+     * @param value raw path-like value
      * @return normalized absolute path
      */
     private static Path normalizePath(String value) {
@@ -496,31 +543,6 @@ public final class RuntimeLauncher {
         return Path.of(expanded).toAbsolutePath().normalize();
     }
 
-    private static String extractPropertyArg(String[] args, String propertyName) {
-        String prefix = "--" + propertyName + "=";
-        for (String arg : args) {
-            if (arg.startsWith(prefix)) {
-                String value = arg.substring(prefix.length()).trim();
-                return value.isBlank() ? null : value;
-            }
-        }
-        return null;
-    }
-
-    private static String extractSystemPropertyArg(String[] args, String propertyName) {
-        for (String arg : args) {
-            if (!isSystemPropertyArg(arg)) {
-                continue;
-            }
-            if (extractSystemPropertyName(arg).equals(propertyName)) {
-                int equalsIndex = arg.indexOf('=');
-                String value = arg.substring(equalsIndex + 1).trim();
-                return value.isBlank() ? null : value;
-            }
-        }
-        return null;
-    }
-
     private static String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
@@ -528,6 +550,14 @@ public final class RuntimeLauncher {
             }
         }
         return null;
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static String resolveJavaCommand() {
@@ -555,8 +585,7 @@ public final class RuntimeLauncher {
      * Removes the per-run shutdown hook once the child process has finished so
      * repeated restarts do not accumulate stale hooks.
      *
-     * @param shutdownHook
-     *            hook installed for the current child process
+     * @param shutdownHook hook installed for the current child process
      */
     private void removeShutdownHook(Thread shutdownHook) {
         try {
@@ -566,15 +595,164 @@ public final class RuntimeLauncher {
         }
     }
 
+    private CommandLine createCommandLine(LauncherCliArguments cliArguments) {
+        CommandLine commandLine = new CommandLine(cliArguments);
+        commandLine.setUnmatchedArgumentsAllowed(true);
+        return commandLine;
+    }
+
+    private void emitUsage(CommandLine commandLine, boolean error) {
+        StringWriter stringWriter = new StringWriter();
+        PrintWriter printWriter = new PrintWriter(stringWriter);
+        commandLine.usage(printWriter);
+        printWriter.flush();
+        emitCommandLineOutput(stringWriter.toString(), error);
+    }
+
+    private void emitVersion() {
+        RuntimeLauncherVersionProvider versionProvider = new RuntimeLauncherVersionProvider();
+        try {
+            for (String line : versionProvider.getVersion()) {
+                output.info(line);
+            }
+        } catch (Exception e) {
+            output.info("golemcore-bot native launcher");
+        }
+    }
+
+    private void emitCommandLineOutput(String text, boolean error) {
+        String normalizedText = text.replace("\r\n", "\n");
+        String[] lines = normalizedText.split("\n", -1);
+        for (int index = 0; index < lines.length; index++) {
+            if (index == lines.length - 1 && lines[index].isEmpty()) {
+                continue;
+            }
+            if (error) {
+                output.error(lines[index]);
+            } else {
+                output.info(lines[index]);
+            }
+        }
+    }
+
     /**
      * Immutable child-process launch descriptor.
      *
-     * @param command
-     *            exact process command line
-     * @param description
-     *            human-readable command source description for logs
+     * @param command exact process command line
+     * @param description human-readable command source description for logs
      */
     record LaunchCommand(List<String> command, String description) {
+    }
+
+    private record LauncherArguments(
+            String storagePath,
+            String updatesPath,
+            String bundledJar,
+            String serverPort,
+            List<String> explicitJavaOptions,
+            List<String> applicationArguments) {
+
+        private static LauncherArguments empty() {
+            return new LauncherArguments(null, null, null, null, List.of(), List.of());
+        }
+    }
+
+    record ParseOutcome(LauncherArguments launcherArguments, int exitCode, boolean shouldExit) {
+
+        private static ParseOutcome success(LauncherArguments launcherArguments) {
+            return new ParseOutcome(launcherArguments, 0, false);
+        }
+
+        private static ParseOutcome exit(int exitCode) {
+            return new ParseOutcome(LauncherArguments.empty(), exitCode, true);
+        }
+    }
+
+    /**
+     * Picocli-backed argument model for the native app-image launcher.
+     */
+    @Command(
+            name = "golemcore-bot",
+            mixinStandardHelpOptions = true,
+            versionProvider = RuntimeLauncherVersionProvider.class,
+            sortOptions = false,
+            description = {
+                    "Restart-aware native launcher for the GolemCore Bot app-image.",
+                    "Launcher-specific options are handled locally; all unknown arguments",
+                    "are forwarded to the spawned Spring Boot runtime."
+            },
+            footer = {
+                    "",
+                    "Examples:",
+                    "  golemcore-bot --server-port=9090",
+                    "  golemcore-bot -J=-Xmx1g --server-port=9090",
+                    "  golemcore-bot --storage-path=/srv/golemcore/workspace --updates-path=/srv/golemcore/updates",
+                    "  golemcore-bot -- --spring.profiles.active=prod"
+            })
+    private static final class LauncherCliArguments {
+
+        @Option(
+                names = { "--storage-path", "--bot.storage.local.base-path" },
+                description = "Workspace storage root. Also forwarded to the runtime as -D"
+                        + STORAGE_PATH_PROPERTY + ".")
+        private String storagePath;
+
+        @Option(
+                names = { "--updates-path", "--bot.update.updates-path" },
+                description = "Updates directory. Also forwarded to the runtime as -D"
+                        + UPDATE_PATH_PROPERTY + ".")
+        private String updatesPath;
+
+        @Option(
+                names = { "--bundled-jar", "--golemcore.launcher.bundled-jar" },
+                description = "Bundled runtime jar to prefer before the classpath fallback.")
+        private String bundledJar;
+
+        @Option(
+                names = { "--server-port", "--server.port" },
+                description = "HTTP port for the spawned runtime. Also forwarded as -D"
+                        + SERVER_PORT_PROPERTY + ".")
+        private String serverPort;
+
+        @Option(
+                names = { "-J", "--java-option" },
+                paramLabel = "<jvm-option>",
+                description = "Additional JVM option forwarded to the spawned runtime. Repeatable.")
+        private List<String> javaOptions = new ArrayList<>();
+
+        @Unmatched
+        private List<String> passThroughArguments = new ArrayList<>();
+
+        private LauncherArguments toLauncherArguments() {
+            List<String> explicitJavaOptions = new ArrayList<>(javaOptions);
+            List<String> applicationArguments = new ArrayList<>();
+            for (String passThroughArgument : passThroughArguments) {
+                if (isSystemPropertyArg(passThroughArgument)) {
+                    explicitJavaOptions.add(passThroughArgument);
+                } else {
+                    applicationArguments.add(passThroughArgument);
+                }
+            }
+            return new LauncherArguments(
+                    trimToNull(storagePath),
+                    trimToNull(updatesPath),
+                    trimToNull(bundledJar),
+                    trimToNull(serverPort),
+                    List.copyOf(explicitJavaOptions),
+                    List.copyOf(applicationArguments));
+        }
+    }
+
+    private static final class RuntimeLauncherVersionProvider implements IVersionProvider {
+
+        @Override
+        public String[] getVersion() {
+            String implementationVersion = RuntimeLauncher.class.getPackage().getImplementationVersion();
+            if (implementationVersion == null || implementationVersion.isBlank()) {
+                implementationVersion = "development";
+            }
+            return new String[] { "golemcore-bot native launcher " + implementationVersion };
+        }
     }
 
     /**
@@ -694,7 +872,7 @@ public final class RuntimeLauncher {
                     return null;
                 }
                 return Path.of(codeSource.getLocation().toURI()).toAbsolutePath().normalize();
-            } catch (URISyntaxException | IllegalArgumentException _) {
+            } catch (URISyntaxException | IllegalArgumentException ignored) {
                 return null;
             }
         }

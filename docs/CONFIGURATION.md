@@ -828,15 +828,30 @@ When the app starts through the native app-image launcher, `RuntimeLauncher` can
 
 These point to the bundled runtime jar inside the local app-image.
 
-The launcher also forwards JVM system properties passed to the native launcher process, including `-Dserver.port=...`, to the spawned runtime jar.
+The native launcher itself is picocli-based and documents its launcher-only options via `--help`.
 
-Launcher priority is:
+Launcher-specific options:
+
+- `--server-port=<port>` forwards `-Dserver.port=<port>` to the spawned runtime
+- `--storage-path=<path>` forwards `-Dbot.storage.local.base-path=<path>`
+- `--updates-path=<path>` forwards `-Dbot.update.updates-path=<path>`
+- `--bundled-jar=<path>` overrides the bundled runtime jar path
+- `-J=<jvm-option>` / `--java-option=<jvm-option>` forwards extra JVM options
+
+Unknown arguments are passed through to Spring Boot, so both of these remain valid:
+
+```bash
+golemcore-bot --server-port=9090
+golemcore-bot --spring.profiles.active=prod
+```
+
+The launcher priority is:
 
 1. staged update selected by `updates/current.txt`
 2. bundled runtime jar
 3. legacy Jib classpath fallback
 
-This preserves the existing self-update model for local distributions.
+This preserves the existing self-update model for local distributions while adding a documented native launcher CLI.
 
 ## Storage Layout
 
