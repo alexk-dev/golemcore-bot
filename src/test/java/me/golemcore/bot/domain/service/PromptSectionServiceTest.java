@@ -131,6 +131,45 @@ class PromptSectionServiceTest {
     }
 
     @Test
+    void reload_frontmatterWithBareOrderKeepsDefaultAndAppliesLaterKeys() {
+        // A bare `order:` parses as null. The loader must not let that abort parsing
+        // and drop
+        // later keys in the same frontmatter — the section should default order and
+        // still apply
+        // the remaining fields.
+        String content = "---\ndescription: Foo\norder:\nenabled: false\n---\nBody.";
+
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
+                .thenReturn(CompletableFuture.completedFuture(content));
+
+        service.reload();
+
+        PromptSection section = service.getSection(IDENTITY_NAME).orElseThrow();
+        assertEquals("Foo", section.getDescription());
+        assertEquals(100, section.getOrder());
+        assertFalse(section.isEnabled());
+    }
+
+    @Test
+    void reload_frontmatterWithBareEnabledKeepsDefaultAndAppliesLaterKeys() {
+        String content = "---\ndescription: Foo\nenabled:\norder: 55\n---\nBody.";
+
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
+                .thenReturn(CompletableFuture.completedFuture(content));
+
+        service.reload();
+
+        PromptSection section = service.getSection(IDENTITY_NAME).orElseThrow();
+        assertEquals("Foo", section.getDescription());
+        assertEquals(55, section.getOrder());
+        assertTrue(section.isEnabled());
+    }
+
+    @Test
     void reload_noFrontmatter() {
         when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("CUSTOM.md")));

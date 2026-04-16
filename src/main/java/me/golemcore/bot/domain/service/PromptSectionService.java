@@ -328,11 +328,17 @@ public class PromptSectionService {
                 // coerce to empty string so the API string contract holds.
                 Object rawDescription = yaml.get("description");
                 description = rawDescription == null ? "" : rawDescription.toString();
-                if (yaml.containsKey("order")) {
-                    order = ((Number) yaml.get("order")).intValue();
+                // Bare `order:` / `enabled:` round-trip as null through YAML; treat them as
+                // absent
+                // so one empty key does not abort parsing and silently drop the remaining
+                // fields.
+                Object rawOrder = yaml.get("order");
+                if (rawOrder instanceof Number orderNumber) {
+                    order = orderNumber.intValue();
                 }
-                if (yaml.containsKey("enabled")) {
-                    enabled = (Boolean) yaml.get("enabled");
+                Object rawEnabled = yaml.get("enabled");
+                if (rawEnabled instanceof Boolean enabledFlag) {
+                    enabled = enabledFlag;
                 }
             } catch (IOException | RuntimeException e) {
                 log.warn("Failed to parse prompt section frontmatter: {}", file, e);
