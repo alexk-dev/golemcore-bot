@@ -1,5 +1,5 @@
-import { useCallback, type ReactElement } from 'react';
-import { Alert, Button, Card, Spinner } from '../../components/ui/tailwind-components';
+import { useCallback, useState, type ReactElement } from 'react';
+import { Button, Card, Spinner } from '../../components/ui/tailwind-components';
 import toast from 'react-hot-toast';
 import type {
   SystemUpdateActionResponse,
@@ -10,20 +10,15 @@ import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAutoReload } from '../../hooks/useUpdateAutoReload';
 import {
   useCheckSystemUpdate,
+  useForceInstallStagedUpdate,
   useSystemUpdateConfig,
   useSystemUpdateStatus,
   useUpdateSystemConfig,
   useUpdateSystemNow,
 } from '../../hooks/useSystem';
 import { extractErrorMessage } from '../../utils/extractErrorMessage';
-import {
-  getPrimaryUpdateVersion,
-  getUpdateActionLabel,
-  getUpdateStateDescription,
-  getUpdateWorkflowPresentation,
-  hasPendingUpdate,
-} from '../../utils/systemUpdateUi';
-import { UpdateWorkflowPanel } from './UpdateWorkflowPanel';
+import { getPrimaryUpdateVersion, getUpdateBlockedReasonLabel } from '../../utils/systemUpdateUi';
+import { UpdateOverviewCard } from './UpdateOverviewCard';
 import { UpdateSettingsCard } from './UpdateSettingsCard';
 import {
   resolveExpectedUpdateVersion,
@@ -32,7 +27,6 @@ import {
   useUpdateConfigForm,
 } from './UpdatesTabHooks';
 import type { UpdateSettingsFormState } from './updateSettingsUtils';
-
 
 interface UpdatesErrorCardProps {
   onRetry: () => void;
@@ -44,31 +38,31 @@ interface UpdatesBodyProps {
   configForm: UpdateSettingsFormState | null;
   canCheck: boolean;
   canUpdate: boolean;
+  canForceInstall: boolean;
   isBusy: boolean;
   isCheckPending: boolean;
   isUpdatePending: boolean;
+  isForceInstallPending: boolean;
   isConfigLoading: boolean;
   isConfigSaving: boolean;
   isAutoReloadArmed: boolean;
   autoReloadState: ReturnType<typeof useUpdateAutoReload>;
+  isForceInstallConfirmOpen: boolean;
+  forceInstallMessage: string;
   onCheck: () => void;
   onUpdateNow: () => void;
+  onOpenForceInstallConfirm: () => void;
+  onConfirmForceInstall: () => void;
+  onCancelForceInstall: () => void;
   onConfigRetry: () => void;
   onConfigChange: (updater: (current: UpdateSettingsFormState) => UpdateSettingsFormState) => void;
   onConfigSave: () => void;
 }
 
-function getIdleHint(status: SystemUpdateStatusResponse): string | null {
-  if (!status.enabled) {
-    return 'Updates are disabled by backend configuration.';
-  }
-  if (status.state === 'IDLE' && !hasPendingUpdate(status)) {
-    return 'No update is queued. Run a check to look for a newer compatible release.';
-  }
-  if (status.state === 'FAILED' && hasPendingUpdate(status)) {
-    return 'A target version is still available. Review the error and retry when ready.';
-  }
-  return null;
+function buildForceInstallMessage(status: SystemUpdateStatusResponse): string {
+  const version = getPrimaryUpdateVersion(status) ?? 'the staged update';
+  const blockedReason = getUpdateBlockedReasonLabel(status.blockedReason) ?? 'Runtime activity is still reported as busy.';
+  return `The update package for ${version} is already staged locally, but the normal install action is blocked because ${blockedReason}. Force install will restart the backend immediately and may interrupt the current work.`;
 }
 
 function UpdatesLoadingCard(): ReactElement {
@@ -87,9 +81,9 @@ function UpdatesErrorCard({ onRetry }: UpdatesErrorCardProps): ReactElement {
     <Card className="settings-card updates-card">
       <Card.Body>
         <SettingsCardTitle title="Updates" />
-        <Alert variant="warning" className="mb-3">
+        <div className="alert alert-warning mb-3">
           Unable to load update status from backend.
-        </Alert>
+        </div>
         <Button type="button" size="sm" variant="secondary" onClick={onRetry}>
           Retry
         </Button>
@@ -104,76 +98,47 @@ function UpdatesBody({
   configForm,
   canCheck,
   canUpdate,
+  canForceInstall,
   isBusy,
   isCheckPending,
   isUpdatePending,
+  isForceInstallPending,
   isConfigLoading,
   isConfigSaving,
   isAutoReloadArmed,
   autoReloadState,
+  isForceInstallConfirmOpen,
+  forceInstallMessage,
   onCheck,
   onUpdateNow,
+  onOpenForceInstallConfirm,
+  onConfirmForceInstall,
+  onCancelForceInstall,
   onConfigRetry,
   onConfigChange,
   onConfigSave,
 }: UpdatesBodyProps): ReactElement {
-  const pendingVersion = getPrimaryUpdateVersion(status);
-  const idleHint = getIdleHint(status);
-  const workflow = getUpdateWorkflowPresentation(status);
-
   return (
     <>
-      <Card className="settings-card updates-card">
-        <Card.Body>
-          <SettingsCardTitle title="Updates" tip="Track every update stage and restart automatically when the new runtime is ready" />
-
-          <UpdateWorkflowPanel
-            status={status}
-            isAutoReloadActive={isAutoReloadArmed}
-            hasSeenDowntime={autoReloadState.hasSeenDowntime}
-            lastProbeError={autoReloadState.lastProbeError}
-          />
-
-          <div className="updates-actions">
-            <Button type="button" size="sm" variant="secondary" onClick={onCheck} disabled={!canCheck}>
-              {isCheckPending ? 'Checking...' : 'Check for updates'}
-            </Button>
-            <Button type="button" size="sm" variant="primary" onClick={onUpdateNow} disabled={!canUpdate}>
-              {isUpdatePending || isBusy ? 'Updating...' : getUpdateActionLabel(status)}
-            </Button>
-          </div>
-
-          <div className="small text-body-secondary updates-footnote">
-            {pendingVersion == null
-              ? 'Applying an update restarts the backend and refreshes this page automatically.'
-              : `Target version: ${pendingVersion}. Applying the update restarts the backend and refreshes this page automatically.`}
-          </div>
-
-          {idleHint != null && (
-            <Alert variant="secondary" className="mb-3 small">
-              {idleHint}
-            </Alert>
-          )}
-
-          {status.lastError != null && status.lastError.trim().length > 0 && (
-            <Alert variant="danger" className="mb-0 small">
-              {status.lastError}
-            </Alert>
-          )}
-
-          {status.lastError == null && idleHint == null && status.state === 'FAILED' && (
-            <Alert variant="danger" className="mb-0 small">
-              {getUpdateStateDescription(status.state)}
-            </Alert>
-          )}
-
-          {status.lastError == null && idleHint == null && status.state === 'IDLE' && !hasPendingUpdate(status) && (
-            <Alert variant="secondary" className="mb-0 small">
-              {workflow.description}
-            </Alert>
-          )}
-        </Card.Body>
-      </Card>
+      <UpdateOverviewCard
+        status={status}
+        canCheck={canCheck}
+        canUpdate={canUpdate}
+        canForceInstall={canForceInstall}
+        isBusy={isBusy}
+        isCheckPending={isCheckPending}
+        isUpdatePending={isUpdatePending}
+        isForceInstallPending={isForceInstallPending}
+        isAutoReloadArmed={isAutoReloadArmed}
+        autoReloadState={autoReloadState}
+        isForceInstallConfirmOpen={isForceInstallConfirmOpen}
+        forceInstallMessage={forceInstallMessage}
+        onCheck={onCheck}
+        onUpdateNow={onUpdateNow}
+        onOpenForceInstallConfirm={onOpenForceInstallConfirm}
+        onConfirmForceInstall={onConfirmForceInstall}
+        onCancelForceInstall={onCancelForceInstall}
+      />
 
       <UpdateSettingsCard
         status={status}
@@ -208,7 +173,9 @@ export function UpdatesTab(): ReactElement {
   const configQuery = useSystemUpdateConfig();
   const checkMutation = useCheckSystemUpdate();
   const updateNowMutation = useUpdateSystemNow();
+  const forceInstallMutation = useForceInstallStagedUpdate();
   const updateConfigMutation = useUpdateSystemConfig();
+  const [isForceInstallConfirmOpen, setIsForceInstallConfirmOpen] = useState<boolean>(false);
   const status = statusQuery.data ?? null;
   const config = configQuery.data ?? null;
   const [configForm, setConfigForm, currentPayload] = useUpdateConfigForm(config);
@@ -216,6 +183,7 @@ export function UpdatesTab(): ReactElement {
   const [isAutoReloadArmed, setIsAutoReloadArmed] = useUpdateAutoReloadLifecycle({
     status,
     isUpdatePending: updateNowMutation.isPending,
+    isForceInstallPending: forceInstallMutation.isPending,
     refetchStatus,
   });
 
@@ -225,10 +193,11 @@ export function UpdatesTab(): ReactElement {
     isEnabled: isAutoReloadArmed,
   });
 
-  const { isBusy, canCheck, canUpdate } = useUpdateActionAvailability(
+  const { isBusy, canCheck, canUpdate, canForceInstall } = useUpdateActionAvailability(
     status,
     checkMutation.isPending,
     updateNowMutation.isPending,
+    forceInstallMutation.isPending,
   );
 
   const handleConfigRetry = useCallback((): void => {
@@ -239,6 +208,16 @@ export function UpdatesTab(): ReactElement {
     setConfigForm((current) => (current == null ? current : updater(current)));
   }, [setConfigForm]);
 
+  const handleOpenForceInstallConfirm = useCallback((): void => {
+    setIsForceInstallConfirmOpen(true);
+  }, []);
+
+  const handleCancelForceInstall = useCallback((): void => {
+    if (forceInstallMutation.isPending) {
+      return;
+    }
+    setIsForceInstallConfirmOpen(false);
+  }, [forceInstallMutation.isPending]);
 
   if (statusQuery.isLoading) {
     return <UpdatesLoadingCard />;
@@ -246,8 +225,6 @@ export function UpdatesTab(): ReactElement {
   if (statusQuery.isError || status == null) {
     return <UpdatesErrorCard onRetry={() => { void statusQuery.refetch(); }} />;
   }
-
-
 
   const handleCheck = (): void => {
     void runUpdateAction(async () => {
@@ -264,6 +241,18 @@ export function UpdatesTab(): ReactElement {
       await statusQuery.refetch();
       return result;
     }, 'Update failed', () => {
+      setIsAutoReloadArmed(false);
+    });
+  };
+
+  const handleConfirmForceInstall = (): void => {
+    setIsAutoReloadArmed(true);
+    void runUpdateAction(async () => {
+      const result = await forceInstallMutation.mutateAsync();
+      setIsForceInstallConfirmOpen(false);
+      await statusQuery.refetch();
+      return result;
+    }, 'Force install failed', () => {
       setIsAutoReloadArmed(false);
     });
   };
@@ -292,15 +281,22 @@ export function UpdatesTab(): ReactElement {
       configForm={configForm}
       canCheck={canCheck}
       canUpdate={canUpdate}
+      canForceInstall={canForceInstall}
       isBusy={isBusy}
       isCheckPending={checkMutation.isPending}
       isUpdatePending={updateNowMutation.isPending}
+      isForceInstallPending={forceInstallMutation.isPending}
       isConfigLoading={configQuery.isLoading}
       isConfigSaving={updateConfigMutation.isPending}
       isAutoReloadArmed={isAutoReloadArmed}
       autoReloadState={autoReloadState}
+      isForceInstallConfirmOpen={isForceInstallConfirmOpen}
+      forceInstallMessage={buildForceInstallMessage(status)}
       onCheck={handleCheck}
       onUpdateNow={handleUpdateNow}
+      onOpenForceInstallConfirm={handleOpenForceInstallConfirm}
+      onConfirmForceInstall={handleConfirmForceInstall}
+      onCancelForceInstall={handleCancelForceInstall}
       onConfigRetry={handleConfigRetry}
       onConfigChange={handleConfigChange}
       onConfigSave={handleConfigSave}

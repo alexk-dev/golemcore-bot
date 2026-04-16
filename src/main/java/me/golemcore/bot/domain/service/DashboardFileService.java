@@ -1,13 +1,19 @@
 package me.golemcore.bot.domain.service;
 
+import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
-import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.MalformedInputException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -19,12 +25,16 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class DashboardFileService {
 
-    private static final long MAX_EDITABLE_FILE_SIZE = 1024L * 1024L * 2L;
+    private static final int DEFAULT_TREE_DEPTH = Integer.MAX_VALUE;
 
     private final WorkspacePathService workspacePathService;
     private final WorkspaceFilePort workspaceFilePort;
 
     public List<DashboardFileNode> getTree(String relativePath) {
+        return getTree(relativePath, DEFAULT_TREE_DEPTH, true);
+    }
+
+    public List<DashboardFileNode> getTree(String relativePath, int depth, boolean includeIgnored) {
         Path base = resolveSafePath(relativePath == null ? "" : relativePath);
         if (!workspaceFilePort.exists(base)) {
             throw new IllegalArgumentException("Path not found: " + relativePath);
@@ -33,7 +43,8 @@ public class DashboardFileService {
             throw new IllegalArgumentException("Path is not a directory: " + relativePath);
         }
 
-        return buildChildren(base);
+        int effectiveDepth = Math.max(1, depth);
+        return buildChildren(base, effectiveDepth, includeIgnored);
     }
 
     public DashboardFileContent getContent(String relativePath) {
@@ -51,17 +62,28 @@ public class DashboardFileService {
 
         try {
             long size = workspaceFilePort.size(path);
-            if (size > MAX_EDITABLE_FILE_SIZE) {
+            String mimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, null);
+            boolean image = DashboardFileMetadataSupport.isImageMimeType(mimeType);
+            if (DashboardFileMetadataSupport.shouldRejectEditableFileSize(workspacePathService, path, mimeType, size)) {
                 throw new IllegalArgumentException("File too large for editor (max 2 MB)");
+            }
+            boolean editable = DashboardFileMetadataSupport.isEditableFile(workspacePathService, path, mimeType, size);
+            String updatedAt = workspaceFilePort.getLastModifiedTime(path);
+            if (!editable) {
+                return baseContentBuilder(path, size, updatedAt, mimeType)
+                        .content(null)
+                        .binary(true)
+                        .image(image)
+                        .editable(false)
+                        .build();
             }
 
             String content = workspaceFilePort.readString(path);
-            String updatedAt = workspaceFilePort.getLastModifiedTime(path);
-            return DashboardFileContent.builder()
-                    .path(toRelativePath(path))
+            return baseContentBuilder(path, size, updatedAt, mimeType)
                     .content(content)
-                    .size(size)
-                    .updatedAt(updatedAt)
+                    .binary(false)
+                    .image(false)
+                    .editable(true)
                     .build();
         } catch (MalformedInputException e) {
             throw new IllegalArgumentException("File is not valid UTF-8 text");
@@ -87,16 +109,8 @@ public class DashboardFileService {
             if (parent != null) {
                 workspaceFilePort.createDirectories(parent);
             }
-            workspaceFilePort.write(path, value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
-            long size = workspaceFilePort.size(path);
-            String updatedAt = Instant.now().toString();
-            return DashboardFileContent.builder()
-                    .path(toRelativePath(path))
-                    .content(value)
-                    .size(size)
-                    .updatedAt(updatedAt)
-                    .build();
+            workspaceFilePort.write(path, value.getBytes(StandardCharsets.UTF_8));
+            return buildSavedTextContent(path, value);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to create file", e);
         }
@@ -117,17 +131,74 @@ public class DashboardFileService {
                 workspaceFilePort.createDirectories(parent);
             }
             workspaceFilePort.writeString(path, content);
-
-            long size = workspaceFilePort.size(path);
-            String updatedAt = Instant.now().toString();
-            return DashboardFileContent.builder()
-                    .path(toRelativePath(path))
-                    .content(content)
-                    .size(size)
-                    .updatedAt(updatedAt)
-                    .build();
+            return buildSavedTextContent(path, content);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to save file", e);
+        }
+    }
+
+    public DashboardFileContent uploadFile(String targetDirectory, String filename, byte[] data, String mimeType) {
+        if (filename == null || filename.isBlank()) {
+            throw new IllegalArgumentException("Filename is required");
+        }
+        if (data == null) {
+            throw new IllegalArgumentException("File data is required");
+        }
+
+        String safeFilename = DashboardFileMetadataSupport.sanitizeFilename(filename);
+        Path targetDirectoryPath = resolveUploadDirectory(targetDirectory);
+        Path path = targetDirectoryPath.resolve(safeFilename).normalize();
+        if (!path.startsWith(getWorkspaceRoot())) {
+            throw new IllegalArgumentException("Path must be inside workspace");
+        }
+
+        String resolvedMimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, mimeType);
+        boolean image = DashboardFileMetadataSupport.isImageMimeType(resolvedMimeType);
+        boolean editable = DashboardFileMetadataSupport.isEditableFile(workspacePathService, path, resolvedMimeType,
+                data.length);
+        String content = editable ? decodeUtf8(data) : null;
+
+        try {
+            Path parent = path.getParent();
+            if (parent != null) {
+                workspaceFilePort.createDirectories(parent);
+            }
+            workspaceFilePort.write(path, data);
+            return baseContentBuilder(path, data.length, Instant.now().toString(), resolvedMimeType)
+                    .content(content)
+                    .binary(!editable)
+                    .image(image)
+                    .editable(editable)
+                    .build();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to upload file", e);
+        }
+    }
+
+    public ToolArtifactDownload getDownload(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            throw new IllegalArgumentException("Path is required");
+        }
+
+        Path path = resolveSafePath(relativePath);
+        if (!workspaceFilePort.exists(path)) {
+            throw new IllegalArgumentException("File not found: " + relativePath);
+        }
+        if (!workspaceFilePort.isRegularFile(path)) {
+            throw new IllegalArgumentException("Not a file: " + relativePath);
+        }
+
+        try {
+            byte[] data = workspaceFilePort.readAllBytes(path);
+            return ToolArtifactDownload.builder()
+                    .path(toRelativePath(path))
+                    .filename(requireFileName(path))
+                    .mimeType(DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, null))
+                    .size(data.length)
+                    .data(data)
+                    .build();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read download file", e);
         }
     }
 
@@ -187,6 +258,47 @@ public class DashboardFileService {
         }
     }
 
+    private DashboardFileContent buildSavedTextContent(Path path, String content) throws IOException {
+        long size = workspaceFilePort.size(path);
+        String mimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, null);
+        return baseContentBuilder(path, size, Instant.now().toString(), mimeType)
+                .content(content)
+                .binary(false)
+                .image(false)
+                .editable(true)
+                .build();
+    }
+
+    private String decodeUtf8(byte[] data) {
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        try {
+            return decoder.decode(ByteBuffer.wrap(data)).toString();
+        } catch (CharacterCodingException e) {
+            throw new IllegalArgumentException("File is not valid UTF-8 text");
+        }
+    }
+
+    private DashboardFileContent.DashboardFileContentBuilder baseContentBuilder(
+            Path path,
+            long size,
+            String updatedAt,
+            String mimeType) {
+        String relativePath = toRelativePath(path);
+        return DashboardFileContent.builder()
+                .path(relativePath)
+                .size(size)
+                .updatedAt(updatedAt)
+                .mimeType(mimeType)
+                .downloadUrl(DashboardFileMetadataSupport.buildDownloadUrl(relativePath));
+    }
+
+    private Path resolveUploadDirectory(String targetDirectory) {
+        String basePath = targetDirectory == null ? "" : targetDirectory.trim();
+        return resolveSafePath(basePath);
+    }
+
     private void deleteDirectoryRecursively(Path path) throws IOException {
         List<Path> paths = new ArrayList<>(workspaceFilePort.walk(path));
         paths.sort(Comparator.reverseOrder());
@@ -198,10 +310,12 @@ public class DashboardFileService {
         }
     }
 
-    private List<DashboardFileNode> buildChildren(Path dir) {
+    private List<DashboardFileNode> buildChildren(Path dir, int depth, boolean includeIgnored) {
         try {
             List<Path> sorted = workspaceFilePort.list(dir).stream()
                     .filter(path -> !workspaceFilePort.isSymbolicLink(path))
+                    .filter(path -> includeIgnored || !DashboardFileMetadataSupport
+                            .isIgnoredDirectory(workspaceFilePort, workspacePathService, path))
                     .sorted(Comparator
                             .comparing((Path p) -> !workspaceFilePort.isDirectory(p))
                             .thenComparing(p -> requireFileName(p).toLowerCase(Locale.ROOT)))
@@ -209,23 +323,10 @@ public class DashboardFileService {
 
             List<DashboardFileNode> nodes = new ArrayList<>();
             for (Path path : sorted) {
-                String nodeName = requireFileName(path);
                 if (workspaceFilePort.isDirectory(path)) {
-                    nodes.add(DashboardFileNode.builder()
-                            .path(toRelativePath(path))
-                            .name(nodeName)
-                            .type("directory")
-                            .children(buildChildren(path))
-                            .build());
+                    nodes.add(buildDirectoryNode(path, depth, includeIgnored));
                 } else if (workspaceFilePort.isRegularFile(path)) {
-                    long size = workspaceFilePort.size(path);
-                    nodes.add(DashboardFileNode.builder()
-                            .path(toRelativePath(path))
-                            .name(nodeName)
-                            .type("file")
-                            .size(size)
-                            .children(List.of())
-                            .build());
+                    nodes.add(buildFileNode(path));
                 }
             }
 
@@ -233,6 +334,47 @@ public class DashboardFileService {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to list directory", e);
         }
+    }
+
+    private DashboardFileNode buildDirectoryNode(Path path, int depth, boolean includeIgnored) throws IOException {
+        boolean hasChildren = hasVisibleChildren(path, includeIgnored);
+        List<DashboardFileNode> children = depth > 1 ? buildChildren(path, depth - 1, includeIgnored) : List.of();
+        return DashboardFileNode.builder()
+                .path(toRelativePath(path))
+                .name(requireFileName(path))
+                .type("directory")
+                .updatedAt(workspaceFilePort.getLastModifiedTime(path))
+                .editable(false)
+                .hasChildren(hasChildren)
+                .children(children)
+                .build();
+    }
+
+    private DashboardFileNode buildFileNode(Path path) throws IOException {
+        long size = workspaceFilePort.size(path);
+        String mimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, null);
+        boolean image = DashboardFileMetadataSupport.isImageMimeType(mimeType);
+        boolean editable = DashboardFileMetadataSupport.isEditableFile(workspacePathService, path, mimeType, size);
+        return DashboardFileNode.builder()
+                .path(toRelativePath(path))
+                .name(requireFileName(path))
+                .type("file")
+                .size(size)
+                .mimeType(mimeType)
+                .updatedAt(workspaceFilePort.getLastModifiedTime(path))
+                .binary(!editable)
+                .image(image)
+                .editable(editable)
+                .hasChildren(false)
+                .children(List.of())
+                .build();
+    }
+
+    private boolean hasVisibleChildren(Path directory, boolean includeIgnored) throws IOException {
+        return workspaceFilePort.list(directory).stream()
+                .filter(path -> !workspaceFilePort.isSymbolicLink(path))
+                .anyMatch(path -> includeIgnored || !DashboardFileMetadataSupport.isIgnoredDirectory(workspaceFilePort,
+                        workspacePathService, path));
     }
 
     private Path getWorkspaceRoot() {

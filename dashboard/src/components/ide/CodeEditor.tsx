@@ -1,10 +1,11 @@
-import { useMemo, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
-import { loadLanguage } from '@uiw/codemirror-extensions-langs';
 import { showMinimap as codeMirrorShowMinimap } from '@replit/codemirror-minimap';
 import type { Extension } from '@codemirror/state';
 import { EditorView, type ViewUpdate } from '@codemirror/view';
+import { search } from '@codemirror/search';
 import { useThemeStore } from '../../store/themeStore';
+import { loadEditorLanguage, resolveEditorLanguage } from './codeEditorLanguages';
 
 export interface CodeEditorProps {
   filePath: string | null;
@@ -12,90 +13,9 @@ export interface CodeEditorProps {
   onChange: (value: string) => void;
   onCursorChange?: (line: number, column: number) => void;
   showMinimap?: boolean;
-}
-
-type LanguageKey =
-  | 'java'
-  | 'js'
-  | 'jsx'
-  | 'ts'
-  | 'tsx'
-  | 'json'
-  | 'markdown'
-  | 'yml'
-  | 'yaml'
-  | 'xml'
-  | 'html'
-  | 'css'
-  | 'scss'
-  | 'bash'
-  | 'py'
-  | 'go'
-  | 'rs'
-  | 'kt'
-  | 'c'
-  | 'h'
-  | 'cpp'
-  | 'cxx'
-  | 'cs'
-  | 'php'
-  | 'vue'
-  | 'sql'
-  | 'toml'
-  | 'ini'
-  | 'text';
-
-function resolveLanguageName(path: string | null): LanguageKey | null {
-  if (path == null || path.length === 0) {
-    return null;
-  }
-
-  const segments = path.split('/');
-  const filename = segments[segments.length - 1] ?? '';
-  if (!filename.includes('.')) {
-    return null;
-  }
-
-  const extension = filename.split('.').pop()?.toLowerCase();
-  if (extension == null) {
-    return null;
-  }
-
-  const languageAlias: Record<string, LanguageKey> = {
-    java: 'java',
-    js: 'js',
-    jsx: 'jsx',
-    ts: 'ts',
-    tsx: 'tsx',
-    json: 'json',
-    md: 'markdown',
-    markdown: 'markdown',
-    yml: 'yml',
-    yaml: 'yaml',
-    xml: 'xml',
-    html: 'html',
-    css: 'css',
-    scss: 'scss',
-    sh: 'bash',
-    bash: 'bash',
-    py: 'py',
-    go: 'go',
-    rs: 'rs',
-    kt: 'kt',
-    c: 'c',
-    h: 'h',
-    cpp: 'cpp',
-    cxx: 'cxx',
-    cs: 'cs',
-    php: 'php',
-    vue: 'vue',
-    sql: 'sql',
-    toml: 'toml',
-    ini: 'ini',
-    txt: 'text',
-  };
-
-  return languageAlias[extension] ?? null;
+  wordWrap?: boolean;
+  fontSize?: number;
+  searchQuery?: string;
 }
 
 function createCursorUpdateExtension(onCursorChange?: (line: number, column: number) => void): Extension {
@@ -129,26 +49,75 @@ function createMinimapExtension(): Extension {
   });
 }
 
+function createFontSizeExtension(fontSize: number): Extension {
+  return EditorView.theme({
+    '&': {
+      fontSize: `${fontSize}px`,
+    },
+  });
+}
+
+function useLanguageExtension(filePath: string | null): Extension | null {
+  const languageName = useMemo(() => resolveEditorLanguage(filePath), [filePath]);
+  const [languageExtension, setLanguageExtension] = useState<Extension | null>(null);
+
+  useEffect(() => {
+    // Load syntax support separately so the editor shell does not include every language parser.
+    let isCancelled = false;
+    setLanguageExtension(null);
+
+    if (languageName == null) {
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    loadEditorLanguage(languageName)
+      .then((extension) => {
+        if (!isCancelled) {
+          setLanguageExtension(extension);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!isCancelled) {
+          console.error('Failed to load editor language support.', error);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [languageName]);
+
+  return languageExtension;
+}
+
 export function CodeEditor({
   filePath,
   value,
   onChange,
   onCursorChange,
   showMinimap = false,
+  wordWrap = true,
+  fontSize = 14,
+  searchQuery = '',
 }: CodeEditorProps): ReactElement {
   const theme = useThemeStore((state) => state.theme);
+  const languageExtension = useLanguageExtension(filePath);
 
   const extensions = useMemo((): Extension[] => {
-    const languageName = resolveLanguageName(filePath);
-    const loadedLanguage = languageName == null ? null : loadLanguage(languageName);
-
     const result: Extension[] = [
-      EditorView.lineWrapping,
+      createFontSizeExtension(fontSize),
+      search({ top: true }),
       createCursorUpdateExtension(onCursorChange),
     ];
 
-    if (loadedLanguage != null) {
-      result.push(loadedLanguage);
+    if (wordWrap) {
+      result.push(EditorView.lineWrapping);
+    }
+
+    if (languageExtension != null) {
+      result.push(languageExtension);
     }
 
     if (showMinimap) {
@@ -156,10 +125,10 @@ export function CodeEditor({
     }
 
     return result;
-  }, [filePath, onCursorChange, showMinimap]);
+  }, [fontSize, languageExtension, onCursorChange, showMinimap, wordWrap]);
 
   return (
-    <div className="ide-editor h-full" id="ide-editor-panel" role="tabpanel" aria-label="Code editor">
+    <div className="ide-editor h-full" id="ide-editor-panel" role="tabpanel" aria-label="Code editor" data-search-query={searchQuery}>
       <CodeMirror
         value={value}
         height="100%"

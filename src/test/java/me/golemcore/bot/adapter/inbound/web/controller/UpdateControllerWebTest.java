@@ -37,4 +37,18 @@ class UpdateControllerWebTest {
                 .jsonPath("$.status").isEqualTo(409)
                 .jsonPath("$.message").isEqualTo("No available update. Run check first.");
     }
+
+    @Test
+    void shouldMapIllegalStateToConflictForForceInstallStagedUpdate() {
+        when(updateService.forceInstallStagedUpdate())
+                .thenThrow(new IllegalStateException("No staged update to force install"));
+
+        webTestClient.post()
+                .uri("/api/system/update/force-install-staged")
+                .exchange()
+                .expectStatus().isEqualTo(409)
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(409)
+                .jsonPath("$.message").isEqualTo("No staged update to force install");
+    }
 }

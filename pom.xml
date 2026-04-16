@@ -524,6 +524,92 @@
     </build>
 
     <profiles>
+        <!-- Mutation testing profile. Opt-in via `./mvnw -P pitests test-compile
+             org.pitest:pitest-maven:mutationCoverage`, or via the "PIT Tests"
+             GitHub Actions workflow. Scoped to the full product — every
+             `me.golemcore.bot.*` class — so survivors surface across the whole
+             codebase rather than just a curated domain subset. The threshold
+             is informational (0) because the full-product baseline has not
+             been established yet; raise it in follow-ups as coverage grows. -->
+        <profile>
+            <id>pitests</id>
+            <properties>
+                <pitest.version>1.23.0</pitest.version>
+                <pitest.junit5.plugin.version>1.2.3</pitest.junit5.plugin.version>
+                <pitest.mutationThreshold>0</pitest.mutationThreshold>
+                <pitest.threads>4</pitest.threads>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.pitest</groupId>
+                        <artifactId>pitest-maven</artifactId>
+                        <version>${pitest.version}</version>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.pitest</groupId>
+                                <artifactId>pitest-junit5-plugin</artifactId>
+                                <version>${pitest.junit5.plugin.version}</version>
+                            </dependency>
+                        </dependencies>
+                        <configuration>
+                            <!--
+                                Full-product mutation scope: every class under
+                                `me.golemcore.bot` is mutated. The exclusions below are
+                                intentional:
+
+                                  * The application entrypoint and Spring `@Configuration`
+                                    classes carry no meaningful logic for PIT to mutate.
+                                  * Generated sources (MapStruct, Lombok @Builder helpers)
+                                    are wrapped in `*MapperImpl` / `*$Builder` and PIT
+                                    cannot drive them from unit tests.
+                            -->
+                            <targetClasses>
+                                <param>me.golemcore.bot.*</param>
+                            </targetClasses>
+                            <excludedClasses>
+                                <param>me.golemcore.bot.BotApplication</param>
+                                <param>me.golemcore.bot.config.*</param>
+                                <param>me.golemcore.bot.*Config</param>
+                                <param>me.golemcore.bot.*Configuration</param>
+                                <param>me.golemcore.bot.*$*Builder</param>
+                                <param>me.golemcore.bot.*MapperImpl</param>
+                                <!-- Generated protobuf classes: not hand-written, PIT
+                                     should not mutate them. -->
+                                <param>me.golemcore.bot.proto.*</param>
+                                <param>me.golemcore.bot.proto.*$*</param>
+                                <param>me.golemcore.bot.adapter.inbound.web.proto.*</param>
+                                <param>me.golemcore.bot.adapter.inbound.web.proto.*$*</param>
+                            </excludedClasses>
+                            <targetTests>
+                                <param>me.golemcore.bot.*</param>
+                            </targetTests>
+                            <excludedTestClasses>
+                                <!-- Broad Spring context checks are valuable in the
+                                     standard test suite but add weak, expensive
+                                     coverage signals for mutation testing. Keep PIT
+                                     focused on assertion-dense unit and slice tests. -->
+                                <param>me.golemcore.bot.ApplicationSmokeTest</param>
+                                <param>me.golemcore.bot.integration.*</param>
+                            </excludedTestClasses>
+                            <threads>${pitest.threads}</threads>
+                            <mutationThreshold>${pitest.mutationThreshold}</mutationThreshold>
+                            <timeoutFactor>2.0</timeoutFactor>
+                            <timeoutConstant>8000</timeoutConstant>
+                            <timestampedReports>false</timestampedReports>
+                            <failWhenNoMutations>true</failWhenNoMutations>
+                            <outputFormats>
+                                <outputFormat>HTML</outputFormat>
+                                <outputFormat>XML</outputFormat>
+                            </outputFormats>
+                            <jvmArgs>
+                                <jvmArg>-Xmx2g</jvmArg>
+                            </jvmArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- Strict profile for CI/CD - fails build on code quality issues -->
         <profile>
             <id>strict</id>

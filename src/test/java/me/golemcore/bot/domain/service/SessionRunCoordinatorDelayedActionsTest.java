@@ -75,6 +75,24 @@ class SessionRunCoordinatorDelayedActionsTest {
     }
 
     @Test
+    void shouldClearDelayedActionsWhenStopIsRequested() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        DelayedSessionActionService delayedActionService = mock(DelayedSessionActionService.class);
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, delayedActionService, null);
+
+            coordinator.requestStop(CHANNEL_TYPE, CHAT_ID);
+
+            verify(delayedActionService).clearActiveActions(CHANNEL_TYPE, CHAT_ID);
+        }
+    }
+
+    @Test
     void shouldContinueProcessingInboundWhenDelayedCancellationFails() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);

@@ -466,6 +466,37 @@ class UpdateServiceTest {
     }
 
     @Test
+    void shouldForceApplyStagedUpdateWhenRuntimeWorkIsActive(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        when(updateActivityGate.getStatus()).thenReturn(
+                UpdateActivityGate.Result.busy(UpdateBlockedReason.SESSION_WORK_RUNNING));
+        when(updateArtifactStorePort.findStagedArtifact())
+                .thenReturn(Optional.of(new UpdateArtifactStorePort.StoredArtifact("bot-0.4.2.jar", BASE_TIME)));
+
+        TestableUpdateService service = createTestableService(new StubReleaseSource());
+
+        UpdateActionResult result = service.forceInstallStagedUpdate();
+
+        assertEquals("Update 0.4.2 is being applied. JVM restart scheduled.", result.getMessage());
+        assertEquals("0.4.2", result.getVersion());
+        assertTrue(service.isRestartRequested());
+        assertEquals(UpdateState.APPLYING, service.getStatus().getState());
+    }
+
+    @Test
+    void shouldRejectForceInstallWhenNoStagedUpdateExists(@TempDir Path tempDir) {
+        enableUpdates(tempDir);
+        when(updateActivityGate.getStatus()).thenReturn(
+                UpdateActivityGate.Result.busy(UpdateBlockedReason.SESSION_WORK_RUNNING));
+
+        UpdateService service = createService(new StubReleaseSource());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, service::forceInstallStagedUpdate);
+
+        assertEquals("No staged update to force install", error.getMessage());
+    }
+
+    @Test
     void shouldNotInitializeAutoUpdateSchedulerWhenFeatureIsDisabled() {
         botProperties.getUpdate().setEnabled(false);
         UpdateService service = createService(new StubReleaseSource());

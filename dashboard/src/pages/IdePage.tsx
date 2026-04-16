@@ -1,7 +1,11 @@
-import { useMemo, type ReactElement } from 'react';
-import { CodeEditor } from '../components/ide/CodeEditor';
+import { Suspense, useMemo, type ReactElement } from 'react';
 import { EditorContentState, EditorStatusBar } from '../components/ide/EditorStatusBar';
 import { EditorTabs } from '../components/ide/EditorTabs';
+import { FilePreview } from '../components/ide/FilePreview';
+import { IdeBreadcrumbs } from '../components/ide/IdeBreadcrumbs';
+import { IdeCommandPalette } from '../components/ide/IdeCommandPalette';
+import { IdeEditorSearchBar } from '../components/ide/IdeEditorSearchBar';
+import { IdeEditorSettingsPanel } from '../components/ide/IdeEditorSettingsPanel';
 import { IdeFileExplorer, type IdeFileExplorerProps } from '../components/ide/IdeFileExplorer';
 import { IdeHeader } from '../components/ide/IdeHeader';
 import { QuickOpenModal } from '../components/ide/QuickOpenModal';
@@ -11,20 +15,34 @@ import { Offcanvas } from '../components/ui/overlay';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { useIdeMobileExplorer } from '../hooks/useIdeMobileExplorer';
 import { useIdeWorkspace } from '../hooks/useIdeWorkspace';
+import { LazyCodeEditor } from '../components/ide/LazyCodeEditor';
+import '../styles/ide.scss';
+
+function CodeEditorFallback(): ReactElement {
+  return (
+    <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-primary" role="status" aria-hidden />
+      <span>Loading editor...</span>
+    </div>
+  );
+}
 
 export default function IdePage(): ReactElement {
   const ide = useIdeWorkspace();
   const {
     activePath, activeTab, activeColumn, activeFileSize, activeLanguage, activeLine, activeUpdatedAt,
     canSaveActiveTab, cancelCloseCandidate, cancelTreeAction, closeCandidate, closeCandidateLabel,
-    closeCandidateWithoutSaving, closeQuickOpen, debouncedTreeSearchQuery, decreaseSidebarWidth,
-    dirtyPaths, dirtyTabsCount, editorTabs, hasDirtyTabs, hasFileLoadError, increaseSidebarWidth,
-    isCloseWithSavePending, isFileOpening, isQuickOpenVisible, isTreeActionPending, openFileFromQuickOpen,
-    openQuickOpen, quickOpenItems, quickOpenQuery, refreshTree, requestCloseTab, requestCreateFromTree,
-    requestDeleteFromTree, requestRenameFromTree, retryLoadContent, saveActiveTab, saveAndCloseCandidate,
-    saveMutation, setActivePath, setEditorCursor, setTreeSearchQuery, sidebarWidth, startSidebarResize,
-    submitCreateFromTree, submitDeleteFromTree, submitRenameFromTree, toggleQuickOpenPinned, treeAction,
-    treeQuery, treeSearchQuery, updateActiveTabContent, updateQuickOpenQuery,
+    closeCandidateWithoutSaving, closeCommandPalette, closeQuickOpen, debouncedTreeSearchQuery, decreaseSidebarWidth,
+    dirtyPaths, dirtyTabsCount, downloadActiveFile, editorTabs, editorSearchQuery, editorSettings, hasDirtyTabs,
+    hasFileLoadError, includeIgnored, increaseSidebarWidth, isCloseWithSavePending, isCommandPaletteVisible,
+    isDownloadingActiveFile, isEditorSearchVisible, isEditorSettingsVisible, isFileOpening, isQuickOpenVisible,
+    isTreeActionPending, loadDirectory, openFileFromQuickOpen, openQuickOpen, quickOpenItems, quickOpenQuery,
+    refreshTree, requestCloseTab, requestCreateFromTree, requestDeleteFromTree, requestRenameFromTree,
+    retryLoadContent, saveActiveTab, saveAndCloseCandidate, saveMutation, setActivePath, setEditorCursor,
+    setEditorFontSize, setEditorSearchQuery, setEditorWordWrap, setTreeSearchQuery, sidebarWidth,
+    startSidebarResize, submitCreateFromTree, submitDeleteFromTree, submitRenameFromTree, toggleEditorSearch,
+    toggleEditorSettings, toggleIncludeIgnored, toggleQuickOpenPinned, treeAction, treeNodes, treeQuery,
+    treeSearchQuery, updateActiveTabContent, updateQuickOpenQuery, uploadFiles,
   } = ide;
   const isMobileLayout = useMediaQuery('(max-width: 991.98px)');
   const mobileExplorer = useIdeMobileExplorer(isMobileLayout);
@@ -36,7 +54,6 @@ export default function IdePage(): ReactElement {
 
     return editorTabs.find((tab) => tab.path === activePath)?.fullTitle ?? activePath;
   }, [activePath, editorTabs]);
-
   const handleOpenFile = useMemo(() => mobileExplorer.wrapAction(setActivePath), [mobileExplorer, setActivePath]);
   const handleRequestCreate = useMemo(
     () => mobileExplorer.wrapAction(requestCreateFromTree),
@@ -52,7 +69,7 @@ export default function IdePage(): ReactElement {
   );
 
   const explorerProps = useMemo<IdeFileExplorerProps>(() => ({
-    nodes: treeQuery.data,
+    nodes: treeNodes,
     isLoading: treeQuery.isLoading,
     isError: treeQuery.isError,
     isRefreshing: treeQuery.isFetching,
@@ -60,28 +77,40 @@ export default function IdePage(): ReactElement {
     dirtyPaths,
     searchInputValue: treeSearchQuery,
     searchQuery: debouncedTreeSearchQuery,
+    includeIgnored,
+    isDownloadingActiveFile,
     onSearchQueryChange: setTreeSearchQuery,
     onRefresh: refreshTree,
     onCreateAtRoot: () => handleRequestCreate(''),
     onOpenFile: handleOpenFile,
+    onLoadDirectory: loadDirectory,
     onRequestCreate: handleRequestCreate,
     onRequestRename: handleRequestRename,
     onRequestDelete: handleRequestDelete,
+    onToggleIncludeIgnored: toggleIncludeIgnored,
+    onDownloadActiveFile: downloadActiveFile,
+    onUploadFiles: uploadFiles,
   }), [
     activePath,
     debouncedTreeSearchQuery,
     dirtyPaths,
+    downloadActiveFile,
     handleOpenFile,
     handleRequestCreate,
     handleRequestDelete,
     handleRequestRename,
+    includeIgnored,
+    isDownloadingActiveFile,
+    loadDirectory,
     refreshTree,
     setTreeSearchQuery,
-    treeQuery.data,
+    toggleIncludeIgnored,
+    treeNodes,
     treeQuery.isError,
     treeQuery.isFetching,
     treeQuery.isLoading,
     treeSearchQuery,
+    uploadFiles,
   ]);
 
   return (
@@ -130,6 +159,7 @@ export default function IdePage(): ReactElement {
               onSelectTab={setActivePath}
               onCloseTab={requestCloseTab}
             />
+            <IdeBreadcrumbs path={activePath} onOpenPath={setActivePath} />
             <EditorStatusBar
               activePath={activeTab?.path ?? null}
               line={activeLine}
@@ -137,6 +167,21 @@ export default function IdePage(): ReactElement {
               language={activeLanguage}
               fileSizeBytes={activeFileSize}
               updatedAt={activeUpdatedAt}
+            />
+            <IdeEditorSearchBar
+              show={isEditorSearchVisible}
+              query={editorSearchQuery}
+              onQueryChange={setEditorSearchQuery}
+              onClose={toggleEditorSearch}
+            />
+            <IdeEditorSettingsPanel
+              show={isEditorSettingsVisible}
+              fontSize={editorSettings.fontSize}
+              wordWrap={editorSettings.wordWrap}
+              minimap={editorSettings.minimap}
+              onFontSizeChange={setEditorFontSize}
+              onWordWrapChange={setEditorWordWrap}
+              onMinimapChange={editorSettings.setMinimap}
             />
 
             <div className="flex-grow-1 overflow-hidden">
@@ -146,13 +191,34 @@ export default function IdePage(): ReactElement {
                 hasActiveTab={activeTab != null}
                 onRetry={retryLoadContent}
               >
-                <CodeEditor
-                  filePath={activeTab?.path ?? null}
-                  value={activeTab?.content ?? ''}
-                  onChange={updateActiveTabContent}
-                  onCursorChange={setEditorCursor}
-                  showMinimap={!isMobileLayout}
-                />
+                {activeTab != null && !activeTab.editable ? (
+                  <FilePreview file={{
+                    path: activeTab.path,
+                    content: null,
+                    size: activeFileSize,
+                    updatedAt: activeUpdatedAt ?? '',
+                    mimeType: activeTab.mimeType,
+                    binary: activeTab.binary,
+                    image: activeTab.image,
+                    editable: activeTab.editable,
+                    downloadUrl: activeTab.downloadUrl,
+                  }} />
+                ) : activeTab != null ? (
+                  <Suspense fallback={<CodeEditorFallback />}>
+                    <LazyCodeEditor
+                      filePath={activeTab.path}
+                      value={activeTab.content}
+                      onChange={updateActiveTabContent}
+                      onCursorChange={setEditorCursor}
+                      showMinimap={!isMobileLayout && editorSettings.minimap}
+                      wordWrap={editorSettings.wordWrap}
+                      fontSize={editorSettings.fontSize}
+                      searchQuery={editorSearchQuery}
+                    />
+                  </Suspense>
+                ) : (
+                  <></>
+                )}
               </EditorContentState>
             </div>
           </div>
@@ -172,6 +238,20 @@ export default function IdePage(): ReactElement {
           <IdeFileExplorer {...explorerProps} />
         </Offcanvas.Body>
       </Offcanvas>
+
+      <IdeCommandPalette
+        show={isCommandPaletteVisible}
+        canSaveActiveTab={canSaveActiveTab}
+        hasActiveTab={activeTab != null}
+        activePath={activePath}
+        isDownloadingActiveFile={isDownloadingActiveFile}
+        onClose={closeCommandPalette}
+        onSaveActiveTab={saveActiveTab}
+        onOpenQuickOpen={openQuickOpen}
+        onToggleEditorSearch={toggleEditorSearch}
+        onToggleSettings={toggleEditorSettings}
+        onDownloadActiveFile={downloadActiveFile}
+      />
 
       <QuickOpenModal
         show={isQuickOpenVisible}

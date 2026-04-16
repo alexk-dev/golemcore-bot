@@ -190,6 +190,30 @@ class ShellToolTest {
     }
 
     @Test
+    void nonStringCommandReturnsValidationFailure() throws Exception {
+        Map<String, Object> params = Map.of(COMMAND, 123);
+
+        ToolResult result = tool.execute(params).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("Missing required parameter: command"));
+        assertFalse(result.getError().contains("ClassCastException"));
+    }
+
+    @Test
+    void nonNumericTimeoutReturnsValidationFailure() throws Exception {
+        Map<String, Object> params = Map.of(
+                COMMAND, "echo ok",
+                TIMEOUT, "slow");
+
+        ToolResult result = tool.execute(params).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("Invalid timeout parameter"));
+        assertFalse(result.getError().contains("ClassCastException"));
+    }
+
+    @Test
     @DisabledOnOs(OS.WINDOWS)
     void commandWithExitCode() throws Exception {
         Map<String, Object> params = Map.of(

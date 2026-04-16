@@ -314,7 +314,7 @@ textarea:focus-visible,
 }
 
 .topbar {
-  height: 64px;
+  height: var(--topbar-height);
   background-color: var(--gc-body-bg);
   border-bottom: 1px solid var(--gc-border-color);
   backdrop-filter: blur(10px);
@@ -1261,6 +1261,13 @@ textarea:focus-visible,
   justify-content: center;
   background-color: rgba(var(--gc-body-bg-rgb), 0.6);
   border: 1px solid rgba(var(--gc-border-color-rgb), 0.55);
+}
+
+.chat-workspace-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .chat-history-load-btn {
@@ -2642,6 +2649,21 @@ textarea:focus-visible,
 }
 
 @media (max-width: 767.98px) {
+  .topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 110;
+    height: calc(var(--topbar-height) + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+  }
+
+  .dashboard-shell-body {
+    padding-top: calc(var(--topbar-height) + env(safe-area-inset-top, 0px));
+  }
+
   .topbar-icon-btn,
   .topbar-action-btn,
   .topbar-update-btn {
@@ -3287,4 +3309,79 @@ textarea:focus-visible,
 
 .webhook-endpoint-badge {
   max-width: 100%;
+}
+
+/* Chat composer reading mode: collapse only the message composer, never the conversation. */
+.chat-composer-toggle {
+  width: min(980px, 100%);
+  min-height: 1.55rem;
+  margin: 0 auto 0.48rem;
+  padding: 0.2rem 0.62rem;
+  border: 1px solid rgba(var(--gc-border-color-rgb), 0.78);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(var(--gc-body-bg-rgb), 0.94), rgba(var(--gc-tertiary-bg-rgb), 0.78));
+  color: var(--gc-secondary-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.46rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  transition: border-color 0.16s ease, color 0.16s ease, background-color 0.16s ease, transform 0.16s ease;
+}
+
+.chat-composer-toggle:hover,
+.chat-composer-toggle:focus-visible {
+  border-color: rgba(var(--gc-primary-rgb), 0.44);
+  color: var(--gc-emphasis-color);
+  background:
+    linear-gradient(180deg, rgba(var(--gc-tertiary-bg-rgb), 0.98), rgba(var(--gc-body-bg-rgb), 0.92));
+  transform: translateY(-1px);
+}
+
+.chat-composer-toggle-grip {
+  width: 2.25rem;
+  height: 0.22rem;
+  border-radius: 999px;
+  background-color: rgba(var(--gc-secondary-rgb), 0.52);
+  box-shadow: 0 0.35rem 0 rgba(var(--gc-secondary-rgb), 0.22);
+}
+
+.chat-composer-toggle-copy {
+  white-space: nowrap;
+}
+
+.chat-input-area--collapsed {
+  padding-top: 0.42rem;
+  border-top-color: rgba(var(--gc-border-color-rgb), 0.62);
+  background: linear-gradient(to top, rgba(var(--gc-body-bg-rgb), 0.98), rgba(var(--gc-tertiary-bg-rgb), 0.72));
+}
+
+.chat-input-area--collapsed .chat-composer-toggle {
+  margin-bottom: 0;
+}
+
+.chat-page-layout--composer-collapsed .chat-window {
+  padding-bottom: 0.75rem;
+}
+
+@media (max-width: 767.98px) {
+  .chat-composer-toggle {
+    min-height: 1.75rem;
+    margin-bottom: 0.35rem;
+    font-size: 0.72rem;
+  }
+
+  .chat-input-area--collapsed {
+    padding: 0.35rem 0.75rem max(0.55rem, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 575.98px) {
+  .chat-composer-toggle-copy {
+    font-size: 0.7rem;
+  }
 }

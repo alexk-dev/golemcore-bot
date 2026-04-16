@@ -23,6 +23,8 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
+import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -39,23 +41,24 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Thin orchestrator for the tool loop (single-turn internal loop).
  *
  * <p>
  * Implements the Scenario A contract: the LLM returns tool calls, tools are
- * executed, and the LLM returns a final answer — all inside a single
+ * executed, and the LLM returns a final answer - all inside a single
  * {@link #processTurn} call.
  *
  * <p>
  * The orchestrator delegates to phase classes for implementation details:
  * <ul>
- * <li>{@link LlmCallPhase} — LLM invocation, retry, context overflow
+ * <li>{@link LlmCallPhase} - LLM invocation, retry, context overflow
  * recovery</li>
- * <li>{@link ToolExecutionPhase} — tool call iteration, plan intercept,
+ * <li>{@link ToolExecutionPhase} - tool call iteration, plan intercept,
  * tracing</li>
- * <li>{@link ToolFailurePolicy} — stop conditions, recovery decisions</li>
+ * <li>{@link ToolFailurePolicy} - stop conditions, recovery decisions</li>
  * </ul>
  *
  * <p>
@@ -89,9 +92,30 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.planService = builder.planService;
         this.clock = builder.clock;
 
+        ContextTokenEstimator contextTokenEstimator = builder.contextTokenEstimator != null
+                ? builder.contextTokenEstimator
+                : new ContextTokenEstimator();
+        // Preflight's budget resolver has exactly one production assembly site
+        // (ToolLoopAutoConfiguration). Forcing callers to wire it removes the
+        // temptation to let the fallback quietly cover a broken bean graph -
+        // any missing wiring now fails loudly at startup instead of at the
+        // first LLM call.
+        ContextCompactionPolicy contextCompactionPolicy = Objects.requireNonNull(builder.contextCompactionPolicy,
+                "contextCompactionPolicy required; wire it explicitly on the builder");
+        ContextCompactionCoordinator compactionCoordinator = new ContextCompactionCoordinator(
+                contextCompactionPolicy,
+                builder.compactionOrchestrationService,
+                builder.runtimeEventService,
+                builder.turnProgressService);
+        LlmRequestPreflightPhase preflightPhase = new LlmRequestPreflightPhase(
+                contextTokenEstimator,
+                contextCompactionPolicy,
+                compactionCoordinator);
+
         this.llmCallPhase = new LlmCallPhase(
                 builder.llmPort, builder.viewBuilder, builder.modelSelectionService,
-                builder.runtimeConfigService, builder.compactionOrchestrationService,
+                builder.runtimeConfigService, preflightPhase,
+                compactionCoordinator,
                 builder.runtimeEventService, builder.turnProgressService,
                 builder.traceService, builder.clock);
 
@@ -303,7 +327,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
      *
      * <p>
      * Required fields: llmPort, toolExecutor, historyWriter, viewBuilder,
-     * modelSelectionService, clock. All other fields are optional.
+     * modelSelectionService, contextCompactionPolicy, clock. All other fields are
+     * optional.
      */
     @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
     public static class Builder {
@@ -318,6 +343,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private PlanService planService;
         private RuntimeConfigService runtimeConfigService;
         private CompactionOrchestrationService compactionOrchestrationService;
+        private ContextTokenEstimator contextTokenEstimator;
+        private ContextCompactionPolicy contextCompactionPolicy;
         private RuntimeEventService runtimeEventService;
         private TurnProgressService turnProgressService;
         private TraceService traceService;
@@ -381,6 +408,21 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         /** Sets the compaction orchestration service (optional). */
         public Builder compactionOrchestrationService(CompactionOrchestrationService compactionOrchestrationService) {
             this.compactionOrchestrationService = compactionOrchestrationService;
+            return this;
+        }
+
+        /** Sets the token estimator used by request preflight checks (optional). */
+        public Builder contextTokenEstimator(ContextTokenEstimator contextTokenEstimator) {
+            this.contextTokenEstimator = contextTokenEstimator;
+            return this;
+        }
+
+        /**
+         * Sets the context compaction policy used by preflight and overflow recovery
+         * (required).
+         */
+        public Builder contextCompactionPolicy(ContextCompactionPolicy contextCompactionPolicy) {
+            this.contextCompactionPolicy = contextCompactionPolicy;
             return this;
         }
 

@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
@@ -77,6 +78,8 @@ class ToolLoopPlanModeSetContentToolTest {
 
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any()))
+                .thenReturn(2_000_000_000);
         when(modelSelectionService.resolveForTier(any()))
                 .thenReturn(new ModelSelectionService.ModelSelection(null, null));
 
@@ -88,6 +91,8 @@ class ToolLoopPlanModeSetContentToolTest {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(new BotProperties.TurnProperties()))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(new BotProperties.ToolLoopProperties()))
                 .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(
+                        mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .planService(planService)
                 .clock(Clock.fixed(FAR_FUTURE, ZoneOffset.UTC))
                 .build();

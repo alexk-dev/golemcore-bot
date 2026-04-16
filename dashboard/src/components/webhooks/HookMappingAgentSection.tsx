@@ -1,13 +1,14 @@
 import { type ReactElement, useEffect, useMemo, useRef } from 'react';
 import type { SystemChannelResponse } from '../../api/system';
-import { JSON_SCHEMA_DRAFT_2020_12_DOCS_URL, type HookMappingDraft } from '../../api/webhooks';
+import type { HookMappingDraft } from '../../api/webhooks';
 import { cn } from '../../lib/utils';
 import { getExplicitModelTierOptions } from '../../lib/modelTiers';
 import HelpTip from '../common/HelpTip';
 import { Badge } from '../ui/badge';
-import { Input, Select, Textarea } from '../ui/field';
+import { Input, Select } from '../ui/field';
 import { HookMappingFieldHeading } from './HookMappingFieldHeading';
 import { SynchronousResponseHeader } from './SynchronousResponseHeader';
+import { WebhookResponseSchemaSection } from './WebhookResponseSchemaSection';
 import {
   controlClassName,
   fieldHelpClassName,
@@ -46,8 +47,6 @@ export function HookAgentSection({
 }: HookAgentSectionProps): ReactElement | null {
   const telegramAutofillKeyRef = useRef<string | null>(null);
   const deliveryState = useDeliveryState(mapping, linkedTelegramUserId, availableChannels, channelsLoading);
-  const hasResponseJsonSchema = mapping.responseJsonSchema != null && mapping.responseJsonSchema.trim().length > 0;
-
   useEffect(() => {
     if (deliveryState.telegramAutofillKey == null) {
       telegramAutofillKeyRef.current = null;
@@ -122,65 +121,12 @@ export function HookAgentSection({
           syncResponse={mapping.syncResponse}
           onToggle={(syncResponse) => onChange(nextMappingWithSynchronousResponse(mapping, syncResponse))}
         />
-        <div className={cn('mt-5 grid gap-4 lg:grid-cols-[minmax(12rem,16rem)_minmax(0,1fr)]', !mapping.syncResponse && 'opacity-75')}>
-          <div>
-            <HookMappingFieldHeading
-              label="Schema Response Tier"
-              help="Optional tier used for schema-constrained responses and repair attempts."
-            />
-            <Select
-              value={mapping.responseValidationModelTier ?? ''}
-              disabled={!mapping.syncResponse || !hasResponseJsonSchema}
-              onChange={(event) => onChange({
-                ...mapping,
-                responseValidationModelTier: toNullableString(event.target.value),
-              })}
-              className={controlClassName}
-            >
-              <option value="">Default</option>
-              {getExplicitModelTierOptions().map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </Select>
-            <p className={fieldHelpClassName}>
-              Leave empty to reuse the hook model tier or the balanced tier.
-            </p>
-          </div>
-          <div>
-            <HookMappingFieldHeading
-              label="Response JSON Schema"
-              help="Optional Draft 2020-12 schema for the synchronous HTTP response body. The final agent output is validated and repaired up to three times."
-            />
-            <Textarea
-              rows={7}
-              value={mapping.responseJsonSchema ?? ''}
-              disabled={!mapping.syncResponse}
-              onChange={(event) => onChange(nextMappingWithResponseJsonSchema(mapping, event.target.value))}
-              placeholder={'{\n  "type": "object",\n  "required": ["version", "response"],\n  "properties": {\n    "version": { "const": "1.0" },\n    "response": { "type": "object" }\n  }\n}'}
-              className="min-h-[12rem] rounded-2xl border-border/80 bg-background/80 font-mono text-sm shadow-none"
-            />
-            <p className={fieldHelpClassName}>
-              Reference:{' '}
-              <a href={JSON_SCHEMA_DRAFT_2020_12_DOCS_URL} target="_blank" rel="noreferrer" className="font-semibold text-primary underline-offset-4 hover:underline">JSON Schema Draft 2020-12</a>
-              .
-            </p>
-          </div>
+        <div className={cn(!mapping.syncResponse && 'opacity-75')}>
+          <WebhookResponseSchemaSection mapping={mapping} onChange={onChange} />
         </div>
       </div>
     </div>
   );
-}
-
-function nextMappingWithResponseJsonSchema(mapping: HookMappingDraft, value: string): HookMappingDraft {
-  const responseJsonSchema = toNullableString(value);
-  if (responseJsonSchema != null) {
-    return { ...mapping, responseJsonSchema };
-  }
-  return {
-    ...mapping,
-    responseJsonSchema: null,
-    responseValidationModelTier: null,
-  };
 }
 
 function nextMappingWithSynchronousResponse(

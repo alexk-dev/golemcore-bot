@@ -12,15 +12,23 @@ import {
   getFileTree,
   renameFilePath,
   saveFileContent,
+  uploadFileContent,
   type FileContent,
   type FileRenameResponse,
   type FileTreeNode,
 } from '../api/files';
 
-export function useFileTree(path: string): UseQueryResult<FileTreeNode[], unknown> {
+export interface UseFileTreeOptions {
+  depth?: number;
+  includeIgnored?: boolean;
+}
+
+export function useFileTree(path: string, options?: UseFileTreeOptions): UseQueryResult<FileTreeNode[], unknown> {
+  const depth = options?.depth;
+  const includeIgnored = options?.includeIgnored;
   return useQuery({
-    queryKey: ['files', 'tree', path],
-    queryFn: () => getFileTree(path),
+    queryKey: ['files', 'tree', path, depth ?? 'all', includeIgnored ?? true],
+    queryFn: () => getFileTree(path, { depth, includeIgnored }),
   });
 }
 
@@ -49,6 +57,17 @@ export function useSaveFileContent(): UseMutationResult<FileContent, unknown, { 
     mutationFn: ({ path, content }: { path: string; content: string }) => saveFileContent(path, content),
     onSuccess: (saved: FileContent) => {
       queryClient.setQueryData<FileContent>(['files', 'content', saved.path], saved);
+      void queryClient.invalidateQueries({ queryKey: ['files', 'tree'], exact: false });
+    },
+  });
+}
+
+export function useUploadFileContent(): UseMutationResult<FileContent, unknown, { path: string; file: File }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ path, file }: { path: string; file: File }) => uploadFileContent(path, file),
+    onSuccess: (uploaded: FileContent) => {
+      queryClient.setQueryData<FileContent>(['files', 'content', uploaded.path], uploaded);
       void queryClient.invalidateQueries({ queryKey: ['files', 'tree'], exact: false });
     },
   });

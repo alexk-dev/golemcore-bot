@@ -14,6 +14,7 @@ public final class ToolNames {
     public static final String HIVE_CREATE_FOLLOWUP_CARD = "hive_create_followup_card";
     public static final String SCHEDULE_SESSION_ACTION = "schedule_session_action";
     public static final String MEMORY = "memory";
+    public static final String SHELL = "shell";
 
     private ToolNames() {
     }

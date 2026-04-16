@@ -23,61 +23,37 @@ import me.golemcore.bot.domain.model.LlmChunk;
 import me.golemcore.bot.domain.model.LlmProviderMetadataKeys;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
-import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.domain.model.ToolDefinition;
-import me.golemcore.bot.domain.service.ToolArtifactService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.system.LlmErrorPatterns;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.LlmPort;
-import com.fasterxml.jackson.core.type.TypeReference;
+import me.golemcore.bot.port.outbound.ToolArtifactReadPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.data.image.Image;
-import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.Content;
-import dev.langchain4j.data.message.ImageContent;
-import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.TextContent;
-import dev.langchain4j.data.message.ToolExecutionResultMessage;
-import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.http.client.HttpClientBuilderLoader;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
-import dev.langchain4j.model.chat.request.json.JsonArraySchema;
-import dev.langchain4j.model.chat.request.json.JsonBooleanSchema;
-import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
-import dev.langchain4j.model.chat.request.json.JsonIntegerSchema;
-import dev.langchain4j.model.chat.request.json.JsonNumberSchema;
-import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
-import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
-import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiResponsesStreamingChatModel;
-import dev.langchain4j.model.output.TokenUsage;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Base64;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Deque;
-import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -118,7 +94,6 @@ import java.util.concurrent.CompletableFuture;
  * @see me.golemcore.bot.infrastructure.config.ModelConfigService
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
@@ -131,26 +106,37 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private static final String API_TYPE_OPENAI = "openai";
     private static final String API_TYPE_ANTHROPIC = "anthropic";
     private static final String API_TYPE_GEMINI = "gemini";
-    private static final String GEMINI_THINKING_SIGNATURE_KEY = "thinking_signature";
-    private static final String TOOL_ATTACHMENTS_METADATA_KEY = "toolAttachments";
-    private static final String SYNTH_ID_PREFIX = "synth_call_";
-    private static final String SCHEMA_KEY_PROPERTIES = "properties";
     private static final java.util.regex.Pattern RESET_SECONDS_PATTERN = java.util.regex.Pattern
             .compile("\"reset_seconds\"\\s*:\\s*(\\d+)");
-    private static final String TOOL_ATTACHMENT_REOPEN_HINT = "Re-open the file with a tool if deeper inspection is needed.";
-
-    private record MessageConversionResult(List<ChatMessage> messages, boolean hydratedToolImages) {
-    }
+    private static final Set<String> RATE_LIMIT_MARKERS = Set.of(
+            "rate_limit",
+            "rate limit",
+            "token_quota_exceeded",
+            "too many requests",
+            "model_cooldown",
+            "cooling down");
 
     private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigPort modelConfig;
-    private final ToolArtifactService toolArtifactService;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Langchain4jMessageConverter messageConverter;
+    private final Langchain4jToolSchemaConverter toolSchemaConverter;
+    private final Langchain4jResponseMapper responseMapper;
 
     private ChatModel chatModel;
     private String currentModel;
     private volatile boolean initialized = false;
     private final Map<String, StreamingChatModel> responsesStreamingModels = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, ChatModel> tierScopedChatModels = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public Langchain4jAdapter(RuntimeConfigService runtimeConfigService, ModelConfigPort modelConfig,
+            ToolArtifactReadPort toolArtifactReadPort) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.modelConfig = modelConfig;
+        this.messageConverter = new Langchain4jMessageConverter(toolArtifactReadPort, objectMapper);
+        this.toolSchemaConverter = new Langchain4jToolSchemaConverter();
+        this.responseMapper = new Langchain4jResponseMapper(objectMapper);
+    }
 
     @Override
     public synchronized void initialize() {
@@ -169,7 +155,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         try {
-            this.chatModel = createModel(model, reasoning);
+            this.chatModel = createModel(model, reasoning, "balanced");
             initialized = true;
             log.info("Langchain4j adapter initialized with model: {}, reasoning: {}", model, reasoning);
         } catch (Exception e) {
@@ -214,20 +200,21 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return API_TYPE_OPENAI.equals(apiType) && !Boolean.TRUE.equals(config.getLegacyApi());
     }
 
-    private StreamingChatModel getResponsesStreamingModel(String model, String reasoningEffort) {
-        String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "");
+    private StreamingChatModel getResponsesStreamingModel(String model, String reasoningEffort, String modelTier) {
+        double temperature = runtimeConfigService.getTemperatureForModel(modelTier, model);
+        String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "") + ":" + temperature;
         return responsesStreamingModels.computeIfAbsent(cacheKey, key -> {
             String provider = getProvider(model);
             RuntimeConfig.LlmProviderConfig config = getProviderConfig(provider);
             String modelName = stripProviderPrefix(model);
             log.info("[LLM] Creating OpenAI Responses streaming model for: {} (reasoning: {})",
                     modelName, reasoningEffort);
-            return createResponsesStreamingModel(model, modelName, reasoningEffort, config);
+            return createResponsesStreamingModel(model, modelName, reasoningEffort, config, temperature);
         });
     }
 
     private StreamingChatModel createResponsesStreamingModel(String fullModel, String modelName, String reasoningEffort,
-            RuntimeConfig.LlmProviderConfig config) {
+            RuntimeConfig.LlmProviderConfig config, double temperature) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for OpenAI Responses provider in runtime config");
@@ -251,7 +238,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         if (supportsTemperature(fullModel)) {
-            builder.temperature((double) runtimeConfigService.getTemperature());
+            builder.temperature(temperature);
         }
 
         return builder.build();
@@ -285,22 +272,20 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return model.contains("/") ? model.substring(model.indexOf('/') + 1) : model;
     }
 
-    /**
-     * Create a model instance based on configuration.
-     */
-    private ChatModel createModel(String model, String reasoningEffort) {
+    private ChatModel createModel(String model, String reasoningEffort, String modelTier) {
         String provider = getProvider(model);
         RuntimeConfig.LlmProviderConfig config = getProviderConfig(provider);
         String modelName = stripProviderPrefix(model);
         String apiType = getApiType(config);
+        double temperature = runtimeConfigService.getTemperatureForModel(modelTier, model);
 
         switch (apiType) {
         case API_TYPE_ANTHROPIC:
-            return createAnthropicModel(model, modelName, config);
+            return createAnthropicModel(model, modelName, config, temperature);
         case API_TYPE_GEMINI:
-            return createGeminiModel(model, modelName, config);
+            return createGeminiModel(model, modelName, config, temperature);
         default:
-            return createOpenAiModel(modelName, model, reasoningEffort, config);
+            return createOpenAiModel(modelName, model, reasoningEffort, config, temperature);
         }
     }
 
@@ -312,7 +297,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return apiType.trim().toLowerCase(Locale.ROOT);
     }
 
-    private ChatModel createAnthropicModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config) {
+    private ChatModel createAnthropicModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config,
+            double temperature) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for provider anthropic in runtime config");
@@ -330,13 +316,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         if (supportsTemperature(fullModel)) {
-            builder.temperature(runtimeConfigService.getTemperature());
+            builder.temperature(temperature);
         }
 
         return builder.build();
     }
 
-    private ChatModel createGeminiModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config) {
+    private ChatModel createGeminiModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config,
+            double temperature) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for Gemini provider in runtime config");
@@ -353,14 +340,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (supportsTemperature(fullModel)) {
-            builder.temperature(runtimeConfigService.getTemperature());
+            builder.temperature(temperature);
         }
 
         return builder.build();
     }
 
     private ChatModel createOpenAiModel(String modelName, String fullModel,
-            String reasoningEffort, RuntimeConfig.LlmProviderConfig config) {
+            String reasoningEffort, RuntimeConfig.LlmProviderConfig config, double temperature) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for provider in runtime config");
@@ -377,7 +364,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         if (supportsTemperature(fullModel)) {
-            builder.temperature(runtimeConfigService.getTemperature());
+            builder.temperature(temperature);
         } else {
             log.debug("Using reasoning model: {}, effort: {}", modelName,
                     reasoningEffort != null ? reasoningEffort : "default");
@@ -436,7 +423,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                                 ? requestToUse.getModel()
                                 : currentModel;
                         StreamingChatModel streamingModel = getResponsesStreamingModel(
-                                effectiveModel, requestToUse.getReasoningEffort());
+                                effectiveModel, requestToUse.getReasoningEffort(), requestToUse.getModelTier());
                         response = chatViaStreaming(streamingModel, messages, tools);
                     } else if (tools != null && !tools.isEmpty()) {
                         log.trace("Calling LLM with {} tools", tools.size());
@@ -500,21 +487,49 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     }
 
     private boolean isRateLimitError(Throwable e) {
-        // Walk the cause chain looking for rate limit indicators
-        Throwable current = e;
-        while (current != null) {
-            // langchain4j maps HTTP 429 to RateLimitException regardless of body content
+        // Use identity semantics for the visited set: the intent is "have I seen this
+        // exact cause object before" (cycle guard), not value equality. A future
+        // provider exception that overrides equals/hashCode - or a wrapped cause that
+        // happens to compare equal to an earlier frame - must not collapse into a
+        // single visited entry and prematurely terminate the cause walk.
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable current = e; current != null && visited.add(current); current = current.getCause()) {
+            // langchain4j maps HTTP 429 to RateLimitException regardless of body content.
             if (current instanceof dev.langchain4j.exception.RateLimitException) {
                 return true;
             }
-            String msg = current.getMessage();
-            if (msg != null && (msg.contains("rate_limit") || msg.contains("token_quota_exceeded")
-                    || msg.contains("too_many_tokens") || msg.contains("Too Many Requests")
-                    || msg.contains("429") || msg.contains("model_cooldown")
-                    || msg.contains("cooling down"))) {
+            String raw = current.getMessage();
+            if (raw == null) {
+                continue;
+            }
+            String normalized = raw.toLowerCase(Locale.ROOT);
+            // Context-overflow errors sometimes carry rate-limit-adjacent wording
+            // ("too many tokens") - they must NOT be retried as rate limits.
+            if (LlmErrorPatterns.matchesContextOverflow(normalized)) {
+                continue;
+            }
+            if (containsAny(normalized, RATE_LIMIT_MARKERS) || looksLikeHttp429(normalized)) {
                 return true;
             }
-            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static boolean looksLikeHttp429(String normalized) {
+        // Avoid matching an arbitrary "429" in stack traces, byte counts, or IDs.
+        return normalized.contains("http 429")
+                || normalized.contains("status 429")
+                || normalized.contains("status: 429")
+                || normalized.contains("status_code=429")
+                || normalized.contains("code 429")
+                || normalized.contains("429 too many");
+    }
+
+    private static boolean containsAny(String haystack, Set<String> needles) {
+        for (String needle : needles) {
+            if (haystack.contains(needle)) {
+                return true;
+            }
         }
         return false;
     }
@@ -577,6 +592,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .traceSpanId(request.getTraceSpanId())
                 .traceParentSpanId(request.getTraceParentSpanId())
                 .traceRootKind(request.getTraceRootKind())
+                .modelTier(request.getModelTier())
                 .reasoningEffort(request.getReasoningEffort())
                 .build();
     }
@@ -584,17 +600,30 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private ChatModel getModelForRequest(LlmRequest request) {
         String requestModel = request.getModel();
         String reasoningEffort = request.getReasoningEffort();
+        String modelTier = request.getModelTier();
+        String effectiveModel = requestModel != null ? requestModel : currentModel;
+
+        if (modelTier != null && effectiveModel != null) {
+            double temperature = runtimeConfigService.getTemperatureForModel(modelTier, effectiveModel);
+            String cacheKey = modelTier + ":" + effectiveModel + ":"
+                    + (reasoningEffort != null ? reasoningEffort : "") + ":" + temperature;
+            return tierScopedChatModels.computeIfAbsent(cacheKey, key -> {
+                log.trace("Creating tier-scoped model for request: {}, tier: {}, reasoning: {}",
+                        effectiveModel, modelTier, reasoningEffort);
+                return createModel(effectiveModel, reasoningEffort, modelTier);
+            });
+        }
 
         // If request specifies a different model, create one-off
         if (requestModel != null && (chatModel == null || !requestModel.equals(currentModel))) {
             log.trace("Creating one-off model for request: {}, reasoning: {}", requestModel, reasoningEffort);
-            return createModel(requestModel, reasoningEffort);
+            return createModel(requestModel, reasoningEffort, null);
         }
 
         // If request specifies different reasoning for current model
         if (currentModel != null && reasoningEffort != null && isReasoningRequired(currentModel)) {
             log.debug("Using reasoning effort: {} for model: {}", reasoningEffort, currentModel);
-            return createModel(currentModel, reasoningEffort);
+            return createModel(currentModel, reasoningEffort, null);
         }
 
         return chatModel;
@@ -608,7 +637,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         if (isResponsesApiRequest(request)) {
             String effectiveModel = request.getModel() != null ? request.getModel() : currentModel;
             StreamingChatModel streamingModel = getResponsesStreamingModel(
-                    effectiveModel, request.getReasoningEffort());
+                    effectiveModel, request.getReasoningEffort(), request.getModelTier());
             MessageConversionResult conversionResult = buildChatMessages(request);
             List<ChatMessage> messages = conversionResult.messages();
             List<ToolSpecification> tools = convertTools(request);
@@ -705,7 +734,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     @Override
     public List<String> getSupportedModels() {
-        // Build from models.json — provider/modelName for each configured provider
+        // Build from models.json - provider/modelName for each configured provider.
         List<String> models = new ArrayList<>();
         Map<String, ModelCatalogEntry> modelsConfig = modelConfig
                 .getAllModels();
@@ -739,11 +768,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return this;
     }
 
-    private static final TypeReference<Map<String, Object>> MAP_TYPE_REF = new TypeReference<>() {
-    };
-
     private MessageConversionResult buildChatMessages(LlmRequest request) {
-        return convertMessages(request, isGeminiRequest(request));
+        return messageConverter.convertMessages(request.getSystemPrompt(), request.getMessages(),
+                isGeminiRequest(request),
+                isVisionCapableRequest(request), request.isDisableToolAttachmentHydration());
     }
 
     // Package-private for reflection-based adapter tests in the same package.
@@ -751,143 +779,10 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return buildChatMessages(request).messages();
     }
 
-    private MessageConversionResult convertMessages(LlmRequest request, boolean geminiApiType) {
-        return convertMessages(request.getSystemPrompt(), request.getMessages(), geminiApiType,
-                isVisionCapableRequest(request), request.isDisableToolAttachmentHydration());
-    }
-
     private List<ChatMessage> convertMessagesWithFlattenedToolHistory(LlmRequest request) {
-        return convertMessagesWithFlattenedToolHistory(request, isGeminiRequest(request));
-    }
-
-    private List<ChatMessage> convertMessagesWithFlattenedToolHistory(LlmRequest request, boolean geminiApiType) {
         List<Message> flattenedMessages = Message.flattenToolMessages(request.getMessages());
-        return convertMessages(request.getSystemPrompt(), flattenedMessages, geminiApiType,
+        return messageConverter.convertMessages(request.getSystemPrompt(), flattenedMessages, isGeminiRequest(request),
                 isVisionCapableRequest(request), request.isDisableToolAttachmentHydration()).messages();
-    }
-
-    private MessageConversionResult convertMessages(String systemPrompt, List<Message> requestMessages,
-            boolean geminiApiType, boolean visionCapableTarget, boolean disableToolAttachmentHydration) {
-        List<ChatMessage> messages = new ArrayList<>();
-        List<Message> normalizedMessages = normalizeMessagesForProvider(requestMessages, geminiApiType);
-        boolean hydratedToolImages = false;
-
-        // Add system message
-        if (systemPrompt != null && !systemPrompt.isBlank()) {
-            messages.add(SystemMessage.from(systemPrompt));
-        }
-
-        if (normalizedMessages == null) {
-            return new MessageConversionResult(messages, false);
-        }
-
-        // Synthetic ID generation: langchain4j serializes null-ID tool calls as
-        // legacy "function_call" and null-ID tool results as "role: function",
-        // both rejected by GPT-5.2+. Assign synthetic IDs where missing.
-        // Also track emitted tool call IDs to detect orphaned tool messages
-        // whose preceding assistant message was removed (e.g. by compaction).
-        int synthCounter = 0;
-        Deque<String> pendingSynthIds = new ArrayDeque<>();
-        Set<String> emittedToolCallIds = new HashSet<>();
-        int firstTrailingToolIndex = findFirstTrailingToolMessageIndex(normalizedMessages);
-
-        for (int index = 0; index < normalizedMessages.size(); index++) {
-            Message msg = normalizedMessages.get(index);
-            switch (msg.getRole()) {
-            case "user" -> messages.add(toUserMessage(msg));
-            case "assistant" -> {
-                if (msg.hasToolCalls()) {
-                    List<ToolExecutionRequest> toolRequests = new ArrayList<>();
-                    for (Message.ToolCall tc : msg.getToolCalls()) {
-                        String id = tc.getId();
-                        if (id == null || id.isBlank()) {
-                            synthCounter++;
-                            id = SYNTH_ID_PREFIX + synthCounter;
-                            pendingSynthIds.addLast(id);
-                        }
-                        emittedToolCallIds.add(id);
-                        toolRequests.add(ToolExecutionRequest.builder()
-                                .id(id)
-                                .name(tc.getName())
-                                .arguments(convertArgsToJson(tc.getArguments()))
-                                .build());
-                    }
-                    AiMessage.Builder aiMessageBuilder = AiMessage.builder()
-                            .toolExecutionRequests(toolRequests);
-                    if (msg.getContent() != null && !msg.getContent().isBlank()) {
-                        aiMessageBuilder.text(msg.getContent());
-                    }
-                    String thinkingSignature = geminiApiType ? extractGeminiThinkingSignature(msg) : null;
-                    if (thinkingSignature != null) {
-                        aiMessageBuilder.attributes(Map.of(GEMINI_THINKING_SIGNATURE_KEY, thinkingSignature));
-                    }
-                    messages.add(aiMessageBuilder.build());
-                } else {
-                    messages.add(AiMessage.from(nonNullText(msg.getContent())));
-                }
-            }
-            case "tool" -> {
-                String toolCallId = msg.getToolCallId();
-                if (toolCallId == null || toolCallId.isBlank()) {
-                    if (pendingSynthIds.isEmpty()) {
-                        synthCounter++;
-                        toolCallId = SYNTH_ID_PREFIX + synthCounter;
-                    } else {
-                        toolCallId = pendingSynthIds.pollFirst();
-                    }
-                }
-                if (emittedToolCallIds.contains(toolCallId)) {
-                    messages.add(ToolExecutionResultMessage.from(
-                            toolCallId,
-                            msg.getToolName(),
-                            nonNullText(msg.getContent())));
-                    boolean hydrateToolImages = shouldHydrateToolAttachments(index, firstTrailingToolIndex,
-                            visionCapableTarget, disableToolAttachmentHydration);
-                    UserMessage toolVisualContext = toToolAttachmentContextMessage(msg, hydrateToolImages);
-                    if (toolVisualContext != null) {
-                        messages.add(toolVisualContext);
-                        hydratedToolImages = hydratedToolImages || hasImageContent(toolVisualContext);
-                    }
-                } else {
-                    log.debug("[LLM] Converting orphaned tool message to text: tool={}",
-                            msg.getToolName());
-                    String toolText = "[Tool: " + nonNullText(msg.getToolName())
-                            + "]\n[Result: " + nonNullText(msg.getContent()) + "]";
-                    boolean hydrateToolImages = shouldHydrateToolAttachments(index, firstTrailingToolIndex,
-                            visionCapableTarget, disableToolAttachmentHydration);
-                    UserMessage orphanedToolContext = toToolAttachmentContextMessage(msg, hydrateToolImages);
-                    messages.add(orphanedToolContext != null ? orphanedToolContext : UserMessage.from(toolText));
-                    if (orphanedToolContext != null) {
-                        hydratedToolImages = hydratedToolImages || hasImageContent(orphanedToolContext);
-                    }
-                }
-            }
-            case "system" -> messages.add(SystemMessage.from(nonNullText(msg.getContent())));
-            default -> log.warn("Unknown message role: {}, treating as user message", msg.getRole());
-            }
-        }
-
-        return new MessageConversionResult(messages, hydratedToolImages);
-    }
-
-    private List<Message> normalizeMessagesForProvider(List<Message> requestMessages, boolean geminiApiType) {
-        if (!geminiApiType || requestMessages == null || requestMessages.isEmpty()) {
-            return requestMessages;
-        }
-
-        long missingSignatureCount = requestMessages.stream()
-                .filter(Message::isAssistantMessage)
-                .filter(Message::hasToolCalls)
-                .filter(msg -> extractGeminiThinkingSignature(msg) == null)
-                .count();
-        if (missingSignatureCount == 0) {
-            return requestMessages;
-        }
-
-        log.warn(
-                "[LLM] Flattening tool history for Gemini request because {} assistant tool-call message(s) are missing thinking_signature",
-                missingSignatureCount);
-        return Message.flattenToolMessages(requestMessages);
     }
 
     private boolean isGeminiRequest(LlmRequest request) {
@@ -904,17 +799,6 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return API_TYPE_GEMINI.equals(getApiType(getProviderConfig(provider)));
     }
 
-    private String extractGeminiThinkingSignature(Message msg) {
-        if (msg == null || msg.getMetadata() == null) {
-            return null;
-        }
-        Object value = msg.getMetadata().get(GEMINI_THINKING_SIGNATURE_KEY);
-        if (value instanceof String signature && !signature.isBlank()) {
-            return signature;
-        }
-        return null;
-    }
-
     private boolean isVisionCapableRequest(LlmRequest request) {
         String model = request != null && request.getModel() != null && !request.getModel().isBlank()
                 ? request.getModel()
@@ -925,539 +809,38 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return modelConfig.supportsVision(model);
     }
 
-    private String nonNullText(String text) {
-        return text != null ? text : "";
-    }
-
-    private int findFirstTrailingToolMessageIndex(List<Message> messages) {
-        if (messages == null || messages.isEmpty()) {
-            return -1;
-        }
-
-        int index = messages.size() - 1;
-        while (index >= 0) {
-            Message message = messages.get(index);
-            if (message == null || !"tool".equals(message.getRole())) {
-                break;
-            }
-            index--;
-        }
-
-        int firstTrailingToolIndex = index + 1;
-        return firstTrailingToolIndex < messages.size() ? firstTrailingToolIndex : -1;
-    }
-
-    private boolean shouldHydrateToolAttachments(int messageIndex, int firstTrailingToolIndex,
-            boolean visionCapableTarget, boolean disableToolAttachmentHydration) {
-        return visionCapableTarget
-                && !disableToolAttachmentHydration
-                && firstTrailingToolIndex >= 0
-                && messageIndex >= firstTrailingToolIndex;
-    }
-
     private boolean isUnsupportedFunctionRoleError(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null) {
-            String message = current.getMessage();
-            if (message != null) {
-                // Legacy function role rejected by newer models
-                if (message.contains("unsupported_value")
-                        && message.contains("does not support 'function'")) {
-                    return true;
-                }
-                // Orphaned tool message without preceding tool_calls
-                if (message.contains("role 'tool' must be a response to")
-                        && message.contains("tool_calls")) {
-                    return true;
-                }
-            }
-            current = current.getCause();
-        }
-        return false;
-    }
-
-    @SuppressWarnings("unchecked")
-    private UserMessage toUserMessage(Message msg) {
-        List<Content> contents = new ArrayList<>();
-
-        if (msg.getContent() != null && !msg.getContent().isBlank()) {
-            contents.add(TextContent.from(msg.getContent()));
-        }
-
-        Map<String, Object> metadata = msg.getMetadata();
-        if (metadata != null) {
-            Object attachmentsRaw = metadata.get("attachments");
-            if (attachmentsRaw instanceof List<?> attachments) {
-                for (Object attachmentObj : attachments) {
-                    if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
-                        continue;
-                    }
-
-                    Object typeObj = attachmentMap.get("type");
-                    Object mimeObj = attachmentMap.get("mimeType");
-                    Object dataObj = attachmentMap.get("dataBase64");
-
-                    if (!(typeObj instanceof String type)
-                            || !(mimeObj instanceof String mimeType)
-                            || !(dataObj instanceof String base64Data)) {
-                        continue;
-                    }
-                    if (!"image".equals(type) || !mimeType.startsWith("image/") || base64Data.isBlank()) {
-                        continue;
-                    }
-
-                    Image image = Image.builder()
-                            .base64Data(base64Data)
-                            .mimeType(mimeType)
-                            .build();
-                    contents.add(ImageContent.from(image));
-                }
-            }
-        }
-
-        if (contents.isEmpty()) {
-            return UserMessage.from(msg.getContent() != null ? msg.getContent() : "");
-        }
-
-        return UserMessage.from(contents);
-    }
-
-    @SuppressWarnings("unchecked")
-    private UserMessage toToolAttachmentContextMessage(Message msg, boolean hydrateImages) {
-        if (msg == null || msg.getMetadata() == null) {
-            return null;
-        }
-
-        Object attachmentsRaw = msg.getMetadata().get(TOOL_ATTACHMENTS_METADATA_KEY);
-        if (!(attachmentsRaw instanceof List<?> attachments)) {
-            return null;
-        }
-
-        List<Content> contents = new ArrayList<>();
-        String text = buildToolAttachmentContextText(msg, attachments);
-        if (text != null && !text.isBlank()) {
-            contents.add(TextContent.from(text));
-        }
-
-        if (!hydrateImages || toolArtifactService == null) {
-            return contents.isEmpty() ? null : UserMessage.from(contents);
-        }
-
-        for (Object attachmentObj : attachments) {
-            if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
-                continue;
-            }
-
-            Object typeObj = attachmentMap.get("type");
-            Object pathObj = attachmentMap.get("internalFilePath");
-            if (!(typeObj instanceof String type)
-                    || !(pathObj instanceof String internalFilePath)
-                    || !"image".equals(type)
-                    || internalFilePath.isBlank()) {
-                continue;
-            }
-
-            try {
-                var download = toolArtifactService.getDownload(internalFilePath);
-                String mimeType = download.getMimeType();
-                if (mimeType == null || !mimeType.startsWith("image/")) {
-                    continue;
-                }
-                String base64Data = Base64.getEncoder().encodeToString(download.getData());
-                Image image = Image.builder()
-                        .base64Data(base64Data)
-                        .mimeType(mimeType)
-                        .build();
-                contents.add(ImageContent.from(image));
-            } catch (RuntimeException ex) {
-                log.warn("[LLM] Failed to hydrate tool image attachment '{}': {}", internalFilePath, ex.getMessage());
-            }
-        }
-
-        if (contents.isEmpty()) {
-            return null;
-        }
-
-        return UserMessage.from(contents);
-    }
-
-    private String buildToolAttachmentContextText(Message msg, List<?> attachments) {
-        String toolName = msg.getToolName() != null && !msg.getToolName().isBlank()
-                ? msg.getToolName()
-                : "tool";
-        List<String> lines = new ArrayList<>();
-        lines.add("Tool artifact from " + toolName + " is available.");
-
-        boolean foundAttachment = false;
-        for (Object attachmentObj : attachments) {
-            if (!(attachmentObj instanceof Map<?, ?> attachmentMap)) {
-                continue;
-            }
-            String path = objectAsString(attachmentMap.get("internalFilePath"));
-            if (path == null || path.isBlank()) {
-                continue;
-            }
-            String name = objectAsString(attachmentMap.get("name"));
-            String mimeType = objectAsString(attachmentMap.get("mimeType"));
-            String displayName = name != null && !name.isBlank() ? name : path.substring(path.lastIndexOf('/') + 1);
-            StringBuilder line = new StringBuilder("- ").append(displayName);
-            if (mimeType != null && !mimeType.isBlank()) {
-                line.append(" (").append(mimeType).append(")");
-            }
-            line.append(" @ ").append(path);
-            lines.add(line.toString());
-            foundAttachment = true;
-        }
-
-        if (!foundAttachment) {
-            return null;
-        }
-
-        lines.add(TOOL_ATTACHMENT_REOPEN_HINT);
-        return String.join("\n", lines);
-    }
-
-    private String objectAsString(Object value) {
-        if (value instanceof String stringValue) {
-            return stringValue;
-        }
-        return null;
+        return Langchain4jMessageConverter.isUnsupportedFunctionRoleError(throwable);
     }
 
     private List<ToolSpecification> convertTools(LlmRequest request) {
-        if (request.getTools() == null || request.getTools().isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        Map<String, ToolDefinition> uniqueTools = new LinkedHashMap<>();
-        for (ToolDefinition tool : request.getTools()) {
-            if (tool == null || tool.getName() == null || tool.getName().isBlank()) {
-                log.warn("[LLM] Dropping tool with blank name before request serialization");
-                continue;
-            }
-            ToolDefinition previous = uniqueTools.putIfAbsent(tool.getName(), tool);
-            if (previous != null) {
-                log.warn("[LLM] Dropping duplicate tool definition '{}' before request serialization", tool.getName());
-            }
-        }
-
-        List<ToolSpecification> tools = new ArrayList<>(uniqueTools.size());
-        for (ToolDefinition tool : uniqueTools.values()) {
-            tools.add(convertToolDefinition(tool));
-        }
-        return tools;
-    }
-
-    private ToolSpecification convertToolDefinition(ToolDefinition tool) {
-        ToolSpecification.Builder builder = ToolSpecification.builder()
-                .name(tool.getName())
-                .description(tool.getDescription());
-
-        // Convert input schema to JsonObjectSchema parameters
-        if (tool.getInputSchema() != null) {
-            Map<String, Object> schema = tool.getInputSchema();
-            Map<String, Object> properties = stringObjectMap(schema.get(SCHEMA_KEY_PROPERTIES),
-                    tool.getName(), SCHEMA_KEY_PROPERTIES);
-            List<String> required = stringList(schema.get("required"), tool.getName(), "required");
-            if (properties != null) {
-                JsonObjectSchema.Builder schemaBuilder = JsonObjectSchema.builder();
-                for (Map.Entry<String, Object> entry : properties.entrySet()) {
-                    String paramName = entry.getKey();
-                    Map<String, Object> paramSchema = stringObjectMap(entry.getValue(), tool.getName(),
-                            SCHEMA_KEY_PROPERTIES + "." + paramName);
-                    if (paramSchema == null) {
-                        log.warn("[LLM] Dropping invalid schema for tool '{}' param '{}'", tool.getName(), paramName);
-                        continue;
-                    }
-                    schemaBuilder.addProperty(paramName, toJsonSchemaElement(tool.getName(),
-                            SCHEMA_KEY_PROPERTIES + "." + paramName, paramSchema));
-                }
-                if (required != null && !required.isEmpty()) {
-                    schemaBuilder.required(required);
-                }
-                builder.parameters(schemaBuilder.build());
-            }
-        }
-
-        return builder.build();
-    }
-
-    private JsonSchemaElement toJsonSchemaElement(String toolName, String path, Map<String, Object> paramSchema) {
-        String type = stringValue(paramSchema.get("type"), toolName, path + ".type");
-        String description = stringValue(paramSchema.get("description"), toolName, path + ".description");
-        List<String> enumValues = stringList(paramSchema.get("enum"), toolName, path + ".enum");
-
-        // Enum values take priority
-        if (enumValues != null && !enumValues.isEmpty()) {
-            JsonEnumSchema.Builder builder = JsonEnumSchema.builder().enumValues(enumValues);
-            if (description != null && !description.isBlank()) {
-                builder.description(description);
-            }
-            return builder.build();
-        }
-
-        if (type == null) {
-            type = "string";
-        }
-
-        switch (type) {
-        case "string" -> {
-            JsonStringSchema.Builder builder = JsonStringSchema.builder();
-            if (description != null && !description.isBlank()) {
-                builder.description(description);
-            }
-            return builder.build();
-        }
-        case "integer" -> {
-            JsonIntegerSchema.Builder builder = JsonIntegerSchema.builder();
-            if (description != null && !description.isBlank()) {
-                builder.description(description);
-            }
-            return builder.build();
-        }
-        case "number" -> {
-            JsonNumberSchema.Builder builder = JsonNumberSchema.builder();
-            if (description != null && !description.isBlank()) {
-                builder.description(description);
-            }
-            return builder.build();
-        }
-        case "boolean" -> {
-            JsonBooleanSchema.Builder builder = JsonBooleanSchema.builder();
-            if (description != null && !description.isBlank()) {
-                builder.description(description);
-            }
-            return builder.build();
-        }
-        case "array" -> {
-            JsonArraySchema.Builder builder = JsonArraySchema.builder();
-            if (description != null && !description.isBlank()) {
-                builder.description(description);
-            }
-            if (paramSchema.containsKey("items")) {
-                Map<String, Object> items = stringObjectMap(paramSchema.get("items"), toolName, path + ".items");
-                if (items != null) {
-                    builder.items(toJsonSchemaElement(toolName, path + ".items", items));
-                }
-            }
-            return builder.build();
-        }
-        case "object" -> {
-            JsonObjectSchema.Builder builder = JsonObjectSchema.builder();
-            if (description != null && !description.isBlank()) {
-                builder.description(description);
-            }
-            if (paramSchema.containsKey(SCHEMA_KEY_PROPERTIES)) {
-                Map<String, Object> nestedProps = stringObjectMap(paramSchema.get(SCHEMA_KEY_PROPERTIES),
-                        toolName, path + "." + SCHEMA_KEY_PROPERTIES);
-                if (nestedProps != null) {
-                    for (Map.Entry<String, Object> entry : nestedProps.entrySet()) {
-                        Map<String, Object> nestedSchema = stringObjectMap(entry.getValue(), toolName,
-                                path + "." + SCHEMA_KEY_PROPERTIES + "." + entry.getKey());
-                        if (nestedSchema == null) {
-                            log.warn("[LLM] Dropping invalid nested schema for tool '{}' at {}", toolName,
-                                    path + "." + SCHEMA_KEY_PROPERTIES + "." + entry.getKey());
-                            continue;
-                        }
-                        builder.addProperty(entry.getKey(), toJsonSchemaElement(toolName,
-                                path + "." + SCHEMA_KEY_PROPERTIES + "." + entry.getKey(), nestedSchema));
-                    }
-                }
-            }
-            return builder.build();
-        }
-        default -> {
-            // Fallback to string for unknown types
-            JsonStringSchema.Builder builder = JsonStringSchema.builder();
-            if (description != null && !description.isBlank()) {
-                builder.description(description);
-            }
-            return builder.build();
-        }
-        }
-    }
-
-    @SuppressWarnings({
-            "unchecked",
-            "PMD.ReturnEmptyCollectionRatherThanNull"
-    })
-    private Map<String, Object> stringObjectMap(Object rawValue, String toolName, String path) {
-        if (!(rawValue instanceof Map<?, ?> rawMap)) {
-            if (rawValue != null) {
-                log.warn("[LLM] Invalid schema object for tool '{}' at {}: {}", toolName, path,
-                        rawValue.getClass().getSimpleName());
-            }
-            return null;
-        }
-        Map<String, Object> casted = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
-            if (!(entry.getKey() instanceof String key)) {
-                log.warn("[LLM] Dropping non-string schema key for tool '{}' at {}", toolName, path);
-                continue;
-            }
-            casted.put(key, (Object) entry.getValue());
-        }
-        return casted;
-    }
-
-    @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull")
-    private List<String> stringList(Object rawValue, String toolName, String path) {
-        if (!(rawValue instanceof List<?> rawList)) {
-            if (rawValue != null) {
-                log.warn("[LLM] Invalid schema list for tool '{}' at {}: {}", toolName, path,
-                        rawValue.getClass().getSimpleName());
-            }
-            return null;
-        }
-        List<String> values = new ArrayList<>(rawList.size());
-        for (Object item : rawList) {
-            if (item instanceof String stringValue && !stringValue.isBlank()) {
-                values.add(stringValue);
-            } else {
-                log.warn("[LLM] Dropping non-string schema list item for tool '{}' at {}", toolName, path);
-            }
-        }
-        return values;
-    }
-
-    private String stringValue(Object rawValue, String toolName, String path) {
-        if (rawValue == null) {
-            return null;
-        }
-        if (rawValue instanceof String stringValue) {
-            return stringValue;
-        }
-        log.warn("[LLM] Invalid schema string for tool '{}' at {}: {}", toolName, path,
-                rawValue.getClass().getSimpleName());
-        return null;
+        return toolSchemaConverter.convertTools(request);
     }
 
     private LlmResponse convertResponse(ChatResponse response, boolean compatibilityFlatteningApplied,
             boolean geminiApiType) {
-        AiMessage aiMessage = response.aiMessage();
-
-        // Convert tool calls if present
-        List<Message.ToolCall> toolCalls = null;
-        if (aiMessage.hasToolExecutionRequests()) {
-            toolCalls = aiMessage.toolExecutionRequests().stream()
-                    .map(ter -> Message.ToolCall.builder()
-                            .id(ter.id())
-                            .name(ter.name())
-                            .arguments(parseJsonArgs(ter.arguments()))
-                            .build())
-                    .toList();
-            log.trace("Parsed {} tool calls from response", toolCalls.size());
-        }
-
-        LlmUsage usage = toLlmUsage(response.tokenUsage());
-
-        Map<String, Object> providerMetadata = extractProviderMetadata(aiMessage, geminiApiType);
-
-        return LlmResponse.builder()
-                .content(aiMessage.text())
-                .toolCalls(toolCalls)
-                .usage(usage)
-                .model(currentModel)
-                .finishReason(response.finishReason() != null ? response.finishReason().name() : "stop")
-                .providerMetadata(providerMetadata.isEmpty() ? null : providerMetadata)
-                .compatibilityFlatteningApplied(compatibilityFlatteningApplied)
-                .build();
+        return responseMapper.convertResponse(response, currentModel, compatibilityFlatteningApplied, geminiApiType);
     }
 
     private LlmResponse withProviderMetadata(LlmResponse response, Map<String, Object> extraMetadata) {
-        if (response == null || extraMetadata == null || extraMetadata.isEmpty()) {
-            return response;
-        }
-
-        Map<String, Object> merged = new LinkedHashMap<>();
-        if (response.getProviderMetadata() != null) {
-            merged.putAll(response.getProviderMetadata());
-        }
-        merged.putAll(extraMetadata);
-
-        return LlmResponse.builder()
-                .content(response.getContent())
-                .toolCalls(response.getToolCalls())
-                .usage(response.getUsage())
-                .model(response.getModel())
-                .finishReason(response.getFinishReason())
-                .providerMetadata(merged)
-                .compatibilityFlatteningApplied(response.isCompatibilityFlatteningApplied())
-                .build();
+        return Langchain4jResponseMapper.withProviderMetadata(response, extraMetadata);
     }
 
-    private LlmUsage toLlmUsage(TokenUsage tokenUsage) {
-        if (tokenUsage == null) {
-            return null;
-        }
-
-        Integer inputTokens = tokenUsage.inputTokenCount();
-        Integer outputTokens = tokenUsage.outputTokenCount();
-        Integer totalTokens = tokenUsage.totalTokenCount();
-        if (inputTokens == null && outputTokens == null && totalTokens == null) {
-            return null;
-        }
-
-        int safeInputTokens = safeTokenCount(inputTokens);
-        int safeOutputTokens = safeTokenCount(outputTokens);
-        int safeTotalTokens = totalTokens != null ? totalTokens : safeInputTokens + safeOutputTokens;
-
-        return LlmUsage.builder()
-                .inputTokens(safeInputTokens)
-                .outputTokens(safeOutputTokens)
-                .totalTokens(safeTotalTokens)
-                .build();
-    }
-
-    private int safeTokenCount(Integer value) {
-        return value != null ? value : 0;
-    }
-
-    private Map<String, Object> extractProviderMetadata(AiMessage aiMessage, boolean geminiApiType) {
-        if (!geminiApiType || aiMessage == null || !aiMessage.hasToolExecutionRequests()) {
-            return Collections.emptyMap();
-        }
-        String thinkingSignature = aiMessage.attribute(GEMINI_THINKING_SIGNATURE_KEY, String.class);
-        if (thinkingSignature == null || thinkingSignature.isBlank()) {
-            return Collections.emptyMap();
-        }
-        return Map.of(GEMINI_THINKING_SIGNATURE_KEY, thinkingSignature);
-    }
-
-    private boolean hasImageContent(UserMessage message) {
-        if (message == null || message.contents() == null) {
-            return false;
-        }
-        for (Content content : message.contents()) {
-            if (content.type() == dev.langchain4j.data.message.ContentType.IMAGE) {
-                return true;
+    String convertArgsToJson(Object args) {
+        if (args instanceof Map<?, ?> rawMap) {
+            Map<String, Object> casted = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                if (entry.getKey() instanceof String key) {
+                    casted.put(key, entry.getValue());
+                }
             }
+            return Langchain4jToolArgumentJson.toJson(casted, objectMapper);
         }
-        return false;
+        return Langchain4jToolArgumentJson.toJson(null, objectMapper);
     }
 
-    private String convertArgsToJson(Map<String, Object> args) {
-        if (args == null || args.isEmpty()) {
-            return "{}";
-        }
-        try {
-            return objectMapper.writeValueAsString(args);
-        } catch (Exception e) {
-            log.warn("Failed to serialize tool arguments: {}", e.getMessage());
-            return "{}";
-        }
-    }
-
-    private Map<String, Object> parseJsonArgs(String json) {
-        if (json == null || json.isBlank()) {
-            return Collections.emptyMap();
-        }
-        try {
-            return objectMapper.readValue(json, MAP_TYPE_REF);
-        } catch (Exception e) {
-            log.warn("Failed to parse tool arguments: {}", e.getMessage());
-            return Collections.emptyMap();
-        }
+    Map<String, Object> parseJsonArgs(Object json) {
+        return Langchain4jToolArgumentJson.parse(json instanceof String stringValue ? stringValue : null, objectMapper);
     }
 
     protected void sleepBeforeRetry(long backoffMs) throws InterruptedException {

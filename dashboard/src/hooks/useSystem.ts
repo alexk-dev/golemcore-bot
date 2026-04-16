@@ -6,6 +6,7 @@ import {
   type SystemUpdateConfigResponse,
   type SystemUpdateStatusResponse,
   checkSystemUpdate,
+  forceInstallStagedUpdate,
   getSystemChannels,
   getSystemDiagnostics,
   getSystemHealth,
@@ -63,6 +64,17 @@ export function useUpdateSystemNow(): UseMutationResult<SystemUpdateActionRespon
   const qc = useQueryClient();
   return useMutation({
     mutationFn: updateSystemNow,
+    onSuccess: () => {
+      invalidateUpdateQueries(qc);
+      void qc.invalidateQueries({ queryKey: ['system', 'health'] });
+    },
+  });
+}
+
+export function useForceInstallStagedUpdate(): UseMutationResult<SystemUpdateActionResponse, unknown, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: forceInstallStagedUpdate,
     onSuccess: () => {
       invalidateUpdateQueries(qc);
       void qc.invalidateQueries({ queryKey: ['system', 'health'] });

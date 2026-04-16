@@ -24,6 +24,19 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 
+/**
+ * Adds the JSON-only response contract for schema-backed synchronous webhooks
+ * to the main agent prompt.
+ *
+ * <p>
+ * The canonical contract source is {@link AgentContext#getAttributes()} via
+ * {@link ContextAttributes#WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT}. Reading from
+ * message metadata is retained only as a compatibility fallback. This keeps the
+ * schema instruction available across multi-iteration flows where the last
+ * conversation message may become an intermediate assistant message rather than
+ * the original webhook request.
+ * </p>
+ */
 public class WebhookResponseSchemaLayer implements ContextLayer {
 
     @Override
@@ -41,6 +54,14 @@ public class WebhookResponseSchemaLayer implements ContextLayer {
         return readSchemaText(context) != null;
     }
 
+    /**
+     * Renders a prompt section instructing the main agent to return only JSON
+     * matching the caller-provided schema.
+     *
+     * @param context
+     *            current agent context
+     * @return context layer result containing schema instructions, or empty result
+     */
     @Override
     public ContextLayerResult assemble(AgentContext context) {
         String schemaText = readSchemaText(context);
@@ -57,20 +78,36 @@ public class WebhookResponseSchemaLayer implements ContextLayer {
         return ContextLayerResult.builder()
                 .layerName(getName())
                 .content(content)
-                .estimatedTokens((int) Math.ceil(content.length() / 3.5))
+                .estimatedTokens(TokenEstimator.estimate(content))
                 .build();
     }
 
+    /**
+     * Reads schema text from canonical context attributes first, then falls back to
+     * the latest message metadata for legacy callers/tests that construct a context
+     * without running through {@code AgentLoop.applyRuntimeAttributes}.
+     */
     private String readSchemaText(AgentContext context) {
-        if (context == null || context.getMessages() == null || context.getMessages().isEmpty()) {
+        if (context == null) {
+            return null;
+        }
+        String attributeSchemaText = readText(
+                context.getAttribute(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT));
+        if (attributeSchemaText != null) {
+            return attributeSchemaText;
+        }
+        if (context.getMessages() == null || context.getMessages().isEmpty()) {
             return null;
         }
         Message last = context.getMessages().get(context.getMessages().size() - 1);
         if (last.getMetadata() == null) {
             return null;
         }
-        Object schemaText = last.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT);
-        if (schemaText instanceof String text && !text.isBlank()) {
+        return readText(last.getMetadata().get(ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT));
+    }
+
+    private String readText(Object value) {
+        if (value instanceof String text && !text.isBlank()) {
             return text;
         }
         return null;

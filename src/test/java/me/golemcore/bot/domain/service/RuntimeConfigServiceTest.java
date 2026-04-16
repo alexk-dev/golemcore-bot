@@ -247,7 +247,6 @@ class RuntimeConfigServiceTest {
     @Test
     void shouldPreserveCanonicalModelRouterBindingsWhenPersisting() throws Exception {
         Map<String, Object> canonicalRouter = new LinkedHashMap<>();
-        canonicalRouter.put("temperature", 0.4d);
         canonicalRouter.put("dynamicTierEnabled", false);
         canonicalRouter.put("routing", Map.of("model", "router/model", "reasoning", "none"));
         Map<String, Object> tiers = new LinkedHashMap<>();
@@ -375,7 +374,159 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldReturnDefaultTemperature() {
-        assertEquals(0.7, service.getTemperature(), 0.001);
+        assertEquals(0.7, service.getTemperatureForModel("balanced", service.getBalancedModel()), 0.001);
+    }
+
+    @Test
+    void shouldReturnPrimaryTemperatureWhenModelMatchesTierBinding() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .temperature(0.3)
+                .build();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        assertEquals(0.3, service.getTemperatureForModel("balanced", "openai/gpt-5"), 0.001);
+    }
+
+    @Test
+    void shouldReturnFallbackTemperatureWhenModelMatchesFallbackEntry() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .temperature(0.3)
+                .fallbacks(new java.util.ArrayList<>(List.of(
+                        RuntimeConfig.TierFallback.builder()
+                                .model("openai/gpt-5-mini")
+                                .temperature(1.2)
+                                .build())))
+                .build();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        assertEquals(1.2, service.getTemperatureForModel("balanced", "openai/gpt-5-mini"), 0.001);
+    }
+
+    @Test
+    void shouldReturnDefaultTemperatureForUnknownModel() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .temperature(0.3)
+                .build();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        assertEquals(0.7, service.getTemperatureForModel("balanced", "openai/other"), 0.001);
+    }
+
+    @Test
+    void shouldReturnDefaultTemperatureWhenTierIsNull() {
+        assertEquals(0.7, service.getTemperatureForModel(null, "openai/gpt-5"), 0.001);
+    }
+
+    @Test
+    void shouldReturnBindingTemperatureWhenModelArgumentIsBlank() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .temperature(0.5)
+                .build();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        assertEquals(0.5, service.getTemperatureForModel("balanced", null), 0.001);
+        assertEquals(0.5, service.getTemperatureForModel("balanced", "   "), 0.001);
+    }
+
+    @Test
+    void shouldNormalizeTierBindingTruncatingFallbacksAboveFive() throws Exception {
+        List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            fallbacks.add(RuntimeConfig.TierFallback.builder().model("openai/fallback-" + i).build());
+        }
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbacks(fallbacks)
+                .build();
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig.TierBinding stored = service.getRuntimeConfig().getModelRouter().getTierBinding("balanced");
+        assertEquals(5, stored.getFallbacks().size());
+        assertEquals("openai/fallback-0", stored.getFallbacks().get(0).getModel());
+        assertEquals("openai/fallback-4", stored.getFallbacks().get(4).getModel());
+    }
+
+    @Test
+    void shouldDropFallbacksWithoutModelReferenceDuringNormalization() throws Exception {
+        List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
+        fallbacks.add(RuntimeConfig.TierFallback.builder().model("openai/keep").build());
+        fallbacks.add(RuntimeConfig.TierFallback.builder().build());
+        fallbacks.add(null);
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbacks(fallbacks)
+                .build();
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig.TierBinding stored = service.getRuntimeConfig().getModelRouter().getTierBinding("balanced");
+        assertEquals(1, stored.getFallbacks().size());
+        assertEquals("openai/keep", stored.getFallbacks().get(0).getModel());
+    }
+
+    @Test
+    void shouldNormalizeFallbackModeDefaultingToSequential() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getModelRouter().setTierBinding("balanced", RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbackMode("garbage")
+                .build());
+        config.getModelRouter().setTierBinding("smart", RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbackMode("WEIGHTED")
+                .build());
+        config.getModelRouter().setTierBinding("deep", RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbackMode(null)
+                .build());
+        setCachedConfig(config);
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig.ModelRouterConfig router = service.getRuntimeConfig().getModelRouter();
+        assertEquals("sequential", router.getTierBinding("balanced").getFallbackMode());
+        assertEquals("weighted", router.getTierBinding("smart").getFallbackMode());
+        assertEquals("sequential", router.getTierBinding("deep").getFallbackMode());
+    }
+
+    @Test
+    void shouldClampOutOfRangeTemperatureDuringNormalization() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getModelRouter().setTierBinding("balanced", RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .temperature(5.0)
+                .fallbacks(new java.util.ArrayList<>(List.of(
+                        RuntimeConfig.TierFallback.builder()
+                                .model("openai/gpt-5-mini")
+                                .temperature(-2.0)
+                                .build())))
+                .build());
+        setCachedConfig(config);
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig.TierBinding stored = service.getRuntimeConfig().getModelRouter().getTierBinding("balanced");
+        assertEquals(2.0, stored.getTemperature(), 0.001);
+        assertEquals(0.0, stored.getFallbacks().get(0).getTemperature(), 0.001);
     }
 
     @Test
@@ -728,7 +879,7 @@ class RuntimeConfigServiceTest {
 
         assertTrue(service.isDelayedActionsEnabled());
         assertEquals(1, service.getDelayedActionsTickSeconds());
-        assertEquals(50, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(3, service.getDelayedActionsMaxPendingPerSession());
         assertEquals(java.time.Duration.ofDays(30), service.getDelayedActionsMaxDelay());
         assertEquals(4, service.getDelayedActionsDefaultMaxAttempts());
         assertEquals(java.time.Duration.ofMinutes(2), service.getDelayedActionsLeaseDuration());
@@ -752,7 +903,7 @@ class RuntimeConfigServiceTest {
 
         assertFalse(service.isDelayedActionsEnabled());
         assertEquals(9, service.getDelayedActionsTickSeconds());
-        assertEquals(12, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(3, service.getDelayedActionsMaxPendingPerSession());
         assertEquals(java.time.Duration.ofHours(6), service.getDelayedActionsMaxDelay());
         assertEquals(7, service.getDelayedActionsDefaultMaxAttempts());
         assertEquals(java.time.Duration.ofMinutes(5), service.getDelayedActionsLeaseDuration());
@@ -776,7 +927,7 @@ class RuntimeConfigServiceTest {
 
         assertTrue(service.isDelayedActionsEnabled());
         assertEquals(1, service.getDelayedActionsTickSeconds());
-        assertEquals(50, service.getDelayedActionsMaxPendingPerSession());
+        assertEquals(3, service.getDelayedActionsMaxPendingPerSession());
         assertEquals(java.time.Duration.ofDays(30), service.getDelayedActionsMaxDelay());
         assertEquals(4, service.getDelayedActionsDefaultMaxAttempts());
         assertEquals(java.time.Duration.ofMinutes(2), service.getDelayedActionsLeaseDuration());
@@ -803,7 +954,7 @@ class RuntimeConfigServiceTest {
         RuntimeConfig updated = service.getRuntimeConfig();
         assertTrue(updated.getDelayedActions().getEnabled());
         assertEquals(1, updated.getDelayedActions().getTickSeconds());
-        assertEquals(50, updated.getDelayedActions().getMaxPendingPerSession());
+        assertEquals(3, updated.getDelayedActions().getMaxPendingPerSession());
         assertEquals("PT720H", updated.getDelayedActions().getMaxDelay());
         assertEquals(4, updated.getDelayedActions().getDefaultMaxAttempts());
         assertEquals("PT2M", updated.getDelayedActions().getLeaseDuration());

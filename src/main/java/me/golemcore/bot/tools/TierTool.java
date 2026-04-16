@@ -84,7 +84,8 @@ public class TierTool implements ToolComponent {
 
     @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
-        String tier = ModelTierCatalog.normalizeTierId((String) parameters.get("tier"));
+        Object rawTier = parameters != null ? parameters.get("tier") : null;
+        String tier = rawTier instanceof String tierValue ? ModelTierCatalog.normalizeTierId(tierValue) : null;
 
         if (tier == null || tier.isBlank()) {
             return CompletableFuture.completedFuture(ToolResult.failure("tier is required"));

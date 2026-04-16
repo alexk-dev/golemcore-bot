@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import type { SystemUpdateConfigResponse, SystemUpdateStatusResponse } from '../../api/system';
-import { UPDATE_BUSY_STATES, getPrimaryUpdateVersion, hasPendingUpdate } from '../../utils/systemUpdateUi';
+import { UPDATE_BUSY_STATES, canForceInstallStagedUpdate, getPrimaryUpdateVersion, hasPendingUpdate } from '../../utils/systemUpdateUi';
 import { configToForm, isValidTimeInput, localTimeToUtc, normalizeIntervalValue, type UpdateSettingsFormState } from './updateSettingsUtils';
 
 const LIVE_STATUS_POLL_MS = 1500;
@@ -9,6 +9,7 @@ const LIVE_STATUS_POLL_MS = 1500;
 interface AutoReloadLifecycleArgs {
   status: SystemUpdateStatusResponse | null;
   isUpdatePending: boolean;
+  isForceInstallPending: boolean;
   refetchStatus: () => void;
 }
 
@@ -52,6 +53,7 @@ export function useUpdateConfigForm(config: SystemUpdateConfigResponse | null): 
 export function useUpdateAutoReloadLifecycle({
   status,
   isUpdatePending,
+  isForceInstallPending,
   refetchStatus,
 }: AutoReloadLifecycleArgs): [boolean, React.Dispatch<React.SetStateAction<boolean>>] {
   const [isAutoReloadArmed, setIsAutoReloadArmed] = useState<boolean>(false);
@@ -60,7 +62,7 @@ export function useUpdateAutoReloadLifecycle({
     if (status == null) {
       return undefined;
     }
-    const shouldLivePoll = isAutoReloadArmed || isUpdatePending || UPDATE_BUSY_STATES.has(status.state);
+    const shouldLivePoll = isAutoReloadArmed || isUpdatePending || isForceInstallPending || UPDATE_BUSY_STATES.has(status.state);
     if (!shouldLivePoll) {
       return undefined;
     }
@@ -68,7 +70,7 @@ export function useUpdateAutoReloadLifecycle({
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [isAutoReloadArmed, isUpdatePending, refetchStatus, status]);
+  }, [isAutoReloadArmed, isForceInstallPending, isUpdatePending, refetchStatus, status]);
 
   useEffect(() => {
     if (!isAutoReloadArmed || status == null) {
@@ -86,21 +88,22 @@ export function resolveExpectedUpdateVersion(status: SystemUpdateStatusResponse 
   return status == null ? null : getPrimaryUpdateVersion(status);
 }
 
-
 export function useUpdateActionAvailability(
   status: SystemUpdateStatusResponse | null,
   isCheckPending: boolean,
   isUpdatePending: boolean,
-): { isBusy: boolean; canCheck: boolean; canUpdate: boolean } {
+  isForceInstallPending: boolean,
+): { isBusy: boolean; canCheck: boolean; canUpdate: boolean; canForceInstall: boolean } {
   return useMemo(() => {
     if (status == null) {
-      return { isBusy: false, canCheck: false, canUpdate: false };
+      return { isBusy: false, canCheck: false, canUpdate: false, canForceInstall: false };
     }
-    const isWorkflowBusy = isCheckPending || isUpdatePending || UPDATE_BUSY_STATES.has(status.state);
+    const isWorkflowBusy = isCheckPending || isUpdatePending || isForceInstallPending || UPDATE_BUSY_STATES.has(status.state);
     return {
       isBusy: isWorkflowBusy || Boolean(status.busy),
       canCheck: status.enabled && !isWorkflowBusy,
       canUpdate: status.enabled && !isWorkflowBusy && !status.busy && hasPendingUpdate(status),
+      canForceInstall: !isWorkflowBusy && canForceInstallStagedUpdate(status),
     };
-  }, [isCheckPending, isUpdatePending, status]);
+  }, [isCheckPending, isForceInstallPending, isUpdatePending, status]);
 }

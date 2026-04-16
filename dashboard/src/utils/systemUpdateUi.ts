@@ -32,6 +32,11 @@ const UPDATE_STATE_DESCRIPTIONS: Record<string, string> = {
   FAILED: 'The last update attempt failed.',
 };
 
+const UPDATE_BLOCKED_REASON_LABELS: Record<string, string> = {
+  SESSION_WORK_RUNNING: 'An active or queued session is still running',
+  AUTO_JOB_RUNNING: 'An auto-mode job is still running',
+};
+
 const WORKFLOW_STEPS = ['check', 'download', 'stage', 'restart', 'verify'] as const;
 
 const WORKFLOW_STEP_LABELS: Record<(typeof WORKFLOW_STEPS)[number], string> = {
@@ -140,6 +145,18 @@ export function getPrimaryUpdateVersion(status: SystemUpdateStatusResponse): str
 
 export function hasPendingUpdate(status: SystemUpdateStatusResponse): boolean {
   return getPrimaryUpdateVersion(status) != null;
+}
+
+export function getUpdateBlockedReasonLabel(blockedReason: string | null | undefined): string | null {
+  if (blockedReason == null || blockedReason.trim().length === 0) {
+    return null;
+  }
+
+  return UPDATE_BLOCKED_REASON_LABELS[blockedReason] ?? blockedReason;
+}
+
+export function canForceInstallStagedUpdate(status: SystemUpdateStatusResponse): boolean {
+  return status.enabled && Boolean(status.busy) && status.staged != null && !UPDATE_BUSY_STATES.has(status.state);
 }
 
 export function getUpdateActionLabel(status: SystemUpdateStatusResponse): string {

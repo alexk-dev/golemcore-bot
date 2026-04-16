@@ -153,7 +153,7 @@ public class ModelSelectionService {
                     ? modelConfigService.getAvailableReasoningLevels(entry.getKey())
                     : List.of();
             result.add(new AvailableModel(entry.getKey(), settings.getProvider(), displayName,
-                    hasReasoning, reasoningLevels, settings.isSupportsVision()));
+                    hasReasoning, reasoningLevels, settings.isSupportsVision(), settings.isSupportsTemperature()));
         }
         return result;
     }
@@ -404,7 +404,7 @@ public class ModelSelectionService {
 
     /** Available model for display in /model list. */
     public record AvailableModel(String id, String provider, String displayName,
-            boolean hasReasoning, List<String> reasoningLevels, boolean supportsVision) {
+            boolean hasReasoning, List<String> reasoningLevels, boolean supportsVision, boolean supportsTemperature) {
     }
 
     /** Validation result for model/reasoning checks. */

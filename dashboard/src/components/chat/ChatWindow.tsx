@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { Offcanvas } from '../ui/tailwind-components';
 import { useChatSessionStore } from '../../store/chatSessionStore';
+import { useChatUiStore } from '../../store/chatUiStore';
 import { useContextPanelStore } from '../../store/contextPanelStore';
 import { useChatRuntimeStore } from '../../store/chatRuntimeStore';
 import { useCreateSession } from '../../hooks/useSessions';
@@ -67,6 +68,8 @@ export default function ChatWindow(): ReactElement {
     setGoals,
   } = useContextPanelStore();
   const { sessionState, loadEarlierMessages, reloadHistory } = useChatSessionHistory(chatSessionId);
+  const composerCollapsed = useChatUiStore((state) => state.composerCollapsed);
+  const toggleComposerCollapsed = useChatUiStore((state) => state.toggleComposerCollapsed);
   const telemetry = useTelemetry();
   const [tier, setTier] = useState('balanced');
   const [tierForce, setTierForce] = useState(false);
@@ -278,7 +281,7 @@ export default function ChatWindow(): ReactElement {
   const messages = useMemo(() => sessionState.messages, [sessionState.messages]);
 
   return (
-    <div className="chat-page-layout">
+    <div className={`chat-page-layout${composerCollapsed ? ' chat-page-layout--composer-collapsed' : ''}`}>
       <div className="chat-container">
         <ChatToolbar
           chatSessionId={chatSessionId}
@@ -288,30 +291,34 @@ export default function ChatWindow(): ReactElement {
           onToggleContext={handleToggleContext}
         />
 
-        <ChatConversation
-          scrollRef={scrollRef}
-          historyLoading={sessionState.historyLoading}
-          historyError={sessionState.historyError}
-          isLoadingEarlier={isLoadingEarlier}
-          hasMoreHistory={sessionState.hasMoreHistory}
-          messages={messages}
-          typing={sessionState.typing}
-          progress={sessionState.progress}
-          modelsConfig={modelsConfig}
-          onScroll={handleScroll}
-          onRetryHistory={reloadHistory}
-          onLoadEarlierMessages={handleLoadEarlierMessages}
-          onRetryMessage={handleRetry}
-          onStarterPromptSelect={(text) => handleSend({ text, attachments: [] })}
-        />
+        <div id="chat-workspace-body" className="chat-workspace-body">
+          <ChatConversation
+            scrollRef={scrollRef}
+            historyLoading={sessionState.historyLoading}
+            historyError={sessionState.historyError}
+            isLoadingEarlier={isLoadingEarlier}
+            hasMoreHistory={sessionState.hasMoreHistory}
+            messages={messages}
+            typing={sessionState.typing}
+            progress={sessionState.progress}
+            modelsConfig={modelsConfig}
+            onScroll={handleScroll}
+            onRetryHistory={reloadHistory}
+            onLoadEarlierMessages={handleLoadEarlierMessages}
+            onRetryMessage={handleRetry}
+            onStarterPromptSelect={(text) => handleSend({ text, attachments: [] })}
+          />
 
-        <ChatInput
-          onSend={handleSend}
-          running={running}
-          onStop={() => {
-            stopSession(chatSessionId, clientInstanceId);
-          }}
-        />
+          <ChatInput
+            onSend={handleSend}
+            running={running}
+            onStop={() => {
+              stopSession(chatSessionId, clientInstanceId);
+            }}
+            composerCollapsed={composerCollapsed}
+            onToggleComposerCollapsed={toggleComposerCollapsed}
+          />
+        </div>
       </div>
 
       <ContextPanel

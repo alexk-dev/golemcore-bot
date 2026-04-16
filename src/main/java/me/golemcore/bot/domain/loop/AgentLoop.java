@@ -352,6 +352,12 @@ public class AgentLoop {
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_REFLECTION_TIER);
         copyStringMetadataAttribute(message, context, ContextAttributes.WEBHOOK_MODEL_TIER);
+        // Webhook response schema fields are pipeline contracts, not merely message
+        // metadata. Copy them to AgentContext attributes so context layers can still
+        // see them after skill transitions, compaction, or other message mutations.
+        copyMetadataAttribute(message, context, ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA);
+        copyStringMetadataAttribute(message, context, ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT);
+        copyStringMetadataAttribute(message, context, ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER);
         copyStringMetadataAttribute(message, context, ContextAttributes.MEMORY_PRESET_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_CARD_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_THREAD_ID);
@@ -388,6 +394,19 @@ public class AgentLoop {
             return;
         }
         context.setAttribute(key, value);
+    }
+
+    /**
+     * Copies non-string metadata values into runtime attributes. Used for webhook
+     * schema maps that must be available to multiple pipeline systems.
+     */
+    private void copyMetadataAttribute(Message message, AgentContext context, String key) {
+        if (message == null || message.getMetadata() == null || context == null || key == null || key.isBlank()) {
+            return;
+        }
+        if (message.getMetadata().containsKey(key)) {
+            context.setAttribute(key, message.getMetadata().get(key));
+        }
     }
 
     private List<Message> buildContextMessages(AgentSession session, Message inbound) {
@@ -902,7 +921,10 @@ public class AgentLoop {
 
     private void emitWebhookResponseSchemaContextEvent(AgentContext context, TraceContext systemSpan) {
         Message lastMessage = lastContextMessage(context);
-        String schemaText = readMetadataString(lastMessage, ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT);
+        String schemaText = readContextString(context, ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT);
+        if (schemaText == null || schemaText.isBlank()) {
+            schemaText = readMetadataString(lastMessage, ContextAttributes.WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT);
+        }
         if (schemaText == null || schemaText.isBlank()) {
             return;
         }
@@ -911,8 +933,11 @@ public class AgentLoop {
         attributes.put("schema.chars", schemaText.length());
         attributes.put("prompt.injected", context.getSystemPrompt() != null
                 && context.getSystemPrompt().contains("Webhook Response JSON Contract"));
-        putIfPresent(attributes, "validation.model.tier",
-                readMetadataString(lastMessage, ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER));
+        String validationTier = readContextString(context, ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER);
+        if (validationTier == null || validationTier.isBlank()) {
+            validationTier = readMetadataString(lastMessage, ContextAttributes.WEBHOOK_RESPONSE_VALIDATION_MODEL_TIER);
+        }
+        putIfPresent(attributes, "validation.model.tier", validationTier);
         putIfPresent(attributes, "response.model.tier", context.getModelTier());
         emitTraceEvent(context, systemSpan, "webhook.response.schema.instructions", attributes);
     }
@@ -933,6 +958,10 @@ public class AgentLoop {
     }
 
     private String stringAttribute(AgentContext context, String key) {
+        return readContextString(context, key);
+    }
+
+    private String readContextString(AgentContext context, String key) {
         if (context == null || context.getAttributes() == null || key == null || key.isBlank()) {
             return null;
         }

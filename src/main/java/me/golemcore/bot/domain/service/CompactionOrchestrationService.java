@@ -18,7 +18,19 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Central compaction pipeline: prepare boundaries, summarize, persist details.
+ * Central compaction pipeline shared by every trigger source (auto-compaction,
+ * manual command, preflight, context-overflow recovery).
+ *
+ * <p>
+ * The service coordinates four collaborators: a
+ * {@link CompactionPreparationService} that decides which messages to drop vs.
+ * keep, a {@link CompactionService} that produces the summary text, a
+ * {@link CompactionDetailsExtractor} that builds the structured audit trail,
+ * and the {@link SessionPort} that persists the compacted session. The flow
+ * produces a single {@link CompactionResult} whether the compaction removed
+ * messages, became a no-op, or failed to locate the session, so callers can
+ * record diagnostics from one result shape.
+ * </p>
  */
 @Service
 public class CompactionOrchestrationService {
@@ -46,6 +58,35 @@ public class CompactionOrchestrationService {
         this.clock = clock;
     }
 
+    /**
+     * Compact the named session, keeping at most {@code keepLast} trailing messages
+     * and summarizing the rest if the preparation service can identify messages
+     * that may be removed.
+     *
+     * <p>
+     * Returns a {@link CompactionResult} with:
+     * </p>
+     * <ul>
+     * <li>{@code removed = -1} when the session cannot be located - the caller
+     * still receives a well-formed result and records diagnostics rather than
+     * throwing.</li>
+     * <li>{@code removed = 0} with no-op details when there was nothing to remove
+     * (keepLast larger than the session, or the preparation service refused to
+     * split a turn).</li>
+     * <li>{@code removed > 0} when messages were dropped. A summary message is
+     * present only when the summarizer returns non-blank text; otherwise
+     * {@code usedSummary=false} and the kept messages are persisted without a
+     * synthetic summary.</li>
+     * </ul>
+     *
+     * @param sessionId
+     *            the session to compact
+     * @param reason
+     *            classification used downstream for telemetry and summary prompt
+     *            selection
+     * @param keepLast
+     *            trailing messages to retain intact
+     */
     public CompactionResult compact(String sessionId, CompactionReason reason, int keepLast) {
         Optional<AgentSession> sessionOptional = sessionPort.get(sessionId);
         if (sessionOptional.isEmpty()) {
@@ -79,13 +120,14 @@ public class CompactionOrchestrationService {
                     false,
                     0,
                     runtimeConfigService.getCompactionDetailsMaxItemsPerCategory());
-            persistDetails(session, emptyDetails);
-            return CompactionResult.builder()
+            CompactionResult emptyResult = CompactionResult.builder()
                     .removed(0)
                     .usedSummary(false)
                     .summaryMessage(null)
                     .details(emptyDetails)
                     .build();
+            persistDetails(session, emptyResult);
+            return emptyResult;
         }
 
         long startedAt = clock.millis();
@@ -123,62 +165,29 @@ public class CompactionOrchestrationService {
             Map<String, Object> metadata = summaryMessage.getMetadata() != null
                     ? new LinkedHashMap<>(summaryMessage.getMetadata())
                     : new LinkedHashMap<>();
-            metadata.put(METADATA_KEY_COMPACTION_DETAILS, toDetailsMap(details));
+            metadata.put(METADATA_KEY_COMPACTION_DETAILS, CompactionPayloadMapper.toDetailsMap(details));
             summaryMessage.setMetadata(metadata);
         }
 
-        persistDetails(session, details);
-        sessionPort.save(session);
-
-        return CompactionResult.builder()
+        CompactionResult result = CompactionResult.builder()
                 .removed(preparation.messagesToCompact().size())
                 .usedSummary(usedSummary)
                 .summaryMessage(summaryMessage)
                 .details(details)
                 .build();
+        persistDetails(session, result);
+        sessionPort.save(session);
+        return result;
     }
 
-    private void persistDetails(AgentSession session, CompactionDetails details) {
-        if (session == null || details == null) {
+    private void persistDetails(AgentSession session, CompactionResult result) {
+        if (session == null || result == null || result.details() == null) {
             return;
         }
         if (session.getMetadata() == null) {
             session.setMetadata(new LinkedHashMap<>());
         }
-        session.getMetadata().put(ContextAttributes.COMPACTION_LAST_DETAILS, toDetailsMap(details));
-    }
-
-    private Map<String, Object> toDetailsMap(CompactionDetails details) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("schemaVersion", details.schemaVersion());
-        result.put("reason", details.reason() != null ? details.reason().name() : null);
-        result.put("summarizedCount", details.summarizedCount());
-        result.put("keptCount", details.keptCount());
-        result.put("usedLlmSummary", details.usedLlmSummary());
-        result.put("summaryLength", details.summaryLength());
-        result.put("toolCount", details.toolCount());
-        result.put("readFilesCount", details.readFilesCount());
-        result.put("modifiedFilesCount", details.modifiedFilesCount());
-        result.put("durationMs", details.durationMs());
-        result.put("toolNames", details.toolNames());
-        result.put("readFiles", details.readFiles());
-        result.put("modifiedFiles", details.modifiedFiles());
-        result.put("splitTurnDetected", details.splitTurnDetected());
-        result.put("fallbackUsed", details.fallbackUsed());
-
-        List<Map<String, Object>> fileChanges = new ArrayList<>();
-        if (details.fileChanges() != null) {
-            for (CompactionDetails.FileChangeStat fileChange : details.fileChanges()) {
-                Map<String, Object> fileChangeMap = new LinkedHashMap<>();
-                fileChangeMap.put("path", fileChange.path());
-                fileChangeMap.put("addedLines", fileChange.addedLines());
-                fileChangeMap.put("removedLines", fileChange.removedLines());
-                fileChangeMap.put("deleted", fileChange.deleted());
-                fileChanges.add(fileChangeMap);
-            }
-        }
-        result.put("fileChanges", fileChanges);
-
-        return result;
+        session.getMetadata().put(ContextAttributes.COMPACTION_LAST_DETAILS,
+                CompactionPayloadMapper.toPayload(result));
     }
 }
