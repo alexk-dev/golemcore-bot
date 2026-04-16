@@ -1,5 +1,3 @@
-package me.golemcore.bot.domain.system.toolloop.resilience;
-
 /*
  * Copyright 2026 Aleksei Kuleshov
  *
@@ -17,6 +15,11 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
  *
  * Contact: alex@kuleshov.tech
  */
+
+package me.golemcore.bot.domain.system.toolloop.resilience;
+
+import static me.golemcore.bot.domain.system.toolloop.resilience.ResilienceTraceSupport.traceAttributes;
+import static me.golemcore.bot.domain.system.toolloop.resilience.ResilienceTraceSupport.traceStep;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -388,32 +391,6 @@ public class LlmResilienceOrchestrator {
             }
             Object model = context.getAttributes().get(ContextAttributes.LLM_MODEL);
             return model instanceof String stringValue && !stringValue.isBlank() ? stringValue : "unknown";
-        }
-
-        /**
-         * Creates a trace step with normalized non-null attributes.
-         */
-        private static ResilienceTraceStep traceStep(String layer, String action, String detail,
-                Map<String, Object> attributes) {
-            return new ResilienceTraceStep(layer, action, detail, attributes);
-        }
-
-        /**
-         * Builds ordered trace attributes while skipping null values, which keeps span
-         * payloads compact and avoids null serialization surprises in adapters.
-         */
-        private static Map<String, Object> traceAttributes(Object... entries) {
-            Map<String, Object> attributes = new LinkedHashMap<>();
-            if (entries == null) {
-                return attributes;
-            }
-            for (int index = 0; index + 1 < entries.length; index += 2) {
-                Object keyObject = entries[index];
-                if (keyObject instanceof String key && !key.isBlank() && entries[index + 1] != null) {
-                    attributes.put(key, entries[index + 1]);
-                }
-            }
-            return attributes;
         }
 
 }
