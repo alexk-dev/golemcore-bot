@@ -98,6 +98,14 @@ class TierToolTest {
     }
 
     @Test
+    void shouldRejectNonStringTier() {
+        ToolResult result = tool.execute(Map.of(PARAM_TIER, 123)).join();
+
+        assertNotNull(result.getError());
+        assertTrue(result.getError().contains("required"));
+    }
+
+    @Test
     void shouldRejectWhenTierForceEnabled() {
         when(preferencesService.getPreferences()).thenReturn(
                 UserPreferences.builder().modelTier("smart").tierForce(true).build());

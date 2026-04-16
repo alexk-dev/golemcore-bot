@@ -16,7 +16,7 @@ export const SETTINGS_SECTIONS = [
   { key: 'general', title: 'General', description: 'Preferences, account security, and MFA', icon: FiSliders },
   { key: 'llm-providers', title: 'LLM Providers', description: 'Provider API keys and base URLs', icon: FiKey },
   { key: 'model-catalog', title: 'Model Catalog', description: 'Edit model definitions and provider capability metadata', icon: FiDatabase },
-  { key: 'models', title: 'Model Router', description: 'Routing and tier model configuration', icon: FiCpu },
+  { key: 'models', title: 'Model Router', description: 'Routing, tier models, and per-tier fallbacks', icon: FiCpu },
   { key: 'plugins-marketplace', title: 'Plugin Marketplace', description: 'Browse, install, and update official integrations', icon: FiPackage },
 
   { key: 'tool-filesystem', title: 'Filesystem Tool', description: 'Sandbox file read/write operations', icon: FiHardDrive },

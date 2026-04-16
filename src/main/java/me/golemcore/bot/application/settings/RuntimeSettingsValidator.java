@@ -1,5 +1,6 @@
 package me.golemcore.bot.application.settings;
 
+import me.golemcore.bot.domain.model.FallbackModes;
 import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -703,20 +704,80 @@ public class RuntimeSettingsValidator {
 
     private void validateModelRouterBinding(RuntimeConfig.TierBinding binding, String tier,
             List<String> configuredProviders) {
-        if (binding == null || binding.getModel() == null || binding.getModel().isBlank()) {
+        if (binding == null) {
             return;
         }
-        ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(
-                binding.getModel(),
+        validateTemperature(binding.getTemperature(), "modelRouter.tiers." + tier + ".temperature");
+        validateFallbackMode(binding.getFallbackMode(), tier);
+        validateModelRouterModel(binding.getModel(), tier, configuredProviders);
+        validateFallbackBindings(binding, tier, configuredProviders);
+    }
+
+    private void validateFallbackBindings(RuntimeConfig.TierBinding binding, String tier,
+            List<String> configuredProviders) {
+        List<RuntimeConfig.TierFallback> fallbacks = binding.getFallbacks();
+        if (fallbacks == null || fallbacks.isEmpty()) {
+            return;
+        }
+        if (fallbacks.size() > 5) {
+            throw new IllegalArgumentException("Model router tier '" + tier + "' supports at most 5 fallback models");
+        }
+        for (int index = 0; index < fallbacks.size(); index++) {
+            RuntimeConfig.TierFallback fallback = fallbacks.get(index);
+            if (fallback == null) {
+                continue;
+            }
+            String fieldPrefix = "modelRouter.tiers." + tier + ".fallbacks[" + index + "]";
+            validateTemperature(fallback.getTemperature(), fieldPrefix + ".temperature");
+            validateFallbackWeight(fallback.getWeight(), fieldPrefix + ".weight");
+            validateModelRouterModel(fallback.getModel(), tier + " fallback " + (index + 1), configuredProviders);
+        }
+    }
+
+    private void validateFallbackMode(String fallbackMode, String tier) {
+        if (fallbackMode == null || fallbackMode.isBlank()) {
+            return;
+        }
+        String normalizedFallbackMode = fallbackMode.trim().toLowerCase(Locale.ROOT);
+        if (!FallbackModes.SUPPORTED.contains(normalizedFallbackMode)) {
+            throw new IllegalArgumentException(
+                    "Model router tier '" + tier + "' fallbackMode must be one of "
+                            + FallbackModes.SUPPORTED);
+        }
+    }
+
+    private void validateFallbackWeight(Double weight, String fieldName) {
+        if (weight == null) {
+            return;
+        }
+        if (weight < 0.0d) {
+            throw new IllegalArgumentException(fieldName + " must be non-negative");
+        }
+    }
+
+    private void validateTemperature(Double temperature, String fieldName) {
+        if (temperature == null) {
+            return;
+        }
+        if (temperature < 0.0d || temperature > 2.0d) {
+            throw new IllegalArgumentException(fieldName + " must be between 0 and 2");
+        }
+    }
+
+    private void validateModelRouterModel(String model, String tier, List<String> configuredProviders) {
+        if (model == null || model.isBlank()) {
+            return;
+        }
+        ModelSelectionService.ValidationResult validation = modelSelectionService.validateModel(model,
                 configuredProviders);
         if (validation.valid()) {
             return;
         }
         throw switch (validation.error()) {
         case "model.not.found" -> new IllegalArgumentException(
-                "Model router tier '" + tier + "' points to unknown model '" + binding.getModel() + "'");
+                "Model router tier '" + tier + "' points to unknown model '" + model + "'");
         case "provider.not.configured" -> new IllegalArgumentException(
-                "Model router tier '" + tier + "' points to model '" + binding.getModel()
+                "Model router tier '" + tier + "' points to model '" + model
                         + "' whose provider is not configured");
         default -> new IllegalArgumentException(
                 "Model router tier '" + tier + "' is invalid: " + validation.error());
@@ -829,15 +890,28 @@ public class RuntimeSettingsValidator {
         RuntimeConfig.TierBinding routingBinding = modelRouterConfig.getRouting();
         if (routingBinding != null) {
             addProviderFromModel(usedProviders, routingBinding.getModel());
+            addProvidersFromFallbacks(usedProviders, routingBinding.getFallbacks());
         }
         if (modelRouterConfig.getTiers() != null) {
             for (RuntimeConfig.TierBinding tierBinding : modelRouterConfig.getTiers().values()) {
                 if (tierBinding != null) {
                     addProviderFromModel(usedProviders, tierBinding.getModel());
+                    addProvidersFromFallbacks(usedProviders, tierBinding.getFallbacks());
                 }
             }
         }
         return usedProviders;
+    }
+
+    private void addProvidersFromFallbacks(Set<String> usedProviders, List<RuntimeConfig.TierFallback> fallbacks) {
+        if (fallbacks == null || fallbacks.isEmpty()) {
+            return;
+        }
+        for (RuntimeConfig.TierFallback fallback : fallbacks) {
+            if (fallback != null) {
+                addProviderFromModel(usedProviders, fallback.getModel());
+            }
+        }
     }
 
     private void addProviderFromModel(Set<String> usedProviders, String model) {
