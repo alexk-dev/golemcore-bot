@@ -23,6 +23,15 @@ export function toNullableModelFallbackString(value: string): string | null {
   return value.length > 0 ? value : null;
 }
 
+export function buildModelProviderOptions(providerNames: string[], configuredProvider: string): string[] {
+  const values = new Set<string>();
+  if (configuredProvider.length > 0) {
+    values.add(configuredProvider);
+  }
+  providerNames.forEach((providerName) => values.add(providerName));
+  return Array.from(values);
+}
+
 export function buildModelsForProvider(
   providers: Record<string, AvailableModel[]>,
   provider: string,
@@ -35,7 +44,15 @@ export function buildModelsForProvider(
   if (modelValue.length === 0 || providerModels.some((model) => model.editorId === modelValue)) {
     return providerModels;
   }
-  return [{
+  const unavailableProviderOption = buildUnavailableProviderModel(provider, modelValue);
+  return unavailableProviderOption == null ? providerModels : [unavailableProviderOption, ...providerModels];
+}
+
+function buildUnavailableProviderModel(provider: string, modelValue: string): ModelFallbackEditorModel | null {
+  if (provider.length === 0) {
+    return null;
+  }
+  return {
     id: modelValue,
     displayName: `${modelValue} (unavailable)`,
     editorId: modelValue,
@@ -44,5 +61,5 @@ export function buildModelsForProvider(
     reasoningLevels: [],
     supportsVision: false,
     supportsTemperature: true,
-  }, ...providerModels];
+  };
 }

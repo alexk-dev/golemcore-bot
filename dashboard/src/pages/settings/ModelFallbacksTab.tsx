@@ -9,6 +9,7 @@ import { useAvailableModels } from '../../hooks/useModels';
 import { useUpdateModelRouter } from '../../hooks/useSettings';
 import { cloneModelRouterConfig, getTierBinding, updateTierBinding } from '../../lib/modelRouter';
 import {
+  buildModelProviderOptions,
   buildModelsForProvider,
   hasModelFallbackEditorDiff,
   normalizeModelFallbacks,
@@ -73,6 +74,10 @@ function ModelSelectFields({
   onTemperatureChange,
 }: ModelSelectFieldsProps): ReactElement {
   const selectedProvider = modelProvider.length > 0 ? modelProvider : (providerNames[0] ?? '');
+  const providerOptions = useMemo(
+    () => buildModelProviderOptions(providerNames, selectedProvider),
+    [providerNames, selectedProvider],
+  );
   const [provider, setProvider] = useState(selectedProvider);
 
   useEffect(() => {
@@ -102,8 +107,13 @@ function ModelSelectFields({
               onModelChange('', nextProvider);
             }}
           >
-            {providerNames.length === 0 && <option value="">No providers</option>}
-            {providerNames.map((providerName) => <option key={providerName} value={providerName}>{providerName}</option>)}
+            {providerOptions.length === 0 && <option value="">No providers</option>}
+            {providerOptions.map((providerName) => (
+              <option key={providerName} value={providerName}>
+                {providerName}
+                {!providerNames.includes(providerName) ? ' (unavailable)' : ''}
+              </option>
+            ))}
           </Form.Select>
         </Form.Group>
       </Col>
