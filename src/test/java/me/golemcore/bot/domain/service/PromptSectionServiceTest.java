@@ -98,6 +98,39 @@ class PromptSectionServiceTest {
     }
 
     @Test
+    void reload_frontmatterWithEmptyDescriptionDefaultsToEmptyString() {
+        // YAML parses `description:` (no value) as a key whose value is null.
+        // The loader must coerce that to an empty string so API consumers can trust the
+        // string contract.
+        String content = "---\ndescription:\norder: 10\n---\nBody.";
+
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
+                .thenReturn(CompletableFuture.completedFuture(content));
+
+        service.reload();
+
+        PromptSection section = service.getSection(IDENTITY_NAME).orElseThrow();
+        assertEquals("", section.getDescription());
+    }
+
+    @Test
+    void reload_frontmatterWithExplicitNullDescriptionDefaultsToEmptyString() {
+        String content = "---\ndescription: ~\norder: 10\n---\nBody.";
+
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
+                .thenReturn(CompletableFuture.completedFuture(content));
+
+        service.reload();
+
+        PromptSection section = service.getSection(IDENTITY_NAME).orElseThrow();
+        assertEquals("", section.getDescription());
+    }
+
+    @Test
     void reload_noFrontmatter() {
         when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("CUSTOM.md")));

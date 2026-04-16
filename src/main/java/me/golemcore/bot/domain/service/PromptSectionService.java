@@ -324,7 +324,10 @@ public class PromptSectionService {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> yaml = yamlMapper.readValue(frontmatter, Map.class);
 
-                description = (String) yaml.getOrDefault("description", "");
+                // YAML treats `description:` (no value) as a key mapped to null;
+                // coerce to empty string so the API string contract holds.
+                Object rawDescription = yaml.get("description");
+                description = rawDescription == null ? "" : rawDescription.toString();
                 if (yaml.containsKey("order")) {
                     order = ((Number) yaml.get("order")).intValue();
                 }

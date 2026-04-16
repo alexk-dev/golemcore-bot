@@ -118,7 +118,7 @@ public class PromptManagementFacade {
     private String buildFileContent(PromptSectionDraft request) {
         StringBuilder sb = new StringBuilder();
         sb.append("---\n");
-        if (request.description() != null) {
+        if (request.description() != null && !request.description().isBlank()) {
             sb.append("description: ").append(request.description()).append("\n");
         }
         sb.append("order: ").append(request.order()).append("\n");
