@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import { Alert, Button } from '../../components/ui/tailwind-components';
 
 import type { SystemUpdateStatusResponse } from '../../api/system';
-import { formatUpdateTimestamp } from '../../utils/systemUpdateUi';
+import { formatUpdateTimestamp, getUpdateBlockedReasonLabel } from '../../utils/systemUpdateUi';
 import { canSaveUpdateSettings } from './updateSettingsValidation';
 import type { UpdateSettingsFormState } from './updateSettingsUtils';
 
@@ -26,12 +26,14 @@ export function UpdateSettingsSummary({
   localTimezone,
   saveSummary,
 }: UpdateSettingsSummaryProps): ReactElement {
+  const blockedReason = getUpdateBlockedReasonLabel(status.blockedReason);
+
   return (
     <Alert variant="secondary" className="mb-3 small">
       <div>Your timezone: {localTimezone}</div>
       <div>Saved on server as {saveSummary}</div>
       {status.state === 'WAITING_FOR_WINDOW' && status.nextEligibleAt != null && <div>Next eligible window: {formatUpdateTimestamp(status.nextEligibleAt)}</div>}
-      {status.state === 'WAITING_FOR_IDLE' && status.blockedReason != null && <div>Current blocker: {status.blockedReason}</div>}
+      {status.state === 'WAITING_FOR_IDLE' && blockedReason != null && <div>Current blocker: {blockedReason}</div>}
     </Alert>
   );
 }

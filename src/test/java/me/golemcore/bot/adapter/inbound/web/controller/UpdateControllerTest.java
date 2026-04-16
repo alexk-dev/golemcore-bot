@@ -92,6 +92,26 @@ class UpdateControllerTest {
     }
 
     @Test
+    void shouldCallForceInstallStagedEndpoint() {
+        UpdateActionResult updateResult = UpdateActionResult.builder()
+                .success(true)
+                .message("Update 0.4.2 is being applied. JVM restart scheduled.")
+                .version("0.4.2")
+                .build();
+        when(updateService.forceInstallStagedUpdate()).thenReturn(updateResult);
+
+        StepVerifier.create(controller.forceInstallStagedUpdate())
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    assertNotNull(response.getBody());
+                    assertEquals("0.4.2", response.getBody().getVersion());
+                })
+                .verifyComplete();
+
+        verify(updateService).forceInstallStagedUpdate();
+    }
+
+    @Test
     void shouldReturnUpdateConfig() {
         RuntimeConfig.UpdateConfig config = RuntimeConfig.UpdateConfig.builder()
                 .autoEnabled(true)
