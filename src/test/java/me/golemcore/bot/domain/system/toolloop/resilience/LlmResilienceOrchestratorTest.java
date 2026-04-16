@@ -165,6 +165,45 @@ class LlmResilienceOrchestratorTest {
     }
 
     @Test
+    void shouldSkipDegradationAndSuspendWhenCircuitBreakerIsAlreadyOpen() {
+        circuitBreaker.recordFailure("provider-a");
+        assertEquals(ProviderCircuitBreaker.State.OPEN, circuitBreaker.getState("provider-a"));
+        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config))
+                .thenReturn("suspended");
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+        RuntimeConfig.ResilienceConfig exhaustedL1 = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(true)
+                .build();
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 0, exhaustedL1);
+
+        assertInstanceOf(LlmResilienceOrchestrator.ResilienceOutcome.Suspended.class, outcome);
+        verify(strategy, never()).isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, exhaustedL1);
+        verify(strategy, never()).apply(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, exhaustedL1);
+    }
+
+    @Test
+    void shouldSkipL1HotRetryWhenCircuitBreakerIsAlreadyOpen() {
+        circuitBreaker.recordFailure("provider-a");
+        assertEquals(ProviderCircuitBreaker.State.OPEN, circuitBreaker.getState("provider-a"));
+        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config))
+                .thenReturn("suspended");
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        // hotRetryMaxAttempts=1 + attempt=0 + transient code would normally trigger L1.
+        // The OPEN breaker must veto: hammering a provider in cooldown defeats the
+        // breaker.
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 0, config);
+
+        assertInstanceOf(LlmResilienceOrchestrator.ResilienceOutcome.Suspended.class, outcome);
+        assertEquals(-1L, retryPolicy.lastSleepMs);
+        verify(strategy, never()).isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config);
+    }
+
+    @Test
     void shouldResolveUnknownProviderWhenAttributesMapIsNull() {
         LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
         AgentContext nullAttributesContext = AgentContext.builder().attributes(null).build();

@@ -51,6 +51,20 @@ class LlmRetryPolicyTest {
     }
 
     @Test
+    void shouldStayWithinCapForLargeAttemptCountsWithoutOverflow() {
+        LlmRetryPolicy policy = new LlmRetryPolicy();
+        RuntimeConfig.ResilienceConfig config = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryBaseDelayMs(5_000L)
+                .hotRetryCapMs(60_000L)
+                .build();
+
+        for (int attempt : new int[] { 63, 100, 10_000, Integer.MAX_VALUE }) {
+            long delay = policy.computeDelay(attempt, config);
+            assertTrue(delay >= 0 && delay < 60_000L, "delay=" + delay + " at attempt=" + attempt);
+        }
+    }
+
+    @Test
     void shouldReturnImmediatelyWhenSleepDelayIsNonPositive() {
         LlmRetryPolicy policy = new LlmRetryPolicy();
 

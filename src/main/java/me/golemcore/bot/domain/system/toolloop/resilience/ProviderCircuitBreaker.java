@@ -140,12 +140,17 @@ public class ProviderCircuitBreaker {
         if (ps == null) {
             return;
         }
-        if (ps.state == State.HALF_OPEN) {
-            log.info("[CircuitBreaker] Provider {} probe succeeded, HALF_OPEN → CLOSED", providerId);
+        // Resetting state/failureCount/windowStart is a compound operation. Without
+        // the lock, a concurrent recordFailure could observe a half-reset snapshot
+        // (e.g. state=CLOSED but stale failureCount) and trip the breaker back open.
+        synchronized (ps) {
+            if (ps.state == State.HALF_OPEN) {
+                log.info("[CircuitBreaker] Provider {} probe succeeded, HALF_OPEN → CLOSED", providerId);
+            }
+            ps.state = State.CLOSED;
+            ps.failureCount = 0;
+            ps.windowStart = clock.instant();
         }
-        ps.state = State.CLOSED;
-        ps.failureCount = 0;
-        ps.windowStart = clock.instant();
     }
 
     /**

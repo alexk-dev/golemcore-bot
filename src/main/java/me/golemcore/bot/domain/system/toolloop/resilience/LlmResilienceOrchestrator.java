@@ -121,10 +121,16 @@ public class LlmResilienceOrchestrator {
     public ResilienceOutcome handle(AgentContext context, RuntimeException error, String errorCode, int attempt,
             RuntimeConfig.ResilienceConfig config) {
         String providerId = resolveProviderId(context);
+        // Snapshot the breaker once per handle() so L1 and L3 share one decision.
+        boolean breakerOpen = circuitBreaker.isOpen(providerId);
 
         // L1: hot retry is deliberately synchronous because it lasts seconds and
         // keeps the current turn state in-memory; longer waits are delegated to L5.
-        if (LlmErrorClassifier.isTransientCode(errorCode) && retryPolicy.shouldRetry(attempt, config)) {
+        // We refuse L1 when the breaker is already OPEN — retrying would defeat the
+        // breaker's whole purpose (stop hammering a provider in cooldown).
+        if (LlmErrorClassifier.isTransientCode(errorCode)
+                && retryPolicy.shouldRetry(attempt, config)
+                && !breakerOpen) {
             long delayMs = retryPolicy.computeDelay(attempt, config);
             log.warn("[Resilience] L1 hot retry: code={}, attempt={}, delayMs={}, provider={}",
                     errorCode, attempt, delayMs, providerId);
@@ -138,21 +144,24 @@ public class LlmResilienceOrchestrator {
         // the call site.
         log.debug("[Resilience] L2 provider fallback: not yet configured, skipping");
 
-        if (circuitBreaker.isOpen(providerId)) {
-            log.warn("[Resilience] L3 circuit breaker OPEN for provider={}, fast-failing", providerId);
+        // L3 fast-fails L4 when the breaker is already OPEN: degradation addresses
+        // request-side complexity, but an OPEN breaker signals the provider itself
+        // needs cooldown. Skip straight to L5 so the provider gets its rest window.
+        if (breakerOpen) {
+            log.warn("[Resilience] L3 breaker OPEN, bypassing L4 degradation: provider={}", providerId);
         } else {
             circuitBreaker.recordFailure(providerId);
-        }
 
-        for (RecoveryStrategy strategy : degradationStrategies) {
-            if (strategy.isApplicable(context, errorCode, config)) {
-                RecoveryStrategy.RecoveryResult result = strategy.apply(context, errorCode, config);
-                if (result.recovered()) {
-                    log.info("[Resilience] L4 degradation succeeded: strategy={}, detail={}",
-                            strategy.name(), result.detail());
-                    return new ResilienceOutcome.RetryNow("L4:" + strategy.name(), result.detail());
+            for (RecoveryStrategy strategy : degradationStrategies) {
+                if (strategy.isApplicable(context, errorCode, config)) {
+                    RecoveryStrategy.RecoveryResult result = strategy.apply(context, errorCode, config);
+                    if (result.recovered()) {
+                        log.info("[Resilience] L4 degradation succeeded: strategy={}, detail={}",
+                                strategy.name(), result.detail());
+                        return new ResilienceOutcome.RetryNow("L4:" + strategy.name(), result.detail());
+                    }
+                    log.debug("[Resilience] L4 strategy {} not effective: {}", strategy.name(), result.detail());
                 }
-                log.debug("[Resilience] L4 strategy {} not effective: {}", strategy.name(), result.detail());
             }
         }
 
