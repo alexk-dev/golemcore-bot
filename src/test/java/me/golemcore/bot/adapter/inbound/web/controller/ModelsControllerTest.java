@@ -246,10 +246,10 @@ class ModelsControllerTest {
         Map<String, List<ModelSelectionService.AvailableModel>> grouped = new LinkedHashMap<>();
         grouped.put("openai", List.of(
                 new ModelSelectionService.AvailableModel("gpt-5", "openai", "GPT-5", true,
-                        List.of("low", "high"), true)));
+                        List.of("low", "high"), true, true)));
         grouped.put("anthropic", List.of(
                 new ModelSelectionService.AvailableModel("claude-opus-4-6", "anthropic", "Claude Opus", false,
-                        List.of(), false)));
+                        List.of(), false, true)));
         when(modelManagementFacade.getAvailableModels()).thenReturn(grouped);
 
         @SuppressWarnings("unchecked")

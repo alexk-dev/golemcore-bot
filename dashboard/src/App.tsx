@@ -10,6 +10,7 @@ const SetupPage = lazy(() => import('./pages/SetupPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const SelfEvolvingPage = lazy(() => import('./pages/SelfEvolvingPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const TierFallbacksPage = lazy(() => import('./pages/TierFallbacksPage'));
 const PromptsPage = lazy(() => import('./pages/PromptsPage'));
 const SkillsPage = lazy(() => import('./pages/SkillsPage'));
 const SessionsPage = lazy(() => import('./pages/SessionsPage'));
@@ -64,6 +65,7 @@ export default function App() {
                     <Route path="/analytics" element={<AnalyticsPage />} />
                     <Route path="/self-evolving" element={<SelfEvolvingPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/settings/models/:tier" element={<TierFallbacksPage />} />
                     <Route path="/settings/:section" element={<SettingsPage />} />
                     <Route path="/prompts" element={<PromptsPage />} />
                     <Route path="/skills" element={<SkillsPage />} />

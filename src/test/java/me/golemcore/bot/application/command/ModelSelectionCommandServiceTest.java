@@ -209,7 +209,8 @@ class ModelSelectionCommandServiceTest {
                                 "GPT-5",
                                 true,
                                 List.of("low", "medium"),
-                                false))));
+                                false,
+                                true))));
 
         ModelSelectionCommandService.AvailableModels result = assertInstanceOf(
                 ModelSelectionCommandService.AvailableModels.class,
@@ -251,7 +252,8 @@ class ModelSelectionCommandServiceTest {
                         "GPT-5",
                         true,
                         List.of("low", "medium"),
-                        false)));
+                        false,
+                        true)));
 
         ModelSelectionCommandService.ModelOverrideSet result = assertInstanceOf(
                 ModelSelectionCommandService.ModelOverrideSet.class,
@@ -296,7 +298,8 @@ class ModelSelectionCommandServiceTest {
                         "GPT-5",
                         true,
                         List.of("low", "medium"),
-                        false)));
+                        false,
+                        true)));
 
         ModelSelectionCommandService.ModelOverrideSet result = assertInstanceOf(
                 ModelSelectionCommandService.ModelOverrideSet.class,
@@ -395,7 +398,8 @@ class ModelSelectionCommandServiceTest {
                         "GPT-5",
                         true,
                         List.of("low", "medium", "high"),
-                        false)));
+                        false,
+                        true)));
 
         ModelSelectionCommandService.InvalidReasoningLevel result = assertInstanceOf(
                 ModelSelectionCommandService.InvalidReasoningLevel.class,

@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.FallbackModes;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
@@ -68,7 +69,7 @@ public class RuntimeConfigService {
     private static final String DEFAULT_CODING_REASONING = REASONING_NONE;
     private static final String DEFAULT_DEEP_MODEL = null;
     private static final String DEFAULT_DEEP_REASONING = REASONING_NONE;
-    private static final double DEFAULT_TEMPERATURE = 0.7;
+    private static final double DEFAULT_TIER_TEMPERATURE = 0.7;
     private static final String DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
     private static final String DEFAULT_TTS_MODEL = "eleven_multilingual_v2";
     private static final String DEFAULT_STT_MODEL = "scribe_v1";
@@ -690,11 +691,6 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_DEEP_REASONING;
     }
 
-    public double getTemperature() {
-        Double val = getRuntimeConfig().getModelRouter().getTemperature();
-        return val != null ? val : DEFAULT_TEMPERATURE;
-    }
-
     public boolean isDynamicTierEnabled() {
         Boolean val = getRuntimeConfig().getModelRouter().getDynamicTierEnabled();
         return val != null ? val : true;
@@ -706,6 +702,31 @@ public class RuntimeConfigService {
             return modelRouter.getRouting();
         }
         return modelRouter.getTierBinding(tier);
+    }
+
+    public double getTemperatureForModel(String tier, String model) {
+        Double configuredTemperature = findConfiguredTemperature(tier, model);
+        return configuredTemperature != null ? configuredTemperature : DEFAULT_TIER_TEMPERATURE;
+    }
+
+    private Double findConfiguredTemperature(String tier, String model) {
+        RuntimeConfig.TierBinding binding = getModelTierBinding(tier);
+        String normalizedModel = normalizeNonBlankString(model, null);
+        if (binding == null) {
+            return null;
+        }
+        if (normalizedModel == null || normalizedModel.equals(binding.getModel())) {
+            return binding.getTemperature();
+        }
+        if (binding.getFallbacks() == null) {
+            return null;
+        }
+        for (RuntimeConfig.TierFallback fallback : binding.getFallbacks()) {
+            if (fallback != null && normalizedModel.equals(fallback.getModel())) {
+                return fallback.getTemperature();
+            }
+        }
+        return null;
     }
 
     public boolean isFilesystemEnabled() {
@@ -2346,17 +2367,61 @@ public class RuntimeConfigService {
                 ? binding
                 : RuntimeConfig.TierBinding.builder().build();
         normalized.setModelReference(RuntimeConfig.ModelReference.normalize(normalized.getModelReference()));
-        if (normalized.getReasoning() != null) {
-            String trimmedReasoning = normalized.getReasoning().trim();
-            normalized.setReasoning(trimmedReasoning.isEmpty() ? null : trimmedReasoning);
-        }
+        normalized.setReasoning(normalizeNonBlankString(normalized.getReasoning(), null));
         if (normalized.getModelReference() == null && defaultModel != null) {
             normalized.setModel(defaultModel);
         }
         if (normalized.getReasoning() == null) {
             normalized.setReasoning(defaultReasoning);
         }
+        normalized.setTemperature(normalizeTemperature(normalized.getTemperature()));
+        normalized.setFallbackMode(normalizeFallbackMode(normalized.getFallbackMode()));
+        normalized.setFallbacks(normalizeFallbacks(normalized.getFallbacks()));
         return normalized;
+    }
+
+    private List<RuntimeConfig.TierFallback> normalizeFallbacks(List<RuntimeConfig.TierFallback> fallbacks) {
+        if (fallbacks == null || fallbacks.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<RuntimeConfig.TierFallback> normalizedFallbacks = new ArrayList<>();
+        for (RuntimeConfig.TierFallback fallback : fallbacks) {
+            RuntimeConfig.TierFallback normalizedFallback = normalizeFallback(fallback);
+            if (normalizedFallback != null) {
+                normalizedFallbacks.add(normalizedFallback);
+            }
+            if (normalizedFallbacks.size() >= 5) {
+                break;
+            }
+        }
+        return normalizedFallbacks;
+    }
+
+    private RuntimeConfig.TierFallback normalizeFallback(RuntimeConfig.TierFallback fallback) {
+        if (fallback == null) {
+            return null;
+        }
+        fallback.setModelReference(RuntimeConfig.ModelReference.normalize(fallback.getModelReference()));
+        fallback.setReasoning(normalizeNonBlankString(fallback.getReasoning(), null));
+        fallback.setTemperature(normalizeTemperature(fallback.getTemperature()));
+        return fallback.getModelReference() == null ? null : fallback;
+    }
+
+    private Double normalizeTemperature(Double temperature) {
+        if (temperature == null) {
+            return null;
+        }
+        if (temperature < 0.0d) {
+            return 0.0d;
+        }
+        if (temperature > 2.0d) {
+            return 2.0d;
+        }
+        return temperature;
+    }
+
+    private String normalizeFallbackMode(String fallbackMode) {
+        return FallbackModes.normalize(fallbackMode);
     }
 
     private String defaultModelForTier(String tier) {
