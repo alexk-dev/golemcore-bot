@@ -391,21 +391,21 @@ class TerminalWebSocketHandlerTest {
 
     private static final class ScriptedSink implements Sinks.Many<String> {
         private final Deque<Sinks.EmitResult> results = new ArrayDeque<>();
-        private int attempts;
+        private int emitAttempts;
         private Sinks.EmitResult lastResult = Sinks.EmitResult.OK;
-        private boolean repeatLastResult;
+        private boolean shouldRepeatLastResult;
 
         private ScriptedSink(Sinks.EmitResult... results) {
             this.results.addAll(java.util.List.of(results));
         }
 
         private ScriptedSink repeatLastResult() {
-            repeatLastResult = true;
+            shouldRepeatLastResult = true;
             return this;
         }
 
         int attempts() {
-            return attempts;
+            return emitAttempts;
         }
 
         @Override
@@ -415,9 +415,9 @@ class TerminalWebSocketHandlerTest {
 
         @Override
         public Sinks.EmitResult tryEmitComplete() {
-            attempts += 1;
+            emitAttempts += 1;
             if (results.isEmpty()) {
-                return repeatLastResult ? lastResult : Sinks.EmitResult.OK;
+                return shouldRepeatLastResult ? lastResult : Sinks.EmitResult.OK;
             }
             lastResult = results.removeFirst();
             return lastResult;

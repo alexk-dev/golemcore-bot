@@ -4,12 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -17,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TerminalConnectionTest {
 
+    private static final String[] FAKE_COMMAND = new String[] { "test-shell" };
     private static final long WAIT_TIMEOUT_SECONDS = 10L;
 
     private ObjectMapper objectMapper;
@@ -31,22 +36,20 @@ class TerminalConnectionTest {
         List<String> outbound = new ArrayList<>();
         CompletableFuture<Void> readySignal = new CompletableFuture<>();
 
-        TerminalConnection connection = TerminalConnection.open(
-                new String[] { "/bin/sh" },
+        TerminalConnection connection = openFakeConnection(
                 120,
                 30,
-                objectMapper,
                 frame -> {
                     synchronized (outbound) {
                         outbound.add(frame);
-                        if (frame.contains("X19HQ19SRUFEWV9f")) {
+                        if (frame.contains("\"type\":\"output\"")) {
                             readySignal.complete(null);
                         }
                     }
                 });
 
         try {
-            connection.handleFrame(wrap("{\"type\":\"input\",\"data\":\"ZWNobyBfX0dDX1JFQURZX18K\"}"));
+            connection.handleFrame(inputFrame("echo __GC_READY__\n"));
             readySignal.get(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
             String combined;
@@ -62,16 +65,15 @@ class TerminalConnectionTest {
     @Test
     void shouldIgnoreUnknownIncomingFrameTypes() throws Exception {
         List<String> outbound = new ArrayList<>();
-        TerminalConnection connection = TerminalConnection.open(
-                new String[] { "/bin/sh" },
+        TerminalConnection connection = openFakeConnection(
                 80,
                 24,
-                objectMapper,
                 outbound::add);
 
         try {
             connection.handleFrame("{\"type\":\"nonsense\",\"foo\":\"bar\"}");
             connection.handleFrame("not-json");
+            connection.handleFrame("null");
             assertTrue(connection.isAlive(), "session should survive malformed frames");
         } finally {
             connection.close();
@@ -80,11 +82,9 @@ class TerminalConnectionTest {
 
     @Test
     void shouldHandleResizeFrame() throws Exception {
-        TerminalConnection connection = TerminalConnection.open(
-                new String[] { "/bin/sh" },
+        TerminalConnection connection = openFakeConnection(
                 80,
                 24,
-                objectMapper,
                 frame -> {
                 });
         try {
@@ -98,11 +98,9 @@ class TerminalConnectionTest {
     @Test
     void shouldEmitExitFrameWhenShellExits() throws Exception {
         CompletableFuture<Map<String, Object>> exitFuture = new CompletableFuture<>();
-        TerminalConnection connection = TerminalConnection.open(
-                new String[] { "/bin/sh" },
+        TerminalConnection connection = openFakeConnection(
                 80,
                 24,
-                objectMapper,
                 frame -> {
                     if (frame.contains("\"type\":\"exit\"") && !exitFuture.isDone()) {
                         try {
@@ -115,7 +113,7 @@ class TerminalConnectionTest {
                 });
 
         try {
-            connection.handleFrame(wrap("{\"type\":\"input\",\"data\":\"ZXhpdCAwCg==\"}"));
+            connection.handleFrame(inputFrame("exit 0\n"));
             Map<String, Object> exit = exitFuture.get(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             assertEquals("exit", exit.get("type"));
             assertNotNull(exit.get("code"));
@@ -124,12 +122,78 @@ class TerminalConnectionTest {
         }
     }
 
-    private String wrap(String json) {
-        // Ensures the payload bytes decode cleanly; the test uses precomputed base64
-        // for
-        // "echo __GC_READY__\n" (ZWNobyBfX0dDX1JFQURZX18K) and "exit 0\n"
-        // (ZXhpdCAwCg==).
-        Base64.getDecoder().decode("ZWNobyBfX0dDX1JFQURZX18K");
-        return json;
+    private TerminalConnection openFakeConnection(
+            int cols,
+            int rows,
+            Consumer<String> outboundSink) throws IOException {
+        return TerminalConnection.open(
+                FAKE_COMMAND,
+                cols,
+                rows,
+                null,
+                objectMapper,
+                outboundSink,
+                (command, requestedCols, requestedRows, workingDirectory, outputConsumer) -> {
+                    FakeTerminalSession session = new FakeTerminalSession();
+                    session.setOutputConsumer(outputConsumer);
+                    return session;
+                });
+    }
+
+    private String inputFrame(String input) {
+        return "{\"type\":\"input\",\"data\":\""
+                + Base64.getEncoder().encodeToString(input.getBytes(StandardCharsets.UTF_8))
+                + "\"}";
+    }
+
+    private static final class FakeTerminalSession implements TerminalConnection.SessionHandle {
+        private final CountDownLatch exitLatch = new CountDownLatch(1);
+        private Consumer<byte[]> outputConsumer = data -> {
+        };
+        private volatile boolean alive = true;
+        private volatile int processExitCode;
+
+        void setOutputConsumer(Consumer<byte[]> outputConsumer) {
+            this.outputConsumer = outputConsumer;
+        }
+
+        @Override
+        public void writeInput(byte[] data) {
+            String input = new String(data, StandardCharsets.UTF_8);
+            if (input.contains("__GC_READY__")) {
+                outputConsumer.accept("__GC_READY__\n".getBytes(StandardCharsets.UTF_8));
+            }
+            if (input.contains("exit 0")) {
+                processExitCode = 0;
+                alive = false;
+                exitLatch.countDown();
+            }
+        }
+
+        @Override
+        public void resize(int cols, int rows) {
+            // Protocol-level resize handling is covered by connection.isAlive().
+        }
+
+        @Override
+        public boolean isAlive() {
+            return alive;
+        }
+
+        @Override
+        public Integer exitCode() {
+            return alive ? null : processExitCode;
+        }
+
+        @Override
+        public boolean waitFor(long timeout, TimeUnit unit) throws InterruptedException {
+            return exitLatch.await(timeout, unit);
+        }
+
+        @Override
+        public void close() {
+            alive = false;
+            exitLatch.countDown();
+        }
     }
 }

@@ -105,6 +105,7 @@ class TerminalSessionLimiterTest {
     }
 
     @Test
+    @SuppressWarnings("PMD.CloseResource")
     void shouldTreatDoubleReleaseAsIdempotentUnderConcurrency() throws Exception {
         TerminalSessionLimiter limiter = new TerminalSessionLimiter(botProperties);
         TerminalSessionLimiter.Lease leaseA = limiter.tryAcquire("admin").orElseThrow();

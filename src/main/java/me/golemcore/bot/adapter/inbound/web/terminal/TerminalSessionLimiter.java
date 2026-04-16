@@ -92,22 +92,22 @@ public class TerminalSessionLimiter {
     }
 
     public static final class Lease {
-        private final String username;
+        private final String leaseUsername;
         private final TerminalSessionLimiter limiter;
         private final AtomicBoolean released = new AtomicBoolean(false);
 
         private Lease(String username, TerminalSessionLimiter limiter) {
-            this.username = username;
+            this.leaseUsername = username;
             this.limiter = limiter;
         }
 
         public String username() {
-            return username;
+            return leaseUsername;
         }
 
         public void release() {
             if (released.compareAndSet(false, true)) {
-                limiter.releaseSlot(username);
+                limiter.releaseSlot(leaseUsername);
             }
         }
     }

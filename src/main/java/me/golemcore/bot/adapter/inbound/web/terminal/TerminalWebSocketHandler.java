@@ -179,11 +179,10 @@ public class TerminalWebSocketHandler implements WebSocketHandler {
         for (String pair : pairs) {
             int separator = pair.indexOf('=');
             String rawName = separator >= 0 ? pair.substring(0, separator) : pair;
-            if (!key.equals(decodeQueryComponent(rawName))) {
-                continue;
+            if (key.equals(decodeQueryComponent(rawName))) {
+                String rawValue = separator >= 0 ? pair.substring(separator + 1) : "";
+                return decodeQueryComponent(rawValue);
             }
-            String rawValue = separator >= 0 ? pair.substring(separator + 1) : "";
-            return decodeQueryComponent(rawValue);
         }
         return null;
     }

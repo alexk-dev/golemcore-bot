@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -41,11 +42,11 @@ public final class TerminalConnection {
         public static final ExitWaitOutcome TIMEOUT = new ExitWaitOutcome(false, 0);
 
         private final boolean terminated;
-        private final int exitCode;
+        private final int processExitCode;
 
         private ExitWaitOutcome(boolean terminated, int exitCode) {
             this.terminated = terminated;
-            this.exitCode = exitCode;
+            this.processExitCode = exitCode;
         }
 
         public static ExitWaitOutcome exited(int exitCode) {
@@ -57,7 +58,7 @@ public final class TerminalConnection {
         }
 
         public int exitCode() {
-            return exitCode;
+            return processExitCode;
         }
     }
 
@@ -70,16 +71,48 @@ public final class TerminalConnection {
         ExitWaitOutcome awaitExit() throws InterruptedException;
     }
 
+    /**
+     * Minimal terminal process contract used by the WebSocket protocol bridge. The
+     * production implementation is {@link TerminalSession}; tests can provide a
+     * fake implementation without starting a native PTY.
+     */
+    interface SessionHandle {
+        void writeInput(byte[] data) throws IOException;
+
+        void resize(int cols, int rows);
+
+        boolean isAlive();
+
+        Integer exitCode();
+
+        boolean waitFor(long timeout, TimeUnit unit) throws InterruptedException;
+
+        void close();
+    }
+
+    /**
+     * Starts a session and wires its raw output bytes back into this connection.
+     */
+    @FunctionalInterface
+    interface SessionFactory {
+        SessionHandle start(
+                String[] command,
+                int cols,
+                int rows,
+                Path workingDirectory,
+                Consumer<byte[]> outputConsumer) throws IOException;
+    }
+
     private final ObjectMapper objectMapper;
     private final Consumer<String> outboundSink;
-    private final TerminalSession session;
+    private final SessionHandle session;
     private final ExitWatcher exitWatcher;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     private TerminalConnection(
             ObjectMapper objectMapper,
             Consumer<String> outboundSink,
-            TerminalSession session) {
+            SessionHandle session) {
         this.objectMapper = objectMapper;
         this.outboundSink = outboundSink;
         this.session = session;
@@ -110,8 +143,19 @@ public final class TerminalConnection {
             Path workingDirectory,
             ObjectMapper objectMapper,
             Consumer<String> outboundSink) throws IOException {
+        return open(command, cols, rows, workingDirectory, objectMapper, outboundSink, TerminalSession::start);
+    }
+
+    static TerminalConnection open(
+            String[] command,
+            int cols,
+            int rows,
+            Path workingDirectory,
+            ObjectMapper objectMapper,
+            Consumer<String> outboundSink,
+            SessionFactory sessionFactory) throws IOException {
         TerminalConnection[] connectionRef = new TerminalConnection[1];
-        TerminalSession session = TerminalSession.start(
+        SessionHandle session = sessionFactory.start(
                 command,
                 cols,
                 rows,
@@ -128,7 +172,7 @@ public final class TerminalConnection {
         return connection;
     }
 
-    private static ExitWaitStrategy defaultStrategy(TerminalSession session) {
+    private static ExitWaitStrategy defaultStrategy(SessionHandle session) {
         return () -> {
             if (session.waitFor(EXIT_POLL_SECONDS, TimeUnit.SECONDS)) {
                 Integer code = session.exitCode();
@@ -144,10 +188,11 @@ public final class TerminalConnection {
         if (closed.get() || frame == null || frame.isBlank()) {
             return;
         }
-        Map<String, Object> parsed = tryParse(frame);
-        if (parsed == null) {
+        Optional<Map<String, Object>> parsedOpt = tryParse(frame);
+        if (parsedOpt.isEmpty()) {
             return;
         }
+        Map<String, Object> parsed = parsedOpt.orElseThrow();
         Object typeValue = parsed.get("type");
         if (!(typeValue instanceof String type)) {
             return;
@@ -234,12 +279,12 @@ public final class TerminalConnection {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> tryParse(String frame) {
+    private Optional<Map<String, Object>> tryParse(String frame) {
         try {
-            return objectMapper.readValue(frame, Map.class);
+            return Optional.ofNullable(objectMapper.readValue(frame, Map.class));
         } catch (IOException e) {
             log.debug("[Terminal] Ignoring malformed frame: {}", e.getMessage());
-            return null;
+            return Optional.empty();
         }
     }
 

@@ -21,7 +21,7 @@ import java.util.function.Consumer;
  * consumer provided at start-time.
  */
 @Slf4j
-public final class TerminalSession {
+public final class TerminalSession implements TerminalConnection.SessionHandle {
 
     private static final int READ_BUFFER_BYTES = 4096;
 
@@ -86,6 +86,9 @@ public final class TerminalSession {
         if (closed) {
             return;
         }
+        // The PTY owns this stream; closing it here would terminate the terminal
+        // session instead of just flushing the current input frame.
+        @SuppressWarnings("PMD.CloseResource")
         OutputStream out = process.getOutputStream();
         out.write(data);
         out.flush();
