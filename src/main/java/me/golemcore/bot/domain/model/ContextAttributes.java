@@ -92,6 +92,21 @@ public final class ContextAttributes {
      */
     public static final String LLM_REASONING = "llm.reasoning";
 
+    /** String - L2 router fallback model forced for the next retry. */
+    public static final String RESILIENCE_L2_FALLBACK_MODEL = "resilience.l2.fallback.model";
+
+    /** String - reasoning effort for the forced L2 router fallback retry. */
+    public static final String RESILIENCE_L2_FALLBACK_REASONING = "resilience.l2.fallback.reasoning";
+
+    /** String - router fallback selection mode used for the current L2 retry. */
+    public static final String RESILIENCE_L2_FALLBACK_MODE = "resilience.l2.fallback.mode";
+
+    /** List<String> - router fallback models already attempted in this turn. */
+    public static final String RESILIENCE_L2_ATTEMPTED_MODELS = "resilience.l2.attempted_models";
+
+    /** Integer - per-turn cursor for round-robin router fallback selection. */
+    public static final String RESILIENCE_L2_ROUND_ROBIN_CURSOR = "resilience.l2.round_robin_cursor";
+
     /**
      * Boolean - true if the current turn was suspended by the resilience
      * orchestrator (L5).

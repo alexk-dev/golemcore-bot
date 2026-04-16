@@ -39,8 +39,7 @@ import java.util.List;
  * <li><b>L1 — Hot Retry</b> (seconds): Exponential backoff with full jitter.
  * Handles brief provider hiccups that resolve within seconds.</li>
  * <li><b>L2 — Provider Fallback</b> (seconds): Route the same request to an
- * alternate LLM provider. <em>Stub — requires user-configured fallback chain in
- * llm-router settings.</em></li>
+ * alternate LLM model from the configured router fallback chain.</li>
  * <li><b>L3 — Circuit Breaker</b> (minutes): Per-provider state machine (CLOSED
  * → OPEN → HALF_OPEN) that fast-fails requests to a known-broken provider,
  * giving it time to recover.</li>
@@ -69,6 +68,7 @@ public class LlmResilienceOrchestrator {
 
     private final LlmRetryPolicy retryPolicy;
     private final ProviderCircuitBreaker circuitBreaker;
+    private final RouterFallbackSelector routerFallbackSelector;
     private final List<RecoveryStrategy> degradationStrategies;
     private final SuspendedTurnManager suspendedTurnManager;
 
@@ -76,8 +76,18 @@ public class LlmResilienceOrchestrator {
             ProviderCircuitBreaker circuitBreaker,
             List<RecoveryStrategy> degradationStrategies,
             SuspendedTurnManager suspendedTurnManager) {
+        this(retryPolicy, circuitBreaker, RouterFallbackSelector.NOOP, degradationStrategies, suspendedTurnManager);
+    }
+
+    public LlmResilienceOrchestrator(LlmRetryPolicy retryPolicy,
+            ProviderCircuitBreaker circuitBreaker,
+            RouterFallbackSelector routerFallbackSelector,
+            List<RecoveryStrategy> degradationStrategies,
+            SuspendedTurnManager suspendedTurnManager) {
         this.retryPolicy = retryPolicy;
         this.circuitBreaker = circuitBreaker;
+        this.routerFallbackSelector = routerFallbackSelector != null ? routerFallbackSelector
+                : RouterFallbackSelector.NOOP;
         this.degradationStrategies = degradationStrategies;
         this.suspendedTurnManager = suspendedTurnManager;
     }
@@ -139,10 +149,25 @@ public class LlmResilienceOrchestrator {
             return new ResilienceOutcome.RetryNow("L1", "hot retry after " + delayMs + "ms");
         }
 
-        // L2 provider fallback is a future routing concern. Keeping the explicit
-        // no-op here documents the intended order without hiding it in comments at
-        // the call site.
-        log.debug("[Resilience] L2 provider fallback: not yet configured, skipping");
+        if (!breakerOpen) {
+            circuitBreaker.recordFailure(providerId);
+        }
+
+        if (LlmErrorClassifier.isTransientCode(errorCode)) {
+            var fallbackSelection = routerFallbackSelector.selectNext(context,
+                    fallbackModel -> !circuitBreaker.isOpen(fallbackModel));
+            if (fallbackSelection.isPresent()) {
+                RouterFallbackSelector.Selection selection = fallbackSelection.get();
+                log.warn("[Resilience] L2 router fallback: provider={}, tier={}, mode={}, fallbackModel={}",
+                        providerId, selection.tier(), selection.mode(), selection.model());
+                return new ResilienceOutcome.RetryNow("L2",
+                        "router fallback to " + selection.model() + " (tier=" + selection.tier()
+                                + ", mode=" + selection.mode() + ")");
+            }
+            log.debug("[Resilience] L2 router fallback: no eligible fallback for provider={}, skipping", providerId);
+        } else {
+            log.debug("[Resilience] L2 router fallback: code={} is not transient, skipping", errorCode);
+        }
 
         // L3 fast-fails L4 when the breaker is already OPEN: degradation addresses
         // request-side complexity, but an OPEN breaker signals the provider itself
@@ -150,8 +175,6 @@ public class LlmResilienceOrchestrator {
         if (breakerOpen) {
             log.warn("[Resilience] L3 breaker OPEN, bypassing L4 degradation: provider={}", providerId);
         } else {
-            circuitBreaker.recordFailure(providerId);
-
             for (RecoveryStrategy strategy : degradationStrategies) {
                 if (strategy.isApplicable(context, errorCode, config)) {
                     RecoveryStrategy.RecoveryResult result = strategy.apply(context, errorCode, config);
@@ -184,6 +207,7 @@ public class LlmResilienceOrchestrator {
     public void recordSuccess(AgentContext context) {
         String providerId = resolveProviderId(context);
         circuitBreaker.recordSuccess(providerId);
+        routerFallbackSelector.clear(context);
     }
 
         private String resolveProviderId(AgentContext context) {

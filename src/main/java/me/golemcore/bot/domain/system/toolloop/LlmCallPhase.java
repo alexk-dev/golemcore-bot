@@ -447,7 +447,7 @@ class LlmCallPhase {
             private LlmResponse executeLlmCall(AgentContext context, int attempt,
                     RuntimeConfig.TracingConfig tracingConfig)
                     throws InterruptedException, ExecutionException {
-                ModelSelectionService.ModelSelection selection = selectModel(context.getModelTier());
+                ModelSelectionService.ModelSelection selection = selectModel(context);
                 Map<String, Object> requestContextAttributes = buildRequestContextAttributes(context, selection,
                         attempt);
                 TraceContext llmSpan = startChildSpan(context, "llm.chat", TraceSpanKind.LLM, requestContextAttributes);
@@ -737,11 +737,24 @@ class LlmCallPhase {
                 attributes.put(key, value);
             }
 
-            private ModelSelectionService.ModelSelection selectModel(String tier) {
+            private ModelSelectionService.ModelSelection selectModel(AgentContext context) {
+                ModelSelectionService.ModelSelection fallbackSelection = resolveRouterFallbackSelection(context);
+                if (fallbackSelection != null) {
+                    return fallbackSelection;
+                }
                 if (modelSelectionService == null) {
                     return new ModelSelectionService.ModelSelection(null, null);
                 }
-                return modelSelectionService.resolveForTier(tier);
+                return modelSelectionService.resolveForTier(context != null ? context.getModelTier() : null);
+            }
+
+            private ModelSelectionService.ModelSelection resolveRouterFallbackSelection(AgentContext context) {
+                String model = readContextAttribute(context, ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL);
+                if (model == null) {
+                    return null;
+                }
+                String reasoning = readContextAttribute(context, ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING);
+                return new ModelSelectionService.ModelSelection(model, reasoning);
             }
 
             private void storeSelectedModel(AgentContext context, String model) {

@@ -2,11 +2,13 @@ package me.golemcore.bot.domain.system.toolloop;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,19 +17,24 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class LlmCallPhaseTest {
 
@@ -169,6 +176,46 @@ class LlmCallPhaseTest {
                 any(),
                 any());
         assertInstanceOf(LlmCallPhase.LlmCallOutcome.Failed.class, outcome);
+    }
+
+    @Test
+    void execute_shouldUseForcedRouterFallbackSelection() {
+        LlmPort llmPort = mock(LlmPort.class);
+        ConversationViewBuilder viewBuilder = mock(ConversationViewBuilder.class);
+        when(viewBuilder.buildView(any(), eq("provider/fallback"))).thenReturn(ConversationView.ofMessages(List.of()));
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        LlmRequestPreflightPhase preflightPhase = mock(LlmRequestPreflightPhase.class);
+        when(preflightPhase.preflight(any(AgentContext.class), any(), anyInt()))
+                .thenAnswer(invocation -> ((java.util.function.Supplier<LlmRequest>) invocation.getArgument(1)).get());
+        when(llmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                        .content("ok")
+                        .finishReason("stop")
+                        .build()));
+        LlmCallPhase fallbackPhase = new LlmCallPhase(
+                llmPort,
+                viewBuilder,
+                modelSelectionService,
+                null,
+                preflightPhase,
+                mock(ContextCompactionCoordinator.class),
+                null,
+                null,
+                null,
+                null,
+                clock);
+        TurnState turnState = buildTurnState();
+        turnState.getContext().setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL, "provider/fallback");
+        turnState.getContext().setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING, "low");
+
+        LlmCallPhase.LlmCallOutcome outcome = fallbackPhase.execute(turnState, historyWriter);
+
+        assertInstanceOf(LlmCallPhase.LlmCallOutcome.Success.class, outcome);
+        ArgumentCaptor<LlmRequest> requestCaptor = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(llmPort).chat(requestCaptor.capture());
+        assertEquals("provider/fallback", requestCaptor.getValue().getModel());
+        assertEquals("low", requestCaptor.getValue().getReasoningEffort());
+        verify(modelSelectionService, never()).resolveForTier(any());
     }
 
     @Test

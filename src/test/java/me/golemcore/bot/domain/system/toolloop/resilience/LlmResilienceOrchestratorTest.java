@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -79,6 +80,38 @@ class LlmResilienceOrchestratorTest {
                 LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
         assertEquals("L4:test_strategy", retryNow.layer());
         assertEquals("degraded", retryNow.detail());
+    }
+
+    @Test
+    void shouldUseRouterFallbackBeforeDegradationAfterRetryBudget() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("provider-a")
+                .fallbackMode("sequential")
+                .fallbacks(List.of(RuntimeConfig.TierFallback.builder()
+                        .model("provider-b")
+                        .reasoning("low")
+                        .build()))
+                .build();
+        when(runtimeConfigService.getModelTierBinding("balanced")).thenReturn(binding);
+        context.setModelTier("balanced");
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                retryPolicy,
+                circuitBreaker,
+                new RuntimeConfigRouterFallbackSelector(runtimeConfigService, new java.util.Random(0)),
+                List.of(strategy),
+                suspendedTurnManager);
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, config);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
+        assertEquals("L2", retryNow.layer());
+        assertEquals("provider-b", context.getAttribute(ContextAttributes.LLM_MODEL));
+        assertEquals("low", context.getAttribute(ContextAttributes.LLM_REASONING));
+        assertEquals("provider-b", context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL));
+        verify(strategy, never()).isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config);
     }
 
     @Test
