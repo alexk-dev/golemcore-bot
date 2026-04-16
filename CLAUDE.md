@@ -167,7 +167,14 @@ Levels: `error` (failures + exception), `warn` (recoverable), `info` (milestones
 - **Direct commits/pushes to `main` are prohibited.**
 - Always create a feature branch from `main`, commit there, and open a Pull Request.
 - Merge to `main` only through PR after required checks pass.
-- PR description must include a detailed `Summary` section.
+- PR description must use the established structured format:
+  1. `## Summary` — concise bullet list of the user-facing and architectural changes.
+  2. `## Architecture` — code block showing the main call chain or component flow.
+  3. `### Key design decisions` — bullets explaining why the chosen design fits the codebase.
+  4. `### Files changed` — Markdown table with columns `Area`, `Files`, and `What`.
+  5. `### Configuration (...)` — JSON examples for new or changed runtime config sections when applicable.
+- Keep PR descriptions current as the branch evolves. When updating an existing PR body, preserve this structure and tone instead of replacing it with a different template.
+- PR descriptions should call out compatibility behavior, feature flags/runtime toggles, observability/tracing impact, dashboard/API surface changes, and test coverage when those areas are touched.
 - Do not add a `Verification` section in PR description unless explicitly requested.
 
 ---
