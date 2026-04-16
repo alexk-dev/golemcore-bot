@@ -47,7 +47,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @RequiredArgsConstructor
 @Slf4j
-class ContextCompactionCoordinator {
+public class ContextCompactionCoordinator {
 
     private static final String OVERFLOW_OUTCOME_SKIPPED_DISABLED = "skipped_disabled";
     private static final String OVERFLOW_OUTCOME_SKIPPED_TOO_SMALL = "skipped_too_small";
@@ -143,7 +143,7 @@ class ContextCompactionCoordinator {
      * @return {@code true} iff compaction removed at least one message, telling the
      *         caller it is safe to retry the provider with the shorter session.
      */
-    boolean recoverFromContextOverflow(AgentContext context, int llmCall, int retryAttempt) {
+    public boolean recoverFromContextOverflow(AgentContext context, int llmCall, int retryAttempt) {
         if (retryAttempt > 0) {
             return false;
         }

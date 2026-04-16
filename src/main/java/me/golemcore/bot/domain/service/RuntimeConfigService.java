@@ -391,6 +391,16 @@ public class RuntimeConfigService {
         return isHiveEnabled() && (value != null ? value : DEFAULT_HIVE_SDLC_FUNCTION_ENABLED);
     }
 
+    public RuntimeConfig.ResilienceConfig getResilienceConfig() {
+        RuntimeConfig.ResilienceConfig resilienceConfig = getRuntimeConfig().getResilience();
+        return resilienceConfig != null ? resilienceConfig : RuntimeConfig.ResilienceConfig.builder().build();
+    }
+
+    public boolean isResilienceEnabled() {
+        Boolean enabled = getResilienceConfig().getEnabled();
+        return enabled != null && enabled;
+    }
+
     public RuntimeConfig.SelfEvolvingConfig getSelfEvolvingConfig() {
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = getRuntimeConfig().getSelfEvolving();
         return selfEvolvingConfig != null ? selfEvolvingConfig : RuntimeConfig.SelfEvolvingConfig.builder().build();

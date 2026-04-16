@@ -50,6 +50,7 @@ class LlmCallPhaseTest {
                 null,
                 null,
                 null,
+                null,
                 clock);
         historyWriter = mock(HistoryWriter.class);
     }
@@ -126,6 +127,7 @@ class LlmCallPhaseTest {
                 null,
                 null,
                 traceService,
+                null,
                 clock);
 
         AgentSession session = AgentSession.builder()

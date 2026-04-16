@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
+import me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
@@ -71,7 +72,8 @@ public class ToolLoopAutoConfiguration {
             RuntimeEventService runtimeEventService,
             TurnProgressService turnProgressService,
             TraceService traceService,
-            ToolFailureRecoveryService toolFailureRecoveryService) {
+            ToolFailureRecoveryService toolFailureRecoveryService,
+            LlmResilienceOrchestrator resilienceOrchestrator) {
         LlmPort tracked = new UsageTrackingLlmPortDecorator(llmPort, usageTracker, telemetryRollupPort);
         return DefaultToolLoopSystem.builder()
                 .llmPort(tracked)
@@ -90,6 +92,7 @@ public class ToolLoopAutoConfiguration {
                 .turnProgressService(turnProgressService)
                 .traceService(traceService)
                 .toolFailureRecoveryService(toolFailureRecoveryService)
+                .resilienceOrchestrator(resilienceOrchestrator)
                 .clock(Clock.systemUTC())
                 .build();
     }

@@ -41,6 +41,7 @@ import me.golemcore.bot.domain.service.TraceMdcSupport;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
+import me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -80,6 +81,7 @@ class LlmCallPhase {
     private final RuntimeEventService runtimeEventService;
     private final TurnProgressService turnProgressService;
     private final TraceService traceService;
+    private final LlmResilienceOrchestrator resilienceOrchestrator;
     private final Clock clock;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
@@ -88,7 +90,7 @@ class LlmCallPhase {
             LlmRequestPreflightPhase preflightPhase,
             ContextCompactionCoordinator compactionCoordinator,
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
-            TraceService traceService, Clock clock) {
+            TraceService traceService, LlmResilienceOrchestrator resilienceOrchestrator, Clock clock) {
         this.llmPort = llmPort;
         this.viewBuilder = viewBuilder;
         this.modelSelectionService = modelSelectionService;
@@ -98,6 +100,7 @@ class LlmCallPhase {
         this.runtimeEventService = runtimeEventService;
         this.turnProgressService = turnProgressService;
         this.traceService = traceService;
+        this.resilienceOrchestrator = resilienceOrchestrator;
         this.clock = clock;
     }
 
@@ -170,6 +173,9 @@ class LlmCallPhase {
         }
 
         context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        if (resilienceOrchestrator != null) {
+            resilienceOrchestrator.recordSuccess(context);
+        }
         maybePublishAttachmentFallback(context, response);
         boolean compatFlatteningUsed = response != null && response.isCompatibilityFlatteningApplied();
         context.setAttribute(ContextAttributes.LLM_COMPAT_FLATTEN_FALLBACK_USED, compatFlatteningUsed);
@@ -351,6 +357,10 @@ class LlmCallPhase {
                     return new LlmCallOutcome.RetryScheduled();
                 }
 
+                if (resilienceOrchestrator != null && runtimeConfigService.isResilienceEnabled()) {
+                    return handleLlmErrorWithResilience(turnState, error, code, historyWriter);
+                }
+
                 if (turnState.isRetryEnabled() && LlmErrorClassifier.isTransientCode(code)
                         && turnState.getRetryAttempt() < turnState.getMaxRetries()) {
                     turnState.incrementRetryAttempt();
@@ -367,6 +377,41 @@ class LlmCallPhase {
                         eventPayload("reason", "llm_error", "code", code));
                 return new LlmCallOutcome.Failed(
                         failLlmInvocation(context, error, turnState.getLlmCalls(), turnState.getToolExecutions()));
+            }
+
+            private LlmCallOutcome handleLlmErrorWithResilience(TurnState turnState, RuntimeException error,
+                    String code, HistoryWriter historyWriter) {
+                AgentContext context = turnState.getContext();
+                RuntimeConfig.ResilienceConfig config = runtimeConfigService.getResilienceConfig();
+                LlmResilienceOrchestrator.ResilienceOutcome outcome = resilienceOrchestrator.handle(
+                        context, error, code, turnState.getRetryAttempt(), config);
+
+                switch (outcome) {
+                case LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow -> {
+                    turnState.incrementRetryAttempt();
+                    turnState.setLastRetryCode(code);
+                    context.setAttribute(ContextAttributes.RESILIENCE_RECOVERY_LAYER, retryNow.layer());
+                    emitRuntimeEvent(context, RuntimeEventType.RETRY_STARTED,
+                            eventPayload("layer", retryNow.layer(), "detail", retryNow.detail(), "code", code));
+                    return new LlmCallOutcome.RetryScheduled();
+                }
+                case LlmResilienceOrchestrator.ResilienceOutcome.Suspended suspended -> {
+                    context.setAttribute(ContextAttributes.RESILIENCE_TURN_SUSPENDED, true);
+                    emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
+                            eventPayload("reason", "resilience_suspended", "code", code));
+                    return new LlmCallOutcome.Failed(
+                            failLlmSuspended(context, suspended.userMessage(),
+                                    turnState.getLlmCalls(), turnState.getToolExecutions()));
+                }
+                case LlmResilienceOrchestrator.ResilienceOutcome.Exhausted exhausted -> {
+                    emitRuntimeEvent(context, RuntimeEventType.LLM_FINISHED,
+                            eventPayload("attempt", turnState.getLlmCalls(), "success", false, "code", code));
+                    emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
+                            eventPayload("reason", "llm_error", "code", code));
+                    return new LlmCallOutcome.Failed(
+                            failLlmInvocation(context, error, turnState.getLlmCalls(), turnState.getToolExecutions()));
+                }
+                }
             }
 
             private void scheduleRetry(AgentContext context, int llmCalls, int attempt, int maxAttempts,
@@ -489,6 +534,18 @@ class LlmCallPhase {
                 context.addFailure(new FailureEvent(FailureSource.LLM, "DefaultToolLoopSystem",
                         FailureKind.VALIDATION, diagnostic, clock.instant()));
                 flushProgress(context, "llm_failure");
+                clearProgress(context);
+                return new ToolLoopTurnResult(context, false, llmCalls, toolExecutions);
+            }
+
+            private ToolLoopTurnResult failLlmSuspended(AgentContext context, String userMessage,
+                    int llmCalls, int toolExecutions) {
+                log.info("[ToolLoop] Turn suspended by resilience orchestrator: {}", userMessage);
+                context.setAttribute(ContextAttributes.LLM_ERROR, userMessage);
+                context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
+                context.addFailure(new FailureEvent(FailureSource.LLM, "LlmResilienceOrchestrator",
+                        FailureKind.EXCEPTION, userMessage, clock.instant()));
+                flushProgress(context, "llm_suspended");
                 clearProgress(context);
                 return new ToolLoopTurnResult(context, false, llmCalls, toolExecutions);
             }
