@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.FallbackModes;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
@@ -2420,11 +2421,7 @@ public class RuntimeConfigService {
     }
 
     private String normalizeFallbackMode(String fallbackMode) {
-        String normalized = normalizeNonBlankString(fallbackMode, "sequential");
-        if ("random".equalsIgnoreCase(normalized)) {
-            return "random";
-        }
-        return "sequential";
+        return FallbackModes.normalize(fallbackMode);
     }
 
     private String defaultModelForTier(String tier) {

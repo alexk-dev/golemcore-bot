@@ -12,7 +12,6 @@ import GeneralTab from './settings/GeneralTab';
 import { AdvancedTab } from './settings/AdvancedTab';
 import ToolsTab from './settings/ToolsTab';
 import ModelsTab from './settings/ModelsTab';
-import ModelFallbacksTab from './settings/ModelFallbacksTab';
 import { ModelCatalogTab } from './settings/ModelCatalogTab';
 import LlmProvidersTab from './settings/LlmProvidersTab';
 import VoiceRoutingTab from './settings/VoiceRoutingTab';
@@ -142,9 +141,6 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'general' && <GeneralTab settings={settings} me={me} qc={qc} />}
       {staticSection === 'models' && rc != null && (
         <ModelsTab config={rc.modelRouter} llmConfig={rc.llm} hiveStatus={hiveStatus.data} />
-      )}
-      {staticSection === 'model-fallbacks' && rc != null && (
-        <ModelFallbacksTab config={rc.modelRouter} llmConfig={rc.llm} hiveStatus={hiveStatus.data} />
       )}
       {staticSection === 'llm-providers' && rc != null && (
         <LlmProvidersTab config={rc.llm} modelRouter={rc.modelRouter} hiveStatus={hiveStatus.data} />

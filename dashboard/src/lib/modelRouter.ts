@@ -1,9 +1,20 @@
 import { modelReferenceToSpec } from '../api/settings';
-import type { ModelRouterConfig, TierBinding, TierFallback } from '../api/settingsTypes';
+import type { FallbackMode, ModelRouterConfig, TierBinding, TierFallback } from '../api/settingsTypes';
 import { EXPLICIT_MODEL_TIER_ORDER, type ExplicitModelTierId } from './modelTiers';
 
 function hasText(value: string | null | undefined): value is string {
   return value != null && value.trim().length > 0;
+}
+
+export function normalizeFallbackMode(value: string | null | undefined): FallbackMode {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === 'round_robin') {
+    return 'round_robin';
+  }
+  if (normalized === 'weighted') {
+    return 'weighted';
+  }
+  return 'sequential';
 }
 
 export function createEmptyTierBinding(): TierBinding {
@@ -21,6 +32,7 @@ function normalizeFallback(fallback: TierFallback): TierFallback {
     model: fallback.model != null ? { ...fallback.model } : null,
     reasoning: fallback.reasoning ?? null,
     temperature: fallback.temperature ?? null,
+    weight: fallback.weight ?? null,
   };
 }
 
@@ -29,7 +41,7 @@ export function normalizeTierBinding(binding: TierBinding | null | undefined): T
     model: binding?.model != null ? { ...binding.model } : null,
     reasoning: binding?.reasoning ?? null,
     temperature: binding?.temperature ?? null,
-    fallbackMode: binding?.fallbackMode === 'random' ? 'random' : 'sequential',
+    fallbackMode: normalizeFallbackMode(binding?.fallbackMode),
     fallbacks: binding?.fallbacks.map(normalizeFallback).slice(0, 5) ?? [],
   };
 }

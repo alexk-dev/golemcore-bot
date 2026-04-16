@@ -434,12 +434,13 @@ public class RuntimeConfig {
     @AllArgsConstructor
     @Builder
     @JsonIgnoreProperties(ignoreUnknown = true)
-    @JsonPropertyOrder({ "model", "reasoning", "temperature" })
+    @JsonPropertyOrder({ "model", "reasoning", "temperature", "weight" })
     public static class TierFallback {
         @JsonIgnore
         private ModelReference modelReference;
         private String reasoning;
         private Double temperature;
+        private Double weight;
 
         @JsonGetter("model")
         public ModelReference getPersistedModel() {

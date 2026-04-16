@@ -1,5 +1,6 @@
 package me.golemcore.bot.application.settings;
 
+import me.golemcore.bot.domain.model.FallbackModes;
 import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -728,6 +729,7 @@ public class RuntimeSettingsValidator {
             }
             String fieldPrefix = "modelRouter.tiers." + tier + ".fallbacks[" + index + "]";
             validateTemperature(fallback.getTemperature(), fieldPrefix + ".temperature");
+            validateFallbackWeight(fallback.getWeight(), fieldPrefix + ".weight");
             validateModelRouterModel(fallback.getModel(), tier + " fallback " + (index + 1), configuredProviders);
         }
     }
@@ -737,9 +739,19 @@ public class RuntimeSettingsValidator {
             return;
         }
         String normalizedFallbackMode = fallbackMode.trim().toLowerCase(Locale.ROOT);
-        if (!Set.of("sequential", "random").contains(normalizedFallbackMode)) {
+        if (!FallbackModes.SUPPORTED.contains(normalizedFallbackMode)) {
             throw new IllegalArgumentException(
-                    "Model router tier '" + tier + "' fallbackMode must be sequential or random");
+                    "Model router tier '" + tier + "' fallbackMode must be one of "
+                            + FallbackModes.SUPPORTED);
+        }
+    }
+
+    private void validateFallbackWeight(Double weight, String fieldName) {
+        if (weight == null) {
+            return;
+        }
+        if (weight < 0.0d) {
+            throw new IllegalArgumentException(fieldName + " must be non-negative");
         }
     }
 

@@ -7,11 +7,19 @@ export interface ModelFallbackEditorModel extends AvailableModel {
   displayLabel: string;
 }
 
+function normalizeFallbackWeight(weight: number | null | undefined): number | null {
+  if (weight == null || !Number.isFinite(weight)) {
+    return null;
+  }
+  return Math.max(0, weight);
+}
+
 export function normalizeModelFallbacks(fallbacks: TierFallback[]): TierFallback[] {
   return fallbacks.slice(0, 5).map((fallback) => ({
     model: fallback.model != null ? { ...fallback.model } : null,
     reasoning: fallback.reasoning ?? null,
     temperature: fallback.temperature ?? null,
+    weight: normalizeFallbackWeight(fallback.weight),
   }));
 }
 

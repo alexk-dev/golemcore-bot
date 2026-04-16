@@ -369,7 +369,7 @@ class RuntimeSettingsValidatorTest {
                 .thenReturn(new ModelSelectionService.ValidationResult(true, null));
         RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
                 .model("openai/gpt-5")
-                .fallbackMode("weighted")
+                .fallbackMode("parallel")
                 .build();
         RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
                 .routing(RuntimeConfig.TierBinding.builder().model("openai/gpt-5").build())
@@ -380,26 +380,34 @@ class RuntimeSettingsValidatorTest {
                 () -> validator.validateModelRouterConfig(modelRouterConfig,
                         RuntimeConfig.LlmConfig.builder().build()));
 
-        assertTrue(error.getMessage().contains("sequential or random"));
+        assertTrue(error.getMessage().contains("fallbackMode must be one of"));
+        assertTrue(error.getMessage().contains("sequential"));
+        assertTrue(error.getMessage().contains("round_robin"));
+        assertTrue(error.getMessage().contains("weighted"));
     }
 
     @Test
-    void shouldAcceptSequentialAndRandomFallbackMode() {
+    void shouldAcceptSupportedFallbackModes() {
         when(modelSelectionService.validateModel(any(), any()))
                 .thenReturn(new ModelSelectionService.ValidationResult(true, null));
         RuntimeConfig.TierBinding sequentialBinding = RuntimeConfig.TierBinding.builder()
                 .model("openai/gpt-5")
                 .fallbackMode("SEQUENTIAL")
                 .build();
-        RuntimeConfig.TierBinding randomBinding = RuntimeConfig.TierBinding.builder()
+        RuntimeConfig.TierBinding roundRobinBinding = RuntimeConfig.TierBinding.builder()
                 .model("openai/gpt-5")
-                .fallbackMode("random")
+                .fallbackMode("round_robin")
+                .build();
+        RuntimeConfig.TierBinding weightedBinding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbackMode("weighted")
                 .build();
         RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
                 .routing(RuntimeConfig.TierBinding.builder().model("openai/gpt-5").build())
                 .tiers(new java.util.LinkedHashMap<>(Map.of(
                         "balanced", sequentialBinding,
-                        "smart", randomBinding)))
+                        "smart", roundRobinBinding,
+                        "deep", weightedBinding)))
                 .build();
 
         assertDoesNotThrow(() -> validator.validateModelRouterConfig(modelRouterConfig,

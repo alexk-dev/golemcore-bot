@@ -492,7 +492,7 @@ class RuntimeConfigServiceTest {
                 .build());
         config.getModelRouter().setTierBinding("smart", RuntimeConfig.TierBinding.builder()
                 .model("openai/gpt-5")
-                .fallbackMode("RANDOM")
+                .fallbackMode("WEIGHTED")
                 .build());
         config.getModelRouter().setTierBinding("deep", RuntimeConfig.TierBinding.builder()
                 .model("openai/gpt-5")
@@ -504,7 +504,7 @@ class RuntimeConfigServiceTest {
 
         RuntimeConfig.ModelRouterConfig router = service.getRuntimeConfig().getModelRouter();
         assertEquals("sequential", router.getTierBinding("balanced").getFallbackMode());
-        assertEquals("random", router.getTierBinding("smart").getFallbackMode());
+        assertEquals("weighted", router.getTierBinding("smart").getFallbackMode());
         assertEquals("sequential", router.getTierBinding("deep").getFallbackMode());
     }
 

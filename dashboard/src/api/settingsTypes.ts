@@ -44,8 +44,8 @@ export interface TelegramConfig { enabled: boolean | null; token: string | null;
 export interface InviteCode { code: string; used: boolean; createdAt: string; }
 export interface ModelRouterConfig { routing: TierBinding; tiers: Record<ExplicitModelTierId, TierBinding>; dynamicTierEnabled: boolean | null; }
 export interface ModelReference { provider: string | null; id: string | null; }
-export type FallbackMode = 'sequential' | 'random';
-export interface TierFallback { model: ModelReference | null; reasoning: string | null; temperature: number | null; }
+export type FallbackMode = 'sequential' | 'round_robin' | 'weighted';
+export interface TierFallback { model: ModelReference | null; reasoning: string | null; temperature: number | null; weight: number | null; }
 export interface TierBinding { model: ModelReference | null; reasoning: string | null; temperature: number | null; fallbackMode: FallbackMode; fallbacks: TierFallback[]; }
 export interface ToolsConfig { filesystemEnabled: boolean | null; shellEnabled: boolean | null; skillManagementEnabled: boolean | null; skillTransitionEnabled: boolean | null; tierEnabled: boolean | null; goalManagementEnabled: boolean | null; shellEnvironmentVariables: ShellEnvironmentVariable[]; }
 export interface ShellEnvironmentVariable { name: string; value: string; }

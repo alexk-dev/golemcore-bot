@@ -1,8 +1,14 @@
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactElement } from 'react';
 import type { HiveStatusResponse } from '../../api/hive';
 import type { LlmConfig, ModelRouterConfig } from '../../api/settingsTypes';
 import ModelsTab from './ModelsTab';
+
+function renderWithRouter(ui: ReactElement): string {
+  return renderToStaticMarkup(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 const availableModels = {
   openai: [
@@ -135,7 +141,7 @@ describe('ModelsTab', () => {
   });
 
   it('renders optional special tiers with an explicit empty model option', () => {
-    const html = renderToStaticMarkup(
+    const html = renderWithRouter(
       <ModelsTab config={modelRouterConfig} llmConfig={llmConfig} />,
     );
 
@@ -145,7 +151,7 @@ describe('ModelsTab', () => {
   it('keeps unavailable configured special tiers visible instead of pretending they are empty', () => {
     modelRouterConfig.tiers.special1 = { model: { provider: 'anthropic', id: 'claude-sonnet-4' }, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] };
 
-    const html = renderToStaticMarkup(
+    const html = renderWithRouter(
       <ModelsTab config={modelRouterConfig} llmConfig={llmConfig} />,
     );
 
@@ -162,7 +168,7 @@ describe('ModelsTab', () => {
       fallbacks: [],
     };
 
-    const html = renderToStaticMarkup(
+    const html = renderWithRouter(
       <ModelsTab config={modelRouterConfig} llmConfig={llmConfig} />,
     );
 
@@ -171,7 +177,7 @@ describe('ModelsTab', () => {
   });
 
   it('shows policy state and disables router editing when Hive manages the section', () => {
-    const html = renderToStaticMarkup(
+    const html = renderWithRouter(
       <ModelsTab config={modelRouterConfig} llmConfig={llmConfig} hiveStatus={managedHiveStatus} />,
     );
 

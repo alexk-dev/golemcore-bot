@@ -53,11 +53,25 @@ function toModelReference(value: unknown): ModelReference | null {
 }
 
 function toFallbackMode(value: unknown): FallbackMode {
-  return typeof value === 'string' && value.toLowerCase() === 'random' ? 'random' : 'sequential';
+  if (typeof value !== 'string') {
+    return 'sequential';
+  }
+  switch (value.trim().toLowerCase()) {
+    case 'round_robin':
+      return 'round_robin';
+    case 'weighted':
+      return 'weighted';
+    default:
+      return 'sequential';
+  }
 }
 
 function toTemperature(value: unknown): number | null {
   return typeof value === 'number' ? value : null;
+}
+
+function toFallbackWeight(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function toTierFallback(value: unknown): TierFallback | null {
@@ -69,7 +83,12 @@ function toTierFallback(value: unknown): TierFallback | null {
   if (model == null) {
     return null;
   }
-  return { model, reasoning: toNullableString(record.reasoning), temperature: toTemperature(record.temperature) };
+  return {
+    model,
+    reasoning: toNullableString(record.reasoning),
+    temperature: toTemperature(record.temperature),
+    weight: toFallbackWeight(record.weight),
+  };
 }
 
 function toTierFallbacks(value: unknown): TierFallback[] {

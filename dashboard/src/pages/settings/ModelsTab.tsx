@@ -1,5 +1,6 @@
-import { type ReactElement, useEffect, useMemo, useState } from 'react';
+import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import type { HiveStatusResponse } from '../../api/hive';
@@ -8,24 +9,28 @@ import { modelReferenceFromSpec, modelReferenceToSpec } from '../../api/settings
 import type { LlmConfig, ModelRouterConfig } from '../../api/settingsTypes';
 import { useUpdateModelRouter } from '../../hooks/useSettings';
 import { useAvailableModels } from '../../hooks/useModels';
+import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
 import { toEditorModelIdForProvider } from '../../lib/providerModelIds';
 import { cloneModelRouterConfig, getTierBinding, updateTierBinding } from '../../lib/modelRouter';
 import {
   allowsEmptyModelSelection,
   EXPLICIT_MODEL_TIER_ORDER,
   MODEL_TIER_META,
+  type DisplayModelTierId,
   type ExplicitModelTierId,
 } from '../../lib/modelTiers';
 import {
-  buildModelsForProvider,
   hasRouterEditorDiff,
   resolveTemperatureAfterModelChange,
   toNullableRouterString,
 } from './modelFallbacksEditorSupport';
+import { TierModelCard } from './models/TierModelCard';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
-import { Badge, Button, Card, Col, Form, Row } from '../../components/ui/tailwind-components';
+import ConfirmModal from '../../components/common/ConfirmModal';
+import { Button, Card, Col, Form, Row } from '../../components/ui/tailwind-components';
 import { HiveManagedPolicyNotice } from './HiveManagedPolicyNotice';
 import { getHiveManagedPolicyDetails } from './hiveManagedPolicySupport';
+import { UNSAVED_CHANGES_MESSAGE, UNSAVED_CHANGES_TITLE } from './unsavedChangesCopy';
 
 interface ModelsTabProps {
   config: ModelRouterConfig;
@@ -40,175 +45,36 @@ interface TierCardConfig {
   allowEmptyModel: boolean;
 }
 
-interface TierModelCardProps {
-  label: string;
-  color: string;
-  providers: Record<string, AvailableModel[]>;
-  providerNames: string[];
-  modelProvider: string;
-  modelValue: string;
-  reasoningValue: string;
-  temperatureValue: number | null;
-  fallbackCount: number;
-  allowEmptyModel: boolean;
-  onModelChange: (value: string, providerName: string) => void;
-  onReasoningChange: (value: string) => void;
-  onTemperatureChange: (value: number | null) => void;
-}
-
 const EMPTY_AVAILABLE_MODELS: Record<string, AvailableModel[]> = {};
-
-function TierModelCard({
-  label,
-  color,
-  providers,
-  providerNames,
-  modelProvider,
-  modelValue,
-  reasoningValue,
-  temperatureValue,
-  fallbackCount,
-  allowEmptyModel,
-  onModelChange,
-  onReasoningChange,
-  onTemperatureChange,
-}: TierModelCardProps): ReactElement {
-  const configuredProvider = useMemo(() => {
-    if (modelValue.length === 0) {
-      return '';
-    }
-    for (const [providerName, models] of Object.entries(providers)) {
-      if (models.some((model) => toEditorModelIdForProvider(model.id, providerName) === modelValue)) {
-        return providerName;
-      }
-    }
-    if (modelProvider.length > 0) {
-      return modelProvider;
-    }
-    const delimiterIndex = modelValue.indexOf('/');
-    return delimiterIndex > 0 ? modelValue.slice(0, delimiterIndex) : '';
-  }, [modelProvider, modelValue, providers]);
-
-  const providerOptionValues = useMemo(() => {
-    if (configuredProvider.length === 0 || providerNames.includes(configuredProvider)) {
-      return providerNames;
-    }
-    return [configuredProvider, ...providerNames];
-  }, [configuredProvider, providerNames]);
-
-  const selectedProvider = useMemo(() => {
-    if (modelValue.length === 0) {
-      return allowEmptyModel ? '' : (providerNames[0] ?? '');
-    }
-    return configuredProvider.length > 0 ? configuredProvider : (providerNames[0] ?? '');
-  }, [allowEmptyModel, configuredProvider, modelValue, providerNames]);
-
-  const [provider, setProvider] = useState(selectedProvider);
-
-  useEffect(() => {
-    setProvider(selectedProvider);
-  }, [selectedProvider]);
-
-  const modelsForProvider = useMemo(
-    () => buildModelsForProvider(providers, provider, modelValue),
-    [modelValue, provider, providers],
-  );
-  const selectedModel = modelsForProvider.find((model) => model.editorId === modelValue);
-  const reasoningLevels = selectedModel?.reasoningLevels ?? [];
-  const supportsTemperature = selectedModel?.supportsTemperature !== false;
-  const hasProviders = providerOptionValues.length > 0;
-  const providerUnavailable = configuredProvider.length > 0 && !providerNames.includes(configuredProvider);
-
-  // Keep optional special tiers unconfigured until the user explicitly selects a model.
-  useEffect(() => {
-    if (!allowEmptyModel && modelValue.length === 0 && modelsForProvider.length > 0) {
-      onModelChange(modelsForProvider[modelsForProvider.length - 1].id, provider);
-    }
-  }, [allowEmptyModel, modelValue, modelsForProvider, onModelChange, provider]);
-
-  return (
-    <Card className="tier-card h-100">
-      <Card.Body className="p-3">
-        <Badge bg={color} className="mb-2">{label}</Badge>
-
-        <Form.Group className="mb-2">
-          <Form.Label className="small fw-medium mb-1">Provider</Form.Label>
-          <Form.Select
-            size="sm"
-            value={provider}
-            disabled={!hasProviders}
-            onChange={(e) => {
-              const nextProvider = e.target.value;
-              setProvider(nextProvider);
-              onModelChange('', nextProvider);
-            }}
-          >
-            {allowEmptyModel && <option value="">Select provider</option>}
-            {!hasProviders && <option value="">No providers</option>}
-            {providerOptionValues.map((providerName) => (
-              <option key={providerName || 'empty'} value={providerName}>
-                {providerName}
-                {providerUnavailable && providerName === configuredProvider ? ' (unavailable)' : ''}
-              </option>
-            ))}
-          </Form.Select>
-        </Form.Group>
-
-        <Form.Group className="mb-2">
-          <Form.Label className="small fw-medium mb-1">Model</Form.Label>
-          <Form.Select
-            size="sm"
-            value={modelValue}
-            disabled={!hasProviders && modelsForProvider.length === 0}
-            onChange={(e) => onModelChange(e.target.value, provider)}
-          >
-            {allowEmptyModel && <option value="">Not configured</option>}
-            {modelsForProvider.map((model) => (
-              <option key={`${provider}-${model.id}`} value={model.editorId}>{model.displayLabel}</option>
-            ))}
-          </Form.Select>
-        </Form.Group>
-
-        {reasoningLevels.length > 0 && (
-          <Form.Group className="mb-2">
-            <Form.Label className="small fw-medium mb-1">Reasoning</Form.Label>
-            <Form.Select size="sm" value={reasoningValue} onChange={(e) => onReasoningChange(e.target.value)}>
-              <option value="">Default</option>
-              {reasoningLevels.map((level) => (
-                <option key={level} value={level}>{level}</option>
-              ))}
-            </Form.Select>
-          </Form.Group>
-        )}
-
-        <Form.Group className="mb-2">
-          <Form.Label className="small fw-medium mb-1">
-            Temperature: {supportsTemperature ? (temperatureValue ?? 0.7).toFixed(1) : 'not supported'}
-          </Form.Label>
-          <Form.Range
-            min={0}
-            max={2}
-            step={0.1}
-            value={temperatureValue ?? 0.7}
-            disabled={!supportsTemperature}
-            onChange={(e) => onTemperatureChange(parseFloat(e.target.value))}
-          />
-        </Form.Group>
-
-        <small className="text-body-secondary">Fallback models configured: {fallbackCount}/5</small>
-      </Card.Body>
-    </Card>
-  );
-}
+const TIER_CARDS: TierCardConfig[] = EXPLICIT_MODEL_TIER_ORDER.map((tier) => ({
+  key: tier,
+  label: MODEL_TIER_META[tier].label,
+  color: MODEL_TIER_META[tier].settingsCardColor,
+  allowEmptyModel: allowsEmptyModelSelection(tier),
+}));
 
 export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabProps): ReactElement {
+  const navigate = useNavigate();
   const updateRouter = useUpdateModelRouter();
   const { data: available } = useAvailableModels();
   const [form, setForm] = useState<ModelRouterConfig>(cloneModelRouterConfig(config));
+  const configSourceRef = useRef(config);
+  const serverSnapshotRef = useRef<ModelRouterConfig>(cloneModelRouterConfig(config));
+  const [pendingTier, setPendingTier] = useState<DisplayModelTierId | null>(null);
 
   useEffect(() => {
-    setForm(cloneModelRouterConfig(config));
-  }, [config]);
+    // Sync clean forms to refreshed runtime config without clobbering local unsaved edits.
+    if (config === configSourceRef.current) {
+      return;
+    }
+    const previousSnapshot = serverSnapshotRef.current;
+    const nextSnapshot = cloneModelRouterConfig(config);
+    configSourceRef.current = config;
+    serverSnapshotRef.current = nextSnapshot;
+    if (!hasRouterEditorDiff(form, previousSnapshot)) {
+      setForm(nextSnapshot);
+    }
+  }, [config, form]);
 
   const readyProviderNames = useMemo(
     () => Object.entries(llmConfig.providers ?? {})
@@ -231,17 +97,30 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
   const isModelsDirty = useMemo(() => hasRouterEditorDiff(form, config), [form, config]);
   const managedPolicy = getHiveManagedPolicyDetails(hiveStatus);
 
+  useBeforeUnloadGuard(managedPolicy == null && isModelsDirty);
+
   const handleSave = async (): Promise<void> => {
-    await updateRouter.mutateAsync(form);
+    const savedForm = cloneModelRouterConfig(form);
+    await updateRouter.mutateAsync(savedForm);
+    serverSnapshotRef.current = savedForm;
+    setForm(savedForm);
     toast.success('Model router settings saved');
   };
 
-  const tierCards: TierCardConfig[] = EXPLICIT_MODEL_TIER_ORDER.map((tier) => ({
-    key: tier,
-    label: MODEL_TIER_META[tier].label,
-    color: MODEL_TIER_META[tier].settingsCardColor,
-    allowEmptyModel: allowsEmptyModelSelection(tier),
-  }));
+  const handleConfigureFallbacks = (tier: DisplayModelTierId): void => {
+    if (isModelsDirty) {
+      setPendingTier(tier);
+      return;
+    }
+    navigate(`/settings/models/${tier}`);
+  };
+
+  const handleConfirmLeave = (): void => {
+    if (pendingTier != null) {
+      navigate(`/settings/models/${pendingTier}`);
+    }
+    setPendingTier(null);
+  };
 
   return (
     <>
@@ -318,9 +197,10 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
                   temperature: value,
                 },
               })}
+              onConfigureFallbacks={() => handleConfigureFallbacks('routing')}
             />
           </Col>
-          {tierCards.map(({ key, label, color, allowEmptyModel }) => (
+          {TIER_CARDS.map(({ key, label, color, allowEmptyModel }) => (
             <Col sm={6} lg={4} xl={3} key={key}>
               <TierModelCard
                 label={label}
@@ -351,6 +231,7 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
                   ...getTierBinding(form, key),
                   temperature: value,
                 }))}
+                onConfigureFallbacks={() => handleConfigureFallbacks(key)}
               />
             </Col>
           ))}
@@ -369,6 +250,16 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
           <SaveStateHint isDirty={managedPolicy == null && isModelsDirty} />
         </SettingsSaveBar>
       </fieldset>
+
+      <ConfirmModal
+        show={pendingTier != null}
+        title={UNSAVED_CHANGES_TITLE}
+        message={UNSAVED_CHANGES_MESSAGE}
+        confirmLabel="Leave"
+        confirmVariant="warning"
+        onConfirm={handleConfirmLeave}
+        onCancel={() => setPendingTier(null)}
+      />
     </>
   );
 }

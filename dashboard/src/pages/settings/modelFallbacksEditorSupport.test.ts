@@ -62,8 +62,17 @@ describe('normalizeModelFallbacks', () => {
       model: { provider: 'openai', id: `openai/m-${i}` },
       reasoning: null,
       temperature: null,
+      weight: i + 1,
     }));
 
     expect(normalizeModelFallbacks(input)).toHaveLength(5);
+  });
+
+  it('preserves fallback weights', () => {
+    const normalized = normalizeModelFallbacks([
+      { model: { provider: 'openai', id: 'openai/m-1' }, reasoning: null, temperature: null, weight: 2.5 },
+    ]);
+
+    expect(normalized[0].weight).toBe(2.5);
   });
 });
