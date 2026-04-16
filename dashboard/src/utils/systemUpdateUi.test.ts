@@ -3,11 +3,13 @@ import type { SystemUpdateStatusResponse } from '../api/system';
 import {
   AUTO_UPDATE_CHECK_INTERVAL_MS,
   type BackgroundUpdateCheckStatus,
+  canForceInstallStagedUpdate,
   formatUpdateTimestamp,
   formatVersionLabel,
   getSidebarUpdateBadge,
   getTopbarUpdateNotice,
   getUpdateActionLabel,
+  getUpdateBlockedReasonLabel,
   getUpdateSourceLabel,
   getUpdateStateDescription,
   getUpdateStateLabel,
@@ -106,6 +108,28 @@ describe('systemUpdateUi', () => {
     expect(getUpdateActionLabel(buildStatus({ state: 'VERIFYING', target: { version: '0.4.2' } }))).toBe('Restarting...');
     expect(getUpdateSourceLabel('jar')).toBe('Local package');
     expect(getUpdateSourceLabel('image')).toBe('Container image');
+  });
+
+  it('shouldProvideFriendlyBlockedReasonLabelsAndForceInstallAvailability', () => {
+    expect(getUpdateBlockedReasonLabel('SESSION_WORK_RUNNING')).toBe('An active or queued session is still running');
+    expect(getUpdateBlockedReasonLabel('AUTO_JOB_RUNNING')).toBe('An auto-mode job is still running');
+    expect(getUpdateBlockedReasonLabel('custom-blocker')).toBe('custom-blocker');
+    expect(getUpdateBlockedReasonLabel(null)).toBeNull();
+
+    expect(canForceInstallStagedUpdate(buildStatus({
+      state: 'WAITING_FOR_IDLE',
+      busy: true,
+      staged: { version: '0.4.2' },
+      target: { version: '0.4.2' },
+      blockedReason: 'SESSION_WORK_RUNNING',
+    }))).toBe(true);
+
+    expect(canForceInstallStagedUpdate(buildStatus({
+      state: 'WAITING_FOR_WINDOW',
+      busy: false,
+      staged: { version: '0.4.2' },
+      target: { version: '0.4.2' },
+    }))).toBe(false);
   });
 
   it('shouldDeriveFailedWorkflowStepsAndFallbackProgress', () => {

@@ -213,6 +213,23 @@ public class UpdateService {
                 .build();
     }
 
+    public UpdateActionResult forceInstallStagedUpdate() {
+        synchronized (lock) {
+            ensureEnabled();
+            ensureNoBusyOperation();
+            lastCheckError = "";
+
+            UpdateVersionInfo staged = resolveStagedInfo();
+            if (staged == null) {
+                throw new IllegalStateException("No staged update to force install");
+            }
+
+            activeTarget = Optional.of(copyVersionInfo(staged));
+        }
+
+        return applyStagedUpdate();
+    }
+
     private UpdateActionResult applyStagedUpdate() {
         synchronized (lock) {
             ensureEnabled();

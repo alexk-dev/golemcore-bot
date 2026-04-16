@@ -130,6 +130,11 @@ export async function updateSystemNow(): Promise<SystemUpdateActionResponse> {
   return data;
 }
 
+export async function forceInstallStagedUpdate(): Promise<SystemUpdateActionResponse> {
+  const { data } = await client.post<SystemUpdateActionResponse>('/system/update/force-install-staged');
+  return data;
+}
+
 export async function updateSystemUpdateConfig(
   payload: SystemUpdateConfigResponse,
 ): Promise<SystemUpdateConfigResponse> {
