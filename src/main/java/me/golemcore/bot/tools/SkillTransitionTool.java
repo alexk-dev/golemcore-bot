@@ -89,11 +89,12 @@ public class SkillTransitionTool implements ToolComponent {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
         // Must run on calling thread to access AgentContextHolder (ThreadLocal)
-        String targetSkill = (String) parameters.get("target_skill");
-        String reason = (String) parameters.get("reason");
+        Object rawTargetSkill = parameters != null ? parameters.get("target_skill") : null;
+        Object rawReason = parameters != null ? parameters.get("reason") : null;
+        String targetSkill = rawTargetSkill instanceof String targetSkillValue ? targetSkillValue : null;
+        String reason = rawReason instanceof String reasonValue ? reasonValue : null;
 
         if (targetSkill == null || targetSkill.isBlank()) {
             return CompletableFuture.completedFuture(ToolResult.failure("target_skill is required"));

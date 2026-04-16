@@ -3,12 +3,15 @@ package me.golemcore.bot.application.prompts;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import org.mockito.ArgumentCaptor;
 
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -60,6 +63,25 @@ class PromptManagementFacadeTest {
         assertEquals("custom", result.getName());
         verify(storagePort).putText(eq("prompts"), eq("CUSTOM.md"), anyString());
         verify(promptSectionService).reload();
+    }
+
+    @Test
+    void shouldOmitBlankDescriptionFromFileContent() {
+        // A bare `description:` line round-trips through YAML as null, which breaks the
+        // API string contract.
+        // Skip the line entirely for null or blank descriptions so the file never
+        // serializes to that shape.
+        PromptSectionDraft request = new PromptSectionDraft("custom", "   ", 40, true, "Custom body");
+        when(promptSectionService.getSection("custom")).thenReturn(
+                Optional.empty(),
+                Optional.of(PromptSection.builder().name("custom").build()));
+
+        facade.createSection(request);
+
+        ArgumentCaptor<String> fileContent = ArgumentCaptor.forClass(String.class);
+        verify(storagePort).putText(eq("prompts"), eq("CUSTOM.md"), fileContent.capture());
+        assertFalse(fileContent.getValue().contains("description:"),
+                "blank description must not be written to frontmatter");
     }
 
     @Test

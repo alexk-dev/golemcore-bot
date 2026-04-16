@@ -98,6 +98,75 @@ class PromptSectionServiceTest {
     }
 
     @Test
+    void reload_frontmatterWithEmptyDescriptionDefaultsToEmptyString() {
+        // YAML parses `description:` (no value) as a key whose value is null.
+        // The loader must coerce that to an empty string so API consumers can trust the
+        // string contract.
+        String content = "---\ndescription:\norder: 10\n---\nBody.";
+
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
+                .thenReturn(CompletableFuture.completedFuture(content));
+
+        service.reload();
+
+        PromptSection section = service.getSection(IDENTITY_NAME).orElseThrow();
+        assertEquals("", section.getDescription());
+    }
+
+    @Test
+    void reload_frontmatterWithExplicitNullDescriptionDefaultsToEmptyString() {
+        String content = "---\ndescription: ~\norder: 10\n---\nBody.";
+
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
+                .thenReturn(CompletableFuture.completedFuture(content));
+
+        service.reload();
+
+        PromptSection section = service.getSection(IDENTITY_NAME).orElseThrow();
+        assertEquals("", section.getDescription());
+    }
+
+    @Test
+    void reload_frontmatterWithBareOrderKeepsDefaultAndAppliesLaterKeys() {
+        // Bare `order:` parses as null; it must not abort the try and drop `enabled`
+        // after it.
+        String content = "---\ndescription: Foo\norder:\nenabled: false\n---\nBody.";
+
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
+                .thenReturn(CompletableFuture.completedFuture(content));
+
+        service.reload();
+
+        PromptSection section = service.getSection(IDENTITY_NAME).orElseThrow();
+        assertEquals("Foo", section.getDescription());
+        assertEquals(100, section.getOrder());
+        assertFalse(section.isEnabled());
+    }
+
+    @Test
+    void reload_frontmatterWithBareEnabledDefaultsToTrue() {
+        String content = "---\ndescription: Foo\norder: 55\nenabled:\n---\nBody.";
+
+        when(storagePort.listObjects(PROMPTS_DIR, ""))
+                .thenReturn(CompletableFuture.completedFuture(List.of(IDENTITY_FILE)));
+        when(storagePort.getText(PROMPTS_DIR, IDENTITY_FILE))
+                .thenReturn(CompletableFuture.completedFuture(content));
+
+        service.reload();
+
+        PromptSection section = service.getSection(IDENTITY_NAME).orElseThrow();
+        assertEquals("Foo", section.getDescription());
+        assertEquals(55, section.getOrder());
+        assertTrue(section.isEnabled());
+    }
+
+    @Test
     void reload_noFrontmatter() {
         when(storagePort.listObjects(PROMPTS_DIR, ""))
                 .thenReturn(CompletableFuture.completedFuture(List.of("CUSTOM.md")));

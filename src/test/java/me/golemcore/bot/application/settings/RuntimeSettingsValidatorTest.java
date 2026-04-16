@@ -289,6 +289,204 @@ class RuntimeSettingsValidatorTest {
     }
 
     @Test
+    void shouldRejectProviderRemovalWhenFallbackStillUsesIt() {
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbacks(new java.util.ArrayList<>(List.of(
+                        RuntimeConfig.TierFallback.builder().model("anthropic/claude-opus-4").build())))
+                .build();
+        RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
+                .routing(RuntimeConfig.TierBinding.builder().model("openai/gpt-5").build())
+                .tiers(new java.util.LinkedHashMap<>(Map.of("balanced", binding)))
+                .build();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> validator.validateProviderRemoval(modelRouterConfig, "anthropic"));
+    }
+
+    @Test
+    void shouldRejectTierBindingTemperatureAboveMax() {
+        when(modelSelectionService.validateModel(any(), any()))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
+                .routing(RuntimeConfig.TierBinding.builder()
+                        .model("openai/gpt-5")
+                        .temperature(2.1)
+                        .build())
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateModelRouterConfig(modelRouterConfig,
+                        RuntimeConfig.LlmConfig.builder().build()));
+
+        assertTrue(error.getMessage().contains("temperature"));
+        assertTrue(error.getMessage().contains("between 0 and 2"));
+    }
+
+    @Test
+    void shouldRejectTierBindingTemperatureBelowMin() {
+        when(modelSelectionService.validateModel(any(), any()))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
+                .routing(RuntimeConfig.TierBinding.builder()
+                        .model("openai/gpt-5")
+                        .temperature(-0.1)
+                        .build())
+                .build();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> validator.validateModelRouterConfig(modelRouterConfig,
+                        RuntimeConfig.LlmConfig.builder().build()));
+    }
+
+    @Test
+    void shouldRejectFallbackTemperatureOutsideRange() {
+        when(modelSelectionService.validateModel(any(), any()))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbacks(new java.util.ArrayList<>(List.of(
+                        RuntimeConfig.TierFallback.builder()
+                                .model("openai/gpt-5-mini")
+                                .temperature(5.0)
+                                .build())))
+                .build();
+        RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
+                .routing(RuntimeConfig.TierBinding.builder().model("openai/gpt-5").build())
+                .tiers(new java.util.LinkedHashMap<>(Map.of("balanced", binding)))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateModelRouterConfig(modelRouterConfig,
+                        RuntimeConfig.LlmConfig.builder().build()));
+
+        assertTrue(error.getMessage().contains("fallbacks[0].temperature"));
+    }
+
+    @Test
+    void shouldRejectInvalidFallbackMode() {
+        when(modelSelectionService.validateModel(any(), any()))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbackMode("parallel")
+                .build();
+        RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
+                .routing(RuntimeConfig.TierBinding.builder().model("openai/gpt-5").build())
+                .tiers(new java.util.LinkedHashMap<>(Map.of("balanced", binding)))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateModelRouterConfig(modelRouterConfig,
+                        RuntimeConfig.LlmConfig.builder().build()));
+
+        assertTrue(error.getMessage().contains("fallbackMode must be one of"));
+        assertTrue(error.getMessage().contains("sequential"));
+        assertTrue(error.getMessage().contains("round_robin"));
+        assertTrue(error.getMessage().contains("weighted"));
+    }
+
+    @Test
+    void shouldAcceptSupportedFallbackModes() {
+        when(modelSelectionService.validateModel(any(), any()))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        RuntimeConfig.TierBinding sequentialBinding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbackMode("SEQUENTIAL")
+                .build();
+        RuntimeConfig.TierBinding roundRobinBinding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbackMode("round_robin")
+                .build();
+        RuntimeConfig.TierBinding weightedBinding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbackMode("weighted")
+                .build();
+        RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
+                .routing(RuntimeConfig.TierBinding.builder().model("openai/gpt-5").build())
+                .tiers(new java.util.LinkedHashMap<>(Map.of(
+                        "balanced", sequentialBinding,
+                        "smart", roundRobinBinding,
+                        "deep", weightedBinding)))
+                .build();
+
+        assertDoesNotThrow(() -> validator.validateModelRouterConfig(modelRouterConfig,
+                RuntimeConfig.LlmConfig.builder().build()));
+    }
+
+    @Test
+    void shouldRejectMoreThanFiveFallbacks() {
+        when(modelSelectionService.validateModel(any(), any()))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            fallbacks.add(RuntimeConfig.TierFallback.builder().model("openai/gpt-5-mini").build());
+        }
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbacks(fallbacks)
+                .build();
+        RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
+                .routing(RuntimeConfig.TierBinding.builder().model("openai/gpt-5").build())
+                .tiers(new java.util.LinkedHashMap<>(Map.of("balanced", binding)))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateModelRouterConfig(modelRouterConfig,
+                        RuntimeConfig.LlmConfig.builder().build()));
+
+        assertTrue(error.getMessage().contains("at most 5 fallback"));
+    }
+
+    @Test
+    void shouldRejectUnknownFallbackModel() {
+        when(modelSelectionService.validateModel("openai/gpt-5", List.of()))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        when(modelSelectionService.validateModel("openai/nonexistent", List.of()))
+                .thenReturn(new ModelSelectionService.ValidationResult(false, "model.not.found"));
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbacks(new java.util.ArrayList<>(List.of(
+                        RuntimeConfig.TierFallback.builder().model("openai/nonexistent").build())))
+                .build();
+        RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
+                .routing(RuntimeConfig.TierBinding.builder().model("openai/gpt-5").build())
+                .tiers(new java.util.LinkedHashMap<>(Map.of("balanced", binding)))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateModelRouterConfig(modelRouterConfig,
+                        RuntimeConfig.LlmConfig.builder().build()));
+
+        assertTrue(error.getMessage().contains("fallback 1"));
+        assertTrue(error.getMessage().contains("unknown model"));
+    }
+
+    @Test
+    void shouldRejectFallbackWithUnconfiguredProvider() {
+        when(modelSelectionService.validateModel("openai/gpt-5", List.of()))
+                .thenReturn(new ModelSelectionService.ValidationResult(true, null));
+        when(modelSelectionService.validateModel("anthropic/claude-opus-4", List.of()))
+                .thenReturn(new ModelSelectionService.ValidationResult(false, "provider.not.configured"));
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbacks(new java.util.ArrayList<>(List.of(
+                        RuntimeConfig.TierFallback.builder().model("anthropic/claude-opus-4").build())))
+                .build();
+        RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
+                .routing(RuntimeConfig.TierBinding.builder().model("openai/gpt-5").build())
+                .tiers(new java.util.LinkedHashMap<>(Map.of("balanced", binding)))
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateModelRouterConfig(modelRouterConfig,
+                        RuntimeConfig.LlmConfig.builder().build()));
+
+        assertTrue(error.getMessage().contains("fallback 1"));
+        assertTrue(error.getMessage().contains("provider is not configured"));
+    }
+
+    @Test
     void shouldNormalizeWebhookTierSelection() {
         UserPreferences.WebhookConfig webhookConfig = UserPreferences.WebhookConfig.builder()
                 .mappings(List.of(UserPreferences.HookMapping.builder()

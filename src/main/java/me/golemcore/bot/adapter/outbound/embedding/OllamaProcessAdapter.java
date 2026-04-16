@@ -34,8 +34,11 @@ import me.golemcore.bot.port.outbound.OllamaProcessPort;
 public class OllamaProcessAdapter implements OllamaProcessPort {
 
     private static final Duration STOP_TIMEOUT = Duration.ofSeconds(2);
+    private static final Duration VERSION_PROBE_TIMEOUT = Duration.ofSeconds(2);
 
     private final String executable;
+    private final Duration versionProbeTimeout;
+    private final Duration stopTimeout;
     private Optional<Process> ownedProcess = Optional.empty();
 
     public OllamaProcessAdapter() {
@@ -43,7 +46,17 @@ public class OllamaProcessAdapter implements OllamaProcessPort {
     }
 
     OllamaProcessAdapter(String executable) {
+        this(executable, VERSION_PROBE_TIMEOUT, STOP_TIMEOUT);
+    }
+
+    OllamaProcessAdapter(String executable, Duration versionProbeTimeout) {
+        this(executable, versionProbeTimeout, STOP_TIMEOUT);
+    }
+
+    OllamaProcessAdapter(String executable, Duration versionProbeTimeout, Duration stopTimeout) {
         this.executable = executable;
+        this.versionProbeTimeout = versionProbeTimeout;
+        this.stopTimeout = stopTimeout;
     }
 
     @Override
@@ -100,11 +113,11 @@ public class OllamaProcessAdapter implements OllamaProcessPort {
         ownedProcess = Optional.empty();
         process.destroy();
         try {
-            boolean finished = process.waitFor(STOP_TIMEOUT.toMillis(),
+            boolean finished = process.waitFor(stopTimeout.toMillis(),
                     java.util.concurrent.TimeUnit.MILLISECONDS);
             if (!finished) {
                 process.destroyForcibly();
-                process.waitFor(STOP_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+                process.waitFor(stopTimeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
@@ -132,9 +145,11 @@ public class OllamaProcessAdapter implements OllamaProcessPort {
                     .redirectErrorStream(true)
                     .start();
             try {
-                boolean finished = process.waitFor(STOP_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+                boolean finished = process.waitFor(versionProbeTimeout.toMillis(),
+                        java.util.concurrent.TimeUnit.MILLISECONDS);
                 if (!finished) {
                     process.destroyForcibly();
+                    process.waitFor(versionProbeTimeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
                     return new VersionProbeResult(false, null, null);
                 }
                 String output = new String(process.getInputStream().readAllBytes(),

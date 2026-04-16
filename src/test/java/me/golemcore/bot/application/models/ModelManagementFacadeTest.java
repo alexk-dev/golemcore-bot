@@ -172,7 +172,8 @@ class ModelManagementFacadeTest {
     void shouldReturnAvailableModels() {
         Map<String, List<ModelSelectionService.AvailableModel>> grouped = new LinkedHashMap<>();
         grouped.put("openai", List.of(
-                new ModelSelectionService.AvailableModel("gpt-5", "openai", "GPT-5", true, List.of("low"), true)));
+                new ModelSelectionService.AvailableModel("gpt-5", "openai", "GPT-5", true, List.of("low"), true,
+                        true)));
         when(modelSelectionService.getAvailableModelsGrouped()).thenReturn(grouped);
 
         Map<String, List<ModelSelectionService.AvailableModel>> result = facade.getAvailableModels();

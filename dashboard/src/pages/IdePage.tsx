@@ -1,5 +1,5 @@
-import { useMemo, type ReactElement } from 'react';
-import { CodeEditor } from '../components/ide/CodeEditor';
+import { Suspense, useMemo, type ReactElement } from 'react';
+import { LazyCodeEditor } from '../components/ide/LazyCodeEditor';
 import { EditorContentState, EditorStatusBar } from '../components/ide/EditorStatusBar';
 import { EditorTabs } from '../components/ide/EditorTabs';
 import { FilePreview } from '../components/ide/FilePreview';
@@ -13,11 +13,21 @@ import { QuickOpenModal } from '../components/ide/QuickOpenModal';
 import { TreeActionModal } from '../components/ide/TreeActionModal';
 import { UnsavedChangesModal } from '../components/ide/UnsavedChangesModal';
 import { Offcanvas } from '../components/ui/overlay';
-import { useMediaQuery } from '../hooks/useMediaQuery';
 import { useIdeMobileExplorer } from '../hooks/useIdeMobileExplorer';
 import { useIdeWorkspace } from '../hooks/useIdeWorkspace';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import '../styles/ide.scss';
 import { useTerminalStore } from '../store/terminalStore';
 import { useWorkspaceLayoutStore } from '../store/workspaceLayoutStore';
+
+function CodeEditorFallback(): ReactElement {
+  return (
+    <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-primary" role="status" aria-hidden />
+      <span>Loading editor...</span>
+    </div>
+  );
+}
 
 export default function IdePage(): ReactElement {
   const ide = useIdeWorkspace();
@@ -98,10 +108,10 @@ export default function IdePage(): ReactElement {
     dirtyPaths,
     downloadActiveFile,
     handleOpenFile,
+    handleOpenTerminalHere,
     handleRequestCreate,
     handleRequestDelete,
     handleRequestRename,
-    handleOpenTerminalHere,
     includeIgnored,
     isDownloadingActiveFile,
     loadDirectory,
@@ -206,17 +216,21 @@ export default function IdePage(): ReactElement {
                     editable: activeTab.editable,
                     downloadUrl: activeTab.downloadUrl,
                   }} />
+                ) : activeTab != null ? (
+                  <Suspense fallback={<CodeEditorFallback />}>
+                    <LazyCodeEditor
+                      filePath={activeTab.path}
+                      value={activeTab.content}
+                      onChange={updateActiveTabContent}
+                      onCursorChange={setEditorCursor}
+                      showMinimap={!isMobileLayout && editorSettings.minimap}
+                      wordWrap={editorSettings.wordWrap}
+                      fontSize={editorSettings.fontSize}
+                      searchQuery={editorSearchQuery}
+                    />
+                  </Suspense>
                 ) : (
-                  <CodeEditor
-                    filePath={activeTab?.path ?? null}
-                    value={activeTab?.content ?? ''}
-                    onChange={updateActiveTabContent}
-                    onCursorChange={setEditorCursor}
-                    showMinimap={!isMobileLayout && editorSettings.minimap}
-                    wordWrap={editorSettings.wordWrap}
-                    fontSize={editorSettings.fontSize}
-                    searchQuery={editorSearchQuery}
-                  />
+                  <></>
                 )}
               </EditorContentState>
             </div>
