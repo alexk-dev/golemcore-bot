@@ -44,6 +44,12 @@ public class RuntimeConfigRouterFallbackSelector implements RouterFallbackSelect
 
     private final RuntimeConfigService runtimeConfigService;
     private final RandomGenerator random;
+    /**
+     * Round-robin is intentionally fleet-wide per tier, not per session. This
+     * spreads fallback traffic across configured models when many sessions hit the
+     * same outage at once. The context cursor is retained only as a seed for
+     * deterministic tests and for future persisted cursor handoff.
+     */
     private final Object roundRobinCursorLock = new Object();
     private final Map<String, Integer> roundRobinCursors = new ConcurrentHashMap<>();
 

@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,9 +12,11 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -224,6 +227,23 @@ class LlmResilienceOrchestratorTest {
         orchestrator.recordSuccess(context);
 
         assertEquals(ProviderCircuitBreaker.State.CLOSED, circuitBreaker.getState("provider-a"));
+    }
+
+    @Test
+    void shouldRestoreL4DegradationStateWhenRecoveredCallSucceeds() {
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
+        List<ToolDefinition> originalTools = new ArrayList<>(List.of(ToolDefinition.simple("search", "Search")));
+        context.setModelTier("balanced");
+        context.setAvailableTools(new ArrayList<>());
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER, "deep");
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS, originalTools);
+
+        orchestrator.recordSuccess(context);
+
+        assertEquals("deep", context.getModelTier());
+        assertEquals(originalTools, context.getAvailableTools());
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS));
     }
 
     @Test

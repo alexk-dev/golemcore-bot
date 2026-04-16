@@ -55,6 +55,7 @@ public class ProviderCircuitBreaker {
         int failureCount = 0;
         Instant windowStart;
         Instant openedAt;
+        boolean halfOpenProbeInFlight = false;
 
         ProviderState(Instant now) {
             this.windowStart = now;
@@ -79,19 +80,32 @@ public class ProviderCircuitBreaker {
      * handles the OPEN → HALF_OPEN transition when the open period expires.
      */
     public boolean isOpen(String providerId) {
+        if (providerId == null) {
+            return false;
+        }
         ProviderState ps = providers.get(providerId);
         if (ps == null) {
             return false;
         }
 
         Instant now = clock.instant();
-        if (ps.state == State.OPEN) {
-            if (ps.openedAt != null && now.isAfter(ps.openedAt.plusSeconds(openDurationSeconds))) {
-                ps.state = State.HALF_OPEN;
-                log.info("[CircuitBreaker] Provider {} transitioned OPEN → HALF_OPEN", providerId);
-                return false;
+        synchronized (ps) {
+            if (ps.state == State.OPEN) {
+                if (ps.openedAt != null && now.isAfter(ps.openedAt.plusSeconds(openDurationSeconds))) {
+                    ps.state = State.HALF_OPEN;
+                    ps.halfOpenProbeInFlight = true;
+                    log.info("[CircuitBreaker] Provider {} transitioned OPEN → HALF_OPEN", providerId);
+                    return false;
+                }
+                return true;
             }
-            return true;
+            if (ps.state == State.HALF_OPEN) {
+                if (!ps.halfOpenProbeInFlight) {
+                    ps.halfOpenProbeInFlight = true;
+                    return false;
+                }
+                return true;
+            }
         }
         return false;
     }
@@ -113,6 +127,7 @@ public class ProviderCircuitBreaker {
             ps.state = State.OPEN;
             ps.openedAt = now;
             ps.failureCount = 0;
+            ps.halfOpenProbeInFlight = false;
             log.warn("[CircuitBreaker] Provider {} probe failed, HALF_OPEN → OPEN for {}s",
                     providerId, openDurationSeconds);
             return;
@@ -128,6 +143,7 @@ public class ProviderCircuitBreaker {
         if (ps.failureCount >= failureThreshold && ps.state == State.CLOSED) {
             ps.state = State.OPEN;
             ps.openedAt = now;
+            ps.halfOpenProbeInFlight = false;
             log.warn("[CircuitBreaker] Provider {} tripped CLOSED → OPEN ({} failures in {}s window)",
                     providerId, ps.failureCount, windowSeconds);
         }
@@ -151,6 +167,7 @@ public class ProviderCircuitBreaker {
             ps.state = State.CLOSED;
             ps.failureCount = 0;
             ps.windowStart = clock.instant();
+            ps.halfOpenProbeInFlight = false;
         }
     }
 
@@ -162,7 +179,12 @@ public class ProviderCircuitBreaker {
             return State.CLOSED;
         }
         ProviderState ps = providers.get(providerId);
-        return ps != null ? ps.state : State.CLOSED;
+        if (ps == null) {
+            return State.CLOSED;
+        }
+        synchronized (ps) {
+            return ps.state;
+        }
     }
 
     /**

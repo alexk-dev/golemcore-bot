@@ -571,6 +571,48 @@ class DelayedActionDispatcherTest {
     }
 
     @Test
+    void shouldSubmitRetryLlmTurnWithResumeMetadataAndOriginalPrompt() throws Exception {
+        SessionRunCoordinator sessionRunCoordinator = mock(SessionRunCoordinator.class);
+        DelayedActionPolicyService policyService = mock(DelayedActionPolicyService.class);
+        when(sessionRunCoordinator.submit(any(Message.class))).thenReturn(CompletableFuture.completedFuture(null));
+        when(policyService.supportsDelayedExecution("telegram", "chat-1")).thenReturn(true);
+
+        DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(
+                sessionRunCoordinator,
+                runtime(List.of()),
+                mock(ToolArtifactService.class),
+                policyService,
+                Clock.fixed(Instant.parse("2026-03-19T18:30:00Z"), ZoneOffset.UTC));
+
+        DelayedSessionAction action = DelayedSessionAction.builder()
+                .id("retry-1")
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.RETRY_LLM_TURN)
+                .deliveryMode(DelayedActionDeliveryMode.INTERNAL_TURN)
+                .payload(Map.of(
+                        "errorCode", "llm.provider.500",
+                        "originalPrompt", "finish the migration",
+                        "resumeAttempt", 0))
+                .build();
+
+        DelayedActionDispatcher.DispatchResult result = dispatcher.dispatch(action).get();
+
+        assertTrue(result.success());
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sessionRunCoordinator).submit(captor.capture());
+        Message message = captor.getValue();
+        assertEquals(1, message.getMetadata().get(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT));
+        assertEquals("llm.provider.500", message.getMetadata().get(ContextAttributes.RESILIENCE_L5_ERROR_CODE));
+        assertEquals("finish the migration",
+                message.getMetadata().get(ContextAttributes.RESILIENCE_L5_ORIGINAL_PROMPT));
+        assertTrue(message.getContent().contains("Resume attempt: 1"));
+        assertTrue(message.getContent().contains("Original user request: finish the migration"));
+        assertTrue(message.getContent().contains("Instruction: Retry the suspended user request now."));
+    }
+
+    @Test
     void shouldRetryInternalTurnWhenCoordinatorFails() throws Exception {
         SessionRunCoordinator sessionRunCoordinator = mock(SessionRunCoordinator.class);
         ToolArtifactService toolArtifactService = mock(ToolArtifactService.class);

@@ -113,6 +113,65 @@ class RuntimeSettingsMergeServiceTest {
     }
 
     @Test
+    void shouldPreserveExistingResilienceValuesWhenPatchContainsExplicitNulls() {
+        RuntimeConfig.ResilienceConfig baselineResilience = RuntimeConfig.ResilienceConfig.builder()
+                .enabled(false)
+                .hotRetryMaxAttempts(2)
+                .hotRetryBaseDelayMs(100L)
+                .hotRetryCapMs(200L)
+                .circuitBreakerFailureThreshold(3)
+                .circuitBreakerWindowSeconds(4L)
+                .circuitBreakerOpenDurationSeconds(5L)
+                .degradationCompactContext(false)
+                .degradationCompactMinMessages(6)
+                .degradationDowngradeModel(false)
+                .degradationFallbackModelTier("smart")
+                .degradationStripTools(false)
+                .coldRetryEnabled(false)
+                .coldRetryMaxAttempts(7)
+                .build();
+        RuntimeConfig.ResilienceConfig incomingResilience = RuntimeConfig.ResilienceConfig.builder()
+                .enabled(true)
+                .hotRetryMaxAttempts(null)
+                .hotRetryBaseDelayMs(null)
+                .hotRetryCapMs(null)
+                .circuitBreakerFailureThreshold(null)
+                .circuitBreakerWindowSeconds(null)
+                .circuitBreakerOpenDurationSeconds(null)
+                .degradationCompactContext(null)
+                .degradationCompactMinMessages(null)
+                .degradationDowngradeModel(null)
+                .degradationFallbackModelTier(null)
+                .degradationStripTools(null)
+                .coldRetryEnabled(null)
+                .coldRetryMaxAttempts(null)
+                .build();
+        RuntimeConfig baseline = RuntimeConfig.builder()
+                .resilience(baselineResilience)
+                .build();
+        RuntimeConfig patch = RuntimeConfig.builder()
+                .resilience(incomingResilience)
+                .build();
+
+        RuntimeConfig merged = mergeService.mergeRuntimeConfigSections(baseline, patch);
+
+        assertTrue(merged.getResilience().getEnabled());
+        assertEquals(2, merged.getResilience().getHotRetryMaxAttempts());
+        assertEquals(100L, merged.getResilience().getHotRetryBaseDelayMs());
+        assertEquals(200L, merged.getResilience().getHotRetryCapMs());
+        assertEquals(3, merged.getResilience().getCircuitBreakerFailureThreshold());
+        assertEquals(4L, merged.getResilience().getCircuitBreakerWindowSeconds());
+        assertEquals(5L, merged.getResilience().getCircuitBreakerOpenDurationSeconds());
+        assertFalse(merged.getResilience().getDegradationCompactContext());
+        assertEquals(6, merged.getResilience().getDegradationCompactMinMessages());
+        assertFalse(merged.getResilience().getDegradationDowngradeModel());
+        assertEquals("smart", merged.getResilience().getDegradationFallbackModelTier());
+        assertFalse(merged.getResilience().getDegradationStripTools());
+        assertFalse(merged.getResilience().getColdRetryEnabled());
+        assertEquals(7, merged.getResilience().getColdRetryMaxAttempts());
+    }
+
+    @Test
     void shouldRetainExistingSecretWhenIncomingSecretHasNoValue() {
         Secret current = Secret.of("current-secret");
         Secret incoming = Secret.builder()

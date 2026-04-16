@@ -88,6 +88,8 @@ public class ModelDowngradeRecoveryStrategy implements RecoveryStrategy {
         if (context.getAttributes() == null) {
             return;
         }
+        // Downgrade changes the active tier, so the previous tier's attempted
+        // fallback chain is no longer authoritative for subsequent L2 selection.
         context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL);
         context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING);
         context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_FALLBACK_MODE);

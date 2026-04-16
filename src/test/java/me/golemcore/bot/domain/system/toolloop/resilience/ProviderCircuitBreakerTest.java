@@ -61,6 +61,21 @@ class ProviderCircuitBreakerTest {
     }
 
     @Test
+    void shouldAllowOnlyOneHalfOpenProbeUntilProbeCompletes() {
+        tripOpen();
+        clock.plusSeconds(31);
+
+        assertFalse(breaker.isOpen("openai"));
+        assertEquals(ProviderCircuitBreaker.State.HALF_OPEN, breaker.getState("openai"));
+        assertTrue(breaker.isOpen("openai"));
+
+        breaker.recordSuccess("openai");
+
+        assertEquals(ProviderCircuitBreaker.State.CLOSED, breaker.getState("openai"));
+        assertFalse(breaker.isOpen("openai"));
+    }
+
+    @Test
     void shouldReopenWhenHalfOpenProbeFails() {
         tripOpen();
         clock.plusSeconds(31);

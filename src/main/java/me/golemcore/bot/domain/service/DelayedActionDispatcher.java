@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
@@ -149,6 +150,12 @@ public class DelayedActionDispatcher {
         if (action.getRunAt() != null) {
             metadata.put(ContextAttributes.DELAYED_ACTION_RUN_AT, action.getRunAt().toString());
         }
+        if (DelayedActionKind.RETRY_LLM_TURN.equals(action.getKind())) {
+            metadata.put(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT, nextResumeAttempt(action));
+            putMetadataString(metadata, ContextAttributes.RESILIENCE_L5_ERROR_CODE, payloadString(action, "errorCode"));
+            putMetadataString(metadata, ContextAttributes.RESILIENCE_L5_ORIGINAL_PROMPT,
+                    payloadString(action, "originalPrompt"));
+        }
         metadata = TraceContextSupport.ensureRootMetadata(
                 metadata,
                 TraceSpanKind.INTERNAL,
@@ -166,6 +173,9 @@ public class DelayedActionDispatcher {
     }
 
     private String buildInternalMessageContent(DelayedSessionAction action) {
+        if (DelayedActionKind.RETRY_LLM_TURN.equals(action.getKind())) {
+            return buildRetryLlmTurnContent(action);
+        }
         String instruction = payloadString(action, "instruction");
         String summary = payloadString(action, "originalSummary");
         StringBuilder builder = new StringBuilder();
@@ -179,12 +189,34 @@ public class DelayedActionDispatcher {
         }
         if (!StringValueSupport.isBlank(instruction)) {
             builder.append("Instruction: ").append(instruction).append('\n');
-        } else if (action.getKind() == me.golemcore.bot.domain.model.DelayedActionKind.NOTIFY_JOB_READY) {
+        } else if (action.getKind() == DelayedActionKind.NOTIFY_JOB_READY) {
             builder.append(
                     "Instruction: The tracked background job is ready. Inspect the current session context and continue.\n");
         }
         builder.append('\n');
         builder.append("This is a scheduled internal wake-up, not a fresh user message. ");
+        builder.append("Use the current session context and continue normally.");
+        return builder.toString();
+    }
+
+    private String buildRetryLlmTurnContent(DelayedSessionAction action) {
+        String errorCode = payloadString(action, "errorCode");
+        String originalPrompt = payloadString(action, "originalPrompt");
+        StringBuilder builder = new StringBuilder();
+        builder.append("[DELAYED ACTION]\n");
+        builder.append("Kind: ").append(action.getKind().name()).append('\n');
+        if (action.getRunAt() != null) {
+            builder.append("Scheduled at: ").append(action.getRunAt()).append('\n');
+        }
+        builder.append("Resume attempt: ").append(nextResumeAttempt(action)).append('\n');
+        if (!StringValueSupport.isBlank(errorCode)) {
+            builder.append("Last LLM error code: ").append(errorCode).append('\n');
+        }
+        if (!StringValueSupport.isBlank(originalPrompt)) {
+            builder.append("Original user request: ").append(originalPrompt).append('\n');
+        }
+        builder.append("Instruction: Retry the suspended user request now.\n\n");
+        builder.append("This is a scheduled internal LLM retry, not a fresh user message. ");
         builder.append("Use the current session context and continue normally.");
         return builder.toString();
     }
@@ -195,6 +227,34 @@ public class DelayedActionDispatcher {
         }
         Object value = action.getPayload().get(key);
         return value instanceof String stringValue && !stringValue.isBlank() ? stringValue.trim() : null;
+    }
+
+    private int nextResumeAttempt(DelayedSessionAction action) {
+        return payloadInt(action, "resumeAttempt") + 1;
+    }
+
+    private int payloadInt(DelayedSessionAction action, String key) {
+        if (action == null || action.getPayload() == null) {
+            return 0;
+        }
+        Object value = action.getPayload().get(key);
+        if (value instanceof Number number) {
+            return Math.max(0, number.intValue());
+        }
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            try {
+                return Math.max(0, Integer.parseInt(stringValue.trim()));
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    private void putMetadataString(Map<String, Object> metadata, String key, String value) {
+        if (!StringValueSupport.isBlank(value)) {
+            metadata.put(key, value);
+        }
     }
 
     private DispatchResult proactiveUnavailableResult(String channelType, String message) {

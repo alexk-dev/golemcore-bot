@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -193,7 +194,9 @@ public class LlmResilienceOrchestrator {
             RuntimeConfig.ResilienceConfig config) {
         List<ResilienceTraceStep> traceSteps = new ArrayList<>();
         String providerId = resolveProviderId(context);
-        // Snapshot the breaker once per handle() so L1 and L3 share one decision.
+        // The breaker is keyed by concrete model ID, even though the historical
+        // class name says "provider". This keeps one broken model from muting other
+        // models exposed by the same upstream.
         ProviderCircuitBreaker.State breakerStateBeforeCheck = circuitBreaker.getState(providerId);
         boolean breakerOpen = circuitBreaker.isOpen(providerId);
         appendCircuitTransition(traceSteps, providerId, breakerStateBeforeCheck,
@@ -318,7 +321,42 @@ public class LlmResilienceOrchestrator {
         String providerId = resolveProviderId(context);
         circuitBreaker.recordSuccess(providerId);
         routerFallbackSelector.clear(context);
+        restoreL4DegradationState(context);
     }
+
+        /**
+         * Restores request-side L4 mutations once a degraded LLM call succeeds.
+         */
+        private void restoreL4DegradationState(AgentContext context) {
+            if (context == null || context.getAttributes() == null) {
+                return;
+            }
+            Map<String, Object> attributes = context.getAttributes();
+            boolean hadOriginalTier = attributes.containsKey(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER);
+            Object originalTier = attributes.remove(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER);
+            if (hadOriginalTier) {
+                context.setModelTier(originalTier instanceof String tier ? tier : null);
+            }
+            boolean hadOriginalTools = attributes.containsKey(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS);
+            Object originalTools = attributes.remove(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS);
+            if (hadOriginalTools) {
+                context.setAvailableTools(copyToolDefinitions(originalTools));
+            }
+            attributes.remove(ContextAttributes.RESILIENCE_L4_MODEL_DOWNGRADE_ATTEMPTED);
+            attributes.remove(ContextAttributes.RESILIENCE_L4_TOOL_STRIP_ATTEMPTED);
+        }
+
+        private List<ToolDefinition> copyToolDefinitions(Object originalTools) {
+            List<ToolDefinition> restored = new ArrayList<>();
+            if (originalTools instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof ToolDefinition toolDefinition) {
+                        restored.add(toolDefinition);
+                    }
+                }
+            }
+            return restored;
+        }
 
         /**
          * Records a provider failure and appends an L3 trace step only when the breaker

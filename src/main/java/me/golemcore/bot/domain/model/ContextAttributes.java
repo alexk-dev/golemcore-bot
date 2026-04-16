@@ -115,6 +115,15 @@ public final class ContextAttributes {
      */
     public static final String RESILIENCE_TURN_SUSPENDED = "resilience.turn.suspended";
 
+    /** Integer - current L5 cold retry resume attempt for delayed LLM turns. */
+    public static final String RESILIENCE_L5_RESUME_ATTEMPT = "resilience.l5.resume_attempt";
+
+    /** String - original user prompt saved for an L5 cold retry. */
+    public static final String RESILIENCE_L5_ORIGINAL_PROMPT = "resilience.l5.original_prompt";
+
+    /** String - last LLM error code that triggered L5 cold retry. */
+    public static final String RESILIENCE_L5_ERROR_CODE = "resilience.l5.error_code";
+
     /**
      * String - the resilience layer that recovered the LLM call (e.g. "L1",
      * "L4:model_downgrade").

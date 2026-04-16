@@ -205,9 +205,9 @@ class RecoveryStrategyTest {
         List<ToolDefinition> tools = List.of(ToolDefinition.simple("search", "Search"));
         AgentContext context = AgentContext.builder().availableTools(new ArrayList<>(tools)).build();
 
-        assertTrue(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, config));
+        assertTrue(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, config));
 
-        RecoveryStrategy.RecoveryResult result = strategy.apply(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT,
+        RecoveryStrategy.RecoveryResult result = strategy.apply(context, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER,
                 config);
 
         assertTrue(result.recovered());
@@ -215,11 +215,11 @@ class RecoveryStrategyTest {
         assertSame(tools.get(0), ((List<?>) context.getAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS))
                 .get(0));
         assertTrue(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_L4_TOOL_STRIP_ATTEMPTED)));
-        assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, config));
+        assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, config));
     }
 
     @Test
-    void toolStripShouldRejectDisabledNonTransientAlreadyAttemptedAndEmptyTools() {
+    void toolStripShouldRejectDisabledRateLimitNonTransientAlreadyAttemptedAndEmptyTools() {
         ToolStripRecoveryStrategy strategy = new ToolStripRecoveryStrategy();
         AgentContext context = AgentContext.builder()
                 .availableTools(new ArrayList<>(List.of(ToolDefinition.simple("search", "Search"))))
@@ -229,13 +229,14 @@ class RecoveryStrategyTest {
                 .build();
 
         assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, disabled));
+        assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, config));
         assertFalse(strategy.isApplicable(context, LlmErrorClassifier.UNKNOWN, config));
 
         context.setAttribute(ContextAttributes.RESILIENCE_L4_TOOL_STRIP_ATTEMPTED, true);
-        assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, config));
+        assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, config));
 
         AgentContext emptyTools = AgentContext.builder().availableTools(new ArrayList<>()).build();
-        assertFalse(strategy.isApplicable(emptyTools, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, config));
+        assertFalse(strategy.isApplicable(emptyTools, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, config));
     }
 
     @Test
