@@ -79,6 +79,40 @@ class RuntimeSettingsMergeServiceTest {
     }
 
     @Test
+    void shouldPreserveExistingResilienceConfigWhenPatchOmitsIt() {
+        RuntimeConfig.ResilienceConfig baselineResilience = RuntimeConfig.ResilienceConfig.builder()
+                .enabled(false)
+                .hotRetryMaxAttempts(2)
+                .degradationFallbackModelTier("smart")
+                .build();
+        RuntimeConfig baseline = RuntimeConfig.builder()
+                .resilience(baselineResilience)
+                .build();
+        RuntimeConfig patch = RuntimeConfig.builder().build();
+
+        RuntimeConfig merged = mergeService.mergeRuntimeConfigSections(baseline, patch);
+
+        assertEquals(baselineResilience, merged.getResilience());
+    }
+
+    @Test
+    void shouldApplyIncomingResilienceConfigWhenPatchProvidesIt() {
+        RuntimeConfig.ResilienceConfig incomingResilience = RuntimeConfig.ResilienceConfig.builder()
+                .enabled(false)
+                .hotRetryMaxAttempts(3)
+                .degradationFallbackModelTier("deep")
+                .build();
+        RuntimeConfig baseline = RuntimeConfig.builder().build();
+        RuntimeConfig patch = RuntimeConfig.builder()
+                .resilience(incomingResilience)
+                .build();
+
+        RuntimeConfig merged = mergeService.mergeRuntimeConfigSections(baseline, patch);
+
+        assertEquals(incomingResilience, merged.getResilience());
+    }
+
+    @Test
     void shouldRetainExistingSecretWhenIncomingSecretHasNoValue() {
         Secret current = Secret.of("current-secret");
         Secret incoming = Secret.builder()

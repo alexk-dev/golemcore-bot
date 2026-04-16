@@ -41,6 +41,8 @@ public class RuntimeSettingsMergeService {
                         RuntimeConfig.DelayedActionsConfig::new))
                 .hive(mergeSection(patch.getHive(), baseline.getHive(), RuntimeConfig.HiveConfig::new))
                 .selfEvolving(mergeSelfEvolvingSection(patch.getSelfEvolving(), baseline.getSelfEvolving()))
+                .resilience(mergeSection(patch.getResilience(), baseline.getResilience(),
+                        RuntimeConfig.ResilienceConfig::new))
                 .build();
     }
 
