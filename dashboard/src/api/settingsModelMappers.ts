@@ -53,7 +53,7 @@ function toModelReference(value: unknown): ModelReference | null {
 }
 
 function toFallbackMode(value: unknown): FallbackMode {
-  return value === 'random' ? 'random' : 'sequential';
+  return typeof value === 'string' && value.toLowerCase() === 'random' ? 'random' : 'sequential';
 }
 
 function toTemperature(value: unknown): number | null {

@@ -4,6 +4,7 @@ import type { AvailableModel } from '../../api/models';
 import {
   normalizeModelFallbacks,
   resolveTemperatureAfterModelChange,
+  toNullableModelFallbackString,
 } from './modelFallbacksEditorSupport';
 
 const providers: Record<string, AvailableModel[]> = {
@@ -42,6 +43,16 @@ describe('resolveTemperatureAfterModelChange', () => {
 
   it('keeps current temperature when model editor id is blank (not configured)', () => {
     expect(resolveTemperatureAfterModelChange(0.4, '', 'openai', providers)).toBe(0.4);
+  });
+});
+
+describe('toNullableModelFallbackString', () => {
+  it('returns null for empty input', () => {
+    expect(toNullableModelFallbackString('')).toBeNull();
+  });
+
+  it('returns the string as-is when non-empty', () => {
+    expect(toNullableModelFallbackString('medium')).toBe('medium');
   });
 });
 

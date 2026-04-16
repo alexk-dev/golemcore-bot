@@ -19,6 +19,7 @@ import {
 import {
   buildModelsForProvider,
   resolveTemperatureAfterModelChange,
+  toNullableModelFallbackString,
 } from './modelFallbacksEditorSupport';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { Badge, Button, Card, Col, Form, Row } from '../../components/ui/tailwind-components';
@@ -58,10 +59,6 @@ const EMPTY_AVAILABLE_MODELS: Record<string, AvailableModel[]> = {};
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
-}
-
-function toNullableString(value: string): string | null {
-  return value.length > 0 ? value : null;
 }
 
 function TierModelCard({
@@ -314,7 +311,7 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
                 ...form,
                 routing: {
                   ...form.routing,
-                  reasoning: toNullableString(value),
+                  reasoning: toNullableModelFallbackString(value),
                 },
               })}
               onTemperatureChange={(value) => setForm({
@@ -351,7 +348,7 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
                 }))}
                 onReasoningChange={(value) => setForm(updateTierBinding(form, key, {
                   ...getTierBinding(form, key),
-                  reasoning: toNullableString(value),
+                  reasoning: toNullableModelFallbackString(value),
                 }))}
                 onTemperatureChange={(value) => setForm(updateTierBinding(form, key, {
                   ...getTierBinding(form, key),
