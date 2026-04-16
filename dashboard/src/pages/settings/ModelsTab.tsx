@@ -16,6 +16,10 @@ import {
   MODEL_TIER_META,
   type ExplicitModelTierId,
 } from '../../lib/modelTiers';
+import {
+  buildModelsForProvider,
+  resolveTemperatureAfterModelChange,
+} from './modelFallbacksEditorSupport';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { Badge, Button, Card, Col, Form, Row } from '../../components/ui/tailwind-components';
 import { HiveManagedPolicyNotice } from './HiveManagedPolicyNotice';
@@ -111,31 +115,10 @@ function TierModelCard({
     setProvider(selectedProvider);
   }, [selectedProvider]);
 
-  const modelsForProvider = useMemo(() => {
-    const providerModels = (providers[provider] ?? []).map((model) => {
-      const editorId = toEditorModelIdForProvider(model.id, provider);
-      return {
-        ...model,
-        editorId,
-        displayLabel: model.displayName ?? editorId,
-      };
-    });
-    if (modelValue.length === 0 || providerModels.some((model) => model.editorId === modelValue)) {
-      return providerModels;
-    }
-    return [
-      {
-        id: modelValue,
-        editorId: modelValue,
-        displayLabel: `${modelValue} (unavailable)`,
-        hasReasoning: false,
-        reasoningLevels: [],
-        supportsVision: false,
-        supportsTemperature: true,
-      },
-      ...providerModels,
-    ];
-  }, [modelValue, provider, providers]);
+  const modelsForProvider = useMemo(
+    () => buildModelsForProvider(providers, provider, modelValue),
+    [modelValue, provider, providers],
+  );
   const selectedModel = modelsForProvider.find((model) => model.editorId === modelValue);
   const reasoningLevels = selectedModel?.reasoningLevels ?? [];
   const supportsTemperature = selectedModel?.supportsTemperature !== false;
@@ -322,7 +305,7 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
                 routing: {
                   model: modelReferenceFromSpec(value, providerName),
                   reasoning: null,
-                  temperature: form.routing.temperature,
+                  temperature: resolveTemperatureAfterModelChange(form.routing.temperature, value, providerName, providers),
                   fallbackMode: form.routing.fallbackMode,
                   fallbacks: form.routing.fallbacks,
                 },
@@ -362,7 +345,7 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
                 onModelChange={(value, providerName) => setForm(updateTierBinding(form, key, {
                   model: modelReferenceFromSpec(value, providerName),
                   reasoning: null,
-                  temperature: getTierBinding(form, key).temperature,
+                  temperature: resolveTemperatureAfterModelChange(getTierBinding(form, key).temperature, value, providerName, providers),
                   fallbackMode: getTierBinding(form, key).fallbackMode,
                   fallbacks: getTierBinding(form, key).fallbacks,
                 }))}

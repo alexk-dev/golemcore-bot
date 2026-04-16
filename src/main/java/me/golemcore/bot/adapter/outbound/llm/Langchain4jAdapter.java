@@ -127,6 +127,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private String currentModel;
     private volatile boolean initialized = false;
     private final Map<String, StreamingChatModel> responsesStreamingModels = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, ChatModel> tierScopedChatModels = new java.util.concurrent.ConcurrentHashMap<>();
 
     public Langchain4jAdapter(RuntimeConfigService runtimeConfigService, ModelConfigPort modelConfig,
             ToolArtifactReadPort toolArtifactReadPort) {
@@ -610,9 +611,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         String effectiveModel = requestModel != null ? requestModel : currentModel;
 
         if (modelTier != null && effectiveModel != null) {
-            log.trace("Creating tier-scoped model for request: {}, tier: {}, reasoning: {}",
-                    effectiveModel, modelTier, reasoningEffort);
-            return createModel(effectiveModel, reasoningEffort, modelTier);
+            double temperature = runtimeConfigService.getTemperatureForModel(modelTier, effectiveModel);
+            String cacheKey = modelTier + ":" + effectiveModel + ":"
+                    + (reasoningEffort != null ? reasoningEffort : "") + ":" + temperature;
+            return tierScopedChatModels.computeIfAbsent(cacheKey, key -> {
+                log.trace("Creating tier-scoped model for request: {}, tier: {}, reasoning: {}",
+                        effectiveModel, modelTier, reasoningEffort);
+                return createModel(effectiveModel, reasoningEffort, modelTier);
+            });
         }
 
         // If request specifies a different model, create one-off

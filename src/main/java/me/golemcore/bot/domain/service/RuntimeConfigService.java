@@ -2421,8 +2421,8 @@ public class RuntimeConfigService {
 
     private String normalizeFallbackMode(String fallbackMode) {
         String normalized = normalizeNonBlankString(fallbackMode, "sequential");
-        if ("random".equals(normalized)) {
-            return normalized;
+        if ("random".equalsIgnoreCase(normalized)) {
+            return "random";
         }
         return "sequential";
     }

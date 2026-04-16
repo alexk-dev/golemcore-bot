@@ -378,6 +378,158 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldReturnPrimaryTemperatureWhenModelMatchesTierBinding() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .temperature(0.3)
+                .build();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        assertEquals(0.3, service.getTemperatureForModel("balanced", "openai/gpt-5"), 0.001);
+    }
+
+    @Test
+    void shouldReturnFallbackTemperatureWhenModelMatchesFallbackEntry() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .temperature(0.3)
+                .fallbacks(new java.util.ArrayList<>(List.of(
+                        RuntimeConfig.TierFallback.builder()
+                                .model("openai/gpt-5-mini")
+                                .temperature(1.2)
+                                .build())))
+                .build();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        assertEquals(1.2, service.getTemperatureForModel("balanced", "openai/gpt-5-mini"), 0.001);
+    }
+
+    @Test
+    void shouldReturnDefaultTemperatureForUnknownModel() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .temperature(0.3)
+                .build();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        assertEquals(0.7, service.getTemperatureForModel("balanced", "openai/other"), 0.001);
+    }
+
+    @Test
+    void shouldReturnDefaultTemperatureWhenTierIsNull() {
+        assertEquals(0.7, service.getTemperatureForModel(null, "openai/gpt-5"), 0.001);
+    }
+
+    @Test
+    void shouldReturnBindingTemperatureWhenModelArgumentIsBlank() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .temperature(0.5)
+                .build();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        assertEquals(0.5, service.getTemperatureForModel("balanced", null), 0.001);
+        assertEquals(0.5, service.getTemperatureForModel("balanced", "   "), 0.001);
+    }
+
+    @Test
+    void shouldNormalizeTierBindingTruncatingFallbacksAboveFive() throws Exception {
+        java.util.List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            fallbacks.add(RuntimeConfig.TierFallback.builder().model("openai/fallback-" + i).build());
+        }
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbacks(fallbacks)
+                .build();
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig.TierBinding stored = service.getRuntimeConfig().getModelRouter().getTierBinding("balanced");
+        assertEquals(5, stored.getFallbacks().size());
+        assertEquals("openai/fallback-0", stored.getFallbacks().get(0).getModel());
+        assertEquals("openai/fallback-4", stored.getFallbacks().get(4).getModel());
+    }
+
+    @Test
+    void shouldDropFallbacksWithoutModelReferenceDuringNormalization() throws Exception {
+        java.util.List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
+        fallbacks.add(RuntimeConfig.TierFallback.builder().model("openai/keep").build());
+        fallbacks.add(RuntimeConfig.TierFallback.builder().build());
+        fallbacks.add(null);
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbacks(fallbacks)
+                .build();
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getModelRouter().setTierBinding("balanced", binding);
+        setCachedConfig(config);
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig.TierBinding stored = service.getRuntimeConfig().getModelRouter().getTierBinding("balanced");
+        assertEquals(1, stored.getFallbacks().size());
+        assertEquals("openai/keep", stored.getFallbacks().get(0).getModel());
+    }
+
+    @Test
+    void shouldNormalizeFallbackModeDefaultingToSequential() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getModelRouter().setTierBinding("balanced", RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbackMode("garbage")
+                .build());
+        config.getModelRouter().setTierBinding("smart", RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbackMode("RANDOM")
+                .build());
+        config.getModelRouter().setTierBinding("deep", RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .fallbackMode(null)
+                .build());
+        setCachedConfig(config);
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig.ModelRouterConfig router = service.getRuntimeConfig().getModelRouter();
+        assertEquals("sequential", router.getTierBinding("balanced").getFallbackMode());
+        assertEquals("random", router.getTierBinding("smart").getFallbackMode());
+        assertEquals("sequential", router.getTierBinding("deep").getFallbackMode());
+    }
+
+    @Test
+    void shouldClampOutOfRangeTemperatureDuringNormalization() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getModelRouter().setTierBinding("balanced", RuntimeConfig.TierBinding.builder()
+                .model("openai/gpt-5")
+                .temperature(5.0)
+                .fallbacks(new java.util.ArrayList<>(List.of(
+                        RuntimeConfig.TierFallback.builder()
+                                .model("openai/gpt-5-mini")
+                                .temperature(-2.0)
+                                .build())))
+                .build());
+        setCachedConfig(config);
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig.TierBinding stored = service.getRuntimeConfig().getModelRouter().getTierBinding("balanced");
+        assertEquals(2.0, stored.getTemperature(), 0.001);
+        assertEquals(0.0, stored.getFallbacks().get(0).getTemperature(), 0.001);
+    }
+
+    @Test
     void shouldReturnDefaultRateLimits() {
         assertEquals(20, service.getUserRequestsPerMinute());
         assertEquals(100, service.getUserRequestsPerHour());

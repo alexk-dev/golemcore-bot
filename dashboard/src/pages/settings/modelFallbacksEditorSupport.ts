@@ -32,6 +32,24 @@ export function buildModelProviderOptions(providerNames: string[], configuredPro
   return Array.from(values);
 }
 
+export function resolveTemperatureAfterModelChange(
+  currentTemperature: number | null,
+  newEditorId: string,
+  provider: string,
+  providers: Record<string, AvailableModel[]>,
+): number | null {
+  if (newEditorId.length === 0) {
+    return currentTemperature;
+  }
+  const candidate = (providers[provider] ?? []).find((model) => {
+    return toEditorModelIdForProvider(model.id, provider) === newEditorId;
+  });
+  if (candidate == null) {
+    return currentTemperature;
+  }
+  return candidate.supportsTemperature ? currentTemperature : null;
+}
+
 export function buildModelsForProvider(
   providers: Record<string, AvailableModel[]>,
   provider: string,

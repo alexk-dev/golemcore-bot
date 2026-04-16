@@ -2023,6 +2023,81 @@ class Langchain4jAdapterTest {
     }
 
     @Test
+    void shouldCacheTierScopedChatModelAcrossRequests() {
+        String model = OPENAI + "/gpt-5.1";
+        setupResponsesApiProvider(model);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of(KEY))
+                        .apiType(OPENAI)
+                        .legacyApi(true)
+                        .build());
+        when(runtimeConfigService.getTemperatureForModel("balanced", model)).thenReturn(0.3);
+        ReflectionTestUtils.setField(adapter, "currentModel", model);
+        ReflectionTestUtils.setField(adapter, "initialized", true);
+
+        LlmRequest request = LlmRequest.builder()
+                .model(model)
+                .modelTier("balanced")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("hi").build()))
+                .build();
+
+        ChatModel first = ReflectionTestUtils.invokeMethod(adapter, "getModelForRequest", request);
+        ChatModel second = ReflectionTestUtils.invokeMethod(adapter, "getModelForRequest", request);
+
+        assertSame(first, second);
+    }
+
+    @Test
+    void shouldCreateDistinctTierScopedChatModelsForDifferentTemperatures() {
+        String model = OPENAI + "/gpt-5.1";
+        setupResponsesApiProvider(model);
+        when(runtimeConfigService.getLlmProviderConfig(OPENAI))
+                .thenReturn(RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of(KEY))
+                        .apiType(OPENAI)
+                        .legacyApi(true)
+                        .build());
+        when(runtimeConfigService.getTemperatureForModel("balanced", model)).thenReturn(0.3);
+        when(runtimeConfigService.getTemperatureForModel("smart", model)).thenReturn(1.2);
+        ReflectionTestUtils.setField(adapter, "currentModel", model);
+        ReflectionTestUtils.setField(adapter, "initialized", true);
+
+        LlmRequest balancedRequest = LlmRequest.builder()
+                .model(model).modelTier("balanced")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("hi").build()))
+                .build();
+        LlmRequest smartRequest = LlmRequest.builder()
+                .model(model).modelTier("smart")
+                .messages(List.of(Message.builder().role(ROLE_USER).content("hi").build()))
+                .build();
+
+        ChatModel balanced = ReflectionTestUtils.invokeMethod(adapter, "getModelForRequest", balancedRequest);
+        ChatModel smart = ReflectionTestUtils.invokeMethod(adapter, "getModelForRequest", smartRequest);
+
+        assertNotSame(balanced, smart);
+    }
+
+    @Test
+    void shouldCacheResponsesStreamingModelByTemperatureKey() {
+        String model = OPENAI + "/gpt-5.4";
+        setupResponsesApiProvider(model);
+        when(modelConfig.supportsTemperature(model)).thenReturn(true);
+        when(runtimeConfigService.getTemperatureForModel("balanced", model)).thenReturn(0.3);
+        when(runtimeConfigService.getTemperatureForModel("smart", model)).thenReturn(1.4);
+
+        StreamingChatModel balanced = ReflectionTestUtils.invokeMethod(adapter,
+                "getResponsesStreamingModel", model, null, "balanced");
+        StreamingChatModel balancedAgain = ReflectionTestUtils.invokeMethod(adapter,
+                "getResponsesStreamingModel", model, null, "balanced");
+        StreamingChatModel smart = ReflectionTestUtils.invokeMethod(adapter,
+                "getResponsesStreamingModel", model, null, "smart");
+
+        assertSame(balanced, balancedAgain);
+        assertNotSame(balanced, smart);
+    }
+
+    @Test
     void shouldCreateResponsesStreamingModelWithCompatibilityBuilder() {
         RuntimeConfig.LlmProviderConfig config = RuntimeConfig.LlmProviderConfig.builder()
                 .apiKey(Secret.of(KEY))

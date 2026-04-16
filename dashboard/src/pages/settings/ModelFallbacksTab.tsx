@@ -13,6 +13,7 @@ import {
   buildModelsForProvider,
   hasModelFallbackEditorDiff,
   normalizeModelFallbacks,
+  resolveTemperatureAfterModelChange,
   toNullableModelFallbackString,
 } from './modelFallbacksEditorSupport';
 import { EXPLICIT_MODEL_TIER_ORDER, MODEL_TIER_META, type ExplicitModelTierId } from '../../lib/modelTiers';
@@ -181,7 +182,12 @@ function FallbackRow({
           temperatureValue={fallback.temperature}
           providers={providers}
           providerNames={providerNames}
-          onModelChange={(value, providerName) => onChange({ ...fallback, model: modelReferenceFromSpec(value, providerName), reasoning: null })}
+          onModelChange={(value, providerName) => onChange({
+            ...fallback,
+            model: modelReferenceFromSpec(value, providerName),
+            reasoning: null,
+            temperature: resolveTemperatureAfterModelChange(fallback.temperature, value, providerName, providers),
+          })}
           onReasoningChange={(value) => onChange({ ...fallback, reasoning: toNullableModelFallbackString(value) })}
           onTemperatureChange={(value) => onChange({ ...fallback, temperature: value })}
         />
@@ -220,7 +226,12 @@ function FallbackEditor({ tier, binding, providers, providerNames, onChange }: F
           temperatureValue={binding.temperature}
           providers={providers}
           providerNames={providerNames}
-          onModelChange={(value, providerName) => onChange({ ...binding, model: modelReferenceFromSpec(value, providerName), reasoning: null })}
+          onModelChange={(value, providerName) => onChange({
+            ...binding,
+            model: modelReferenceFromSpec(value, providerName),
+            reasoning: null,
+            temperature: resolveTemperatureAfterModelChange(binding.temperature, value, providerName, providers),
+          })}
           onReasoningChange={(value) => onChange({ ...binding, reasoning: toNullableModelFallbackString(value) })}
           onTemperatureChange={(value) => onChange({ ...binding, temperature: value })}
         />
