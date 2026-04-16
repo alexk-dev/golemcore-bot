@@ -1,8 +1,11 @@
 package me.golemcore.bot.adapter.inbound.web.terminal;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -15,6 +18,8 @@ class TerminalSessionTest {
 
     private static final String[] SH_COMMAND = new String[] { "/bin/sh" };
     private static final long WAIT_TIMEOUT_SECONDS = 10L;
+    private static final String PWD_MARKER = "__GC_PWD_END__";
+    private static final String PWD_COMMAND = "pwd; printf '\\137\\137GC_PWD_END\\137\\137\\n'\n";
 
     @Test
     void shouldCaptureOutputWrittenToPty() throws Exception {
@@ -69,6 +74,52 @@ class TerminalSessionTest {
     }
 
     @Test
+    void shouldStartInGivenWorkingDirectory(@TempDir Path tempDir) throws Exception {
+        Path realDir = tempDir.toRealPath();
+        CompletableFuture<Void> outputReceived = new CompletableFuture<>();
+        StringBuilder captured = new StringBuilder();
+
+        TerminalSession session = TerminalSession.start(
+                SH_COMMAND,
+                80,
+                24,
+                realDir,
+                data -> {
+                    synchronized (captured) {
+                        captured.append(new String(data, StandardCharsets.UTF_8));
+                        if (captured.toString().contains(PWD_MARKER)) {
+                            outputReceived.complete(null);
+                        }
+                    }
+                });
+
+        try {
+            session.writeInput(PWD_COMMAND.getBytes(StandardCharsets.UTF_8));
+            outputReceived.get(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            String received;
+            synchronized (captured) {
+                received = captured.toString();
+            }
+            assertTrue(
+                    containsNormalizedPath(received, realDir),
+                    "expected pwd output to contain " + realDir + ", got: " + received);
+        } finally {
+            session.close();
+        }
+    }
+
+    @Test
+    void shouldAcceptNullWorkingDirectoryAsDefault() throws IOException {
+        TerminalSession session = TerminalSession.start(SH_COMMAND, 80, 24, null, data -> {
+        });
+        try {
+            assertTrue(session.isAlive(), "session should start with null working dir");
+        } finally {
+            session.close();
+        }
+    }
+
+    @Test
     void shouldExposeExitCodeAfterShellTermination() throws Exception {
         CompletableFuture<Void> outputReceived = new CompletableFuture<>();
         AtomicReference<String> captured = new AtomicReference<>("");
@@ -93,5 +144,15 @@ class TerminalSessionTest {
         } finally {
             session.close();
         }
+    }
+
+    private boolean containsNormalizedPath(String output, Path expectedPath) {
+        String normalizedOutput = normalizeMacTempPath(output);
+        String normalizedExpected = normalizeMacTempPath(expectedPath.toString());
+        return normalizedOutput.contains(normalizedExpected);
+    }
+
+    private String normalizeMacTempPath(String value) {
+        return value.replace("/private/var/", "/var/");
     }
 }

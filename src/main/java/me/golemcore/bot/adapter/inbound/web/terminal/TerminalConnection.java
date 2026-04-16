@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -91,11 +92,30 @@ public final class TerminalConnection {
             int rows,
             ObjectMapper objectMapper,
             Consumer<String> outboundSink) throws IOException {
+        return open(command, cols, rows, null, objectMapper, outboundSink);
+    }
+
+    /**
+     * Opens a terminal protocol bridge for a PTY started in an optional working
+     * directory.
+     *
+     * @param workingDirectory
+     *            validated cwd from the websocket handshake; {@code null} preserves
+     *            previous default process behavior
+     */
+    public static TerminalConnection open(
+            String[] command,
+            int cols,
+            int rows,
+            Path workingDirectory,
+            ObjectMapper objectMapper,
+            Consumer<String> outboundSink) throws IOException {
         TerminalConnection[] connectionRef = new TerminalConnection[1];
         TerminalSession session = TerminalSession.start(
                 command,
                 cols,
                 rows,
+                workingDirectory,
                 bytes -> {
                     TerminalConnection self = connectionRef[0];
                     if (self != null) {

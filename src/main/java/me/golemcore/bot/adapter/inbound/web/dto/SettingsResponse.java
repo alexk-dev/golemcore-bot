@@ -18,6 +18,7 @@ public class SettingsResponse {
     private boolean notificationsEnabled;
     private String modelTier;
     private boolean tierForce;
+    private String memoryPreset;
     private Map<String, TierOverrideDto> tierOverrides;
     private UserPreferences.WebhookConfig webhooks;
 

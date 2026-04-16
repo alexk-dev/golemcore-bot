@@ -8,6 +8,7 @@ import { useTerminalStore } from '../../store/terminalStore';
 
 interface TerminalPaneProps {
   tabId?: string;
+  cwd?: string;
 }
 
 interface OutputFrame {
@@ -45,11 +46,18 @@ function encodeBytesToBase64(chunk: string): string {
   return btoa(binary);
 }
 
-function buildTerminalUrl(token: string | null): string {
+function buildTerminalUrl(token: string | null, cwd: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.host;
-  const query = token ? `?token=${encodeURIComponent(token)}` : '';
-  return `${protocol}//${host}/ws/terminal${query}`;
+  const queryParams = new URLSearchParams();
+  if (token != null && token.length > 0) {
+    queryParams.set('token', token);
+  }
+  if (cwd.length > 0) {
+    queryParams.set('cwd', cwd);
+  }
+  const query = queryParams.toString();
+  return `${protocol}//${host}/ws/terminal${query.length > 0 ? `?${query}` : ''}`;
 }
 
 function parseInbound(raw: string): InboundFrame | null {
@@ -61,7 +69,7 @@ function parseInbound(raw: string): InboundFrame | null {
   }
 }
 
-export function TerminalPane({ tabId }: TerminalPaneProps = {}): ReactElement {
+export function TerminalPane({ tabId, cwd = '' }: TerminalPaneProps = {}): ReactElement {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
@@ -84,7 +92,7 @@ export function TerminalPane({ tabId }: TerminalPaneProps = {}): ReactElement {
     terminal.open(container);
 
     const token = useAuthStore.getState().accessToken;
-    const socket = new WebSocket(buildTerminalUrl(token));
+    const socket = new WebSocket(buildTerminalUrl(token, cwd));
     socketRef.current = socket;
 
     const sendInputChunk = (chunk: string): void => {
@@ -173,7 +181,7 @@ export function TerminalPane({ tabId }: TerminalPaneProps = {}): ReactElement {
       terminal.dispose();
       socketRef.current = null;
     };
-  }, [tabId]);
+  }, [cwd, tabId]);
 
   return <div ref={containerRef} className="terminal-pane" />;
 }

@@ -144,6 +144,7 @@ function sendMessage(get: ChatRuntimeGet, set: ChatRuntimeSet, args: SendMessage
   const sent = transport.sendMessage({
     text: args.payload.text,
     attachments: args.payload.attachments,
+    ...(args.payload.memoryPreset != null ? { memoryPreset: args.payload.memoryPreset } : {}),
     sessionId: args.sessionId,
     clientInstanceId: args.clientInstanceId,
     clientMessageId: args.clientMessageId,

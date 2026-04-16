@@ -1351,6 +1351,34 @@ textarea:focus-visible,
   border: 1px solid rgba(var(--gc-border-color-rgb), 0.55);
 }
 
+.chat-toolbar-tier-controls {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chat-toolbar-tier-label {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+}
+
+.chat-toolbar-tier-select {
+  min-width: 9rem;
+  font-size: 0.8125rem;
+}
+
+.chat-toolbar-memory-select {
+  min-width: 10rem;
+  font-size: 0.8125rem;
+}
+
+.chat-toolbar-tier-force {
+  padding-left: 2.25rem;
+  min-height: auto;
+}
+
 .chat-workspace-body {
   display: flex;
   flex-direction: column;

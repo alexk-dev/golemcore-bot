@@ -16,9 +16,13 @@ import { Offcanvas } from '../components/ui/overlay';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { useIdeMobileExplorer } from '../hooks/useIdeMobileExplorer';
 import { useIdeWorkspace } from '../hooks/useIdeWorkspace';
+import { useTerminalStore } from '../store/terminalStore';
+import { useWorkspaceLayoutStore } from '../store/workspaceLayoutStore';
 
 export default function IdePage(): ReactElement {
   const ide = useIdeWorkspace();
+  const openTerminalTab = useTerminalStore((state) => state.openTab);
+  const setTerminalVisible = useWorkspaceLayoutStore((state) => state.setTerminalVisible);
   const {
     activePath, activeTab, activeColumn, activeFileSize, activeLanguage, activeLine, activeUpdatedAt,
     canSaveActiveTab, cancelCloseCandidate, cancelTreeAction, closeCandidate, closeCandidateLabel,
@@ -57,6 +61,13 @@ export default function IdePage(): ReactElement {
     () => mobileExplorer.wrapAction(requestDeleteFromTree),
     [mobileExplorer, requestDeleteFromTree],
   );
+  const handleOpenTerminalHere = useMemo(
+    () => mobileExplorer.wrapAction((path: string): void => {
+      openTerminalTab(path);
+      setTerminalVisible(true);
+    }),
+    [mobileExplorer, openTerminalTab, setTerminalVisible],
+  );
 
   const explorerProps = useMemo<IdeFileExplorerProps>(() => ({
     nodes: treeNodes,
@@ -77,6 +88,7 @@ export default function IdePage(): ReactElement {
     onRequestCreate: handleRequestCreate,
     onRequestRename: handleRequestRename,
     onRequestDelete: handleRequestDelete,
+    onOpenTerminalHere: handleOpenTerminalHere,
     onToggleIncludeIgnored: toggleIncludeIgnored,
     onDownloadActiveFile: downloadActiveFile,
     onUploadFiles: uploadFiles,
@@ -89,6 +101,7 @@ export default function IdePage(): ReactElement {
     handleRequestCreate,
     handleRequestDelete,
     handleRequestRename,
+    handleOpenTerminalHere,
     includeIgnored,
     isDownloadingActiveFile,
     loadDirectory,

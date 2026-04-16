@@ -113,6 +113,25 @@ describe('chatRuntimeStore', () => {
     });
   });
 
+  it('forwards the selected memory preset to the transport when present', () => {
+    const sendMessage = vi.fn<(payload: ChatSendPayload) => boolean>(() => true);
+    useChatRuntimeStore.getState().registerTransport({
+      sendBind: () => true,
+      sendMessage,
+      stop: () => true,
+    });
+
+    useChatRuntimeStore.getState().sendMessage(
+      'chat-1',
+      'client-instance',
+      'client-1',
+      { ...createOutboundPayload(), memoryPreset: 'coding_balanced' },
+    );
+
+    const call = sendMessage.mock.calls[0]?.[0];
+    expect(call).toMatchObject({ memoryPreset: 'coding_balanced' });
+  });
+
   it('keeps live optimistic messages when persisted history is hydrated later', () => {
     useChatRuntimeStore.getState().appendOptimisticUserMessage('chat-1', createOptimisticMessage({}));
 

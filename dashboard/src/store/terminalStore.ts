@@ -7,6 +7,7 @@ export type TerminalConnectionStatus = 'idle' | 'connecting' | 'connected' | 'di
 export interface TerminalTab {
   id: string;
   title: string;
+  cwd: string;
 }
 
 interface TerminalState {
@@ -14,7 +15,7 @@ interface TerminalState {
   activeTabId: string | null;
   connectionStatus: TerminalConnectionStatus;
   pendingInput: Record<string, string[]>;
-  openTab: () => string;
+  openTab: (cwd?: string) => string;
   closeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
   setConnectionStatus: (status: TerminalConnectionStatus) => void;
@@ -43,11 +44,11 @@ export const useTerminalStore = create<TerminalState>()(subscribeWithSelector((s
   connectionStatus: 'idle',
   pendingInput: {},
 
-  openTab: (): string => {
+  openTab: (cwd = ''): string => {
     const currentTabs = get().tabs;
     const id = createUuid();
     const title = nextTitle(currentTabs);
-    const nextTab: TerminalTab = { id, title };
+    const nextTab: TerminalTab = { id, title, cwd };
     set({
       tabs: [...currentTabs, nextTab],
       activeTabId: id,

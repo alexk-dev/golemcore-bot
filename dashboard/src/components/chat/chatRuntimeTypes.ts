@@ -75,6 +75,7 @@ export interface ChatSendPayload {
   sessionId: string;
   clientInstanceId: string;
   clientMessageId: string;
+  memoryPreset?: string | null;
   openedTabs?: OpenedTabContext[];
   activePath?: string | null;
 }

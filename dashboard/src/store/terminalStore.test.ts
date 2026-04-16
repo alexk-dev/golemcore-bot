@@ -30,6 +30,14 @@ describe('terminalStore', () => {
     expect(state.tabs).toHaveLength(1);
     expect(state.tabs[0]?.id).toBe(id);
     expect(state.tabs[0]?.title).toBe('Terminal 1');
+    expect(state.tabs[0]?.cwd).toBe('');
+    expect(state.activeTabId).toBe(id);
+  });
+
+  it('openTab stores the requested working directory', () => {
+    const id = useTerminalStore.getState().openTab('src/main');
+    const state = useTerminalStore.getState();
+    expect(state.tabs[0]).toMatchObject({ id, cwd: 'src/main' });
     expect(state.activeTabId).toBe(id);
   });
 

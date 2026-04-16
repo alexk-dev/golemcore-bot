@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -38,21 +39,46 @@ public final class TerminalSession {
             int cols,
             int rows,
             Consumer<byte[]> outputConsumer) throws IOException {
+        return start(command, cols, rows, null, outputConsumer);
+    }
+
+    /**
+     * Starts a PTY process with the requested dimensions and optional working
+     * directory.
+     *
+     * @param workingDirectory
+     *            directory passed to pty4j as the process cwd; {@code null} leaves
+     *            the platform default unchanged
+     */
+    public static TerminalSession start(
+            String[] command,
+            int cols,
+            int rows,
+            Path workingDirectory,
+            Consumer<byte[]> outputConsumer) throws IOException {
         Map<String, String> env = new HashMap<>(System.getenv());
         env.putIfAbsent("TERM", "xterm-256color");
         env.putIfAbsent("LANG", StandardCharsets.UTF_8.name());
 
-        PtyProcess process = new PtyProcessBuilder(command)
+        PtyProcessBuilder builder = new PtyProcessBuilder(command)
                 .setEnvironment(env)
                 .setInitialColumns(cols)
-                .setInitialRows(rows)
-                .start();
+                .setInitialRows(rows);
+        if (workingDirectory != null) {
+            builder.setDirectory(workingDirectory.toString());
+        }
+        PtyProcess process = builder.start();
 
         Thread reader = new Thread(() -> pumpOutput(process, outputConsumer), "pty4j-reader");
         reader.setDaemon(true);
         reader.start();
 
-        log.info("[Terminal] Session started pid={} cols={} rows={}", process.pid(), cols, rows);
+        log.info(
+                "[Terminal] Session started pid={} cols={} rows={} cwd={}",
+                process.pid(),
+                cols,
+                rows,
+                workingDirectory);
         return new TerminalSession(process, reader);
     }
 

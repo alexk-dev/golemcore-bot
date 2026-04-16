@@ -13,6 +13,7 @@ export interface ChatAttachmentDraft extends ChatAttachmentPayload {
 export interface OutboundChatPayload {
   text: string;
   attachments: ChatAttachmentPayload[];
+  memoryPreset?: string | null;
 }
 
 export interface CommandSuggestion {

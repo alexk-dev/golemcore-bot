@@ -1,20 +1,27 @@
 /* @vitest-environment jsdom */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { normalizeStoredOpenSessionIds, useChatSessionStore } from './chatSessionStore';
+import {
+  normalizeStoredMemoryPresetOverrides,
+  normalizeStoredOpenSessionIds,
+  useChatSessionStore,
+} from './chatSessionStore';
 import { createUuid } from '../utils/uuid';
 
 const OPEN_SESSIONS_KEY = 'golem-chat-open-sessions';
 const ACTIVE_SESSION_KEY = 'golem-chat-session-id';
+const MEMORY_PRESET_OVERRIDES_KEY = 'golem-chat-memory-preset-overrides';
 
 function seedStore(): string {
   const seed = createUuid();
   useChatSessionStore.setState({
     activeSessionId: seed,
     openSessionIds: [seed],
+    memoryPresetOverrides: {},
   });
   window.localStorage.setItem(ACTIVE_SESSION_KEY, seed);
   window.localStorage.setItem(OPEN_SESSIONS_KEY, JSON.stringify([seed]));
+  window.localStorage.setItem(MEMORY_PRESET_OVERRIDES_KEY, JSON.stringify({}));
   return seed;
 }
 
@@ -148,6 +155,58 @@ describe('chatSessionStore: multi-session state', () => {
 
     expect(window.localStorage.getItem(ACTIVE_SESSION_KEY)).toBe(newId);
   });
+
+  it('stores memory preset overrides per chat session without affecting other sessions', () => {
+    const first = useChatSessionStore.getState().activeSessionId;
+    const second = createUuid();
+    useChatSessionStore.getState().openSession(second);
+
+    useChatSessionStore.getState().setMemoryPresetOverride(first, ' Coding_Balanced ');
+    useChatSessionStore.getState().setMemoryPresetOverride(second, 'general_chat');
+
+    expect(useChatSessionStore.getState().memoryPresetOverrides).toEqual({
+      [first]: 'coding_balanced',
+      [second]: 'general_chat',
+    });
+  });
+
+  it('clears only the selected chat memory preset override when set to blank', () => {
+    const first = useChatSessionStore.getState().activeSessionId;
+    const second = createUuid();
+    useChatSessionStore.getState().openSession(second);
+    useChatSessionStore.getState().setMemoryPresetOverride(first, 'coding_balanced');
+    useChatSessionStore.getState().setMemoryPresetOverride(second, 'general_chat');
+
+    useChatSessionStore.getState().setMemoryPresetOverride(first, '');
+
+    expect(useChatSessionStore.getState().memoryPresetOverrides).toEqual({
+      [second]: 'general_chat',
+    });
+  });
+
+  it('persists memory preset overrides to localStorage', () => {
+    const sessionId = useChatSessionStore.getState().activeSessionId;
+
+    useChatSessionStore.getState().setMemoryPresetOverride(sessionId, 'coding_balanced');
+
+    const raw = window.localStorage.getItem(MEMORY_PRESET_OVERRIDES_KEY);
+    expect(raw).not.toBeNull();
+    expect(JSON.parse(raw ?? '{}')).toEqual({ [sessionId]: 'coding_balanced' });
+  });
+
+  it('removes a closed chat session memory preset override', () => {
+    const first = useChatSessionStore.getState().activeSessionId;
+    const second = createUuid();
+    useChatSessionStore.getState().openSession(second);
+    useChatSessionStore.getState().setMemoryPresetOverride(first, 'coding_balanced');
+    useChatSessionStore.getState().setMemoryPresetOverride(second, 'general_chat');
+
+    useChatSessionStore.getState().closeSession(second);
+
+    expect(useChatSessionStore.getState().memoryPresetOverrides).toEqual({
+      [first]: 'coding_balanced',
+    });
+  });
 });
 
 describe('normalizeStoredOpenSessionIds', () => {
@@ -203,5 +262,32 @@ describe('normalizeStoredOpenSessionIds', () => {
     expect(result).toContain(other);
     expect(result).toContain(fallback);
     expect(result[result.length - 1]).toBe(fallback);
+  });
+});
+
+describe('normalizeStoredMemoryPresetOverrides', () => {
+  it('returns an empty map when storage is empty or malformed', () => {
+    const sessionId = createUuid();
+
+    expect(normalizeStoredMemoryPresetOverrides(null, [sessionId])).toEqual({});
+    expect(normalizeStoredMemoryPresetOverrides('', [sessionId])).toEqual({});
+    expect(normalizeStoredMemoryPresetOverrides('not-json', [sessionId])).toEqual({});
+    expect(normalizeStoredMemoryPresetOverrides('[]', [sessionId])).toEqual({});
+  });
+
+  it('keeps normalized overrides only for open chat sessions', () => {
+    const openSessionId = createUuid();
+    const closedSessionId = createUuid();
+    const raw = JSON.stringify({
+      [openSessionId]: ' Coding_Balanced ',
+      [closedSessionId]: 'general_chat',
+      '!!!invalid!!!': 'disabled',
+      [createUuid()]: '   ',
+      ignored: 42,
+    });
+
+    expect(normalizeStoredMemoryPresetOverrides(raw, [openSessionId])).toEqual({
+      [openSessionId]: 'coding_balanced',
+    });
   });
 });

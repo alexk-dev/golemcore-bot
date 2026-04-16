@@ -14,6 +14,9 @@ final class DashboardFileMetadataSupport {
     private static final long MAX_EDITABLE_FILE_SIZE = 1024L * 1024L * 2L;
     private static final Set<String> DEFAULT_IGNORED_DIRECTORIES = Set.of(
             ".git", ".gradle", ".idea", "build", "dist", "node_modules", "target");
+    private static final Set<String> GENERIC_BINARY_MIME_TYPES = Set.of(
+            "application/macbinary",
+            "application/x-macbinary");
     private static final Map<String, String> TEXT_EXTENSION_MIME_TYPES = Map.ofEntries(
             Map.entry(".css", "text/css"),
             Map.entry(".go", "text/x-go"),
@@ -93,6 +96,11 @@ final class DashboardFileMetadataSupport {
             String requestedMimeType) {
         String mimeType = workspacePathService.resolveMimeType(path, requestedMimeType);
         String filename = requireFileName(workspacePathService, path);
+        if (GENERIC_BINARY_MIME_TYPES.contains(mimeType)) {
+            // macOS can report ordinary .bin files as MacBinary; expose a stable
+            // generic binary type unless the filename maps to a known text type.
+            return findTextMimeType(filename, "application/octet-stream");
+        }
         if ("application/octet-stream".equals(mimeType)) {
             return findTextMimeType(filename, mimeType);
         }

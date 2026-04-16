@@ -13,4 +13,5 @@ public class PreferencesUpdateRequest {
     private Boolean notificationsEnabled;
     private String modelTier;
     private Boolean tierForce;
+    private String memoryPreset;
 }

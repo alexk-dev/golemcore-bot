@@ -113,12 +113,12 @@ interface Harness {
   root: Root;
 }
 
-function mount(tabId?: string): Harness {
+function mount(tabId?: string, cwd?: string): Harness {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() => {
-    root.render(<TerminalPane tabId={tabId} />);
+    root.render(<TerminalPane tabId={tabId} cwd={cwd} />);
   });
   return { container, root };
 }
@@ -155,6 +155,14 @@ describe('TerminalPane', () => {
 
     expect(sockets).toHaveLength(1);
     expect(sockets[0]?.url).toContain('/ws/terminal?token=test-token');
+    unmount(harness);
+  });
+
+  it('includes the working directory in the WebSocket handshake when provided', () => {
+    const harness = mount(undefined, 'src/main');
+
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0]?.url).toContain('/ws/terminal?token=test-token&cwd=src%2Fmain');
     unmount(harness);
   });
 
