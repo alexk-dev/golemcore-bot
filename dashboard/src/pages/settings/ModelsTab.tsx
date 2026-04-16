@@ -42,9 +42,12 @@ interface TierModelCardProps {
   modelProvider: string;
   modelValue: string;
   reasoningValue: string;
+  temperatureValue: number | null;
+  fallbackCount: number;
   allowEmptyModel: boolean;
   onModelChange: (value: string, providerName: string) => void;
   onReasoningChange: (value: string) => void;
+  onTemperatureChange: (value: number | null) => void;
 }
 
 const EMPTY_AVAILABLE_MODELS: Record<string, AvailableModel[]> = {};
@@ -65,9 +68,12 @@ function TierModelCard({
   modelProvider,
   modelValue,
   reasoningValue,
+  temperatureValue,
+  fallbackCount,
   allowEmptyModel,
   onModelChange,
   onReasoningChange,
+  onTemperatureChange,
 }: TierModelCardProps): ReactElement {
   const configuredProvider = useMemo(() => {
     if (modelValue.length === 0) {
@@ -125,12 +131,14 @@ function TierModelCard({
         hasReasoning: false,
         reasoningLevels: [],
         supportsVision: false,
+        supportsTemperature: true,
       },
       ...providerModels,
     ];
   }, [modelValue, provider, providers]);
   const selectedModel = modelsForProvider.find((model) => model.editorId === modelValue);
   const reasoningLevels = selectedModel?.reasoningLevels ?? [];
+  const supportsTemperature = selectedModel?.supportsTemperature !== false;
   const hasProviders = providerOptionValues.length > 0;
   const providerUnavailable = configuredProvider.length > 0 && !providerNames.includes(configuredProvider);
 
@@ -185,7 +193,7 @@ function TierModelCard({
         </Form.Group>
 
         {reasoningLevels.length > 0 && (
-          <Form.Group>
+          <Form.Group className="mb-2">
             <Form.Label className="small fw-medium mb-1">Reasoning</Form.Label>
             <Form.Select size="sm" value={reasoningValue} onChange={(e) => onReasoningChange(e.target.value)}>
               <option value="">Default</option>
@@ -195,6 +203,22 @@ function TierModelCard({
             </Form.Select>
           </Form.Group>
         )}
+
+        <Form.Group className="mb-2">
+          <Form.Label className="small fw-medium mb-1">
+            Temperature: {supportsTemperature ? (temperatureValue ?? 0.7).toFixed(1) : 'not supported'}
+          </Form.Label>
+          <Form.Range
+            min={0}
+            max={2}
+            step={0.1}
+            value={temperatureValue ?? 0.7}
+            disabled={!supportsTemperature}
+            onChange={(e) => onTemperatureChange(parseFloat(e.target.value))}
+          />
+        </Form.Group>
+
+        <small className="text-body-secondary">Fallback models configured: {fallbackCount}/5</small>
       </Card.Body>
     </Card>
   );
@@ -253,21 +277,6 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
           <Card.Body>
             <SettingsCardTitle title="Global Settings" />
             <Row className="g-3">
-              <Col md={6}>
-                <Form.Group>
-                  <Form.Label className="small fw-medium">
-                    Temperature: {form.temperature?.toFixed(1) ?? '0.7'}
-                    <HelpTip text="Controls randomness of LLM responses. Higher = more creative, lower = more deterministic. Ignored by reasoning models." />
-                  </Form.Label>
-                  <Form.Range
-                    min={0}
-                    max={2}
-                    step={0.1}
-                    value={form.temperature ?? 0.7}
-                    onChange={(e) => setForm({ ...form, temperature: parseFloat(e.target.value) })}
-                  />
-                </Form.Group>
-              </Col>
               <Col md={6} className="d-flex align-items-end">
                 <Form.Check
                   type="switch"
@@ -305,12 +314,17 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
                 form.routing.model?.provider,
               )}
               reasoningValue={form.routing.reasoning ?? ''}
+              temperatureValue={form.routing.temperature}
+              fallbackCount={form.routing.fallbacks.length}
               allowEmptyModel={false}
               onModelChange={(value, providerName) => setForm({
                 ...form,
                 routing: {
                   model: modelReferenceFromSpec(value, providerName),
                   reasoning: null,
+                  temperature: form.routing.temperature,
+                  fallbackMode: form.routing.fallbackMode,
+                  fallbacks: form.routing.fallbacks,
                 },
               })}
               onReasoningChange={(value) => setForm({
@@ -318,6 +332,13 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
                 routing: {
                   ...form.routing,
                   reasoning: toNullableString(value),
+                },
+              })}
+              onTemperatureChange={(value) => setForm({
+                ...form,
+                routing: {
+                  ...form.routing,
+                  temperature: value,
                 },
               })}
             />
@@ -335,14 +356,23 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
                   getTierBinding(form, key).model?.provider,
                 )}
                 reasoningValue={getTierBinding(form, key).reasoning ?? ''}
+                temperatureValue={getTierBinding(form, key).temperature}
+                fallbackCount={getTierBinding(form, key).fallbacks.length}
                 allowEmptyModel={allowEmptyModel}
                 onModelChange={(value, providerName) => setForm(updateTierBinding(form, key, {
                   model: modelReferenceFromSpec(value, providerName),
                   reasoning: null,
+                  temperature: getTierBinding(form, key).temperature,
+                  fallbackMode: getTierBinding(form, key).fallbackMode,
+                  fallbacks: getTierBinding(form, key).fallbacks,
                 }))}
                 onReasoningChange={(value) => setForm(updateTierBinding(form, key, {
                   ...getTierBinding(form, key),
                   reasoning: toNullableString(value),
+                }))}
+                onTemperatureChange={(value) => setForm(updateTierBinding(form, key, {
+                  ...getTierBinding(form, key),
+                  temperature: value,
                 }))}
               />
             </Col>

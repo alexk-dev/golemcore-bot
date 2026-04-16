@@ -42,9 +42,11 @@ export interface SkillsConfig { enabled: boolean | null; progressiveLoading: boo
 export interface TurnConfig { maxLlmCalls: number | null; maxToolExecutions: number | null; deadline: string | null; progressUpdatesEnabled: boolean | null; progressIntentEnabled: boolean | null; progressBatchSize: number | null; progressMaxSilenceSeconds: number | null; progressSummaryTimeoutMs: number | null; }
 export interface TelegramConfig { enabled: boolean | null; token: string | null; tokenPresent?: boolean; authMode: 'invite_only' | null; allowedUsers: string[]; inviteCodes: InviteCode[]; }
 export interface InviteCode { code: string; used: boolean; createdAt: string; }
-export interface ModelRouterConfig { temperature: number | null; routing: TierBinding; tiers: Record<ExplicitModelTierId, TierBinding>; dynamicTierEnabled: boolean | null; }
+export interface ModelRouterConfig { routing: TierBinding; tiers: Record<ExplicitModelTierId, TierBinding>; dynamicTierEnabled: boolean | null; }
 export interface ModelReference { provider: string | null; id: string | null; }
-export interface TierBinding { model: ModelReference | null; reasoning: string | null; }
+export type FallbackMode = 'sequential' | 'random';
+export interface TierFallback { model: ModelReference | null; reasoning: string | null; temperature: number | null; }
+export interface TierBinding { model: ModelReference | null; reasoning: string | null; temperature: number | null; fallbackMode: FallbackMode; fallbacks: TierFallback[]; }
 export interface ToolsConfig { filesystemEnabled: boolean | null; shellEnabled: boolean | null; skillManagementEnabled: boolean | null; skillTransitionEnabled: boolean | null; tierEnabled: boolean | null; goalManagementEnabled: boolean | null; shellEnvironmentVariables: ShellEnvironmentVariable[]; }
 export interface ShellEnvironmentVariable { name: string; value: string; }
 export interface VoiceConfig { enabled: boolean | null; apiKey: string | null; apiKeyPresent?: boolean; voiceId: string | null; ttsModelId: string | null; sttModelId: string | null; speed: number | null; telegramRespondWithVoice: boolean | null; telegramTranscribeIncoming: boolean | null; sttProvider: string | null; ttsProvider: string | null; whisperSttUrl: string | null; whisperSttApiKey: string | null; whisperSttApiKeyPresent?: boolean; }

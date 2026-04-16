@@ -104,7 +104,7 @@ public class ModelsController {
         Map<String, List<AvailableModelDto>> result = new LinkedHashMap<>();
         grouped.forEach((provider, models) -> result.put(provider, models.stream()
                 .map(model -> new AvailableModelDto(model.id(), model.displayName(), model.hasReasoning(),
-                        model.reasoningLevels(), model.supportsVision()))
+                        model.reasoningLevels(), model.supportsVision(), model.supportsTemperature()))
                 .toList()));
         return Mono.just(ResponseEntity.ok(result));
     }
@@ -193,7 +193,7 @@ public class ModelsController {
     }
 
     private record AvailableModelDto(String id, String displayName, boolean hasReasoning,
-            List<String> reasoningLevels, boolean supportsVision) {
+            List<String> reasoningLevels, boolean supportsVision, boolean supportsTemperature) {
     }
 
     private record DiscoveredModelDto(String provider, String id, String displayName, String ownedBy,

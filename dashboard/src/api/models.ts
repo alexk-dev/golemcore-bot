@@ -25,6 +25,7 @@ export interface AvailableModel {
   hasReasoning: boolean;
   reasoningLevels: string[];
   supportsVision: boolean;
+  supportsTemperature: boolean;
 }
 
 export interface DiscoveredProviderModel {

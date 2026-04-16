@@ -26,21 +26,23 @@ const config: LlmConfig = {
 };
 
 const modelRouter: ModelRouterConfig = {
-  temperature: 0.7,
   routing: {
     model: { provider: 'openrouter', id: 'openai/gpt-5' },
     reasoning: null,
+    temperature: null,
+    fallbackMode: 'sequential',
+    fallbacks: [],
   },
   tiers: {
-    balanced: { model: { provider: 'openrouter', id: 'openai/gpt-5' }, reasoning: null },
-    smart: { model: null, reasoning: null },
-    deep: { model: null, reasoning: null },
-    coding: { model: null, reasoning: null },
-    special1: { model: null, reasoning: null },
-    special2: { model: null, reasoning: null },
-    special3: { model: null, reasoning: null },
-    special4: { model: null, reasoning: null },
-    special5: { model: null, reasoning: null },
+    balanced: { model: { provider: 'openrouter', id: 'openai/gpt-5' }, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    smart: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    deep: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    coding: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    special1: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    special2: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    special3: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    special4: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    special5: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
   },
   dynamicTierEnabled: true,
 };

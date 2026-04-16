@@ -12,6 +12,7 @@ const availableModels = {
       hasReasoning: true,
       reasoningLevels: ['none', 'medium'],
       supportsVision: true,
+      supportsTemperature: true,
     },
   ],
   openrouter: [
@@ -21,6 +22,7 @@ const availableModels = {
       hasReasoning: false,
       reasoningLevels: [],
       supportsVision: true,
+      supportsTemperature: true,
     },
   ],
 };
@@ -68,21 +70,23 @@ const llmConfig: LlmConfig = {
 };
 
 const modelRouterConfig: ModelRouterConfig = {
-  temperature: 0.7,
   routing: {
     model: { provider: 'openai', id: 'gpt-5.1' },
     reasoning: 'none',
+    temperature: 0.7,
+    fallbackMode: 'sequential',
+    fallbacks: [],
   },
   tiers: {
-    balanced: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'none' },
-    smart: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'medium' },
-    deep: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'medium' },
-    coding: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'medium' },
-    special1: { model: null, reasoning: null },
-    special2: { model: null, reasoning: null },
-    special3: { model: null, reasoning: null },
-    special4: { model: null, reasoning: null },
-    special5: { model: null, reasoning: null },
+    balanced: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'none', temperature: 0.7, fallbackMode: 'sequential', fallbacks: [] },
+    smart: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'medium', temperature: 0.7, fallbackMode: 'sequential', fallbacks: [] },
+    deep: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'medium', temperature: 0.7, fallbackMode: 'sequential', fallbacks: [] },
+    coding: { model: { provider: 'openai', id: 'gpt-5.1' }, reasoning: 'medium', temperature: 0.7, fallbackMode: 'sequential', fallbacks: [] },
+    special1: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    special2: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    special3: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    special4: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
+    special5: { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] },
   },
   dynamicTierEnabled: true,
 };
@@ -127,7 +131,7 @@ const managedHiveStatus: HiveStatusResponse = {
 
 describe('ModelsTab', () => {
   beforeEach(() => {
-    modelRouterConfig.tiers.special1 = { model: null, reasoning: null };
+    modelRouterConfig.tiers.special1 = { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] };
   });
 
   it('renders optional special tiers with an explicit empty model option', () => {
@@ -139,7 +143,7 @@ describe('ModelsTab', () => {
   });
 
   it('keeps unavailable configured special tiers visible instead of pretending they are empty', () => {
-    modelRouterConfig.tiers.special1 = { model: { provider: 'anthropic', id: 'claude-sonnet-4' }, reasoning: null };
+    modelRouterConfig.tiers.special1 = { model: { provider: 'anthropic', id: 'claude-sonnet-4' }, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] };
 
     const html = renderToStaticMarkup(
       <ModelsTab config={modelRouterConfig} llmConfig={llmConfig} />,
@@ -153,6 +157,9 @@ describe('ModelsTab', () => {
     modelRouterConfig.routing = {
       model: { provider: 'openrouter', id: 'qwen/model-name:version' },
       reasoning: null,
+      temperature: null,
+      fallbackMode: 'sequential',
+      fallbacks: [],
     };
 
     const html = renderToStaticMarkup(

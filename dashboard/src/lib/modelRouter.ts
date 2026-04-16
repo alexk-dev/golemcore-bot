@@ -1,5 +1,5 @@
 import { modelReferenceToSpec } from '../api/settings';
-import type { ModelRouterConfig, TierBinding } from '../api/settingsTypes';
+import type { ModelRouterConfig, TierBinding, TierFallback } from '../api/settingsTypes';
 import { EXPLICIT_MODEL_TIER_ORDER, type ExplicitModelTierId } from './modelTiers';
 
 function hasText(value: string | null | undefined): value is string {
@@ -10,6 +10,17 @@ export function createEmptyTierBinding(): TierBinding {
   return {
     model: null,
     reasoning: null,
+    temperature: null,
+    fallbackMode: 'sequential',
+    fallbacks: [],
+  };
+}
+
+function normalizeFallback(fallback: TierFallback): TierFallback {
+  return {
+    model: fallback.model != null ? { ...fallback.model } : null,
+    reasoning: fallback.reasoning ?? null,
+    temperature: fallback.temperature ?? null,
   };
 }
 
@@ -17,12 +28,14 @@ export function normalizeTierBinding(binding: TierBinding | null | undefined): T
   return {
     model: binding?.model != null ? { ...binding.model } : null,
     reasoning: binding?.reasoning ?? null,
+    temperature: binding?.temperature ?? null,
+    fallbackMode: binding?.fallbackMode === 'random' ? 'random' : 'sequential',
+    fallbacks: binding?.fallbacks.map(normalizeFallback).slice(0, 5) ?? [],
   };
 }
 
 export function cloneModelRouterConfig(config: ModelRouterConfig): ModelRouterConfig {
   return {
-    temperature: config.temperature,
     routing: normalizeTierBinding(config.routing),
     tiers: {
       balanced: normalizeTierBinding(config.tiers.balanced),
@@ -63,12 +76,24 @@ export function listConfiguredModelSpecs(config: ModelRouterConfig): string[] {
   if (hasText(routingModel)) {
     models.push(routingModel);
   }
+  config.routing.fallbacks.forEach((fallback) => {
+    const fallbackModel = modelReferenceToSpec(fallback.model);
+    if (hasText(fallbackModel)) {
+      models.push(fallbackModel);
+    }
+  });
   EXPLICIT_MODEL_TIER_ORDER.forEach((tier) => {
     const binding = config.tiers[tier];
     const model = modelReferenceToSpec(binding?.model);
     if (hasText(model)) {
       models.push(model);
     }
+    binding?.fallbacks.forEach((fallback) => {
+      const fallbackModel = modelReferenceToSpec(fallback.model);
+      if (hasText(fallbackModel)) {
+        models.push(fallbackModel);
+      }
+    });
   });
   return models;
 }

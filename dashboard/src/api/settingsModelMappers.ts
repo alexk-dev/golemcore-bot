@@ -1,4 +1,4 @@
-import type { ModelReference, ModelRegistryConfig, ModelRouterConfig, TierBinding } from './settingsTypes';
+import type { FallbackMode, ModelReference, ModelRegistryConfig, ModelRouterConfig, TierBinding, TierFallback } from './settingsTypes';
 import { toNullableString, type UnknownRecord } from './settingsUtils';
 
 export function modelReferenceToSpec(model: ModelReference | null | undefined): string | null {
@@ -52,19 +52,54 @@ function toModelReference(value: unknown): ModelReference | null {
   return { provider, id };
 }
 
-function toTierBinding(value: unknown): TierBinding {
+function toFallbackMode(value: unknown): FallbackMode {
+  return value === 'random' ? 'random' : 'sequential';
+}
+
+function toTemperature(value: unknown): number | null {
+  return typeof value === 'number' ? value : null;
+}
+
+function toTierFallback(value: unknown): TierFallback | null {
   if (value == null || typeof value !== 'object') {
-    return { model: null, reasoning: null };
+    return null;
   }
   const record = value as UnknownRecord;
-  return { model: toModelReference(record.model), reasoning: toNullableString(record.reasoning) };
+  const model = toModelReference(record.model);
+  if (model == null) {
+    return null;
+  }
+  return { model, reasoning: toNullableString(record.reasoning), temperature: toTemperature(record.temperature) };
+}
+
+function toTierFallbacks(value: unknown): TierFallback[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) => {
+    const fallback = toTierFallback(entry);
+    return fallback == null ? [] : [fallback];
+  }).slice(0, 5);
+}
+
+function toTierBinding(value: unknown): TierBinding {
+  if (value == null || typeof value !== 'object') {
+    return { model: null, reasoning: null, temperature: null, fallbackMode: 'sequential', fallbacks: [] };
+  }
+  const record = value as UnknownRecord;
+  return {
+    model: toModelReference(record.model),
+    reasoning: toNullableString(record.reasoning),
+    temperature: toTemperature(record.temperature),
+    fallbackMode: toFallbackMode(record.fallbackMode),
+    fallbacks: toTierFallbacks(record.fallbacks),
+  };
 }
 
 export function toModelRouterConfig(value: unknown): ModelRouterConfig {
   const record = value != null && typeof value === 'object' ? value as UnknownRecord : {};
   const rawTiers = record.tiers != null && typeof record.tiers === 'object' ? record.tiers as Record<string, unknown> : {};
   return {
-    temperature: typeof record.temperature === 'number' ? record.temperature : null,
     routing: toTierBinding(record.routing),
     tiers: {
       balanced: toTierBinding(rawTiers.balanced),

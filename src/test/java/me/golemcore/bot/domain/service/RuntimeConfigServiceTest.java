@@ -247,7 +247,6 @@ class RuntimeConfigServiceTest {
     @Test
     void shouldPreserveCanonicalModelRouterBindingsWhenPersisting() throws Exception {
         Map<String, Object> canonicalRouter = new LinkedHashMap<>();
-        canonicalRouter.put("temperature", 0.4d);
         canonicalRouter.put("dynamicTierEnabled", false);
         canonicalRouter.put("routing", Map.of("model", "router/model", "reasoning", "none"));
         Map<String, Object> tiers = new LinkedHashMap<>();
@@ -375,7 +374,7 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldReturnDefaultTemperature() {
-        assertEquals(0.7, service.getTemperature(), 0.001);
+        assertEquals(0.7, service.getTemperatureForModel("balanced", service.getBalancedModel()), 0.001);
     }
 
     @Test

@@ -149,16 +149,15 @@ public class RuntimeConfig {
     @AllArgsConstructor
     @Builder
     @JsonIgnoreProperties(ignoreUnknown = true)
-    @JsonPropertyOrder({ "temperature", "routing", "tiers", "dynamicTierEnabled" })
+    @JsonPropertyOrder({ "routing", "tiers", "dynamicTierEnabled" })
     public static class ModelRouterConfig {
-        private Double temperature;
         private TierBinding routing;
         private Map<String, TierBinding> tiers = new LinkedHashMap<>();
         private Boolean dynamicTierEnabled;
 
         public static class ModelRouterConfigBuilder {
             private TierBinding routing;
-            private Map<String, TierBinding> tiers;
+            private Map<String, TierBinding> tiers = new LinkedHashMap<>();
 
             public ModelRouterConfigBuilder routingModel(String model) {
                 routingBinding().setModel(model);
@@ -382,11 +381,15 @@ public class RuntimeConfig {
     @AllArgsConstructor
     @Builder
     @JsonIgnoreProperties(ignoreUnknown = true)
-    @JsonPropertyOrder({ "model", "reasoning" })
+    @JsonPropertyOrder({ "model", "reasoning", "temperature", "fallbackMode", "fallbacks" })
     public static class TierBinding {
         @JsonIgnore
         private ModelReference modelReference;
         private String reasoning;
+        private Double temperature;
+        private String fallbackMode;
+        @Builder.Default
+        private List<TierFallback> fallbacks = new ArrayList<>();
 
         @JsonGetter("model")
         public ModelReference getPersistedModel() {
@@ -420,6 +423,56 @@ public class RuntimeConfig {
 
         public static class TierBindingBuilder {
             public TierBindingBuilder model(String model) {
+                this.modelReference = ModelReference.fromLegacyString(model);
+                return this;
+            }
+        }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonPropertyOrder({ "model", "reasoning", "temperature" })
+    public static class TierFallback {
+        @JsonIgnore
+        private ModelReference modelReference;
+        private String reasoning;
+        private Double temperature;
+
+        @JsonGetter("model")
+        public ModelReference getPersistedModel() {
+            return modelReference;
+        }
+
+        @JsonSetter("model")
+        public void setPersistedModel(Object modelNode) {
+            this.modelReference = ModelReference.fromRawValue(modelNode);
+        }
+
+        @JsonIgnore
+        public String getModel() {
+            return modelReference != null ? modelReference.toModelSpec() : null;
+        }
+
+        @JsonIgnore
+        public void setModel(String model) {
+            this.modelReference = ModelReference.fromLegacyString(model);
+        }
+
+        @JsonIgnore
+        public ModelReference getModelReference() {
+            return modelReference;
+        }
+
+        @JsonIgnore
+        public void setModelReference(ModelReference modelReference) {
+            this.modelReference = ModelReference.normalize(modelReference);
+        }
+
+        public static class TierFallbackBuilder {
+            public TierFallbackBuilder model(String model) {
                 this.modelReference = ModelReference.fromLegacyString(model);
                 return this;
             }

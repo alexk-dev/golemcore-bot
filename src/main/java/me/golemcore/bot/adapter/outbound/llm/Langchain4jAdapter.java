@@ -154,7 +154,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         try {
-            this.chatModel = createModel(model, reasoning);
+            this.chatModel = createModel(model, reasoning, "balanced");
             initialized = true;
             log.info("Langchain4j adapter initialized with model: {}, reasoning: {}", model, reasoning);
         } catch (Exception e) {
@@ -199,20 +199,21 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return API_TYPE_OPENAI.equals(apiType) && !Boolean.TRUE.equals(config.getLegacyApi());
     }
 
-    private StreamingChatModel getResponsesStreamingModel(String model, String reasoningEffort) {
-        String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "");
+    private StreamingChatModel getResponsesStreamingModel(String model, String reasoningEffort, String modelTier) {
+        double temperature = runtimeConfigService.getTemperatureForModel(modelTier, model);
+        String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "") + ":" + temperature;
         return responsesStreamingModels.computeIfAbsent(cacheKey, key -> {
             String provider = getProvider(model);
             RuntimeConfig.LlmProviderConfig config = getProviderConfig(provider);
             String modelName = stripProviderPrefix(model);
             log.info("[LLM] Creating OpenAI Responses streaming model for: {} (reasoning: {})",
                     modelName, reasoningEffort);
-            return createResponsesStreamingModel(model, modelName, reasoningEffort, config);
+            return createResponsesStreamingModel(model, modelName, reasoningEffort, config, temperature);
         });
     }
 
     private StreamingChatModel createResponsesStreamingModel(String fullModel, String modelName, String reasoningEffort,
-            RuntimeConfig.LlmProviderConfig config) {
+            RuntimeConfig.LlmProviderConfig config, double temperature) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for OpenAI Responses provider in runtime config");
@@ -236,7 +237,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         if (supportsTemperature(fullModel)) {
-            builder.temperature((double) runtimeConfigService.getTemperature());
+            builder.temperature(temperature);
         }
 
         return builder.build();
@@ -274,18 +275,23 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
      * Create a model instance based on configuration.
      */
     private ChatModel createModel(String model, String reasoningEffort) {
+        return createModel(model, reasoningEffort, null);
+    }
+
+    private ChatModel createModel(String model, String reasoningEffort, String modelTier) {
         String provider = getProvider(model);
         RuntimeConfig.LlmProviderConfig config = getProviderConfig(provider);
         String modelName = stripProviderPrefix(model);
         String apiType = getApiType(config);
+        double temperature = runtimeConfigService.getTemperatureForModel(modelTier, model);
 
         switch (apiType) {
         case API_TYPE_ANTHROPIC:
-            return createAnthropicModel(model, modelName, config);
+            return createAnthropicModel(model, modelName, config, temperature);
         case API_TYPE_GEMINI:
-            return createGeminiModel(model, modelName, config);
+            return createGeminiModel(model, modelName, config, temperature);
         default:
-            return createOpenAiModel(modelName, model, reasoningEffort, config);
+            return createOpenAiModel(modelName, model, reasoningEffort, config, temperature);
         }
     }
 
@@ -297,7 +303,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         return apiType.trim().toLowerCase(Locale.ROOT);
     }
 
-    private ChatModel createAnthropicModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config) {
+    private ChatModel createAnthropicModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config,
+            double temperature) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for provider anthropic in runtime config");
@@ -315,13 +322,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         if (supportsTemperature(fullModel)) {
-            builder.temperature(runtimeConfigService.getTemperature());
+            builder.temperature(temperature);
         }
 
         return builder.build();
     }
 
-    private ChatModel createGeminiModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config) {
+    private ChatModel createGeminiModel(String fullModel, String modelName, RuntimeConfig.LlmProviderConfig config,
+            double temperature) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for Gemini provider in runtime config");
@@ -338,14 +346,14 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         config.getRequestTimeoutSeconds() != null ? config.getRequestTimeoutSeconds() : 300));
 
         if (supportsTemperature(fullModel)) {
-            builder.temperature(runtimeConfigService.getTemperature());
+            builder.temperature(temperature);
         }
 
         return builder.build();
     }
 
     private ChatModel createOpenAiModel(String modelName, String fullModel,
-            String reasoningEffort, RuntimeConfig.LlmProviderConfig config) {
+            String reasoningEffort, RuntimeConfig.LlmProviderConfig config, double temperature) {
         String apiKey = Secret.valueOrEmpty(config.getApiKey());
         if (apiKey.isBlank()) {
             throw new IllegalStateException("Missing apiKey for provider in runtime config");
@@ -362,7 +370,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         }
 
         if (supportsTemperature(fullModel)) {
-            builder.temperature(runtimeConfigService.getTemperature());
+            builder.temperature(temperature);
         } else {
             log.debug("Using reasoning model: {}, effort: {}", modelName,
                     reasoningEffort != null ? reasoningEffort : "default");
@@ -421,7 +429,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                                 ? requestToUse.getModel()
                                 : currentModel;
                         StreamingChatModel streamingModel = getResponsesStreamingModel(
-                                effectiveModel, requestToUse.getReasoningEffort());
+                                effectiveModel, requestToUse.getReasoningEffort(), requestToUse.getModelTier());
                         response = chatViaStreaming(streamingModel, messages, tools);
                     } else if (tools != null && !tools.isEmpty()) {
                         log.trace("Calling LLM with {} tools", tools.size());
@@ -590,6 +598,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                 .traceSpanId(request.getTraceSpanId())
                 .traceParentSpanId(request.getTraceParentSpanId())
                 .traceRootKind(request.getTraceRootKind())
+                .modelTier(request.getModelTier())
                 .reasoningEffort(request.getReasoningEffort())
                 .build();
     }
@@ -597,17 +606,25 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     private ChatModel getModelForRequest(LlmRequest request) {
         String requestModel = request.getModel();
         String reasoningEffort = request.getReasoningEffort();
+        String modelTier = request.getModelTier();
+        String effectiveModel = requestModel != null ? requestModel : currentModel;
+
+        if (modelTier != null && effectiveModel != null) {
+            log.trace("Creating tier-scoped model for request: {}, tier: {}, reasoning: {}",
+                    effectiveModel, modelTier, reasoningEffort);
+            return createModel(effectiveModel, reasoningEffort, modelTier);
+        }
 
         // If request specifies a different model, create one-off
         if (requestModel != null && (chatModel == null || !requestModel.equals(currentModel))) {
             log.trace("Creating one-off model for request: {}, reasoning: {}", requestModel, reasoningEffort);
-            return createModel(requestModel, reasoningEffort);
+            return createModel(requestModel, reasoningEffort, null);
         }
 
         // If request specifies different reasoning for current model
         if (currentModel != null && reasoningEffort != null && isReasoningRequired(currentModel)) {
             log.debug("Using reasoning effort: {} for model: {}", reasoningEffort, currentModel);
-            return createModel(currentModel, reasoningEffort);
+            return createModel(currentModel, reasoningEffort, null);
         }
 
         return chatModel;
@@ -621,7 +638,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
         if (isResponsesApiRequest(request)) {
             String effectiveModel = request.getModel() != null ? request.getModel() : currentModel;
             StreamingChatModel streamingModel = getResponsesStreamingModel(
-                    effectiveModel, request.getReasoningEffort());
+                    effectiveModel, request.getReasoningEffort(), request.getModelTier());
             MessageConversionResult conversionResult = buildChatMessages(request);
             List<ChatMessage> messages = conversionResult.messages();
             List<ToolSpecification> tools = convertTools(request);

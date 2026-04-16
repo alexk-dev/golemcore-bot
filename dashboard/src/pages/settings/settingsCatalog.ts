@@ -17,6 +17,7 @@ export const SETTINGS_SECTIONS = [
   { key: 'llm-providers', title: 'LLM Providers', description: 'Provider API keys and base URLs', icon: FiKey },
   { key: 'model-catalog', title: 'Model Catalog', description: 'Edit model definitions and provider capability metadata', icon: FiDatabase },
   { key: 'models', title: 'Model Router', description: 'Routing and tier model configuration', icon: FiCpu },
+  { key: 'model-fallbacks', title: 'Model Fallbacks', description: 'Per-tier fallback models, order mode, and temperature', icon: FiCpu },
   { key: 'plugins-marketplace', title: 'Plugin Marketplace', description: 'Browse, install, and update official integrations', icon: FiPackage },
 
   { key: 'tool-filesystem', title: 'Filesystem Tool', description: 'Sandbox file read/write operations', icon: FiHardDrive },
@@ -56,7 +57,7 @@ export const SETTINGS_BLOCKS: SettingsBlock[] = [
     key: 'core',
     title: 'Core',
     description: 'Main runtime settings and access configuration',
-    sections: ['general', 'llm-providers', 'model-catalog', 'models'],
+    sections: ['general', 'llm-providers', 'model-catalog', 'models', 'model-fallbacks'],
   },
   {
     key: 'plugins',

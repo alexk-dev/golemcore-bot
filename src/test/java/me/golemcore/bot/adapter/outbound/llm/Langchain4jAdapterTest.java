@@ -100,7 +100,7 @@ class Langchain4jAdapterTest {
         when(modelConfig.getProvider(anyString())).thenReturn(OPENAI);
         when(modelConfig.isReasoningRequired(anyString())).thenReturn(false);
         when(modelConfig.getAllModels()).thenReturn(Map.of());
-        when(runtimeConfigService.getTemperature()).thenReturn(0.7);
+        when(runtimeConfigService.getTemperatureForModel(any(), any())).thenReturn(0.7);
         when(runtimeConfigService.getBalancedModel()).thenReturn(OPENAI + "/gpt-5.1");
         when(runtimeConfigService.getBalancedModelReasoning()).thenReturn("medium");
         when(runtimeConfigService.getConfiguredLlmProviders()).thenReturn(List.of());
@@ -2031,7 +2031,7 @@ class Langchain4jAdapterTest {
                 .build();
 
         StreamingChatModel model = ReflectionTestUtils.invokeMethod(adapter,
-                "createResponsesStreamingModel", "openai/gpt-5.4", "gpt-5.4", "high", config);
+                "createResponsesStreamingModel", "openai/gpt-5.4", "gpt-5.4", "high", config, 0.7d);
         HttpClientBuilder httpClientBuilder = ReflectionTestUtils.invokeMethod(adapter,
                 "createResponsesCompatibilityHttpClientBuilder", Duration.ofSeconds(42));
 
@@ -2050,7 +2050,7 @@ class Langchain4jAdapterTest {
                 .thenThrow(new IllegalArgumentException("raw model id lookup should not be used"));
 
         StreamingChatModel result = ReflectionTestUtils.invokeMethod(adapter,
-                "getResponsesStreamingModel", model, "high");
+                "getResponsesStreamingModel", model, "high", "smart");
 
         assertNotNull(result);
     }
@@ -2064,7 +2064,7 @@ class Langchain4jAdapterTest {
         when(modelConfig.supportsTemperature(OPENAI + "/gpt-5.4")).thenReturn(false);
 
         StreamingChatModel result = ReflectionTestUtils.invokeMethod(adapter,
-                "createResponsesStreamingModel", OPENAI + "/gpt-5.4", "gpt-5.4", null, config);
+                "createResponsesStreamingModel", OPENAI + "/gpt-5.4", "gpt-5.4", null, config, 0.7d);
 
         assertNotNull(result);
     }
@@ -2079,7 +2079,7 @@ class Langchain4jAdapterTest {
         when(modelConfig.supportsTemperature(model)).thenReturn(false);
 
         ChatModel result = ReflectionTestUtils.invokeMethod(adapter,
-                "createAnthropicModel", model, "claude-opus-4-1", config);
+                "createAnthropicModel", model, "claude-opus-4-1", config, 0.7d);
 
         assertTrue(result instanceof AnthropicChatModel);
     }
@@ -2094,7 +2094,7 @@ class Langchain4jAdapterTest {
         when(modelConfig.supportsTemperature(model)).thenReturn(false);
 
         ChatModel result = ReflectionTestUtils.invokeMethod(adapter,
-                "createGeminiModel", model, "gemini-2.5-flash", config);
+                "createGeminiModel", model, "gemini-2.5-flash", config, 0.7d);
 
         assertTrue(result instanceof GoogleAiGeminiChatModel);
     }
@@ -2279,7 +2279,7 @@ class Langchain4jAdapterTest {
         ReflectionTestUtils.setField(adapter, "initialized", true);
         Map<String, StreamingChatModel> cache = (Map<String, StreamingChatModel>) ReflectionTestUtils.getField(adapter,
                 "responsesStreamingModels");
-        String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "");
+        String cacheKey = model + ":" + (reasoningEffort != null ? reasoningEffort : "") + ":0.7";
         cache.put(cacheKey, streamingModel);
     }
 
