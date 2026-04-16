@@ -208,8 +208,9 @@ public class FileSystemTool implements ToolComponent {
             }
 
             try {
-                String operation = (String) parameters.get(PARAM_OPERATION);
-                String pathStr = (String) parameters.get(PARAM_PATH);
+                Map<String, Object> safeParameters = parameters != null ? parameters : Map.of();
+                String operation = stringParam(safeParameters, PARAM_OPERATION);
+                String pathStr = stringParam(safeParameters, PARAM_PATH);
                 log.info("[FileSystem] Operation: {}, Path: {}", operation, pathStr);
 
                 if (operation == null || pathStr == null) {
@@ -233,7 +234,7 @@ public class FileSystemTool implements ToolComponent {
 
                 ToolResult result = switch (operation) {
                 case "read_file" -> readFile(resolvedPath);
-                case "write_file" -> writeFile(resolvedPath, parameters);
+                case "write_file" -> writeFile(resolvedPath, safeParameters);
                 case "list_directory" -> listDirectory(resolvedPath);
                 case "create_directory" -> createDirectory(resolvedPath);
                 case "delete" -> delete(resolvedPath);
@@ -250,6 +251,16 @@ public class FileSystemTool implements ToolComponent {
                 return ToolResult.failure("Error: " + e.getMessage());
             }
         });
+    }
+
+    private static String stringParam(Map<String, Object> params, String name) {
+        Object value = params.get(name);
+        return value instanceof String stringValue ? stringValue : null;
+    }
+
+    private static boolean booleanParam(Map<String, Object> params, String name) {
+        Object value = params.get(name);
+        return value instanceof Boolean booleanValue && booleanValue;
     }
 
     private Path resolveSafePath(String pathStr) {
@@ -308,13 +319,12 @@ public class FileSystemTool implements ToolComponent {
     }
 
     private ToolResult writeFile(Path path, Map<String, Object> params) {
-        String content = (String) params.get(PARAM_CONTENT);
+        String content = stringParam(params, PARAM_CONTENT);
         if (content == null) {
             return ToolResult.failure("Missing content for write_file operation");
         }
 
-        Boolean append = (Boolean) params.get(PARAM_APPEND);
-        boolean shouldAppend = append != null && append;
+        boolean shouldAppend = booleanParam(params, PARAM_APPEND);
 
         try {
             // Ensure parent directory exists

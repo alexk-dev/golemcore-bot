@@ -62,6 +62,17 @@ class DateTimeToolTest {
     }
 
     @Test
+    void execute_withNonStringTimezone() throws ExecutionException, InterruptedException {
+        Map<String, Object> params = Map.of(TIMEZONE, 123);
+
+        ToolResult result = dateTimeTool.execute(params).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("Invalid timezone"));
+        assertFalse(result.getError().contains("ClassCastException"));
+    }
+
+    @Test
     void execute_withDifferentTimezones() throws ExecutionException, InterruptedException {
         String[] timezones = { "America/New_York", "Europe/London", "Asia/Tokyo" };
 

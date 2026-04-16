@@ -1,10 +1,13 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.AutoRunKind;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -56,5 +59,23 @@ class MemoryScopeSupportTest {
         String scope = MemoryScopeSupport.resolveScopeFromSessionOrGlobal(session);
 
         assertEquals(MemoryScopeSupport.GLOBAL_SCOPE, scope);
+    }
+
+    @Test
+    void shouldNormalizeScopePrefixesCaseInsensitively() {
+        assertEquals("session:web:Conv_123",
+                MemoryScopeSupport.normalizeScopeOrGlobal(" SESSION:WEB:Conv_123 "));
+        assertEquals("goal:web:Conv_123:Goal-1",
+                MemoryScopeSupport.normalizeScopeOrGlobal(" GOAL:WEB:Conv_123:Goal-1 "));
+        assertEquals("task:Task-1", MemoryScopeSupport.normalizeScopeOrGlobal(" TASK:Task-1 "));
+    }
+
+    @Test
+    void shouldBuildScopeChainFromCaseInsensitiveSessionScope() {
+        List<String> chain = MemoryScopeSupport.buildScopeChain(" SESSION:WEB:Conv_123 ",
+                AutoRunKind.GOAL_RUN.name().toLowerCase(Locale.ROOT), "Goal-1", "Task-1");
+
+        assertEquals(List.of("task:Task-1", "goal:web:Conv_123:Goal-1", "session:web:Conv_123", "global"),
+                chain);
     }
 }

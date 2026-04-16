@@ -207,7 +207,8 @@ public class ShellTool implements ToolComponent {
             }
 
             try {
-                String command = (String) parameters.get(PARAM_COMMAND);
+                Map<String, Object> safeParameters = parameters != null ? parameters : Map.of();
+                String command = stringParam(safeParameters, PARAM_COMMAND);
                 if (command == null || command.isBlank()) {
                     log.warn("[Shell] Missing command parameter");
                     return ToolResult.failure("Missing required parameter: command");
@@ -224,16 +225,18 @@ public class ShellTool implements ToolComponent {
 
                 // Parse timeout
                 int timeout = defaultTimeout;
-                Object timeoutObj = parameters.get("timeout");
-                if (timeoutObj != null) {
-                    timeout = Math.min(((Number) timeoutObj).intValue(), maxTimeout);
+                Object timeoutObj = safeParameters.get("timeout");
+                if (timeoutObj instanceof Number timeoutNumber) {
+                    timeout = Math.min(timeoutNumber.intValue(), maxTimeout);
                     timeout = Math.max(timeout, 1);
+                } else if (timeoutObj != null) {
+                    return ToolResult.failure("Invalid timeout parameter");
                 }
                 log.debug("[Shell] Timeout: {}s", timeout);
 
                 // Resolve working directory
                 Path workDir = workspaceRoot;
-                String workdirStr = (String) parameters.get("workdir");
+                String workdirStr = stringParam(safeParameters, "workdir");
                 if (workdirStr != null && !workdirStr.isBlank()) {
                     workDir = workspaceRoot.resolve(workdirStr).normalize();
                     if (!workDir.startsWith(workspaceRoot)) {
@@ -274,6 +277,11 @@ public class ShellTool implements ToolComponent {
                 return ToolResult.failure("Error: " + e.getMessage());
             }
         }, executor);
+    }
+
+    private static String stringParam(Map<String, Object> params, String name) {
+        Object value = params.get(name);
+        return value instanceof String stringValue ? stringValue : null;
     }
 
     private String truncate(String text, int maxLen) {

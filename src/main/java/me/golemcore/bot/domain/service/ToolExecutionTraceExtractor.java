@@ -139,7 +139,7 @@ public class ToolExecutionTraceExtractor {
     private String extractGenericAction(String toolName, Map<String, Object> arguments, Map<String, Object> details) {
         StringJoiner joiner = new StringJoiner(", ");
         arguments.forEach((key, value) -> {
-            if (joiner.length() > 0 || details.size() >= 3) {
+            if (details.size() >= 3) {
                 return;
             }
             String normalized = safeString(value);
