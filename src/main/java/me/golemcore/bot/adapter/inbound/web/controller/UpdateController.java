@@ -46,6 +46,12 @@ public class UpdateController {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
+    @PostMapping("/force-install-staged")
+    public Mono<ResponseEntity<UpdateActionResult>> forceInstallStagedUpdate() {
+        return Mono.fromCallable(() -> ResponseEntity.ok(updateService.forceInstallStagedUpdate()))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
     @PutMapping("/config")
     public Mono<ResponseEntity<RuntimeConfig.UpdateConfig>> updateConfig(
             @RequestBody RuntimeConfig.UpdateConfig config) {
