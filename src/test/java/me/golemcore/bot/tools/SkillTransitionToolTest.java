@@ -146,6 +146,17 @@ class SkillTransitionToolTest {
     }
 
     @Test
+    void nonStringTargetSkill() throws Exception {
+        setUpAgentContext();
+
+        ToolResult result = tool.execute(Map.of(
+                TARGET_SKILL, 123)).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains(TARGET_SKILL));
+    }
+
+    @Test
     void noAgentContext() throws Exception {
         // Don't set up context — AgentContextHolder is empty
         Skill targetSkill = Skill.builder()

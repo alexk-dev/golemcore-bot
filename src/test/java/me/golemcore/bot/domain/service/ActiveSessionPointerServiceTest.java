@@ -8,8 +8,10 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -143,7 +145,7 @@ class ActiveSessionPointerServiceTest {
     }
 
     @Test
-    void shouldSerializeConcurrentWritesToPointerRegistry() {
+    void shouldSerializeConcurrentWritesToPointerRegistry() throws InterruptedException {
         TrackingStoragePort trackingStoragePort = new TrackingStoragePort();
         service = new ActiveSessionPointerService(trackingStoragePort, new ObjectMapper());
         String pointerKey = service.buildWebPointerKey("admin", "client-1");
@@ -152,9 +154,11 @@ class ActiveSessionPointerServiceTest {
             CompletableFuture<Void> first = CompletableFuture.runAsync(
                     () -> service.setActiveConversationKey(pointerKey, "session-1"),
                     executor);
+            assertTrue(trackingStoragePort.awaitWriteStarted());
             CompletableFuture<Void> second = CompletableFuture.runAsync(
                     () -> service.setActiveConversationKey(pointerKey, "session-2"),
                     executor);
+            trackingStoragePort.releaseWrites();
 
             assertDoesNotThrow(() -> CompletableFuture.allOf(first, second).join());
             assertEquals(1, trackingStoragePort.maxConcurrentWrites());
@@ -167,6 +171,8 @@ class ActiveSessionPointerServiceTest {
 
         private final AtomicInteger concurrentWrites = new AtomicInteger();
         private final AtomicInteger maxConcurrentWritesCounter = new AtomicInteger();
+        private final CountDownLatch firstWriteStarted = new CountDownLatch(1);
+        private final CountDownLatch writesMayContinue = new CountDownLatch(1);
 
         @Override
         public CompletableFuture<Void> putObject(String directory, String path, byte[] content) {
@@ -214,7 +220,10 @@ class ActiveSessionPointerServiceTest {
                 int active = concurrentWrites.incrementAndGet();
                 maxConcurrentWritesCounter.accumulateAndGet(active, Math::max);
                 try {
-                    Thread.sleep(75);
+                    firstWriteStarted.countDown();
+                    if (!writesMayContinue.await(2, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Timed out waiting to release pointer write");
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException(e);
@@ -231,6 +240,14 @@ class ActiveSessionPointerServiceTest {
 
         int maxConcurrentWrites() {
             return maxConcurrentWritesCounter.get();
+        }
+
+        boolean awaitWriteStarted() throws InterruptedException {
+            return firstWriteStarted.await(1, TimeUnit.SECONDS);
+        }
+
+        void releaseWrites() {
+            writesMayContinue.countDown();
         }
     }
 }

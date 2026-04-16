@@ -97,7 +97,7 @@ public final class ConversationKeyValidator {
         return Comparator.comparing(
                 (AgentSession session) -> session.getUpdatedAt() != null ? session.getUpdatedAt()
                         : session.getCreatedAt(),
-                Comparator.nullsLast(Comparator.naturalOrder()))
+                Comparator.nullsFirst(Comparator.naturalOrder()))
                 .reversed();
     }
 

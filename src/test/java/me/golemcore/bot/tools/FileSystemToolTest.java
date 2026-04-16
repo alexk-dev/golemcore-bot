@@ -211,6 +211,23 @@ class FileSystemToolTest {
     }
 
     @Test
+    void nonStringOperationOrPathReturnValidationFailure() throws Exception {
+        ToolResult result1 = tool.execute(Map.of(
+                OPERATION, 123,
+                PATH, TEST_TXT)).get();
+        assertFalse(result1.isSuccess());
+        assertTrue(result1.getError().contains("Missing required parameters"));
+        assertFalse(result1.getError().contains("ClassCastException"));
+
+        ToolResult result2 = tool.execute(Map.of(
+                OPERATION, READ_FILE,
+                PATH, 123)).get();
+        assertFalse(result2.isSuccess());
+        assertTrue(result2.getError().contains("Missing required parameters"));
+        assertFalse(result2.getError().contains("ClassCastException"));
+    }
+
+    @Test
     void disabledTool() throws Exception {
         BotProperties disabledProps = createTestProperties(tempDir.toString());
         // enabled is now controlled via RuntimeConfigService
@@ -347,6 +364,18 @@ class FileSystemToolTest {
                 PATH, TEST_TXT)).get();
         assertFalse(result.isSuccess());
         assertTrue(result.getError().contains("Missing content"));
+    }
+
+    @Test
+    void shouldFailWriteWithNonStringContent() throws Exception {
+        ToolResult result = tool.execute(Map.of(
+                OPERATION, WRITE_FILE,
+                PATH, TEST_TXT,
+                CONTENT, 123)).get();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("Missing content"));
+        assertFalse(result.getError().contains("ClassCastException"));
     }
 
     @Test

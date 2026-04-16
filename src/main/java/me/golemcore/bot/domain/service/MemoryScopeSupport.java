@@ -53,7 +53,8 @@ public final class MemoryScopeSupport {
             return GLOBAL_SCOPE;
         }
 
-        if (candidate.startsWith(SESSION_PREFIX)) {
+        String candidateLower = candidate.toLowerCase(Locale.ROOT);
+        if (candidateLower.startsWith(SESSION_PREFIX)) {
             String[] parts = candidate.split(":", 3);
             if (parts.length != 3) {
                 return GLOBAL_SCOPE;
@@ -74,7 +75,7 @@ public final class MemoryScopeSupport {
             return SESSION_PREFIX + normalizedChannel + ":" + conversationKey;
         }
 
-        if (candidate.startsWith(GOAL_PREFIX)) {
+        if (candidateLower.startsWith(GOAL_PREFIX)) {
             String[] parts = candidate.split(":", 4);
             if (parts.length != 4) {
                 return GLOBAL_SCOPE;
@@ -100,7 +101,7 @@ public final class MemoryScopeSupport {
             return GOAL_PREFIX + normalizedChannel + ":" + conversationKey + ":" + goalId;
         }
 
-        if (candidate.startsWith(TASK_PREFIX)) {
+        if (candidateLower.startsWith(TASK_PREFIX)) {
             String[] parts = candidate.split(":", 2);
             if (parts.length != 2) {
                 return GLOBAL_SCOPE;
