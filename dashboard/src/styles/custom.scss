@@ -3574,6 +3574,17 @@ textarea:focus-visible,
   min-height: 0;
   display: flex;
 
+  .workspace-terminal-session {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+  }
+
+  .workspace-terminal-session[hidden] {
+    display: none;
+  }
+
   .terminal-pane {
     flex: 1 1 auto;
     min-height: 0;

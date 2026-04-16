@@ -32,7 +32,11 @@ vi.mock('../components/chat/ChatWindow', () => ({
 }));
 
 vi.mock('../components/terminal/TerminalPane', () => ({
-  TerminalPane: () => <div data-testid="workspace-terminal-slot">Terminal</div>,
+  TerminalPane: ({ tabId, cwd }: { tabId?: string; cwd?: string }) => (
+    <div data-testid="workspace-terminal-slot" data-tab-id={tabId} data-cwd={cwd}>
+      Terminal
+    </div>
+  ),
 }));
 
 vi.mock('../components/terminal/TerminalTabs', () => ({
@@ -44,6 +48,7 @@ import {
   DEFAULT_WORKSPACE_LAYOUT,
   useWorkspaceLayoutStore,
 } from '../store/workspaceLayoutStore';
+import { useTerminalStore } from '../store/terminalStore';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
@@ -79,6 +84,12 @@ function unmountHarness({ container, root }: TestHarness): void {
 
 function resetStore(): void {
   useWorkspaceLayoutStore.setState({ ...DEFAULT_WORKSPACE_LAYOUT });
+  useTerminalStore.setState({
+    tabs: [],
+    activeTabId: null,
+    connectionStatus: 'idle',
+    pendingInput: {},
+  });
 }
 
 describe('WorkspacePage', () => {
@@ -165,6 +176,40 @@ describe('WorkspacePage', () => {
     expect(
       harness.container.querySelector('[data-testid="workspace-terminal-tabs-slot"]'),
     ).not.toBeNull();
+    unmountHarness(harness);
+  });
+
+  it('keeps inactive terminal panes mounted so tab switching does not close PTY sessions', () => {
+    const firstTabId = useTerminalStore.getState().openTab('src/main');
+    const secondTabId = useTerminalStore.getState().openTab('dashboard');
+    useWorkspaceLayoutStore.getState().setTerminalVisible(true);
+
+    const harness = mountHarness();
+
+    const terminalSlots = harness.container.querySelectorAll('[data-testid="workspace-terminal-slot"]');
+    expect(terminalSlots).toHaveLength(2);
+    expect(
+      harness.container.querySelector(`[data-testid="workspace-terminal-session-${firstTabId}"]`)
+        ?.hasAttribute('hidden'),
+    ).toBe(true);
+    expect(
+      harness.container.querySelector(`[data-testid="workspace-terminal-session-${secondTabId}"]`)
+        ?.hasAttribute('hidden'),
+    ).toBe(false);
+
+    act(() => {
+      useTerminalStore.getState().setActiveTab(firstTabId);
+    });
+
+    expect(
+      harness.container.querySelector(`[data-testid="workspace-terminal-session-${firstTabId}"]`)
+        ?.hasAttribute('hidden'),
+    ).toBe(false);
+    expect(
+      harness.container.querySelector(`[data-testid="workspace-terminal-session-${secondTabId}"]`)
+        ?.hasAttribute('hidden'),
+    ).toBe(true);
+
     unmountHarness(harness);
   });
 

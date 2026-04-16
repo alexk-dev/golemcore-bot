@@ -26,7 +26,9 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -87,6 +89,26 @@ class TerminalWebSocketHandlerTest {
     }
 
     @Test
+    void shouldRejectWhenQueryStringIsBlank() {
+        WebSocketSession session = mockSession("ws://localhost/ws/terminal?");
+        when(session.close()).thenReturn(Mono.empty());
+
+        StepVerifier.create(handler.handle(session)).verifyComplete();
+
+        verify(session).close();
+    }
+
+    @Test
+    void shouldRejectWhenTokenIsInvalid() {
+        WebSocketSession session = mockSession("ws://localhost/ws/terminal?token=not-a-jwt");
+        when(session.close()).thenReturn(Mono.empty());
+
+        StepVerifier.create(handler.handle(session)).verifyComplete();
+
+        verify(session).close();
+    }
+
+    @Test
     void shouldRejectWhenRefreshTokenProvided() {
         String refreshToken = tokenProvider.generateRefreshToken("admin");
         WebSocketSession session = mockSession("ws://localhost/ws/terminal?token=" + refreshToken);
@@ -133,6 +155,23 @@ class TerminalWebSocketHandlerTest {
         WebSocketSession session = mockStreamingSession(
                 "ws://localhost/ws/terminal?token=" + accessToken,
                 Flux.never());
+
+        StepVerifier.create(handler.handle(session))
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
+
+        awaitLeaseReleased("admin");
+        assertEquals(0, limiter.activeCount("admin"));
+    }
+
+    @Test
+    void shouldCompleteWhenTimeoutDurationsAreDisabled() {
+        botProperties.getDashboard().getTerminal().setIdleTimeout(Duration.ZERO);
+        botProperties.getDashboard().getTerminal().setMaxSessionDuration(Duration.ZERO);
+        String accessToken = tokenProvider.generateAccessToken("admin");
+        WebSocketSession session = mockStreamingSession(
+                "ws://localhost/ws/terminal?token=" + accessToken,
+                Flux.empty());
 
         StepVerifier.create(handler.handle(session))
                 .expectComplete()
@@ -333,6 +372,21 @@ class TerminalWebSocketHandlerTest {
         handler.completeOutbound(sink);
 
         assertTrue(sink.attempts() > 1);
+    }
+
+    @Test
+    void shouldClassifyOnlyPositiveDurationsAsPositive() {
+        assertFalse(TerminalWebSocketHandler.isPositive(null));
+        assertFalse(TerminalWebSocketHandler.isPositive(Duration.ZERO));
+        assertFalse(TerminalWebSocketHandler.isPositive(Duration.ofMillis(-1)));
+        assertTrue(TerminalWebSocketHandler.isPositive(Duration.ofMillis(1)));
+    }
+
+    @Test
+    void shouldResolveDefaultShellFromEnvironmentValue() {
+        assertArrayEquals(new String[] { "/bin/zsh", "-l" }, TerminalWebSocketHandler.resolveDefaultShell("/bin/zsh"));
+        assertArrayEquals(new String[] { "/bin/sh" }, TerminalWebSocketHandler.resolveDefaultShell(null));
+        assertArrayEquals(new String[] { "/bin/sh" }, TerminalWebSocketHandler.resolveDefaultShell(" "));
     }
 
     private void awaitLeaseReleased(String username) {

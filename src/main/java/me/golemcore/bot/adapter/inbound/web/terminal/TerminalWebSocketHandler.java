@@ -146,7 +146,7 @@ public class TerminalWebSocketHandler implements WebSocketHandler {
                 });
     }
 
-    private boolean isPositive(Duration duration) {
+    static boolean isPositive(Duration duration) {
         return duration != null && !duration.isZero() && !duration.isNegative();
     }
 
@@ -260,7 +260,10 @@ public class TerminalWebSocketHandler implements WebSocketHandler {
     }
 
     private static String[] resolveDefaultShell() {
-        String shell = System.getenv("SHELL");
+        return resolveDefaultShell(System.getenv("SHELL"));
+    }
+
+    static String[] resolveDefaultShell(String shell) {
         if (shell == null || shell.isBlank()) {
             return new String[] { "/bin/sh" };
         }

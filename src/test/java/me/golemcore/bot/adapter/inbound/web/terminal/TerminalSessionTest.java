@@ -1,18 +1,27 @@
 package me.golemcore.bot.adapter.inbound.web.terminal;
 
+import com.pty4j.PtyProcess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class TerminalSessionTest {
 
@@ -74,6 +83,19 @@ class TerminalSessionTest {
     }
 
     @Test
+    void shouldIgnoreOperationsAfterClose() throws Exception {
+        TerminalSession session = TerminalSession.start(SH_COMMAND, 80, 24, data -> {
+        });
+        session.close();
+
+        session.writeInput("ignored\n".getBytes(StandardCharsets.UTF_8));
+        session.resize(120, 40);
+        session.close();
+
+        assertFalse(session.isAlive(), "closed sessions should stay closed after redundant operations");
+    }
+
+    @Test
     void shouldStartInGivenWorkingDirectory(@TempDir Path tempDir) throws Exception {
         Path realDir = tempDir.toRealPath();
         CompletableFuture<Void> outputReceived = new CompletableFuture<>();
@@ -120,6 +142,17 @@ class TerminalSessionTest {
     }
 
     @Test
+    void shouldReturnNullExitCodeWhileShellIsAlive() throws Exception {
+        TerminalSession session = TerminalSession.start(SH_COMMAND, 80, 24, data -> {
+        });
+        try {
+            assertNull(session.exitCode(), "alive shells should not report an exit code");
+        } finally {
+            session.close();
+        }
+    }
+
+    @Test
     void shouldExposeExitCodeAfterShellTermination() throws Exception {
         CompletableFuture<Void> outputReceived = new CompletableFuture<>();
         AtomicReference<String> captured = new AtomicReference<>("");
@@ -140,10 +173,60 @@ class TerminalSessionTest {
             session.writeInput("echo __GC_BYE__ && exit 0\n".getBytes(StandardCharsets.UTF_8));
             outputReceived.get(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             assertTrue(session.waitFor(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS), "shell should exit within timeout");
+            assertFalse(session.isAlive(), "session should observe the process exit before close()");
             assertNotNull(session.exitCode());
         } finally {
             session.close();
         }
+    }
+
+    @Test
+    void shouldSkipZeroLengthReadsWhenPumpingOutput() {
+        PtyProcess process = mock(PtyProcess.class);
+        when(process.getInputStream()).thenReturn(new InputStream() {
+            private int reads;
+
+            @Override
+            public int read() {
+                return -1;
+            }
+
+            @Override
+            public int read(byte[] buffer, int offset, int length) {
+                reads += 1;
+                if (reads == 1) {
+                    return 0;
+                }
+                if (reads == 2) {
+                    buffer[offset] = 'o';
+                    buffer[offset + 1] = 'k';
+                    return 2;
+                }
+                return -1;
+            }
+        });
+        List<byte[]> chunks = new ArrayList<>();
+
+        TerminalSession.pumpOutput(process, chunks::add);
+
+        assertEquals(1, chunks.size());
+        assertArrayEquals("ok".getBytes(StandardCharsets.UTF_8), chunks.get(0));
+    }
+
+    @Test
+    void shouldNotPumpOutputWhenThreadIsAlreadyInterrupted() {
+        PtyProcess process = mock(PtyProcess.class);
+        when(process.getInputStream()).thenReturn(InputStream.nullInputStream());
+        List<byte[]> chunks = new ArrayList<>();
+
+        Thread.currentThread().interrupt();
+        try {
+            TerminalSession.pumpOutput(process, chunks::add);
+        } finally {
+            Thread.interrupted();
+        }
+
+        assertTrue(chunks.isEmpty(), "interrupted readers should exit before reading pty output");
     }
 
     private boolean containsNormalizedPath(String output, Path expectedPath) {

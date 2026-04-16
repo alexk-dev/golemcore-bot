@@ -24,7 +24,6 @@ export default function WorkspacePage(): ReactElement {
   const tabs = useTerminalStore((state) => state.tabs);
   const activeTabId = useTerminalStore((state) => state.activeTabId);
   const openTab = useTerminalStore((state) => state.openTab);
-  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
 
   const handleChatResize = useCallback(
     (panelSize: PanelSize): void => {
@@ -118,9 +117,20 @@ export default function WorkspacePage(): ReactElement {
                   <div className="workspace-terminal-pane">
                     <TerminalTabs />
                     <div className="workspace-terminal-body">
-                      {activeTab ? (
-                        <TerminalPane key={activeTab.id} tabId={activeTab.id} cwd={activeTab.cwd} />
-                      ) : null}
+                      {tabs.map((tab) => {
+                        const isActive = tab.id === activeTabId;
+                        return (
+                          <div
+                            key={tab.id}
+                            className="workspace-terminal-session"
+                            data-testid={`workspace-terminal-session-${tab.id}`}
+                            hidden={!isActive}
+                            aria-hidden={!isActive}
+                          >
+                            <TerminalPane tabId={tab.id} cwd={tab.cwd} active={isActive} />
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </Panel>

@@ -89,4 +89,15 @@ class ExitWatcherTest {
             watcher.stop();
         }
     }
+
+    @Test
+    void shouldIgnoreRedundantStopCalls() {
+        ExitWatcher watcher = new ExitWatcher(() -> TerminalConnection.ExitWaitOutcome.TIMEOUT, code -> {
+        });
+
+        watcher.stop();
+        watcher.stop();
+
+        assertTrue(watcher.isStopped(), "stop() should be idempotent");
+    }
 }

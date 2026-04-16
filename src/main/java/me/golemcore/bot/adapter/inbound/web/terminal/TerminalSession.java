@@ -132,7 +132,7 @@ public final class TerminalSession implements TerminalConnection.SessionHandle {
         log.info("[Terminal] Session closed pid={}", process.pid());
     }
 
-    private static void pumpOutput(PtyProcess process, Consumer<byte[]> outputConsumer) {
+    static void pumpOutput(PtyProcess process, Consumer<byte[]> outputConsumer) {
         byte[] buffer = new byte[READ_BUFFER_BYTES];
         try (InputStream in = process.getInputStream()) {
             while (!Thread.currentThread().isInterrupted()) {

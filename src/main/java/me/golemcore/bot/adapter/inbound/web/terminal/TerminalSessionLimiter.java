@@ -80,10 +80,7 @@ public class TerminalSessionLimiter {
     }
 
     private void releaseSlot(String username) {
-        activeByUser.compute(username, (key, counter) -> {
-            if (counter == null) {
-                return null;
-            }
+        activeByUser.computeIfPresent(username, (key, counter) -> {
             if (counter.decrementAndGet() <= 0) {
                 return null;
             }

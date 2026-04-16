@@ -6,12 +6,16 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -154,25 +158,39 @@ public final class TerminalConnection {
             ObjectMapper objectMapper,
             Consumer<String> outboundSink,
             SessionFactory sessionFactory) throws IOException {
-        TerminalConnection[] connectionRef = new TerminalConnection[1];
+        AtomicReference<TerminalConnection> connectionRef = new AtomicReference<>();
+        List<byte[]> startupOutput = new ArrayList<>();
         SessionHandle session = sessionFactory.start(
                 command,
                 cols,
                 rows,
                 workingDirectory,
                 bytes -> {
-                    TerminalConnection self = connectionRef[0];
-                    if (self != null) {
-                        self.emitOutput(bytes);
+                    TerminalConnection self;
+                    synchronized (startupOutput) {
+                        self = connectionRef.get();
+                        if (self == null) {
+                            startupOutput.add(Arrays.copyOf(bytes, bytes.length));
+                            return;
+                        }
                     }
+                    self.emitOutput(bytes);
                 });
         TerminalConnection connection = new TerminalConnection(objectMapper, outboundSink, session);
-        connectionRef[0] = connection;
+        List<byte[]> bufferedOutput;
+        synchronized (startupOutput) {
+            connectionRef.set(connection);
+            bufferedOutput = List.copyOf(startupOutput);
+            startupOutput.clear();
+        }
+        for (byte[] bytes : bufferedOutput) {
+            connection.emitOutput(bytes);
+        }
         connection.exitWatcher.start();
         return connection;
     }
 
-    private static ExitWaitStrategy defaultStrategy(SessionHandle session) {
+    static ExitWaitStrategy defaultStrategy(SessionHandle session) {
         return () -> {
             if (session.waitFor(EXIT_POLL_SECONDS, TimeUnit.SECONDS)) {
                 Integer code = session.exitCode();
@@ -258,7 +276,7 @@ public final class TerminalConnection {
         emit(frame);
     }
 
-    private void emitExit(int code) {
+    void emitExit(int code) {
         if (closed.get()) {
             return;
         }

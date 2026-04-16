@@ -32,6 +32,15 @@ class TerminalSessionLimiterTest {
     }
 
     @Test
+    void shouldDisableTerminalByDefaultUntilOperatorOptsIn() {
+        BotProperties defaultProperties = new BotProperties();
+        TerminalSessionLimiter limiter = new TerminalSessionLimiter(defaultProperties);
+
+        assertFalse(defaultProperties.getDashboard().getTerminal().isEnabled());
+        assertFalse(limiter.isEnabled(), "terminal access should require an explicit operator opt-in");
+    }
+
+    @Test
     void shouldReportDisabledWhenFeatureFlagOff() {
         botProperties.getDashboard().getTerminal().setEnabled(false);
         TerminalSessionLimiter limiter = new TerminalSessionLimiter(botProperties);
@@ -80,6 +89,15 @@ class TerminalSessionLimiterTest {
         botProperties.getDashboard().getTerminal().setEnabled(false);
         TerminalSessionLimiter limiter = new TerminalSessionLimiter(botProperties);
         assertFalse(limiter.tryAcquire("admin").isPresent(), "disabled limiter should never grant leases");
+    }
+
+    @Test
+    void shouldRejectAcquireWhenMaxSessionsPerUserIsNonPositive() {
+        botProperties.getDashboard().getTerminal().setMaxSessionsPerUser(0);
+        TerminalSessionLimiter limiter = new TerminalSessionLimiter(botProperties);
+
+        assertFalse(limiter.tryAcquire("admin").isPresent(), "non-positive caps should disable new terminal leases");
+        assertEquals(0, limiter.activeCount("admin"));
     }
 
     @Test

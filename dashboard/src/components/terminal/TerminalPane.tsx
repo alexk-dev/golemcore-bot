@@ -9,6 +9,7 @@ import { useTerminalStore } from '../../store/terminalStore';
 interface TerminalPaneProps {
   tabId?: string;
   cwd?: string;
+  active?: boolean;
 }
 
 interface OutputFrame {
@@ -69,9 +70,10 @@ function parseInbound(raw: string): InboundFrame | null {
   }
 }
 
-export function TerminalPane({ tabId, cwd = '' }: TerminalPaneProps = {}): ReactElement {
+export function TerminalPane({ tabId, cwd = '', active = true }: TerminalPaneProps = {}): ReactElement {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
 
   useEffect(() => {
     // Mount xterm.js and bridge it to the backend WebSocket for the session lifetime.
@@ -87,6 +89,7 @@ export function TerminalPane({ tabId, cwd = '' }: TerminalPaneProps = {}): React
       fontSize: 13,
     });
     const fitAddon = new FitAddon();
+    fitAddonRef.current = fitAddon;
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(new WebLinksAddon());
     terminal.open(container);
@@ -180,8 +183,27 @@ export function TerminalPane({ tabId, cwd = '' }: TerminalPaneProps = {}): React
       }
       terminal.dispose();
       socketRef.current = null;
+      fitAddonRef.current = null;
     };
   }, [cwd, tabId]);
+
+  useEffect(() => {
+    // A terminal tab can become visible after being kept mounted in the background.
+    // Re-fit on activation so xterm recalculates dimensions after the wrapper is unhidden.
+    if (!active) {
+      return undefined;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        fitAddonRef.current?.fit();
+      } catch (error) {
+        console.error('[terminal] activation fit failed', error);
+      }
+    });
+    return (): void => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [active]);
 
   return <div ref={containerRef} className="terminal-pane" />;
 }
