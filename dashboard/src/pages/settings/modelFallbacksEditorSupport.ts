@@ -15,11 +15,11 @@ export function normalizeModelFallbacks(fallbacks: TierFallback[]): TierFallback
   }));
 }
 
-export function hasModelFallbackEditorDiff<T>(current: T, initial: T): boolean {
+export function hasRouterEditorDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
 }
 
-export function toNullableModelFallbackString(value: string): string | null {
+export function toNullableRouterString(value: string): string | null {
   return value.length > 0 ? value : null;
 }
 

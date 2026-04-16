@@ -18,8 +18,9 @@ import {
 } from '../../lib/modelTiers';
 import {
   buildModelsForProvider,
+  hasRouterEditorDiff,
   resolveTemperatureAfterModelChange,
-  toNullableModelFallbackString,
+  toNullableRouterString,
 } from './modelFallbacksEditorSupport';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 import { Badge, Button, Card, Col, Form, Row } from '../../components/ui/tailwind-components';
@@ -56,10 +57,6 @@ interface TierModelCardProps {
 }
 
 const EMPTY_AVAILABLE_MODELS: Record<string, AvailableModel[]> = {};
-
-function hasDiff<T>(current: T, initial: T): boolean {
-  return JSON.stringify(current) !== JSON.stringify(initial);
-}
 
 function TierModelCard({
   label,
@@ -231,7 +228,7 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
   }, [available, readyProviderNames]);
 
   const providerNames = useMemo(() => Object.keys(providers), [providers]);
-  const isModelsDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const isModelsDirty = useMemo(() => hasRouterEditorDiff(form, config), [form, config]);
   const managedPolicy = getHiveManagedPolicyDetails(hiveStatus);
 
   const handleSave = async (): Promise<void> => {
@@ -311,7 +308,7 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
                 ...form,
                 routing: {
                   ...form.routing,
-                  reasoning: toNullableModelFallbackString(value),
+                  reasoning: toNullableRouterString(value),
                 },
               })}
               onTemperatureChange={(value) => setForm({
@@ -348,7 +345,7 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
                 }))}
                 onReasoningChange={(value) => setForm(updateTierBinding(form, key, {
                   ...getTierBinding(form, key),
-                  reasoning: toNullableModelFallbackString(value),
+                  reasoning: toNullableRouterString(value),
                 }))}
                 onTemperatureChange={(value) => setForm(updateTierBinding(form, key, {
                   ...getTierBinding(form, key),

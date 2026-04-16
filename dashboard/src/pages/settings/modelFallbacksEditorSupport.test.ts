@@ -4,7 +4,7 @@ import type { AvailableModel } from '../../api/models';
 import {
   normalizeModelFallbacks,
   resolveTemperatureAfterModelChange,
-  toNullableModelFallbackString,
+  toNullableRouterString,
 } from './modelFallbacksEditorSupport';
 
 const providers: Record<string, AvailableModel[]> = {
@@ -46,13 +46,13 @@ describe('resolveTemperatureAfterModelChange', () => {
   });
 });
 
-describe('toNullableModelFallbackString', () => {
+describe('toNullableRouterString', () => {
   it('returns null for empty input', () => {
-    expect(toNullableModelFallbackString('')).toBeNull();
+    expect(toNullableRouterString('')).toBeNull();
   });
 
   it('returns the string as-is when non-empty', () => {
-    expect(toNullableModelFallbackString('medium')).toBe('medium');
+    expect(toNullableRouterString('medium')).toBe('medium');
   });
 });
 

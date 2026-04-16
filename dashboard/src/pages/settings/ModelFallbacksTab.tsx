@@ -11,10 +11,10 @@ import { cloneModelRouterConfig, getTierBinding, updateTierBinding } from '../..
 import {
   buildModelProviderOptions,
   buildModelsForProvider,
-  hasModelFallbackEditorDiff,
+  hasRouterEditorDiff,
   normalizeModelFallbacks,
   resolveTemperatureAfterModelChange,
-  toNullableModelFallbackString,
+  toNullableRouterString,
 } from './modelFallbacksEditorSupport';
 import { EXPLICIT_MODEL_TIER_ORDER, MODEL_TIER_META, type ExplicitModelTierId } from '../../lib/modelTiers';
 import { toEditorModelIdForProvider } from '../../lib/providerModelIds';
@@ -188,7 +188,7 @@ function FallbackRow({
             reasoning: null,
             temperature: resolveTemperatureAfterModelChange(fallback.temperature, value, providerName, providers),
           })}
-          onReasoningChange={(value) => onChange({ ...fallback, reasoning: toNullableModelFallbackString(value) })}
+          onReasoningChange={(value) => onChange({ ...fallback, reasoning: toNullableRouterString(value) })}
           onTemperatureChange={(value) => onChange({ ...fallback, temperature: value })}
         />
       </Card.Body>
@@ -232,7 +232,7 @@ function FallbackEditor({ tier, binding, providers, providerNames, onChange }: F
             reasoning: null,
             temperature: resolveTemperatureAfterModelChange(binding.temperature, value, providerName, providers),
           })}
-          onReasoningChange={(value) => onChange({ ...binding, reasoning: toNullableModelFallbackString(value) })}
+          onReasoningChange={(value) => onChange({ ...binding, reasoning: toNullableRouterString(value) })}
           onTemperatureChange={(value) => onChange({ ...binding, temperature: value })}
         />
 
@@ -290,7 +290,7 @@ export default function ModelFallbacksTab({ config, llmConfig, hiveStatus }: Mod
     return Object.fromEntries(Object.entries(available).filter(([providerName]) => readySet.has(providerName)));
   }, [available, readyProviderNames]);
   const providerNames = useMemo(() => Object.keys(providers), [providers]);
-  const isDirty = useMemo(() => hasModelFallbackEditorDiff(form, config), [form, config]);
+  const isDirty = useMemo(() => hasRouterEditorDiff(form, config), [form, config]);
 
   const handleSave = async (): Promise<void> => {
     await updateRouter.mutateAsync(form);
