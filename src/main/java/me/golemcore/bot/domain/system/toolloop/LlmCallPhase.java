@@ -756,7 +756,7 @@ class LlmCallPhase {
                 String reasoning = readContextAttribute(context, ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING);
                 if (modelSelectionService != null) {
                     return modelSelectionService.resolveRouterFallbackSelection(
-                            context != null ? context.getModelTier() : null, model, reasoning);
+                            context.getModelTier(), model, reasoning);
                 }
                 return new ModelSelectionService.ModelSelection(model, reasoning);
             }
