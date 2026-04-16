@@ -16,6 +16,19 @@ import java.util.stream.Stream;
 /**
  * Supervises the actual bot runtime so self-update can restart into a staged
  * jar instead of relaunching the immutable container classpath.
+ *
+ * <p>
+ * The launcher always evaluates the best available runtime source in this
+ * order:
+ * <ol>
+ * <li>a staged jar selected by {@code updates/current.txt}</li>
+ * <li>a bundled runtime jar shipped next to the launcher</li>
+ * <li>the image classpath produced by the container build</li>
+ * </ol>
+ *
+ * <p>
+ * This keeps restart semantics stable for both container and local native
+ * distribution layouts.
  */
 public final class RuntimeLauncher {
 
@@ -34,6 +47,10 @@ public final class RuntimeLauncher {
     private static final String LIB_DIR_NAME = "lib";
     private static final String RUNTIME_DIR_NAME = "runtime";
 
+    /**
+     * System properties that must follow the child runtime even when the new
+     * process is launched from a different entry point.
+     */
     private static final List<String> FORWARDED_SYSTEM_PROPERTIES = List.of(
             STORAGE_PATH_PROPERTY,
             UPDATE_PATH_PROPERTY,
@@ -74,6 +91,17 @@ public final class RuntimeLauncher {
         }
     }
 
+    /**
+     * Runs the launcher loop until the child runtime exits normally.
+     *
+     * <p>
+     * When the child returns {@link #RESTART_EXIT_CODE}, the loop resolves the
+     * runtime source again so newly staged jars become active immediately.
+     *
+     * @param args
+     *            original launcher arguments
+     * @return final child exit code or {@code 1} when the launcher itself fails
+     */
     int run(String[] args) {
         while (true) {
             LaunchCommand launchCommand = resolveLaunchCommand(args);
@@ -110,6 +138,18 @@ public final class RuntimeLauncher {
         }
     }
 
+    /**
+     * Builds the exact child-process command for the current launcher cycle.
+     *
+     * <p>
+     * The launcher prefers a staged update, then an explicitly or implicitly
+     * discovered bundled jar, and only falls back to the image classpath when no
+     * jar-based runtime is available.
+     *
+     * @param args
+     *            original launcher arguments
+     * @return immutable launch command description
+     */
     LaunchCommand resolveLaunchCommand(String[] args) {
         Path currentJar = resolveCurrentJar(args);
         List<String> applicationArgs = resolveApplicationArgs(args);
@@ -139,6 +179,18 @@ public final class RuntimeLauncher {
         return new LaunchCommand(List.copyOf(command), "bundled runtime from image classpath");
     }
 
+    /**
+     * Resolves the staged runtime jar pointed to by {@code current.txt}.
+     *
+     * <p>
+     * The marker content is validated aggressively so a corrupted or hostile marker
+     * cannot escape the updates directory via path traversal.
+     *
+     * @param args
+     *            original launcher arguments
+     * @return staged runtime jar path, or {@code null} when no valid staged jar
+     *         exists
+     */
     Path resolveCurrentJar(String[] args) {
         Path updatesDir = resolveUpdatesDir(args);
         Path markerPath = updatesDir.resolve(CURRENT_MARKER_NAME);
@@ -173,6 +225,19 @@ public final class RuntimeLauncher {
         }
     }
 
+    /**
+     * Resolves the updates directory using the same precedence as the runtime.
+     *
+     * <p>
+     * Command-line properties win over JVM properties, which win over the ambient
+     * environment. When no explicit updates path exists, the launcher derives it
+     * from the storage root and finally falls back to the default workspace
+     * location under the user home directory.
+     *
+     * @param args
+     *            original launcher arguments
+     * @return normalized updates directory path
+     */
     Path resolveUpdatesDir(String[] args) {
         String configuredUpdatesPath = firstNonBlank(
                 extractPropertyArg(args, UPDATE_PATH_PROPERTY),
@@ -197,6 +262,17 @@ public final class RuntimeLauncher {
                 .normalize();
     }
 
+    /**
+     * Resolves a bundled runtime jar shipped with the launcher itself.
+     *
+     * <p>
+     * An explicit configuration value wins first. Otherwise the launcher inspects
+     * the code-source location and common app-image directories to support both
+     * direct jars and native distributions produced by {@code jpackage}.
+     *
+     * @return bundled runtime jar path, or {@code null} when the launcher should
+     *         use classpath mode
+     */
     Path resolveBundledJar() {
         String configuredBundledJar = firstNonBlank(
                 propertyReader.get(BUNDLED_JAR_PROPERTY),
@@ -232,6 +308,18 @@ public final class RuntimeLauncher {
         return null;
     }
 
+    /**
+     * Collects JVM options that must be preserved across launcher restarts.
+     *
+     * <p>
+     * Explicit {@code -D} arguments are forwarded verbatim. For a small set of
+     * critical properties the launcher also injects values from the current JVM
+     * when they were not supplied explicitly on the command line.
+     *
+     * @param args
+     *            original launcher arguments
+     * @return JVM options for the child process
+     */
     private List<String> resolveForwardedJavaOptions(String[] args) {
         List<String> forwardedOptions = new ArrayList<>();
         Set<String> explicitSystemPropertyNames = new LinkedHashSet<>();
@@ -259,6 +347,14 @@ public final class RuntimeLauncher {
         }
     }
 
+    /**
+     * Filters out launcher-only JVM arguments so the remaining values can be passed
+     * to Spring Boot exactly as application arguments.
+     *
+     * @param args
+     *            original launcher arguments
+     * @return application arguments for the child runtime
+     */
     private List<String> resolveApplicationArgs(String[] args) {
         List<String> applicationArgs = new ArrayList<>();
         for (String arg : args) {
@@ -283,6 +379,19 @@ public final class RuntimeLauncher {
         return "-D" + propertyName + "=" + value;
     }
 
+    /**
+     * Searches app-image layouts that place the runtime jar in a nearby
+     * {@code runtime} directory instead of next to the launcher artifact.
+     *
+     * <p>
+     * This covers the directory shapes produced by local native bundles on Linux
+     * and macOS.
+     *
+     * @param resolvedLocation
+     *            launcher code-source location
+     * @return discovered bundled runtime jar, or {@code null} when none exists
+     *         nearby
+     */
     private Path findBundledRuntimeJarInCommonRuntimeDirs(Path resolvedLocation) {
         Path currentDirectory = Files.isDirectory(resolvedLocation)
                 ? resolvedLocation
@@ -317,6 +426,13 @@ public final class RuntimeLauncher {
         }
     }
 
+    /**
+     * Scans a single directory for a bundled runtime jar.
+     *
+     * @param resolvedLocation
+     *            directory or file near the bundled runtime
+     * @return matching runtime jar, or {@code null} when no candidate is present
+     */
     private Path findBundledRuntimeJar(Path resolvedLocation) {
         Path searchDirectory = Files.isDirectory(resolvedLocation)
                 ? resolvedLocation
@@ -363,6 +479,14 @@ public final class RuntimeLauncher {
         return fileName.endsWith(".jar");
     }
 
+    /**
+     * Normalizes user-provided paths and expands the home placeholders commonly
+     * produced by local launchers and shell invocations.
+     *
+     * @param value
+     *            raw path-like value
+     * @return normalized absolute path
+     */
     private static Path normalizePath(String value) {
         String expanded = value;
         if (expanded.startsWith("~/")) {
@@ -427,6 +551,13 @@ public final class RuntimeLauncher {
         return throwable.getMessage();
     }
 
+    /**
+     * Removes the per-run shutdown hook once the child process has finished so
+     * repeated restarts do not accumulate stale hooks.
+     *
+     * @param shutdownHook
+     *            hook installed for the current child process
+     */
     private void removeShutdownHook(Thread shutdownHook) {
         try {
             Runtime.getRuntime().removeShutdownHook(shutdownHook);
@@ -435,33 +566,59 @@ public final class RuntimeLauncher {
         }
     }
 
+    /**
+     * Immutable child-process launch descriptor.
+     *
+     * @param command
+     *            exact process command line
+     * @param description
+     *            human-readable command source description for logs
+     */
     record LaunchCommand(List<String> command, String description) {
     }
 
+    /**
+     * Starts the child runtime process.
+     */
     interface ProcessStarter {
         ChildProcess start(List<String> command) throws IOException;
     }
 
+    /**
+     * Minimal process abstraction that keeps launcher tests deterministic.
+     */
     interface ChildProcess {
         int waitFor() throws InterruptedException;
 
         void destroy();
     }
 
+    /**
+     * Reads environment variables from the current execution context.
+     */
     interface EnvironmentReader {
         String get(String name);
     }
 
+    /**
+     * Reads JVM system properties from the current execution context.
+     */
     interface PropertyReader {
         String get(String name);
     }
 
+    /**
+     * Writes launcher diagnostics for operators.
+     */
     interface LauncherOutput {
         void info(String message);
 
         void error(String message);
     }
 
+    /**
+     * Resolves the launcher code-source or equivalent packaged runtime origin.
+     */
     interface BundledRuntimeResolver {
         Path resolve();
     }

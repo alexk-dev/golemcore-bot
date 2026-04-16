@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Convenience wrapper that finds a golemcore-bot checkout from the current
+# directory and delegates to the canonical native distribution build script.
 find_project_root() {
   local current_dir="${PWD}"
   while [[ "${current_dir}" != "/" ]]; do

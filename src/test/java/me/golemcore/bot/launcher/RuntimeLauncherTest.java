@@ -15,6 +15,10 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Covers launcher restart behavior, staged update selection, and bundled
+ * runtime discovery for both container and local native distribution layouts.
+ */
 class RuntimeLauncherTest {
 
     @Test
@@ -370,6 +374,10 @@ class RuntimeLauncherTest {
         }
     }
 
+    /**
+     * Creates a launcher that uses an isolated updates directory with optional
+     * bundled runtime overrides.
+     */
     private RuntimeLauncher createLauncher(
             Path updatesDir,
             RecordingProcessStarter processStarter,
@@ -385,6 +393,10 @@ class RuntimeLauncherTest {
                 properties);
     }
 
+    /**
+     * Creates a launcher wired to deterministic test doubles for environment,
+     * system properties, process startup, and bundled runtime discovery.
+     */
     private RuntimeLauncher createLauncher(
             Map<String, String> environment,
             RuntimeLauncher.ProcessStarter processStarter,
@@ -405,6 +417,10 @@ class RuntimeLauncherTest {
                 new FixedBundledRuntimeResolver(resolvedBundledJar));
     }
 
+    /**
+     * Records every command sent to the child process and replays configured exit
+     * codes in sequence.
+     */
     private static class RecordingProcessStarter implements RuntimeLauncher.ProcessStarter {
 
         private final List<Integer> exitCodes;
@@ -428,6 +444,10 @@ class RuntimeLauncherTest {
         }
     }
 
+    /**
+     * Simulates a self-update by writing the staged jar marker after the first
+     * launcher cycle returns the restart exit code.
+     */
     private static final class RestartingProcessStarter extends RecordingProcessStarter {
 
         private final Path updatesDir;
@@ -450,6 +470,9 @@ class RuntimeLauncherTest {
         }
     }
 
+    /**
+     * Returns a fixed exit code without spawning a real process.
+     */
     private static final class FixedExitChildProcess implements RuntimeLauncher.ChildProcess {
 
         private final int exitCode;
@@ -465,10 +488,13 @@ class RuntimeLauncherTest {
 
         @Override
         public void destroy() {
-            // nothing to destroy in tests
+            // Nothing to destroy in tests because no external process exists.
         }
     }
 
+    /**
+     * Always returns the same child process instance.
+     */
     private static final class SingleChildProcessStarter implements RuntimeLauncher.ProcessStarter {
 
         private final RuntimeLauncher.ChildProcess childProcess;
@@ -483,6 +509,9 @@ class RuntimeLauncherTest {
         }
     }
 
+    /**
+     * Fails immediately when the launcher tries to spawn a child process.
+     */
     private static final class FailingProcessStarter implements RuntimeLauncher.ProcessStarter {
 
         private final IOException failure;
@@ -497,6 +526,10 @@ class RuntimeLauncherTest {
         }
     }
 
+    /**
+     * Simulates an interrupted wait so the launcher can prove it destroys the child
+     * process and preserves the interrupt flag.
+     */
     private static final class InterruptingChildProcess implements RuntimeLauncher.ChildProcess {
 
         private boolean destroyed;
@@ -516,6 +549,9 @@ class RuntimeLauncherTest {
         }
     }
 
+    /**
+     * In-memory environment source for deterministic tests.
+     */
     private static final class MapEnvironmentReader implements RuntimeLauncher.EnvironmentReader {
 
         private final Map<String, String> values;
@@ -530,6 +566,9 @@ class RuntimeLauncherTest {
         }
     }
 
+    /**
+     * In-memory system property source for deterministic tests.
+     */
     private static final class MapPropertyReader implements RuntimeLauncher.PropertyReader {
 
         private final Map<String, String> values;
@@ -544,26 +583,32 @@ class RuntimeLauncherTest {
         }
     }
 
+    /**
+     * Discards launcher logs when the test does not assert on them.
+     */
     private static final class NoOpLauncherOutput implements RuntimeLauncher.LauncherOutput {
 
         @Override
         public void info(String message) {
-            // ignore launcher logs in unit tests
+            // Intentionally ignored to keep successful test output quiet.
         }
 
         @Override
         public void error(String message) {
-            // ignore launcher logs in unit tests
+            // Intentionally ignored to keep successful test output quiet.
         }
     }
 
+    /**
+     * Collects launcher errors for assertion-friendly verification.
+     */
     private static final class CapturingLauncherOutput implements RuntimeLauncher.LauncherOutput {
 
         private final List<String> capturedErrorMessages = new ArrayList<>();
 
         @Override
         public void info(String message) {
-            // ignore info-level launcher logs in assertions
+            // Info logs are not relevant for the failure assertions in this test.
         }
 
         @Override
@@ -576,6 +621,10 @@ class RuntimeLauncherTest {
         }
     }
 
+    /**
+     * Returns a fixed code-source location so bundled runtime discovery can be
+     * tested without relying on the real test JVM layout.
+     */
     private static final class FixedBundledRuntimeResolver implements RuntimeLauncher.BundledRuntimeResolver {
 
         private final Path bundledJar;

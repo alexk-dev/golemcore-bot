@@ -203,6 +203,8 @@ jobs:
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         run: ./mvnw clean package -DskipTests -DskipGitHooks=true
 
+      # Build the local native bundles from the freshly produced runtime jar so
+      # the release carries the same launcher-aware packaging users build locally.
       - name: Build native distribution bundles
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         run: ./.github/scripts/build-native-distribution.sh
@@ -220,6 +222,8 @@ jobs:
           JAR_NAME=$(basename "${JAR_PATH}")
           sha256sum "${JAR_PATH}" | awk -v file="${JAR_NAME}" '{print $1 "  " file}' > "${SHA_FILE}"
 
+          # Publish checksums for each native bundle as well so local installers
+          # can verify the exact archive they downloaded.
           while IFS= read -r bundlePath; do
             if [[ -z "${bundlePath}" ]]; then
               continue
