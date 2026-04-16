@@ -184,6 +184,8 @@ class LlmCallPhaseTest {
         ConversationViewBuilder viewBuilder = mock(ConversationViewBuilder.class);
         when(viewBuilder.buildView(any(), eq("provider/fallback"))).thenReturn(ConversationView.ofMessages(List.of()));
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveRouterFallbackSelection(eq(null), eq("provider/fallback"), eq("low")))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider/fallback", "low"));
         LlmRequestPreflightPhase preflightPhase = mock(LlmRequestPreflightPhase.class);
         when(preflightPhase.preflight(any(AgentContext.class), any(), anyInt()))
                 .thenAnswer(invocation -> ((java.util.function.Supplier<LlmRequest>) invocation.getArgument(1)).get());
@@ -216,6 +218,48 @@ class LlmCallPhaseTest {
         assertEquals("provider/fallback", requestCaptor.getValue().getModel());
         assertEquals("low", requestCaptor.getValue().getReasoningEffort());
         verify(modelSelectionService, never()).resolveForTier(any());
+    }
+
+    @Test
+    void execute_shouldNormalizeForcedRouterFallbackSelection() {
+        LlmPort llmPort = mock(LlmPort.class);
+        ConversationViewBuilder viewBuilder = mock(ConversationViewBuilder.class);
+        when(viewBuilder.buildView(any(), eq("provider/fallback"))).thenReturn(ConversationView.ofMessages(List.of()));
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveRouterFallbackSelection(eq("balanced"), eq("provider/fallback"), eq(null)))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider/fallback", "lowest"));
+        LlmRequestPreflightPhase preflightPhase = mock(LlmRequestPreflightPhase.class);
+        when(preflightPhase.preflight(any(AgentContext.class), any(), anyInt()))
+                .thenAnswer(invocation -> ((java.util.function.Supplier<LlmRequest>) invocation.getArgument(1)).get());
+        when(llmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                        .content("ok")
+                        .finishReason("stop")
+                        .build()));
+        LlmCallPhase fallbackPhase = new LlmCallPhase(
+                llmPort,
+                viewBuilder,
+                modelSelectionService,
+                null,
+                preflightPhase,
+                mock(ContextCompactionCoordinator.class),
+                null,
+                null,
+                null,
+                null,
+                clock);
+        TurnState turnState = buildTurnState();
+        turnState.getContext().setModelTier("balanced");
+        turnState.getContext().setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL, "provider/fallback");
+
+        LlmCallPhase.LlmCallOutcome outcome = fallbackPhase.execute(turnState, historyWriter);
+
+        assertInstanceOf(LlmCallPhase.LlmCallOutcome.Success.class, outcome);
+        ArgumentCaptor<LlmRequest> requestCaptor = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(llmPort).chat(requestCaptor.capture());
+        assertEquals("provider/fallback", requestCaptor.getValue().getModel());
+        assertEquals("lowest", requestCaptor.getValue().getReasoningEffort());
+        verify(modelSelectionService).resolveRouterFallbackSelection("balanced", "provider/fallback", null);
     }
 
     @Test

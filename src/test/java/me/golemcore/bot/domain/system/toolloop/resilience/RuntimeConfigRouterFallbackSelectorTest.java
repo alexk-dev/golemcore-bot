@@ -114,6 +114,25 @@ class RuntimeConfigRouterFallbackSelectorTest {
     }
 
     @Test
+    void shouldClearForcedFallbackWhenFallbacksAreExhausted() {
+        when(runtimeConfigService.getModelTierBinding("deep")).thenReturn(binding(
+                FallbackModes.SEQUENTIAL,
+                fallback("provider/fallback-a", "low", null)));
+        RuntimeConfigRouterFallbackSelector selector = selector(new Random(0));
+        Optional<RouterFallbackSelector.Selection> selected = selector.selectNext(context);
+        assertTrue(selected.isPresent());
+
+        Optional<RouterFallbackSelector.Selection> exhausted = selector.selectNext(context);
+
+        assertTrue(exhausted.isEmpty());
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_MODE));
+        assertEquals(List.of("provider/fallback-a"),
+                context.getAttribute(ContextAttributes.RESILIENCE_L2_ATTEMPTED_MODELS));
+    }
+
+    @Test
     void shouldClearFallbackState() {
         when(runtimeConfigService.getModelTierBinding("deep")).thenReturn(binding(
                 FallbackModes.SEQUENTIAL,

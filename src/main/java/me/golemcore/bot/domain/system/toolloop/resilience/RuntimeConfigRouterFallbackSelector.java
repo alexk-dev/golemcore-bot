@@ -66,11 +66,13 @@ public class RuntimeConfigRouterFallbackSelector implements RouterFallbackSelect
         String tier = normalizeTier(context.getModelTier());
         RuntimeConfig.TierBinding binding = runtimeConfigService.getModelTierBinding(tier);
         if (binding == null || binding.getFallbacks() == null || binding.getFallbacks().isEmpty()) {
+            clearForcedSelection(context);
             return Optional.empty();
         }
 
         List<FallbackCandidate> candidates = buildCandidates(binding.getFallbacks());
         if (candidates.isEmpty()) {
+            clearForcedSelection(context);
             return Optional.empty();
         }
 
@@ -85,6 +87,7 @@ public class RuntimeConfigRouterFallbackSelector implements RouterFallbackSelect
                 .toList();
         if (eligible.isEmpty()) {
             log.debug("[Resilience] L2 router fallback exhausted for tier {}", tier);
+            clearForcedSelection(context);
             return Optional.empty();
         }
 
@@ -104,14 +107,21 @@ public class RuntimeConfigRouterFallbackSelector implements RouterFallbackSelect
         return modelAvailable == null || modelAvailable.test(model);
     }
 
-    @Override
-    public void clear(AgentContext context) {
+    private void clearForcedSelection(AgentContext context) {
         if (context == null || context.getAttributes() == null) {
             return;
         }
         context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL);
         context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING);
         context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_FALLBACK_MODE);
+    }
+
+    @Override
+    public void clear(AgentContext context) {
+        if (context == null || context.getAttributes() == null) {
+            return;
+        }
+        clearForcedSelection(context);
         context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_ATTEMPTED_MODELS);
         context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_ROUND_ROBIN_CURSOR);
     }
