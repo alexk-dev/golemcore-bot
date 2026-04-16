@@ -11,6 +11,17 @@ import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import org.springframework.stereotype.Service;
 
+/**
+ * Cleans up runtime update artifacts after a successful startup.
+ *
+ * <p>
+ * The service keeps the currently active runtime jar and any still-relevant
+ * staged candidate, while deleting obsolete jars left behind by previous
+ * updates. When the process is already running from a newer bundled image, it
+ * also clears stale persisted markers that would otherwise keep forcing an
+ * older jar on the next restart.
+ * </p>
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -24,11 +35,30 @@ public class UpdateRuntimeCleanupService {
     private final WorkspaceFilePort workspaceFilePort;
     private final RuntimeVersionSupport runtimeVersionSupport = new RuntimeVersionSupport();
 
+    /**
+     * Run startup cleanup without comparing against an explicitly supplied running
+     * version.
+     */
     @SuppressWarnings("PMD.NullAssignment")
     public void cleanupAfterSuccessfulStartup() {
         cleanupAfterSuccessfulStartup(null);
     }
 
+    /**
+     * Remove obsolete runtime jars and clear stale marker files after a successful
+     * startup.
+     *
+     * <p>
+     * When {@code runningVersion} is present and strictly newer than a marker
+     * target, the stale marker and its jar are removed. Equal versions are kept
+     * intentionally so variant A behavior remains intact: a same-version persisted
+     * jar continues to win over the bundled image on future restarts.
+     * </p>
+     *
+     * @param runningVersion
+     *            normalized version of the runtime that actually started, or
+     *            {@code null} when the caller only wants generic cleanup
+     */
     @SuppressWarnings("PMD.NullAssignment")
     public void cleanupAfterSuccessfulStartup(String runningVersion) {
         if (!settingsPort.update().enabled()) {
@@ -83,6 +113,10 @@ public class UpdateRuntimeCleanupService {
         }
     }
 
+    /**
+     * Decide whether a persisted marker points to an older runtime than the one
+     * that has already started successfully.
+     */
     private boolean shouldDropStaleMarker(String assetName, String runningVersion) {
         if (assetName == null || runningVersion == null || runningVersion.isBlank()) {
             return false;
@@ -98,6 +132,10 @@ public class UpdateRuntimeCleanupService {
         return runtimeVersionSupport.compareVersions(runningVersion, assetVersion) > 0;
     }
 
+    /**
+     * Delete a jar only when the marker asset name resolves safely under the
+     * runtime jars directory.
+     */
     private void deleteAssetJarIfSafe(Path jarsDir, String assetName) {
         Path assetPath = resolveAssetPath(jarsDir, assetName);
         if (assetPath == null) {
@@ -106,6 +144,10 @@ public class UpdateRuntimeCleanupService {
         deleteIfExists(assetPath);
     }
 
+    /**
+     * Resolve a marker asset name to an on-disk jar path while preventing path
+     * traversal or nested path tricks from escaping {@code jarsDir}.
+     */
     private Path resolveAssetPath(Path jarsDir, String assetName) {
         if (!isValidAssetName(assetName)) {
             return null;
@@ -115,6 +157,9 @@ public class UpdateRuntimeCleanupService {
         return assetPath.startsWith(normalizedJarsDir) ? assetPath : null;
     }
 
+    /**
+     * Accept only plain file names written by the update artifact store.
+     */
     private boolean isValidAssetName(String assetName) {
         if (assetName == null || assetName.isBlank()) {
             return false;
@@ -132,6 +177,10 @@ public class UpdateRuntimeCleanupService {
         return fileName != null ? fileName.toString() : null;
     }
 
+    /**
+     * Read a marker file best-effort. Invalid or unreadable markers are treated as
+     * absent so startup cleanup stays resilient.
+     */
     private String readMarker(Path markerPath) {
         try {
             if (!workspaceFilePort.exists(markerPath)) {

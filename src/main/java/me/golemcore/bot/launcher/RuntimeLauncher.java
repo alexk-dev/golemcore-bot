@@ -15,6 +15,13 @@ import me.golemcore.bot.domain.service.RuntimeVersionSupport;
 /**
  * Supervises the actual bot runtime so self-update can restart into a staged
  * jar instead of relaunching the immutable container classpath.
+ *
+ * <p>
+ * The launcher decides between the bundled image runtime and a persisted
+ * self-updated jar before Spring starts. This is the critical decision point
+ * that allows a newly pulled container image to take over from an older
+ * persisted runtime when appropriate.
+ * </p>
  */
 public final class RuntimeLauncher {
 
@@ -137,6 +144,15 @@ public final class RuntimeLauncher {
         return new LaunchCommand(List.copyOf(command), "bundled runtime from image classpath");
     }
 
+    /**
+     * Resolve the persisted current runtime jar, if any.
+     *
+     * <p>
+     * The marker is validated defensively before any comparison happens so a
+     * damaged or tampered persisted state cannot redirect startup outside the
+     * updates directory.
+     * </p>
+     */
     Path resolveCurrentJar(String[] args) {
         Path updatesDir = resolveUpdatesDir(args);
         Path markerPath = updatesDir.resolve(CURRENT_MARKER_NAME);
@@ -196,6 +212,15 @@ public final class RuntimeLauncher {
                 .normalize();
     }
 
+    /**
+     * Decide whether the bundled runtime should override the persisted current jar.
+     *
+     * <p>
+     * Variant A is intentionally preserved here: equal versions keep using the
+     * persisted jar, so only a strictly newer bundled image suppresses the current
+     * marker.
+     * </p>
+     */
     private boolean isBundledRuntimeNewer(String assetName) {
         String bundledVersion = runtimeVersionSupport.normalizeVersion(runtimeVersionReader.currentVersion());
         String currentJarVersion = runtimeVersionSupport.extractVersionFromAssetName(assetName);
@@ -354,6 +379,16 @@ public final class RuntimeLauncher {
         }
     }
 
+    /**
+     * Reads the version baked into the bundled image runtime.
+     *
+     * <p>
+     * The context class loader is preferred to satisfy PMD and to work in
+     * environments where the launcher class loader is not the one that sees the
+     * build-info resource. A system-classloader fallback keeps the lookup stable
+     * when no context loader is set.
+     * </p>
+     */
     private static final class ClasspathRuntimeVersionReader implements RuntimeVersionReader {
 
         @Override

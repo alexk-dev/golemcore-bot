@@ -869,16 +869,29 @@ class UpdateServiceTest {
 
     @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
     private static Method getDeclaredMethod(String methodName, Class<?>... parameterTypes) {
-        try {
-            Class<?> owner = "compareVersions".equals(methodName)
-                    ? UpdateVersionSupport.class
-                    : UpdateService.class;
-            Method method = owner.getDeclaredMethod(methodName, parameterTypes);
-            method.setAccessible(true);
-            return method;
-        } catch (NoSuchMethodException exception) {
-            throw new IllegalStateException("Method not found: " + methodName, exception);
+        Class<?> owner = "compareVersions".equals(methodName)
+                ? UpdateVersionSupport.class
+                : UpdateService.class;
+        Method method = findDeclaredMethod(owner, methodName, parameterTypes);
+        if (method == null) {
+            throw new IllegalStateException("Method not found: " + methodName);
         }
+        method.setAccessible(true);
+        return method;
+    }
+
+    private static Method findDeclaredMethod(Class<?> owner, String methodName, Class<?>... parameterTypes) {
+        Class<?> current = owner;
+        while (current != null) {
+            try {
+                // compareVersions now lives in shared RuntimeVersionSupport, so the
+                // compatibility wrapper test must walk inherited declarations too.
+                return current.getDeclaredMethod(methodName, parameterTypes);
+            } catch (NoSuchMethodException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        return null;
     }
 
     private static Object invokeReflective(Method method, Object target, Object... arguments) {
