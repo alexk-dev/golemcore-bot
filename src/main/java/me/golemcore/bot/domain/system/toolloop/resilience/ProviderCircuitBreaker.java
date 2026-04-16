@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -157,7 +158,26 @@ public class ProviderCircuitBreaker {
      * Returns the current state of a provider (CLOSED if unknown).
      */
     public State getState(String providerId) {
+        if (providerId == null) {
+            return State.CLOSED;
+        }
         ProviderState ps = providers.get(providerId);
         return ps != null ? ps.state : State.CLOSED;
+    }
+
+    /**
+     * Returns current states for all providers observed by this breaker.
+     */
+    public Map<String, State> snapshotStates() {
+        Map<String, State> snapshot = new LinkedHashMap<>();
+        providers.keySet().stream().sorted().forEach(providerId -> {
+            ProviderState ps = providers.get(providerId);
+            if (ps != null) {
+                synchronized (ps) {
+                    snapshot.put(providerId, ps.state);
+                }
+            }
+        });
+        return snapshot;
     }
 }

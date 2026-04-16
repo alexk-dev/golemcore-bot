@@ -38,7 +38,8 @@ import java.util.Set;
  * semantic memory (order=55). Runs after MemoryPersistSystem, before
  * ResponseRoutingSystem. Uses fire-and-forget async indexing to avoid blocking
  * the response pipeline. Filters trivial exchanges (greetings, short messages).
- * Integrates with external LightRAG REST API via {@link port.outbound.RagPort}.
+ * Integrates with external LightRAG REST API via
+ * {@link me.golemcore.bot.port.outbound.RagPort}.
  */
 @Component
 @RequiredArgsConstructor

@@ -83,7 +83,7 @@ public class ScheduleReportSender {
      *            the header text (e.g. "📋 Goal: X / Task: Y")
      * @param assistantText
      *            the assistant summary to include in the report
-     * @param fallbackChannelInfo
+     * @param fallbackDeliveryContext
      *            the active channel binding for chatId auto-resolution
      */
     public void sendReport(ScheduleEntry schedule, String reportHeader, String assistantText,

@@ -383,8 +383,11 @@ class LlmCallPhase {
                     String code, HistoryWriter historyWriter) {
                 AgentContext context = turnState.getContext();
                 RuntimeConfig.ResilienceConfig config = runtimeConfigService.getResilienceConfig();
+                ResilienceTraceSnapshot traceBefore = captureResilienceTraceSnapshot(context);
                 LlmResilienceOrchestrator.ResilienceOutcome outcome = resilienceOrchestrator.handle(
                         context, error, code, turnState.getRetryAttempt(), config);
+                ResilienceTraceSnapshot traceAfter = captureResilienceTraceSnapshot(context);
+                traceResilienceOutcome(context, outcome, code, turnState.getRetryAttempt(), traceBefore, traceAfter);
 
                 switch (outcome) {
                 case LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow -> {
@@ -411,6 +414,8 @@ class LlmCallPhase {
                     return new LlmCallOutcome.Failed(
                             failLlmInvocation(context, error, turnState.getLlmCalls(), turnState.getToolExecutions()));
                 }
+                default -> throw new IllegalStateException("Unsupported resilience outcome: "
+                        + outcome.getClass().getName());
                 }
             }
 
@@ -818,6 +823,268 @@ class LlmCallPhase {
 
             // ==================== Tracing ====================
 
+            /**
+             * Converts resilience-domain trace steps into regular child spans under the
+             * active turn trace.
+             *
+             * <p>
+             * The resilience layer intentionally stays storage-agnostic, so this phase is
+             * the boundary that turns L1-L5 recovery decisions into visible tracing data.
+             */
+            private void traceResilienceOutcome(AgentContext context,
+                    LlmResilienceOrchestrator.ResilienceOutcome outcome, String errorCode, int attempt,
+                    ResilienceTraceSnapshot before, ResilienceTraceSnapshot after) {
+                if (outcome == null) {
+                    return;
+                }
+                TraceStatusCode outcomeStatusCode = outcome instanceof LlmResilienceOrchestrator.ResilienceOutcome.Exhausted
+                        ? TraceStatusCode.ERROR
+                        : TraceStatusCode.OK;
+                List<LlmResilienceOrchestrator.ResilienceTraceStep> traceSteps = outcome.traceSteps() != null
+                        ? outcome.traceSteps()
+                        : List.of();
+                for (LlmResilienceOrchestrator.ResilienceTraceStep step : traceSteps) {
+                    traceResilienceStep(context, step, errorCode, attempt, before, after,
+                            resilienceStepStatusCode(step, outcomeStatusCode));
+                }
+                if (hasModelSwitch(before, after)) {
+                    traceModelSwitch(context, traceSteps, errorCode, attempt, before, after, outcomeStatusCode);
+                }
+            }
+
+            /**
+             * Emits one explicit {@code llm.resilience.*} span for a single recovery layer
+             * action.
+             */
+            private void traceResilienceStep(AgentContext context,
+                    LlmResilienceOrchestrator.ResilienceTraceStep step, String errorCode, int attempt,
+                    ResilienceTraceSnapshot before, ResilienceTraceSnapshot after, TraceStatusCode statusCode) {
+                if (step == null) {
+                    return;
+                }
+                Map<String, Object> attributes = buildResilienceTraceAttributes(step, errorCode, attempt, before,
+                        after);
+                TraceContext span = startChildSpan(context, resilienceSpanName(step.layer()), TraceSpanKind.INTERNAL,
+                        attributes);
+                finishChildSpan(context, span, statusCode, statusCode == TraceStatusCode.ERROR ? step.detail() : null);
+            }
+
+            /**
+             * Emits a dedicated model-switch span instead of overloading L2/L4 spans with
+             * model-change semantics.
+             *
+             * <p>
+             * This keeps circuit-breaker spans honest: L3 may appear in the same outcome as
+             * L2, but L3 itself did not switch the model.
+             */
+            private void traceModelSwitch(AgentContext context,
+                    List<LlmResilienceOrchestrator.ResilienceTraceStep> steps, String errorCode, int attempt,
+                    ResilienceTraceSnapshot before, ResilienceTraceSnapshot after, TraceStatusCode statusCode) {
+                LlmResilienceOrchestrator.ResilienceTraceStep primaryStep = primaryResilienceStep(steps);
+                Map<String, Object> attributes = new LinkedHashMap<>();
+                putTraceAttribute(attributes, "resilience.layer",
+                        primaryStep != null ? baseLayer(primaryStep.layer()) : null);
+                if (primaryStep != null && primaryStep.action() != null) {
+                    attributes.put("resilience.action", primaryStep.action());
+                }
+                attributes.put("llm.error.code", errorCode);
+                attributes.put("attempt", attempt);
+                addSnapshotAttributes(attributes, before, after);
+                TraceContext span = startChildSpan(context, "llm.model.switch", TraceSpanKind.INTERNAL, attributes);
+                finishChildSpan(context, span, statusCode, statusCode == TraceStatusCode.ERROR
+                        ? "model switch failed with resilience outcome"
+                        : null);
+            }
+
+            /**
+             * Chooses the span status for one resilience step instead of copying the
+             * terminal outcome status to every intermediate action.
+             *
+             * <p>
+             * For example, an exhausted cascade can contain a successful L3 state
+             * transition followed by a terminal L5 exhaustion; only the latter should be
+             * marked as {@code ERROR}.
+             */
+            private TraceStatusCode resilienceStepStatusCode(
+                    LlmResilienceOrchestrator.ResilienceTraceStep step, TraceStatusCode outcomeStatusCode) {
+                if (outcomeStatusCode != TraceStatusCode.ERROR) {
+                    return outcomeStatusCode;
+                }
+                return isTerminalFailureStep(step) ? TraceStatusCode.ERROR : TraceStatusCode.OK;
+            }
+
+            /**
+             * Identifies the trace step that represents the terminal fallback failure.
+             */
+            private boolean isTerminalFailureStep(LlmResilienceOrchestrator.ResilienceTraceStep step) {
+                return step != null
+                        && "L5".equals(baseLayer(step.layer()))
+                        && "exhausted".equals(step.action());
+            }
+
+            /**
+             * Builds common span attributes for one resilience layer.
+             *
+             * <p>
+             * Only the layer that owns the model transition is allowed to set
+             * {@code model.changed=true}; a separate {@code llm.model.switch} span always
+             * records the actual before/after values.
+             */
+            private Map<String, Object> buildResilienceTraceAttributes(
+                    LlmResilienceOrchestrator.ResilienceTraceStep step, String errorCode, int attempt,
+                    ResilienceTraceSnapshot before, ResilienceTraceSnapshot after) {
+                Map<String, Object> attributes = new LinkedHashMap<>();
+                if (step.attributes() != null) {
+                    attributes.putAll(step.attributes());
+                }
+                attributes.put("resilience.layer", baseLayer(step.layer()));
+                attributes.put("resilience.action", step.action());
+                if (step.detail() != null && !step.detail().isBlank()) {
+                    attributes.put("resilience.detail", step.detail());
+                }
+                String strategy = strategyName(step.layer());
+                if (strategy != null && !attributes.containsKey("resilience.strategy")) {
+                    attributes.put("resilience.strategy", strategy);
+                }
+                attributes.put("llm.error.code", errorCode);
+                attributes.put("attempt", attempt);
+                addSnapshotAttributes(attributes, before, after,
+                        ownsModelSwitch(step) && hasModelSwitch(before, after));
+                return attributes;
+            }
+
+            /**
+             * Adds before/after model context and marks it as a real model switch.
+             */
+            private void addSnapshotAttributes(Map<String, Object> attributes, ResilienceTraceSnapshot before,
+                    ResilienceTraceSnapshot after) {
+                addSnapshotAttributes(attributes, before, after, hasModelSwitch(before, after));
+            }
+
+            /**
+             * Adds before/after model context with caller-controlled switch semantics.
+             *
+             * <p>
+             * L3 spans receive the same context values for diagnostics, but
+             * {@code model.changed=false} so trace consumers do not attribute the switch to
+             * the circuit breaker.
+             */
+            private void addSnapshotAttributes(Map<String, Object> attributes, ResilienceTraceSnapshot before,
+                    ResilienceTraceSnapshot after, boolean modelChanged) {
+                putTraceAttribute(attributes, "model.before", before != null ? before.model() : null);
+                putTraceAttribute(attributes, "model.after", after != null ? after.model() : null);
+                putTraceAttribute(attributes, "reasoning.before", before != null ? before.reasoning() : null);
+                putTraceAttribute(attributes, "reasoning.after", after != null ? after.reasoning() : null);
+                putTraceAttribute(attributes, "model.tier.before", before != null ? before.tier() : null);
+                putTraceAttribute(attributes, "model.tier.after", after != null ? after.tier() : null);
+                putTraceAttribute(attributes, "fallback.model", after != null ? after.fallbackModel() : null);
+                putTraceAttribute(attributes, "fallback.reasoning", after != null ? after.fallbackReasoning() : null);
+                putTraceAttribute(attributes, "fallback.mode", after != null ? after.fallbackMode() : null);
+                attributes.put("model.changed", modelChanged);
+                attributes.put("model.tier.changed", modelChanged && !Objects.equals(
+                        before != null ? before.tier() : null,
+                        after != null ? after.tier() : null));
+            }
+
+            /**
+             * Adds a trace attribute only when it has a meaningful value.
+             */
+            private void putTraceAttribute(Map<String, Object> attributes, String key, Object value) {
+                if (attributes == null || key == null || key.isBlank() || value == null) {
+                    return;
+                }
+                if (value instanceof String stringValue && stringValue.isBlank()) {
+                    return;
+                }
+                attributes.put(key, value);
+            }
+
+            /**
+             * Detects model, reasoning, or tier changes across a resilience decision.
+             */
+            private boolean hasModelSwitch(ResilienceTraceSnapshot before, ResilienceTraceSnapshot after) {
+                if (before == null || after == null) {
+                    return false;
+                }
+                return !Objects.equals(before.model(), after.model())
+                        || !Objects.equals(before.reasoning(), after.reasoning())
+                        || !Objects.equals(before.tier(), after.tier());
+            }
+
+            /**
+             * Returns true when the layer is allowed to own model-switch semantics.
+             */
+            private boolean ownsModelSwitch(LlmResilienceOrchestrator.ResilienceTraceStep step) {
+                String layer = step != null ? baseLayer(step.layer()) : null;
+                return "L2".equals(layer) || "L4".equals(layer);
+            }
+
+            /**
+             * Selects the resilience step that should be associated with the separate
+             * model-switch span.
+             */
+            private LlmResilienceOrchestrator.ResilienceTraceStep primaryResilienceStep(
+                    List<LlmResilienceOrchestrator.ResilienceTraceStep> steps) {
+                if (steps == null || steps.isEmpty()) {
+                    return null;
+                }
+                return steps.stream()
+                        .filter(step -> step != null && !"L3".equals(baseLayer(step.layer())))
+                        .findFirst()
+                        .orElse(steps.getFirst());
+            }
+
+            /**
+             * Builds the canonical span name for a resilience layer.
+             */
+            private String resilienceSpanName(String layer) {
+                String baseLayer = baseLayer(layer);
+                return "llm.resilience." + (baseLayer != null ? baseLayer : "unknown");
+            }
+
+            /**
+             * Normalizes strategy-specific layer labels such as {@code L4:model_downgrade}
+             * to their top-level layer.
+             */
+            private String baseLayer(String layer) {
+                if (layer == null || layer.isBlank()) {
+                    return null;
+                }
+                int separator = layer.indexOf(':');
+                return separator > 0 ? layer.substring(0, separator) : layer;
+            }
+
+            /**
+             * Extracts the strategy suffix from a layer label such as
+             * {@code L4:model_downgrade}.
+             */
+            private String strategyName(String layer) {
+                if (layer == null || layer.isBlank()) {
+                    return null;
+                }
+                int separator = layer.indexOf(':');
+                if (separator < 0 || separator == layer.length() - 1) {
+                    return null;
+                }
+                return layer.substring(separator + 1);
+            }
+
+            /**
+             * Captures model-related context before and after a resilience decision.
+             */
+            private ResilienceTraceSnapshot captureResilienceTraceSnapshot(AgentContext context) {
+                if (context == null) {
+                    return new ResilienceTraceSnapshot(null, null, null, null, null, null);
+                }
+                return new ResilienceTraceSnapshot(
+                        readContextAttribute(context, ContextAttributes.LLM_MODEL),
+                        readContextAttribute(context, ContextAttributes.LLM_REASONING),
+                        normalizeTierForTrace(context.getModelTier()),
+                        readContextAttribute(context, ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL),
+                        readContextAttribute(context, ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING),
+                        readContextAttribute(context, ContextAttributes.RESILIENCE_L2_FALLBACK_MODE));
+            }
+
             private TraceContext startChildSpan(AgentContext context, String spanName, TraceSpanKind spanKind,
                     Map<String, Object> attributes) {
                 if (traceService == null || context == null || context.getSession() == null
@@ -864,6 +1131,13 @@ class LlmCallPhase {
                 } catch (Exception e) { // NOSONAR - tracing must not break tool loop
                     return String.valueOf(payload).getBytes(StandardCharsets.UTF_8);
                 }
+            }
+
+            /**
+             * Immutable model-context snapshot used to compute tracing deltas.
+             */
+            private record ResilienceTraceSnapshot(String model, String reasoning, String tier, String fallbackModel,
+                    String fallbackReasoning, String fallbackMode) {
             }
 
             // ==================== Events and progress ====================

@@ -18,17 +18,34 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.DelayedSessionAction;
+import me.golemcore.bot.domain.model.FallbackModes;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.DelayedSessionActionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TraceBudgetService;
 import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
+import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator;
+import me.golemcore.bot.domain.system.toolloop.resilience.LlmRetryPolicy;
+import me.golemcore.bot.domain.system.toolloop.resilience.ProviderCircuitBreaker;
+import me.golemcore.bot.domain.system.toolloop.resilience.RecoveryStrategy;
+import me.golemcore.bot.domain.system.toolloop.resilience.RuntimeConfigRouterFallbackSelector;
+import me.golemcore.bot.domain.system.toolloop.resilience.SuspendedTurnManager;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -263,6 +280,182 @@ class LlmCallPhaseTest {
     }
 
     @Test
+    void execute_shouldCascadeResilienceThroughLlmCallPhaseUntilSuspended() {
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.failedFuture(
+                new RuntimeException(LlmErrorClassifier.withCode(
+                        LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, "provider returned 500"))));
+        ConversationViewBuilder viewBuilder = mock(ConversationViewBuilder.class);
+        when(viewBuilder.buildView(any(), any())).thenReturn(ConversationView.ofMessages(List.of()));
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(eq("balanced")))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider-primary", null));
+        when(modelSelectionService.resolveRouterFallbackSelection(eq("balanced"), eq("provider-fallback"), eq("low")))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider-fallback", "low"));
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.ResilienceConfig config = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(1)
+                .hotRetryBaseDelayMs(0L)
+                .hotRetryCapMs(1L)
+                .coldRetryEnabled(true)
+                .coldRetryMaxAttempts(3)
+                .build();
+        when(runtimeConfigService.isResilienceEnabled()).thenReturn(true);
+        when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getResilienceConfig()).thenReturn(config);
+        when(runtimeConfigService.getModelTierBinding("balanced")).thenReturn(RuntimeConfig.TierBinding.builder()
+                .model("provider-primary")
+                .fallbackMode(FallbackModes.SEQUENTIAL)
+                .fallbacks(List.of(RuntimeConfig.TierFallback.builder()
+                        .model("provider-fallback")
+                        .reasoning("low")
+                        .build()))
+                .build());
+        LlmRequestPreflightPhase preflightPhase = mock(LlmRequestPreflightPhase.class);
+        when(preflightPhase.preflight(any(AgentContext.class), any(), anyInt()))
+                .thenAnswer(invocation -> ((java.util.function.Supplier<LlmRequest>) invocation.getArgument(1)).get());
+        DelayedSessionActionService delayedActionService = mock(DelayedSessionActionService.class);
+        ProviderCircuitBreaker circuitBreaker = new ProviderCircuitBreaker(clock, 2, 60, 120);
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                new ImmediateRetryPolicy(),
+                circuitBreaker,
+                new RuntimeConfigRouterFallbackSelector(runtimeConfigService),
+                List.of(new OneShotRecoveryStrategy()),
+                new SuspendedTurnManager(delayedActionService, clock));
+        TraceService traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
+        LlmCallPhase resilientPhase = new LlmCallPhase(
+                llmPort,
+                viewBuilder,
+                modelSelectionService,
+                runtimeConfigService,
+                preflightPhase,
+                mock(ContextCompactionCoordinator.class),
+                null,
+                null,
+                traceService,
+                orchestrator,
+                clock);
+        TurnState turnState = buildResilienceTurnState();
+        TraceContext rootTrace = traceService.startRootTrace(turnState.getContext().getSession(),
+                "tool-loop.turn", TraceSpanKind.INTERNAL, clock.instant(), Map.of());
+        turnState.getContext().setTraceContext(rootTrace);
+
+        assertInstanceOf(LlmCallPhase.LlmCallOutcome.RetryScheduled.class,
+                resilientPhase.execute(turnState, historyWriter));
+        assertEquals(1, turnState.getRetryAttempt());
+        assertEquals("L1", turnState.getContext().getAttribute(ContextAttributes.RESILIENCE_RECOVERY_LAYER));
+
+        assertInstanceOf(LlmCallPhase.LlmCallOutcome.RetryScheduled.class,
+                resilientPhase.execute(turnState, historyWriter));
+        assertEquals(2, turnState.getRetryAttempt());
+        assertEquals("L2", turnState.getContext().getAttribute(ContextAttributes.RESILIENCE_RECOVERY_LAYER));
+        assertEquals("provider-fallback", turnState.getContext().getAttribute(ContextAttributes.LLM_MODEL));
+
+        assertInstanceOf(LlmCallPhase.LlmCallOutcome.RetryScheduled.class,
+                resilientPhase.execute(turnState, historyWriter));
+        assertEquals(3, turnState.getRetryAttempt());
+        assertEquals("L4:one_shot", turnState.getContext().getAttribute(ContextAttributes.RESILIENCE_RECOVERY_LAYER));
+
+        LlmCallPhase.LlmCallOutcome.Failed suspended = assertInstanceOf(LlmCallPhase.LlmCallOutcome.Failed.class,
+                resilientPhase.execute(turnState, historyWriter));
+        assertFalse(suspended.result().finalAnswerReady());
+        assertTrue(
+                Boolean.TRUE.equals(turnState.getContext().getAttribute(ContextAttributes.RESILIENCE_TURN_SUSPENDED)));
+        verify(delayedActionService).schedule(any(DelayedSessionAction.class));
+
+        ArgumentCaptor<LlmRequest> requests = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(llmPort, org.mockito.Mockito.times(4)).chat(requests.capture());
+        assertEquals(List.of("provider-primary", "provider-primary", "provider-fallback", "provider-fallback"),
+                requests.getAllValues().stream().map(LlmRequest::getModel).toList());
+
+        List<TraceSpanRecord> spans = turnState.getContext().getSession().getTraces().getFirst().getSpans();
+        assertNotNull(findSpan(spans, "llm.resilience.L1"));
+        TraceSpanRecord l2Span = findSpan(spans, "llm.resilience.L2");
+        assertNotNull(l2Span);
+        assertEquals("retry_now", l2Span.getAttributes().get("resilience.action"));
+        assertEquals("provider-primary", l2Span.getAttributes().get("model.before"));
+        assertEquals("provider-fallback", l2Span.getAttributes().get("model.after"));
+        assertEquals(Boolean.TRUE, l2Span.getAttributes().get("model.changed"));
+        assertEquals(FallbackModes.SEQUENTIAL, l2Span.getAttributes().get("fallback.mode"));
+
+        TraceSpanRecord l3Span = findSpan(spans, "llm.resilience.L3");
+        assertNotNull(l3Span);
+        assertEquals("state_transition", l3Span.getAttributes().get("resilience.action"));
+        assertEquals("OPEN", l3Span.getAttributes().get("circuit.state.after"));
+        assertEquals(Boolean.FALSE, l3Span.getAttributes().get("model.changed"));
+
+        TraceSpanRecord l4Span = findSpan(spans, "llm.resilience.L4");
+        assertNotNull(l4Span);
+        assertEquals("one_shot", l4Span.getAttributes().get("resilience.strategy"));
+
+        TraceSpanRecord l5Span = findSpan(spans, "llm.resilience.L5");
+        assertNotNull(l5Span);
+        assertEquals("suspend", l5Span.getAttributes().get("resilience.action"));
+
+        TraceSpanRecord modelSwitchSpan = findSpan(spans, "llm.model.switch");
+        assertNotNull(modelSwitchSpan);
+        assertEquals("L2", modelSwitchSpan.getAttributes().get("resilience.layer"));
+        assertEquals("provider-primary", modelSwitchSpan.getAttributes().get("model.before"));
+        assertEquals("provider-fallback", modelSwitchSpan.getAttributes().get("model.after"));
+    }
+
+    @Test
+    void execute_shouldOnlyMarkTerminalResilienceSpanAsErrorWhenCascadeExhausts() {
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.failedFuture(
+                new RuntimeException(LlmErrorClassifier.withCode(
+                        LlmErrorClassifier.UNKNOWN, "provider failed"))));
+        ConversationViewBuilder viewBuilder = mock(ConversationViewBuilder.class);
+        when(viewBuilder.buildView(any(), any())).thenReturn(ConversationView.ofMessages(List.of()));
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(eq("balanced")))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider-primary", null));
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.ResilienceConfig config = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(false)
+                .build();
+        when(runtimeConfigService.isResilienceEnabled()).thenReturn(true);
+        when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getResilienceConfig()).thenReturn(config);
+        LlmRequestPreflightPhase preflightPhase = mock(LlmRequestPreflightPhase.class);
+        when(preflightPhase.preflight(any(AgentContext.class), any(), anyInt()))
+                .thenAnswer(invocation -> ((java.util.function.Supplier<LlmRequest>) invocation.getArgument(1)).get());
+        ProviderCircuitBreaker circuitBreaker = new ProviderCircuitBreaker(clock, 1, 60, 120);
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                new ImmediateRetryPolicy(), circuitBreaker, List.of(), null);
+        TraceService traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
+        LlmCallPhase resilientPhase = new LlmCallPhase(
+                llmPort,
+                viewBuilder,
+                modelSelectionService,
+                runtimeConfigService,
+                preflightPhase,
+                mock(ContextCompactionCoordinator.class),
+                null,
+                null,
+                traceService,
+                orchestrator,
+                clock);
+        TurnState turnState = buildResilienceTurnState();
+        TraceContext rootTrace = traceService.startRootTrace(turnState.getContext().getSession(),
+                "tool-loop.turn", TraceSpanKind.INTERNAL, clock.instant(), Map.of());
+        turnState.getContext().setTraceContext(rootTrace);
+
+        assertInstanceOf(LlmCallPhase.LlmCallOutcome.Failed.class,
+                resilientPhase.execute(turnState, historyWriter));
+
+        List<TraceSpanRecord> spans = turnState.getContext().getSession().getTraces().getFirst().getSpans();
+        TraceSpanRecord l3Span = findSpan(spans, "llm.resilience.L3");
+        assertNotNull(l3Span);
+        assertEquals(TraceStatusCode.OK, l3Span.getStatusCode());
+        TraceSpanRecord l5Span = findSpan(spans, "llm.resilience.L5");
+        assertNotNull(l5Span);
+        assertEquals("exhausted", l5Span.getAttributes().get("resilience.action"));
+        assertEquals(TraceStatusCode.ERROR, l5Span.getStatusCode());
+    }
+
+    @Test
     void finalizeFinalAnswer_shouldAppendHistoryAndMarkTurnFinished() {
         TurnState turnState = buildTurnState();
         LlmResponse response = LlmResponse.builder()
@@ -301,5 +494,76 @@ class LlmCallPhaseTest {
                 1,
                 10L,
                 true);
+    }
+
+    private TurnState buildResilienceTurnState() {
+        AgentSession session = AgentSession.builder()
+                .id("sess-1")
+                .channelType("telegram")
+                .chatId("chat-1")
+                .messages(List.of(Message.builder()
+                        .role("user")
+                        .content("run cascade")
+                        .timestamp(clock.instant())
+                        .build()))
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(session.getMessages())
+                .modelTier("balanced")
+                .maxIterations(1)
+                .currentIteration(0)
+                .build();
+        return new TurnState(
+                context,
+                null,
+                8,
+                4,
+                clock.instant().plusSeconds(60),
+                false,
+                true,
+                false,
+                1,
+                0L,
+                true);
+    }
+
+    private TraceSpanRecord findSpan(List<TraceSpanRecord> spans, String name) {
+        return spans.stream()
+                .filter(span -> name.equals(span.getName()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static final class OneShotRecoveryStrategy implements RecoveryStrategy {
+        private boolean applied;
+
+        @Override
+        public String name() {
+            return "one_shot";
+        }
+
+        @Override
+        public boolean isApplicable(AgentContext context, String errorCode, RuntimeConfig.ResilienceConfig config) {
+            return !applied;
+        }
+
+        @Override
+        public RecoveryResult apply(AgentContext context, String errorCode, RuntimeConfig.ResilienceConfig config) {
+            applied = true;
+            return RecoveryResult.success("reduced request complexity");
+        }
+    }
+
+    private static final class ImmediateRetryPolicy extends LlmRetryPolicy {
+        @Override
+        public long computeDelay(int attempt, RuntimeConfig.ResilienceConfig config) {
+            return 0L;
+        }
+
+        @Override
+        public void sleep(long delayMs) {
+            // Keep the LlmCallPhase cascade test deterministic and fast.
+        }
     }
 }

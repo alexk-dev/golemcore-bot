@@ -39,7 +39,7 @@ import java.util.List;
  * model tier) first, then invokes layers in declared order, and finally
  * composes the system prompt via {@link PromptComposer}.
  *
- * <h3>Assembly Pipeline</h3>
+ * <h2>Assembly Pipeline</h2>
  *
  * <pre>
  * 1. Resolve active skill       ({@link SkillResolver})

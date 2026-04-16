@@ -151,6 +151,25 @@ class LlmResilienceOrchestratorTest {
     }
 
     @Test
+    void shouldTraceL5ExhaustionWhenColdRetryDisabledAndNoStrategyRecovers() {
+        RuntimeConfig.ResilienceConfig noColdRetry = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(false)
+                .build();
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.UNKNOWN, 5, noColdRetry);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.Exhausted exhausted = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
+        LlmResilienceOrchestrator.ResilienceTraceStep terminalStep = exhausted.traceSteps().getLast();
+        assertEquals("L5", terminalStep.layer());
+        assertEquals("exhausted", terminalStep.action());
+        assertEquals("provider-a", terminalStep.attributes().get("provider"));
+    }
+
+    @Test
     void shouldExhaustWhenColdRetrySchedulingFails() {
         RuntimeConfig.ResilienceConfig coldRetry = RuntimeConfig.ResilienceConfig.builder()
                 .hotRetryMaxAttempts(0)

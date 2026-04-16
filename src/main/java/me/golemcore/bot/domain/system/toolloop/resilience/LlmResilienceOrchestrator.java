@@ -25,7 +25,10 @@ import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Five-layer resilience orchestrator for LLM API failures.
@@ -95,20 +98,78 @@ public class LlmResilienceOrchestrator {
     /**
      * Outcome of the resilience orchestration — tells the caller what to do next.
      */
-    public sealed
+    public interface ResilienceOutcome {
 
-    interface ResilienceOutcome {
-
-        /** L1/L3/L4 recovered — caller should retry the LLM call immediately. */
-        record RetryNow(String layer, String detail) implements ResilienceOutcome {
+        /**
+         * Domain-level trace steps emitted while the orchestrator chose this outcome.
+         *
+         * <p>
+         * The orchestrator deliberately does not depend on {@code TraceService};
+         * callers can map these steps to tracing spans, logs, or diagnostics without
+         * pulling infrastructure concerns into the resilience layer.
+         *
+         * @return ordered trace steps for the recovery decision
+         */
+        default List<ResilienceTraceStep> traceSteps() {
+            return List.of();
         }
 
-        /** L5 suspended the turn — caller should stop this turn gracefully. */
-        record Suspended(String userMessage) implements ResilienceOutcome {
+        /**
+         * L1, L2, or L4 recovered the failure and the caller should retry the LLM
+         * request immediately.
+         *
+         * @param layer
+         *            resilience layer that selected the retry, for example {@code L2} or
+         *            {@code L4:model_downgrade}
+         * @param detail
+         *            human-readable recovery detail
+         * @param traceSteps
+         *            ordered trace steps leading to this retry decision
+         */
+        record RetryNow(String layer, String detail, List<ResilienceTraceStep> traceSteps)
+                implements ResilienceOutcome {
         }
 
-        /** All layers exhausted — caller should fail the turn permanently. */
-        record Exhausted(String reason) implements ResilienceOutcome {
+        /**
+         * L5 suspended the turn and scheduled a delayed retry.
+         *
+         * @param userMessage
+         *            message that can be surfaced to the user
+         * @param traceSteps
+         *            ordered trace steps leading to this suspension
+         */
+        record Suspended(String userMessage, List<ResilienceTraceStep> traceSteps) implements ResilienceOutcome {
+        }
+
+        /**
+         * All configured resilience layers failed to recover the request.
+         *
+         * @param reason
+         *            terminal failure reason
+         * @param traceSteps
+         *            ordered trace steps leading to exhaustion
+         */
+        record Exhausted(String reason, List<ResilienceTraceStep> traceSteps) implements ResilienceOutcome {
+        }
+    }
+
+    /**
+     * Lightweight tracing DTO produced by resilience code and consumed by the tool
+     * loop tracing adapter.
+     *
+     * @param layer
+     *            resilience layer, for example {@code L2} or {@code L4}
+     * @param action
+     *            machine-readable action such as {@code retry_now} or
+     *            {@code state_transition}
+     * @param detail
+     *            human-readable detail for the span
+     * @param attributes
+     *            additional span attributes; copied defensively on construction
+     */
+    public record ResilienceTraceStep(String layer, String action, String detail, Map<String, Object> attributes) {
+        public ResilienceTraceStep {
+            attributes = attributes != null ? new LinkedHashMap<>(attributes) : new LinkedHashMap<>();
         }
     }
 
@@ -130,9 +191,13 @@ public class LlmResilienceOrchestrator {
      */
     public ResilienceOutcome handle(AgentContext context, RuntimeException error, String errorCode, int attempt,
             RuntimeConfig.ResilienceConfig config) {
+        List<ResilienceTraceStep> traceSteps = new ArrayList<>();
         String providerId = resolveProviderId(context);
         // Snapshot the breaker once per handle() so L1 and L3 share one decision.
+        ProviderCircuitBreaker.State breakerStateBeforeCheck = circuitBreaker.getState(providerId);
         boolean breakerOpen = circuitBreaker.isOpen(providerId);
+        appendCircuitTransition(traceSteps, providerId, breakerStateBeforeCheck,
+                circuitBreaker.getState(providerId), "availability_check");
 
         // L1: hot retry is deliberately synchronous because it lasts seconds and
         // keeps the current turn state in-memory; longer waits are delegated to L5.
@@ -145,12 +210,16 @@ public class LlmResilienceOrchestrator {
             log.warn("[Resilience] L1 hot retry: code={}, attempt={}, delayMs={}, provider={}",
                     errorCode, attempt, delayMs, providerId);
             retryPolicy.sleep(delayMs);
-            circuitBreaker.recordFailure(providerId);
-            return new ResilienceOutcome.RetryNow("L1", "hot retry after " + delayMs + "ms");
+            String detail = "hot retry after " + delayMs + "ms";
+            traceSteps.add(traceStep("L1", "retry_now", detail,
+                    traceAttributes("provider", providerId, "llm.error.code", errorCode,
+                            "retry.delay.ms", delayMs, "retry.attempt", attempt)));
+            recordFailureWithTrace(traceSteps, providerId, "failure_recorded");
+            return new ResilienceOutcome.RetryNow("L1", detail, traceSteps);
         }
 
         if (!breakerOpen) {
-            circuitBreaker.recordFailure(providerId);
+            recordFailureWithTrace(traceSteps, providerId, "failure_recorded");
         }
 
         if (LlmErrorClassifier.isTransientCode(errorCode)) {
@@ -160,9 +229,13 @@ public class LlmResilienceOrchestrator {
                 RouterFallbackSelector.Selection selection = fallbackSelection.get();
                 log.warn("[Resilience] L2 router fallback: provider={}, tier={}, mode={}, fallbackModel={}",
                         providerId, selection.tier(), selection.mode(), selection.model());
-                return new ResilienceOutcome.RetryNow("L2",
-                        "router fallback to " + selection.model() + " (tier=" + selection.tier()
-                                + ", mode=" + selection.mode() + ")");
+                String detail = "router fallback to " + selection.model() + " (tier=" + selection.tier()
+                        + ", mode=" + selection.mode() + ")";
+                traceSteps.add(traceStep("L2", "retry_now", detail,
+                        traceAttributes("provider", providerId, "fallback.tier", selection.tier(),
+                                "fallback.mode", selection.mode(), "fallback.model", selection.model(),
+                                "fallback.reasoning", selection.reasoning())));
+                return new ResilienceOutcome.RetryNow("L2", detail, traceSteps);
             }
             log.debug("[Resilience] L2 router fallback: no eligible fallback for provider={}, skipping", providerId);
         } else {
@@ -174,6 +247,10 @@ public class LlmResilienceOrchestrator {
         // needs cooldown. Skip straight to L5 so the provider gets its rest window.
         if (breakerOpen) {
             log.warn("[Resilience] L3 breaker OPEN, bypassing L4 degradation: provider={}", providerId);
+            traceSteps.add(traceStep("L3", "open_bypass", "circuit breaker open; bypassing L4 degradation",
+                    traceAttributes("circuit.provider", providerId, "circuit.state.before",
+                            circuitBreaker.getState(providerId).name(), "circuit.state.after",
+                            circuitBreaker.getState(providerId).name())));
         } else {
             for (RecoveryStrategy strategy : degradationStrategies) {
                 if (strategy.isApplicable(context, errorCode, config)) {
@@ -181,7 +258,10 @@ public class LlmResilienceOrchestrator {
                     if (result.recovered()) {
                         log.info("[Resilience] L4 degradation succeeded: strategy={}, detail={}",
                                 strategy.name(), result.detail());
-                        return new ResilienceOutcome.RetryNow("L4:" + strategy.name(), result.detail());
+                        traceSteps.add(traceStep("L4", "retry_now", result.detail(),
+                                traceAttributes("provider", providerId, "resilience.strategy",
+                                        strategy.name())));
+                        return new ResilienceOutcome.RetryNow("L4:" + strategy.name(), result.detail(), traceSteps);
                     }
                     log.debug("[Resilience] L4 strategy {} not effective: {}", strategy.name(), result.detail());
                 }
@@ -193,26 +273,41 @@ public class LlmResilienceOrchestrator {
                 String reason = "Cold retry scheduling failed for provider " + providerId
                         + " (code=" + errorCode + "): suspended turn manager is not configured";
                 log.warn("[Resilience] L5 cold retry unavailable: provider={}, code={}", providerId, errorCode);
-                return new ResilienceOutcome.Exhausted(reason);
+                traceSteps.add(traceStep("L5", "exhausted", reason,
+                        traceAttributes("provider", providerId, "llm.error.code", errorCode,
+                                "cold_retry.enabled", true)));
+                return new ResilienceOutcome.Exhausted(reason, traceSteps);
             }
             try {
                 String userMessage = suspendedTurnManager.suspend(context, errorCode, config);
                 log.info("[Resilience] L5 cold retry: turn suspended, provider={}, code={}", providerId, errorCode);
-                return new ResilienceOutcome.Suspended(userMessage);
+                traceSteps.add(traceStep("L5", "suspend", userMessage,
+                        traceAttributes("provider", providerId, "llm.error.code", errorCode,
+                                "cold_retry.enabled", true)));
+                return new ResilienceOutcome.Suspended(userMessage, traceSteps);
             } catch (RuntimeException exception) {
-                String message = exception.getMessage() != null ? exception.getMessage() : exception.getClass()
-                        .getSimpleName();
+                String message = exception.getMessage() != null ? exception.getMessage()
+                        : exception.getClass()
+                                .getSimpleName();
                 log.warn("[Resilience] L5 cold retry scheduling failed: provider={}, code={}, error={}",
                         providerId, errorCode, message, exception);
-                return new ResilienceOutcome.Exhausted("Cold retry scheduling failed for provider " + providerId
-                        + " (code=" + errorCode + "): " + message);
+                String reason = "Cold retry scheduling failed for provider " + providerId
+                        + " (code=" + errorCode + "): " + message;
+                traceSteps.add(traceStep("L5", "exhausted", reason,
+                        traceAttributes("provider", providerId, "llm.error.code", errorCode,
+                                "cold_retry.enabled", true)));
+                return new ResilienceOutcome.Exhausted(reason, traceSteps);
             }
         }
 
         log.error("[Resilience] All layers exhausted: code={}, provider={}, attempt={}",
                 errorCode, providerId, attempt);
-        return new ResilienceOutcome.Exhausted(
-                "LLM provider " + providerId + " unavailable after all recovery attempts (code=" + errorCode + ")");
+        String reason = "LLM provider " + providerId + " unavailable after all recovery attempts (code=" + errorCode
+                + ")";
+        traceSteps.add(traceStep("L5", "exhausted", reason,
+                traceAttributes("provider", providerId, "llm.error.code", errorCode,
+                        "cold_retry.enabled", false)));
+        return new ResilienceOutcome.Exhausted(reason, traceSteps);
     }
 
     /**
@@ -225,12 +320,62 @@ public class LlmResilienceOrchestrator {
         routerFallbackSelector.clear(context);
     }
 
+        /**
+         * Records a provider failure and appends an L3 trace step only when the breaker
+         * actually changes state.
+         */
+        private void recordFailureWithTrace(List<ResilienceTraceStep> traceSteps, String providerId, String action) {
+            ProviderCircuitBreaker.State before = circuitBreaker.getState(providerId);
+            circuitBreaker.recordFailure(providerId);
+            appendCircuitTransition(traceSteps, providerId, before, circuitBreaker.getState(providerId), action);
+        }
+
+        /**
+         * Keeps L3 trace spans semantic: normal failure accounting is not emitted as a
+         * span, but CLOSED/OPEN/HALF_OPEN transitions are.
+         */
+        private void appendCircuitTransition(List<ResilienceTraceStep> traceSteps, String providerId,
+                ProviderCircuitBreaker.State before, ProviderCircuitBreaker.State after, String action) {
+            if (before == null || after == null || before == after) {
+                return;
+            }
+            traceSteps.add(traceStep("L3", "state_transition", "circuit breaker " + before + " -> " + after,
+                    traceAttributes("circuit.provider", providerId, "circuit.action", action,
+                            "circuit.state.before", before.name(), "circuit.state.after", after.name())));
+        }
+
         private String resolveProviderId(AgentContext context) {
             if (context == null || context.getAttributes() == null) {
                 return "unknown";
             }
             Object model = context.getAttributes().get(ContextAttributes.LLM_MODEL);
             return model instanceof String stringValue && !stringValue.isBlank() ? stringValue : "unknown";
+        }
+
+        /**
+         * Creates a trace step with normalized non-null attributes.
+         */
+        private static ResilienceTraceStep traceStep(String layer, String action, String detail,
+                Map<String, Object> attributes) {
+            return new ResilienceTraceStep(layer, action, detail, attributes);
+        }
+
+        /**
+         * Builds ordered trace attributes while skipping null values, which keeps span
+         * payloads compact and avoids null serialization surprises in adapters.
+         */
+        private static Map<String, Object> traceAttributes(Object... entries) {
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            if (entries == null) {
+                return attributes;
+            }
+            for (int index = 0; index + 1 < entries.length; index += 2) {
+                Object keyObject = entries[index];
+                if (keyObject instanceof String key && !key.isBlank() && entries[index + 1] != null) {
+                    attributes.put(key, entries[index + 1]);
+                }
+            }
+            return attributes;
         }
 
 }

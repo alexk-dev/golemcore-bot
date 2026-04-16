@@ -30,8 +30,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.random.RandomGenerator;
 
@@ -42,6 +44,8 @@ public class RuntimeConfigRouterFallbackSelector implements RouterFallbackSelect
 
     private final RuntimeConfigService runtimeConfigService;
     private final RandomGenerator random;
+    private final Object roundRobinCursorLock = new Object();
+    private final Map<String, Integer> roundRobinCursors = new ConcurrentHashMap<>();
 
     public RuntimeConfigRouterFallbackSelector(RuntimeConfigService runtimeConfigService) {
         this(runtimeConfigService, RandomGenerator.getDefault());
@@ -87,13 +91,12 @@ public class RuntimeConfigRouterFallbackSelector implements RouterFallbackSelect
                 .toList();
         if (eligible.isEmpty()) {
             log.debug("[Resilience] L2 router fallback exhausted for tier {}", tier);
-            clearForcedSelection(context);
             return Optional.empty();
         }
 
         String mode = FallbackModes.normalize(binding.getFallbackMode());
         FallbackCandidate selected = switch (mode) {
-        case FallbackModes.ROUND_ROBIN -> selectRoundRobin(context, candidates, eligible);
+        case FallbackModes.ROUND_ROBIN -> selectRoundRobin(tier, context, candidates, eligible);
         case FallbackModes.WEIGHTED -> selectWeighted(eligible);
         default -> eligible.getFirst();
         };
@@ -141,16 +144,19 @@ public class RuntimeConfigRouterFallbackSelector implements RouterFallbackSelect
         return candidates;
     }
 
-    private FallbackCandidate selectRoundRobin(AgentContext context, List<FallbackCandidate> candidates,
+    private FallbackCandidate selectRoundRobin(String tier, AgentContext context, List<FallbackCandidate> candidates,
             List<FallbackCandidate> eligible) {
-        int cursor = readRoundRobinCursor(context);
-        for (int offset = 0; offset < candidates.size(); offset++) {
-            int index = Math.floorMod(cursor + offset, candidates.size());
-            FallbackCandidate candidate = candidates.get(index);
-            if (eligible.contains(candidate)) {
-                context.setAttribute(ContextAttributes.RESILIENCE_L2_ROUND_ROBIN_CURSOR,
-                        Math.floorMod(index + 1, candidates.size()));
-                return candidate;
+        synchronized (roundRobinCursorLock) {
+            int cursor = roundRobinCursors.computeIfAbsent(tier, ignored -> readRoundRobinCursor(context));
+            for (int offset = 0; offset < candidates.size(); offset++) {
+                int index = Math.floorMod(cursor + offset, candidates.size());
+                FallbackCandidate candidate = candidates.get(index);
+                if (eligible.contains(candidate)) {
+                    int nextCursor = Math.floorMod(index + 1, candidates.size());
+                    roundRobinCursors.put(tier, nextCursor);
+                    context.setAttribute(ContextAttributes.RESILIENCE_L2_ROUND_ROBIN_CURSOR, nextCursor);
+                    return candidate;
+                }
             }
         }
         return eligible.getFirst();

@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FallbackModes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -140,6 +141,11 @@ class RecoveryStrategyTest {
     void modelDowngradeShouldStoreOriginalTierAndPreventRepeatedDowngrades() {
         ModelDowngradeRecoveryStrategy strategy = new ModelDowngradeRecoveryStrategy();
         AgentContext context = AgentContext.builder().modelTier("deep").build();
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL, "provider/fallback");
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING, "low");
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODE, FallbackModes.SEQUENTIAL);
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_ATTEMPTED_MODELS, List.of("provider/fallback"));
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_ROUND_ROBIN_CURSOR, 1);
 
         assertTrue(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config));
 
@@ -151,6 +157,11 @@ class RecoveryStrategyTest {
         assertEquals("deep", context.getAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER));
         assertTrue(Boolean.TRUE.equals(
                 context.getAttribute(ContextAttributes.RESILIENCE_L4_MODEL_DOWNGRADE_ATTEMPTED)));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_MODE));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_ATTEMPTED_MODELS));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_ROUND_ROBIN_CURSOR));
         assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config));
     }
 

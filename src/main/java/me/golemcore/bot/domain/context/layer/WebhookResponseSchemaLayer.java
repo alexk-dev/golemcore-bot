@@ -29,7 +29,7 @@ import me.golemcore.bot.domain.model.Message;
  * to the main agent prompt.
  *
  * <p>
- * The canonical contract source is {@link AgentContext#getAttributes()} via
+ * The canonical contract source is {@code AgentContext#getAttributes()} via
  * {@link ContextAttributes#WEBHOOK_RESPONSE_JSON_SCHEMA_TEXT}. Reading from
  * message metadata is retained only as a compatibility fallback. This keeps the
  * schema instruction available across multi-iteration flows where the last

@@ -28,6 +28,11 @@ import java.util.Objects;
  * attributes) that tells
  * {@link me.golemcore.bot.domain.system.ContextBuildingSystem} to load and
  * activate a different skill for the next iteration.
+ *
+ * @param targetSkill
+ *            target skill name
+ * @param reason
+ *            reason the transition was requested
  */
 public record SkillTransitionRequest(String targetSkill,SkillTransitionReason reason){
 

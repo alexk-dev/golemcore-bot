@@ -69,6 +69,27 @@ class RuntimeConfigRouterFallbackSelectorTest {
     }
 
     @Test
+    void shouldRotateRoundRobinAcrossFallbackEpisodes() {
+        when(runtimeConfigService.getModelTierBinding("deep")).thenReturn(binding(
+                FallbackModes.ROUND_ROBIN,
+                fallback("provider/fallback-a", null, null),
+                fallback("provider/fallback-b", null, null),
+                fallback("provider/fallback-c", null, null)));
+        RuntimeConfigRouterFallbackSelector selector = selector(new Random(0));
+
+        Optional<RouterFallbackSelector.Selection> first = selector.selectNext(context);
+        selector.clear(context);
+        AgentContext nextContext = AgentContext.builder().modelTier("deep").build();
+        nextContext.setAttribute(ContextAttributes.LLM_MODEL, "provider/primary");
+        Optional<RouterFallbackSelector.Selection> second = selector.selectNext(nextContext);
+
+        assertTrue(first.isPresent());
+        assertEquals("provider/fallback-a", first.get().model());
+        assertTrue(second.isPresent());
+        assertEquals("provider/fallback-b", second.get().model());
+    }
+
+    @Test
     void shouldSkipUnavailableFallbackCandidates() {
         when(runtimeConfigService.getModelTierBinding("deep")).thenReturn(binding(
                 FallbackModes.SEQUENTIAL,
@@ -114,7 +135,7 @@ class RuntimeConfigRouterFallbackSelectorTest {
     }
 
     @Test
-    void shouldClearForcedFallbackWhenFallbacksAreExhausted() {
+    void shouldPreserveForcedFallbackWhenFallbacksAreExhaustedForDegradationRetry() {
         when(runtimeConfigService.getModelTierBinding("deep")).thenReturn(binding(
                 FallbackModes.SEQUENTIAL,
                 fallback("provider/fallback-a", "low", null)));
@@ -125,9 +146,9 @@ class RuntimeConfigRouterFallbackSelectorTest {
         Optional<RouterFallbackSelector.Selection> exhausted = selector.selectNext(context);
 
         assertTrue(exhausted.isEmpty());
-        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL));
-        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING));
-        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_MODE));
+        assertEquals("provider/fallback-a", context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL));
+        assertEquals("low", context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING));
+        assertEquals(FallbackModes.SEQUENTIAL, context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODE));
         assertEquals(List.of("provider/fallback-a"),
                 context.getAttribute(ContextAttributes.RESILIENCE_L2_ATTEMPTED_MODELS));
     }

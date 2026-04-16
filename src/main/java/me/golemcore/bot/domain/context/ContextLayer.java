@@ -31,7 +31,7 @@ import me.golemcore.bot.domain.model.AgentContext;
  * applicable layers in order and delegates final prompt composition to
  * {@link PromptComposer}.
  *
- * <h3>Contract</h3>
+ * <h2>Contract</h2>
  * <ul>
  * <li>{@link #appliesTo} — fast guard; return {@code false} to skip
  * entirely</li>
@@ -41,7 +41,7 @@ import me.golemcore.bot.domain.model.AgentContext;
  * earlier in prompt)</li>
  * </ul>
  *
- * <h3>Side Effects</h3>
+ * <h2>Side Effects</h2>
  * <p>
  * Layers are allowed to mutate {@link AgentContext} fields that are explicitly
  * within their responsibility (e.g., {@code ToolLayer} sets
