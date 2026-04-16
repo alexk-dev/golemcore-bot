@@ -19,8 +19,12 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
  */
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.service.CompactionOrchestrationService;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.RuntimeEventService;
+import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.system.toolloop.ContextCompactionCoordinator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -51,6 +55,19 @@ public class ResilienceConfiguration {
                 config.getCircuitBreakerFailureThreshold(),
                 config.getCircuitBreakerWindowSeconds(),
                 config.getCircuitBreakerOpenDurationSeconds());
+    }
+
+    @Bean
+    static ContextCompactionCoordinator contextCompactionCoordinator(
+            ContextCompactionPolicy contextCompactionPolicy,
+            CompactionOrchestrationService compactionOrchestrationService,
+            RuntimeEventService runtimeEventService,
+            TurnProgressService turnProgressService) {
+        return new ContextCompactionCoordinator(
+                contextCompactionPolicy,
+                compactionOrchestrationService,
+                runtimeEventService,
+                turnProgressService);
     }
 
     @Bean

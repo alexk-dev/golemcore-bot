@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
  */
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
@@ -47,8 +48,6 @@ import java.util.List;
 public class ToolStripRecoveryStrategy implements RecoveryStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(ToolStripRecoveryStrategy.class);
-    private static final String STRIP_ATTEMPTED_FLAG = "resilience.l4.tool_strip_attempted";
-    private static final String ORIGINAL_TOOLS_KEY = "resilience.l4.original_tools";
 
     @Override
     public String name() {
@@ -63,7 +62,7 @@ public class ToolStripRecoveryStrategy implements RecoveryStrategy {
         if (!LlmErrorClassifier.isTransientCode(errorCode)) {
             return false;
         }
-        Boolean alreadyAttempted = context.getAttribute(STRIP_ATTEMPTED_FLAG);
+        Boolean alreadyAttempted = context.getAttribute(ContextAttributes.RESILIENCE_L4_TOOL_STRIP_ATTEMPTED);
         if (Boolean.TRUE.equals(alreadyAttempted)) {
             return false;
         }
@@ -73,10 +72,10 @@ public class ToolStripRecoveryStrategy implements RecoveryStrategy {
 
     @Override
     public RecoveryResult apply(AgentContext context, String errorCode, RuntimeConfig.ResilienceConfig config) {
-        context.setAttribute(STRIP_ATTEMPTED_FLAG, true);
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_TOOL_STRIP_ATTEMPTED, true);
         List<ToolDefinition> originalTools = context.getAvailableTools();
         int toolCount = originalTools != null ? originalTools.size() : 0;
-        context.setAttribute(ORIGINAL_TOOLS_KEY, originalTools);
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS, originalTools);
         context.setAvailableTools(List.of());
         log.info("[Resilience] L4 tool strip: removed {} tools for think-only turn", toolCount);
         return RecoveryResult.success("stripped " + toolCount + " tools for think-only turn");

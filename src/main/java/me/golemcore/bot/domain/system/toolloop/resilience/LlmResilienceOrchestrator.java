@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
  */
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import org.slf4j.Logger;
@@ -105,18 +106,24 @@ public class LlmResilienceOrchestrator {
      * Attempt to recover from a transient LLM error by cascading through all
      * defense layers in order.
      *
-     * @param context       the current agent context
-     * @param error         the exception thrown by the LLM call
-     * @param errorCode     machine-readable code from {@link LlmErrorClassifier}
-     * @param attempt       current retry attempt number (0-based)
-     * @param config        resilience configuration
+     * @param context
+     *            the current agent context
+     * @param error
+     *            the exception thrown by the LLM call
+     * @param errorCode
+     *            machine-readable code from {@link LlmErrorClassifier}
+     * @param attempt
+     *            current retry attempt number (0-based)
+     * @param config
+     *            resilience configuration
      * @return outcome instructing the caller what to do next
      */
-    public ResilienceOutcome handle(AgentContext context, RuntimeException error, String errorCode,
-                                    int attempt, RuntimeConfig.ResilienceConfig config) {
+    public ResilienceOutcome handle(AgentContext context, RuntimeException error, String errorCode, int attempt,
+            RuntimeConfig.ResilienceConfig config) {
         String providerId = resolveProviderId(context);
 
-        // ── L1: Hot Retry ──────────────────────────────────────────────
+        // L1: hot retry is deliberately synchronous because it lasts seconds and
+        // keeps the current turn state in-memory; longer waits are delegated to L5.
         if (LlmErrorClassifier.isTransientCode(errorCode) && retryPolicy.shouldRetry(attempt, config)) {
             long delayMs = retryPolicy.computeDelay(attempt, config);
             log.warn("[Resilience] L1 hot retry: code={}, attempt={}, delayMs={}, provider={}",
@@ -126,23 +133,17 @@ public class LlmResilienceOrchestrator {
             return new ResilienceOutcome.RetryNow("L1", "hot retry after " + delayMs + "ms");
         }
 
-        // ── L2: Provider Fallback (stub) ───────────────────────────────
-        // TODO: Implement when llm-router fallback chain configuration is designed.
-        //       This layer will route the same LlmRequest to an alternate provider
-        //       from the user-configured chain (e.g., anthropic → openai → gemini).
-        //       Requires: RuntimeConfig.ModelRouterConfig.fallbackChain field,
-        //       FallbackLlmPort decorator, and LlmAdapterFactory.getAdapter() lookup.
+        // L2 provider fallback is a future routing concern. Keeping the explicit
+        // no-op here documents the intended order without hiding it in comments at
+        // the call site.
         log.debug("[Resilience] L2 provider fallback: not yet configured, skipping");
 
-        // ── L3: Circuit Breaker ────────────────────────────────────────
         if (circuitBreaker.isOpen(providerId)) {
             log.warn("[Resilience] L3 circuit breaker OPEN for provider={}, fast-failing", providerId);
-            // Provider is known-broken — skip to L4 immediately
         } else {
             circuitBreaker.recordFailure(providerId);
         }
 
-        // ── L4: Graceful Degradation ───────────────────────────────────
         for (RecoveryStrategy strategy : degradationStrategies) {
             if (strategy.isApplicable(context, errorCode, config)) {
                 RecoveryStrategy.RecoveryResult result = strategy.apply(context, errorCode, config);
@@ -155,14 +156,12 @@ public class LlmResilienceOrchestrator {
             }
         }
 
-        // ── L5: Cold Retry (suspend and schedule) ──────────────────────
         if (config.getColdRetryEnabled()) {
             String userMessage = suspendedTurnManager.suspend(context, errorCode, config);
             log.info("[Resilience] L5 cold retry: turn suspended, provider={}, code={}", providerId, errorCode);
             return new ResilienceOutcome.Suspended(userMessage);
         }
 
-        // ── All layers exhausted ───────────────────────────────────────
         log.error("[Resilience] All layers exhausted: code={}, provider={}, attempt={}",
                 errorCode, providerId, attempt);
         return new ResilienceOutcome.Exhausted(
@@ -170,8 +169,8 @@ public class LlmResilienceOrchestrator {
     }
 
     /**
-     * Notify the orchestrator that an LLM call succeeded — resets circuit
-     * breaker state for the provider.
+     * Notify the orchestrator that an LLM call succeeded — resets circuit breaker
+     * state for the provider used by the latest request.
      */
     public void recordSuccess(AgentContext context) {
         String providerId = resolveProviderId(context);
@@ -179,10 +178,11 @@ public class LlmResilienceOrchestrator {
     }
 
         private String resolveProviderId(AgentContext context) {
-            if (context == null) {
+            if (context == null || context.getAttributes() == null) {
                 return "unknown";
             }
-            Object model = context.getAttributes().get("llm.model");
-            return model instanceof String s && !s.isBlank() ? s : "unknown";
+            Object model = context.getAttributes().get(ContextAttributes.LLM_MODEL);
+            return model instanceof String stringValue && !stringValue.isBlank() ? stringValue : "unknown";
         }
+
 }
