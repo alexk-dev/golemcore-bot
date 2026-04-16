@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.65.0 - 2026-04-16
+#### Features
+- (**llm**) add tier fallback routing settings (#294) - (55b35e3) - GolemCore AI Agent #1
+#### Tests
+- harden qa coverage (#295) - (4155e7e) - Alex Kuleshov
+- stabilize Ollama PIT process tests (#292) - (565b0fe) - Alex Kuleshov
+- expand PIT mutation scope to the full product (#289) - (ad07417) - Alex Kuleshov
+#### Refactoring
+- split large runtime helpers (#290) - (2c6f306) - Alex Kuleshov
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
