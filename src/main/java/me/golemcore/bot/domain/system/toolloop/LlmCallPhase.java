@@ -415,6 +415,7 @@ class LlmCallPhase {
                     context.setAttribute(ContextAttributes.RESILIENCE_RECOVERY_LAYER, retryNow.layer());
                     emitRuntimeEvent(context, RuntimeEventType.RETRY_STARTED,
                             eventPayload("layer", retryNow.layer(), "detail", retryNow.detail(), "code", code));
+                    resilienceOrchestrator.pauseBeforeRetry(retryNow);
                     return new LlmCallOutcome.RetryScheduled();
                 }
                 case LlmResilienceOrchestrator.ResilienceOutcome.Suspended suspended -> {
@@ -940,9 +941,14 @@ class LlmCallPhase {
                 case "L5" -> l5ProgressNotice(step);
                 default -> {
                     log.warn("[ToolLoop] Unknown resilience layer in progress notice: layer={}", step.layer());
-                    yield null;
+                    yield "Applying LLM recovery step " + displayLayer(step) + ": " + fallbackDetail(step) + ".";
                 }
                 };
+            }
+
+            private String displayLayer(LlmResilienceOrchestrator.ResilienceTraceStep step) {
+                String layer = step.layer();
+                return layer != null && !layer.isBlank() ? layer : "unknown";
             }
 
             private String circuitBreakerProgressNotice(LlmResilienceOrchestrator.ResilienceTraceStep step) {

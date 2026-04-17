@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
@@ -490,7 +492,65 @@ class LlmCallPhaseTest {
     }
 
     @Test
-    void execute_shouldSkipProgressNoticeForUnknownResilienceLayer() {
+    void execute_shouldPublishHotRetryNoticeBeforeSleeping() {
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.failedFuture(
+                new RuntimeException(LlmErrorClassifier.withCode(
+                        LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, "provider returned 500"))));
+        ConversationViewBuilder viewBuilder = mock(ConversationViewBuilder.class);
+        when(viewBuilder.buildView(any(), any())).thenReturn(ConversationView.ofMessages(List.of()));
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(eq("balanced")))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider-primary", null));
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.ResilienceConfig config = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(1)
+                .hotRetryBaseDelayMs(250L)
+                .hotRetryCapMs(250L)
+                .coldRetryEnabled(false)
+                .build();
+        when(runtimeConfigService.isResilienceEnabled()).thenReturn(true);
+        when(runtimeConfigService.getResilienceConfig()).thenReturn(config);
+        LlmRequestPreflightPhase preflightPhase = mock(LlmRequestPreflightPhase.class);
+        when(preflightPhase.preflight(any(AgentContext.class), any(), anyInt()))
+                .thenAnswer(invocation -> ((java.util.function.Supplier<LlmRequest>) invocation.getArgument(1)).get());
+        AtomicBoolean hotRetryNoticePublished = new AtomicBoolean(false);
+        TurnProgressService turnProgressService = mock(TurnProgressService.class);
+        doAnswer(invocation -> {
+            String text = invocation.getArgument(1);
+            if (text != null && text.contains("Retrying the same LLM model")) {
+                hotRetryNoticePublished.set(true);
+            }
+            return null;
+        }).when(turnProgressService).publishSummary(any(AgentContext.class), any(String.class), any());
+        AssertingRetryPolicy retryPolicy = new AssertingRetryPolicy(hotRetryNoticePublished);
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                retryPolicy,
+                new ProviderCircuitBreaker(clock, 5, 60, 120),
+                List.of(),
+                null);
+        LlmCallPhase resilientPhase = new LlmCallPhase(
+                llmPort,
+                viewBuilder,
+                modelSelectionService,
+                runtimeConfigService,
+                preflightPhase,
+                mock(ContextCompactionCoordinator.class),
+                null,
+                turnProgressService,
+                null,
+                orchestrator,
+                clock);
+
+        assertInstanceOf(LlmCallPhase.LlmCallOutcome.RetryScheduled.class,
+                resilientPhase.execute(buildResilienceTurnState(), historyWriter));
+
+        assertTrue(retryPolicy.slept,
+                "L1 retry must still honor the configured backoff after notifying the user");
+    }
+
+    @Test
+    void execute_shouldPublishGenericProgressNoticeForUnknownResilienceLayer() {
         LlmPort llmPort = mock(LlmPort.class);
         when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.failedFuture(
                 new RuntimeException(LlmErrorClassifier.withCode(
@@ -532,9 +592,11 @@ class LlmCallPhaseTest {
                 clock);
         TurnState turnState = buildResilienceTurnState();
 
-        resilientPhase.execute(turnState, historyWriter);
+        assertInstanceOf(LlmCallPhase.LlmCallOutcome.Failed.class,
+                resilientPhase.execute(turnState, historyWriter));
 
-        verify(turnProgressService, never()).publishSummary(any(AgentContext.class), any(String.class), any());
+        verify(turnProgressService).publishSummary(eq(turnState.getContext()),
+                eq("Applying LLM recovery step L6: brand-new recovery layer."), any());
     }
 
     @Test
@@ -728,6 +790,27 @@ class LlmCallPhaseTest {
         @Override
         public void sleep(long delayMs) {
             // Keep the LlmCallPhase cascade test deterministic and fast.
+        }
+    }
+
+    private static final class AssertingRetryPolicy extends LlmRetryPolicy {
+        private final AtomicBoolean hotRetryNoticePublished;
+        private boolean slept;
+
+        private AssertingRetryPolicy(AtomicBoolean hotRetryNoticePublished) {
+            this.hotRetryNoticePublished = hotRetryNoticePublished;
+        }
+
+        @Override
+        public long computeDelay(int attempt, RuntimeConfig.ResilienceConfig config) {
+            return 250L;
+        }
+
+        @Override
+        public void sleep(long delayMs) {
+            assertTrue(hotRetryNoticePublished.get(),
+                    "hot-retry progress notice must be published before the retry backoff sleep");
+            slept = true;
         }
     }
 }

@@ -81,6 +81,12 @@ class LlmRequestPreflightPhaseTest extends LlmRequestPreflightPhaseFixture {
         assertEquals(1, context.getMessages().size());
         verify(compactionService).compact("session-1", CompactionReason.REQUEST_PREFLIGHT, 2);
         verify(turnProgressService).flushBufferedTools(context, "request_preflight_compaction");
+        verify(turnProgressService).publishSummary(context,
+                "I shortened the conversation context so this request fits the model window.",
+                Map.of("kind", "context_compaction_fallback",
+                        "reason", CompactionReason.REQUEST_PREFLIGHT.name(),
+                        "removed", 2,
+                        "usedSummary", false));
         Map<String, Object> diagnostics = context.getAttribute(ContextAttributes.LLM_REQUEST_PREFLIGHT);
         assertEquals(true, diagnostics.get("compactionAttempted"));
         assertEquals(2, diagnostics.get("compactionRemoved"));

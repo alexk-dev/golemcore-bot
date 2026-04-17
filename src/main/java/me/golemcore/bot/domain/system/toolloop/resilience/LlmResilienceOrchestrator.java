@@ -193,7 +193,6 @@ public class LlmResilienceOrchestrator {
             long delayMs = retryPolicy.computeDelay(attempt, config);
             log.warn("[Resilience] L1 hot retry: code={}, attempt={}, delayMs={}, provider={}",
                     errorCode, attempt, delayMs, providerId);
-            retryPolicy.sleep(delayMs);
             String detail = "hot retry after " + delayMs + "ms";
             traceSteps.add(traceStep("L1", "retry_now", detail,
                     traceAttributes("provider", providerId, "llm.error.code", errorCode,
@@ -292,6 +291,20 @@ public class LlmResilienceOrchestrator {
         ResilienceContextState.restoreAfterSuccess(context);
     }
 
+    /**
+     * Waits for the retry delay after callers have published user-facing progress
+     * for the selected recovery step.
+     */
+    public void pauseBeforeRetry(ResilienceOutcome.RetryNow retryNow) {
+        if (retryPolicy == null || retryNow == null) {
+            return;
+        }
+        long delayMs = retryDelayMs(retryNow.traceSteps());
+        if (delayMs > 0L) {
+            retryPolicy.sleep(delayMs);
+        }
+    }
+
         /**
          * Records a provider failure and appends an L3 trace step only when the breaker
          * actually changes state.
@@ -351,6 +364,29 @@ public class LlmResilienceOrchestrator {
             }
             context.getAttributes().remove(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE);
             context.getAttributes().remove(ContextAttributes.RESILIENCE_L5_TERMINAL_REASON);
+        }
+
+        private long retryDelayMs(List<ResilienceTraceStep> traceSteps) {
+            if (traceSteps == null) {
+                return 0L;
+            }
+            for (ResilienceTraceStep step : traceSteps) {
+                if (step == null || step.attributes() == null) {
+                    continue;
+                }
+                Object delay = step.attributes().get("retry.delay.ms");
+                if (delay instanceof Number number) {
+                    return Math.max(0L, number.longValue());
+                }
+                if (delay instanceof String stringValue && !stringValue.isBlank()) {
+                    try {
+                        return Math.max(0L, Long.parseLong(stringValue));
+                    } catch (NumberFormatException ignored) {
+                        return 0L;
+                    }
+                }
+            }
+            return 0L;
         }
 
         /**
