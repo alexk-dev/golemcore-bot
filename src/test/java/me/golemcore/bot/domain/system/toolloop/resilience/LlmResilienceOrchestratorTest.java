@@ -321,6 +321,27 @@ class LlmResilienceOrchestratorTest {
     }
 
     @Test
+    void shouldTagTerminalColdRetryFailureWhenAttemptsAreExhausted() {
+        RuntimeConfig.ResilienceConfig exhaustedConfig = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(true)
+                .build();
+        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, exhaustedConfig))
+                .thenThrow(new IllegalStateException("Cold retry attempts exhausted after 4 attempt(s)"));
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, exhaustedConfig);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.Exhausted exhausted = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
+        assertTrue(exhausted.reason().contains("Cold retry attempts exhausted"));
+        assertEquals(Boolean.TRUE, context.getAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE));
+        assertTrue(((String) context.getAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_REASON))
+                .contains("Cold retry attempts exhausted"));
+    }
+
+    @Test
     void shouldResolveUnknownProviderWhenAttributesMapIsNull() {
         LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
         AgentContext nullAttributesContext = AgentContext.builder().attributes(null).build();

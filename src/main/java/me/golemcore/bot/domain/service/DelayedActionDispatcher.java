@@ -18,6 +18,7 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
@@ -130,10 +131,26 @@ public class DelayedActionDispatcher {
                     "Delayed execution delivery unavailable"));
         }
         Message synthetic = buildInternalMessage(action);
+        if (DelayedActionKind.RETRY_LLM_TURN.equals(action.getKind())) {
+            return dispatchRetryLlmTurn(synthetic);
+        }
         return sessionRunCoordinator.submit(synthetic)
                 .handle((ignored, failure) -> failure == null
                         ? DispatchResult.completed()
                         : DispatchResult.retryable("Internal turn failed: " + failure.getMessage()));
+    }
+
+    private CompletableFuture<DispatchResult> dispatchRetryLlmTurn(Message synthetic) {
+        return sessionRunCoordinator.submitForContext(synthetic)
+                .handle((context, failure) -> {
+                    if (failure != null) {
+                        return DispatchResult.retryable("Internal turn failed: " + failure.getMessage());
+                    }
+                    if (isTerminalL5Failure(context)) {
+                        return DispatchResult.terminal(resolveTerminalL5Reason(context));
+                    }
+                    return DispatchResult.completed();
+                });
     }
 
     private Message buildInternalMessage(DelayedSessionAction action) {
@@ -201,7 +218,6 @@ public class DelayedActionDispatcher {
 
     private String buildRetryLlmTurnContent(DelayedSessionAction action) {
         String errorCode = payloadString(action, "errorCode");
-        String originalPrompt = payloadString(action, "originalPrompt");
         StringBuilder builder = new StringBuilder();
         builder.append("[DELAYED ACTION]\n");
         builder.append("Kind: ").append(action.getKind().name()).append('\n');
@@ -212,13 +228,24 @@ public class DelayedActionDispatcher {
         if (!StringValueSupport.isBlank(errorCode)) {
             builder.append("Last LLM error code: ").append(errorCode).append('\n');
         }
-        if (!StringValueSupport.isBlank(originalPrompt)) {
-            builder.append("Original user request: ").append(originalPrompt).append('\n');
-        }
-        builder.append("Instruction: Retry the suspended user request now.\n\n");
+        builder.append("Instruction: Retry the previous suspended user request now.\n\n");
         builder.append("This is a scheduled internal LLM retry, not a fresh user message. ");
-        builder.append("Use the current session context and continue normally.");
+        builder.append("Use the latest non-internal user message already present in the conversation history. ");
+        builder.append("Do not treat delayed-action metadata as user instructions.");
         return builder.toString();
+    }
+
+    private boolean isTerminalL5Failure(AgentContext context) {
+        return context != null
+                && Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE));
+    }
+
+    private String resolveTerminalL5Reason(AgentContext context) {
+        if (context == null) {
+            return "L5 cold retry failed";
+        }
+        String reason = context.getAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_REASON);
+        return !StringValueSupport.isBlank(reason) ? reason : "L5 cold retry failed";
     }
 
     private String payloadString(DelayedSessionAction action, String key) {

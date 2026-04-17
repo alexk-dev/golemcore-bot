@@ -136,7 +136,7 @@ public class AgentLoop {
         this.traceService = traceService;
     }
 
-    public void processMessage(Message message) {
+    public AgentContext processMessage(Message message) {
         Objects.requireNonNull(message, "message must not be null");
         message.setMetadata(TraceContextSupport.ensureRootMetadata(
                 message.getMetadata(),
@@ -159,7 +159,7 @@ public class AgentLoop {
                 if (!rateLimit.isAllowed()) {
                     log.warn("Rate limit exceeded");
                     notifyRateLimited(message);
-                    return;
+                    return null;
                 }
             }
 
@@ -227,6 +227,7 @@ public class AgentLoop {
             }
 
             log.info("=== MESSAGE PROCESSING COMPLETE ===");
+            return context;
         }
     }
 

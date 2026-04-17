@@ -96,6 +96,7 @@ final class LlmOpenCircuitPreflight {
             String reason = "Cold retry scheduling failed for provider " + providerId
                     + " (code=" + LlmErrorClassifier.PROVIDER_CIRCUIT_OPEN
                     + "): suspended turn manager is not configured";
+            markTerminalL5Failure(context, reason);
             traceSteps.add(traceStep("L5", "exhausted", reason,
                     traceAttributes("provider", providerId, "llm.error.code",
                             LlmErrorClassifier.PROVIDER_CIRCUIT_OPEN, "cold_retry.enabled", true)));
@@ -104,6 +105,7 @@ final class LlmOpenCircuitPreflight {
         try {
             String userMessage = suspendedTurnManager.suspend(context, LlmErrorClassifier.PROVIDER_CIRCUIT_OPEN,
                     config);
+            clearTerminalL5Failure(context);
             traceSteps.add(traceStep("L5", "suspend", userMessage,
                     traceAttributes("provider", providerId, "llm.error.code",
                             LlmErrorClassifier.PROVIDER_CIRCUIT_OPEN, "cold_retry.enabled", true)));
@@ -113,11 +115,28 @@ final class LlmOpenCircuitPreflight {
                     : exception.getClass().getSimpleName();
             String reason = "Cold retry scheduling failed for provider " + providerId
                     + " (code=" + LlmErrorClassifier.PROVIDER_CIRCUIT_OPEN + "): " + message;
+            markTerminalL5Failure(context, reason);
             traceSteps.add(traceStep("L5", "exhausted", reason,
                     traceAttributes("provider", providerId, "llm.error.code",
                             LlmErrorClassifier.PROVIDER_CIRCUIT_OPEN, "cold_retry.enabled", true)));
             return new LlmResilienceOrchestrator.ResilienceOutcome.Exhausted(reason, traceSteps);
         }
+    }
+
+    private void markTerminalL5Failure(AgentContext context, String reason) {
+        if (context == null) {
+            return;
+        }
+        context.setAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE, true);
+        context.setAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_REASON, reason);
+    }
+
+    private void clearTerminalL5Failure(AgentContext context) {
+        if (context == null || context.getAttributes() == null) {
+            return;
+        }
+        context.getAttributes().remove(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE);
+        context.getAttributes().remove(ContextAttributes.RESILIENCE_L5_TERMINAL_REASON);
     }
 
     private LlmResilienceOrchestrator.ResilienceOutcome exhausted(String providerId,
