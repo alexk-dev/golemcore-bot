@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useChatRuntimeStore } from '../../store/chatRuntimeStore';
 import { useChatSessionStore } from '../../store/chatSessionStore';
@@ -7,8 +7,9 @@ import { useSidebarStore } from '../../store/sidebarStore';
 import { useBackgroundSystemUpdateCheck } from '../../hooks/useBackgroundSystemUpdateCheck';
 import { useSystemUpdateStatus } from '../../hooks/useSystem';
 import { logout } from '../../api/auth';
+import { getPrimaryDocForPath } from '../../lib/docsLinks';
 import { type TopbarUpdateNotice, getTopbarUpdateNotice } from '../../utils/systemUpdateUi';
-import { FiArrowUpCircle, FiLogOut, FiMenu, FiMoon, FiSun } from 'react-icons/fi';
+import { FiArrowUpCircle, FiBookOpen, FiLogOut, FiMenu, FiMoon, FiSun } from 'react-icons/fi';
 
 interface ChatStatusState {
   trackedSessionId: string | null;
@@ -69,6 +70,7 @@ function TopbarUpdateShortcut({ notice, onClick }: { notice: TopbarUpdateNotice;
 }
 
 export default function Topbar() {
+  const location = useLocation();
   const nav = useNavigate();
   const doLogout = useAuthStore((s) => s.logout);
   const activeSessionId = useChatSessionStore((s) => s.activeSessionId);
@@ -83,6 +85,7 @@ export default function Topbar() {
   const { data: updateStatus } = useSystemUpdateStatus();
   const chatStatus = resolveChatStatus(activeSessionId, activeSession, runningSessionId, connectionState);
   const updateNotice = getTopbarUpdateNotice(updateStatus);
+  const primaryDoc = getPrimaryDocForPath(location.pathname);
 
   useBackgroundSystemUpdateCheck(updateStatus);
 
@@ -135,6 +138,20 @@ export default function Topbar() {
         )}
       </div>
       <div className="d-flex align-items-center gap-2">
+        {primaryDoc != null && (
+          <a
+            href={primaryDoc.url}
+            target="_blank"
+            rel="noreferrer"
+            className="topbar-action-btn text-decoration-none d-flex align-items-center px-3"
+            title={`Open ${primaryDoc.title} on docs.golemcore.me`}
+            aria-label={`Open ${primaryDoc.title} on docs.golemcore.me`}
+          >
+            <FiBookOpen size={16} className="me-0 me-lg-2" />
+            <span className="fw-medium small d-none d-lg-inline">{primaryDoc.shortLabel}</span>
+            <span className="fw-medium small d-lg-none">Docs</span>
+          </a>
+        )}
         {updateNotice != null && (
           <TopbarUpdateShortcut notice={updateNotice} onClick={handleOpenUpdates} />
         )}

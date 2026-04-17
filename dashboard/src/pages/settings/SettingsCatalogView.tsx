@@ -2,7 +2,11 @@ import type { ReactElement } from 'react';
 import { Badge, Button, Card, Col, Form, InputGroup, Row } from '../../components/ui/tailwind-components';
 import { FiSearch, FiX } from 'react-icons/fi';
 
+import { DocsLinkAnchor } from '../../components/common/DocsLinkAnchor';
+import { PageDocsLinks } from '../../components/common/PageDocsLinks';
+import type { DocLink } from '../../lib/docsLinks';
 import type { SettingsSectionMeta } from './settingsCatalog';
+import { SettingsIntentCards } from './SettingsIntentCards';
 
 export interface CatalogCardItem {
   key: string;
@@ -23,6 +27,7 @@ export interface CatalogBlockView {
 }
 
 interface SettingsCatalogViewProps {
+  docs: DocLink[];
   catalogSearch: string;
   filteredCatalogBlocks: CatalogBlockView[];
   onSearchChange: (value: string) => void;
@@ -31,6 +36,7 @@ interface SettingsCatalogViewProps {
 }
 
 export function SettingsCatalogView({
+  docs,
   catalogSearch,
   filteredCatalogBlocks,
   onSearchChange,
@@ -39,10 +45,29 @@ export function SettingsCatalogView({
 }: SettingsCatalogViewProps): ReactElement {
   return (
     <div>
-      <div className="page-header"><h4>Settings</h4><p className="text-body-secondary mb-0">Select a settings category</p></div>
-      <Card className="settings-card mb-4"><Card.Body><SettingsCatalogSearch catalogSearch={catalogSearch} onSearchChange={onSearchChange} onClearSearch={onClearSearch} /></Card.Body></Card>
+      <div className="page-header">
+        <h4>Settings</h4>
+        <p className="text-body-secondary mb-0">Select a settings category</p>
+        <PageDocsLinks title="Key guides" docs={docs} className="mt-3" />
+      </div>
+      <SettingsIntentCards onOpenSection={onOpenSection} />
+      <Card className="settings-card mb-4">
+        <Card.Body>
+          <SettingsCatalogSearch catalogSearch={catalogSearch} onSearchChange={onSearchChange} onClearSearch={onClearSearch} />
+        </Card.Body>
+      </Card>
       {filteredCatalogBlocks.length === 0 ? (
-        <Card className="settings-card"><Card.Body><h2 className="h6 mb-2">Nothing found</h2><p className="text-body-secondary small mb-0">No settings match `{catalogSearch}`. Try another name or clear the search.</p></Card.Body></Card>
+        <Card className="settings-card">
+          <Card.Body>
+            <h2 className="h6 mb-2">Nothing found</h2>
+            <p className="text-body-secondary small mb-3">
+              No settings match `{catalogSearch}`. Try another name or clear the search.
+            </p>
+            <DocsLinkAnchor doc={docs[0]} appearance="text">
+              Open the main settings guide
+            </DocsLinkAnchor>
+          </Card.Body>
+        </Card>
       ) : filteredCatalogBlocks.map((block) => <SettingsCatalogBlock key={block.key} block={block} onOpenSection={onOpenSection} />)}
     </div>
   );

@@ -1,5 +1,7 @@
 import type { ReactElement } from 'react';
 import { FiCommand, FiFolder, FiMinus, FiPlus, FiSave } from 'react-icons/fi';
+import { PageDocsLinks } from '../common/PageDocsLinks';
+import { type DocLink, getDocLinks } from '../../lib/docsLinks';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 
@@ -17,6 +19,14 @@ export interface IdeHeaderProps {
   onDecreaseSidebarWidth: () => void;
 }
 
+function resolveIdeDocs(activeFileLabel: string | null): DocLink[] {
+  const normalizedLabel = activeFileLabel?.toLowerCase() ?? '';
+  if (normalizedLabel.endsWith('skill.md') || normalizedLabel.includes('/skills/')) {
+    return getDocLinks(['skills', 'mcp', 'dashboard']);
+  }
+  return getDocLinks(['dashboard', 'skills']);
+}
+
 export function IdeHeader({
   activeFileLabel,
   isMobileLayout,
@@ -30,6 +40,8 @@ export function IdeHeader({
   onIncreaseSidebarWidth,
   onDecreaseSidebarWidth,
 }: IdeHeaderProps): ReactElement {
+  const ideDocs = resolveIdeDocs(activeFileLabel);
+
   return (
     <div className="section-header flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0 flex-1">
@@ -37,6 +49,7 @@ export function IdeHeader({
         <p className="text-sm text-muted-foreground">
           Open a file, make a quick change, and save it back to the workspace.
         </p>
+        <PageDocsLinks title="Workspace docs" docs={ideDocs} className="mt-3" />
         {isMobileLayout && (
           <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
             <span className="font-semibold uppercase tracking-[0.16em]">Current file</span>

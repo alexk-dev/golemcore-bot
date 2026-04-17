@@ -1,6 +1,8 @@
 import { useDeferredValue, useEffect, useState, type ReactElement } from 'react';
 import { Card, Button, Spinner, Placeholder } from '../components/ui/tailwind-components';
 import { useNavigate, useParams } from 'react-router-dom';
+import { PageDocsLinks } from '../components/common/PageDocsLinks';
+import { getDocLinks, getDocsForSettingsSection } from '../lib/docsLinks';
 import {
   useSettings, useRuntimeConfig, useUpdateRuntimeConfig,
 } from '../hooks/useSettings';
@@ -42,7 +44,8 @@ import { SettingsCatalogView, type CatalogBlockView } from './settings/SettingsC
 import { buildCatalogBlocks, buildMarketplaceBadge, resolveSectionMeta } from './settings/SettingsPageState';
 import { useTelemetry } from '../lib/telemetry/TelemetryContext';
 
-// ==================== Main ====================
+const SETTINGS_CATALOG_DOCS = getDocLinks(['configuration', 'dashboard', 'quickstart']);
+const PLUGIN_SETTINGS_DOCS = getDocLinks(['plugins', 'configuration']);
 
 export default function SettingsPage(): ReactElement {
   const navigate = useNavigate();
@@ -74,6 +77,11 @@ export default function SettingsPage(): ReactElement {
 
   const sectionMeta = resolveSectionMeta(staticSection, pluginSection);
   const selectedSectionKey = staticSection ?? pluginSection?.routeKey ?? 'catalog';
+  const sectionDocs = staticSection != null
+    ? getDocLinks(getDocsForSettingsSection(staticSection))
+    : pluginSection != null
+      ? PLUGIN_SETTINGS_DOCS
+      : SETTINGS_CATALOG_DOCS;
 
   const catalogBlocks: CatalogBlockView[] = buildCatalogBlocks(pluginCatalog, marketplaceBadge);
   const filteredCatalogBlocks = filterCatalogBlocks(catalogBlocks, deferredCatalogSearch);
@@ -94,6 +102,7 @@ export default function SettingsPage(): ReactElement {
         <div className="page-header">
           <h4>Settings</h4>
           <p className="text-body-secondary mb-0">Configure your GolemCore instance</p>
+          <PageDocsLinks title="Key guides" docs={SETTINGS_CATALOG_DOCS} className="mt-3" />
         </div>
         <Card className="settings-card">
           <Card.Body>
@@ -112,6 +121,7 @@ export default function SettingsPage(): ReactElement {
   if (staticSection == null && pluginSection == null) {
     return (
       <SettingsCatalogView
+        docs={SETTINGS_CATALOG_DOCS}
         catalogSearch={catalogSearch}
         filteredCatalogBlocks={filteredCatalogBlocks}
         onSearchChange={(value) => {
@@ -129,8 +139,9 @@ export default function SettingsPage(): ReactElement {
       <div className="page-header">
         <h4>{sectionMeta?.title ?? 'Settings'}</h4>
         <p className="text-body-secondary mb-0">{sectionMeta?.description ?? 'Configure your GolemCore instance'}</p>
+        <PageDocsLinks title="Relevant docs" docs={sectionDocs} className="mt-3" />
       </div>
-      <div className="mb-3">
+      <div className="mb-3 d-flex flex-wrap gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/settings')}>
           Back to catalog
         </Button>
