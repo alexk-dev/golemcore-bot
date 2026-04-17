@@ -1,10 +1,16 @@
 import type { FileTreeNode } from '../../api/files';
 
+/**
+ * Flat file suggestion entry shown by the chat file-mention UI.
+ */
 export interface MentionFileEntry {
   path: string;
   name: string;
 }
 
+/**
+ * Flattens a hierarchical file tree into mentionable non-binary file entries.
+ */
 export function flattenFileTree(tree: FileTreeNode[]): MentionFileEntry[] {
   const result: MentionFileEntry[] = [];
   const stack: FileTreeNode[] = [];
@@ -29,17 +35,26 @@ export function flattenFileTree(tree: FileTreeNode[]): MentionFileEntry[] {
   return result;
 }
 
+/**
+ * Active mention token boundaries inside the composer text.
+ */
 export interface MentionTrigger {
   query: string;
   start: number;
   end: number;
 }
 
+/**
+ * Result of inserting a selected mention into the composer text.
+ */
 export interface MentionInsertResult {
   text: string;
   caret: number;
 }
 
+/**
+ * Finds the currently active `@path` mention token at the caret position.
+ */
 export function findMentionTrigger(text: string, caret: number): MentionTrigger | null {
   if (caret < 1) {
     return null;
@@ -60,6 +75,9 @@ export function findMentionTrigger(text: string, caret: number): MentionTrigger 
   return { query, start: atIndex, end: caret };
 }
 
+/**
+ * Filters flattened file entries against the active mention query.
+ */
 export function filterFilesByQuery(
   files: MentionFileEntry[],
   query: string,
@@ -72,6 +90,9 @@ export function filterFilesByQuery(
   return matched.slice(0, limit);
 }
 
+/**
+ * Inserts a selected mention path and returns the updated text with caret position.
+ */
 export function insertMentionPath(
   text: string,
   trigger: { start: number; end: number },

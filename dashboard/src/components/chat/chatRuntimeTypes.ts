@@ -1,6 +1,9 @@
 import type { TurnMetadata } from '../../store/contextPanelStore';
 import type { ChatAttachmentPayload, OutboundChatPayload } from './chatInputTypes';
 
+/**
+ * Attachment metadata rendered inside chat history items.
+ */
 export interface ChatMessageAttachment {
   type: 'image' | 'document';
   name: string | null;
@@ -10,6 +13,9 @@ export interface ChatMessageAttachment {
   thumbnailBase64: string | null;
 }
 
+/**
+ * Client-side chat message representation used by the workspace chat store.
+ */
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -25,6 +31,9 @@ export interface ChatMessage {
   persisted: boolean;
 }
 
+/**
+ * Partial metadata emitted by the backend while a turn is running.
+ */
 export interface AssistantHint extends Partial<TurnMetadata> {
   model?: string | null;
   tier?: string | null;
@@ -37,12 +46,18 @@ export interface AssistantHint extends Partial<TurnMetadata> {
   maxContextTokens?: number | null;
 }
 
+/**
+ * Streaming progress update shown while the assistant is still responding.
+ */
 export interface LiveProgressUpdate {
   type: 'intent' | 'summary';
   text: string;
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * Raw websocket payload coming from the dashboard chat backend.
+ */
 export interface SocketMessage {
   type?: string;
   eventType?: string;
@@ -57,18 +72,27 @@ export interface SocketMessage {
   runtimeEventPayload?: Record<string, unknown>;
 }
 
+/**
+ * Initial websocket binding frame that associates the browser with a chat session.
+ */
 export interface ChatBindPayload {
   type: 'bind';
   sessionId: string;
   clientInstanceId: string;
 }
 
+/**
+ * Minimal IDE tab context included with each outbound chat turn.
+ */
 export interface OpenedTabContext {
   path: string;
   title: string;
   isDirty: boolean;
 }
 
+/**
+ * Outbound websocket message sent by the workspace chat transport.
+ */
 export interface ChatSendPayload {
   text: string;
   attachments: ChatAttachmentPayload[];
@@ -80,6 +104,9 @@ export interface ChatSendPayload {
   activePath?: string | null;
 }
 
+/**
+ * Per-session runtime state tracked by the workspace chat store.
+ */
 export interface ChatRuntimeSessionState {
   sessionRecordId: string | null;
   messages: ChatMessage[];

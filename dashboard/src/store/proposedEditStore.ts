@@ -22,6 +22,9 @@ interface ProposedEditState {
   clearProposals: () => void;
 }
 
+/**
+ * Client-side store for assistant-proposed file edits awaiting user review.
+ */
 export const useProposedEditStore = create<ProposedEditState>((set) => ({
   proposals: [],
 

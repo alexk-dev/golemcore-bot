@@ -26,6 +26,10 @@ function resolveTargetIndex(
   return null;
 }
 
+/**
+ * Renders the workspace chat session strip with keyboard navigation between open
+ * sessions.
+ */
 export function ChatSessionTabs(): ReactElement {
   const openSessionIds = useChatSessionStore((state) => state.openSessionIds);
   const activeSessionId = useChatSessionStore((state) => state.activeSessionId);

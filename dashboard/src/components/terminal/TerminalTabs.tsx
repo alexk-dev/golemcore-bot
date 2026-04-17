@@ -2,6 +2,9 @@ import type { ReactElement } from 'react';
 import { FiPlus, FiX } from 'react-icons/fi';
 import { useTerminalStore } from '../../store/terminalStore';
 
+/**
+ * Tab strip for the embedded workspace terminal sessions.
+ */
 export function TerminalTabs(): ReactElement {
   const tabs = useTerminalStore((state) => state.tabs);
   const activeTabId = useTerminalStore((state) => state.activeTabId);

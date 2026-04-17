@@ -66,6 +66,9 @@ function pickBoolean(
   return value;
 }
 
+/**
+ * Parses and sanitizes the persisted workspace layout snapshot from localStorage.
+ */
 export function normalizeStoredWorkspaceLayout(raw: string | null): WorkspaceLayoutSnapshot {
   if (raw == null || raw.length === 0) {
     return { ...DEFAULT_WORKSPACE_LAYOUT };
@@ -127,6 +130,9 @@ function snapshotFromState(state: WorkspaceLayoutState): WorkspaceLayoutSnapshot
 
 const initialLayout = readInitialLayout();
 
+/**
+ * Persists the workspace panel arrangement for chat and terminal panes.
+ */
 export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) => ({
   ...initialLayout,
 

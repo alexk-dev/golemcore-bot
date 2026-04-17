@@ -6,6 +6,9 @@ export interface FileMentionMenuProps {
   onSelect: (path: string) => void;
 }
 
+/**
+ * Small suggestion menu shown when the user inserts file mentions in chat.
+ */
 export function FileMentionMenu({ suggestions, onSelect }: FileMentionMenuProps): ReactElement {
   if (suggestions.length === 0) {
     return (

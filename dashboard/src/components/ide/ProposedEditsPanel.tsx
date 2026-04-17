@@ -3,6 +3,9 @@ import { InlineDiffView } from './InlineDiffView';
 import { useIdeStore } from '../../store/ideStore';
 import { useProposedEditStore, type ProposedEdit } from '../../store/proposedEditStore';
 
+/**
+ * Panel that renders assistant-proposed file edits above the IDE editor surface.
+ */
 export function ProposedEditsPanel(): ReactElement | null {
   const proposals = useProposedEditStore((state) => state.proposals);
   const acceptProposal = useProposedEditStore((state) => state.acceptProposal);

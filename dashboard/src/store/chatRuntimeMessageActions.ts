@@ -65,6 +65,10 @@ function cloneSessions(
   return { ...sessions, [sessionId]: nextSession };
 }
 
+/**
+ * Builds the imperative chat-runtime store actions that react to websocket
+ * traffic and optimistic dashboard message sends.
+ */
 export function createMessageActions(
   set: ChatRuntimeSet,
   get: ChatRuntimeGet,

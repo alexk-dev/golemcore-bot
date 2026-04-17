@@ -3,6 +3,9 @@ import { useWorkspaceLayoutStore } from '../../store/workspaceLayoutStore';
 
 const RUN_PREFIX = '/run';
 
+/**
+ * Extracts the shell command from a chat `/run ...` instruction.
+ */
 export function parseRunCommand(text: string): string | null {
   const trimmedStart = text.trimStart();
   if (!trimmedStart.startsWith(RUN_PREFIX)) {
@@ -16,6 +19,9 @@ export function parseRunCommand(text: string): string | null {
   return command.length > 0 ? command : null;
 }
 
+/**
+ * Routes a parsed `/run` command into the active workspace terminal tab.
+ */
 export function routeRunCommandToTerminal(command: string): void {
   const terminal = useTerminalStore.getState();
   const targetTabId = terminal.activeTabId ?? terminal.openTab();

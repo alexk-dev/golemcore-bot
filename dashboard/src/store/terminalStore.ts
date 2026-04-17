@@ -38,6 +38,10 @@ function nextTitle(tabs: TerminalTab[]): string {
   return `Terminal ${candidate}`;
 }
 
+/**
+ * Workspace terminal tab store, including pending keystrokes queued before a
+ * websocket session is ready.
+ */
 export const useTerminalStore = create<TerminalState>()(subscribeWithSelector((set, get) => ({
   tabs: [],
   activeTabId: null,

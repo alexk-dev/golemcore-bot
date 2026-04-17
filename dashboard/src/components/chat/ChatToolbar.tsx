@@ -25,6 +25,10 @@ export interface ChatToolbarProps {
   onMemoryPresetChange?: (preset: string) => void;
 }
 
+/**
+ * Toolbar shown above the workspace chat, with chat/session actions and optional
+ * embedded model controls.
+ */
 export function ChatToolbar({
   chatSessionId,
   connected,

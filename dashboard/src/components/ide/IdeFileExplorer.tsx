@@ -30,6 +30,9 @@ export interface IdeFileExplorerProps {
   onUploadFiles: (targetPath: string, files: FileList) => void;
 }
 
+/**
+ * IDE sidebar explorer with tree search, upload, refresh, and quick actions.
+ */
 export function IdeFileExplorer({
   nodes,
   isLoading,
