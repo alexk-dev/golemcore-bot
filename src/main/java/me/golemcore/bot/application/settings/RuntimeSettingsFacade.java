@@ -385,7 +385,8 @@ public class RuntimeSettingsFacade {
 
     public RuntimeConfig updateAdvancedConfig(RuntimeConfig.RateLimitConfig rateLimitConfig,
             RuntimeConfig.SecurityConfig securityConfig,
-            RuntimeConfig.CompactionConfig compactionConfig) {
+            RuntimeConfig.CompactionConfig compactionConfig,
+            RuntimeConfig.ResilienceConfig resilienceConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         if (rateLimitConfig != null) {
             config.setRateLimit(rateLimitConfig);
@@ -396,6 +397,9 @@ public class RuntimeSettingsFacade {
         if (compactionConfig != null) {
             validator.validateCompactionConfig(compactionConfig);
             config.setCompaction(compactionConfig);
+        }
+        if (resilienceConfig != null) {
+            config.setResilience(resilienceConfig);
         }
         runtimeConfigService.updateRuntimeConfig(config);
         RuntimeConfig apiView = runtimeConfigService.getRuntimeConfigForApi();

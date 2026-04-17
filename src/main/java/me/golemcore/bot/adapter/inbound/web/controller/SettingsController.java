@@ -13,6 +13,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ModelRouterConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ResilienceConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SecurityConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
@@ -407,7 +408,8 @@ public class SettingsController {
                 runtimeSettingsFacade.updateAdvancedConfig(
                         runtimeSettingsWebMapper.toRateLimitConfig(request.rateLimit()),
                         runtimeSettingsWebMapper.toSecurityConfig(request.security()),
-                        runtimeSettingsWebMapper.toCompactionConfig(request.compaction()))));
+                        runtimeSettingsWebMapper.toCompactionConfig(request.compaction()),
+                        runtimeSettingsWebMapper.toResilienceConfig(request.resilience()))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateRuntimeConfig(RuntimeConfig config) {
@@ -607,15 +609,18 @@ public class SettingsController {
     private record AdvancedConfigRequest(
             RateLimitConfigDto rateLimit,
             SecurityConfigDto security,
-            CompactionConfigDto compaction) {
+            CompactionConfigDto compaction,
+            ResilienceConfigDto resilience) {
 
         private AdvancedConfigRequest(
                 RuntimeConfig.RateLimitConfig rateLimit,
                 RuntimeConfig.SecurityConfig security,
-                RuntimeConfig.CompactionConfig compaction) {
+                RuntimeConfig.CompactionConfig compaction,
+                RuntimeConfig.ResilienceConfig resilience) {
             this(copy(rateLimit, new RateLimitConfigDto()),
                     copy(security, new SecurityConfigDto()),
-                    copy(compaction, new CompactionConfigDto()));
+                    copy(compaction, new CompactionConfigDto()),
+                    copy(resilience, new ResilienceConfigDto()));
         }
 
         private static <S, T> T copy(S source, T target) {

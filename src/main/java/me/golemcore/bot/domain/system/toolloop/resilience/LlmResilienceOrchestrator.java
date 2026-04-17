@@ -229,8 +229,8 @@ public class LlmResilienceOrchestrator {
         }
 
         if (LlmErrorClassifier.isTransientCode(errorCode)) {
-            var fallbackSelection = routerFallbackSelector.selectNext(context,
-                    fallbackModel -> !circuitBreaker.isOpen(fallbackModel));
+            java.util.Optional<RouterFallbackSelector.Selection> fallbackSelection = routerFallbackSelector
+                    .selectNext(context, circuitBreaker::isAvailable);
             if (fallbackSelection.isPresent()) {
                 RouterFallbackSelector.Selection selection = fallbackSelection.get();
                 log.warn("[Resilience] L2 router fallback: provider={}, tier={}, mode={}, fallbackModel={}",

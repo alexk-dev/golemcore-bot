@@ -87,6 +87,11 @@ public class RuntimeConfigRouterFallbackSelector implements RouterFallbackSelect
         }
 
         Set<String> attemptedModels = readAttemptedModels(context);
+        if (attemptedModels.size() >= resolveMaxAttempts()) {
+            log.debug("[Resilience] L2 router fallback cap reached for tier {} after {} attempt(s)",
+                    tier, attemptedModels.size());
+            return Optional.empty();
+        }
         Set<String> excludedModels = new LinkedHashSet<>(attemptedModels);
         addIfPresent(excludedModels, readString(context, ContextAttributes.LLM_MODEL));
         addIfPresent(excludedModels, binding.getModel());
@@ -226,6 +231,16 @@ public class RuntimeConfigRouterFallbackSelector implements RouterFallbackSelect
             return number.intValue();
         }
         return 0;
+    }
+
+    private int resolveMaxAttempts() {
+        RuntimeConfig.ResilienceConfig resilienceConfig = runtimeConfigService != null
+                ? runtimeConfigService.getResilienceConfig()
+                : null;
+        Integer configuredMaxAttempts = resilienceConfig != null
+                ? resilienceConfig.getL2ProviderFallbackMaxAttempts()
+                : null;
+        return configuredMaxAttempts != null && configuredMaxAttempts > 0 ? configuredMaxAttempts : 5;
     }
 
     private String normalizeTier(String tier) {

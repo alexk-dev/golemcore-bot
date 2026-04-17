@@ -154,6 +154,62 @@ class RuntimeConfigRouterFallbackSelectorTest {
     }
 
     @Test
+    void shouldStopSequentialFallbackAtConfiguredAttemptCap() {
+        when(runtimeConfigService.getResilienceConfig()).thenReturn(RuntimeConfig.ResilienceConfig.builder()
+                .l2ProviderFallbackMaxAttempts(2)
+                .build());
+        when(runtimeConfigService.getModelTierBinding("deep")).thenReturn(binding(
+                FallbackModes.SEQUENTIAL,
+                fallback("provider/fallback-a", null, null),
+                fallback("provider/fallback-b", null, null),
+                fallback("provider/fallback-c", null, null)));
+        RuntimeConfigRouterFallbackSelector selector = selector(new Random(0));
+
+        assertTrue(selector.selectNext(context).isPresent());
+        assertTrue(selector.selectNext(context).isPresent());
+        assertTrue(selector.selectNext(context).isEmpty());
+        assertEquals(List.of("provider/fallback-a", "provider/fallback-b"),
+                context.getAttribute(ContextAttributes.RESILIENCE_L2_ATTEMPTED_MODELS));
+        assertEquals("provider/fallback-b", context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL));
+    }
+
+    @Test
+    void shouldStopRoundRobinFallbackAtConfiguredAttemptCap() {
+        when(runtimeConfigService.getResilienceConfig()).thenReturn(RuntimeConfig.ResilienceConfig.builder()
+                .l2ProviderFallbackMaxAttempts(1)
+                .build());
+        when(runtimeConfigService.getModelTierBinding("deep")).thenReturn(binding(
+                FallbackModes.ROUND_ROBIN,
+                fallback("provider/fallback-a", null, null),
+                fallback("provider/fallback-b", null, null)));
+        RuntimeConfigRouterFallbackSelector selector = selector(new Random(0));
+
+        assertTrue(selector.selectNext(context).isPresent());
+        assertTrue(selector.selectNext(context).isEmpty());
+        assertEquals("provider/fallback-a", context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL));
+        assertEquals(Integer.valueOf(1), context.getAttribute(ContextAttributes.RESILIENCE_L2_ROUND_ROBIN_CURSOR));
+    }
+
+    @Test
+    void shouldStopWeightedFallbackAtConfiguredAttemptCap() {
+        when(runtimeConfigService.getResilienceConfig()).thenReturn(RuntimeConfig.ResilienceConfig.builder()
+                .l2ProviderFallbackMaxAttempts(2)
+                .build());
+        when(runtimeConfigService.getModelTierBinding("deep")).thenReturn(binding(
+                FallbackModes.WEIGHTED,
+                fallback("provider/fallback-a", null, 9.0d),
+                fallback("provider/fallback-b", null, 1.0d),
+                fallback("provider/fallback-c", null, 1.0d)));
+        RuntimeConfigRouterFallbackSelector selector = selector(new Random(0));
+
+        assertTrue(selector.selectNext(context).isPresent());
+        assertTrue(selector.selectNext(context).isPresent());
+        assertTrue(selector.selectNext(context).isEmpty());
+        assertEquals(List.of("provider/fallback-a", "provider/fallback-b"),
+                context.getAttribute(ContextAttributes.RESILIENCE_L2_ATTEMPTED_MODELS));
+    }
+
+    @Test
     void shouldClearFallbackState() {
         when(runtimeConfigService.getModelTierBinding("deep")).thenReturn(binding(
                 FallbackModes.SEQUENTIAL,

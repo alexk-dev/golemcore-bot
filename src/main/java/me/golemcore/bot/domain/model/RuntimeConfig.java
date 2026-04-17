@@ -1328,6 +1328,10 @@ public class RuntimeConfig {
         @Builder.Default
         private Long circuitBreakerOpenDurationSeconds = 120L;
 
+        /** Maximum L2 provider-fallback reroutes before escalating to later layers. */
+        @Builder.Default
+        private Integer l2ProviderFallbackMaxAttempts = 5;
+
         /** Whether L4 may compact context after provider-side transient errors. */
         @Builder.Default
         private Boolean degradationCompactContext = true;
