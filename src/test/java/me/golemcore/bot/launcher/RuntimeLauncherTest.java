@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -92,6 +93,152 @@ class RuntimeLauncherTest {
                 "-jar",
                 jarPath.toAbsolutePath().normalize().toString(),
                 "--spring.profiles.active=prod"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldLaunchBundledRuntimeWhenCurrentMarkerIsBlank(@TempDir Path tempDir) throws Exception {
+        Files.writeString(tempDir.resolve("current.txt"), "   \n", StandardCharsets.UTF_8);
+
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter);
+
+        int exitCode = launcher.run(new String[0]);
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-cp",
+                "@/app/jib-classpath-file",
+                "me.golemcore.bot.BotApplication"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldFallbackToBundledRuntimeWhenCurrentMarkerUsesBackslashes(@TempDir Path tempDir) throws Exception {
+        Files.writeString(tempDir.resolve("current.txt"), "subdir\\bot-0.4.2.jar\n", StandardCharsets.UTF_8);
+
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        CapturingLauncherOutput output = new CapturingLauncherOutput();
+        RuntimeLauncher launcher = createLauncher(Map.of("UPDATE_PATH", tempDir.toString()), processStarter, output);
+
+        int exitCode = launcher.run(new String[0]);
+
+        assertEquals(0, exitCode);
+        assertTrue(
+                output.errorMessages().contains("Ignoring invalid current marker asset name: subdir\\bot-0.4.2.jar"));
+    }
+
+    @Test
+    void shouldKeepCurrentJarWhenBundledVersionIsNotSemantic(@TempDir Path tempDir) throws Exception {
+        Path jarsDir = tempDir.resolve("jars");
+        Files.createDirectories(jarsDir);
+        Path jarPath = jarsDir.resolve("bot-0.4.2.jar");
+        Files.writeString(jarPath, "payload", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("current.txt"), "bot-0.4.2.jar\n", StandardCharsets.UTF_8);
+
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "dev");
+
+        int exitCode = launcher.run(new String[0]);
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                jarPath.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldKeepCurrentJarWhenCurrentMarkerVersionIsNotSemantic(@TempDir Path tempDir) throws Exception {
+        Path jarsDir = tempDir.resolve("jars");
+        Files.createDirectories(jarsDir);
+        Path jarPath = jarsDir.resolve("bot-latest.jar");
+        Files.writeString(jarPath, "payload", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("current.txt"), "bot-latest.jar\n", StandardCharsets.UTF_8);
+
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
+
+        int exitCode = launcher.run(new String[0]);
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                jarPath.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldPreferSystemPropertyUpdatePathWhenArgumentIsMissing(@TempDir Path tempDir) {
+        String previousValue = System.getProperty(RuntimeLauncher.UPDATE_PATH_PROPERTY);
+        Path systemUpdatesDir = tempDir.resolve("system-updates");
+        System.setProperty(RuntimeLauncher.UPDATE_PATH_PROPERTY, systemUpdatesDir.toString());
+        try {
+            RuntimeLauncher launcher = createLauncher(
+                    Map.of("UPDATE_PATH", tempDir.resolve("env-updates").toString()),
+                    new RecordingProcessStarter(List.of(0)),
+                    new NoOpLauncherOutput());
+
+            Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
+
+            assertEquals(systemUpdatesDir.toAbsolutePath().normalize(), updatesDir);
+        } finally {
+            restoreSystemProperty(RuntimeLauncher.UPDATE_PATH_PROPERTY, previousValue);
+        }
+    }
+
+    @Test
+    void shouldPreferSystemPropertyStoragePathWhenUpdatePathIsMissing(@TempDir Path tempDir) {
+        String previousValue = System.getProperty(RuntimeLauncher.STORAGE_PATH_PROPERTY);
+        Path storagePath = tempDir.resolve("system-workspace");
+        System.setProperty(RuntimeLauncher.STORAGE_PATH_PROPERTY, storagePath.toString());
+        try {
+            RuntimeLauncher launcher = createLauncher(
+                    Map.of(),
+                    new RecordingProcessStarter(List.of(0)),
+                    new NoOpLauncherOutput());
+
+            Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
+
+            assertEquals(storagePath.resolve("updates").toAbsolutePath().normalize(), updatesDir);
+        } finally {
+            restoreSystemProperty(RuntimeLauncher.STORAGE_PATH_PROPERTY, previousValue);
+        }
+    }
+
+    @Test
+    void shouldExpandTildeInUpdatePathArgument(@TempDir Path tempDir) {
+        String previousHome = System.getProperty("user.home");
+        System.setProperty("user.home", tempDir.toString());
+        try {
+            RuntimeLauncher launcher = createLauncher(
+                    Map.of(),
+                    new RecordingProcessStarter(List.of(0)),
+                    new NoOpLauncherOutput());
+
+            Path updatesDir = launcher.resolveUpdatesDir(new String[] { "--bot.update.updates-path=~/custom-updates" });
+
+            assertEquals(tempDir.resolve("custom-updates").toAbsolutePath().normalize(), updatesDir);
+        } finally {
+            restoreSystemProperty("user.home", previousHome);
+        }
+    }
+
+    @Test
+    void shouldExpandUserHomePlaceholderInStoragePathEnvironment(@TempDir Path tempDir) {
+        String previousHome = System.getProperty("user.home");
+        System.setProperty("user.home", tempDir.toString());
+        try {
+            RuntimeLauncher launcher = createLauncher(
+                    Map.of("STORAGE_PATH", "${user.home}/workspace-root"),
+                    new RecordingProcessStarter(List.of(0)),
+                    new NoOpLauncherOutput());
+
+            Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
+
+            assertEquals(tempDir.resolve("workspace-root").resolve("updates").toAbsolutePath().normalize(), updatesDir);
+        } finally {
+            restoreSystemProperty("user.home", previousHome);
+        }
     }
 
     @Test
@@ -221,6 +368,63 @@ class RuntimeLauncherTest {
         }
     }
 
+    @Test
+    void shouldReadRuntimeVersionFromContextClassLoaderWhenResourceExists() {
+        RuntimeLauncher.RuntimeVersionReader reader = reflectiveClasspathRuntimeVersionReader();
+        ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(new SingleResourceClassLoader("build.version=1.2.3\n"));
+        try {
+            assertEquals("1.2.3", reader.currentVersion());
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousClassLoader);
+        }
+    }
+
+    @Test
+    void shouldReturnBundledBuildVersionWhenContextClassLoaderDoesNotProvideBuildInfo() {
+        RuntimeLauncher.RuntimeVersionReader reader = reflectiveClasspathRuntimeVersionReader();
+        ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(new EmptyResourceClassLoader());
+        try {
+            assertEquals("0.0.0-fix_update_image_runtime_precedence", reader.currentVersion());
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousClassLoader);
+        }
+    }
+
+    @Test
+    void shouldReturnDevWhenBuildInfoContainsBlankVersion() {
+        RuntimeLauncher.RuntimeVersionReader reader = reflectiveClasspathRuntimeVersionReader();
+        ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(new SingleResourceClassLoader("build.version=   \n"));
+        try {
+            assertEquals("dev", reader.currentVersion());
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousClassLoader);
+        }
+    }
+
+    private static RuntimeLauncher.RuntimeVersionReader reflectiveClasspathRuntimeVersionReader() {
+        try {
+            Class<?> type = Class.forName("me.golemcore.bot.launcher.RuntimeLauncher$ClasspathRuntimeVersionReader");
+            java.lang.reflect.Constructor<?> constructor = type.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            return (RuntimeLauncher.RuntimeVersionReader) constructor.newInstance();
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to construct ClasspathRuntimeVersionReader", exception);
+        }
+    }
+
+    private static String buildInfoResourceName() {
+        try {
+            java.lang.reflect.Field field = RuntimeLauncher.class.getDeclaredField("BUILD_INFO_RESOURCE");
+            field.setAccessible(true);
+            return (String) field.get(null);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to read build info resource name", exception);
+        }
+    }
+
     private RuntimeLauncher createLauncher(Path updatesDir, RecordingProcessStarter processStarter) {
         return createLauncher(updatesDir, processStarter, "0.4.2");
     }
@@ -252,6 +456,14 @@ class RuntimeLauncherTest {
                 new MapEnvironmentReader(environment),
                 output,
                 new FixedRuntimeVersionReader(runtimeVersion));
+    }
+
+    private static void restoreSystemProperty(String key, String value) {
+        if (value == null) {
+            System.clearProperty(key);
+            return;
+        }
+        System.setProperty(key, value);
     }
 
     private static class RecordingProcessStarter implements RuntimeLauncher.ProcessStarter {
@@ -422,6 +634,36 @@ class RuntimeLauncherTest {
 
         private List<String> errorMessages() {
             return capturedErrorMessages;
+        }
+    }
+
+    private static final class SingleResourceClassLoader extends ClassLoader {
+
+        private final byte[] content;
+
+        private SingleResourceClassLoader(String content) {
+            super(null);
+            this.content = content.getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public InputStream getResourceAsStream(String name) {
+            if (buildInfoResourceName().equals(name)) {
+                return new java.io.ByteArrayInputStream(content);
+            }
+            return null;
+        }
+    }
+
+    private static final class EmptyResourceClassLoader extends ClassLoader {
+
+        private EmptyResourceClassLoader() {
+            super(null);
+        }
+
+        @Override
+        public InputStream getResourceAsStream(String name) {
+            return null;
         }
     }
 }
