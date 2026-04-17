@@ -30,8 +30,9 @@ import java.security.SecureRandom;
  * <p>
  * Implements exponential backoff with full jitter to prevent thundering-herd
  * effects when multiple agent instances hit a failing provider simultaneously.
- * The jitter range is {@code [0, min(cap, base * 2^attempt)]}, which spreads
- * retry requests uniformly across the backoff window.
+ * The jitter draw is uniform over the inclusive range
+ * {@code [0, min(cap, base * 2^attempt)]}, which spreads retry requests evenly
+ * across the backoff window.
  *
  * <p>
  * This replaces the previous inline retry in both {@code Langchain4jAdapter}
@@ -59,10 +60,13 @@ public class LlmRetryPolicy {
      * Computes the sleep duration with full jitter.
      *
      * <p>
-     * Formula: {@code random(0, min(capMs, baseMs * 2^attempt))}
+     * AWS Full Jitter: uniform draw in the inclusive range
+     * {@code [0, min(capMs, baseMs * 2^attempt)]}. Returns {@code 0} when either
+     * {@code baseMs} or {@code capMs} is non-positive (treated as "no delay
+     * configured") so that a misconfigured resilience section cannot stall retries.
      *
      * @param attempt
-     *            0-based attempt index
+     *            0-based attempt index; negative values are clamped to 0
      * @param config
      *            resilience configuration with base delay and cap
      * @return delay in milliseconds (always >= 0)
@@ -70,9 +74,15 @@ public class LlmRetryPolicy {
     public long computeDelay(int attempt, RuntimeConfig.ResilienceConfig config) {
         long baseMs = config.getHotRetryBaseDelayMs();
         long capMs = config.getHotRetryCapMs();
+        if (baseMs <= 0L || capMs <= 0L) {
+            return 0L;
+        }
         long exponential = (long) (baseMs * Math.pow(2.0, Math.max(0, attempt)));
         long ceiling = Math.min(capMs, exponential);
-        return JITTER_RANDOM.nextLong(Math.max(1, ceiling));
+        if (ceiling <= 0L) {
+            return 0L;
+        }
+        return JITTER_RANDOM.nextLong(ceiling + 1L);
     }
 
     /**

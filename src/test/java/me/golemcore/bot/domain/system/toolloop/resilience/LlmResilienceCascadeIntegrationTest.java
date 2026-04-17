@@ -64,6 +64,7 @@ class LlmResilienceCascadeIntegrationTest {
         LlmResilienceOrchestrator.ResilienceOutcome.RetryNow l1 = assertInstanceOf(
                 LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, first);
         assertEquals("L1", l1.layer());
+        assertTrue(hasTrace(l1.traceSteps(), "L1", "retry_now"));
 
         LlmResilienceOrchestrator.ResilienceOutcome second = orchestrator.handle(context, ERROR, ERROR_CODE, 1,
                 config);
@@ -72,6 +73,8 @@ class LlmResilienceCascadeIntegrationTest {
         assertEquals("L2", l2.layer());
         assertEquals("provider-fallback", context.getAttribute(ContextAttributes.LLM_MODEL));
         assertEquals(ProviderCircuitBreaker.State.OPEN, circuitBreaker.getState("provider-primary"));
+        assertTrue(hasTrace(l2.traceSteps(), "L2", "retry_now"));
+        assertTrue(hasTrace(l2.traceSteps(), "L3", "state_transition"));
 
         LlmResilienceOrchestrator.ResilienceOutcome third = orchestrator.handle(context, ERROR, ERROR_CODE, 1,
                 config);
@@ -79,6 +82,7 @@ class LlmResilienceCascadeIntegrationTest {
                 LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, third);
         assertEquals("L4:one_shot", l4.layer());
         assertTrue(Boolean.TRUE.equals(context.getAttribute("test.l4.degraded")));
+        assertTrue(hasTrace(l4.traceSteps(), "L4", "retry_now"));
 
         LlmResilienceOrchestrator.ResilienceOutcome fourth = orchestrator.handle(context, ERROR, ERROR_CODE, 1,
                 config);
@@ -87,6 +91,12 @@ class LlmResilienceCascadeIntegrationTest {
         assertTrue(l5.userMessage().contains(ERROR_CODE));
         assertEquals(ProviderCircuitBreaker.State.OPEN, circuitBreaker.getState("provider-fallback"));
         verify(delayedActionService).schedule(any(DelayedSessionAction.class));
+        assertTrue(hasTrace(l5.traceSteps(), "L5", "suspend"));
+    }
+
+    private static boolean hasTrace(List<LlmResilienceOrchestrator.ResilienceTraceStep> steps, String layer,
+            String action) {
+        return steps.stream().anyMatch(step -> layer.equals(step.layer()) && action.equals(step.action()));
     }
 
     private AgentContext context() {
