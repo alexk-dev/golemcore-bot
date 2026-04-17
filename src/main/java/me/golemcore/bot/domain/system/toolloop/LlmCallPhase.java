@@ -878,15 +878,10 @@ class LlmCallPhase {
             private void traceResilienceOutcome(AgentContext context,
                     LlmResilienceOrchestrator.ResilienceOutcome outcome, String errorCode, int attempt,
                     ResilienceTraceSnapshot before, ResilienceTraceSnapshot after) {
-                if (outcome == null) {
-                    return;
-                }
                 TraceStatusCode outcomeStatusCode = outcome instanceof LlmResilienceOrchestrator.ResilienceOutcome.Exhausted
                         ? TraceStatusCode.ERROR
                         : TraceStatusCode.OK;
-                List<LlmResilienceOrchestrator.ResilienceTraceStep> traceSteps = outcome.traceSteps() != null
-                        ? outcome.traceSteps()
-                        : List.of();
+                List<LlmResilienceOrchestrator.ResilienceTraceStep> traceSteps = outcome.traceSteps();
                 for (LlmResilienceOrchestrator.ResilienceTraceStep step : traceSteps) {
                     traceResilienceStep(context, step, errorCode, attempt, before, after,
                             resilienceStepStatusCode(step, outcomeStatusCode));
@@ -932,9 +927,6 @@ class LlmCallPhase {
              * Converts a resilience trace step into concise current-session copy.
              */
             private String resilienceProgressNotice(LlmResilienceOrchestrator.ResilienceTraceStep step) {
-                if (step == null) {
-                    return null;
-                }
                 String layer = baseLayer(step.layer());
                 return switch (layer != null ? layer : "") {
                 case "L1" -> "Retrying the same LLM model after a transient provider failure ("
