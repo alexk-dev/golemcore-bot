@@ -28,6 +28,7 @@ import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.LlmErrorPatterns;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -415,6 +416,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             boolean toolAttachmentFallbackApplied = false;
 
             int attempt = 0;
+            Exception lastRateLimitError = null;
             while (attempt <= MAX_RETRIES) {
                 try {
                     ChatResponse response;
@@ -456,6 +458,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         continue;
                     }
                     if (isRateLimitError(e) && attempt < MAX_RETRIES) {
+                        lastRateLimitError = e;
                         long exponentialBackoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
                         long resetSeconds = extractResetSeconds(e);
                         long backoffMs = resetSeconds > 0
@@ -482,7 +485,12 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                     }
                 }
             }
-            throw new RuntimeException("LLM chat failed: max retries exhausted");
+            // Preserve the last rate-limit cause so LlmErrorClassifier can still map
+            // this to a transient code; otherwise the resilience orchestrator sees
+            // UNKNOWN and skips L2 model fallback, jumping straight to L5.
+            String exhaustedMessage = LlmErrorClassifier.withCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT,
+                    "LLM chat failed: rate-limit retries exhausted after " + MAX_RETRIES + " attempt(s)");
+            throw new RuntimeException(exhaustedMessage, lastRateLimitError);
         });
     }
 
