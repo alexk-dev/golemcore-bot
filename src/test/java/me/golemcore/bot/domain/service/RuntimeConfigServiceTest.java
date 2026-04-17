@@ -2047,6 +2047,23 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldDefaultResilienceFallbackTierToBalanced() {
+        RuntimeConfig defaults = service.getRuntimeConfig();
+
+        assertEquals("balanced", defaults.getResilience().getDegradationFallbackModelTier());
+    }
+
+    @Test
+    void shouldNormalizeInvalidResilienceFallbackTierToBalanced() {
+        RuntimeConfig config = service.snapshotRuntimeConfig();
+        config.getResilience().setDegradationFallbackModelTier("fast");
+
+        service.updateRuntimeConfig(config);
+
+        assertEquals("balanced", service.getResilienceConfig().getDegradationFallbackModelTier());
+    }
+
+    @Test
     void shouldReadResilienceDefaultsAndDisabledFlag() {
         RuntimeConfig defaults = service.getRuntimeConfig();
 

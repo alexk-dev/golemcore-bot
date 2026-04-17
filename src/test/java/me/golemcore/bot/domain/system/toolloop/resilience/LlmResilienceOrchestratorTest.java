@@ -25,6 +25,7 @@ class LlmResilienceOrchestratorTest {
     private RuntimeConfig.ResilienceConfig config;
     private NoSleepRetryPolicy retryPolicy;
     private ProviderCircuitBreaker circuitBreaker;
+    private ProviderFallbackSelector providerFallbackSelector;
     private RecoveryStrategy strategy;
     private SuspendedTurnManager suspendedTurnManager;
     private AgentContext context;
@@ -44,6 +45,7 @@ class LlmResilienceOrchestratorTest {
         circuitBreaker = new ProviderCircuitBreaker(Clock.fixed(Instant.parse("2026-04-16T03:00:00Z"),
                 ZoneOffset.UTC), 1, 60, 120);
         strategy = mock(RecoveryStrategy.class);
+        providerFallbackSelector = mock(ProviderFallbackSelector.class);
         suspendedTurnManager = mock(SuspendedTurnManager.class);
         context = AgentContext.builder().build();
         context.setAttribute(ContextAttributes.LLM_MODEL, "provider-a");
@@ -61,6 +63,22 @@ class LlmResilienceOrchestratorTest {
         assertEquals("L1", retryNow.layer());
         assertEquals(1L, retryPolicy.lastSleepMs);
         assertEquals(ProviderCircuitBreaker.State.OPEN, circuitBreaker.getState("provider-a"));
+        verify(strategy, never()).isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config);
+    }
+
+    @Test
+    void shouldUseProviderFallbackBeforeDegradationStrategies() {
+        when(providerFallbackSelector.selectNext(context)).thenReturn(
+                new ProviderFallbackSelector.FallbackSelection("anthropic/claude-sonnet-4", "high", "sequential"));
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, config);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
+        assertEquals("L2", retryNow.layer());
+        assertTrue(retryNow.detail().contains("anthropic/claude-sonnet-4"));
         verify(strategy, never()).isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config);
     }
 
@@ -181,7 +199,12 @@ class LlmResilienceOrchestratorTest {
     }
 
     private LlmResilienceOrchestrator orchestrator(List<RecoveryStrategy> strategies) {
-        return new LlmResilienceOrchestrator(retryPolicy, circuitBreaker, strategies, suspendedTurnManager);
+        return new LlmResilienceOrchestrator(
+                retryPolicy,
+                circuitBreaker,
+                providerFallbackSelector,
+                strategies,
+                suspendedTurnManager);
     }
 
     private static final class NoSleepRetryPolicy extends LlmRetryPolicy {

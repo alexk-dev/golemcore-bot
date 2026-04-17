@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
@@ -93,6 +94,18 @@ public class ModelSelectionService {
     }
 
     public ModelSelection resolveForContext(AgentContext context) {
+        String fallbackModel = context != null
+                ? context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL)
+                : null;
+        if (fallbackModel != null && !fallbackModel.isBlank()) {
+            String fallbackReasoning = context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING);
+            String effectiveTier = resolveEffectiveTier(context);
+            String validationTier = isImplicitDefaultTier(effectiveTier)
+                    ? normalizeImplicitTier(effectiveTier)
+                    : effectiveTier;
+            return validateResolvedSelection(validationTier, new ModelSelection(fallbackModel, fallbackReasoning));
+        }
+
         String effectiveTier = resolveEffectiveTier(context);
         if (isImplicitDefaultTier(effectiveTier)) {
             return resolveForImplicitTier(effectiveTier);

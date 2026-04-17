@@ -38,9 +38,9 @@ import java.util.List;
  * <ol>
  * <li><b>L1 — Hot Retry</b> (seconds): Exponential backoff with full jitter.
  * Handles brief provider hiccups that resolve within seconds.</li>
- * <li><b>L2 — Provider Fallback</b> (seconds): Route the same request to an
- * alternate LLM provider. <em>Stub — requires user-configured fallback chain in
- * llm-router settings.</em></li>
+ * <li><b>L2 - Provider Fallback</b> (seconds): Route the same request to a
+ * configured fallback model/provider from the active model-router tier
+ * chain.</li>
  * <li><b>L3 — Circuit Breaker</b> (minutes): Per-provider state machine (CLOSED
  * → OPEN → HALF_OPEN) that fast-fails requests to a known-broken provider,
  * giving it time to recover.</li>
@@ -69,15 +69,18 @@ public class LlmResilienceOrchestrator {
 
     private final LlmRetryPolicy retryPolicy;
     private final ProviderCircuitBreaker circuitBreaker;
+    private final ProviderFallbackSelector providerFallbackSelector;
     private final List<RecoveryStrategy> degradationStrategies;
     private final SuspendedTurnManager suspendedTurnManager;
 
     public LlmResilienceOrchestrator(LlmRetryPolicy retryPolicy,
             ProviderCircuitBreaker circuitBreaker,
+            ProviderFallbackSelector providerFallbackSelector,
             List<RecoveryStrategy> degradationStrategies,
             SuspendedTurnManager suspendedTurnManager) {
         this.retryPolicy = retryPolicy;
         this.circuitBreaker = circuitBreaker;
+        this.providerFallbackSelector = providerFallbackSelector;
         this.degradationStrategies = degradationStrategies;
         this.suspendedTurnManager = suspendedTurnManager;
     }
@@ -133,10 +136,17 @@ public class LlmResilienceOrchestrator {
             return new ResilienceOutcome.RetryNow("L1", "hot retry after " + delayMs + "ms");
         }
 
-        // L2 provider fallback is a future routing concern. Keeping the explicit
-        // no-op here documents the intended order without hiding it in comments at
-        // the call site.
-        log.debug("[Resilience] L2 provider fallback: not yet configured, skipping");
+        if (LlmErrorClassifier.isTransientCode(errorCode) && providerFallbackSelector != null) {
+            ProviderFallbackSelector.FallbackSelection fallbackSelection = providerFallbackSelector.selectNext(context);
+            if (fallbackSelection != null) {
+                circuitBreaker.recordFailure(providerId);
+                log.warn("[Resilience] L2 provider fallback: code={}, from={}, to={}, mode={}",
+                        errorCode, providerId, fallbackSelection.model(), fallbackSelection.mode());
+                return new ResilienceOutcome.RetryNow("L2",
+                        "fallback to " + fallbackSelection.model() + " via " + fallbackSelection.mode());
+            }
+            providerFallbackSelector.clearOverride(context);
+        }
 
         if (circuitBreaker.isOpen(providerId)) {
             log.warn("[Resilience] L3 circuit breaker OPEN for provider={}, fast-failing", providerId);

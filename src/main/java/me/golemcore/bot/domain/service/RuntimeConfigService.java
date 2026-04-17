@@ -1908,6 +1908,11 @@ public class RuntimeConfigService {
         if (cfg.getDelayedActions().getAllowRunLater() == null) {
             cfg.getDelayedActions().setAllowRunLater(DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER);
         }
+        if (cfg.getResilience() == null) {
+            cfg.setResilience(new RuntimeConfig.ResilienceConfig());
+        }
+        cfg.getResilience().setDegradationFallbackModelTier(
+                normalizeResilienceFallbackTier(cfg.getResilience().getDegradationFallbackModelTier()));
         if (cfg.getHive() == null) {
             cfg.setHive(new RuntimeConfig.HiveConfig());
         }
@@ -2250,6 +2255,11 @@ public class RuntimeConfigService {
             return DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_BASE_URL;
         }
         return null;
+    }
+
+    private String normalizeResilienceFallbackTier(String value) {
+        String normalizedTierId = ModelTierCatalog.normalizeTierId(value);
+        return ModelTierCatalog.isExplicitSelectableTier(normalizedTierId) ? normalizedTierId : "balanced";
     }
 
     private String normalizeSelfEvolvingJudgeTier(String value, String defaultValue) {

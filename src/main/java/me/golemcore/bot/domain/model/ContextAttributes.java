@@ -98,6 +98,14 @@ public final class ContextAttributes {
      */
     public static final String RESILIENCE_TURN_SUSPENDED = "resilience.turn.suspended";
 
+    /** String ? model override selected by L2 provider fallback for this turn. */
+    public static final String RESILIENCE_L2_FALLBACK_MODEL = "resilience.l2.fallback.model";
+
+    /**
+     * String ? reasoning override selected by L2 provider fallback for this turn.
+     */
+    public static final String RESILIENCE_L2_FALLBACK_REASONING = "resilience.l2.fallback.reasoning";
+
     /**
      * String - the resilience layer that recovered the LLM call (e.g. "L1",
      * "L4:model_downgrade").

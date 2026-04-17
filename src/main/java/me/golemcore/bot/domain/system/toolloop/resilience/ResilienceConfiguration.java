@@ -58,6 +58,11 @@ public class ResilienceConfiguration {
     }
 
     @Bean
+    static ProviderFallbackSelector providerFallbackSelector(RuntimeConfigService runtimeConfigService) {
+        return new ProviderFallbackSelector(runtimeConfigService);
+    }
+
+    @Bean
     static ContextCompactionCoordinator contextCompactionCoordinator(
             ContextCompactionPolicy contextCompactionPolicy,
             CompactionOrchestrationService compactionOrchestrationService,
@@ -95,6 +100,7 @@ public class ResilienceConfiguration {
     static LlmResilienceOrchestrator llmResilienceOrchestrator(
             LlmRetryPolicy retryPolicy,
             ProviderCircuitBreaker circuitBreaker,
+            ProviderFallbackSelector providerFallbackSelector,
             ContextCompactionRecoveryStrategy contextCompaction,
             ModelDowngradeRecoveryStrategy modelDowngrade,
             ToolStripRecoveryStrategy toolStrip,
@@ -102,6 +108,7 @@ public class ResilienceConfiguration {
         return new LlmResilienceOrchestrator(
                 retryPolicy,
                 circuitBreaker,
+                providerFallbackSelector,
                 List.of(contextCompaction, modelDowngrade, toolStrip),
                 suspendedTurnManager);
     }

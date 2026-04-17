@@ -1342,7 +1342,7 @@ public class RuntimeConfig {
 
         /** Model tier used when L4 degradation downgrades the active model. */
         @Builder.Default
-        private String degradationFallbackModelTier = "fast";
+        private String degradationFallbackModelTier = "balanced";
 
         /** Whether L4 may remove tool schemas for a think-only retry. */
         @Builder.Default

@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -23,6 +24,7 @@ import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -87,6 +89,55 @@ class LlmCallPhaseTest {
         String errorCode = turnState.getContext().getAttribute(ContextAttributes.LLM_ERROR_CODE);
         assertNotNull(errorCode);
         assertTrue(errorCode.startsWith("llm.empty_"));
+    }
+
+    @Test
+    void execute_shouldUseContextResolutionWhenL2FallbackOverrideExists() {
+        LlmPort llmPort = mock(LlmPort.class);
+        ConversationViewBuilder viewBuilder = mock(ConversationViewBuilder.class);
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        ModelSelectionService.ModelSelection fallbackSelection = new ModelSelectionService.ModelSelection(
+                "anthropic/claude-sonnet-4", "high");
+        when(viewBuilder.buildView(any(), any()))
+                .thenReturn(new ConversationView(java.util.List.of(), java.util.List.of()));
+        when(modelSelectionService.resolveForContext(any())).thenReturn(fallbackSelection);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(1_000_000);
+
+        LlmRequestPreflightPhase preflightPhase = mock(LlmRequestPreflightPhase.class);
+        when(preflightPhase.preflight(any(AgentContext.class), any(), anyInt()))
+                .thenAnswer(
+                        invocation -> ((java.util.function.Supplier<me.golemcore.bot.domain.model.LlmRequest>) invocation
+                                .getArgument(1)).get());
+
+        LlmResponse response = LlmResponse.builder()
+                .content("fallback ok")
+                .finishReason("stop")
+                .build();
+        when(llmPort.chat(any())).thenReturn(java.util.concurrent.CompletableFuture.completedFuture(response));
+
+        LlmCallPhase fallbackPhase = new LlmCallPhase(
+                llmPort,
+                viewBuilder,
+                modelSelectionService,
+                null,
+                preflightPhase,
+                mock(ContextCompactionCoordinator.class),
+                null,
+                null,
+                null,
+                null,
+                clock);
+
+        TurnState turnState = buildTurnState();
+        turnState.getContext().setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL,
+                "anthropic/claude-sonnet-4");
+        turnState.getContext().setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING, "high");
+
+        LlmCallPhase.LlmCallOutcome outcome = fallbackPhase.execute(turnState, historyWriter);
+
+        assertInstanceOf(LlmCallPhase.LlmCallOutcome.Success.class, outcome);
+        verify(modelSelectionService).resolveForContext(turnState.getContext());
+        verify(modelSelectionService, never()).resolveForTier(any());
     }
 
     @Test

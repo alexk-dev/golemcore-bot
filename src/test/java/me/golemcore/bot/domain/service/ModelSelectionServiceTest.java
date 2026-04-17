@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
@@ -883,6 +884,20 @@ class ModelSelectionServiceTest {
 
         // Assert — the service preserves the user-specified reasoning as-is
         assertEquals("openai/gpt-4o", result.model());
+        assertEquals("high", result.reasoning());
+    }
+
+    @Test
+    void shouldUseResilienceFallbackOverrideWhenPresentInContext() {
+        AgentContext context = AgentContext.builder()
+                .modelTier("balanced")
+                .build();
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL, "anthropic/claude-sonnet-4");
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING, "high");
+
+        ModelSelectionService.ModelSelection result = service.resolveForContext(context);
+
+        assertEquals("anthropic/claude-sonnet-4", result.model());
         assertEquals("high", result.reasoning());
     }
 
