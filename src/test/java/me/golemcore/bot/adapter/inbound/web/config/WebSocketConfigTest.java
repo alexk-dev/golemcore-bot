@@ -2,6 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.config;
 
 import me.golemcore.bot.adapter.inbound.web.WebSocketChatHandler;
 import me.golemcore.bot.adapter.inbound.web.WebSocketLogsHandler;
+import me.golemcore.bot.adapter.inbound.web.terminal.TerminalWebSocketHandler;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.HandlerMapping;
@@ -23,7 +24,9 @@ class WebSocketConfigTest {
     void shouldMapChatAndLogsWebSocketEndpoints() throws Exception {
         WebSocketChatHandler chatHandler = mock(WebSocketChatHandler.class);
         WebSocketLogsHandler logsHandler = mock(WebSocketLogsHandler.class);
-        WebSocketConfig config = new WebSocketConfig(chatHandler, logsHandler, createBotProperties(80 * 1024 * 1024));
+        TerminalWebSocketHandler terminalHandler = mock(TerminalWebSocketHandler.class);
+        WebSocketConfig config = new WebSocketConfig(
+                chatHandler, logsHandler, terminalHandler, createBotProperties(80 * 1024 * 1024));
 
         HandlerMapping mapping = config.webSocketHandlerMapping();
         assertNotNull(mapping);
@@ -34,6 +37,7 @@ class WebSocketConfigTest {
         Map<String, ?> handlers = urlMapping.getUrlMap();
         assertEquals(chatHandler, handlers.get("/ws/chat"));
         assertEquals(logsHandler, handlers.get("/ws/logs"));
+        assertEquals(terminalHandler, handlers.get("/ws/terminal"));
     }
 
     @Test
@@ -41,6 +45,7 @@ class WebSocketConfigTest {
         int expectedLimit = 80 * 1024 * 1024;
         WebSocketConfig config = new WebSocketConfig(mock(WebSocketChatHandler.class),
                 mock(WebSocketLogsHandler.class),
+                mock(TerminalWebSocketHandler.class),
                 createBotProperties(expectedLimit));
 
         WebSocketHandlerAdapter adapter = config.webSocketHandlerAdapter();

@@ -56,6 +56,10 @@ public class UserPreferences {
     @Builder.Default
     private boolean tierForce = false;
 
+    /** Optional memory preset applied to interactive web chat turns. */
+    @Builder.Default
+    private String memoryPreset = null;
+
     /**
      * Per-tier model overrides (e.g. "coding" -> {model="openai/gpt-5.2",
      * reasoning="high"})

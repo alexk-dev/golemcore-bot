@@ -91,6 +91,7 @@ public class SettingsController {
                 .notificationsEnabled(prefs.isNotificationsEnabled())
                 .modelTier(prefs.getModelTier())
                 .tierForce(prefs.isTierForce())
+                .memoryPreset(prefs.getMemoryPreset())
                 .tierOverrides(overrideDtos)
                 .webhooks(prefs.getWebhooks())
                 .build();
@@ -100,6 +101,15 @@ public class SettingsController {
     @PutMapping("/preferences")
     public Mono<ResponseEntity<SettingsResponse>> updatePreferences(
             @RequestBody PreferencesUpdateRequest request) {
+        boolean hasModelTier = request.getModelTier() != null;
+        boolean hasMemoryPreset = request.getMemoryPreset() != null;
+        String normalizedModelTier = hasModelTier
+                ? normalizeOptionalSelectableTier(request.getModelTier(), "modelTier")
+                : null;
+        String normalizedMemoryPreset = hasMemoryPreset
+                ? normalizeOptionalMemoryPreset(request.getMemoryPreset(), "memoryPreset")
+                : null;
+
         UserPreferences prefs = preferencesService.getPreferences();
         if (request.getLanguage() != null) {
             prefs.setLanguage(request.getLanguage());
@@ -110,11 +120,14 @@ public class SettingsController {
         if (request.getNotificationsEnabled() != null) {
             prefs.setNotificationsEnabled(request.getNotificationsEnabled());
         }
-        if (request.getModelTier() != null) {
-            prefs.setModelTier(normalizeOptionalSelectableTier(request.getModelTier(), "modelTier"));
+        if (hasModelTier) {
+            prefs.setModelTier(normalizedModelTier);
         }
         if (request.getTierForce() != null) {
             prefs.setTierForce(request.getTierForce());
+        }
+        if (hasMemoryPreset) {
+            prefs.setMemoryPreset(normalizedMemoryPreset);
         }
         preferencesService.savePreferences(prefs);
         return getSettings();
@@ -551,6 +564,19 @@ public class SettingsController {
             throw new IllegalArgumentException(fieldName + " must be a known tier id");
         }
         return normalizedTier;
+    }
+
+    private String normalizeOptionalMemoryPreset(String memoryPreset, String fieldName) {
+        String normalizedPreset = memoryPreset.trim().toLowerCase(Locale.ROOT);
+        if (normalizedPreset.isBlank() || "default".equals(normalizedPreset)) {
+            return null;
+        }
+        boolean knownPreset = runtimeSettingsFacade.getMemoryPresets().stream()
+                .anyMatch(preset -> normalizedPreset.equals(preset.getId()));
+        if (!knownPreset) {
+            throw new IllegalArgumentException(fieldName + " must be a known memory preset id");
+        }
+        return normalizedPreset;
     }
 
     private record ModelDto(String id, String displayName, boolean hasReasoning,

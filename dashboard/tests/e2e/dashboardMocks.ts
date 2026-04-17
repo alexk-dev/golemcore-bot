@@ -5,6 +5,7 @@ import {
   mockHealthResponse,
   mockHiveStatus,
   mockLogsPage,
+  mockMemoryPresets,
   mockModelsConfig,
   mockPluginMarketplace,
   mockPrompts,
@@ -60,6 +61,9 @@ function buildSessionSummary(): unknown {
 function routeApiGet(path: string): MockRouteResponse {
   if (path === '/settings/runtime') {
     return { body: mockRuntimeConfig };
+  }
+  if (path === '/settings/runtime/memory/presets') {
+    return { body: mockMemoryPresets };
   }
   if (path === '/settings') {
     return { body: mockSettings };
