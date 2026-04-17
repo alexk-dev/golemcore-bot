@@ -195,7 +195,7 @@ class RuntimeLauncherTest {
         Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(
-                Map.of(),
+                Map.of("UPDATE_PATH", tempDir.toString()),
                 processStarter,
                 new NoOpLauncherOutput(),
                 null,
@@ -449,6 +449,25 @@ class RuntimeLauncherTest {
     }
 
     @Test
+    void shouldCaptureInfoOutputWhenVersionRequested() {
+        CapturingLauncherOutput output = new CapturingLauncherOutput();
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                new RecordingProcessStarter(List.of(0)),
+                output,
+                null,
+                null,
+                Map.of());
+
+        RuntimeLauncher.ParseOutcome parseOutcome = launcher.parseArguments(new String[] { "--version" });
+
+        assertTrue(parseOutcome.shouldExit());
+        assertEquals(0, parseOutcome.exitCode());
+        assertTrue(output.infoMessages().stream()
+                .anyMatch(message -> message.contains("golemcore-bot native launcher")));
+    }
+
+    @Test
     void shouldReturnZeroWhenUsageHelpRequested() {
         RuntimeLauncher launcher = createLauncher(
                 Map.of(),
@@ -465,25 +484,23 @@ class RuntimeLauncherTest {
     }
 
     @Test
-    void shouldReturnCliErrorWhenUnknownLauncherOptionLooksLikeLauncherFlag() {
-        CapturingLauncherOutput output = new CapturingLauncherOutput();
+    void shouldPassThroughUnknownArgumentsToSpringRuntime() {
         RuntimeLauncher launcher = createLauncher(
                 Map.of(),
                 new RecordingProcessStarter(List.of(0)),
-                output,
+                new NoOpLauncherOutput(),
                 null,
                 null,
                 Map.of());
 
         RuntimeLauncher.ParseOutcome parseOutcome = launcher.parseArguments(new String[] {
-                "--unknown-launcher-flag"
+                "--unknown-launcher-flag",
+                "value"
         });
 
-        assertTrue(parseOutcome.shouldExit());
-        assertEquals(RuntimeLauncher.CLI_ERROR_EXIT_CODE, parseOutcome.exitCode());
-        assertTrue(output.errorMessages().stream()
-                .anyMatch(message -> message
-                        .contains("Missing required parameter for option '--unknown-launcher-flag'")));
+        assertFalse(parseOutcome.shouldExit());
+        assertIterableEquals(List.of("--unknown-launcher-flag", "value"),
+                parseOutcome.launcherArguments().applicationArguments());
     }
 
     @Test
