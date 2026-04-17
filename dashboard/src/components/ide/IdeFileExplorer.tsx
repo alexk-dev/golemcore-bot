@@ -24,11 +24,15 @@ export interface IdeFileExplorerProps {
   onRequestCreate: (targetPath: string) => void;
   onRequestRename: (targetPath: string) => void;
   onRequestDelete: (targetPath: string) => void;
+  onOpenTerminalHere: (targetPath: string) => void;
   onToggleIncludeIgnored: () => void;
   onDownloadActiveFile: () => void;
   onUploadFiles: (targetPath: string, files: FileList) => void;
 }
 
+/**
+ * IDE sidebar explorer with tree search, upload, refresh, and quick actions.
+ */
 export function IdeFileExplorer({
   nodes,
   isLoading,
@@ -48,6 +52,7 @@ export function IdeFileExplorer({
   onRequestCreate,
   onRequestRename,
   onRequestDelete,
+  onOpenTerminalHere,
   onToggleIncludeIgnored,
   onDownloadActiveFile,
   onUploadFiles,
@@ -152,6 +157,7 @@ export function IdeFileExplorer({
             onRequestCreate={onRequestCreate}
             onRequestRename={onRequestRename}
             onRequestDelete={onRequestDelete}
+            onOpenTerminalHere={onOpenTerminalHere}
           />
         )}
       </div>

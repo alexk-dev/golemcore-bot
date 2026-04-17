@@ -1,9 +1,9 @@
 import { Suspense, lazy, useEffect, type ComponentType, type LazyExoticComponent, type ReactElement } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { useAuthStore } from './store/authStore';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { loadCodeEditor } from './components/ide/LazyCodeEditor';
 import DashboardLayout from './components/layout/DashboardLayout';
 import { TelemetryBootstrap } from './components/telemetry/TelemetryBootstrap';
-import { loadCodeEditor } from './components/ide/LazyCodeEditor';
+import { useAuthStore } from './store/authStore';
 
 interface PageModule {
   default: ComponentType;
@@ -28,7 +28,7 @@ const loadSkillsPage: PageLoader = () => import('./pages/SkillsPage');
 const loadSessionsPage: PageLoader = () => import('./pages/SessionsPage');
 const loadSessionDetailsPage: PageLoader = () => import('./pages/SessionDetailsPage');
 const loadDiagnosticsPage: PageLoader = () => import('./pages/DiagnosticsPage');
-const loadIdePage: PageLoader = () => import('./pages/IdePage');
+const loadWorkspacePage: PageLoader = () => import('./pages/WorkspacePage');
 const loadLogsPage: PageLoader = () => import('./pages/LogsPage');
 const loadGoalsPage: PageLoader = () => import('./pages/GoalsPage');
 const loadSchedulerPage: PageLoader = () => import('./pages/SchedulerPage');
@@ -46,14 +46,14 @@ const SkillsPage: LazyPageComponent = lazy(loadSkillsPage);
 const SessionsPage: LazyPageComponent = lazy(loadSessionsPage);
 const SessionDetailsPage: LazyPageComponent = lazy(loadSessionDetailsPage);
 const DiagnosticsPage: LazyPageComponent = lazy(loadDiagnosticsPage);
-const IdePage: LazyPageComponent = lazy(loadIdePage);
+const WorkspacePage: LazyPageComponent = lazy(loadWorkspacePage);
 const LogsPage: LazyPageComponent = lazy(loadLogsPage);
 const GoalsPage: LazyPageComponent = lazy(loadGoalsPage);
 const SchedulerPage: LazyPageComponent = lazy(loadSchedulerPage);
 const WebhooksPage: LazyPageComponent = lazy(loadWebhooksPage);
 
 const SPECIALIZED_ROUTE_LOADERS: WarmupLoader[] = [
-  loadIdePage,
+  loadWorkspacePage,
   loadCodeEditor,
   loadAnalyticsPage,
 ];
@@ -63,12 +63,14 @@ function RouteFallback(): ReactElement {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }): ReactElement {
-  const token = useAuthStore((s) => s.accessToken);
-  if (!token) {return <Navigate to="/login" replace />;}
+  const token = useAuthStore((state) => state.accessToken);
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
   return <>{children}</>;
 }
 
-function HiveSsoCallbackRoute(): React.ReactElement {
+function HiveSsoCallbackRoute(): ReactElement {
   return <Navigate to={`/login${window.location.search}`} replace />;
 }
 
@@ -115,7 +117,8 @@ function DashboardRouteShell(): ReactElement {
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<ChatPage />} />
-            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/chat" element={<Navigate to="/workspace?focus=chat" replace />} />
+            <Route path="/workspace" element={<WorkspacePage />} />
             <Route path="/setup" element={<SetupPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/self-evolving" element={<SelfEvolvingPage />} />
@@ -129,7 +132,7 @@ function DashboardRouteShell(): ReactElement {
             <Route path="/sessions/:sessionId/:tab" element={<SessionDetailsPage />} />
             <Route path="/goals" element={<GoalsPage />} />
             <Route path="/diagnostics" element={<DiagnosticsPage />} />
-            <Route path="/ide" element={<IdePage />} />
+            <Route path="/ide" element={<Navigate to="/workspace?focus=editor" replace />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/scheduler" element={<SchedulerPage />} />
             <Route path="/webhooks" element={<WebhooksPage />} />
@@ -145,23 +148,20 @@ export default function App(): ReactElement {
     <Routes>
       <Route
         path="/login"
-        element={
+        element={(
           <Suspense fallback={<RouteFallback />}>
             <LoginPage />
           </Suspense>
-        }
+        )}
       />
-      <Route
-        path="/api/auth/hive/callback"
-        element={<HiveSsoCallbackRoute />}
-      />
+      <Route path="/api/auth/hive/callback" element={<HiveSsoCallbackRoute />} />
       <Route
         path="/*"
-        element={
+        element={(
           <ProtectedRoute>
             <DashboardRouteShell />
           </ProtectedRoute>
-        }
+        )}
       />
     </Routes>
   );

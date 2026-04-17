@@ -2,8 +2,10 @@ import type {
   AssistantHint,
   ChatMessage,
   ChatRuntimeSessionState,
+  OpenedTabContext,
 } from '../components/chat/chatRuntimeTypes';
 import type { OutboundChatPayload } from '../components/chat/chatInputTypes';
+import { useIdeStore } from './ideStore';
 import {
   applyAssistantTextUpdate,
   applyLiveProgressUpdate,
@@ -63,6 +65,10 @@ function cloneSessions(
   return { ...sessions, [sessionId]: nextSession };
 }
 
+/**
+ * Builds the imperative chat-runtime store actions that react to websocket
+ * traffic and optimistic dashboard message sends.
+ */
 export function createMessageActions(
   set: ChatRuntimeSet,
   get: ChatRuntimeGet,
@@ -133,12 +139,21 @@ function sendMessage(get: ChatRuntimeGet, set: ChatRuntimeSet, args: SendMessage
     get().markMessageAsFailed(args.sessionId, args.clientMessageId);
     return false;
   }
+  const ide = useIdeStore.getState();
+  const openedTabs: OpenedTabContext[] = ide.openedTabs.map((tab) => ({
+    path: tab.path,
+    title: tab.title,
+    isDirty: tab.isDirty,
+  }));
   const sent = transport.sendMessage({
     text: args.payload.text,
     attachments: args.payload.attachments,
+    ...(args.payload.memoryPreset != null ? { memoryPreset: args.payload.memoryPreset } : {}),
     sessionId: args.sessionId,
     clientInstanceId: args.clientInstanceId,
     clientMessageId: args.clientMessageId,
+    openedTabs,
+    activePath: ide.activePath,
   });
   if (!sent) {
     get().markMessageAsFailed(args.sessionId, args.clientMessageId);

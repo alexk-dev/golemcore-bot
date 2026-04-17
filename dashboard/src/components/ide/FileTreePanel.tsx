@@ -14,6 +14,7 @@ export interface FileTreePanelProps {
   onRequestCreate: (targetPath: string) => void;
   onRequestRename: (targetPath: string) => void;
   onRequestDelete: (targetPath: string) => void;
+  onOpenTerminalHere: (targetPath: string) => void;
 }
 
 interface ArboristFileNode {
@@ -91,6 +92,7 @@ export function FileTreePanel({
   onRequestCreate,
   onRequestRename,
   onRequestDelete,
+  onOpenTerminalHere,
 }: FileTreePanelProps): ReactElement {
   const mappedNodes = useMemo(() => mapNodes(nodes, dirtyPaths), [dirtyPaths, nodes]);
   const { ref, size } = useElementSize();
@@ -186,6 +188,17 @@ export function FileTreePanel({
     setContextMenu(null);
   };
 
+  const handleOpenTerminalHere = (): void => {
+    if (contextMenu?.kind !== 'directory') {
+      return;
+    }
+
+    // Terminal tabs accept directory cwd only; files keep using their parent for
+    // create actions but do not expose this action.
+    onOpenTerminalHere(contextMenu.path);
+    setContextMenu(null);
+  };
+
   return (
     <div className="ide-tree-panel h-100" ref={ref} aria-label="Project files" onContextMenu={handleContextMenuRoot}>
       <Tree<ArboristFileNode>
@@ -227,6 +240,16 @@ export function FileTreePanel({
           <button type="button" className="ide-tree-context-item" onClick={handleCreate} role="menuitem">
             New file
           </button>
+          {contextMenu.kind === 'directory' && (
+            <button
+              type="button"
+              className="ide-tree-context-item"
+              onClick={handleOpenTerminalHere}
+              role="menuitem"
+            >
+              Open terminal here
+            </button>
+          )}
           {contextMenu.path.length > 0 && (
             <>
               <button type="button" className="ide-tree-context-item" onClick={handleRename} role="menuitem">

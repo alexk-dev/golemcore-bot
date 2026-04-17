@@ -39,7 +39,7 @@ const links = [
   { to: '/prompts', icon: <FiFileText size={20} />, label: 'Prompts' },
   { to: '/skills', icon: <FiZap size={20} />, label: 'Skills' },
   { to: '/diagnostics', icon: <FiActivity size={20} />, label: 'Diagnostics' },
-  { to: '/ide', icon: <FiCode size={20} />, label: 'IDE' },
+  { to: '/workspace', icon: <FiCode size={20} />, label: 'Workspace' },
   { to: '/logs', icon: <FiTerminal size={20} />, label: 'Logs' },
   { to: '/settings', icon: <FiSettings size={20} />, label: 'Settings' },
 ];

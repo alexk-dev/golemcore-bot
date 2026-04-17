@@ -56,6 +56,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -131,6 +132,7 @@ class SettingsControllerTest {
         prefs.setTimezone("UTC");
         prefs.setNotificationsEnabled(true);
         prefs.setModelTier("balanced");
+        prefs.setMemoryPreset("general_chat");
         when(preferencesService.getPreferences()).thenReturn(prefs);
 
         StepVerifier.create(controller.getSettings())
@@ -141,6 +143,7 @@ class SettingsControllerTest {
                     assertEquals("en", body.getLanguage());
                     assertEquals("UTC", body.getTimezone());
                     assertEquals("balanced", body.getModelTier());
+                    assertEquals("general_chat", body.getMemoryPreset());
                 })
                 .verifyComplete();
     }
@@ -253,11 +256,14 @@ class SettingsControllerTest {
         prefs.setLanguage("en");
         prefs.setModelTier("balanced");
         when(preferencesService.getPreferences()).thenReturn(prefs);
+        when(memoryPresetService.getPresets())
+                .thenReturn(List.of(MemoryPreset.builder().id("coding_balanced").build()));
 
         PreferencesUpdateRequest request = new PreferencesUpdateRequest();
         request.setNotificationsEnabled(true);
         request.setModelTier("special3");
         request.setTierForce(true);
+        request.setMemoryPreset(" CODING_BALANCED ");
 
         StepVerifier.create(controller.updatePreferences(request))
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
@@ -266,7 +272,60 @@ class SettingsControllerTest {
         assertEquals("en", prefs.getLanguage()); // unchanged
         assertEquals("special3", prefs.getModelTier());
         assertTrue(prefs.isTierForce());
+        assertEquals("coding_balanced", prefs.getMemoryPreset());
         assertTrue(prefs.isNotificationsEnabled());
+    }
+
+    @Test
+    void shouldClearMemoryPresetWhenPreferenceIsBlank() {
+        UserPreferences prefs = new UserPreferences();
+        prefs.setMemoryPreset("general_chat");
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        PreferencesUpdateRequest request = new PreferencesUpdateRequest();
+        request.setMemoryPreset("");
+
+        StepVerifier.create(controller.updatePreferences(request))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        assertNull(prefs.getMemoryPreset());
+    }
+
+    @Test
+    void shouldClearMemoryPresetWhenPreferenceIsDefault() {
+        UserPreferences prefs = new UserPreferences();
+        prefs.setMemoryPreset("general_chat");
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+
+        PreferencesUpdateRequest request = new PreferencesUpdateRequest();
+        request.setMemoryPreset(" DEFAULT ");
+
+        StepVerifier.create(controller.updatePreferences(request))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        assertNull(prefs.getMemoryPreset());
+    }
+
+    @Test
+    void shouldNotPartiallyMutatePreferencesWhenMemoryPresetIsInvalid() {
+        UserPreferences prefs = new UserPreferences();
+        prefs.setLanguage("en");
+        prefs.setMemoryPreset("general_chat");
+        when(preferencesService.getPreferences()).thenReturn(prefs);
+        when(memoryPresetService.getPresets())
+                .thenReturn(List.of(MemoryPreset.builder().id("coding_balanced").build()));
+
+        PreferencesUpdateRequest request = new PreferencesUpdateRequest();
+        request.setLanguage("fr");
+        request.setMemoryPreset("unknown");
+
+        assertThrows(IllegalArgumentException.class, () -> controller.updatePreferences(request));
+
+        assertEquals("en", prefs.getLanguage());
+        assertEquals("general_chat", prefs.getMemoryPreset());
+        verify(preferencesService, never()).savePreferences(any());
     }
 
     @Test

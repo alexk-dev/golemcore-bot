@@ -91,6 +91,7 @@ export interface SettingsResponse extends Record<string, unknown> {
   timezone?: string;
   modelTier?: string | null;
   tierForce?: boolean;
+  memoryPreset?: string | null;
 }
 
 export async function getSettings(): Promise<SettingsResponse> {
