@@ -2047,6 +2047,23 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldDefaultResilienceL2ProviderFallbackMaxAttemptsToFive() {
+        RuntimeConfig defaults = service.getRuntimeConfig();
+
+        assertEquals(5, defaults.getResilience().getL2ProviderFallbackMaxAttempts());
+    }
+
+    @Test
+    void shouldNormalizeInvalidResilienceL2ProviderFallbackMaxAttemptsToFive() {
+        RuntimeConfig config = service.snapshotRuntimeConfig();
+        config.getResilience().setL2ProviderFallbackMaxAttempts(0);
+
+        service.updateRuntimeConfig(config);
+
+        assertEquals(5, service.getResilienceConfig().getL2ProviderFallbackMaxAttempts());
+    }
+
+    @Test
     void shouldDefaultResilienceFallbackTierToBalanced() {
         RuntimeConfig defaults = service.getRuntimeConfig();
 

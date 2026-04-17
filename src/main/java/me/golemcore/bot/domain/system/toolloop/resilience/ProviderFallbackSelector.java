@@ -37,6 +37,7 @@ import java.util.Map;
 public class ProviderFallbackSelector {
 
     private static final String WEIGHTED_STATE_KEY = "resilience.l2.weighted.state";
+    private static final String ATTEMPT_COUNT_KEY = "resilience.l2.attempts";
 
     private final RuntimeConfigService runtimeConfigService;
 
@@ -48,6 +49,12 @@ public class ProviderFallbackSelector {
         if (context == null) {
             return null;
         }
+        int attemptCount = readAttemptCount(context);
+        if (attemptCount >= resolveMaxAttempts()) {
+            clearOverride(context);
+            return null;
+        }
+
         RuntimeConfig.TierBinding binding = runtimeConfigService.getModelTierBinding(resolveTier(context));
         if (binding == null || binding.getFallbacks() == null || binding.getFallbacks().isEmpty()) {
             clearOverride(context);
@@ -74,6 +81,7 @@ public class ProviderFallbackSelector {
 
         context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL, selected.getModel());
         context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING, selected.getReasoning());
+        context.setAttribute(ATTEMPT_COUNT_KEY, attemptCount + 1);
         return new FallbackSelection(selected.getModel(), selected.getReasoning(), fallbackMode);
     }
 
@@ -84,6 +92,17 @@ public class ProviderFallbackSelector {
         context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL, null);
         context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING, null);
         context.setAttribute(WEIGHTED_STATE_KEY, null);
+    }
+
+    private int resolveMaxAttempts() {
+        RuntimeConfig.ResilienceConfig config = runtimeConfigService.getResilienceConfig();
+        Integer configured = config != null ? config.getL2ProviderFallbackMaxAttempts() : null;
+        return configured != null && configured > 0 ? configured : 5;
+    }
+
+    private int readAttemptCount(AgentContext context) {
+        Object value = context.getAttribute(ATTEMPT_COUNT_KEY);
+        return value instanceof Number number ? number.intValue() : 0;
     }
 
     private String resolveTier(AgentContext context) {

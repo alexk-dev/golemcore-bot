@@ -1911,6 +1911,10 @@ public class RuntimeConfigService {
         if (cfg.getResilience() == null) {
             cfg.setResilience(new RuntimeConfig.ResilienceConfig());
         }
+        Integer l2ProviderFallbackMaxAttempts = cfg.getResilience().getL2ProviderFallbackMaxAttempts();
+        if (l2ProviderFallbackMaxAttempts == null || l2ProviderFallbackMaxAttempts < 1) {
+            cfg.getResilience().setL2ProviderFallbackMaxAttempts(5);
+        }
         cfg.getResilience().setDegradationFallbackModelTier(
                 normalizeResilienceFallbackTier(cfg.getResilience().getDegradationFallbackModelTier()));
         if (cfg.getHive() == null) {
