@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
@@ -49,12 +48,7 @@ public class ResilienceConfiguration {
 
     @Bean
     static ProviderCircuitBreaker providerCircuitBreaker(Clock clock, RuntimeConfigService configService) {
-        RuntimeConfig.ResilienceConfig config = configService.getResilienceConfig();
-        return new ProviderCircuitBreaker(
-                clock,
-                config.getCircuitBreakerFailureThreshold(),
-                config.getCircuitBreakerWindowSeconds(),
-                config.getCircuitBreakerOpenDurationSeconds());
+        return new ProviderCircuitBreaker(clock, configService::getResilienceConfig);
     }
 
     @Bean

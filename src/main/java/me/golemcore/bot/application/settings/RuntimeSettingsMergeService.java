@@ -182,6 +182,8 @@ public class RuntimeSettingsMergeService {
                 .circuitBreakerOpenDurationSeconds(coalesce(incoming.getCircuitBreakerOpenDurationSeconds(),
                         baseline.getCircuitBreakerOpenDurationSeconds(),
                         defaults.getCircuitBreakerOpenDurationSeconds()))
+                .l2ProviderFallbackMaxAttempts(coalesce(incoming.getL2ProviderFallbackMaxAttempts(),
+                        baseline.getL2ProviderFallbackMaxAttempts(), defaults.getL2ProviderFallbackMaxAttempts()))
                 .degradationCompactContext(coalesce(incoming.getDegradationCompactContext(),
                         baseline.getDegradationCompactContext(), defaults.getDegradationCompactContext()))
                 .degradationCompactMinMessages(coalesce(incoming.getDegradationCompactMinMessages(),

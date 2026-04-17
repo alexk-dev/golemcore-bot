@@ -35,39 +35,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Five-layer resilience orchestrator for LLM API failures.
+ * Coordinates the L1-L5 resilience cascade for transient LLM failures.
  *
  * <p>
- * When a remote LLM provider returns a transient error (HTTP 500, timeout, rate
- * limit), the autonomous agent loop must not break. This orchestrator cascades
- * through five defense layers, each with its own timescale:
- *
- * <ol>
- * <li><b>L1 — Hot Retry</b> (seconds): Exponential backoff with full jitter.
- * Handles brief provider hiccups that resolve within seconds.</li>
- * <li><b>L2 — Provider Fallback</b> (seconds): Route the same request to an
- * alternate LLM model from the configured router fallback chain.</li>
- * <li><b>L3 — Circuit Breaker</b> (minutes): Per-provider state machine (CLOSED
- * → OPEN → HALF_OPEN) that fast-fails requests to a known-broken provider,
- * giving it time to recover.</li>
- * <li><b>L4 — Graceful Degradation</b> (seconds): Reduce request complexity
- * when all providers fail — compact context, downgrade model, strip tools — to
- * increase the chance of a successful call.</li>
- * <li><b>L5 — Cold Retry</b> (minutes to hours): Suspend the turn, notify the
- * user, and schedule a delayed retry. The autonomous loop moves on to other
- * work and resumes this turn later.</li>
- * </ol>
- *
- * <p>
- * The orchestrator is stateless per invocation — all mutable state lives in
- * {@link ProviderCircuitBreaker} (L3) and the delayed action registry (L5). It
- * is designed to be called from {@code LlmCallPhase.handleLlmError()} as a
- * replacement for the inline retry logic.
- *
- * @see LlmRetryPolicy
- * @see ProviderCircuitBreaker
- * @see RecoveryStrategy
- * @see SuspendedTurnManager
+ * Mutable state lives in {@link ProviderCircuitBreaker} and delayed actions;
+ * this class chooses the next recovery outcome for the tool loop.
  */
 public class LlmResilienceOrchestrator {
 
@@ -78,6 +50,7 @@ public class LlmResilienceOrchestrator {
     private final RouterFallbackSelector routerFallbackSelector;
     private final List<RecoveryStrategy> degradationStrategies;
     private final SuspendedTurnManager suspendedTurnManager;
+    private final LlmOpenCircuitPreflight openCircuitPreflight;
 
     public LlmResilienceOrchestrator(LlmRetryPolicy retryPolicy,
             ProviderCircuitBreaker circuitBreaker,
@@ -97,6 +70,8 @@ public class LlmResilienceOrchestrator {
                 : RouterFallbackSelector.NOOP;
         this.degradationStrategies = degradationStrategies;
         this.suspendedTurnManager = suspendedTurnManager;
+        this.openCircuitPreflight = new LlmOpenCircuitPreflight(this.circuitBreaker, this.routerFallbackSelector,
+                this.suspendedTurnManager);
     }
 
     /**
@@ -274,36 +249,8 @@ public class LlmResilienceOrchestrator {
             }
         }
 
-        if (Boolean.TRUE.equals(config.getColdRetryEnabled())) {
-            if (suspendedTurnManager == null) {
-                String reason = "Cold retry scheduling failed for provider " + providerId
-                        + " (code=" + errorCode + "): suspended turn manager is not configured";
-                log.warn("[Resilience] L5 cold retry unavailable: provider={}, code={}", providerId, errorCode);
-                traceSteps.add(traceStep("L5", "exhausted", reason,
-                        traceAttributes("provider", providerId, "llm.error.code", errorCode,
-                                "cold_retry.enabled", true)));
-                return new ResilienceOutcome.Exhausted(reason, traceSteps);
-            }
-            try {
-                String userMessage = suspendedTurnManager.suspend(context, errorCode, config);
-                log.info("[Resilience] L5 cold retry: turn suspended, provider={}, code={}", providerId, errorCode);
-                traceSteps.add(traceStep("L5", "suspend", userMessage,
-                        traceAttributes("provider", providerId, "llm.error.code", errorCode,
-                                "cold_retry.enabled", true)));
-                return new ResilienceOutcome.Suspended(userMessage, traceSteps);
-            } catch (RuntimeException exception) {
-                String message = exception.getMessage() != null ? exception.getMessage()
-                        : exception.getClass()
-                                .getSimpleName();
-                log.warn("[Resilience] L5 cold retry scheduling failed: provider={}, code={}, error={}",
-                        providerId, errorCode, message, exception);
-                String reason = "Cold retry scheduling failed for provider " + providerId
-                        + " (code=" + errorCode + "): " + message;
-                traceSteps.add(traceStep("L5", "exhausted", reason,
-                        traceAttributes("provider", providerId, "llm.error.code", errorCode,
-                                "cold_retry.enabled", true)));
-                return new ResilienceOutcome.Exhausted(reason, traceSteps);
-            }
+        if (config != null && Boolean.TRUE.equals(config.getColdRetryEnabled())) {
+            return suspendForColdRetry(context, errorCode, config, providerId, traceSteps);
         }
 
         log.error("[Resilience] All layers exhausted: code={}, provider={}, attempt={}",
@@ -314,6 +261,11 @@ public class LlmResilienceOrchestrator {
                 traceAttributes("provider", providerId, "llm.error.code", errorCode,
                         "cold_retry.enabled", false)));
         return new ResilienceOutcome.Exhausted(reason, traceSteps);
+    }
+
+    /** Fast-fail before a provider call when the selected model's circuit is open. */
+    public ResilienceOutcome preflightOpenCircuit(AgentContext context, RuntimeConfig.ResilienceConfig config) {
+        return openCircuitPreflight.handle(context, config);
     }
 
     /**
@@ -369,6 +321,38 @@ public class LlmResilienceOrchestrator {
             ProviderCircuitBreaker.State before = circuitBreaker.getState(providerId);
             circuitBreaker.recordFailure(providerId);
             appendCircuitTransition(traceSteps, providerId, before, circuitBreaker.getState(providerId), action);
+        }
+
+        private ResilienceOutcome suspendForColdRetry(AgentContext context, String errorCode,
+                RuntimeConfig.ResilienceConfig config, String providerId, List<ResilienceTraceStep> traceSteps) {
+            if (suspendedTurnManager == null) {
+                String reason = "Cold retry scheduling failed for provider " + providerId
+                        + " (code=" + errorCode + "): suspended turn manager is not configured";
+                log.warn("[Resilience] L5 cold retry unavailable: provider={}, code={}", providerId, errorCode);
+                traceSteps.add(traceStep("L5", "exhausted", reason,
+                        traceAttributes("provider", providerId, "llm.error.code", errorCode,
+                                "cold_retry.enabled", true)));
+                return new ResilienceOutcome.Exhausted(reason, traceSteps);
+            }
+            try {
+                String userMessage = suspendedTurnManager.suspend(context, errorCode, config);
+                log.info("[Resilience] L5 cold retry: turn suspended, provider={}, code={}", providerId, errorCode);
+                traceSteps.add(traceStep("L5", "suspend", userMessage,
+                        traceAttributes("provider", providerId, "llm.error.code", errorCode,
+                                "cold_retry.enabled", true)));
+                return new ResilienceOutcome.Suspended(userMessage, traceSteps);
+            } catch (RuntimeException exception) {
+                String message = exception.getMessage() != null ? exception.getMessage()
+                        : exception.getClass().getSimpleName();
+                log.warn("[Resilience] L5 cold retry scheduling failed: provider={}, code={}, error={}",
+                        providerId, errorCode, message, exception);
+                String reason = "Cold retry scheduling failed for provider " + providerId
+                        + " (code=" + errorCode + "): " + message;
+                traceSteps.add(traceStep("L5", "exhausted", reason,
+                        traceAttributes("provider", providerId, "llm.error.code", errorCode,
+                                "cold_retry.enabled", true)));
+                return new ResilienceOutcome.Exhausted(reason, traceSteps);
+            }
         }
 
         /**

@@ -26,6 +26,9 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
+
+import me.golemcore.bot.domain.model.RuntimeConfig;
 
 /**
  * L3 — Per-provider circuit breaker (CLOSED → OPEN → HALF_OPEN).
@@ -64,15 +67,17 @@ public class ProviderCircuitBreaker {
 
     private final Map<String, ProviderState> providers = new ConcurrentHashMap<>();
     private final Clock clock;
-    private final int failureThreshold;
-    private final long windowSeconds;
-    private final long openDurationSeconds;
+    private final Supplier<Settings> settingsSupplier;
 
     public ProviderCircuitBreaker(Clock clock, int failureThreshold, long windowSeconds, long openDurationSeconds) {
         this.clock = clock;
-        this.failureThreshold = failureThreshold;
-        this.windowSeconds = windowSeconds;
-        this.openDurationSeconds = openDurationSeconds;
+        Settings fixedSettings = new Settings(failureThreshold, windowSeconds, openDurationSeconds);
+        this.settingsSupplier = () -> fixedSettings;
+    }
+
+    public ProviderCircuitBreaker(Clock clock, Supplier<RuntimeConfig.ResilienceConfig> configSupplier) {
+        this.clock = clock;
+        this.settingsSupplier = () -> settingsFrom(configSupplier != null ? configSupplier.get() : null);
     }
 
     /**
@@ -89,9 +94,10 @@ public class ProviderCircuitBreaker {
         }
 
         Instant now = clock.instant();
+        Settings settings = settings();
         synchronized (ps) {
             if (ps.state == State.OPEN) {
-                if (ps.openedAt != null && now.isAfter(ps.openedAt.plusSeconds(openDurationSeconds))) {
+                if (ps.openedAt != null && now.isAfter(ps.openedAt.plusSeconds(settings.openDurationSeconds()))) {
                     ps.state = State.HALF_OPEN;
                     ps.halfOpenProbeInFlight = true;
                     log.info("[CircuitBreaker] Provider {} transitioned OPEN → HALF_OPEN", providerId);
@@ -129,10 +135,11 @@ public class ProviderCircuitBreaker {
             return true;
         }
         Instant now = clock.instant();
+        Settings settings = settings();
         synchronized (ps) {
             return switch (ps.state) {
             case CLOSED -> true;
-            case OPEN -> ps.openedAt != null && now.isAfter(ps.openedAt.plusSeconds(openDurationSeconds));
+            case OPEN -> ps.openedAt != null && now.isAfter(ps.openedAt.plusSeconds(settings.openDurationSeconds()));
             case HALF_OPEN -> !ps.halfOpenProbeInFlight;
             };
         }
@@ -143,37 +150,38 @@ public class ProviderCircuitBreaker {
      */
     public void recordFailure(String providerId) {
         Instant now = clock.instant();
+        Settings settings = settings();
         ProviderState ps = providers.computeIfAbsent(providerId, k -> new ProviderState(now));
 
         synchronized (ps) {
-            recordFailureLocked(providerId, ps, now);
+            recordFailureLocked(providerId, ps, now, settings);
         }
     }
 
-    private void recordFailureLocked(String providerId, ProviderState ps, Instant now) {
+    private void recordFailureLocked(String providerId, ProviderState ps, Instant now, Settings settings) {
         if (ps.state == State.HALF_OPEN) {
             ps.state = State.OPEN;
             ps.openedAt = now;
             ps.failureCount = 0;
             ps.halfOpenProbeInFlight = false;
             log.warn("[CircuitBreaker] Provider {} probe failed, HALF_OPEN → OPEN for {}s",
-                    providerId, openDurationSeconds);
+                    providerId, settings.openDurationSeconds());
             return;
         }
 
-        if (now.isAfter(ps.windowStart.plusSeconds(windowSeconds))) {
+        if (now.isAfter(ps.windowStart.plusSeconds(settings.windowSeconds()))) {
             ps.failureCount = 1;
             ps.windowStart = now;
         } else {
             ps.failureCount++;
         }
 
-        if (ps.failureCount >= failureThreshold && ps.state == State.CLOSED) {
+        if (ps.failureCount >= settings.failureThreshold() && ps.state == State.CLOSED) {
             ps.state = State.OPEN;
             ps.openedAt = now;
             ps.halfOpenProbeInFlight = false;
             log.warn("[CircuitBreaker] Provider {} tripped CLOSED → OPEN ({} failures in {}s window)",
-                    providerId, ps.failureCount, windowSeconds);
+                    providerId, ps.failureCount, settings.windowSeconds());
         }
     }
 
@@ -229,5 +237,37 @@ public class ProviderCircuitBreaker {
             }
         });
         return snapshot;
+    }
+
+    private Settings settings() {
+        Settings settings = settingsSupplier != null ? settingsSupplier.get() : null;
+        if (settings == null) {
+            return new Settings(5, 60L, 120L);
+        }
+        return new Settings(
+                positive(settings.failureThreshold(), 5),
+                positive(settings.windowSeconds(), 60L),
+                positive(settings.openDurationSeconds(), 120L));
+    }
+
+    private static Settings settingsFrom(RuntimeConfig.ResilienceConfig config) {
+        RuntimeConfig.ResilienceConfig defaults = new RuntimeConfig.ResilienceConfig();
+        RuntimeConfig.ResilienceConfig source = config != null ? config : defaults;
+        return new Settings(
+                positive(source.getCircuitBreakerFailureThreshold(), defaults.getCircuitBreakerFailureThreshold()),
+                positive(source.getCircuitBreakerWindowSeconds(), defaults.getCircuitBreakerWindowSeconds()),
+                positive(source.getCircuitBreakerOpenDurationSeconds(),
+                        defaults.getCircuitBreakerOpenDurationSeconds()));
+    }
+
+    private static int positive(Integer value, int fallback) {
+        return value != null && value > 0 ? value : fallback;
+    }
+
+    private static long positive(Long value, long fallback) {
+        return value != null && value > 0L ? value : fallback;
+    }
+
+    private record Settings(int failureThreshold, long windowSeconds, long openDurationSeconds) {
     }
 }

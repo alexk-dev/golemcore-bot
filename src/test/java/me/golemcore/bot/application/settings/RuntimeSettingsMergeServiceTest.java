@@ -122,6 +122,7 @@ class RuntimeSettingsMergeServiceTest {
                 .circuitBreakerFailureThreshold(3)
                 .circuitBreakerWindowSeconds(4L)
                 .circuitBreakerOpenDurationSeconds(5L)
+                .l2ProviderFallbackMaxAttempts(8)
                 .degradationCompactContext(false)
                 .degradationCompactMinMessages(6)
                 .degradationDowngradeModel(false)
@@ -138,6 +139,7 @@ class RuntimeSettingsMergeServiceTest {
                 .circuitBreakerFailureThreshold(null)
                 .circuitBreakerWindowSeconds(null)
                 .circuitBreakerOpenDurationSeconds(null)
+                .l2ProviderFallbackMaxAttempts(null)
                 .degradationCompactContext(null)
                 .degradationCompactMinMessages(null)
                 .degradationDowngradeModel(null)
@@ -162,6 +164,7 @@ class RuntimeSettingsMergeServiceTest {
         assertEquals(3, merged.getResilience().getCircuitBreakerFailureThreshold());
         assertEquals(4L, merged.getResilience().getCircuitBreakerWindowSeconds());
         assertEquals(5L, merged.getResilience().getCircuitBreakerOpenDurationSeconds());
+        assertEquals(8, merged.getResilience().getL2ProviderFallbackMaxAttempts());
         assertFalse(merged.getResilience().getDegradationCompactContext());
         assertEquals(6, merged.getResilience().getDegradationCompactMinMessages());
         assertFalse(merged.getResilience().getDegradationDowngradeModel());
