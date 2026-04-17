@@ -667,7 +667,7 @@ public final class RuntimeLauncher {
     record LaunchCommand(List<String> command, String description) {
     }
 
-    private record LauncherArguments(
+    record LauncherArguments(
             String storagePath,
             String updatesPath,
             String bundledJar,
