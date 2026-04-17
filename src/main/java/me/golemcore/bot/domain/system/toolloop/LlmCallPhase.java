@@ -1171,21 +1171,23 @@ class LlmCallPhase {
             }
 
             private static final class PreCallResilienceException extends RuntimeException {
-                private final LlmResilienceOrchestrator.ResilienceOutcome outcome;
-                private final ResilienceTraceSnapshot traceBefore;
-                private final ResilienceTraceSnapshot traceAfter;
+                private static final long serialVersionUID = 1L;
+
+                private final transient LlmResilienceOrchestrator.ResilienceOutcome resilienceOutcome;
+                private final transient ResilienceTraceSnapshot beforeTraceSnapshot;
+                private final transient ResilienceTraceSnapshot afterTraceSnapshot;
 
                 private PreCallResilienceException(LlmResilienceOrchestrator.ResilienceOutcome outcome,
                         ResilienceTraceSnapshot traceBefore, ResilienceTraceSnapshot traceAfter) {
                     super(LlmErrorClassifier.withCode(LlmErrorClassifier.PROVIDER_CIRCUIT_OPEN,
                             "LLM provider skipped because its circuit breaker is open"));
-                    this.outcome = outcome;
-                    this.traceBefore = traceBefore;
-                    this.traceAfter = traceAfter;
+                    this.resilienceOutcome = outcome;
+                    this.beforeTraceSnapshot = traceBefore;
+                    this.afterTraceSnapshot = traceAfter;
                 }
 
                 private LlmResilienceOrchestrator.ResilienceOutcome outcome() {
-                    return outcome;
+                    return resilienceOutcome;
                 }
 
                 private String errorCode() {
@@ -1193,11 +1195,11 @@ class LlmCallPhase {
                 }
 
                 private ResilienceTraceSnapshot traceBefore() {
-                    return traceBefore;
+                    return beforeTraceSnapshot;
                 }
 
                 private ResilienceTraceSnapshot traceAfter() {
-                    return traceAfter;
+                    return afterTraceSnapshot;
                 }
             }
 
