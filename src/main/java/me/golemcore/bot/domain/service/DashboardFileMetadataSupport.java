@@ -47,8 +47,8 @@ final class DashboardFileMetadataSupport {
     }
 
     /**
-     * Returns whether a text-like file should be rejected for inline editing due
-     * to its size.
+     * Returns whether a text-like file should be rejected for inline editing due to
+     * its size.
      */
     static boolean shouldRejectEditableFileSize(
             WorkspacePathService workspacePathService,
