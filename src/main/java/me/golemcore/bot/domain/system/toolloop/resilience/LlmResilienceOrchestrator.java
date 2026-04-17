@@ -177,8 +177,11 @@ public class LlmResilienceOrchestrator {
         // models exposed by the same upstream.
         ProviderCircuitBreaker.State breakerStateBeforeCheck = circuitBreaker.getState(providerId);
         boolean breakerOpen = circuitBreaker.isOpen(providerId);
+        ProviderCircuitBreaker.State breakerStateAfterCheck = circuitBreaker.getState(providerId);
         appendCircuitTransition(traceSteps, providerId, breakerStateBeforeCheck,
-                circuitBreaker.getState(providerId), "availability_check");
+                breakerStateAfterCheck, "availability_check");
+        boolean halfOpenProbeFailure = breakerStateBeforeCheck == ProviderCircuitBreaker.State.HALF_OPEN
+                || (!breakerOpen && breakerStateAfterCheck == ProviderCircuitBreaker.State.HALF_OPEN);
 
         // L1: hot retry is deliberately synchronous because it lasts seconds and
         // keeps the current turn state in-memory; longer waits are delegated to L5.
@@ -186,7 +189,8 @@ public class LlmResilienceOrchestrator {
         // breaker's whole purpose (stop hammering a provider in cooldown).
         if (LlmErrorClassifier.isTransientCode(errorCode)
                 && retryPolicy.shouldRetry(attempt, config)
-                && !breakerOpen) {
+                && !breakerOpen
+                && !halfOpenProbeFailure) {
             long delayMs = retryPolicy.computeDelay(attempt, config);
             log.warn("[Resilience] L1 hot retry: code={}, attempt={}, delayMs={}, provider={}",
                     errorCode, attempt, delayMs, providerId);
@@ -199,7 +203,10 @@ public class LlmResilienceOrchestrator {
             return new ResilienceOutcome.RetryNow("L1", detail, traceSteps);
         }
 
-        if (!breakerOpen) {
+        if (halfOpenProbeFailure) {
+            recordFailureWithTrace(traceSteps, providerId, "probe_failure_recorded");
+            breakerOpen = true;
+        } else if (!breakerOpen) {
             recordFailureWithTrace(traceSteps, providerId, "failure_recorded");
         }
 
