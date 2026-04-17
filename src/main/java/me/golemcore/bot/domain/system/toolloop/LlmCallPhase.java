@@ -247,6 +247,9 @@ class LlmCallPhase {
             historyWriter.appendFinalAssistantAnswer(context, response, response.getContent());
         }
         context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        if (resilienceOrchestrator != null) {
+            resilienceOrchestrator.recordTurnSuccess(context);
+        }
         flushProgress(context, "final_answer");
         applyAttachments(context, turnState.getAccumulatedAttachments());
         emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,

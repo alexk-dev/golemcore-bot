@@ -281,6 +281,13 @@ public class LlmResilienceOrchestrator {
     public void recordSuccess(AgentContext context) {
         String providerId = resolveProviderId(context);
         circuitBreaker.recordSuccess(providerId);
+    }
+
+    /**
+     * Clears turn-scoped resilience mutations once the full tool-loop turn has
+     * reached a successful final answer.
+     */
+    public void recordTurnSuccess(AgentContext context) {
         routerFallbackSelector.clear(context);
         ResilienceContextState.restoreAfterSuccess(context);
     }

@@ -231,6 +231,26 @@ class LlmResilienceOrchestratorTest {
     }
 
     @Test
+    void shouldKeepTurnScopedResilienceStateWhenIntermediateProviderCallSucceeds() {
+        RouterFallbackSelector fallbackSelector = mock(RouterFallbackSelector.class);
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                retryPolicy, circuitBreaker, fallbackSelector, List.of(), suspendedTurnManager);
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_MODEL_DOWNGRADE_ATTEMPTED, true);
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER, "deep");
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_TOOL_STRIP_ATTEMPTED, true);
+        context.setAttribute(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT, 2);
+
+        orchestrator.recordSuccess(context);
+
+        verify(fallbackSelector, never()).clear(context);
+        assertTrue(
+                Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_L4_MODEL_DOWNGRADE_ATTEMPTED)));
+        assertEquals("deep", context.getAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER));
+        assertTrue(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_L4_TOOL_STRIP_ATTEMPTED)));
+        assertEquals(Integer.valueOf(2), context.getAttribute(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT));
+    }
+
+    @Test
     void shouldRestoreL4DegradationStateWhenRecoveredCallSucceeds() {
         LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
         List<ToolDefinition> originalTools = new ArrayList<>(List.of(ToolDefinition.simple("search", "Search")));
@@ -239,7 +259,7 @@ class LlmResilienceOrchestratorTest {
         context.setAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER, "deep");
         context.setAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS, originalTools);
 
-        orchestrator.recordSuccess(context);
+        orchestrator.recordTurnSuccess(context);
 
         assertEquals("deep", context.getModelTier());
         assertEquals(originalTools, context.getAvailableTools());
@@ -255,7 +275,7 @@ class LlmResilienceOrchestratorTest {
         context.setAttribute(ContextAttributes.RESILIENCE_L5_ERROR_CODE, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT);
         context.setAttribute(ContextAttributes.RESILIENCE_L5_ORIGINAL_PROMPT, "finish the migration");
 
-        orchestrator.recordSuccess(context);
+        orchestrator.recordTurnSuccess(context);
 
         assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_TURN_SUSPENDED));
         assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT));

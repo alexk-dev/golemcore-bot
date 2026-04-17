@@ -610,6 +610,32 @@ class LlmCallPhaseTest {
         assertTrue(Boolean.TRUE.equals(turnState.getContext().getAttribute(ContextAttributes.FINAL_ANSWER_READY)));
     }
 
+    @Test
+    void finalizeFinalAnswer_shouldClearResilienceTurnStateAfterFinalSuccess() {
+        LlmResilienceOrchestrator orchestrator = mock(LlmResilienceOrchestrator.class);
+        LlmCallPhase resilientPhase = new LlmCallPhase(
+                mock(LlmPort.class),
+                mock(ConversationViewBuilder.class),
+                mock(ModelSelectionService.class),
+                null,
+                mock(LlmRequestPreflightPhase.class),
+                mock(ContextCompactionCoordinator.class),
+                null,
+                null,
+                null,
+                orchestrator,
+                clock);
+        TurnState turnState = buildTurnState();
+        LlmResponse response = LlmResponse.builder()
+                .content("Done")
+                .finishReason("stop")
+                .build();
+
+        resilientPhase.finalizeFinalAnswer(turnState, response, historyWriter);
+
+        verify(orchestrator).recordTurnSuccess(turnState.getContext());
+    }
+
     private TurnState buildTurnState() {
         AgentSession session = AgentSession.builder()
                 .id("sess-1")
