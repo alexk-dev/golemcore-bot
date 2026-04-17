@@ -254,17 +254,20 @@ public class LlmResilienceOrchestrator {
             }
         }
 
-        if (config != null && Boolean.TRUE.equals(config.getColdRetryEnabled())) {
+        boolean coldRetryEnabled = config != null && Boolean.TRUE.equals(config.getColdRetryEnabled());
+        boolean coldRetryEligible = coldRetryEnabled && LlmErrorClassifier.isTransientCode(errorCode);
+        if (coldRetryEligible) {
             return suspendForColdRetry(context, errorCode, config, providerId, traceSteps);
         }
 
-        log.error("[Resilience] All layers exhausted: code={}, provider={}, attempt={}",
-                errorCode, providerId, attempt);
+        log.error("[Resilience] All layers exhausted: code={}, provider={}, attempt={}, coldRetryEnabled={}",
+                errorCode, providerId, attempt, coldRetryEnabled);
         String reason = "LLM provider " + providerId + " unavailable after all recovery attempts (code=" + errorCode
                 + ")";
         traceSteps.add(traceStep("L5", "exhausted", reason,
                 traceAttributes("provider", providerId, "llm.error.code", errorCode,
-                        "cold_retry.enabled", false)));
+                        "cold_retry.enabled", coldRetryEnabled,
+                        "cold_retry.eligible", coldRetryEligible)));
         return new ResilienceOutcome.Exhausted(reason, traceSteps);
     }
 

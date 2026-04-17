@@ -179,17 +179,41 @@ class LlmResilienceOrchestratorTest {
                 .hotRetryMaxAttempts(0)
                 .coldRetryEnabled(true)
                 .build();
-        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.UNKNOWN, coldRetry))
+        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, coldRetry))
                 .thenThrow(new IllegalStateException("Delayed actions disabled"));
         LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
 
         LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
-                context, new RuntimeException("boom"), LlmErrorClassifier.UNKNOWN, 5, coldRetry);
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 5, coldRetry);
 
         LlmResilienceOrchestrator.ResilienceOutcome.Exhausted exhausted = assertInstanceOf(
                 LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
         assertTrue(exhausted.reason().contains("Cold retry scheduling failed"));
         assertTrue(exhausted.reason().contains("Delayed actions disabled"));
+    }
+
+    @Test
+    void shouldExhaustWithoutSuspendingWhenErrorCodeIsNotTransient() {
+        RuntimeConfig.ResilienceConfig coldRetry = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(true)
+                .build();
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("bad request"),
+                LlmErrorClassifier.LANGCHAIN4J_INVALID_REQUEST, 5, coldRetry);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.Exhausted exhausted = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
+        assertTrue(exhausted.reason().contains(LlmErrorClassifier.LANGCHAIN4J_INVALID_REQUEST));
+        verify(suspendedTurnManager, never())
+                .suspend(context, LlmErrorClassifier.LANGCHAIN4J_INVALID_REQUEST, coldRetry);
+        LlmResilienceOrchestrator.ResilienceTraceStep terminalStep = exhausted.traceSteps().getLast();
+        assertEquals("L5", terminalStep.layer());
+        assertEquals("exhausted", terminalStep.action());
+        assertEquals(Boolean.TRUE, terminalStep.attributes().get("cold_retry.enabled"));
+        assertEquals(Boolean.FALSE, terminalStep.attributes().get("cold_retry.eligible"));
     }
 
     @Test
