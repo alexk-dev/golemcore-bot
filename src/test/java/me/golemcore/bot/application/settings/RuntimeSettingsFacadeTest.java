@@ -463,6 +463,20 @@ class RuntimeSettingsFacadeTest {
     }
 
     @Test
+    void shouldApplyOnlyResilienceAdvancedConfigSectionWhenOthersAreNull() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        RuntimeConfig.ResilienceConfig resilience = RuntimeConfig.ResilienceConfig.builder()
+                .l2ProviderFallbackMaxAttempts(7)
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig response = facade.updateAdvancedConfig(null, null, null, resilience);
+
+        assertEquals(current, response);
+        assertEquals(resilience, current.getResilience());
+    }
+
+    @Test
     void shouldReturnMemoryPresetsAndUpdatePassiveRuntimeSections() {
         RuntimeConfig current = RuntimeConfig.builder().build();
         RuntimeConfig apiView = RuntimeConfig.builder().build();

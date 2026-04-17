@@ -74,15 +74,16 @@ public class ProviderFallbackSelector {
         case FallbackModes.WEIGHTED -> selectWeighted(context, candidates);
         default -> selectSequential(binding.getFallbacks(), currentModel);
         };
-        if (selected == null || selected.getModel() == null || selected.getModel().isBlank()) {
+        String selectedModel = selected != null ? selected.getModel() : null;
+        if (selectedModel == null) {
             clearOverride(context);
             return null;
         }
 
-        context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL, selected.getModel());
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL, selectedModel);
         context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING, selected.getReasoning());
         context.setAttribute(ATTEMPT_COUNT_KEY, attemptCount + 1);
-        return new FallbackSelection(selected.getModel(), selected.getReasoning(), fallbackMode);
+        return new FallbackSelection(selectedModel, selected.getReasoning(), fallbackMode);
     }
 
     public void clearOverride(AgentContext context) {
@@ -110,18 +111,18 @@ public class ProviderFallbackSelector {
         if (rawTier == null || rawTier.isBlank() || "default".equalsIgnoreCase(rawTier)) {
             return "balanced";
         }
-        String normalized = ModelTierCatalog.normalizeTierId(rawTier);
-        return normalized != null ? normalized : rawTier;
+        return ModelTierCatalog.normalizeTierId(rawTier);
     }
 
     private List<RuntimeConfig.TierFallback> resolveCandidates(List<RuntimeConfig.TierFallback> configuredFallbacks,
             String currentModel) {
         List<RuntimeConfig.TierFallback> candidates = new ArrayList<>();
         for (RuntimeConfig.TierFallback fallback : configuredFallbacks) {
-            if (fallback == null || fallback.getModel() == null || fallback.getModel().isBlank()) {
+            String model = fallback != null ? fallback.getModel() : null;
+            if (model == null || model.isBlank()) {
                 continue;
             }
-            if (currentModel != null && currentModel.equals(fallback.getModel())) {
+            if (currentModel != null && currentModel.equals(model)) {
                 continue;
             }
             candidates.add(fallback);

@@ -120,6 +120,62 @@ class LlmResilienceOrchestratorTest {
     }
 
     @Test
+    void shouldContinueToLaterLayersWhenProviderFallbackSelectorReturnsNull() {
+        when(providerFallbackSelector.selectNext(context)).thenReturn(null);
+        when(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config)).thenReturn(true);
+        when(strategy.apply(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config))
+                .thenReturn(RecoveryStrategy.RecoveryResult.success("degraded"));
+        when(strategy.name()).thenReturn("test_strategy");
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, config);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
+        assertEquals("L4:test_strategy", retryNow.layer());
+        verify(providerFallbackSelector).clearOverride(context);
+    }
+
+    @Test
+    void shouldHandleMissingProviderFallbackSelector() {
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                retryPolicy,
+                circuitBreaker,
+                null,
+                List.of(strategy),
+                suspendedTurnManager);
+        RuntimeConfig.ResilienceConfig exhaustedConfig = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(false)
+                .build();
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.UNKNOWN, 1, exhaustedConfig);
+
+        assertInstanceOf(LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
+    }
+
+    @Test
+    void shouldSkipL2WhenProviderFallbackSelectorIsNullForTransientError() {
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                retryPolicy,
+                circuitBreaker,
+                null,
+                List.of(strategy),
+                suspendedTurnManager);
+        RuntimeConfig.ResilienceConfig noColdRetry = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(false)
+                .build();
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, noColdRetry);
+
+        assertInstanceOf(LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
+    }
+
+    @Test
     void shouldExhaustWhenColdRetryDisabledAndNoStrategyRecovers() {
         RuntimeConfig.ResilienceConfig noColdRetry = RuntimeConfig.ResilienceConfig.builder()
                 .hotRetryMaxAttempts(0)
