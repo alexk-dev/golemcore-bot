@@ -7,6 +7,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -60,6 +61,21 @@ class ProviderCircuitBreakerTest {
     }
 
     @Test
+    void shouldAllowOnlyOneHalfOpenProbeUntilProbeCompletes() {
+        tripOpen();
+        clock.plusSeconds(31);
+
+        assertFalse(breaker.isOpen("openai"));
+        assertEquals(ProviderCircuitBreaker.State.HALF_OPEN, breaker.getState("openai"));
+        assertTrue(breaker.isOpen("openai"));
+
+        breaker.recordSuccess("openai");
+
+        assertEquals(ProviderCircuitBreaker.State.CLOSED, breaker.getState("openai"));
+        assertFalse(breaker.isOpen("openai"));
+    }
+
+    @Test
     void shouldReopenWhenHalfOpenProbeFails() {
         tripOpen();
         clock.plusSeconds(31);
@@ -97,6 +113,17 @@ class ProviderCircuitBreakerTest {
         clock.plusSeconds(30);
         assertTrue(breaker.isOpen("openai"));
 
+    }
+
+    @Test
+    void shouldSnapshotStatesWithoutAdvancingOpenBreakerToHalfOpen() {
+        tripOpen();
+        clock.plusSeconds(31);
+
+        Map<String, ProviderCircuitBreaker.State> snapshot = breaker.snapshotStates();
+
+        assertEquals(ProviderCircuitBreaker.State.OPEN, snapshot.get("openai"));
+        assertEquals(ProviderCircuitBreaker.State.OPEN, breaker.getState("openai"));
     }
 
     @Test

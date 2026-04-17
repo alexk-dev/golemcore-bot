@@ -71,11 +71,25 @@ public class ToolFailurePolicy {
         record Ok() implements Verdict {
         }
 
-        /** Stop the turn immediately with the given reason. */
+        /**
+         * Stop the turn immediately with the given reason.
+         *
+         * @param reason
+         *            user-safe stop reason
+         */
         record StopTurn(String reason) implements Verdict {
         }
 
-        /** Inject a recovery hint and break out of the current tool batch. */
+        /**
+         * Inject a recovery hint and break out of the current tool batch.
+         *
+         * @param hint
+         *            guidance injected into the next LLM step
+         * @param fingerprint
+         *            stable failure fingerprint
+         * @param recoverabilityName
+         *            recovery classification name
+         */
         record RecoveryHint(String hint, String fingerprint, String recoverabilityName) implements Verdict {
         }
     }

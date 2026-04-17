@@ -103,7 +103,11 @@ public class SuspendedTurnManager {
     public String suspend(AgentContext context, String errorCode, RuntimeConfig.ResilienceConfig config) {
         Instant now = clock.instant();
         int maxAttempts = config.getColdRetryMaxAttempts();
-        long delaySeconds = computeDelay(0);
+        int resumeAttempt = resolveResumeAttempt(context);
+        if (resumeAttempt >= maxAttempts) {
+            throw new IllegalStateException("Cold retry attempts exhausted after " + resumeAttempt + " attempt(s)");
+        }
+        long delaySeconds = computeDelay(resumeAttempt);
 
         String sessionId = context != null && context.getSession() != null ? context.getSession().getId() : null;
         String chatId = context != null && context.getSession() != null
@@ -119,11 +123,14 @@ public class SuspendedTurnManager {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("errorCode", errorCode);
         payload.put("suspendedAt", now.toString());
-        payload.put("resumeAttempt", 0);
+        payload.put("resumeAttempt", resumeAttempt);
         if (!StringValueSupport.isBlank(sessionId)) {
             payload.put("sessionId", sessionId);
         }
         String originalPrompt = findLastUserPrompt(context);
+        if (StringValueSupport.isBlank(originalPrompt)) {
+            originalPrompt = readStringAttribute(context, ContextAttributes.RESILIENCE_L5_ORIGINAL_PROMPT);
+        }
         if (!StringValueSupport.isBlank(originalPrompt)) {
             payload.put("originalPrompt", originalPrompt);
         }
@@ -169,32 +176,34 @@ public class SuspendedTurnManager {
         return BACKOFF_SCHEDULE_SECONDS[index];
     }
 
-    /**
-     * Called by the delayed action handler when a cold retry fires. Increments the
-     * attempt counter in the payload for the next retry.
-     *
-     * @param action
-     *            the delayed action being executed
-     * @return the updated resume attempt number
-     */
-    public int prepareResume(DelayedSessionAction action) {
-        Map<String, Object> payload = action.getPayload();
-        int resumeAttempt = 0;
-        Object existing = payload.get("resumeAttempt");
-        if (existing instanceof Number number) {
-            resumeAttempt = number.intValue();
-        }
-        resumeAttempt++;
-        payload.put("resumeAttempt", resumeAttempt);
-
-        long nextDelay = computeDelay(resumeAttempt);
-        action.setRunAt(clock.instant().plusSeconds(nextDelay));
-        action.setUpdatedAt(clock.instant());
-        return resumeAttempt;
-    }
-
     private String fallbackIdentity(String value) {
         return StringValueSupport.isBlank(value) ? "unknown" : value;
+    }
+
+    private int resolveResumeAttempt(AgentContext context) {
+        if (context == null || context.getAttributes() == null) {
+            return 0;
+        }
+        Object value = context.getAttributes().get(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT);
+        if (value instanceof Number number) {
+            return Math.max(0, number.intValue());
+        }
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            try {
+                return Math.max(0, Integer.parseInt(stringValue.trim()));
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    private String readStringAttribute(AgentContext context, String key) {
+        if (context == null || context.getAttributes() == null) {
+            return null;
+        }
+        Object value = context.getAttributes().get(key);
+        return value instanceof String stringValue && !stringValue.isBlank() ? stringValue.trim() : null;
     }
 
     private String findLastUserPrompt(AgentContext context) {

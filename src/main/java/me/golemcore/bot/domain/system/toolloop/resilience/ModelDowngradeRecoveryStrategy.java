@@ -79,7 +79,21 @@ public class ModelDowngradeRecoveryStrategy implements RecoveryStrategy {
         String fallbackTier = config.getDegradationFallbackModelTier();
         context.setAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER, originalTier);
         context.setModelTier(fallbackTier);
+        clearRouterFallbackState(context);
         log.info("[Resilience] L4 model downgrade: {} → {}", originalTier, fallbackTier);
         return RecoveryResult.success("downgraded model tier from " + originalTier + " to " + fallbackTier);
+    }
+
+    private void clearRouterFallbackState(AgentContext context) {
+        if (context.getAttributes() == null) {
+            return;
+        }
+        // Downgrade changes the active tier, so the previous tier's attempted
+        // fallback chain is no longer authoritative for subsequent L2 selection.
+        context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL);
+        context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING);
+        context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_FALLBACK_MODE);
+        context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_ATTEMPTED_MODELS);
+        context.getAttributes().remove(ContextAttributes.RESILIENCE_L2_ROUND_ROBIN_CURSOR);
     }
 }

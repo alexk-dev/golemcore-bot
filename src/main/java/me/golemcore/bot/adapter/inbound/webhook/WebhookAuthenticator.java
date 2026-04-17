@@ -38,7 +38,7 @@ import java.util.HexFormat;
  * Authenticates inbound webhook requests using Bearer token or HMAC signature.
  *
  * <p>
- * Bearer token is read from {@link UserPreferences.WebhookConfig#getToken()}.
+ * Bearer token is read from {@code UserPreferences.WebhookConfig#getToken()}.
  * HMAC verification is used for custom hook mappings that specify
  * {@code authMode=hmac}.
  *

@@ -49,8 +49,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * Default implementation of {@link LlmUsageTracker} with persistence to JSONL
- * files.
+ * Default implementation of
+ * {@link me.golemcore.bot.port.outbound.UsageTrackingPort} with persistence to
+ * JSONL files.
  *
  * <p>
  * Features:

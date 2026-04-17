@@ -1,10 +1,11 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.dto.UsageStatsResponse;
 import me.golemcore.bot.domain.model.UsageMetric;
 import me.golemcore.bot.domain.model.UsageStats;
+import me.golemcore.bot.domain.system.toolloop.resilience.ProviderCircuitBreaker;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,10 +24,20 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/usage")
-@RequiredArgsConstructor
 public class UsageController {
 
+    private static final String CIRCUIT_BREAKER_STATE_METRIC = "llm.circuit_breaker.state";
+    private static final String PROVIDER_TAG = "provider";
+    private static final String STATE_TAG = "state";
+
     private final UsageTrackingPort usageTrackingPort;
+    private final ObjectProvider<ProviderCircuitBreaker> circuitBreakerProvider;
+
+    public UsageController(UsageTrackingPort usageTrackingPort,
+            ObjectProvider<ProviderCircuitBreaker> circuitBreakerProvider) {
+        this.usageTrackingPort = usageTrackingPort;
+        this.circuitBreakerProvider = circuitBreakerProvider;
+    }
 
     @GetMapping("/stats")
     public Mono<ResponseEntity<UsageStatsResponse>> getStats(
@@ -82,8 +94,23 @@ public class UsageController {
 
     @GetMapping("/export")
     public Mono<ResponseEntity<List<UsageMetric>>> exportMetrics() {
-        List<UsageMetric> metrics = usageTrackingPort.exportMetrics();
+        List<UsageMetric> metrics = new ArrayList<>(usageTrackingPort.exportMetrics());
+        appendCircuitBreakerMetrics(metrics);
         return Mono.just(ResponseEntity.ok(metrics));
+    }
+
+    private void appendCircuitBreakerMetrics(List<UsageMetric> metrics) {
+        ProviderCircuitBreaker circuitBreaker = circuitBreakerProvider.getIfAvailable();
+        if (circuitBreaker == null) {
+            return;
+        }
+        circuitBreaker.snapshotStates().forEach((providerId, state) -> metrics.add(UsageMetric.of(
+                CIRCUIT_BREAKER_STATE_METRIC,
+                1.0d,
+                PROVIDER_TAG,
+                providerId,
+                STATE_TAG,
+                state.name())));
     }
 
     private Duration parsePeriod(String period) {

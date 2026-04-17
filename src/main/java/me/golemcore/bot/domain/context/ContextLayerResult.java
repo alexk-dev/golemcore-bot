@@ -37,7 +37,7 @@ import java.util.Map;
  * propagated to the {@link ContextBlueprint} for downstream consumers (e.g.,
  * diagnostics, tier resolution artifacts).
  *
- * <h3>Empty Results</h3> A result with {@code null} or blank {@link #content}
+ * <h2>Empty Results</h2> A result with {@code null} or blank {@link #content}
  * is treated as "nothing to contribute" and is excluded from the composed
  * prompt by {@link PromptComposer}. Use {@link #empty(String)} for convenience.
  */

@@ -122,6 +122,18 @@ class ModelSelectionServiceTest {
     }
 
     @Test
+    void shouldAutoFillDefaultReasoningForRouterFallbackSelection() {
+        when(modelConfigService.isReasoningRequired("openai/gpt-5.1")).thenReturn(true);
+        when(modelConfigService.getLowestReasoningLevel("openai/gpt-5.1")).thenReturn("low");
+
+        ModelSelectionService.ModelSelection result = service.resolveRouterFallbackSelection(
+                "balanced", "openai/gpt-5.1", null);
+
+        assertEquals("openai/gpt-5.1", result.model());
+        assertEquals("low", result.reasoning());
+    }
+
+    @Test
     void shouldNotAutoFillReasoningWhenOverrideHasNoReasoningAndModelDoesNotRequireIt() {
         // Arrange
         Map<String, UserPreferences.TierOverride> overrides = new HashMap<>();

@@ -152,6 +152,9 @@ jobs:
       - name: Run SpotBugs
         run: ./mvnw -P strict compile spotbugs:check -DskipGitHooks=true
 
+      - name: Generate Javadoc
+        run: ./mvnw -B -ntp javadoc:javadoc -DskipGitHooks=true
+
       - name: Upload PMD report
         if: always()
         uses: actions/upload-artifact@v7

@@ -21,9 +21,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class SuspendedTurnManagerTest {
 
@@ -71,32 +73,36 @@ class SuspendedTurnManagerTest {
     }
 
     @Test
-    void shouldIncrementNumericResumeAttemptAndScheduleNextDelay() {
-        SuspendedTurnManager manager = new SuspendedTurnManager(mock(DelayedSessionActionService.class), fixedClock());
-        DelayedSessionAction action = DelayedSessionAction.builder()
-                .payload(new LinkedHashMap<>(Map.of("resumeAttempt", 2)))
-                .build();
+    void shouldScheduleNextColdRetryDelayFromResumeAttemptMetadata() {
+        DelayedSessionActionService actionService = mock(DelayedSessionActionService.class);
+        SuspendedTurnManager manager = new SuspendedTurnManager(actionService, fixedClock());
+        AgentContext context = contextWithIdentity();
+        context.setAttribute(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT, 1);
 
-        int resumeAttempt = manager.prepareResume(action);
+        String message = manager.suspend(context, "llm.request.timeout",
+                RuntimeConfig.ResilienceConfig.builder().coldRetryMaxAttempts(4).build());
 
-        assertEquals(3, resumeAttempt);
-        assertEquals(3, action.getPayload().get("resumeAttempt"));
-        assertEquals(NOW.plusSeconds(3600), action.getRunAt());
-        assertEquals(NOW, action.getUpdatedAt());
+        ArgumentCaptor<DelayedSessionAction> captor = ArgumentCaptor.forClass(DelayedSessionAction.class);
+        verify(actionService).schedule(captor.capture());
+        DelayedSessionAction action = captor.getValue();
+        assertEquals(1, action.getPayload().get("resumeAttempt"));
+        assertEquals(NOW.plusSeconds(300), action.getRunAt());
+        assertTrue(message.contains("5 minute"));
     }
 
     @Test
-    void shouldTreatMissingResumeAttemptAsZeroBeforeIncrementing() {
-        SuspendedTurnManager manager = new SuspendedTurnManager(mock(DelayedSessionActionService.class), fixedClock());
-        DelayedSessionAction action = DelayedSessionAction.builder()
-                .payload(new LinkedHashMap<>(Map.of("resumeAttempt", "not-a-number")))
-                .build();
+    void shouldRejectColdRetryWhenResumeAttemptsAreExhausted() {
+        DelayedSessionActionService actionService = mock(DelayedSessionActionService.class);
+        SuspendedTurnManager manager = new SuspendedTurnManager(actionService, fixedClock());
+        AgentContext context = contextWithIdentity();
+        context.setAttribute(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT, 3);
 
-        int resumeAttempt = manager.prepareResume(action);
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> manager.suspend(context, "llm.request.timeout",
+                        RuntimeConfig.ResilienceConfig.builder().coldRetryMaxAttempts(3).build()));
 
-        assertEquals(1, resumeAttempt);
-        assertEquals(1, action.getPayload().get("resumeAttempt"));
-        assertEquals(NOW.plusSeconds(300), action.getRunAt());
+        assertTrue(exception.getMessage().contains("Cold retry attempts exhausted"));
+        verifyNoInteractions(actionService);
     }
 
     @Test

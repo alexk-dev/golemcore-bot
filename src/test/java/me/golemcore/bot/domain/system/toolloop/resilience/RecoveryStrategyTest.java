@@ -5,7 +5,9 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.FallbackModes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
@@ -139,6 +141,11 @@ class RecoveryStrategyTest {
     void modelDowngradeShouldStoreOriginalTierAndPreventRepeatedDowngrades() {
         ModelDowngradeRecoveryStrategy strategy = new ModelDowngradeRecoveryStrategy();
         AgentContext context = AgentContext.builder().modelTier("deep").build();
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL, "provider/fallback");
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING, "low");
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODE, FallbackModes.SEQUENTIAL);
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_ATTEMPTED_MODELS, List.of("provider/fallback"));
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_ROUND_ROBIN_CURSOR, 1);
 
         assertTrue(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config));
 
@@ -150,6 +157,11 @@ class RecoveryStrategyTest {
         assertEquals("deep", context.getAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER));
         assertTrue(Boolean.TRUE.equals(
                 context.getAttribute(ContextAttributes.RESILIENCE_L4_MODEL_DOWNGRADE_ATTEMPTED)));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FALLBACK_MODE));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_ATTEMPTED_MODELS));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_ROUND_ROBIN_CURSOR));
         assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config));
     }
 
@@ -181,14 +193,21 @@ class RecoveryStrategyTest {
     }
 
     @Test
+    void modelDowngradeDefaultFallbackTierShouldBeKnown() {
+        RuntimeConfig.ResilienceConfig defaultConfig = RuntimeConfig.ResilienceConfig.builder().build();
+
+        assertTrue(ModelTierCatalog.isKnownTier(defaultConfig.getDegradationFallbackModelTier()));
+    }
+
+    @Test
     void toolStripShouldSaveOriginalToolsAndReplaceThemWithEmptyList() {
         ToolStripRecoveryStrategy strategy = new ToolStripRecoveryStrategy();
         List<ToolDefinition> tools = List.of(ToolDefinition.simple("search", "Search"));
         AgentContext context = AgentContext.builder().availableTools(new ArrayList<>(tools)).build();
 
-        assertTrue(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, config));
+        assertTrue(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, config));
 
-        RecoveryStrategy.RecoveryResult result = strategy.apply(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT,
+        RecoveryStrategy.RecoveryResult result = strategy.apply(context, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER,
                 config);
 
         assertTrue(result.recovered());
@@ -196,11 +215,11 @@ class RecoveryStrategyTest {
         assertSame(tools.get(0), ((List<?>) context.getAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS))
                 .get(0));
         assertTrue(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_L4_TOOL_STRIP_ATTEMPTED)));
-        assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, config));
+        assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, config));
     }
 
     @Test
-    void toolStripShouldRejectDisabledNonTransientAlreadyAttemptedAndEmptyTools() {
+    void toolStripShouldRejectDisabledRateLimitNonTransientAlreadyAttemptedAndEmptyTools() {
         ToolStripRecoveryStrategy strategy = new ToolStripRecoveryStrategy();
         AgentContext context = AgentContext.builder()
                 .availableTools(new ArrayList<>(List.of(ToolDefinition.simple("search", "Search"))))
@@ -210,13 +229,14 @@ class RecoveryStrategyTest {
                 .build();
 
         assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, disabled));
+        assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, config));
         assertFalse(strategy.isApplicable(context, LlmErrorClassifier.UNKNOWN, config));
 
         context.setAttribute(ContextAttributes.RESILIENCE_L4_TOOL_STRIP_ATTEMPTED, true);
-        assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, config));
+        assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, config));
 
         AgentContext emptyTools = AgentContext.builder().availableTools(new ArrayList<>()).build();
-        assertFalse(strategy.isApplicable(emptyTools, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, config));
+        assertFalse(strategy.isApplicable(emptyTools, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, config));
     }
 
     @Test

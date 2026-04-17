@@ -32,10 +32,10 @@ import java.util.List;
  * L4c — Tool stripping as a degradation strategy.
  *
  * <p>
- * Some providers return 500 when the request carries a large tool-spec payload.
- * This strategy temporarily strips all tools from the request, giving the agent
- * a "think-only" turn. The agent loses the ability to execute tools for this
- * one iteration, but the autonomous loop stays alive.
+ * Some providers return 500 or timeout when the request carries a large
+ * tool-spec payload. This strategy temporarily strips all tools from the
+ * request, giving the agent a "think-only" turn. The agent loses the ability to
+ * execute tools for this one iteration, but the autonomous loop stays alive.
  *
  * <p>
  * This is the most aggressive degradation — applied last in the chain, only
@@ -59,7 +59,7 @@ public class ToolStripRecoveryStrategy implements RecoveryStrategy {
         if (!config.getDegradationStripTools()) {
             return false;
         }
-        if (!LlmErrorClassifier.isTransientCode(errorCode)) {
+        if (!isPayloadSensitiveFailure(errorCode)) {
             return false;
         }
         Boolean alreadyAttempted = context.getAttribute(ContextAttributes.RESILIENCE_L4_TOOL_STRIP_ATTEMPTED);
@@ -68,6 +68,13 @@ public class ToolStripRecoveryStrategy implements RecoveryStrategy {
         }
         List<ToolDefinition> tools = context.getAvailableTools();
         return tools != null && !tools.isEmpty();
+    }
+
+    private boolean isPayloadSensitiveFailure(String errorCode) {
+        return LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER.equals(errorCode)
+                || LlmErrorClassifier.LANGCHAIN4J_TIMEOUT.equals(errorCode)
+                || LlmErrorClassifier.REQUEST_TIMEOUT.equals(errorCode)
+                || LlmErrorClassifier.LANGCHAIN4J_RETRIABLE.equals(errorCode);
     }
 
     @Override

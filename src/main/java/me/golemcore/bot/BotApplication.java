@@ -50,7 +50,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
  *
  * <h2>Architecture</h2>
  * <p>
- * Hexagonal architecture (Ports & Adapters) with ECS-inspired agent loop:
+ * Hexagonal architecture (Ports and Adapters) with ECS-inspired agent loop:
  *
  * <pre>
  * Input Layer        → TelegramAdapter, CommandRouter

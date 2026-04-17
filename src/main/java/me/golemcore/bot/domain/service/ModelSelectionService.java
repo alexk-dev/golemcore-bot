@@ -114,6 +114,16 @@ public class ModelSelectionService {
     }
 
     /**
+     * Normalize a router fallback model selection without changing the selected
+     * tier. Applies the same catalog validation, canonicalization, and default
+     * reasoning fill as primary tier resolution.
+     */
+    public ModelSelection resolveRouterFallbackSelection(String tier, String model, String reasoning) {
+        String effectiveTier = normalizeFallbackTier(tier);
+        return validateResolvedSelection(effectiveTier, new ModelSelection(model, reasoning));
+    }
+
+    /**
      * Convenience method — resolve just the model name for a tier.
      */
     public String resolveModelName(String tier) {
@@ -282,6 +292,17 @@ public class ModelSelectionService {
             return "balanced";
         }
         return ModelTierCatalog.isImplicitRoutingTier(tier) ? tier : "balanced";
+    }
+
+    private String normalizeFallbackTier(String tier) {
+        if (isImplicitDefaultTier(tier)) {
+            return normalizeImplicitTier(tier);
+        }
+        String normalized = ModelTierCatalog.normalizeTierId(tier);
+        if (!ModelTierCatalog.isKnownTier(normalized)) {
+            throw new IllegalArgumentException("Unknown model tier: " + tier);
+        }
+        return normalized;
     }
 
     private ModelSelection resolveOverrideSelection(String tier) {

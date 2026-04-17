@@ -20,5 +20,16 @@ package me.golemcore.bot.domain.model;
 
 /**
  * Runtime metadata for a single auto execution tick.
+ *
+ * @param sessionIdentity
+ *            logical session identity for the tick
+ * @param runKind
+ *            kind of auto run
+ * @param runId
+ *            auto run identifier
+ * @param goalId
+ *            optional goal identifier
+ * @param taskId
+ *            optional task identifier
  */
 public record AutoExecutionContext(SessionIdentity sessionIdentity,AutoRunKind runKind,String runId,String goalId,String taskId){}

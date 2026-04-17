@@ -2047,46 +2047,13 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
-    void shouldDefaultResilienceL2ProviderFallbackMaxAttemptsToFive() {
-        RuntimeConfig defaults = service.getRuntimeConfig();
-
-        assertEquals(5, defaults.getResilience().getL2ProviderFallbackMaxAttempts());
-    }
-
-    @Test
-    void shouldNormalizeInvalidResilienceL2ProviderFallbackMaxAttemptsToFive() {
-        RuntimeConfig config = service.snapshotRuntimeConfig();
-        config.getResilience().setL2ProviderFallbackMaxAttempts(0);
-
-        service.updateRuntimeConfig(config);
-
-        assertEquals(5, service.getResilienceConfig().getL2ProviderFallbackMaxAttempts());
-    }
-
-    @Test
-    void shouldDefaultResilienceFallbackTierToBalanced() {
-        RuntimeConfig defaults = service.getRuntimeConfig();
-
-        assertEquals("balanced", defaults.getResilience().getDegradationFallbackModelTier());
-    }
-
-    @Test
-    void shouldNormalizeInvalidResilienceFallbackTierToBalanced() {
-        RuntimeConfig config = service.snapshotRuntimeConfig();
-        config.getResilience().setDegradationFallbackModelTier("fast");
-
-        service.updateRuntimeConfig(config);
-
-        assertEquals("balanced", service.getResilienceConfig().getDegradationFallbackModelTier());
-    }
-
-    @Test
     void shouldReadResilienceDefaultsAndDisabledFlag() {
         RuntimeConfig defaults = service.getRuntimeConfig();
 
         assertTrue(service.isResilienceEnabled());
         assertTrue(defaults.getResilience().getColdRetryEnabled());
         assertEquals(5, defaults.getResilience().getHotRetryMaxAttempts());
+        assertEquals(5, defaults.getResilience().getL2ProviderFallbackMaxAttempts());
 
         RuntimeConfig disabled = service.snapshotRuntimeConfig();
         disabled.getResilience().setEnabled(false);
@@ -2094,6 +2061,47 @@ class RuntimeConfigServiceTest {
 
         assertFalse(service.isResilienceEnabled());
         assertFalse(service.getResilienceConfig().getEnabled());
+    }
+
+    @Test
+    void shouldNormalizeResilienceNullsAndUnknownFallbackTier() {
+        RuntimeConfig config = service.snapshotRuntimeConfig();
+        RuntimeConfig.ResilienceConfig resilience = RuntimeConfig.ResilienceConfig.builder().build();
+        resilience.setEnabled(null);
+        resilience.setHotRetryMaxAttempts(null);
+        resilience.setHotRetryBaseDelayMs(null);
+        resilience.setHotRetryCapMs(null);
+        resilience.setCircuitBreakerFailureThreshold(null);
+        resilience.setCircuitBreakerWindowSeconds(null);
+        resilience.setCircuitBreakerOpenDurationSeconds(null);
+        resilience.setL2ProviderFallbackMaxAttempts(null);
+        resilience.setDegradationCompactContext(null);
+        resilience.setDegradationCompactMinMessages(null);
+        resilience.setDegradationDowngradeModel(null);
+        resilience.setDegradationFallbackModelTier("fast");
+        resilience.setDegradationStripTools(null);
+        resilience.setColdRetryEnabled(null);
+        resilience.setColdRetryMaxAttempts(null);
+        config.setResilience(resilience);
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig.ResilienceConfig normalized = service.getResilienceConfig();
+        assertTrue(normalized.getEnabled());
+        assertEquals(5, normalized.getHotRetryMaxAttempts());
+        assertEquals(5000L, normalized.getHotRetryBaseDelayMs());
+        assertEquals(60000L, normalized.getHotRetryCapMs());
+        assertEquals(5, normalized.getCircuitBreakerFailureThreshold());
+        assertEquals(60L, normalized.getCircuitBreakerWindowSeconds());
+        assertEquals(120L, normalized.getCircuitBreakerOpenDurationSeconds());
+        assertEquals(5, normalized.getL2ProviderFallbackMaxAttempts());
+        assertTrue(normalized.getDegradationCompactContext());
+        assertEquals(6, normalized.getDegradationCompactMinMessages());
+        assertTrue(normalized.getDegradationDowngradeModel());
+        assertEquals("balanced", normalized.getDegradationFallbackModelTier());
+        assertTrue(normalized.getDegradationStripTools());
+        assertTrue(normalized.getColdRetryEnabled());
+        assertEquals(4, normalized.getColdRetryMaxAttempts());
     }
 
     @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })

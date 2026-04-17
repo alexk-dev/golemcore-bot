@@ -3,6 +3,8 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,9 +12,11 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -25,7 +29,6 @@ class LlmResilienceOrchestratorTest {
     private RuntimeConfig.ResilienceConfig config;
     private NoSleepRetryPolicy retryPolicy;
     private ProviderCircuitBreaker circuitBreaker;
-    private ProviderFallbackSelector providerFallbackSelector;
     private RecoveryStrategy strategy;
     private SuspendedTurnManager suspendedTurnManager;
     private AgentContext context;
@@ -45,7 +48,6 @@ class LlmResilienceOrchestratorTest {
         circuitBreaker = new ProviderCircuitBreaker(Clock.fixed(Instant.parse("2026-04-16T03:00:00Z"),
                 ZoneOffset.UTC), 1, 60, 120);
         strategy = mock(RecoveryStrategy.class);
-        providerFallbackSelector = mock(ProviderFallbackSelector.class);
         suspendedTurnManager = mock(SuspendedTurnManager.class);
         context = AgentContext.builder().build();
         context.setAttribute(ContextAttributes.LLM_MODEL, "provider-a");
@@ -67,22 +69,6 @@ class LlmResilienceOrchestratorTest {
     }
 
     @Test
-    void shouldUseProviderFallbackBeforeDegradationStrategies() {
-        when(providerFallbackSelector.selectNext(context)).thenReturn(
-                new ProviderFallbackSelector.FallbackSelection("anthropic/claude-sonnet-4", "high", "sequential"));
-        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
-
-        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
-                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, config);
-
-        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
-                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
-        assertEquals("L2", retryNow.layer());
-        assertTrue(retryNow.detail().contains("anthropic/claude-sonnet-4"));
-        verify(strategy, never()).isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config);
-    }
-
-    @Test
     void shouldUseFirstSuccessfulDegradationStrategyAfterRetryBudget() {
         when(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config)).thenReturn(true);
         when(strategy.apply(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config))
@@ -97,6 +83,38 @@ class LlmResilienceOrchestratorTest {
                 LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
         assertEquals("L4:test_strategy", retryNow.layer());
         assertEquals("degraded", retryNow.detail());
+    }
+
+    @Test
+    void shouldUseRouterFallbackBeforeDegradationAfterRetryBudget() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("provider-a")
+                .fallbackMode("sequential")
+                .fallbacks(List.of(RuntimeConfig.TierFallback.builder()
+                        .model("provider-b")
+                        .reasoning("low")
+                        .build()))
+                .build();
+        when(runtimeConfigService.getModelTierBinding("balanced")).thenReturn(binding);
+        context.setModelTier("balanced");
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                retryPolicy,
+                circuitBreaker,
+                new RuntimeConfigRouterFallbackSelector(runtimeConfigService, new java.util.Random(0)),
+                List.of(strategy),
+                suspendedTurnManager);
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, config);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
+        assertEquals("L2", retryNow.layer());
+        assertEquals("provider-b", context.getAttribute(ContextAttributes.LLM_MODEL));
+        assertEquals("low", context.getAttribute(ContextAttributes.LLM_REASONING));
+        assertEquals("provider-b", context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL));
+        verify(strategy, never()).isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config);
     }
 
     @Test
@@ -120,62 +138,6 @@ class LlmResilienceOrchestratorTest {
     }
 
     @Test
-    void shouldContinueToLaterLayersWhenProviderFallbackSelectorReturnsNull() {
-        when(providerFallbackSelector.selectNext(context)).thenReturn(null);
-        when(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config)).thenReturn(true);
-        when(strategy.apply(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config))
-                .thenReturn(RecoveryStrategy.RecoveryResult.success("degraded"));
-        when(strategy.name()).thenReturn("test_strategy");
-        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
-
-        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
-                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, config);
-
-        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
-                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
-        assertEquals("L4:test_strategy", retryNow.layer());
-        verify(providerFallbackSelector).clearOverride(context);
-    }
-
-    @Test
-    void shouldHandleMissingProviderFallbackSelector() {
-        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
-                retryPolicy,
-                circuitBreaker,
-                null,
-                List.of(strategy),
-                suspendedTurnManager);
-        RuntimeConfig.ResilienceConfig exhaustedConfig = RuntimeConfig.ResilienceConfig.builder()
-                .hotRetryMaxAttempts(0)
-                .coldRetryEnabled(false)
-                .build();
-
-        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
-                context, new RuntimeException("boom"), LlmErrorClassifier.UNKNOWN, 1, exhaustedConfig);
-
-        assertInstanceOf(LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
-    }
-
-    @Test
-    void shouldSkipL2WhenProviderFallbackSelectorIsNullForTransientError() {
-        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
-                retryPolicy,
-                circuitBreaker,
-                null,
-                List.of(strategy),
-                suspendedTurnManager);
-        RuntimeConfig.ResilienceConfig noColdRetry = RuntimeConfig.ResilienceConfig.builder()
-                .hotRetryMaxAttempts(0)
-                .coldRetryEnabled(false)
-                .build();
-
-        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
-                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, noColdRetry);
-
-        assertInstanceOf(LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
-    }
-
-    @Test
     void shouldExhaustWhenColdRetryDisabledAndNoStrategyRecovers() {
         RuntimeConfig.ResilienceConfig noColdRetry = RuntimeConfig.ResilienceConfig.builder()
                 .hotRetryMaxAttempts(0)
@@ -189,6 +151,44 @@ class LlmResilienceOrchestratorTest {
         LlmResilienceOrchestrator.ResilienceOutcome.Exhausted exhausted = assertInstanceOf(
                 LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
         assertTrue(exhausted.reason().contains("provider-a"));
+    }
+
+    @Test
+    void shouldTraceL5ExhaustionWhenColdRetryDisabledAndNoStrategyRecovers() {
+        RuntimeConfig.ResilienceConfig noColdRetry = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(false)
+                .build();
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.UNKNOWN, 5, noColdRetry);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.Exhausted exhausted = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
+        LlmResilienceOrchestrator.ResilienceTraceStep terminalStep = exhausted.traceSteps().getLast();
+        assertEquals("L5", terminalStep.layer());
+        assertEquals("exhausted", terminalStep.action());
+        assertEquals("provider-a", terminalStep.attributes().get("provider"));
+    }
+
+    @Test
+    void shouldExhaustWhenColdRetrySchedulingFails() {
+        RuntimeConfig.ResilienceConfig coldRetry = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(true)
+                .build();
+        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.UNKNOWN, coldRetry))
+                .thenThrow(new IllegalStateException("Delayed actions disabled"));
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.UNKNOWN, 5, coldRetry);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.Exhausted exhausted = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
+        assertTrue(exhausted.reason().contains("Cold retry scheduling failed"));
+        assertTrue(exhausted.reason().contains("Delayed actions disabled"));
     }
 
     @Test
@@ -230,12 +230,68 @@ class LlmResilienceOrchestratorTest {
     }
 
     @Test
+    void shouldRestoreL4DegradationStateWhenRecoveredCallSucceeds() {
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
+        List<ToolDefinition> originalTools = new ArrayList<>(List.of(ToolDefinition.simple("search", "Search")));
+        context.setModelTier("balanced");
+        context.setAvailableTools(new ArrayList<>());
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER, "deep");
+        context.setAttribute(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS, originalTools);
+
+        orchestrator.recordSuccess(context);
+
+        assertEquals("deep", context.getModelTier());
+        assertEquals(originalTools, context.getAvailableTools());
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS));
+    }
+
+    @Test
     void shouldRecordSuccessForUnknownProviderWhenContextIsNull() {
         LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
 
         orchestrator.recordSuccess(null);
 
         assertEquals(ProviderCircuitBreaker.State.CLOSED, circuitBreaker.getState("unknown"));
+    }
+
+    @Test
+    void shouldSkipDegradationAndSuspendWhenCircuitBreakerIsAlreadyOpen() {
+        circuitBreaker.recordFailure("provider-a");
+        assertEquals(ProviderCircuitBreaker.State.OPEN, circuitBreaker.getState("provider-a"));
+        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config))
+                .thenReturn("suspended");
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+        RuntimeConfig.ResilienceConfig exhaustedL1 = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(true)
+                .build();
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 0, exhaustedL1);
+
+        assertInstanceOf(LlmResilienceOrchestrator.ResilienceOutcome.Suspended.class, outcome);
+        verify(strategy, never()).isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, exhaustedL1);
+        verify(strategy, never()).apply(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, exhaustedL1);
+    }
+
+    @Test
+    void shouldSkipL1HotRetryWhenCircuitBreakerIsAlreadyOpen() {
+        circuitBreaker.recordFailure("provider-a");
+        assertEquals(ProviderCircuitBreaker.State.OPEN, circuitBreaker.getState("provider-a"));
+        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config))
+                .thenReturn("suspended");
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        // hotRetryMaxAttempts=1 + attempt=0 + transient code would normally trigger L1.
+        // The OPEN breaker must veto: hammering a provider in cooldown defeats the
+        // breaker.
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 0, config);
+
+        assertInstanceOf(LlmResilienceOrchestrator.ResilienceOutcome.Suspended.class, outcome);
+        assertEquals(-1L, retryPolicy.lastSleepMs);
+        verify(strategy, never()).isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config);
     }
 
     @Test
@@ -255,12 +311,7 @@ class LlmResilienceOrchestratorTest {
     }
 
     private LlmResilienceOrchestrator orchestrator(List<RecoveryStrategy> strategies) {
-        return new LlmResilienceOrchestrator(
-                retryPolicy,
-                circuitBreaker,
-                providerFallbackSelector,
-                strategies,
-                suspendedTurnManager);
+        return new LlmResilienceOrchestrator(retryPolicy, circuitBreaker, strategies, suspendedTurnManager);
     }
 
     private static final class NoSleepRetryPolicy extends LlmRetryPolicy {
