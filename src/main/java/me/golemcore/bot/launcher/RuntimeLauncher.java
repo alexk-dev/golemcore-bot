@@ -632,12 +632,8 @@ public final class RuntimeLauncher {
 
     private void emitVersion() {
         RuntimeLauncherVersionProvider versionProvider = new RuntimeLauncherVersionProvider();
-        try {
-            for (String line : versionProvider.getVersion()) {
-                output.info(line);
-            }
-        } catch (Exception e) {
-            output.info("golemcore-bot native launcher");
+        for (String line : versionProvider.getVersion()) {
+            output.info(line);
         }
     }
 
