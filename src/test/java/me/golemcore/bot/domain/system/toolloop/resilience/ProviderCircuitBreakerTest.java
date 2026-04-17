@@ -137,6 +137,42 @@ class ProviderCircuitBreakerTest {
         assertEquals(ProviderCircuitBreaker.State.OPEN, thresholdOneBreaker.getState("manual"));
     }
 
+    @Test
+    void isAvailableReturnsTrueForUnknownProvider() {
+        assertTrue(breaker.isAvailable("never-seen"));
+    }
+
+    @Test
+    void isAvailableReturnsFalseWhenOpenCooldownNotElapsed() {
+        tripOpen();
+        clock.plusSeconds(10);
+
+        assertFalse(breaker.isAvailable("openai"));
+        assertEquals(ProviderCircuitBreaker.State.OPEN, breaker.getState("openai"));
+    }
+
+    @Test
+    void isAvailableDoesNotTransitionOpenToHalfOpen() {
+        tripOpen();
+        clock.plusSeconds(31);
+
+        assertTrue(breaker.isAvailable("openai"));
+        assertTrue(breaker.isAvailable("openai"));
+        assertEquals(ProviderCircuitBreaker.State.OPEN, breaker.getState("openai"));
+    }
+
+    @Test
+    void isAvailableReturnsFalseWhileHalfOpenProbeInFlight() {
+        tripOpen();
+        clock.plusSeconds(31);
+        assertFalse(breaker.isOpen("openai"));
+        assertEquals(ProviderCircuitBreaker.State.HALF_OPEN, breaker.getState("openai"));
+
+        assertFalse(breaker.isAvailable("openai"));
+        assertFalse(breaker.isAvailable("openai"));
+        assertEquals(ProviderCircuitBreaker.State.HALF_OPEN, breaker.getState("openai"));
+    }
+
     private void tripOpen() {
         breaker.recordFailure("openai");
         breaker.recordFailure("openai");

@@ -111,6 +111,34 @@ public class ProviderCircuitBreaker {
     }
 
     /**
+     * Read-only availability check: returns true when a probe would be admitted
+     * right now without mutating breaker state.
+     *
+     * <p>
+     * Unlike {@link #isOpen(String)}, this never performs the OPEN → HALF_OPEN
+     * transition nor marks a HALF_OPEN probe as in-flight. Use from selection
+     * filters that scan multiple candidates — otherwise {@code isOpen} would flip
+     * every eligible candidate into HALF_OPEN even though only one will be tried.
+     */
+    public boolean isAvailable(String providerId) {
+        if (providerId == null) {
+            return true;
+        }
+        ProviderState ps = providers.get(providerId);
+        if (ps == null) {
+            return true;
+        }
+        Instant now = clock.instant();
+        synchronized (ps) {
+            return switch (ps.state) {
+            case CLOSED -> true;
+            case OPEN -> ps.openedAt != null && now.isAfter(ps.openedAt.plusSeconds(openDurationSeconds));
+            case HALF_OPEN -> !ps.halfOpenProbeInFlight;
+            };
+        }
+    }
+
+    /**
      * Records a failure for the provider. May trip the breaker to OPEN.
      */
     public void recordFailure(String providerId) {
