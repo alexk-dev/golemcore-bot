@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.TurnLimitReason;
@@ -572,7 +573,7 @@ class LlmCallPhase {
                 log.info("[ToolLoop] Turn suspended by resilience orchestrator: {}", userMessage);
                 context.setAttribute(ContextAttributes.LLM_ERROR, userMessage);
                 context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
-                context.setOutgoingResponse(me.golemcore.bot.domain.model.OutgoingResponse.textOnly(userMessage));
+                context.setOutgoingResponse(OutgoingResponse.textOnly(userMessage));
                 context.addFailure(new FailureEvent(FailureSource.LLM, "LlmResilienceOrchestrator",
                         FailureKind.EXCEPTION, userMessage, clock.instant()));
                 flushProgress(context, "llm_suspended");
@@ -898,7 +899,7 @@ class LlmCallPhase {
             private void publishResilienceProgress(AgentContext context,
                     LlmResilienceOrchestrator.ResilienceOutcome outcome, String errorCode, int attempt,
                     ResilienceTraceSnapshot before, ResilienceTraceSnapshot after) {
-                if (turnProgressService == null || context == null || outcome == null || outcome.traceSteps() == null) {
+                if (turnProgressService == null || context == null || outcome == null) {
                     return;
                 }
                 for (LlmResilienceOrchestrator.ResilienceTraceStep step : outcome.traceSteps()) {
@@ -942,7 +943,11 @@ class LlmCallPhase {
                 case "L4" -> "Applying LLM degradation: " + fallbackStrategy(step) + " ("
                         + fallbackDetail(step) + ").";
                 case "L5" -> l5ProgressNotice(step);
-                default -> "LLM resilience action: " + fallbackDetail(step) + ".";
+                default -> {
+                    log.warn("[ToolLoop] Unknown resilience layer in progress notice: layer={} action={} detail={}",
+                            step.layer(), step.action(), step.detail());
+                    yield null;
+                }
                 };
             }
 
@@ -960,7 +965,7 @@ class LlmCallPhase {
 
             private String l5ProgressNotice(LlmResilienceOrchestrator.ResilienceTraceStep step) {
                 if ("suspend".equals(step.action())) {
-                    return fallbackDetail(step);
+                    return "Turn suspended: " + fallbackDetail(step);
                 }
                 return "LLM recovery is exhausted: " + fallbackDetail(step) + ".";
             }
