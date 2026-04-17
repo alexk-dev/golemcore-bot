@@ -4,10 +4,12 @@ import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import type { SkillInfo, SkillUpdateRequest } from '../api/skills';
 import ConfirmModal from '../components/common/ConfirmModal';
+import { PageDocsLinks } from '../components/common/PageDocsLinks';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/field';
 import { Modal } from '../components/ui/overlay';
 import { Card, CardContent } from '../components/ui/card';
+import { getDocLinks } from '../lib/docsLinks';
 import { cn } from '../lib/utils';
 import {
   useCreateSkill,
@@ -28,6 +30,7 @@ model_tier: balanced
 `;
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const SKILLS_TAB_QUERY_PARAM = 'tab';
+const SKILLS_DOCS = getDocLinks(['skills', 'mcp', 'dashboard']);
 
 type SkillsTabKey = 'local' | 'marketplace';
 
@@ -204,6 +207,7 @@ export default function SkillsPage(): ReactElement {
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
               Manage local skills and install maintained artifacts from one workspace.
             </p>
+            <PageDocsLinks title="Relevant docs" docs={SKILLS_DOCS} className="mt-3" />
           </div>
         </div>
 

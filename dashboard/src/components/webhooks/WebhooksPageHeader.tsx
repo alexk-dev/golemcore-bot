@@ -2,6 +2,9 @@ import type { ReactElement } from 'react';
 import { Badge } from '../ui/tailwind-components';
 import { FiGlobe } from 'react-icons/fi';
 
+import { PageDocsLinks } from '../common/PageDocsLinks';
+import { getDocLinks } from '../../lib/docsLinks';
+
 export interface WebhookSummary {
   total: number;
   agent: number;
@@ -12,6 +15,8 @@ interface WebhooksPageHeaderProps {
   enabled: boolean;
   summary: WebhookSummary;
 }
+
+const WEBHOOK_DOCS = getDocLinks(['webhooks', 'dashboard']);
 
 export function WebhooksPageHeader({ enabled, summary }: WebhooksPageHeaderProps): ReactElement {
   return (
@@ -24,8 +29,9 @@ export function WebhooksPageHeader({ enabled, summary }: WebhooksPageHeaderProps
         <p className="text-body-secondary mb-0">
           Configure inbound HTTP hooks, authentication, templates, and delivery routes.
         </p>
+        <PageDocsLinks title="Relevant docs" docs={WEBHOOK_DOCS} className="mt-3" />
       </div>
-      <div className="d-flex flex-wrap gap-2">
+      <div className="d-flex flex-wrap gap-2 align-content-start">
         <Badge bg={enabled ? 'success' : 'secondary'}>
           {enabled ? 'Enabled' : 'Disabled'}
         </Badge>

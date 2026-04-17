@@ -1,10 +1,12 @@
 import type { ReactElement } from 'react';
 import { FiArrowRight } from 'react-icons/fi';
 import type { SkillInfo, SkillUpdateRequest } from '../../api/skills';
+import { DocsLinkAnchor } from '../../components/common/DocsLinkAnchor';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/field';
+import { getDocLink } from '../../lib/docsLinks';
 import { cn } from '../../lib/utils';
 import { LocalSkillDetailPane } from './LocalSkillDetailPane';
 
@@ -25,14 +27,21 @@ interface LocalSkillsPanelProps {
   deletePending: boolean;
 }
 
+const SKILLS_DOC = getDocLink('skills');
+
 function EmptyState({ onOpenMarketplace }: { onOpenMarketplace: () => void }): ReactElement {
   return (
     <div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 px-4 py-8 text-center">
       <p className="text-sm text-muted-foreground">No skills match this filter.</p>
-      <Button type="button" variant="link" className="mt-2" onClick={onOpenMarketplace}>
-        Open marketplace
-        <FiArrowRight size={14} />
-      </Button>
+      <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
+        <Button type="button" variant="link" onClick={onOpenMarketplace}>
+          Open marketplace
+          <FiArrowRight size={14} />
+        </Button>
+        <DocsLinkAnchor doc={SKILLS_DOC} appearance="text">
+          How skills work
+        </DocsLinkAnchor>
+      </div>
     </div>
   );
 }

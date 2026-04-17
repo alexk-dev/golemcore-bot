@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
+import { DocsLinkAnchor } from '../../components/common/DocsLinkAnchor';
 import type { HiveStatusResponse } from '../../api/hive';
 import type { AvailableModel } from '../../api/models';
 import { modelReferenceFromSpec, modelReferenceToSpec } from '../../api/settings';
@@ -10,6 +11,7 @@ import type { LlmConfig, ModelRouterConfig } from '../../api/settingsTypes';
 import { useUpdateModelRouter } from '../../hooks/useSettings';
 import { useAvailableModels } from '../../hooks/useModels';
 import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
+import { getDocLink } from '../../lib/docsLinks';
 import { toEditorModelIdForProvider } from '../../lib/providerModelIds';
 import { cloneModelRouterConfig, getTierBinding, updateTierBinding } from '../../lib/modelRouter';
 import {
@@ -45,13 +47,77 @@ interface TierCardConfig {
   allowEmptyModel: boolean;
 }
 
+interface GlobalSettingsCardProps {
+  dynamicTierEnabled: boolean;
+  onDynamicTierEnabledChange: (enabled: boolean) => void;
+}
+
+interface NoProvidersNoticeProps {
+  isVisible: boolean;
+}
+
 const EMPTY_AVAILABLE_MODELS: Record<string, AvailableModel[]> = {};
+const MODEL_ROUTING_DOC = getDocLink('model-routing');
+const PROVIDER_SETUP_DOC = getDocLink('configuration');
 const TIER_CARDS: TierCardConfig[] = EXPLICIT_MODEL_TIER_ORDER.map((tier) => ({
   key: tier,
   label: MODEL_TIER_META[tier].label,
   color: MODEL_TIER_META[tier].settingsCardColor,
   allowEmptyModel: allowsEmptyModelSelection(tier),
 }));
+
+function GlobalSettingsCard({
+  dynamicTierEnabled,
+  onDynamicTierEnabledChange,
+}: GlobalSettingsCardProps): ReactElement {
+  return (
+    <Card className="settings-card mb-3">
+      <Card.Body>
+        <SettingsCardTitle title="Global Settings" />
+        <Row className="g-3">
+          <Col md={6} className="d-flex align-items-end">
+            <Form.Check
+              type="switch"
+              label={<>
+                Dynamic tier upgrade{' '}
+                <HelpTip
+                  text="Automatically upgrade to coding tier when code-related activity is detected mid-conversation"
+                  href={MODEL_ROUTING_DOC.url}
+                  linkLabel="Read Model Routing docs"
+                />
+              </>}
+              checked={dynamicTierEnabled}
+              onChange={(event) => onDynamicTierEnabledChange(event.target.checked)}
+            />
+          </Col>
+        </Row>
+      </Card.Body>
+    </Card>
+  );
+}
+
+function NoProvidersNotice({ isVisible }: NoProvidersNoticeProps): ReactElement | null {
+  if (!isVisible) {
+    return null;
+  }
+
+  return (
+    <Col xs={12}>
+      <Card className="settings-card">
+        <Card.Body className="py-2">
+          <small className="text-body-secondary d-block">
+            No LLM providers with API keys configured. Add a provider with an API key in the LLM Providers tab to select models here.
+          </small>
+          <div className="mt-2">
+            <DocsLinkAnchor doc={PROVIDER_SETUP_DOC} appearance="text">
+              Open provider setup guide
+            </DocsLinkAnchor>
+          </div>
+        </Card.Body>
+      </Card>
+    </Col>
+  );
+}
 
 export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabProps): ReactElement {
   const navigate = useNavigate();
@@ -129,34 +195,13 @@ export default function ModelsTab({ config, llmConfig, hiveStatus }: ModelsTabPr
       ) : null}
 
       <fieldset disabled={managedPolicy != null} className="border-0 m-0 p-0">
-        <Card className="settings-card mb-3">
-          <Card.Body>
-            <SettingsCardTitle title="Global Settings" />
-            <Row className="g-3">
-              <Col md={6} className="d-flex align-items-end">
-                <Form.Check
-                  type="switch"
-                  label={<>Dynamic tier upgrade <HelpTip text="Automatically upgrade to coding tier when code-related activity is detected mid-conversation" /></>}
-                  checked={form.dynamicTierEnabled ?? true}
-                  onChange={(e) => setForm({ ...form, dynamicTierEnabled: e.target.checked })}
-                />
-              </Col>
-            </Row>
-          </Card.Body>
-        </Card>
+        <GlobalSettingsCard
+          dynamicTierEnabled={form.dynamicTierEnabled ?? true}
+          onDynamicTierEnabledChange={(dynamicTierEnabled) => setForm({ ...form, dynamicTierEnabled })}
+        />
 
         <Row className="g-3 mb-3">
-          {providerNames.length === 0 && (
-            <Col xs={12}>
-              <Card className="settings-card">
-                <Card.Body className="py-2">
-                  <small className="text-body-secondary">
-                    No LLM providers with API keys configured. Add a provider with an API key in the LLM Providers tab to select models here.
-                  </small>
-                </Card.Body>
-              </Card>
-            </Col>
-          )}
+          <NoProvidersNotice isVisible={providerNames.length === 0} />
 
           <Col sm={6} lg={3}>
             <TierModelCard

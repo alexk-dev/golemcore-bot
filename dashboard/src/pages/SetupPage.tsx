@@ -1,6 +1,8 @@
 import type { ReactElement } from 'react';
 import { Alert, Badge, Button, Card, Spinner } from '../components/ui/tailwind-components';
 import { useNavigate } from 'react-router-dom';
+import { PageDocsLinks } from '../components/common/PageDocsLinks';
+import { getDocLinks } from '../lib/docsLinks';
 import { useRuntimeConfig } from '../hooks/useSettings';
 import { extractErrorMessage } from '../utils/extractErrorMessage';
 import {
@@ -17,6 +19,8 @@ interface SetupStepCardProps {
   actionLabel: string;
   onAction: () => void;
 }
+
+const SETUP_DOCS = getDocLinks(['quickstart', 'dashboard', 'configuration']);
 
 function SetupStepCard({
   step,
@@ -57,6 +61,18 @@ function SetupLoadingState(): ReactElement {
   );
 }
 
+function SetupHeader(): ReactElement {
+  return (
+    <div className="page-header">
+      <h4>Startup Setup Wizard</h4>
+      <p className="text-body-secondary mb-0">
+        Finish recommended startup configuration for reliable model routing and responses.
+      </p>
+      <PageDocsLinks title="Start here" docs={SETUP_DOCS} className="mt-3" />
+    </div>
+  );
+}
+
 function getErrorMessage(error: unknown, fallback: string): string {
   const message = extractErrorMessage(error);
   return message === 'Unknown error' ? fallback : message;
@@ -68,14 +84,22 @@ export default function SetupPage(): ReactElement {
   const runtimeConfig = runtimeConfigQuery.data;
 
   if (runtimeConfigQuery.isLoading) {
-    return <SetupLoadingState />;
+    return (
+      <div>
+        <SetupHeader />
+        <SetupLoadingState />
+      </div>
+    );
   }
 
   if (runtimeConfig == null) {
     return (
-      <Alert variant="danger" className="mb-0">
-        {getErrorMessage(runtimeConfigQuery.error, 'Failed to load runtime configuration.')}
-      </Alert>
+      <div>
+        <SetupHeader />
+        <Alert variant="danger" className="mb-0">
+          {getErrorMessage(runtimeConfigQuery.error, 'Failed to load runtime configuration.')}
+        </Alert>
+      </div>
     );
   }
 
@@ -86,12 +110,7 @@ export default function SetupPage(): ReactElement {
 
   return (
     <div>
-      <div className="page-header">
-        <h4>Startup Setup Wizard</h4>
-        <p className="text-body-secondary mb-0">
-          Finish recommended startup configuration for reliable model routing and responses.
-        </p>
-      </div>
+      <SetupHeader />
 
       {runtimeConfigQuery.error != null && (
         <Alert variant="warning">
