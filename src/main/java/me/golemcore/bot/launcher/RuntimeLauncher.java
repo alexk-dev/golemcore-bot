@@ -25,15 +25,17 @@ import picocli.CommandLine.Unmatched;
  * Supervises the actual bot runtime so self-update can restart into a staged
  * jar instead of relaunching the immutable container classpath.
  *
- * <p>The launcher always evaluates the best available runtime source in this
+ * <p>
+ * The launcher always evaluates the best available runtime source in this
  * order:
  * <ol>
- *     <li>a staged jar selected by {@code updates/current.txt}</li>
- *     <li>a bundled runtime jar shipped next to the launcher</li>
- *     <li>the image classpath produced by the container build</li>
+ * <li>a staged jar selected by {@code updates/current.txt}</li>
+ * <li>a bundled runtime jar shipped next to the launcher</li>
+ * <li>the image classpath produced by the container build</li>
  * </ol>
  *
- * <p>The native app-image entry point uses picocli so the local launcher can
+ * <p>
+ * The native app-image entry point uses picocli so the local launcher can
  * document its own options while forwarding unknown arguments to the spawned
  * Spring Boot runtime.
  */
@@ -102,10 +104,12 @@ public final class RuntimeLauncher {
     /**
      * Runs the launcher loop until the child runtime exits normally.
      *
-     * <p>When the child returns {@link #RESTART_EXIT_CODE}, the loop resolves
-     * the runtime source again so newly staged jars become active immediately.
+     * <p>
+     * When the child returns {@link #RESTART_EXIT_CODE}, the loop resolves the
+     * runtime source again so newly staged jars become active immediately.
      *
-     * @param args original launcher arguments
+     * @param args
+     *            original launcher arguments
      * @return final child exit code or {@code 1} when the launcher itself fails
      */
     int run(String[] args) {
@@ -154,9 +158,10 @@ public final class RuntimeLauncher {
      * Parses launcher-specific command-line options with picocli while leaving
      * unknown arguments untouched for Spring Boot.
      *
-     * @param args original launcher arguments
-     * @return parse outcome containing either normalized launcher arguments or
-     *         an exit decision for help / parse failures
+     * @param args
+     *            original launcher arguments
+     * @return parse outcome containing either normalized launcher arguments or an
+     *         exit decision for help / parse failures
      */
     ParseOutcome parseArguments(String[] args) {
         LauncherCliArguments cliArguments = new LauncherCliArguments();
@@ -184,11 +189,13 @@ public final class RuntimeLauncher {
     /**
      * Builds the exact child-process command for the current launcher cycle.
      *
-     * <p>The launcher prefers a staged update, then an explicitly or implicitly
-     * discovered bundled jar, and only falls back to the image classpath when
-     * no jar-based runtime is available.
+     * <p>
+     * The launcher prefers a staged update, then an explicitly or implicitly
+     * discovered bundled jar, and only falls back to the image classpath when no
+     * jar-based runtime is available.
      *
-     * @param args original launcher arguments
+     * @param args
+     *            original launcher arguments
      * @return immutable launch command description
      */
     LaunchCommand resolveLaunchCommand(String[] args) {
@@ -226,11 +233,14 @@ public final class RuntimeLauncher {
     /**
      * Resolves the staged runtime jar pointed to by {@code current.txt}.
      *
-     * <p>The marker content is validated aggressively so a corrupted or hostile
-     * marker cannot escape the updates directory via path traversal.
+     * <p>
+     * The marker content is validated aggressively so a corrupted or hostile marker
+     * cannot escape the updates directory via path traversal.
      *
-     * @param args original launcher arguments
-     * @return staged runtime jar path, or {@code null} when no valid staged jar exists
+     * @param args
+     *            original launcher arguments
+     * @return staged runtime jar path, or {@code null} when no valid staged jar
+     *         exists
      */
     Path resolveCurrentJar(String[] args) {
         return resolveCurrentJar(parseArguments(args).launcherArguments());
@@ -273,12 +283,14 @@ public final class RuntimeLauncher {
     /**
      * Resolves the updates directory using the same precedence as the runtime.
      *
-     * <p>Explicit launcher options win over JVM properties, which win over the
-     * ambient environment. When no explicit updates path exists, the launcher
-     * derives it from the storage root and finally falls back to the default
-     * workspace location under the user home directory.
+     * <p>
+     * Explicit launcher options win over JVM properties, which win over the ambient
+     * environment. When no explicit updates path exists, the launcher derives it
+     * from the storage root and finally falls back to the default workspace
+     * location under the user home directory.
      *
-     * @param args original launcher arguments
+     * @param args
+     *            original launcher arguments
      * @return normalized updates directory path
      */
     Path resolveUpdatesDir(String[] args) {
@@ -310,12 +322,14 @@ public final class RuntimeLauncher {
     /**
      * Resolves a bundled runtime jar shipped with the launcher itself.
      *
-     * <p>An explicit launcher option or system property wins first. Otherwise
-     * the launcher inspects the code-source location and common app-image
-     * directories to support both direct jars and native distributions produced
-     * by {@code jpackage}.
+     * <p>
+     * An explicit launcher option or system property wins first. Otherwise the
+     * launcher inspects the code-source location and common app-image directories
+     * to support both direct jars and native distributions produced by
+     * {@code jpackage}.
      *
-     * @return bundled runtime jar path, or {@code null} when the launcher should use classpath mode
+     * @return bundled runtime jar path, or {@code null} when the launcher should
+     *         use classpath mode
      */
     Path resolveBundledJar() {
         return resolveBundledJar(LauncherArguments.empty());
@@ -360,13 +374,14 @@ public final class RuntimeLauncher {
     /**
      * Collects JVM options that must be preserved across launcher restarts.
      *
-     * <p>Explicit JVM options from picocli's {@code -J/--java-option} and
-     * pass-through {@code -D...} arguments are forwarded verbatim. For a small
-     * set of critical properties the launcher also injects values from the
-     * parsed launcher options or the current JVM when they were not supplied
-     * explicitly.
+     * <p>
+     * Explicit JVM options from picocli's {@code -J/--java-option} and pass-through
+     * {@code -D...} arguments are forwarded verbatim. For a small set of critical
+     * properties the launcher also injects values from the parsed launcher options
+     * or the current JVM when they were not supplied explicitly.
      *
-     * @param launcherArguments normalized launcher arguments
+     * @param launcherArguments
+     *            normalized launcher arguments
      * @return JVM options for the child process
      */
     private List<String> resolveForwardedJavaOptions(LauncherArguments launcherArguments) {
@@ -435,11 +450,14 @@ public final class RuntimeLauncher {
      * Searches app-image layouts that place the runtime jar in a nearby
      * {@code runtime} directory instead of next to the launcher artifact.
      *
-     * <p>This covers the directory shapes produced by local native bundles on
-     * Linux and macOS.
+     * <p>
+     * This covers the directory shapes produced by local native bundles on Linux
+     * and macOS.
      *
-     * @param resolvedLocation launcher code-source location
-     * @return discovered bundled runtime jar, or {@code null} when none exists nearby
+     * @param resolvedLocation
+     *            launcher code-source location
+     * @return discovered bundled runtime jar, or {@code null} when none exists
+     *         nearby
      */
     private Path findBundledRuntimeJarInCommonRuntimeDirs(Path resolvedLocation) {
         Path currentDirectory = Files.isDirectory(resolvedLocation)
@@ -478,7 +496,8 @@ public final class RuntimeLauncher {
     /**
      * Scans a single directory for a bundled runtime jar.
      *
-     * @param resolvedLocation directory or file near the bundled runtime
+     * @param resolvedLocation
+     *            directory or file near the bundled runtime
      * @return matching runtime jar, or {@code null} when no candidate is present
      */
     private Path findBundledRuntimeJar(Path resolvedLocation) {
@@ -531,7 +550,8 @@ public final class RuntimeLauncher {
      * Normalizes user-provided paths and expands the home placeholders commonly
      * produced by local launchers and shell invocations.
      *
-     * @param value raw path-like value
+     * @param value
+     *            raw path-like value
      * @return normalized absolute path
      */
     private static Path normalizePath(String value) {
@@ -585,7 +605,8 @@ public final class RuntimeLauncher {
      * Removes the per-run shutdown hook once the child process has finished so
      * repeated restarts do not accumulate stale hooks.
      *
-     * @param shutdownHook hook installed for the current child process
+     * @param shutdownHook
+     *            hook installed for the current child process
      */
     private void removeShutdownHook(Thread shutdownHook) {
         try {
@@ -638,8 +659,10 @@ public final class RuntimeLauncher {
     /**
      * Immutable child-process launch descriptor.
      *
-     * @param command exact process command line
-     * @param description human-readable command source description for logs
+     * @param command
+     *            exact process command line
+     * @param description
+     *            human-readable command source description for logs
      */
     record LaunchCommand(List<String> command, String description) {
     }
@@ -671,53 +694,41 @@ public final class RuntimeLauncher {
     /**
      * Picocli-backed argument model for the native app-image launcher.
      */
-    @Command(
-            name = "golemcore-bot",
-            mixinStandardHelpOptions = true,
-            versionProvider = RuntimeLauncherVersionProvider.class,
-            sortOptions = false,
-            description = {
-                    "Restart-aware native launcher for the GolemCore Bot app-image.",
-                    "Launcher-specific options are handled locally; all unknown arguments",
-                    "are forwarded to the spawned Spring Boot runtime."
-            },
-            footer = {
-                    "",
-                    "Examples:",
-                    "  golemcore-bot --server-port=9090",
-                    "  golemcore-bot -J=-Xmx1g --server-port=9090",
-                    "  golemcore-bot --storage-path=/srv/golemcore/workspace --updates-path=/srv/golemcore/updates",
-                    "  golemcore-bot -- --spring.profiles.active=prod"
-            })
+    @Command(name = "golemcore-bot", mixinStandardHelpOptions = true, versionProvider = RuntimeLauncherVersionProvider.class, sortOptions = false, description = {
+            "Restart-aware native launcher for the GolemCore Bot app-image.",
+            "Launcher-specific options are handled locally; all unknown arguments",
+            "are forwarded to the spawned Spring Boot runtime."
+    }, footer = {
+            "",
+            "Examples:",
+            "  golemcore-bot --server-port=9090",
+            "  golemcore-bot -J=-Xmx1g --server-port=9090",
+            "  golemcore-bot --storage-path=/srv/golemcore/workspace --updates-path=/srv/golemcore/updates",
+            "  golemcore-bot -- --spring.profiles.active=prod"
+    })
     private static final class LauncherCliArguments {
 
-        @Option(
-                names = { "--storage-path", "--bot.storage.local.base-path" },
-                description = "Workspace storage root. Also forwarded to the runtime as -D"
+        @Option(names = { "--storage-path",
+                "--bot.storage.local.base-path" }, description = "Workspace storage root. Also forwarded to the runtime as -D"
                         + STORAGE_PATH_PROPERTY + ".")
         private String storagePath;
 
-        @Option(
-                names = { "--updates-path", "--bot.update.updates-path" },
-                description = "Updates directory. Also forwarded to the runtime as -D"
+        @Option(names = { "--updates-path",
+                "--bot.update.updates-path" }, description = "Updates directory. Also forwarded to the runtime as -D"
                         + UPDATE_PATH_PROPERTY + ".")
         private String updatesPath;
 
-        @Option(
-                names = { "--bundled-jar", "--golemcore.launcher.bundled-jar" },
-                description = "Bundled runtime jar to prefer before the classpath fallback.")
+        @Option(names = { "--bundled-jar",
+                "--golemcore.launcher.bundled-jar" }, description = "Bundled runtime jar to prefer before the classpath fallback.")
         private String bundledJar;
 
-        @Option(
-                names = { "--server-port", "--server.port" },
-                description = "HTTP port for the spawned runtime. Also forwarded as -D"
+        @Option(names = { "--server-port",
+                "--server.port" }, description = "HTTP port for the spawned runtime. Also forwarded as -D"
                         + SERVER_PORT_PROPERTY + ".")
         private String serverPort;
 
-        @Option(
-                names = { "-J", "--java-option" },
-                paramLabel = "<jvm-option>",
-                description = "Additional JVM option forwarded to the spawned runtime. Repeatable.")
+        @Option(names = { "-J",
+                "--java-option" }, paramLabel = "<jvm-option>", description = "Additional JVM option forwarded to the spawned runtime. Repeatable.")
         private List<String> javaOptions = new ArrayList<>();
 
         @Unmatched

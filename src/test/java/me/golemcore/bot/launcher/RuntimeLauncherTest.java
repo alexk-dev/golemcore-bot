@@ -482,7 +482,8 @@ class RuntimeLauncherTest {
         assertTrue(parseOutcome.shouldExit());
         assertEquals(RuntimeLauncher.CLI_ERROR_EXIT_CODE, parseOutcome.exitCode());
         assertTrue(output.errorMessages().stream()
-                .anyMatch(message -> message.contains("Missing required parameter for option '--unknown-launcher-flag'")));
+                .anyMatch(message -> message
+                        .contains("Missing required parameter for option '--unknown-launcher-flag'")));
     }
 
     @Test
@@ -570,8 +571,8 @@ class RuntimeLauncherTest {
     }
 
     /**
-     * Records every command sent to the child process and replays configured
-     * exit codes in sequence.
+     * Records every command sent to the child process and replays configured exit
+     * codes in sequence.
      */
     private static class RecordingProcessStarter implements RuntimeLauncher.ProcessStarter {
 
@@ -679,8 +680,8 @@ class RuntimeLauncherTest {
     }
 
     /**
-     * Simulates an interrupted wait so the launcher can prove it destroys the
-     * child process and preserves the interrupt flag.
+     * Simulates an interrupted wait so the launcher can prove it destroys the child
+     * process and preserves the interrupt flag.
      */
     private static final class InterruptingChildProcess implements RuntimeLauncher.ChildProcess {
 
