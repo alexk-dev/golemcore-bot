@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -130,7 +131,7 @@ class ProviderFallbackSelectorTest {
 
     @Test
     void shouldIgnoreInvalidFallbackEntriesAndUseFirstValidSequentialCandidate() {
-        java.util.List<RuntimeConfig.TierFallback> fallbacks = new java.util.ArrayList<>();
+        List<RuntimeConfig.TierFallback> fallbacks = new ArrayList<>();
         fallbacks.add(null);
         fallbacks.add(RuntimeConfig.TierFallback.builder().build());
         RuntimeConfig.TierFallback blankFallback = mock(RuntimeConfig.TierFallback.class);
@@ -391,6 +392,7 @@ class ProviderFallbackSelectorTest {
     }
 
     @Test
+    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
     void privateSelectorsShouldHandleEmptyFallbackCollections() throws Exception {
         Method sequential = ProviderFallbackSelector.class.getDeclaredMethod("selectSequential", List.class,
                 String.class);
@@ -424,6 +426,7 @@ class ProviderFallbackSelectorTest {
     }
 
     @Test
+    @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
     void privateHelpersShouldHandleNullAndBlankCurrentTierAndModelValues() throws Exception {
         Method resolveTier = ProviderFallbackSelector.class.getDeclaredMethod("resolveTier", AgentContext.class);
         resolveTier.setAccessible(true);
@@ -474,7 +477,7 @@ class ProviderFallbackSelectorTest {
     @Test
     void shouldReturnNullWhenSelectedFallbackModelBecomesNull() {
         RuntimeConfig.TierFallback fallback = mock(RuntimeConfig.TierFallback.class);
-        when(fallback.getModel()).thenReturn("anthropic/claude-sonnet-4", null);
+        when(fallback.getModel()).thenReturn("anthropic/claude-sonnet-4", (String) null);
         RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
                 .model("openai/gpt-5")
                 .fallbackMode("sequential")

@@ -97,7 +97,7 @@ public class ProviderFallbackSelector {
 
     private int resolveMaxAttempts() {
         RuntimeConfig.ResilienceConfig config = runtimeConfigService.getResilienceConfig();
-        Integer configured = config != null ? config.getL2ProviderFallbackMaxAttempts() : null;
+        Integer configured = config.getL2ProviderFallbackMaxAttempts();
         return configured != null && configured > 0 ? configured : 5;
     }
 
