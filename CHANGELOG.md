@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.65.3 - 2026-04-17
+#### Bug Fixes
+- (**ci**) repair javadoc generation for release builds (#301) - (81df682) - Alex Kuleshov
+#### Refactoring
+- (**ui**) defer specialized frontend chunks (#300) - (a53d7ec) - Alex Kuleshov
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
