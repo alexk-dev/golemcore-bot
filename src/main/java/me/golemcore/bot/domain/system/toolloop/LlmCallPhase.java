@@ -433,8 +433,8 @@ class LlmCallPhase {
                     emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
                             eventPayload("reason", "llm_error", "code", code));
                     return new LlmCallOutcome.Failed(
-                            failLlmInvocation(context, failure, turnState.getLlmCalls(),
-                                    turnState.getToolExecutions()));
+                            failLlmExhausted(context, exhausted.reason(), code, failure,
+                                    turnState.getLlmCalls(), turnState.getToolExecutions()));
                 }
                 default -> throw new IllegalStateException("Unsupported resilience outcome: "
                         + outcome.getClass().getName());
@@ -581,6 +581,20 @@ class LlmCallPhase {
                 context.addFailure(new FailureEvent(FailureSource.LLM, "LlmResilienceOrchestrator",
                         FailureKind.EXCEPTION, userMessage, clock.instant()));
                 flushProgress(context, "llm_suspended");
+                clearProgress(context);
+                return new ToolLoopTurnResult(context, false, llmCalls, toolExecutions);
+            }
+
+            private ToolLoopTurnResult failLlmExhausted(AgentContext context, String reason, String reasonCode,
+                    Throwable throwable, int llmCalls, int toolExecutions) {
+                String diagnostic = LlmErrorClassifier.withCode(reasonCode, reason);
+                log.error("[ToolLoop] LLM resilience cascade exhausted: {}", diagnostic, throwable);
+                context.setAttribute(ContextAttributes.LLM_ERROR, diagnostic);
+                context.setAttribute(ContextAttributes.LLM_ERROR_CODE, reasonCode);
+                context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
+                context.addFailure(new FailureEvent(FailureSource.LLM, "LlmResilienceOrchestrator",
+                        FailureKind.EXCEPTION, diagnostic, clock.instant()));
+                flushProgress(context, "llm_failure");
                 clearProgress(context);
                 return new ToolLoopTurnResult(context, false, llmCalls, toolExecutions);
             }
