@@ -8,9 +8,25 @@ const recordCounter = vi.hoisted(() => vi.fn());
 const recordKeyedCounter = vi.hoisted(() => vi.fn());
 const appendOptimisticUserMessage = vi.hoisted(() => vi.fn());
 const retryUserMessage = vi.hoisted(() => vi.fn());
-const sendMessage = vi.hoisted(() => vi.fn(() => true));
+const sendMessage = vi.hoisted(() => vi.fn<(
+  sessionId: string,
+  clientInstanceId: string,
+  clientMessageId: string,
+  payload: { memoryPreset?: string | null },
+) => boolean>(() => true));
 const resetSession = vi.hoisted(() => vi.fn());
+const getSettings = vi.hoisted(() => vi.fn<() => Promise<{
+  modelTier: string;
+  tierForce: boolean;
+  memoryPreset: string;
+}>>(() => new Promise(() => {})));
+const getMemoryPresets = vi.hoisted(() => vi.fn<() => Promise<Array<{
+  id: string;
+  label: string;
+}>>>(() => Promise.resolve([])));
 const updatePreferences = vi.hoisted(() => vi.fn(() => new Promise(() => {})));
+const activeSessionIdRef = vi.hoisted(() => ({ value: 'session-1' }));
+const memoryPresetOverridesRef = vi.hoisted(() => ({ value: {} as Record<string, string> }));
 
 vi.mock('../../lib/telemetry/TelemetryContext', () => ({
   useTelemetry: () => ({
@@ -23,8 +39,21 @@ vi.mock('../../lib/telemetry/TelemetryContext', () => ({
 
 vi.mock('../../store/chatSessionStore', () => ({
   useChatSessionStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
-    activeSessionId: 'session-1',
+    activeSessionId: activeSessionIdRef.value,
+    openSessionIds: ['session-1', 'session-2'],
+    memoryPresetOverrides: memoryPresetOverridesRef.value,
     setActiveSessionId: vi.fn(),
+    openSession: vi.fn(),
+    closeSession: vi.fn(),
+    startNewSession: vi.fn(() => 'session-2'),
+    setMemoryPresetOverride: (sessionId: string, preset: string) => {
+      if (preset.length === 0) {
+        const { [sessionId]: _removed, ...remaining } = memoryPresetOverridesRef.value;
+        memoryPresetOverridesRef.value = remaining;
+        return;
+      }
+      memoryPresetOverridesRef.value = { ...memoryPresetOverridesRef.value, [sessionId]: preset };
+    },
     clientInstanceId: 'client-1',
   }),
 }));
@@ -85,7 +114,8 @@ vi.mock('../../api/goals', () => ({
 }));
 
 vi.mock('../../api/settings', () => ({
-  getSettings: () => new Promise(() => {}),
+  getSettings,
+  getMemoryPresets,
   updatePreferences,
 }));
 
@@ -104,7 +134,21 @@ vi.mock('./useChatSessionHistory', () => ({
 }));
 
 vi.mock('./ChatToolbar', () => ({
-  ChatToolbar: () => <div>toolbar</div>,
+  ChatToolbar: ({
+    inheritedMemoryPresetLabel,
+    onMemoryPresetChange,
+    onTierChange,
+  }: {
+    inheritedMemoryPresetLabel?: string | null;
+    onMemoryPresetChange?: (value: string) => void;
+    onTierChange?: (value: string) => void;
+  }) => (
+    <div>
+      <span data-testid="inherited-memory">{inheritedMemoryPresetLabel ?? ''}</span>
+      <button type="button" onClick={() => onTierChange?.('deep')}>Toolbar tier</button>
+      <button type="button" onClick={() => onMemoryPresetChange?.('coding_balanced')}>Toolbar memory</button>
+    </div>
+  ),
 }));
 
 vi.mock('./ChatConversation', () => ({
@@ -166,7 +210,13 @@ describe('ChatWindow telemetry', () => {
     recordKeyedCounter.mockClear();
     appendOptimisticUserMessage.mockClear();
     sendMessage.mockClear();
+    getSettings.mockReset();
+    getSettings.mockImplementation(() => new Promise(() => {}));
+    getMemoryPresets.mockReset();
+    getMemoryPresets.mockResolvedValue([]);
     updatePreferences.mockClear();
+    activeSessionIdRef.value = 'session-1';
+    memoryPresetOverridesRef.value = {};
   });
 
   it('records chat send and force-tier toggles', () => {
@@ -191,6 +241,146 @@ describe('ChatWindow telemetry', () => {
     expect(recordCounter).toHaveBeenCalledWith('chat_send_count');
     expect(recordCounter).toHaveBeenCalledWith('tier_force_toggle_count');
     expect(recordKeyedCounter).toHaveBeenCalledWith('tier_select_count_by_tier', 'deep');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('sends a chat-local memory preset override without updating global preferences', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+
+    act(() => {
+      root.render(<ChatWindow embedded />);
+    });
+
+    act(() => {
+      getButtonByText('Toolbar memory').click();
+    });
+    act(() => {
+      root.render(<ChatWindow embedded />);
+    });
+
+    act(() => {
+      getButtonByText('Send message').click();
+    });
+
+    expect(sendMessage.mock.calls[0]?.[3]).toMatchObject({ memoryPreset: 'coding_balanced' });
+    expect(updatePreferences).not.toHaveBeenCalled();
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('uses the stored chat-local memory preset override after remount', () => {
+    memoryPresetOverridesRef.value = { 'session-1': 'coding_balanced' };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+
+    act(() => {
+      root.render(<ChatWindow embedded />);
+    });
+
+    act(() => {
+      getButtonByText('Send message').click();
+    });
+
+    expect(sendMessage.mock.calls[0]?.[3]).toMatchObject({ memoryPreset: 'coding_balanced' });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('scopes memory preset overrides to the active chat session', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+
+    act(() => {
+      root.render(<ChatWindow embedded />);
+    });
+
+    act(() => {
+      getButtonByText('Toolbar memory').click();
+    });
+
+    activeSessionIdRef.value = 'session-2';
+    act(() => {
+      root.render(<ChatWindow embedded />);
+    });
+
+    act(() => {
+      getButtonByText('Send message').click();
+    });
+
+    expect(sendMessage.mock.calls[0]?.[0]).toBe('session-2');
+    expect(sendMessage.mock.calls[0]?.[3]).toMatchObject({ memoryPreset: null });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('omits a memory preset override while inheriting global memory settings', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+
+    act(() => {
+      root.render(<ChatWindow embedded />);
+    });
+
+    act(() => {
+      getButtonByText('Send message').click();
+    });
+
+    expect(sendMessage.mock.calls[0]?.[3]).toMatchObject({ memoryPreset: null });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('keeps the inherited memory label when local tier changes before settings load', async () => {
+    let resolveSettings: (settings: {
+      modelTier: string;
+      tierForce: boolean;
+      memoryPreset: string;
+    }) => void = () => {};
+    getSettings.mockImplementation(() => new Promise((resolve) => {
+      resolveSettings = resolve;
+    }));
+    getMemoryPresets.mockResolvedValue([
+      { id: 'coding_balanced', label: 'Coding balanced' },
+    ]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+
+    act(() => {
+      root.render(<ChatWindow embedded />);
+    });
+
+    act(() => {
+      getButtonByText('Toolbar tier').click();
+    });
+
+    await act(async () => {
+      resolveSettings({
+        modelTier: 'smart',
+        tierForce: false,
+        memoryPreset: 'coding_balanced',
+      });
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector('[data-testid="inherited-memory"]')?.textContent)
+      .toBe('Coding balanced');
 
     act(() => {
       root.unmount();

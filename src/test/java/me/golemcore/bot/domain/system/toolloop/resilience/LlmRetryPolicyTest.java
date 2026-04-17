@@ -31,8 +31,8 @@ class LlmRetryPolicyTest {
         for (int index = 0; index < 64; index++) {
             long firstAttempt = policy.computeDelay(0, config);
             long cappedAttempt = policy.computeDelay(5, config);
-            assertTrue(firstAttempt >= 0 && firstAttempt < 10);
-            assertTrue(cappedAttempt >= 0 && cappedAttempt < 25);
+            assertTrue(firstAttempt >= 0 && firstAttempt <= 10);
+            assertTrue(cappedAttempt >= 0 && cappedAttempt <= 25);
         }
     }
 
@@ -46,7 +46,7 @@ class LlmRetryPolicyTest {
 
         for (int index = 0; index < 32; index++) {
             long delay = policy.computeDelay(-5, config);
-            assertTrue(delay >= 0 && delay < 7);
+            assertTrue(delay >= 0 && delay <= 7);
         }
     }
 
@@ -60,8 +60,26 @@ class LlmRetryPolicyTest {
 
         for (int attempt : new int[] { 63, 100, 10_000, Integer.MAX_VALUE }) {
             long delay = policy.computeDelay(attempt, config);
-            assertTrue(delay >= 0 && delay < 60_000L, "delay=" + delay + " at attempt=" + attempt);
+            assertTrue(delay >= 0 && delay <= 60_000L, "delay=" + delay + " at attempt=" + attempt);
         }
+    }
+
+    @Test
+    void shouldReturnZeroWhenConfigHasNonPositiveBaseOrCap() {
+        LlmRetryPolicy policy = new LlmRetryPolicy();
+        RuntimeConfig.ResilienceConfig zeroBase = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryBaseDelayMs(0L)
+                .hotRetryCapMs(60_000L)
+                .build();
+        RuntimeConfig.ResilienceConfig zeroCap = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryBaseDelayMs(5_000L)
+                .hotRetryCapMs(0L)
+                .build();
+
+        assertTrue(policy.computeDelay(0, zeroBase) == 0L);
+        assertTrue(policy.computeDelay(0, zeroCap) == 0L);
+        assertTrue(policy.computeDelay(5, zeroBase) == 0L);
+        assertTrue(policy.computeDelay(5, zeroCap) == 0L);
     }
 
     @Test

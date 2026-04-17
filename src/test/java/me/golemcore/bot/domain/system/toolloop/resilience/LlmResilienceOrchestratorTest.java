@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -311,6 +312,52 @@ class LlmResilienceOrchestratorTest {
     }
 
     @Test
+    void shouldReopenHalfOpenCircuitWhenAdmittedProbeFails() {
+        MutableClock mutableClock = new MutableClock(Instant.parse("2026-04-16T03:00:00Z"));
+        ProviderCircuitBreaker halfOpenBreaker = new ProviderCircuitBreaker(mutableClock, 1, 60, 30);
+        halfOpenBreaker.recordFailure("provider-a");
+        assertEquals(ProviderCircuitBreaker.State.OPEN, halfOpenBreaker.getState("provider-a"));
+        mutableClock.plusSeconds(31);
+        assertFalse(halfOpenBreaker.isOpen("provider-a"));
+        assertEquals(ProviderCircuitBreaker.State.HALF_OPEN, halfOpenBreaker.getState("provider-a"));
+
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                retryPolicy, halfOpenBreaker, List.of(), suspendedTurnManager);
+        RuntimeConfig.ResilienceConfig noRetryNoCold = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(false)
+                .build();
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("probe failed"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 0,
+                noRetryNoCold);
+
+        assertInstanceOf(LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
+        assertEquals(ProviderCircuitBreaker.State.OPEN, halfOpenBreaker.getState("provider-a"));
+    }
+
+    @Test
+    void shouldTagTerminalColdRetryFailureWhenAttemptsAreExhausted() {
+        RuntimeConfig.ResilienceConfig exhaustedConfig = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(true)
+                .build();
+        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, exhaustedConfig))
+                .thenThrow(new IllegalStateException("Cold retry attempts exhausted after 4 attempt(s)"));
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, exhaustedConfig);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.Exhausted exhausted = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
+        assertTrue(exhausted.reason().contains("Cold retry attempts exhausted"));
+        assertEquals(Boolean.TRUE, context.getAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE));
+        assertTrue(((String) context.getAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_REASON))
+                .contains("Cold retry attempts exhausted"));
+    }
+
+    @Test
     void shouldResolveUnknownProviderWhenAttributesMapIsNull() {
         LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
         AgentContext nullAttributesContext = AgentContext.builder().attributes(null).build();
@@ -341,6 +388,33 @@ class LlmResilienceOrchestratorTest {
         @Override
         public void sleep(long delayMs) {
             lastSleepMs = delayMs;
+        }
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant now;
+
+        MutableClock(Instant now) {
+            this.now = now;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
+
+        void plusSeconds(long seconds) {
+            now = now.plusSeconds(seconds);
         }
     }
 }

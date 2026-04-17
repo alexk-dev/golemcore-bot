@@ -8,9 +8,11 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.domain.service.ConversationKeyValidator;
+import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.domain.service.TraceContextSupport;
 import me.golemcore.bot.domain.service.TraceNamingSupport;
+import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
 import me.golemcore.bot.port.inbound.CommandPort;
 import org.springframework.beans.factory.ObjectProvider;
@@ -29,13 +31,20 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 /**
  * Reactive WebSocket handler for dashboard chat. Handles JSON messages: {
- * "text": "...", "sessionId": "..." } Delegates to WebChannelAdapter for
- * message routing.
+ * "text": "...", "sessionId": "...", "memoryPreset": "..." } Delegates to
+ * WebChannelAdapter for message routing.
+ *
+ * <p>
+ * The {@code memoryPreset} field is an optional per-message override from a
+ * workspace chat. When it is omitted or invalid, the handler falls back to the
+ * global user preference so individual chats can override memory behavior
+ * without mutating shared settings.
  */
 @Component
 @RequiredArgsConstructor
@@ -52,6 +61,8 @@ public class WebSocketChatHandler implements WebSocketHandler {
     private final ObjectMapper objectMapper;
     private final ObjectProvider<CommandPort> commandRouter;
     private final ActiveSessionPointerService pointerService;
+    private final UserPreferencesService preferencesService;
+    private final MemoryPresetService memoryPresetService;
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {
@@ -91,6 +102,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
             String sessionId = normalizeSessionId((String) json.get("sessionId"), connectionId);
             String clientInstanceId = normalizeClientInstanceId((String) json.get("clientInstanceId"));
             String clientMessageId = normalizeClientMessageId(asString(json.get("clientMessageId")));
+            String requestedMemoryPreset = asString(json.get("memoryPreset"));
             List<Map<String, Object>> attachments = extractImageAttachments(json.get("attachments"));
             webChannelAdapter.bindConnectionToChatId(connectionId, sessionId);
             bindWebPointer(username, clientInstanceId, sessionId);
@@ -109,6 +121,7 @@ public class WebSocketChatHandler implements WebSocketHandler {
                 return;
             }
 
+            String memoryPreset = resolveEffectiveMemoryPreset(requestedMemoryPreset);
             Map<String, Object> metadata = null;
             if (!attachments.isEmpty()) {
                 metadata = new LinkedHashMap<>();
@@ -125,6 +138,12 @@ public class WebSocketChatHandler implements WebSocketHandler {
                     metadata = new LinkedHashMap<>();
                 }
                 metadata.put(ContextAttributes.WEB_CLIENT_INSTANCE_ID, clientInstanceId);
+            }
+            if (memoryPreset != null) {
+                if (metadata == null) {
+                    metadata = new LinkedHashMap<>();
+                }
+                metadata.put(ContextAttributes.MEMORY_PRESET_ID, memoryPreset);
             }
             metadata = TraceContextSupport.ensureRootMetadata(
                     metadata,
@@ -275,6 +294,44 @@ public class WebSocketChatHandler implements WebSocketHandler {
         }
         String candidate = clientMessageId.trim();
         return candidate.isEmpty() ? null : candidate;
+    }
+
+    private String normalizeMemoryPreset(String memoryPreset) {
+        if (StringValueSupport.isBlank(memoryPreset)) {
+            return null;
+        }
+        String candidate = memoryPreset.trim().toLowerCase(Locale.ROOT);
+        return candidate;
+    }
+
+    /**
+     * Resolves the memory preset for a websocket turn.
+     *
+     * <p>
+     * Valid client overrides win for that turn only. Unknown override ids are
+     * ignored instead of being forwarded to the agent context, because unknown ids
+     * would otherwise bypass a global {@code disabled} preset in the memory layer.
+     */
+    private String resolveEffectiveMemoryPreset(String requestedMemoryPreset) {
+        String normalizedOverride = normalizeMemoryPreset(requestedMemoryPreset);
+        if (isKnownMemoryPreset(normalizedOverride)) {
+            return normalizedOverride;
+        }
+        String persistedPreset = resolvePersistedMemoryPreset();
+        return isKnownMemoryPreset(persistedPreset) ? persistedPreset : null;
+    }
+
+    private String resolvePersistedMemoryPreset() {
+        try {
+            return normalizeMemoryPreset(preferencesService.getPreferences().getMemoryPreset());
+        } catch (RuntimeException e) { // NOSONAR - memory preference lookup must not block chat delivery
+            log.debug("[WebSocket] Failed to resolve persisted memory preset: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean isKnownMemoryPreset(String memoryPreset) {
+        return memoryPreset != null && memoryPresetService.findById(memoryPreset).isPresent();
     }
 
     private void bindWebPointer(String username, String clientInstanceId, String sessionId) {

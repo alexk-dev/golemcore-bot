@@ -124,6 +124,12 @@ public final class ContextAttributes {
     /** String - last LLM error code that triggered L5 cold retry. */
     public static final String RESILIENCE_L5_ERROR_CODE = "resilience.l5.error_code";
 
+    /** Boolean - true when an L5 delayed retry reached a terminal failure. */
+    public static final String RESILIENCE_L5_TERMINAL_FAILURE = "resilience.l5.terminal_failure";
+
+    /** String - terminal L5 failure reason for delayed action dead-lettering. */
+    public static final String RESILIENCE_L5_TERMINAL_REASON = "resilience.l5.terminal_reason";
+
     /**
      * String - the resilience layer that recovered the LLM call (e.g. "L1",
      * "L4:model_downgrade").

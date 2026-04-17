@@ -2053,6 +2053,7 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isResilienceEnabled());
         assertTrue(defaults.getResilience().getColdRetryEnabled());
         assertEquals(5, defaults.getResilience().getHotRetryMaxAttempts());
+        assertEquals(5, defaults.getResilience().getL2ProviderFallbackMaxAttempts());
 
         RuntimeConfig disabled = service.snapshotRuntimeConfig();
         disabled.getResilience().setEnabled(false);
@@ -2073,6 +2074,7 @@ class RuntimeConfigServiceTest {
         resilience.setCircuitBreakerFailureThreshold(null);
         resilience.setCircuitBreakerWindowSeconds(null);
         resilience.setCircuitBreakerOpenDurationSeconds(null);
+        resilience.setL2ProviderFallbackMaxAttempts(null);
         resilience.setDegradationCompactContext(null);
         resilience.setDegradationCompactMinMessages(null);
         resilience.setDegradationDowngradeModel(null);
@@ -2092,6 +2094,7 @@ class RuntimeConfigServiceTest {
         assertEquals(5, normalized.getCircuitBreakerFailureThreshold());
         assertEquals(60L, normalized.getCircuitBreakerWindowSeconds());
         assertEquals(120L, normalized.getCircuitBreakerOpenDurationSeconds());
+        assertEquals(5, normalized.getL2ProviderFallbackMaxAttempts());
         assertTrue(normalized.getDegradationCompactContext());
         assertEquals(6, normalized.getDegradationCompactMinMessages());
         assertTrue(normalized.getDegradationDowngradeModel());

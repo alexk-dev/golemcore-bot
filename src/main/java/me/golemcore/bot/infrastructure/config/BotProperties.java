@@ -236,6 +236,30 @@ public class BotProperties {
         private String corsAllowedOrigins = "";
         private int webSocketMaxFramePayloadLength = 80 * 1024 * 1024;
         private LogsProperties logs = new LogsProperties();
+        private TerminalProperties terminal = new TerminalProperties();
+    }
+
+    @Data
+    public static class TerminalProperties {
+        /**
+         * Whether the browser terminal WebSocket endpoint is exposed. Defaults to
+         * {@code false}; enable via {@code BOT_DASHBOARD_TERMINAL_ENABLED} or
+         * {@code bot.dashboard.terminal.enabled} only when interactive browser-shell
+         * access is an intentional requirement. The endpoint grants authenticated
+         * dashboard users a live pty bound to the bot's host process.
+         */
+        private boolean enabled = false;
+
+        private int maxSessionsPerUser = 2;
+
+        /**
+         * Wall-clock window of inbound inactivity after which the session is torn down.
+         * Measured from the last inbound frame (input or resize); streams of pure
+         * output do <em>not</em> reset the timer.
+         */
+        private java.time.Duration idleTimeout = java.time.Duration.ofMinutes(30);
+
+        private java.time.Duration maxSessionDuration = java.time.Duration.ofHours(8);
     }
 
     @Data

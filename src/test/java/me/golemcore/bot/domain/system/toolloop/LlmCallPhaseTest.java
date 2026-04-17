@@ -282,6 +282,75 @@ class LlmCallPhaseTest {
     }
 
     @Test
+    void execute_shouldFastFailOpenCircuitBeforeCallingPrimaryProvider() {
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                        .content("ok")
+                        .finishReason("stop")
+                        .build()));
+        ConversationViewBuilder viewBuilder = mock(ConversationViewBuilder.class);
+        when(viewBuilder.buildView(any(), any())).thenReturn(ConversationView.ofMessages(List.of()));
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveForTier(eq("balanced")))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider-primary", null));
+        when(modelSelectionService.resolveRouterFallbackSelection(eq("balanced"), eq("provider-fallback"), eq("low")))
+                .thenReturn(new ModelSelectionService.ModelSelection("provider-fallback", "low"));
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.ResilienceConfig config = RuntimeConfig.ResilienceConfig.builder()
+                .coldRetryEnabled(false)
+                .build();
+        when(runtimeConfigService.isResilienceEnabled()).thenReturn(true);
+        when(runtimeConfigService.getResilienceConfig()).thenReturn(config);
+        when(runtimeConfigService.getModelTierBinding("balanced")).thenReturn(RuntimeConfig.TierBinding.builder()
+                .model("provider-primary")
+                .fallbackMode(FallbackModes.SEQUENTIAL)
+                .fallbacks(List.of(RuntimeConfig.TierFallback.builder()
+                        .model("provider-fallback")
+                        .reasoning("low")
+                        .build()))
+                .build());
+        LlmRequestPreflightPhase preflightPhase = mock(LlmRequestPreflightPhase.class);
+        when(preflightPhase.preflight(any(AgentContext.class), any(), anyInt()))
+                .thenAnswer(invocation -> ((java.util.function.Supplier<LlmRequest>) invocation.getArgument(1)).get());
+        ProviderCircuitBreaker circuitBreaker = new ProviderCircuitBreaker(clock, 1, 60, 120);
+        circuitBreaker.recordFailure("provider-primary");
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                new ImmediateRetryPolicy(),
+                circuitBreaker,
+                new RuntimeConfigRouterFallbackSelector(runtimeConfigService),
+                List.of(),
+                null);
+        LlmCallPhase resilientPhase = new LlmCallPhase(
+                llmPort,
+                viewBuilder,
+                modelSelectionService,
+                runtimeConfigService,
+                preflightPhase,
+                mock(ContextCompactionCoordinator.class),
+                null,
+                null,
+                null,
+                orchestrator,
+                clock);
+        TurnState turnState = buildResilienceTurnState();
+
+        assertInstanceOf(LlmCallPhase.LlmCallOutcome.RetryScheduled.class,
+                resilientPhase.execute(turnState, historyWriter));
+
+        verify(llmPort, never()).chat(any(LlmRequest.class));
+        assertEquals("provider-fallback",
+                turnState.getContext().getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL));
+
+        assertInstanceOf(LlmCallPhase.LlmCallOutcome.Success.class,
+                resilientPhase.execute(turnState, historyWriter));
+
+        ArgumentCaptor<LlmRequest> requestCaptor = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(llmPort).chat(requestCaptor.capture());
+        assertEquals("provider-fallback", requestCaptor.getValue().getModel());
+    }
+
+    @Test
     void execute_shouldCascadeResilienceThroughLlmCallPhaseUntilSuspended() {
         LlmPort llmPort = mock(LlmPort.class);
         when(llmPort.chat(any(LlmRequest.class))).thenReturn(CompletableFuture.failedFuture(

@@ -7,13 +7,16 @@ import { useChatRuntimeStore } from '../../store/chatRuntimeStore';
 import { useCreateSession } from '../../hooks/useSessions';
 import { useModelsConfig } from '../../hooks/useModels';
 import { getGoals } from '../../api/goals';
-import { getSettings, updatePreferences } from '../../api/settings';
+import { getMemoryPresets, getSettings, updatePreferences, type MemoryPreset } from '../../api/settings';
 import { createUuid } from '../../utils/uuid';
 import ChatInput from './ChatInput';
 import ContextPanel from './ContextPanel';
 import { ChatConversation } from './ChatConversation';
+import { ChatSessionTabs } from './ChatSessionTabs';
+import { useChatSessionHotkeys } from './useChatSessionHotkeys';
 import { ChatToolbar } from './ChatToolbar';
 import type { OutboundChatPayload } from './chatInputTypes';
+import { parseRunCommand, routeRunCommandToTerminal } from './chatRunCommand';
 import { useChatSessionHistory } from './useChatSessionHistory';
 import { useTelemetry } from '../../lib/telemetry/TelemetryContext';
 import { normalizeExplicitModelTier } from '../../lib/modelTiers';
@@ -46,10 +49,31 @@ function normalizeTier(value: string | null | undefined): string {
   return normalizeExplicitModelTier(value);
 }
 
-export default function ChatWindow(): ReactElement {
+function normalizeMemoryPreset(value: string | null | undefined): string {
+  return value == null ? '' : value.trim().toLowerCase();
+}
+
+function patchHasKey(patch: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(patch, key);
+}
+
+function findMemoryPresetLabel(presets: MemoryPreset[], presetId: string): string | null {
+  if (presetId.length === 0) {
+    return null;
+  }
+  return presets.find((preset) => preset.id === presetId)?.label ?? presetId;
+}
+
+export interface ChatWindowProps {
+  embedded?: boolean;
+}
+
+export default function ChatWindow({ embedded = false }: ChatWindowProps = {}): ReactElement {
   const chatSessionId = useChatSessionStore((state) => state.activeSessionId);
-  const setChatSessionId = useChatSessionStore((state) => state.setActiveSessionId);
+  const startNewChatSession = useChatSessionStore((state) => state.startNewSession);
   const clientInstanceId = useChatSessionStore((state) => state.clientInstanceId);
+  const memoryPresetOverride = useChatSessionStore((state) => state.memoryPresetOverrides[chatSessionId] ?? '');
+  const setMemoryPresetOverride = useChatSessionStore((state) => state.setMemoryPresetOverride);
   const createSessionMutation = useCreateSession();
   const { data: modelsConfig } = useModelsConfig();
   const connectionState = useChatRuntimeStore((state) => state.connectionState);
@@ -71,14 +95,19 @@ export default function ChatWindow(): ReactElement {
   const composerCollapsed = useChatUiStore((state) => state.composerCollapsed);
   const toggleComposerCollapsed = useChatUiStore((state) => state.toggleComposerCollapsed);
   const telemetry = useTelemetry();
+  useChatSessionHotkeys();
   const [tier, setTier] = useState('balanced');
   const [tierForce, setTierForce] = useState(false);
+  const [globalMemoryPreset, setGlobalMemoryPreset] = useState('');
+  const [memoryPresets, setMemoryPresets] = useState<MemoryPreset[]>([]);
+  const [memoryPresetsLoading, setMemoryPresetsLoading] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
   const prependScrollHeightRef = useRef<number | null>(null);
   const preferenceUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const hasLocalPreferenceChangesRef = useRef(false);
+  const hasLocalTierChangeRef = useRef(false);
+  const hasLocalTierForceChangeRef = useRef(false);
 
   const isConnected = connectionState === 'connected';
   const isLoadingEarlier = sessionState.historyLoading && sessionState.messages.length > 0;
@@ -89,14 +118,45 @@ export default function ChatWindow(): ReactElement {
     let cancelled = false;
     getSettings()
       .then((settings) => {
-        if (cancelled || hasLocalPreferenceChangesRef.current) {
+        if (cancelled) {
           return;
         }
-        setTier(normalizeTier(settings.modelTier));
-        setTierForce(settings.tierForce === true);
+        if (!hasLocalTierChangeRef.current) {
+          setTier(normalizeTier(settings.modelTier));
+        }
+        if (!hasLocalTierForceChangeRef.current) {
+          setTierForce(settings.tierForce === true);
+        }
+        setGlobalMemoryPreset(normalizeMemoryPreset(settings.memoryPreset));
       })
       .catch(() => {
         // Ignore settings bootstrap failures; chat can still operate with defaults.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Load memory preset labels for the compact workspace chat selector.
+    let cancelled = false;
+    setMemoryPresetsLoading(true);
+    getMemoryPresets()
+      .then((presets) => {
+        if (!cancelled) {
+          setMemoryPresets(presets);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMemoryPresets([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMemoryPresetsLoading(false);
+        }
       });
 
     return () => {
@@ -145,8 +205,12 @@ export default function ChatWindow(): ReactElement {
       })
       .then(async () => {
         const settings = await updatePreferences(prefsPatch);
-        setTier(normalizeTier(settings.modelTier));
-        setTierForce(settings.tierForce === true);
+        if (patchHasKey(prefsPatch, 'modelTier')) {
+          setTier(normalizeTier(settings.modelTier));
+        }
+        if (patchHasKey(prefsPatch, 'tierForce')) {
+          setTierForce(settings.tierForce === true);
+        }
       })
       .catch(() => {
         // Ignore preference update failures; the optimistic UI state remains local.
@@ -154,9 +218,8 @@ export default function ChatWindow(): ReactElement {
   }, []);
 
   const startNewConversation = useCallback((): void => {
-    const newSessionId = createUuid();
+    const newSessionId = startNewChatSession();
     resetSession(newSessionId);
-    setChatSessionId(newSessionId);
     createSessionMutation.mutate({
       channelType: 'web',
       clientInstanceId,
@@ -167,10 +230,17 @@ export default function ChatWindow(): ReactElement {
         // Keep the local conversation even if eager session creation fails.
       },
     });
-  }, [clientInstanceId, createSessionMutation, resetSession, setChatSessionId]);
+  }, [clientInstanceId, createSessionMutation, resetSession, startNewChatSession]);
 
   const handleSend = useCallback((payload: OutboundChatPayload): void => {
     const trimmed = payload.text.trim();
+    if (payload.attachments.length === 0) {
+      const runCommand = parseRunCommand(trimmed);
+      if (runCommand !== null) {
+        routeRunCommandToTerminal(runCommand);
+        return;
+      }
+    }
     const localCommand = getLocalCommand(trimmed);
     if (localCommand === 'new' && payload.attachments.length === 0) {
       startNewConversation();
@@ -185,6 +255,9 @@ export default function ChatWindow(): ReactElement {
     const outboundPayload: OutboundChatPayload = {
       text: trimmed,
       attachments: payload.attachments,
+      // Null explicitly means "inherit the global memory preset"; only a
+      // session-scoped override is sent over the websocket.
+      memoryPreset: memoryPresetOverride.length > 0 ? memoryPresetOverride : null,
     };
 
     telemetry.recordCounter('chat_send_count');
@@ -209,7 +282,7 @@ export default function ChatWindow(): ReactElement {
     if (localCommand === 'reset' && sent) {
       resetSession(chatSessionId);
     }
-  }, [appendOptimisticUserMessage, chatSessionId, clientInstanceId, resetSession, sendMessage, startNewConversation, telemetry]);
+  }, [appendOptimisticUserMessage, chatSessionId, clientInstanceId, memoryPresetOverride, resetSession, sendMessage, startNewConversation, telemetry]);
 
   const handleRetry = useCallback((messageId: string): void => {
     const outbound = retryUserMessage(chatSessionId, messageId);
@@ -255,7 +328,7 @@ export default function ChatWindow(): ReactElement {
 
   const handleTierChange = useCallback((newTier: string): void => {
     const normalizedTier = normalizeTier(newTier);
-    hasLocalPreferenceChangesRef.current = true;
+    hasLocalTierChangeRef.current = true;
     telemetry.recordKeyedCounter('tier_select_count_by_tier', normalizedTier);
     setTier(normalizedTier);
     setTurnMetadata(EMPTY_TURN_METADATA);
@@ -263,12 +336,22 @@ export default function ChatWindow(): ReactElement {
   }, [enqueuePreferencesUpdate, setTurnMetadata, telemetry]);
 
   const handleForceChange = useCallback((force: boolean): void => {
-    hasLocalPreferenceChangesRef.current = true;
+    hasLocalTierForceChangeRef.current = true;
     telemetry.recordCounter('tier_force_toggle_count');
     setTierForce(force);
     setTurnMetadata(EMPTY_TURN_METADATA);
     enqueuePreferencesUpdate({ tierForce: force });
   }, [enqueuePreferencesUpdate, setTurnMetadata, telemetry]);
+
+  const handleMemoryPresetChange = useCallback((newPreset: string): void => {
+    const normalizedPreset = normalizeMemoryPreset(newPreset);
+    telemetry.recordKeyedCounter(
+      'memory_preset_select_count_by_preset',
+      normalizedPreset.length > 0 ? normalizedPreset : 'default',
+    );
+    setMemoryPresetOverride(chatSessionId, normalizedPreset);
+    setTurnMetadata(EMPTY_TURN_METADATA);
+  }, [chatSessionId, setMemoryPresetOverride, setTurnMetadata, telemetry]);
 
   const handleToggleContext = useCallback((): void => {
     if (window.innerWidth > 992) {
@@ -279,16 +362,39 @@ export default function ChatWindow(): ReactElement {
   }, [openMobileDrawer, togglePanel]);
 
   const messages = useMemo(() => sessionState.messages, [sessionState.messages]);
+  const inheritedMemoryPresetLabel = useMemo(
+    () => findMemoryPresetLabel(memoryPresets, globalMemoryPreset),
+    [globalMemoryPreset, memoryPresets],
+  );
+
+  const layoutClassName = [
+    'chat-page-layout',
+    composerCollapsed ? 'chat-page-layout--composer-collapsed' : '',
+    embedded ? 'chat-page-layout--embedded' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
-    <div className={`chat-page-layout${composerCollapsed ? ' chat-page-layout--composer-collapsed' : ''}`}>
+    <div className={layoutClassName}>
       <div className="chat-container">
+        <ChatSessionTabs />
         <ChatToolbar
           chatSessionId={chatSessionId}
           connected={isConnected}
           panelOpen={panelOpen}
           onNewChat={startNewConversation}
           onToggleContext={handleToggleContext}
+          embedded={embedded}
+          tier={tier}
+          tierForce={tierForce}
+          memoryPreset={memoryPresetOverride}
+          memoryPresetOptions={memoryPresets}
+          memoryPresetsLoading={memoryPresetsLoading}
+          inheritedMemoryPresetLabel={inheritedMemoryPresetLabel}
+          onTierChange={handleTierChange}
+          onForceChange={handleForceChange}
+          onMemoryPresetChange={handleMemoryPresetChange}
         />
 
         <div id="chat-workspace-body" className="chat-workspace-body">
@@ -321,13 +427,15 @@ export default function ChatWindow(): ReactElement {
         </div>
       </div>
 
-      <ContextPanel
-        tier={tier}
-        tierForce={tierForce}
-        chatSessionId={chatSessionId}
-        onTierChange={handleTierChange}
-        onForceChange={handleForceChange}
-      />
+      {embedded ? null : (
+        <ContextPanel
+          tier={tier}
+          tierForce={tierForce}
+          chatSessionId={chatSessionId}
+          onTierChange={handleTierChange}
+          onForceChange={handleForceChange}
+        />
+      )}
 
       <Offcanvas
         show={mobileDrawerOpen}

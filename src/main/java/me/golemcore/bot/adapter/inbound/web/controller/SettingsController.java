@@ -13,6 +13,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ModelRouterConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ResilienceConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SecurityConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
@@ -91,6 +92,7 @@ public class SettingsController {
                 .notificationsEnabled(prefs.isNotificationsEnabled())
                 .modelTier(prefs.getModelTier())
                 .tierForce(prefs.isTierForce())
+                .memoryPreset(prefs.getMemoryPreset())
                 .tierOverrides(overrideDtos)
                 .webhooks(prefs.getWebhooks())
                 .build();
@@ -100,6 +102,15 @@ public class SettingsController {
     @PutMapping("/preferences")
     public Mono<ResponseEntity<SettingsResponse>> updatePreferences(
             @RequestBody PreferencesUpdateRequest request) {
+        boolean hasModelTier = request.getModelTier() != null;
+        boolean hasMemoryPreset = request.getMemoryPreset() != null;
+        String normalizedModelTier = hasModelTier
+                ? normalizeOptionalSelectableTier(request.getModelTier(), "modelTier")
+                : null;
+        String normalizedMemoryPreset = hasMemoryPreset
+                ? normalizeOptionalMemoryPreset(request.getMemoryPreset(), "memoryPreset")
+                : null;
+
         UserPreferences prefs = preferencesService.getPreferences();
         if (request.getLanguage() != null) {
             prefs.setLanguage(request.getLanguage());
@@ -110,11 +121,14 @@ public class SettingsController {
         if (request.getNotificationsEnabled() != null) {
             prefs.setNotificationsEnabled(request.getNotificationsEnabled());
         }
-        if (request.getModelTier() != null) {
-            prefs.setModelTier(normalizeOptionalSelectableTier(request.getModelTier(), "modelTier"));
+        if (hasModelTier) {
+            prefs.setModelTier(normalizedModelTier);
         }
         if (request.getTierForce() != null) {
             prefs.setTierForce(request.getTierForce());
+        }
+        if (hasMemoryPreset) {
+            prefs.setMemoryPreset(normalizedMemoryPreset);
         }
         preferencesService.savePreferences(prefs);
         return getSettings();
@@ -394,7 +408,8 @@ public class SettingsController {
                 runtimeSettingsFacade.updateAdvancedConfig(
                         runtimeSettingsWebMapper.toRateLimitConfig(request.rateLimit()),
                         runtimeSettingsWebMapper.toSecurityConfig(request.security()),
-                        runtimeSettingsWebMapper.toCompactionConfig(request.compaction()))));
+                        runtimeSettingsWebMapper.toCompactionConfig(request.compaction()),
+                        runtimeSettingsWebMapper.toResilienceConfig(request.resilience()))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateRuntimeConfig(RuntimeConfig config) {
@@ -553,6 +568,19 @@ public class SettingsController {
         return normalizedTier;
     }
 
+    private String normalizeOptionalMemoryPreset(String memoryPreset, String fieldName) {
+        String normalizedPreset = memoryPreset.trim().toLowerCase(Locale.ROOT);
+        if (normalizedPreset.isBlank() || "default".equals(normalizedPreset)) {
+            return null;
+        }
+        boolean knownPreset = runtimeSettingsFacade.getMemoryPresets().stream()
+                .anyMatch(preset -> normalizedPreset.equals(preset.getId()));
+        if (!knownPreset) {
+            throw new IllegalArgumentException(fieldName + " must be a known memory preset id");
+        }
+        return normalizedPreset;
+    }
+
     private record ModelDto(String id, String displayName, boolean hasReasoning,
             List<String> reasoningLevels, boolean supportsVision) {
     }
@@ -581,15 +609,18 @@ public class SettingsController {
     private record AdvancedConfigRequest(
             RateLimitConfigDto rateLimit,
             SecurityConfigDto security,
-            CompactionConfigDto compaction) {
+            CompactionConfigDto compaction,
+            ResilienceConfigDto resilience) {
 
         private AdvancedConfigRequest(
                 RuntimeConfig.RateLimitConfig rateLimit,
                 RuntimeConfig.SecurityConfig security,
-                RuntimeConfig.CompactionConfig compaction) {
+                RuntimeConfig.CompactionConfig compaction,
+                RuntimeConfig.ResilienceConfig resilience) {
             this(copy(rateLimit, new RateLimitConfigDto()),
                     copy(security, new SecurityConfigDto()),
-                    copy(compaction, new CompactionConfigDto()));
+                    copy(compaction, new CompactionConfigDto()),
+                    copy(resilience, new ResilienceConfigDto()));
         }
 
         private static <S, T> T copy(S source, T target) {

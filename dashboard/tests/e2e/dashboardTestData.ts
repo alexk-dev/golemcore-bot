@@ -66,6 +66,7 @@ export const mockSettings = {
   timezone: 'UTC',
   modelTier: 'balanced',
   tierForce: false,
+  memoryPreset: 'disabled',
   webhooks: {
     enabled: true,
     token: { present: true },
@@ -74,6 +75,21 @@ export const mockSettings = {
     mappings: [],
   },
 };
+
+export const mockMemoryPresets = [
+  {
+    id: 'disabled',
+    label: 'Memory Disabled',
+    comment: 'No memory context',
+    memory: { enabled: false },
+  },
+  {
+    id: 'coding_balanced',
+    label: 'Coding Balanced',
+    comment: 'Balanced memory for workspace chat',
+    memory: { enabled: true },
+  },
+];
 
 export const mockModelsConfig = {
   models: {

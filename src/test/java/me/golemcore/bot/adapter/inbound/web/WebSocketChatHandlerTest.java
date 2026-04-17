@@ -3,7 +3,11 @@ package me.golemcore.bot.adapter.inbound.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.MemoryPresetIds;
+import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.ActiveSessionPointerService;
+import me.golemcore.bot.domain.service.MemoryPresetService;
+import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
 import me.golemcore.bot.port.inbound.CommandPort;
@@ -46,6 +50,8 @@ class WebSocketChatHandlerTest {
     private ObjectMapper objectMapper;
     private ApplicationEventPublisher eventPublisher;
     private ActiveSessionPointerService pointerService;
+    private UserPreferencesService preferencesService;
+    private MemoryPresetService memoryPresetService;
     @SuppressWarnings("unchecked")
     private ObjectProvider<CommandPort> commandRouterProvider = mock(ObjectProvider.class);
     private WebSocketChatHandler handler;
@@ -61,11 +67,14 @@ class WebSocketChatHandlerTest {
         eventPublisher = mock(ApplicationEventPublisher.class);
         webChannelAdapter = new WebChannelAdapter(objectMapper, eventPublisher);
         pointerService = mock(ActiveSessionPointerService.class);
+        preferencesService = mock(UserPreferencesService.class);
+        memoryPresetService = new MemoryPresetService();
+        when(preferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
         when(pointerService.buildWebPointerKey(any(String.class), any(String.class)))
                 .thenAnswer(invocation -> "web|" + invocation.getArgument(0) + "|" + invocation.getArgument(1));
         when(commandRouterProvider.getIfAvailable()).thenReturn(null);
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService);
+                pointerService, preferencesService, memoryPresetService);
     }
 
     @Test
@@ -232,6 +241,136 @@ class WebSocketChatHandlerTest {
     }
 
     @Test
+    void shouldPersistMemoryPresetInInboundMetadata() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-memory-preset");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText())
+                .thenReturn("{\"text\":\"hello\",\"sessionId\":\"chat-1\",\"memoryPreset\":\" Coding_Balanced \"}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("coding_balanced",
+                captor.getValue().message().getMetadata().get(ContextAttributes.MEMORY_PRESET_ID));
+    }
+
+    @Test
+    void shouldPersistMemoryPresetWithoutReplacingExistingInboundMetadata() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-memory-preset-existing-metadata");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText())
+                .thenReturn("{\"text\":\"hello\",\"sessionId\":\"chat-1\","
+                        + "\"clientMessageId\":\"client-msg-1\",\"memoryPreset\":\"coding_balanced\"}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        Map<String, Object> metadata = captor.getValue().message().getMetadata();
+        assertEquals("client-msg-1", metadata.get("clientMessageId"));
+        assertEquals("coding_balanced", metadata.get(ContextAttributes.MEMORY_PRESET_ID));
+    }
+
+    @Test
+    void shouldUsePersistedMemoryPresetWhenPayloadOmitsMemoryPreset() {
+        when(preferencesService.getPreferences())
+                .thenReturn(UserPreferences.builder().memoryPreset("coding_balanced").build());
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-memory-preset-fallback");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText()).thenReturn("{\"text\":\"hello\",\"sessionId\":\"chat-1\"}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("coding_balanced",
+                captor.getValue().message().getMetadata().get(ContextAttributes.MEMORY_PRESET_ID));
+    }
+
+    @Test
+    void shouldStillPublishMessageWhenPersistedMemoryPresetCannotBeRead() {
+        when(preferencesService.getPreferences()).thenThrow(new IllegalStateException("preferences unavailable"));
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-memory-preset-unavailable");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText()).thenReturn("{\"text\":\"hello\",\"sessionId\":\"chat-1\"}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("hello", captor.getValue().message().getContent());
+        assertNull(captor.getValue().message().getMetadata().get(ContextAttributes.MEMORY_PRESET_ID));
+    }
+
+    @Test
+    void shouldFallbackToPersistedMemoryPresetWhenPayloadMemoryPresetIsUnknown() {
+        when(preferencesService.getPreferences())
+                .thenReturn(UserPreferences.builder().memoryPreset(MemoryPresetIds.DISABLED).build());
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-memory-preset-invalid");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText())
+                .thenReturn("{\"text\":\"hello\",\"sessionId\":\"chat-1\",\"memoryPreset\":\"unknown\"}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals(MemoryPresetIds.DISABLED,
+                captor.getValue().message().getMetadata().get(ContextAttributes.MEMORY_PRESET_ID));
+    }
+
+    @Test
     void shouldBindSocketWithoutPublishingInboundMessage() {
         String token = tokenProvider.generateAccessToken("admin");
 
@@ -348,7 +487,7 @@ class WebSocketChatHandlerTest {
                         CommandPort.CommandResult.success("Bot status: OK")));
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService);
+                pointerService, preferencesService, memoryPresetService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -377,7 +516,7 @@ class WebSocketChatHandlerTest {
                         CommandPort.CommandResult.success("Bot status: OK")));
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService);
+                pointerService, preferencesService, memoryPresetService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -413,7 +552,7 @@ class WebSocketChatHandlerTest {
                         CommandPort.CommandResult.success("Bot status: OK")));
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService);
+                pointerService, preferencesService, memoryPresetService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -451,7 +590,7 @@ class WebSocketChatHandlerTest {
                         CommandPort.CommandResult.success("Tier set to smart")));
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService);
+                pointerService, preferencesService, memoryPresetService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -476,7 +615,7 @@ class WebSocketChatHandlerTest {
         when(commandRouter.hasCommand("unknown")).thenReturn(false);
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService);
+                pointerService, preferencesService, memoryPresetService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -503,7 +642,7 @@ class WebSocketChatHandlerTest {
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("boom")));
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService);
+                pointerService, preferencesService, memoryPresetService);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);

@@ -156,6 +156,8 @@ class LlmCallPhase {
         LlmResponse response;
         try {
             response = executeLlmCall(context, attempt, turnState.getTracingConfig());
+        } catch (PreCallResilienceException e) {
+            return handlePreCallResilience(turnState, e);
         } catch (InterruptedException e) {
             return handleInterrupt(turnState, e, historyWriter);
         } catch (ExecutionException e) {
@@ -344,6 +346,11 @@ class LlmCallPhase {
                 return handleLlmError(turnState, e, historyWriter);
             }
 
+            private LlmCallOutcome handlePreCallResilience(TurnState turnState, PreCallResilienceException exception) {
+                return applyResilienceOutcome(turnState, exception.outcome(), exception.errorCode(), exception,
+                        exception.traceBefore(), exception.traceAfter());
+            }
+
             private LlmCallOutcome handleLlmError(TurnState turnState, RuntimeException error,
                     HistoryWriter historyWriter) {
                 AgentContext context = turnState.getContext();
@@ -387,10 +394,16 @@ class LlmCallPhase {
                 LlmResilienceOrchestrator.ResilienceOutcome outcome = resilienceOrchestrator.handle(
                         context, error, code, turnState.getRetryAttempt(), config);
                 ResilienceTraceSnapshot traceAfter = captureResilienceTraceSnapshot(context);
+                return applyResilienceOutcome(turnState, outcome, code, error, traceBefore, traceAfter);
+            }
+
+            private LlmCallOutcome applyResilienceOutcome(TurnState turnState,
+                    LlmResilienceOrchestrator.ResilienceOutcome outcome, String code, Throwable failure,
+                    ResilienceTraceSnapshot traceBefore, ResilienceTraceSnapshot traceAfter) {
+                AgentContext context = turnState.getContext();
                 traceResilienceOutcome(context, outcome, code, turnState.getRetryAttempt(), traceBefore, traceAfter);
                 publishResilienceProgress(context, outcome, code, turnState.getRetryAttempt(), traceBefore,
                         traceAfter);
-
                 switch (outcome) {
                 case LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow -> {
                     turnState.incrementRetryAttempt();
@@ -402,6 +415,7 @@ class LlmCallPhase {
                 }
                 case LlmResilienceOrchestrator.ResilienceOutcome.Suspended suspended -> {
                     context.setAttribute(ContextAttributes.RESILIENCE_TURN_SUSPENDED, true);
+                    context.setAttribute(ContextAttributes.LLM_ERROR_CODE, code);
                     emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
                             eventPayload("reason", "resilience_suspended", "code", code));
                     return new LlmCallOutcome.Failed(
@@ -414,7 +428,8 @@ class LlmCallPhase {
                     emitRuntimeEvent(context, RuntimeEventType.TURN_FAILED,
                             eventPayload("reason", "llm_error", "code", code));
                     return new LlmCallOutcome.Failed(
-                            failLlmInvocation(context, error, turnState.getLlmCalls(), turnState.getToolExecutions()));
+                            failLlmInvocation(context, failure, turnState.getLlmCalls(),
+                                    turnState.getToolExecutions()));
                 }
                 default -> throw new IllegalStateException("Unsupported resilience outcome: "
                         + outcome.getClass().getName());
@@ -455,6 +470,13 @@ class LlmCallPhase {
                     RuntimeConfig.TracingConfig tracingConfig)
                     throws InterruptedException, ExecutionException {
                 ModelSelectionService.ModelSelection selection = selectModel(context);
+                applySelectedModel(context, selection);
+                ResilienceTraceSnapshot preCallTraceBefore = captureResilienceTraceSnapshot(context);
+                LlmResilienceOrchestrator.ResilienceOutcome preCallOutcome = preflightOpenCircuit(context);
+                if (preCallOutcome != null) {
+                    throw new PreCallResilienceException(preCallOutcome, preCallTraceBefore,
+                            captureResilienceTraceSnapshot(context));
+                }
                 Map<String, Object> requestContextAttributes = buildRequestContextAttributes(context, selection,
                         attempt);
                 TraceContext llmSpan = startChildSpan(context, "llm.chat", TraceSpanKind.LLM, requestContextAttributes);
@@ -589,8 +611,7 @@ class LlmCallPhase {
                     log.debug("[ToolLoop] conversation view diagnostics: {}", view.diagnostics());
                 }
                 storeSelectedModel(context, selection.model());
-                context.setAttribute(ContextAttributes.LLM_MODEL, selection.model());
-                context.setAttribute(ContextAttributes.LLM_REASONING, selection.reasoning());
+                applySelectedModel(context, selection);
 
                 return LlmRequest.builder()
                         .model(selection.model())
@@ -756,6 +777,14 @@ class LlmCallPhase {
                 return modelSelectionService.resolveForTier(context != null ? context.getModelTier() : null);
             }
 
+            private LlmResilienceOrchestrator.ResilienceOutcome preflightOpenCircuit(AgentContext context) {
+                if (resilienceOrchestrator == null || runtimeConfigService == null
+                        || !runtimeConfigService.isResilienceEnabled()) {
+                    return null;
+                }
+                return resilienceOrchestrator.preflightOpenCircuit(context, runtimeConfigService.getResilienceConfig());
+            }
+
             private ModelSelectionService.ModelSelection resolveRouterFallbackSelection(AgentContext context) {
                 String model = readContextAttribute(context, ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL);
                 if (model == null) {
@@ -767,6 +796,14 @@ class LlmCallPhase {
                             context.getModelTier(), model, reasoning);
                 }
                 return new ModelSelectionService.ModelSelection(model, reasoning);
+            }
+
+            private void applySelectedModel(AgentContext context, ModelSelectionService.ModelSelection selection) {
+                if (context == null || selection == null) {
+                    return;
+                }
+                context.setAttribute(ContextAttributes.LLM_MODEL, selection.model());
+                context.setAttribute(ContextAttributes.LLM_REASONING, selection.reasoning());
             }
 
             private void storeSelectedModel(AgentContext context, String model) {
@@ -1225,6 +1262,39 @@ class LlmCallPhase {
                     return objectMapper.writeValueAsBytes(payload);
                 } catch (Exception e) { // NOSONAR - tracing must not break tool loop
                     return String.valueOf(payload).getBytes(StandardCharsets.UTF_8);
+                }
+            }
+
+            private static final class PreCallResilienceException extends RuntimeException {
+                private static final long serialVersionUID = 1L;
+
+                private final transient LlmResilienceOrchestrator.ResilienceOutcome resilienceOutcome;
+                private final transient ResilienceTraceSnapshot beforeTraceSnapshot;
+                private final transient ResilienceTraceSnapshot afterTraceSnapshot;
+
+                private PreCallResilienceException(LlmResilienceOrchestrator.ResilienceOutcome outcome,
+                        ResilienceTraceSnapshot traceBefore, ResilienceTraceSnapshot traceAfter) {
+                    super(LlmErrorClassifier.withCode(LlmErrorClassifier.PROVIDER_CIRCUIT_OPEN,
+                            "LLM provider skipped because its circuit breaker is open"));
+                    this.resilienceOutcome = outcome;
+                    this.beforeTraceSnapshot = traceBefore;
+                    this.afterTraceSnapshot = traceAfter;
+                }
+
+                private LlmResilienceOrchestrator.ResilienceOutcome outcome() {
+                    return resilienceOutcome;
+                }
+
+                private String errorCode() {
+                    return LlmErrorClassifier.PROVIDER_CIRCUIT_OPEN;
+                }
+
+                private ResilienceTraceSnapshot traceBefore() {
+                    return beforeTraceSnapshot;
+                }
+
+                private ResilienceTraceSnapshot traceAfter() {
+                    return afterTraceSnapshot;
                 }
             }
 

@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FailureEvent;
@@ -84,6 +85,8 @@ public class SessionRunCoordinator {
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
     private final Map<Message, List<CompletableFuture<Void>>> pendingCompletions = Collections
             .synchronizedMap(new IdentityHashMap<>());
+    private final Map<Message, List<CompletableFuture<AgentContext>>> pendingContextCompletions = Collections
+            .synchronizedMap(new IdentityHashMap<>());
     private final Map<Message, List<Runnable>> pendingStartCallbacks = Collections
             .synchronizedMap(new IdentityHashMap<>());
 
@@ -132,6 +135,15 @@ public class SessionRunCoordinator {
         CompletableFuture<Void> completion = new CompletableFuture<>();
         registerPendingCompletion(inbound, completion);
         registerPendingStartCallback(inbound, onStart);
+        enqueue(inbound);
+        return completion;
+    }
+
+    public CompletableFuture<AgentContext> submitForContext(Message inbound) {
+        Objects.requireNonNull(inbound, "inbound");
+
+        CompletableFuture<AgentContext> completion = new CompletableFuture<>();
+        registerPendingContextCompletion(inbound, completion);
         enqueue(inbound);
         return completion;
     }
@@ -335,11 +347,13 @@ public class SessionRunCoordinator {
                         flushQueuedMessages(runKey, prefix);
                     }
                     runPendingStartCallbacks(inbound);
-                    agentLoop.processMessage(inbound);
+                    AgentContext context = agentLoop.processMessage(inbound);
                     completePendingCompletion(inbound);
+                    completePendingContextCompletion(inbound, context);
                 } catch (Exception e) { // NOSONAR - must not kill executor thread
                     handleRunFailure(inbound, e);
                     failPendingCompletion(inbound, e);
+                    failPendingContextCompletion(inbound, e);
                 } finally {
                     onRunComplete();
                 }
@@ -697,6 +711,12 @@ public class SessionRunCoordinator {
         }
     }
 
+    private void registerPendingContextCompletion(Message message, CompletableFuture<AgentContext> completion) {
+        synchronized (pendingContextCompletions) {
+            pendingContextCompletions.computeIfAbsent(message, ignored -> new ArrayList<>()).add(completion);
+        }
+    }
+
     private void registerPendingStartCallback(Message message, Runnable onStart) {
         if (message == null || onStart == null) {
             return;
@@ -714,13 +734,22 @@ public class SessionRunCoordinator {
 
     private void transferPendingCompletions(Message source, Message target) {
         List<CompletableFuture<Void>> completions = removePendingCompletions(source);
+        List<CompletableFuture<AgentContext>> contextCompletions = removePendingContextCompletions(source);
         removePendingStartCallbacks(source);
-        if (completions.isEmpty()) {
+        if (completions.isEmpty() && contextCompletions.isEmpty()) {
             return;
         }
 
-        synchronized (pendingCompletions) {
-            pendingCompletions.computeIfAbsent(target, ignored -> new ArrayList<>()).addAll(completions);
+        if (!completions.isEmpty()) {
+            synchronized (pendingCompletions) {
+                pendingCompletions.computeIfAbsent(target, ignored -> new ArrayList<>()).addAll(completions);
+            }
+        }
+        if (!contextCompletions.isEmpty()) {
+            synchronized (pendingContextCompletions) {
+                pendingContextCompletions.computeIfAbsent(target, ignored -> new ArrayList<>())
+                        .addAll(contextCompletions);
+            }
         }
     }
 
@@ -731,6 +760,13 @@ public class SessionRunCoordinator {
         }
     }
 
+    private void completePendingContextCompletion(Message message, AgentContext context) {
+        removePendingStartCallbacks(message);
+        for (CompletableFuture<AgentContext> completion : removePendingContextCompletions(message)) {
+            completion.complete(context);
+        }
+    }
+
     private void failPendingCompletion(Message message, Throwable failure) {
         removePendingStartCallbacks(message);
         for (CompletableFuture<Void> completion : removePendingCompletions(message)) {
@@ -738,13 +774,32 @@ public class SessionRunCoordinator {
         }
     }
 
+    private void failPendingContextCompletion(Message message, Throwable failure) {
+        removePendingStartCallbacks(message);
+        for (CompletableFuture<AgentContext> completion : removePendingContextCompletions(message)) {
+            completion.completeExceptionally(failure);
+        }
+    }
+
     private void rejectPendingCompletion(Message message, String reason) {
-        failPendingCompletion(message, new IllegalStateException(reason));
+        IllegalStateException failure = new IllegalStateException(reason);
+        failPendingCompletion(message, failure);
+        failPendingContextCompletion(message, failure);
     }
 
     private List<CompletableFuture<Void>> removePendingCompletions(Message message) {
         synchronized (pendingCompletions) {
             List<CompletableFuture<Void>> completions = pendingCompletions.remove(message);
+            if (completions == null || completions.isEmpty()) {
+                return List.of();
+            }
+            return new ArrayList<>(completions);
+        }
+    }
+
+    private List<CompletableFuture<AgentContext>> removePendingContextCompletions(Message message) {
+        synchronized (pendingContextCompletions) {
+            List<CompletableFuture<AgentContext>> completions = pendingContextCompletions.remove(message);
             if (completions == null || completions.isEmpty()) {
                 return List.of();
             }
