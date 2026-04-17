@@ -34,7 +34,7 @@ public final class RuntimeLauncher {
     static final String STORAGE_PATH_PROPERTY = "bot.storage.local.base-path";
     static final String UPDATE_PATH_ENV = "UPDATE_PATH";
     static final String UPDATE_PATH_PROPERTY = "bot.update.updates-path";
-    private static final String BUILD_INFO_RESOURCE = "META-INF/build-info.properties";
+    static final String BUILD_INFO_RESOURCE = "META-INF/build-info.properties";
 
     private final String javaCommand;
     private final ProcessStarter processStarter;
@@ -389,7 +389,7 @@ public final class RuntimeLauncher {
      * when no context loader is set.
      * </p>
      */
-    private static final class ClasspathRuntimeVersionReader implements RuntimeVersionReader {
+    static final class ClasspathRuntimeVersionReader implements RuntimeVersionReader {
 
         @Override
         public String currentVersion() {

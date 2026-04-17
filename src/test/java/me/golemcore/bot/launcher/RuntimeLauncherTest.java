@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -370,7 +371,7 @@ class RuntimeLauncherTest {
 
     @Test
     void shouldReadRuntimeVersionFromContextClassLoaderWhenResourceExists() {
-        RuntimeLauncher.RuntimeVersionReader reader = reflectiveClasspathRuntimeVersionReader();
+        RuntimeLauncher.RuntimeVersionReader reader = new RuntimeLauncher.ClasspathRuntimeVersionReader();
         ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(new SingleResourceClassLoader("build.version=1.2.3\n"));
         try {
@@ -382,11 +383,11 @@ class RuntimeLauncherTest {
 
     @Test
     void shouldReturnBundledBuildVersionWhenContextClassLoaderDoesNotProvideBuildInfo() {
-        RuntimeLauncher.RuntimeVersionReader reader = reflectiveClasspathRuntimeVersionReader();
+        RuntimeLauncher.RuntimeVersionReader reader = new RuntimeLauncher.ClasspathRuntimeVersionReader();
         ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(new EmptyResourceClassLoader());
         try {
-            assertEquals("0.0.0-fix_update_image_runtime_precedence", reader.currentVersion());
+            assertEquals(expectedSystemBuildVersion(), reader.currentVersion());
         } finally {
             Thread.currentThread().setContextClassLoader(previousClassLoader);
         }
@@ -394,7 +395,7 @@ class RuntimeLauncherTest {
 
     @Test
     void shouldReturnDevWhenBuildInfoContainsBlankVersion() {
-        RuntimeLauncher.RuntimeVersionReader reader = reflectiveClasspathRuntimeVersionReader();
+        RuntimeLauncher.RuntimeVersionReader reader = new RuntimeLauncher.ClasspathRuntimeVersionReader();
         ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(new SingleResourceClassLoader("build.version=   \n"));
         try {
@@ -404,25 +405,22 @@ class RuntimeLauncherTest {
         }
     }
 
-    private static RuntimeLauncher.RuntimeVersionReader reflectiveClasspathRuntimeVersionReader() {
-        try {
-            Class<?> type = Class.forName("me.golemcore.bot.launcher.RuntimeLauncher$ClasspathRuntimeVersionReader");
-            java.lang.reflect.Constructor<?> constructor = type.getDeclaredConstructor();
-            constructor.setAccessible(true);
-            return (RuntimeLauncher.RuntimeVersionReader) constructor.newInstance();
-        } catch (ReflectiveOperationException exception) {
-            throw new IllegalStateException("Failed to construct ClasspathRuntimeVersionReader", exception);
+    private static String expectedSystemBuildVersion() {
+        try (InputStream inputStream = ClassLoader.getSystemResourceAsStream(RuntimeLauncher.BUILD_INFO_RESOURCE)) {
+            if (inputStream == null) {
+                return "dev";
+            }
+            Properties properties = new Properties();
+            properties.load(inputStream);
+            String version = properties.getProperty("build.version");
+            return version == null || version.isBlank() ? "dev" : version;
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to read expected system build version", exception);
         }
     }
 
     private static String buildInfoResourceName() {
-        try {
-            java.lang.reflect.Field field = RuntimeLauncher.class.getDeclaredField("BUILD_INFO_RESOURCE");
-            field.setAccessible(true);
-            return (String) field.get(null);
-        } catch (ReflectiveOperationException exception) {
-            throw new IllegalStateException("Failed to read build info resource name", exception);
-        }
+        return RuntimeLauncher.BUILD_INFO_RESOURCE;
     }
 
     private RuntimeLauncher createLauncher(Path updatesDir, RecordingProcessStarter processStarter) {
