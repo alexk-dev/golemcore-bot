@@ -388,6 +388,8 @@ class LlmCallPhase {
                         context, error, code, turnState.getRetryAttempt(), config);
                 ResilienceTraceSnapshot traceAfter = captureResilienceTraceSnapshot(context);
                 traceResilienceOutcome(context, outcome, code, turnState.getRetryAttempt(), traceBefore, traceAfter);
+                publishResilienceProgress(context, outcome, code, turnState.getRetryAttempt(), traceBefore,
+                        traceAfter);
 
                 switch (outcome) {
                 case LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow -> {
@@ -548,6 +550,7 @@ class LlmCallPhase {
                 log.info("[ToolLoop] Turn suspended by resilience orchestrator: {}", userMessage);
                 context.setAttribute(ContextAttributes.LLM_ERROR, userMessage);
                 context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, false);
+                context.setOutgoingResponse(me.golemcore.bot.domain.model.OutgoingResponse.textOnly(userMessage));
                 context.addFailure(new FailureEvent(FailureSource.LLM, "LlmResilienceOrchestrator",
                         FailureKind.EXCEPTION, userMessage, clock.instant()));
                 flushProgress(context, "llm_suspended");
@@ -850,6 +853,98 @@ class LlmCallPhase {
                 if (hasModelSwitch(before, after)) {
                     traceModelSwitch(context, traceSteps, errorCode, attempt, before, after, outcomeStatusCode);
                 }
+            }
+
+            /**
+             * Publishes user-facing notices for each resilience step in the current turn.
+             */
+            private void publishResilienceProgress(AgentContext context,
+                    LlmResilienceOrchestrator.ResilienceOutcome outcome, String errorCode, int attempt,
+                    ResilienceTraceSnapshot before, ResilienceTraceSnapshot after) {
+                if (turnProgressService == null || context == null || outcome == null || outcome.traceSteps() == null) {
+                    return;
+                }
+                for (LlmResilienceOrchestrator.ResilienceTraceStep step : outcome.traceSteps()) {
+                    String notice = resilienceProgressNotice(step);
+                    if (notice == null || notice.isBlank()) {
+                        continue;
+                    }
+                    turnProgressService.publishSummary(context, notice,
+                            buildResilienceProgressMetadata(step, errorCode, attempt, before, after));
+                }
+            }
+
+            /**
+             * Uses the same structured context as tracing, with nulls removed for
+             * transport-safe progress payloads.
+             */
+            private Map<String, Object> buildResilienceProgressMetadata(
+                    LlmResilienceOrchestrator.ResilienceTraceStep step, String errorCode, int attempt,
+                    ResilienceTraceSnapshot before, ResilienceTraceSnapshot after) {
+                Map<String, Object> metadata = buildResilienceTraceAttributes(step, errorCode, attempt, before, after);
+                metadata.put("kind", "llm_resilience");
+                metadata.values().removeIf(Objects::isNull);
+                return metadata;
+            }
+
+            /**
+             * Converts a resilience trace step into concise current-session copy.
+             */
+            private String resilienceProgressNotice(LlmResilienceOrchestrator.ResilienceTraceStep step) {
+                if (step == null) {
+                    return null;
+                }
+                String layer = baseLayer(step.layer());
+                return switch (layer != null ? layer : "") {
+                case "L1" -> "Retrying the same LLM model after a transient provider failure ("
+                        + fallbackDetail(step) + ").";
+                case "L2" -> "Switching to fallback model "
+                        + displayAttribute(step, "fallback.model", "configured fallback")
+                        + " after the current LLM model failed.";
+                case "L3" -> circuitBreakerProgressNotice(step);
+                case "L4" -> "Applying LLM degradation: " + fallbackStrategy(step) + " ("
+                        + fallbackDetail(step) + ").";
+                case "L5" -> l5ProgressNotice(step);
+                default -> "LLM resilience action: " + fallbackDetail(step) + ".";
+                };
+            }
+
+            private String circuitBreakerProgressNotice(LlmResilienceOrchestrator.ResilienceTraceStep step) {
+                if ("state_transition".equals(step.action())) {
+                    return "Circuit breaker moved "
+                            + displayAttribute(step, "circuit.state.before", "unknown")
+                            + " -> " + displayAttribute(step, "circuit.state.after", "unknown")
+                            + " for " + displayAttribute(step, "circuit.provider", "the LLM model") + ".";
+                }
+                return "Circuit breaker is open for "
+                        + displayAttribute(step, "circuit.provider", "the LLM model")
+                        + "; skipping local degradation and waiting before retry.";
+            }
+
+            private String l5ProgressNotice(LlmResilienceOrchestrator.ResilienceTraceStep step) {
+                if ("suspend".equals(step.action())) {
+                    return fallbackDetail(step);
+                }
+                return "LLM recovery is exhausted: " + fallbackDetail(step) + ".";
+            }
+
+            private String fallbackStrategy(LlmResilienceOrchestrator.ResilienceTraceStep step) {
+                Object value = step.attributes() != null ? step.attributes().get("resilience.strategy") : null;
+                if (value instanceof String strategy && !strategy.isBlank()) {
+                    return strategy;
+                }
+                String strategy = strategyName(step.layer());
+                return strategy != null ? strategy : "request simplification";
+            }
+
+            private String fallbackDetail(LlmResilienceOrchestrator.ResilienceTraceStep step) {
+                return step.detail() != null && !step.detail().isBlank() ? step.detail() : "retrying";
+            }
+
+            private String displayAttribute(LlmResilienceOrchestrator.ResilienceTraceStep step, String key,
+                    String fallback) {
+                Object value = step.attributes() != null ? step.attributes().get(key) : null;
+                return value instanceof String stringValue && !stringValue.isBlank() ? stringValue : fallback;
             }
 
             /**

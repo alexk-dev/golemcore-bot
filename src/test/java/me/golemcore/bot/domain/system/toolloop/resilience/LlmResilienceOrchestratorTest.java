@@ -247,6 +247,22 @@ class LlmResilienceOrchestratorTest {
     }
 
     @Test
+    void shouldClearL5ResumeStateWhenRecoveredCallSucceeds() {
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
+        context.setAttribute(ContextAttributes.RESILIENCE_TURN_SUSPENDED, true);
+        context.setAttribute(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT, 2);
+        context.setAttribute(ContextAttributes.RESILIENCE_L5_ERROR_CODE, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT);
+        context.setAttribute(ContextAttributes.RESILIENCE_L5_ORIGINAL_PROMPT, "finish the migration");
+
+        orchestrator.recordSuccess(context);
+
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_TURN_SUSPENDED));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L5_ERROR_CODE));
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L5_ORIGINAL_PROMPT));
+    }
+
+    @Test
     void shouldRecordSuccessForUnknownProviderWhenContextIsNull() {
         LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
 

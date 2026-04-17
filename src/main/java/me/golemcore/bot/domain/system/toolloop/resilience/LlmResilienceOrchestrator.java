@@ -24,7 +24,6 @@ import static me.golemcore.bot.domain.system.toolloop.resilience.ResilienceTrace
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -324,42 +323,8 @@ public class LlmResilienceOrchestrator {
         String providerId = resolveProviderId(context);
         circuitBreaker.recordSuccess(providerId);
         routerFallbackSelector.clear(context);
-        restoreL4DegradationState(context);
+        ResilienceContextState.restoreAfterSuccess(context);
     }
-
-        /**
-         * Restores request-side L4 mutations once a degraded LLM call succeeds.
-         */
-        private void restoreL4DegradationState(AgentContext context) {
-            if (context == null || context.getAttributes() == null) {
-                return;
-            }
-            Map<String, Object> attributes = context.getAttributes();
-            boolean hadOriginalTier = attributes.containsKey(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER);
-            Object originalTier = attributes.remove(ContextAttributes.RESILIENCE_L4_ORIGINAL_MODEL_TIER);
-            if (hadOriginalTier) {
-                context.setModelTier(originalTier instanceof String tier ? tier : null);
-            }
-            boolean hadOriginalTools = attributes.containsKey(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS);
-            Object originalTools = attributes.remove(ContextAttributes.RESILIENCE_L4_ORIGINAL_TOOLS);
-            if (hadOriginalTools) {
-                context.setAvailableTools(copyToolDefinitions(originalTools));
-            }
-            attributes.remove(ContextAttributes.RESILIENCE_L4_MODEL_DOWNGRADE_ATTEMPTED);
-            attributes.remove(ContextAttributes.RESILIENCE_L4_TOOL_STRIP_ATTEMPTED);
-        }
-
-        private List<ToolDefinition> copyToolDefinitions(Object originalTools) {
-            List<ToolDefinition> restored = new ArrayList<>();
-            if (originalTools instanceof List<?> list) {
-                for (Object item : list) {
-                    if (item instanceof ToolDefinition toolDefinition) {
-                        restored.add(toolDefinition);
-                    }
-                }
-            }
-            return restored;
-        }
 
         /**
          * Records a provider failure and appends an L3 trace step only when the breaker

@@ -30,10 +30,12 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.TraceBudgetService;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
+import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.model.trace.TraceContext;
@@ -315,6 +317,7 @@ class LlmCallPhaseTest {
         when(preflightPhase.preflight(any(AgentContext.class), any(), anyInt()))
                 .thenAnswer(invocation -> ((java.util.function.Supplier<LlmRequest>) invocation.getArgument(1)).get());
         DelayedSessionActionService delayedActionService = mock(DelayedSessionActionService.class);
+        TurnProgressService turnProgressService = mock(TurnProgressService.class);
         ProviderCircuitBreaker circuitBreaker = new ProviderCircuitBreaker(clock, 2, 60, 120);
         LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
                 new ImmediateRetryPolicy(),
@@ -331,7 +334,7 @@ class LlmCallPhaseTest {
                 preflightPhase,
                 mock(ContextCompactionCoordinator.class),
                 null,
-                null,
+                turnProgressService,
                 traceService,
                 orchestrator,
                 clock);
@@ -397,6 +400,24 @@ class LlmCallPhaseTest {
         assertEquals("L2", modelSwitchSpan.getAttributes().get("resilience.layer"));
         assertEquals("provider-primary", modelSwitchSpan.getAttributes().get("model.before"));
         assertEquals("provider-fallback", modelSwitchSpan.getAttributes().get("model.after"));
+
+        ArgumentCaptor<String> progressText = ArgumentCaptor.forClass(String.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> progressMetadata = ArgumentCaptor.forClass(Map.class);
+        verify(turnProgressService, org.mockito.Mockito.times(6)).publishSummary(eq(turnState.getContext()),
+                progressText.capture(), progressMetadata.capture());
+        List<String> notices = progressText.getAllValues();
+        assertTrue(notices.stream().anyMatch(text -> text.contains("Retrying the same LLM model")));
+        assertTrue(notices.stream().anyMatch(text -> text.contains("Switching to fallback model provider-fallback")));
+        assertTrue(notices.stream().anyMatch(text -> text.contains("Circuit breaker moved CLOSED -> OPEN")));
+        assertTrue(notices.stream().anyMatch(text -> text.contains("Applying LLM degradation: one_shot")));
+        assertTrue(notices.stream().anyMatch(text -> text.contains("retry automatically in 2 minute(s)")));
+        assertTrue(progressMetadata.getAllValues().stream()
+                .anyMatch(metadata -> "L2".equals(metadata.get("resilience.layer"))
+                        && "provider-fallback".equals(metadata.get("fallback.model"))));
+        OutgoingResponse suspensionResponse = turnState.getContext().getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(suspensionResponse);
+        assertTrue(suspensionResponse.getText().contains("retry automatically in 2 minute(s)"));
     }
 
     @Test
