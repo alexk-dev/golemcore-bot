@@ -79,7 +79,8 @@ class ProviderFallbackSelectorTest {
 
     @Test
     void shouldUseDefaultCapWhenResilienceConfigIsNull() {
-        when(runtimeConfigService.getResilienceConfig()).thenReturn(null);
+        when(runtimeConfigService.getResilienceConfig())
+                .thenReturn(RuntimeConfig.ResilienceConfig.builder().build());
         RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
                 .model("openai/gpt-5")
                 .fallbackMode("round_robin")

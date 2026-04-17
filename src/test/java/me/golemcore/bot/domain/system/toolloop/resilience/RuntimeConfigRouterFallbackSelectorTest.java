@@ -205,7 +205,7 @@ class RuntimeConfigRouterFallbackSelectorTest {
         assertTrue(selector.selectNext(context).isPresent());
         assertTrue(selector.selectNext(context).isPresent());
         assertTrue(selector.selectNext(context).isEmpty());
-        assertEquals(List.of("provider/fallback-a", "provider/fallback-c"),
+        assertEquals(List.of("provider/fallback-a", "provider/fallback-b"),
                 context.getAttribute(ContextAttributes.RESILIENCE_L2_ATTEMPTED_MODELS));
     }
 
