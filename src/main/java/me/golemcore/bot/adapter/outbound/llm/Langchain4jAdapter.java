@@ -100,7 +100,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     /**
      * Max retry attempts for rate limit / transient errors (exponential backoff).
      */
-    private static final int MAX_RETRIES = 5;
+    private static final int MAX_RETRIES = 3;
     private static final long INITIAL_BACKOFF_MS = 5_000;
     private static final double BACKOFF_MULTIPLIER = 2.0;
     private static final String API_TYPE_OPENAI = "openai";
