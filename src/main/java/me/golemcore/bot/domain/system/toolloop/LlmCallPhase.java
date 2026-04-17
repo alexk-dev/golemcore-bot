@@ -902,7 +902,7 @@ class LlmCallPhase {
             private void publishResilienceProgress(AgentContext context,
                     LlmResilienceOrchestrator.ResilienceOutcome outcome, String errorCode, int attempt,
                     ResilienceTraceSnapshot before, ResilienceTraceSnapshot after) {
-                if (turnProgressService == null || context == null || outcome == null) {
+                if (turnProgressService == null) {
                     return;
                 }
                 for (LlmResilienceOrchestrator.ResilienceTraceStep step : outcome.traceSteps()) {
@@ -947,8 +947,7 @@ class LlmCallPhase {
                         + fallbackDetail(step) + ").";
                 case "L5" -> l5ProgressNotice(step);
                 default -> {
-                    log.warn("[ToolLoop] Unknown resilience layer in progress notice: layer={} action={} detail={}",
-                            step.layer(), step.action(), step.detail());
+                    log.warn("[ToolLoop] Unknown resilience layer in progress notice: layer={}", step.layer());
                     yield null;
                 }
                 };
