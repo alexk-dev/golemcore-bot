@@ -20,6 +20,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -139,7 +140,8 @@ class UsageControllerTest {
                     UsageMetric metric = body.getFirst();
                     assertEquals("llm.circuit_breaker.state", metric.getName());
                     assertEquals(1.0d, metric.getValue());
-                    assertEquals("provider-a", metric.getTags().get("provider"));
+                    assertEquals("provider-a", metric.getTags().get("model"));
+                    assertNull(metric.getTags().get("provider"));
                     assertEquals("OPEN", metric.getTags().get("state"));
                 })
                 .verifyComplete();

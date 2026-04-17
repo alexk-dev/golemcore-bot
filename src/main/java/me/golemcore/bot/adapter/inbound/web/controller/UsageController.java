@@ -27,7 +27,9 @@ import java.util.Map;
 public class UsageController {
 
     private static final String CIRCUIT_BREAKER_STATE_METRIC = "llm.circuit_breaker.state";
-    private static final String PROVIDER_TAG = "provider";
+    // Breaker snapshot keys are concrete model IDs (see ProviderCircuitBreaker);
+    // the historical class name "provider" is misleading here.
+    private static final String MODEL_TAG = "model";
     private static final String STATE_TAG = "state";
 
     private final UsageTrackingPort usageTrackingPort;
@@ -104,11 +106,11 @@ public class UsageController {
         if (circuitBreaker == null) {
             return;
         }
-        circuitBreaker.snapshotStates().forEach((providerId, state) -> metrics.add(UsageMetric.of(
+        circuitBreaker.snapshotStates().forEach((modelId, state) -> metrics.add(UsageMetric.of(
                 CIRCUIT_BREAKER_STATE_METRIC,
                 1.0d,
-                PROVIDER_TAG,
-                providerId,
+                MODEL_TAG,
+                modelId,
                 STATE_TAG,
                 state.name())));
     }
