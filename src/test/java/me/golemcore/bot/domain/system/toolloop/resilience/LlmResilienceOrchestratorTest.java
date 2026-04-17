@@ -64,6 +64,7 @@ class LlmResilienceOrchestratorTest {
         LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
                 LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
         assertEquals("L1", retryNow.layer());
+        orchestrator.pauseBeforeRetry(retryNow);
         assertEquals(1L, retryPolicy.lastSleepMs);
         assertEquals(ProviderCircuitBreaker.State.OPEN, circuitBreaker.getState("provider-a"));
         verify(strategy, never()).isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config);
@@ -399,6 +400,179 @@ class LlmResilienceOrchestratorTest {
         assertEquals(Boolean.TRUE, context.getAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE));
         assertTrue(((String) context.getAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_REASON))
                 .contains("Cold retry attempts exhausted"));
+    }
+
+    // ==================== Observability: trace step structure ====================
+
+    @Test
+    void shouldEmitL1TraceStepWithProviderAndRetryAttributes() {
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 0, config);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
+        LlmResilienceOrchestrator.ResilienceTraceStep l1Step = retryNow.traceSteps().stream()
+                .filter(step -> "L1".equals(step.layer()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected L1 trace step, got " + retryNow.traceSteps()));
+        assertEquals("retry_now", l1Step.action());
+        assertEquals("provider-a", l1Step.attributes().get("provider"));
+        assertEquals(LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, l1Step.attributes().get("llm.error.code"));
+        assertEquals(0, l1Step.attributes().get("retry.attempt"));
+        assertTrue(l1Step.attributes().get("retry.delay.ms") instanceof Number,
+                () -> "Expected retry.delay.ms to be numeric, got " + l1Step.attributes());
+    }
+
+    @Test
+    void shouldEmitL2TraceStepWithFallbackModelAttributes() {
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("provider-a")
+                .fallbackMode("sequential")
+                .fallbacks(List.of(RuntimeConfig.TierFallback.builder()
+                        .model("provider-b")
+                        .reasoning("low")
+                        .build()))
+                .build();
+        when(runtimeConfigService.getModelTierBinding("balanced")).thenReturn(binding);
+        context.setModelTier("balanced");
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                retryPolicy,
+                circuitBreaker,
+                new RuntimeConfigRouterFallbackSelector(runtimeConfigService, new java.util.Random(0)),
+                List.of(strategy),
+                suspendedTurnManager);
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, config);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
+        LlmResilienceOrchestrator.ResilienceTraceStep l2Step = retryNow.traceSteps().stream()
+                .filter(step -> "L2".equals(step.layer()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected L2 trace step, got " + retryNow.traceSteps()));
+        assertEquals("retry_now", l2Step.action());
+        assertEquals("provider-b", l2Step.attributes().get("fallback.model"));
+        assertEquals("balanced", l2Step.attributes().get("fallback.tier"));
+        assertEquals("sequential", l2Step.attributes().get("fallback.mode"));
+    }
+
+    @Test
+    void shouldEmitL3StateTransitionTraceStepWhenBreakerFlipsClosedToOpen() {
+        // Threshold is 1 — the single failure recorded by the orchestrator itself
+        // is enough to trip the breaker and emit a state_transition trace step.
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+        RuntimeConfig.ResilienceConfig noL1 = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(false)
+                .build();
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, noL1);
+
+        LlmResilienceOrchestrator.ResilienceTraceStep transitionStep = outcome.traceSteps().stream()
+                .filter(step -> "L3".equals(step.layer()) && "state_transition".equals(step.action()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected L3 state_transition step, got "
+                        + outcome.traceSteps()));
+        assertEquals("provider-a", transitionStep.attributes().get("circuit.provider"));
+        assertEquals("failure_recorded", transitionStep.attributes().get("circuit.action"));
+        assertEquals("CLOSED", transitionStep.attributes().get("circuit.state.before"));
+        assertEquals("OPEN", transitionStep.attributes().get("circuit.state.after"));
+    }
+
+    @Test
+    void shouldEmitL4TraceStepWithStrategyAttribute() {
+        when(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config)).thenReturn(true);
+        when(strategy.apply(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config))
+                .thenReturn(RecoveryStrategy.RecoveryResult.success("tools stripped"));
+        when(strategy.name()).thenReturn("tool_strip");
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, config);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
+        LlmResilienceOrchestrator.ResilienceTraceStep l4Step = retryNow.traceSteps().stream()
+                .filter(step -> "L4".equals(step.layer()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected L4 trace step, got " + retryNow.traceSteps()));
+        assertEquals("retry_now", l4Step.action());
+        assertEquals("tools stripped", l4Step.detail());
+        assertEquals("tool_strip", l4Step.attributes().get("resilience.strategy"));
+        assertEquals("provider-a", l4Step.attributes().get("provider"));
+    }
+
+    @Test
+    void shouldEmitL5SuspendTraceStepWithColdRetryEnabledFlag() {
+        RuntimeConfig.ResilienceConfig coldRetry = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(true)
+                .build();
+        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, coldRetry))
+                .thenReturn("saved — retry in 2 minutes");
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of());
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, coldRetry);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.Suspended suspended = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.Suspended.class, outcome);
+        LlmResilienceOrchestrator.ResilienceTraceStep l5Step = suspended.traceSteps().stream()
+                .filter(step -> "L5".equals(step.layer()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected L5 trace step, got " + suspended.traceSteps()));
+        assertEquals("suspend", l5Step.action());
+        assertEquals("saved — retry in 2 minutes", l5Step.detail());
+        assertEquals(Boolean.TRUE, l5Step.attributes().get("cold_retry.enabled"));
+        assertEquals(LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, l5Step.attributes().get("llm.error.code"));
+    }
+
+    @Test
+    void shouldEmitTraceStepsInCascadeOrderAcrossL1ToL5() {
+        RuntimeConfig.ResilienceConfig coldRetry = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(1)
+                .hotRetryBaseDelayMs(1L)
+                .coldRetryEnabled(true)
+                .build();
+        when(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, coldRetry)).thenReturn(true);
+        when(strategy.apply(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, coldRetry))
+                .thenReturn(RecoveryStrategy.RecoveryResult.notApplicable("skipped"));
+        when(strategy.name()).thenReturn("test_strategy");
+        when(suspendedTurnManager.suspend(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, coldRetry))
+                .thenReturn("saved");
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        // attempt=1 → past L1 budget, L2 has no fallbacks → L3 bookkeeping → L4
+        // declines → L5 suspends.
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("boom"), LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, 1, coldRetry);
+
+        List<String> layerOrder = outcome.traceSteps().stream()
+                .map(LlmResilienceOrchestrator.ResilienceTraceStep::layer)
+                .distinct()
+                .toList();
+        assertTrue(layerOrder.contains("L3"),
+                () -> "Expected L3 breaker accounting in cascade, got " + layerOrder);
+        assertEquals("L5", layerOrder.getLast(),
+                () -> "Expected L5 to be the final cascade layer, got " + layerOrder);
+        // Any L3 transitions must precede the L5 terminal action.
+        int lastL3Index = -1;
+        int firstL5Index = Integer.MAX_VALUE;
+        for (int index = 0; index < outcome.traceSteps().size(); index++) {
+            String layer = outcome.traceSteps().get(index).layer();
+            if ("L3".equals(layer)) {
+                lastL3Index = index;
+            } else if ("L5".equals(layer)) {
+                firstL5Index = Math.min(firstL5Index, index);
+            }
+        }
+        assertTrue(lastL3Index < firstL5Index,
+                () -> "Expected all L3 steps to precede L5 in trace, got " + outcome.traceSteps());
     }
 
     @Test
