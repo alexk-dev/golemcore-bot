@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import me.golemcore.bot.domain.service.RuntimeVersionSupport;
+import me.golemcore.bot.runtime.RuntimeVersionSupport;
 
 final class CurrentRuntimeResolver {
 

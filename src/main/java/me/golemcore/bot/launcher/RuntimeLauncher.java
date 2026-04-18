@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import me.golemcore.bot.domain.service.RuntimeVersionSupport;
+import me.golemcore.bot.runtime.RuntimeVersionSupport;
 import picocli.CommandLine;
 
 /**

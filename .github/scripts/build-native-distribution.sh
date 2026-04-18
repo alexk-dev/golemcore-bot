@@ -34,6 +34,10 @@ if [[ ! -d "${TARGET_DIR}/classes/me/golemcore/bot/launcher" ]]; then
   echo "RuntimeLauncher classes not found in target/classes. Run ./mvnw clean package first." >&2
   exit 1
 fi
+if [[ ! -d "${TARGET_DIR}/classes/me/golemcore/bot/runtime" ]]; then
+  echo "Runtime support classes not found in target/classes. Run ./mvnw clean package first." >&2
+  exit 1
+fi
 
 RUNTIME_JAR_NAME="$(basename "${RUNTIME_JAR_PATH}")"
 VERSION="${RUNTIME_JAR_NAME#bot-}"
@@ -87,11 +91,13 @@ rm -rf "${BUILD_DIR}"
 rm -f "${ARCHIVE_PATH}"
 mkdir -p "${JPACKAGE_INPUT_DIR}" "${APP_IMAGE_OUTPUT_DIR}" "${NATIVE_DIST_DIR}"
 
-# Package only the launcher classes into a tiny bootstrap jar for jpackage.
+# Package only the launcher and runtime-version support classes into a tiny
+# bootstrap jar for jpackage.
 jar --create \
   --file "${LAUNCHER_JAR_PATH}" \
   --main-class "${LAUNCHER_MAIN_CLASS}" \
-  -C "${TARGET_DIR}/classes" me/golemcore/bot/launcher
+  -C "${TARGET_DIR}/classes" me/golemcore/bot/launcher \
+  -C "${TARGET_DIR}/classes" me/golemcore/bot/runtime
 
 if [[ ! -f "${PICOCLI_JAR_PATH}" ]]; then
   echo "picocli jar not found: ${PICOCLI_JAR_PATH}" >&2

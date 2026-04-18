@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.runtime;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
