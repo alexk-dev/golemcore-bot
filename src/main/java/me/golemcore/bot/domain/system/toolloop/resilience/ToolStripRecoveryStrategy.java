@@ -71,10 +71,15 @@ public class ToolStripRecoveryStrategy implements RecoveryStrategy {
     }
 
     private boolean isPayloadSensitiveFailure(String errorCode) {
+        // invalid_request is included because a provider that rejects the tool
+        // payload (bad schema, unsupported tool shape, oversize tool spec)
+        // surfaces as a non-transient invalid_request; a think-only turn still
+        // lets the autonomous agent recover instead of terminating.
         return LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER.equals(errorCode)
                 || LlmErrorClassifier.LANGCHAIN4J_TIMEOUT.equals(errorCode)
                 || LlmErrorClassifier.REQUEST_TIMEOUT.equals(errorCode)
-                || LlmErrorClassifier.LANGCHAIN4J_RETRIABLE.equals(errorCode);
+                || LlmErrorClassifier.LANGCHAIN4J_RETRIABLE.equals(errorCode)
+                || LlmErrorClassifier.LANGCHAIN4J_INVALID_REQUEST.equals(errorCode);
     }
 
     @Override

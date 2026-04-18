@@ -81,7 +81,7 @@ class RecoveryStrategyTest {
     }
 
     @Test
-    void contextCompactionShouldRejectDisabledNonTransientSmallAndAlreadyAttemptedInputs() {
+    void contextCompactionShouldRejectDisabledSmallAndAlreadyAttemptedInputs() {
         ContextCompactionRecoveryStrategy strategy = new ContextCompactionRecoveryStrategy(mock(
                 ContextCompactionCoordinator.class));
         AgentContext context = contextWithMessages(3);
@@ -91,13 +91,24 @@ class RecoveryStrategyTest {
                 .degradationCompactMinMessages(2)
                 .build();
         assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, disabled));
-        assertFalse(strategy.isApplicable(context, LlmErrorClassifier.UNKNOWN, config));
 
         AgentContext smallContext = contextWithMessages(2);
         assertFalse(strategy.isApplicable(smallContext, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, config));
 
         context.setAttribute(ContextAttributes.RESILIENCE_L4_COMPACTION_ATTEMPTED, true);
         assertFalse(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, config));
+    }
+
+    @Test
+    void contextCompactionShouldApplyOnNonTransientInvalidRequest() {
+        // L4 compaction must run even for non-transient codes so the autonomous
+        // agent can self-heal on payload-shaped failures like invalid_request.
+        ContextCompactionRecoveryStrategy strategy = new ContextCompactionRecoveryStrategy(mock(
+                ContextCompactionCoordinator.class));
+        AgentContext context = contextWithMessages(5);
+
+        assertTrue(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_INVALID_REQUEST, config));
+        assertTrue(strategy.isApplicable(context, LlmErrorClassifier.UNKNOWN, config));
     }
 
     @Test
@@ -219,7 +230,7 @@ class RecoveryStrategyTest {
     }
 
     @Test
-    void toolStripShouldRejectDisabledRateLimitNonTransientAlreadyAttemptedAndEmptyTools() {
+    void toolStripShouldRejectDisabledRateLimitUnknownAlreadyAttemptedAndEmptyTools() {
         ToolStripRecoveryStrategy strategy = new ToolStripRecoveryStrategy();
         AgentContext context = AgentContext.builder()
                 .availableTools(new ArrayList<>(List.of(ToolDefinition.simple("search", "Search"))))
@@ -237,6 +248,19 @@ class RecoveryStrategyTest {
 
         AgentContext emptyTools = AgentContext.builder().availableTools(new ArrayList<>()).build();
         assertFalse(strategy.isApplicable(emptyTools, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER, config));
+    }
+
+    @Test
+    void toolStripShouldApplyOnInvalidRequestBecauseProviderMayRejectToolPayload() {
+        // Provider rejection of a tool payload (bad schema, unsupported tool shape)
+        // surfaces as non-transient invalid_request. A think-only turn still lets
+        // the autonomous agent recover instead of terminating.
+        ToolStripRecoveryStrategy strategy = new ToolStripRecoveryStrategy();
+        AgentContext context = AgentContext.builder()
+                .availableTools(new ArrayList<>(List.of(ToolDefinition.simple("search", "Search"))))
+                .build();
+
+        assertTrue(strategy.isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_INVALID_REQUEST, config));
     }
 
     @Test

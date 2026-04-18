@@ -23,6 +23,7 @@ import static me.golemcore.bot.domain.system.toolloop.resilience.ResilienceTrace
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import org.slf4j.Logger;
@@ -131,25 +132,34 @@ public class LlmResilienceOrchestrator {
             recordFailureWithTrace(traceSteps, providerId, "failure_recorded");
         }
 
-        if (LlmErrorClassifier.isTransientCode(errorCode)) {
-            java.util.Optional<RouterFallbackSelector.Selection> fallbackSelection = routerFallbackSelector
-                    .selectNext(context, circuitBreaker::isAvailable);
-            if (fallbackSelection.isPresent()) {
-                RouterFallbackSelector.Selection selection = fallbackSelection.get();
-                log.warn("[Resilience] L2 router fallback: provider={}, tier={}, mode={}, fallbackModel={}",
-                        providerId, selection.tier(), selection.mode(), selection.model());
-                String detail = "router fallback to " + selection.model() + " (tier=" + selection.tier()
-                        + ", mode=" + selection.mode() + ")";
-                traceSteps.add(traceStep("L2", "retry_now", detail,
-                        traceAttributes("provider", providerId, "fallback.tier", selection.tier(),
-                                "fallback.mode", selection.mode(), "fallback.model", selection.model(),
-                                "fallback.reasoning", selection.reasoning())));
-                return new ResilienceOutcome.RetryNow("L2", detail, traceSteps);
-            }
-            log.debug("[Resilience] L2 router fallback: no eligible fallback for provider={}, skipping", providerId);
-        } else {
-            log.debug("[Resilience] L2 router fallback: code={} is not transient, skipping", errorCode);
+        // Pre-L2: on payload rejection (invalid_request), flatten tool_use blocks
+        // in history into plain text. The same model may accept the cleaned
+        // payload; if not, the flattened history also benefits any subsequent L2
+        // router fallback. Applied at most once per turn.
+        ResilienceOutcome flattenOutcome = tryFlattenHistory(context, errorCode, providerId, traceSteps);
+        if (flattenOutcome != null) {
+            return flattenOutcome;
         }
+
+        // L2 router fallback runs for any error — a different model/provider may
+        // accept a payload the current one rejected (e.g. invalid_request), so we
+        // try an available fallback before surfacing a terminal failure.
+        java.util.Optional<RouterFallbackSelector.Selection> fallbackSelection = routerFallbackSelector
+                .selectNext(context, circuitBreaker::isAvailable);
+        if (fallbackSelection.isPresent()) {
+            RouterFallbackSelector.Selection selection = fallbackSelection.get();
+            log.warn("[Resilience] L2 router fallback: provider={}, code={}, tier={}, mode={}, fallbackModel={}",
+                    providerId, errorCode, selection.tier(), selection.mode(), selection.model());
+            String detail = "router fallback to " + selection.model() + " (tier=" + selection.tier()
+                    + ", mode=" + selection.mode() + ")";
+            traceSteps.add(traceStep("L2", "retry_now", detail,
+                    traceAttributes("provider", providerId, "llm.error.code", errorCode,
+                            "fallback.tier", selection.tier(), "fallback.mode", selection.mode(),
+                            "fallback.model", selection.model(), "fallback.reasoning", selection.reasoning())));
+            return new ResilienceOutcome.RetryNow("L2", detail, traceSteps);
+        }
+        log.debug("[Resilience] L2 router fallback: no eligible fallback for provider={}, code={}, skipping",
+                providerId, errorCode);
 
         // L3 fast-fails L4 when the breaker is already OPEN: degradation addresses
         // request-side complexity, but an OPEN breaker signals the provider itself
@@ -327,6 +337,40 @@ public class LlmResilienceOrchestrator {
             traceSteps.add(traceStep("L3", "state_transition", "circuit breaker " + before + " -> " + after,
                     traceAttributes("circuit.provider", providerId, "circuit.action", action,
                             "circuit.state.before", before.name(), "circuit.state.after", after.name())));
+        }
+
+        private ResilienceOutcome tryFlattenHistory(AgentContext context, String errorCode, String providerId,
+                List<ResilienceTraceStep> traceSteps) {
+            if (context == null) {
+                return null;
+            }
+            if (!LlmErrorClassifier.LANGCHAIN4J_INVALID_REQUEST.equals(errorCode)) {
+                return null;
+            }
+            if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_L2_FLATTEN_ATTEMPTED))) {
+                return null;
+            }
+            List<Message> messages = context.getMessages();
+            if (messages == null || messages.isEmpty()) {
+                return null;
+            }
+            boolean hasToolArtifacts = messages.stream()
+                    .anyMatch(message -> message != null && (message.hasToolCalls() || message.isToolMessage()));
+            if (!hasToolArtifacts) {
+                return null;
+            }
+            int beforeCount = messages.size();
+            List<Message> flattened = Message.flattenToolMessages(messages);
+            context.setMessages(new ArrayList<>(flattened));
+            context.setAttribute(ContextAttributes.RESILIENCE_L2_FLATTEN_ATTEMPTED, true);
+            int afterCount = flattened.size();
+            log.warn("[Resilience] L2 flatten: provider={}, code={}, messages {} -> {}",
+                    providerId, errorCode, beforeCount, afterCount);
+            String detail = "flattened tool-call history (" + beforeCount + " -> " + afterCount + " messages)";
+            traceSteps.add(traceStep("L2", "flatten_history", detail,
+                    traceAttributes("provider", providerId, "llm.error.code", errorCode,
+                            "history.before", beforeCount, "history.after", afterCount)));
+            return new ResilienceOutcome.RetryNow("L2-flatten", detail, traceSteps);
         }
 
         private String resolveProviderId(AgentContext context) {

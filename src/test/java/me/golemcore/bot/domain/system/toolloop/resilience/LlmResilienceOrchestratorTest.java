@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -117,6 +118,141 @@ class LlmResilienceOrchestratorTest {
         assertEquals("low", context.getAttribute(ContextAttributes.LLM_REASONING));
         assertEquals("provider-b", context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL));
         verify(strategy, never()).isApplicable(context, LlmErrorClassifier.LANGCHAIN4J_TIMEOUT, config);
+    }
+
+    @Test
+    void shouldFlattenToolCallHistoryOnInvalidRequestBeforeRouterFallback() {
+        // Pre-L2: when the provider rejects the payload (invalid_request) and the
+        // message history contains tool calls, flatten those into plain text
+        // before attempting L2 router fallback. The same model may accept the
+        // cleaned payload; if not, any subsequent L2 fallback inherits it.
+        Message assistantWithTool = Message.builder()
+                .role("assistant")
+                .content("calling tool")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call-1")
+                        .name("search")
+                        .arguments(java.util.Map.of("query", "weather"))
+                        .build()))
+                .build();
+        Message toolResult = Message.builder()
+                .role("tool")
+                .toolCallId("call-1")
+                .toolName("search")
+                .content("sunny")
+                .build();
+        context.setMessages(new ArrayList<>(List.of(assistantWithTool, toolResult)));
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("bad request"),
+                LlmErrorClassifier.LANGCHAIN4J_INVALID_REQUEST, 1, config);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
+        assertTrue(retryNow.layer().startsWith("L2"),
+                () -> "Expected L2 flatten layer, got " + retryNow.layer());
+        assertEquals(Boolean.TRUE,
+                context.getAttribute(ContextAttributes.RESILIENCE_L2_FLATTEN_ATTEMPTED));
+        assertTrue(context.getMessages().stream().noneMatch(Message::hasToolCalls),
+                () -> "Expected no tool_use blocks after flatten, got " + context.getMessages());
+        assertTrue(context.getMessages().stream().noneMatch(Message::isToolMessage),
+                () -> "Expected no tool-role messages after flatten, got " + context.getMessages());
+    }
+
+    @Test
+    void shouldNotFlattenWhenHistoryHasNoToolCalls() {
+        // Flatten is a no-op when there are no tool calls — the cascade must
+        // fall through so L5 cold retry / exhaustion still fire.
+        context.setMessages(new ArrayList<>(List.of(Message.builder().role("user").content("hi").build())));
+        LlmResilienceOrchestrator orchestrator = orchestrator(List.of(strategy));
+        RuntimeConfig.ResilienceConfig noColdRetry = RuntimeConfig.ResilienceConfig.builder()
+                .hotRetryMaxAttempts(0)
+                .coldRetryEnabled(false)
+                .build();
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("bad request"),
+                LlmErrorClassifier.LANGCHAIN4J_INVALID_REQUEST, 5, noColdRetry);
+
+        assertInstanceOf(LlmResilienceOrchestrator.ResilienceOutcome.Exhausted.class, outcome);
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.RESILIENCE_L2_FLATTEN_ATTEMPTED));
+    }
+
+    @Test
+    void shouldNotFlattenTwiceInSameTurn() {
+        // Once flatten has been applied this turn, a second invalid_request must
+        // fall through to L2 router fallback rather than re-flatten.
+        Message assistantWithTool = Message.builder()
+                .role("assistant")
+                .content("calling tool")
+                .toolCalls(List.of(Message.ToolCall.builder()
+                        .id("call-1")
+                        .name("search")
+                        .arguments(java.util.Map.of("query", "weather"))
+                        .build()))
+                .build();
+        context.setMessages(new ArrayList<>(List.of(assistantWithTool)));
+        context.setAttribute(ContextAttributes.RESILIENCE_L2_FLATTEN_ATTEMPTED, true);
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("provider-a")
+                .fallbackMode("sequential")
+                .fallbacks(List.of(RuntimeConfig.TierFallback.builder()
+                        .model("provider-b")
+                        .reasoning("low")
+                        .build()))
+                .build();
+        when(runtimeConfigService.getModelTierBinding("balanced")).thenReturn(binding);
+        context.setModelTier("balanced");
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                retryPolicy,
+                circuitBreaker,
+                new RuntimeConfigRouterFallbackSelector(runtimeConfigService, new java.util.Random(0)),
+                List.of(strategy),
+                suspendedTurnManager);
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("bad request"),
+                LlmErrorClassifier.LANGCHAIN4J_INVALID_REQUEST, 1, config);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
+        assertEquals("L2", retryNow.layer());
+        assertEquals("provider-b", context.getAttribute(ContextAttributes.LLM_MODEL));
+    }
+
+    @Test
+    void shouldUseRouterFallbackOnInvalidRequestEvenThoughItIsNonTransient() {
+        // Non-transient invalid_request must still trigger L2 router fallback — the
+        // next model may accept a payload the current one rejected. Without this
+        // the autonomous agent terminates on the first payload rejection.
+        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
+        RuntimeConfig.TierBinding binding = RuntimeConfig.TierBinding.builder()
+                .model("provider-a")
+                .fallbackMode("sequential")
+                .fallbacks(List.of(RuntimeConfig.TierFallback.builder()
+                        .model("provider-b")
+                        .reasoning("low")
+                        .build()))
+                .build();
+        when(runtimeConfigService.getModelTierBinding("balanced")).thenReturn(binding);
+        context.setModelTier("balanced");
+        LlmResilienceOrchestrator orchestrator = new LlmResilienceOrchestrator(
+                retryPolicy,
+                circuitBreaker,
+                new RuntimeConfigRouterFallbackSelector(runtimeConfigService, new java.util.Random(0)),
+                List.of(strategy),
+                suspendedTurnManager);
+
+        LlmResilienceOrchestrator.ResilienceOutcome outcome = orchestrator.handle(
+                context, new RuntimeException("bad request"),
+                LlmErrorClassifier.LANGCHAIN4J_INVALID_REQUEST, 1, config);
+
+        LlmResilienceOrchestrator.ResilienceOutcome.RetryNow retryNow = assertInstanceOf(
+                LlmResilienceOrchestrator.ResilienceOutcome.RetryNow.class, outcome);
+        assertEquals("L2", retryNow.layer());
+        assertEquals("provider-b", context.getAttribute(ContextAttributes.LLM_MODEL));
     }
 
     @Test

@@ -21,7 +21,6 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.toolloop.ContextCompactionCoordinator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,9 +57,6 @@ public class ContextCompactionRecoveryStrategy implements RecoveryStrategy {
     @Override
     public boolean isApplicable(AgentContext context, String errorCode, RuntimeConfig.ResilienceConfig config) {
         if (!config.getDegradationCompactContext()) {
-            return false;
-        }
-        if (!LlmErrorClassifier.isTransientCode(errorCode)) {
             return false;
         }
         Boolean alreadyAttempted = context.getAttribute(ContextAttributes.RESILIENCE_L4_COMPACTION_ATTEMPTED);

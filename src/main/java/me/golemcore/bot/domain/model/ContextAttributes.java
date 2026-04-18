@@ -110,6 +110,12 @@ public final class ContextAttributes {
     public static final String RESILIENCE_L2_ROUND_ROBIN_CURSOR = "resilience.l2.round_robin_cursor";
 
     /**
+     * Boolean - pre-L2 tool-call flatten already ran for this turn. Flattening runs
+     * at most once per turn because repeat flatten is a no-op.
+     */
+    public static final String RESILIENCE_L2_FLATTEN_ATTEMPTED = "resilience.l2.flatten_attempted";
+
+    /**
      * Boolean - true if the current turn was suspended by the resilience
      * orchestrator (L5).
      */
