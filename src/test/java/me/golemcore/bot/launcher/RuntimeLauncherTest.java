@@ -34,7 +34,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, null, Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -51,7 +51,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, bundledJar, Map.of());
 
-        int exitCode = launcher.run(new String[] { "--spring.profiles.active=prod" });
+        int exitCode = launcher.run(webCommand("--spring.profiles.active=prod"));
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -74,7 +74,7 @@ class RuntimeLauncherTest {
                 bundledJar,
                 Map.of("server.port", "9090"));
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -97,11 +97,10 @@ class RuntimeLauncherTest {
                 bundledJar,
                 Map.of());
 
-        int exitCode = launcher.run(new String[] {
+        int exitCode = launcher.run(webCommand(
                 "-Dserver.port=9191",
                 "-Dspring.profiles.active=prod",
-                "--spring.main.web-application-type=none"
-        });
+                "--spring.main.web-application-type=none"));
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -126,11 +125,10 @@ class RuntimeLauncherTest {
                 bundledJar,
                 Map.of());
 
-        int exitCode = launcher.run(new String[] {
+        int exitCode = launcher.run(webCommand(
                 "-J=-Xmx512m",
-                "--server-port=9191",
-                "--spring.main.web-application-type=none"
-        });
+                "--port=9191",
+                "--spring.main.web-application-type=none"));
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -140,6 +138,30 @@ class RuntimeLauncherTest {
                 "-jar",
                 bundledJar.toAbsolutePath().normalize().toString(),
                 "--spring.main.web-application-type=none"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldForwardWebPortAndHostnameAsSystemProperties(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of());
+
+        int exitCode = launcher.run(webCommand("--port=8080", "--hostname=0.0.0.0"));
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Dserver.port=8080",
+                "-Dserver.address=0.0.0.0",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
     }
 
     @Test
@@ -157,10 +179,9 @@ class RuntimeLauncherTest {
                 bundledJar,
                 Map.of());
 
-        int exitCode = launcher.run(new String[] {
+        int exitCode = launcher.run(webCommand(
                 "--storage-path=" + storagePath,
-                "--updates-path=" + updatesPath
-        });
+                "--updates-path=" + updatesPath));
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -184,7 +205,7 @@ class RuntimeLauncherTest {
                 bundledJar,
                 Map.of("server.port", "9090"));
 
-        int exitCode = launcher.run(new String[] { "--server.port=9191" });
+        int exitCode = launcher.run(webCommand("--server.port=9191"));
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -207,7 +228,7 @@ class RuntimeLauncherTest {
                 null,
                 Map.of());
 
-        int exitCode = launcher.run(new String[] { "--bundled-jar=" + bundledJar });
+        int exitCode = launcher.run(webCommand("--bundled-jar=" + bundledJar));
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -226,7 +247,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, appDir, Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -250,7 +271,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, launcherJar, Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -274,7 +295,7 @@ class RuntimeLauncherTest {
                 null,
                 Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -290,7 +311,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, bundledFile, Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -311,7 +332,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -332,7 +353,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
 
-        int exitCode = launcher.run(new String[] { "--spring.profiles.active=prod" });
+        int exitCode = launcher.run(webCommand("--spring.profiles.active=prod"));
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -353,7 +374,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
 
-        int exitCode = launcher.run(new String[] { "--spring.profiles.active=prod" });
+        int exitCode = launcher.run(webCommand("--spring.profiles.active=prod"));
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -370,7 +391,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter);
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -388,7 +409,7 @@ class RuntimeLauncherTest {
         CapturingLauncherOutput output = new CapturingLauncherOutput();
         RuntimeLauncher launcher = createLauncher(Map.of("UPDATE_PATH", tempDir.toString()), processStarter, output);
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertTrue(
@@ -406,7 +427,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "dev");
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -426,7 +447,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -446,7 +467,7 @@ class RuntimeLauncherTest {
                 null,
                 Map.of(RuntimeLauncher.UPDATE_PATH_PROPERTY, systemUpdatesDir.toString()));
 
-        Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
+        Path updatesDir = launcher.resolveUpdatesDir(webCommand());
 
         assertEquals(systemUpdatesDir.toAbsolutePath().normalize(), updatesDir);
     }
@@ -462,7 +483,7 @@ class RuntimeLauncherTest {
                 null,
                 Map.of(RuntimeLauncher.STORAGE_PATH_PROPERTY, storagePath.toString()));
 
-        Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
+        Path updatesDir = launcher.resolveUpdatesDir(webCommand());
 
         assertEquals(storagePath.resolve("updates").toAbsolutePath().normalize(), updatesDir);
     }
@@ -477,7 +498,7 @@ class RuntimeLauncherTest {
                     new RecordingProcessStarter(List.of(0)),
                     new NoOpLauncherOutput());
 
-            Path updatesDir = launcher.resolveUpdatesDir(new String[] { "--bot.update.updates-path=~/custom-updates" });
+            Path updatesDir = launcher.resolveUpdatesDir(webCommand("--bot.update.updates-path=~/custom-updates"));
 
             assertEquals(tempDir.resolve("custom-updates").toAbsolutePath().normalize(), updatesDir);
         } finally {
@@ -495,7 +516,7 @@ class RuntimeLauncherTest {
                     new RecordingProcessStarter(List.of(0)),
                     new NoOpLauncherOutput());
 
-            Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
+            Path updatesDir = launcher.resolveUpdatesDir(webCommand());
 
             assertEquals(tempDir.resolve("workspace-root").resolve("updates").toAbsolutePath().normalize(), updatesDir);
         } finally {
@@ -508,7 +529,7 @@ class RuntimeLauncherTest {
         RestartingProcessStarter processStarter = new RestartingProcessStarter(tempDir);
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, null, Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(2, processStarter.commands().size());
@@ -534,7 +555,7 @@ class RuntimeLauncherTest {
         RuntimeLauncher launcher = createLauncher(Map.of("UPDATE_PATH", tempDir.toString()), processStarter, output,
                 null, null, Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -554,7 +575,7 @@ class RuntimeLauncherTest {
         RuntimeLauncher launcher = createLauncher(Map.of("UPDATE_PATH", tempDir.toString()), processStarter, output,
                 null, null, Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -580,9 +601,7 @@ class RuntimeLauncherTest {
                 null,
                 Map.of());
 
-        Path updatesDir = launcher.resolveUpdatesDir(new String[] {
-                "--updates-path=" + argUpdatesDir
-        });
+        Path updatesDir = launcher.resolveUpdatesDir(webCommand("--updates-path=" + argUpdatesDir));
 
         assertEquals(argUpdatesDir.toAbsolutePath().normalize(), updatesDir);
     }
@@ -598,7 +617,7 @@ class RuntimeLauncherTest {
                 null,
                 Map.of());
 
-        Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
+        Path updatesDir = launcher.resolveUpdatesDir(webCommand());
 
         assertEquals(storagePath.resolve("updates").toAbsolutePath().normalize(), updatesDir);
     }
@@ -615,9 +634,13 @@ class RuntimeLauncherTest {
 
         ParseOutcome parseOutcome = launcher.parseArguments(new String[] {
                 "--storage-path=/srv/workspace",
-                "--updates-path=/srv/updates",
                 "--bundled-jar=/opt/bot.jar",
-                "--server-port=9090",
+                "web",
+                "--updates-path=/srv/updates",
+                "--port",
+                "9090",
+                "--hostname",
+                "0.0.0.0",
                 "-J=-Xmx512m",
                 "-Dspring.profiles.active=prod",
                 "--spring.main.banner-mode=off"
@@ -630,9 +653,30 @@ class RuntimeLauncherTest {
         assertEquals("/srv/updates", launcherArguments.updatesPath());
         assertEquals("/opt/bot.jar", launcherArguments.bundledJar());
         assertEquals("9090", launcherArguments.serverPort());
+        assertEquals("0.0.0.0", launcherArguments.serverAddress());
         assertIterableEquals(List.of("-Xmx512m", "-Dspring.profiles.active=prod"),
                 launcherArguments.explicitJavaOptions());
         assertIterableEquals(List.of("--spring.main.banner-mode=off"), launcherArguments.applicationArguments());
+    }
+
+    @Test
+    void shouldRequireCommandBeforeStartingRuntime() {
+        CapturingLauncherOutput output = new CapturingLauncherOutput();
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                processStarter,
+                output,
+                null,
+                null,
+                Map.of());
+
+        int exitCode = launcher.run(new String[0]);
+
+        assertEquals(RuntimeLauncher.CLI_ERROR_EXIT_CODE, exitCode);
+        assertTrue(processStarter.commands().isEmpty());
+        assertTrue(output.errorMessages().stream()
+                .anyMatch(message -> message.contains("Missing command")));
     }
 
     @Test
@@ -671,6 +715,22 @@ class RuntimeLauncherTest {
     }
 
     @Test
+    void shouldReturnZeroWhenWebUsageHelpRequested() {
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                new RecordingProcessStarter(List.of(0)),
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
+
+        ParseOutcome parseOutcome = launcher.parseArguments(new String[] { "web", "--help" });
+
+        assertTrue(parseOutcome.shouldExit());
+        assertEquals(0, parseOutcome.exitCode());
+    }
+
+    @Test
     void shouldPassThroughUnknownArgumentsToSpringRuntime() {
         RuntimeLauncher launcher = createLauncher(
                 Map.of(),
@@ -681,6 +741,7 @@ class RuntimeLauncherTest {
                 Map.of());
 
         ParseOutcome parseOutcome = launcher.parseArguments(new String[] {
+                "web",
                 "--unknown-launcher-flag",
                 "value"
         });
@@ -701,7 +762,7 @@ class RuntimeLauncherTest {
                 null,
                 Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(1, exitCode);
         assertTrue(output.errorMessages().contains("Failed to start runtime: boom"));
@@ -720,7 +781,7 @@ class RuntimeLauncherTest {
                 Map.of());
 
         try {
-            int exitCode = launcher.run(new String[0]);
+            int exitCode = launcher.run(webCommand());
 
             assertEquals(1, exitCode);
             assertTrue(childProcess.isDestroyed());
@@ -843,6 +904,13 @@ class RuntimeLauncherTest {
 
         assertEquals(0, childProcess.waitFor());
         childProcess.destroy();
+    }
+
+    private static String[] webCommand(String... args) {
+        List<String> command = new ArrayList<>();
+        command.add("web");
+        command.addAll(List.of(args));
+        return command.toArray(String[]::new);
     }
 
     private static String expectedSystemBuildVersion() {

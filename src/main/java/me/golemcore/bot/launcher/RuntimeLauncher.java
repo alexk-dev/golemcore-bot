@@ -48,6 +48,7 @@ public final class RuntimeLauncher {
     static final String JAVA_COMMAND_ENV = "GOLEMCORE_JAVA_COMMAND";
     static final String JAVA_COMMAND_PROPERTY = "golemcore.launcher.java-command";
     static final String SERVER_PORT_PROPERTY = "server.port";
+    static final String SERVER_ADDRESS_PROPERTY = "server.address";
     static final String BUILD_INFO_RESOURCE = "META-INF/build-info.properties";
 
     private final String javaCommand;
@@ -206,15 +207,43 @@ public final class RuntimeLauncher {
             return ParseOutcome.exit(CLI_ERROR_EXIT_CODE);
         }
 
-        if (parseResult.isUsageHelpRequested()) {
-            emitUsage(commandLine, false);
+        CommandLine.ParseResult usageHelpRequest = findUsageHelpRequest(parseResult);
+        if (usageHelpRequest != null) {
+            emitUsage(usageHelpRequest.commandSpec().commandLine(), false);
             return ParseOutcome.exit(0);
         }
-        if (parseResult.isVersionHelpRequested()) {
+        if (isVersionHelpRequested(parseResult)) {
             emitVersion();
             return ParseOutcome.exit(0);
         }
+        if (parseResult.subcommand() == null) {
+            output.error("Missing command. Use `golemcore-bot web` to start the web runtime.");
+            emitUsage(commandLine, true);
+            return ParseOutcome.exit(CLI_ERROR_EXIT_CODE);
+        }
         return ParseOutcome.success(cliArguments.toLauncherArguments());
+    }
+
+    private CommandLine.ParseResult findUsageHelpRequest(CommandLine.ParseResult parseResult) {
+        CommandLine.ParseResult current = parseResult;
+        while (current != null) {
+            if (current.isUsageHelpRequested()) {
+                return current;
+            }
+            current = current.subcommand();
+        }
+        return null;
+    }
+
+    private boolean isVersionHelpRequested(CommandLine.ParseResult parseResult) {
+        CommandLine.ParseResult current = parseResult;
+        while (current != null) {
+            if (current.isVersionHelpRequested()) {
+                return true;
+            }
+            current = current.subcommand();
+        }
+        return false;
     }
 
     /**
@@ -344,7 +373,10 @@ public final class RuntimeLauncher {
 
     private CommandLine createCommandLine(LauncherCliArguments cliArguments) {
         CommandLine commandLine = new CommandLine(cliArguments);
+        commandLine.addSubcommand("web", cliArguments.webCommand());
         commandLine.setUnmatchedArgumentsAllowed(true);
+        commandLine.getSubcommands().values()
+                .forEach(subcommand -> subcommand.setUnmatchedArgumentsAllowed(true));
         return commandLine;
     }
 

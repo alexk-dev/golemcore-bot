@@ -14,7 +14,8 @@ final class ForwardedJavaOptionsResolver {
     private static final List<String> FORWARDED_SYSTEM_PROPERTIES = List.of(
             RuntimeLauncher.STORAGE_PATH_PROPERTY,
             RuntimeLauncher.UPDATE_PATH_PROPERTY,
-            RuntimeLauncher.SERVER_PORT_PROPERTY);
+            RuntimeLauncher.SERVER_PORT_PROPERTY,
+            RuntimeLauncher.SERVER_ADDRESS_PROPERTY);
 
     private final PropertyReader propertyReader;
 
@@ -45,6 +46,8 @@ final class ForwardedJavaOptionsResolver {
                 RuntimeLauncher.UPDATE_PATH_PROPERTY, launcherArguments.updatesPath());
         addExplicitSystemProperty(forwardedOptions, explicitSystemPropertyNames,
                 RuntimeLauncher.SERVER_PORT_PROPERTY, launcherArguments.serverPort());
+        addExplicitSystemProperty(forwardedOptions, explicitSystemPropertyNames,
+                RuntimeLauncher.SERVER_ADDRESS_PROPERTY, launcherArguments.serverAddress());
 
         for (String propertyName : FORWARDED_SYSTEM_PROPERTIES) {
             if (!explicitSystemPropertyNames.contains(propertyName)) {

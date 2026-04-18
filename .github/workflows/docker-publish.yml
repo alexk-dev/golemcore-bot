@@ -164,6 +164,12 @@ jobs:
           grep -F 'golemcore.launcher.java-command=$APPDIR/../runtime/bin/java' target/native-dist/smoke/golemcore-bot/lib/app/golemcore-bot.cfg
           "${runtime_java}" -version
           target/native-dist/smoke/golemcore-bot/bin/golemcore-bot --help
+          if target/native-dist/smoke/golemcore-bot/bin/golemcore-bot 2>target/native-dist/smoke/missing-command.err; then
+            echo "Launcher unexpectedly started without a command." >&2
+            exit 1
+          fi
+          grep -F 'Missing command. Use `golemcore-bot web` to start the web runtime.' target/native-dist/smoke/missing-command.err
+          target/native-dist/smoke/golemcore-bot/bin/golemcore-bot web --help
 
       - name: Upload native distribution
         uses: actions/upload-artifact@v7

@@ -120,18 +120,20 @@ Show help:
 
 Common options:
 
-- `--server-port=<port>` — forwards `-Dserver.port=<port>` to the spawned runtime
-- `--storage-path=<path>` — forwards `-Dbot.storage.local.base-path=<path>`
-- `--updates-path=<path>` — forwards `-Dbot.update.updates-path=<path>`
+- `web` — required command that starts the bundled Spring Boot runtime
+- `web --port=<port>` — forwards `-Dserver.port=<port>` to the spawned runtime
+- `web --hostname=<address>` — forwards `-Dserver.address=<address>` to the spawned runtime
+- `--storage-path=<path>` / `web --storage-path=<path>` — forwards `-Dbot.storage.local.base-path=<path>`
+- `--updates-path=<path>` / `web --updates-path=<path>` — forwards `-Dbot.update.updates-path=<path>`
 - `--bundled-jar=<path>` — overrides the bundled runtime jar path
-- `-J=<jvm-option>` / `--java-option=<jvm-option>` — forwards extra JVM options to the spawned runtime
+- `web -J=<jvm-option>` / `web --java-option=<jvm-option>` — forwards extra JVM options to the spawned runtime
 
 Examples:
 
 ```bash
-./golemcore-bot/bin/golemcore-bot --server-port=9090
-./golemcore-bot/bin/golemcore-bot -J=-Xmx1g --server-port=9090
-./golemcore-bot/bin/golemcore-bot --storage-path=/srv/golemcore/workspace --updates-path=/srv/golemcore/updates
+./golemcore-bot/bin/golemcore-bot web --port=8080 --hostname=0.0.0.0
+./golemcore-bot/bin/golemcore-bot web -J=-Xmx1g --port=9090
+./golemcore-bot/bin/golemcore-bot --storage-path=/srv/golemcore/workspace web --updates-path=/srv/golemcore/updates
 ```
 
 ### Spring runtime arguments still work
@@ -139,15 +141,15 @@ Examples:
 Unknown arguments are forwarded to Spring Boot unchanged, so existing application arguments continue to work:
 
 ```bash
-./golemcore-bot/bin/golemcore-bot --spring.profiles.active=prod
-./golemcore-bot/bin/golemcore-bot --server.port=9090
-./golemcore-bot/bin/golemcore-bot -Dspring.profiles.active=prod
+./golemcore-bot/bin/golemcore-bot web --spring.profiles.active=prod
+./golemcore-bot/bin/golemcore-bot web --server.port=9090
+./golemcore-bot/bin/golemcore-bot web -Dspring.profiles.active=prod
 ```
 
 If you want to make the split explicit, you can also use `--` before Spring arguments:
 
 ```bash
-./golemcore-bot/bin/golemcore-bot --server-port=9090 -- --spring.profiles.active=prod
+./golemcore-bot/bin/golemcore-bot web --port=9090 -- --spring.profiles.active=prod
 ```
 
 ### Why this matters

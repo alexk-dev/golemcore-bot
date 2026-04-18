@@ -219,11 +219,13 @@ The native launcher uses picocli, so operators can inspect its own documented pa
 
 Launcher-specific options include:
 
-- `--server-port=<port>`
+- `web`
+- `web --port=<port>`
+- `web --hostname=<address>`
 - `--storage-path=<path>`
 - `--updates-path=<path>`
 - `--bundled-jar=<path>`
-- `-J=<jvm-option>` / `--java-option=<jvm-option>`
+- `web -J=<jvm-option>` / `web --java-option=<jvm-option>`
 
 ### Override launcher-managed runtime parameters
 
@@ -232,9 +234,9 @@ The native launcher converts its own options into runtime JVM/system properties.
 Examples:
 
 ```bash
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --server-port=9090
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot -J=-Xmx1g --server-port=9090
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --storage-path=/srv/golemcore/workspace --updates-path=/srv/golemcore/updates
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --port=8080 --hostname=0.0.0.0
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web -J=-Xmx1g --port=9090
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --storage-path=/srv/golemcore/workspace web --updates-path=/srv/golemcore/updates
 ```
 
 ### Forward Spring Boot arguments unchanged
@@ -242,15 +244,15 @@ Examples:
 Unknown arguments still flow to Spring Boot as application arguments, so existing runtime flags continue to work:
 
 ```bash
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --spring.profiles.active=prod
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --server.port=9090
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot -Dspring.profiles.active=prod
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --spring.profiles.active=prod
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --server.port=9090
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web -Dspring.profiles.active=prod
 ```
 
 If you want to make the handoff explicit, use `--`:
 
 ```bash
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --server-port=9090 -- --spring.profiles.active=prod
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --port=9090 -- --spring.profiles.active=prod
 ```
 
 ### How the launcher behaves

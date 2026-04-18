@@ -832,17 +832,19 @@ The native launcher itself is picocli-based and documents its launcher-only opti
 
 Launcher-specific options:
 
-- `--server-port=<port>` forwards `-Dserver.port=<port>` to the spawned runtime
-- `--storage-path=<path>` forwards `-Dbot.storage.local.base-path=<path>`
-- `--updates-path=<path>` forwards `-Dbot.update.updates-path=<path>`
+- `web` starts the spawned runtime
+- `web --port=<port>` forwards `-Dserver.port=<port>` to the spawned runtime
+- `web --hostname=<address>` forwards `-Dserver.address=<address>` to the spawned runtime
+- `--storage-path=<path>` or `web --storage-path=<path>` forwards `-Dbot.storage.local.base-path=<path>`
+- `--updates-path=<path>` or `web --updates-path=<path>` forwards `-Dbot.update.updates-path=<path>`
 - `--bundled-jar=<path>` overrides the bundled runtime jar path
-- `-J=<jvm-option>` / `--java-option=<jvm-option>` forwards extra JVM options
+- `web -J=<jvm-option>` / `web --java-option=<jvm-option>` forwards extra JVM options
 
 Unknown arguments are passed through to Spring Boot, so both of these remain valid:
 
 ```bash
-golemcore-bot --server-port=9090
-golemcore-bot --spring.profiles.active=prod
+golemcore-bot web --port=9090
+golemcore-bot web --spring.profiles.active=prod
 ```
 
 The launcher priority is:
