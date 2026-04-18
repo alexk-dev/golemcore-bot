@@ -457,8 +457,13 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         log.warn("[LLM] Provider rejected oversized inline tool attachments; retrying without them");
                         continue;
                     }
-                    if (isRateLimitError(e) && attempt < MAX_RETRIES) {
+                    if (isRateLimitError(e)) {
                         lastRateLimitError = e;
+                        if (attempt >= MAX_RETRIES) {
+                            log.warn("[LLM] Rate limit retries exhausted for {} after {} retry attempt(s)",
+                                    request.getModel(), MAX_RETRIES);
+                            break;
+                        }
                         long exponentialBackoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
                         long resetSeconds = extractResetSeconds(e);
                         long backoffMs = resetSeconds > 0
