@@ -27,9 +27,10 @@ import java.util.Locale;
  * campaign verdicts.
  *
  * <p>
- * Arithmetic aggregation lives on {@link TacticMetricsAggregator} — keeping the
- * decision isolated here means richer verdict signals (confidence thresholds,
- * multi-metric deltas) only touch this class.
+ * Arithmetic aggregation lives on
+ * {@link me.golemcore.bot.domain.selfevolving.tactic.TacticMetricsAggregator} —
+ * keeping the decision isolated here means richer verdict signals (confidence
+ * thresholds, multi-metric deltas) only touch this class.
  */
 public final class BenchmarkWinRateCalculator {
 

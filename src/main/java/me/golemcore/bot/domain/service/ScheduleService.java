@@ -34,7 +34,7 @@ import me.golemcore.bot.port.outbound.SchedulePersistencePort;
 /**
  * Domain service for managing cron-based schedules for autonomous goal/task
  * execution. Schedules are persisted in {@code auto/schedules.json} via
- * {@link StoragePort}.
+ * {@link me.golemcore.bot.port.outbound.StoragePort}.
  *
  * <p>
  * Only GOAL and TASK schedule types exist. Goals/tasks without explicit

@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.loop.AgentLoop;
+import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -486,6 +487,28 @@ class SessionRunCoordinatorTest {
 
             verify(agentLoop, times(1)).processMessage(a);
             verify(agentLoop, times(1)).processMessage(auto);
+        }
+    }
+
+    @Test
+    void shouldCompleteSubmitForContextWithProcessedAgentContext() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+            Message inbound = internalRetry("retry");
+            AgentContext processed = AgentContext.builder().build();
+            processed.setAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE, true);
+            when(agentLoop.processMessage(inbound)).thenReturn(processed);
+
+            CompletableFuture<AgentContext> completion = coordinator.submitForContext(inbound);
+
+            assertEquals(processed, completion.get(2, TimeUnit.SECONDS));
+            verify(agentLoop).processMessage(inbound);
         }
     }
 

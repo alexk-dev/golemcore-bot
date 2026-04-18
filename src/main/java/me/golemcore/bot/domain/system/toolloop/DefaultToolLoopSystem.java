@@ -102,11 +102,17 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         // first LLM call.
         ContextCompactionPolicy contextCompactionPolicy = Objects.requireNonNull(builder.contextCompactionPolicy,
                 "contextCompactionPolicy required; wire it explicitly on the builder");
-        ContextCompactionCoordinator compactionCoordinator = new ContextCompactionCoordinator(
-                contextCompactionPolicy,
-                builder.compactionOrchestrationService,
-                builder.runtimeEventService,
-                builder.turnProgressService);
+        // The coordinator is shared by request preflight, context-overflow
+        // recovery, and the L4 resilience compaction strategy. Spring injects a
+        // singleton coordinator; tests and hand-built systems may still omit it,
+        // in which case we assemble the same collaborator locally.
+        ContextCompactionCoordinator compactionCoordinator = builder.contextCompactionCoordinator != null
+                ? builder.contextCompactionCoordinator
+                : new ContextCompactionCoordinator(
+                        contextCompactionPolicy,
+                        builder.compactionOrchestrationService,
+                        builder.runtimeEventService,
+                        builder.turnProgressService);
         LlmRequestPreflightPhase preflightPhase = new LlmRequestPreflightPhase(
                 contextTokenEstimator,
                 contextCompactionPolicy,
@@ -117,7 +123,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 builder.runtimeConfigService, preflightPhase,
                 compactionCoordinator,
                 builder.runtimeEventService, builder.turnProgressService,
-                builder.traceService, builder.clock);
+                builder.traceService, builder.resilienceOrchestrator, builder.clock);
 
         ToolFailurePolicy failurePolicy = new ToolFailurePolicy(
                 builder.toolFailureRecoveryService != null
@@ -345,10 +351,12 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private CompactionOrchestrationService compactionOrchestrationService;
         private ContextTokenEstimator contextTokenEstimator;
         private ContextCompactionPolicy contextCompactionPolicy;
+        private ContextCompactionCoordinator contextCompactionCoordinator;
         private RuntimeEventService runtimeEventService;
         private TurnProgressService turnProgressService;
         private TraceService traceService;
         private ToolFailureRecoveryService toolFailureRecoveryService;
+        private me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator resilienceOrchestrator;
         private Clock clock;
 
         /** Sets the LLM invocation port (required). */
@@ -426,6 +434,16 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             return this;
         }
 
+        /**
+         * Sets the coordinator shared with the resilience compaction strategy. Passing
+         * the same instance keeps LLM preflight and L4 recovery diagnostics consistent
+         * within a turn.
+         */
+        public Builder contextCompactionCoordinator(ContextCompactionCoordinator contextCompactionCoordinator) {
+            this.contextCompactionCoordinator = contextCompactionCoordinator;
+            return this;
+        }
+
         /** Sets the runtime event service (optional). */
         public Builder runtimeEventService(RuntimeEventService runtimeEventService) {
             this.runtimeEventService = runtimeEventService;
@@ -449,6 +467,13 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
          */
         public Builder toolFailureRecoveryService(ToolFailureRecoveryService toolFailureRecoveryService) {
             this.toolFailureRecoveryService = toolFailureRecoveryService;
+            return this;
+        }
+
+        /** Sets the LLM resilience orchestrator (optional). */
+        public Builder resilienceOrchestrator(
+                me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator resilienceOrchestrator) {
+            this.resilienceOrchestrator = resilienceOrchestrator;
             return this;
         }
 

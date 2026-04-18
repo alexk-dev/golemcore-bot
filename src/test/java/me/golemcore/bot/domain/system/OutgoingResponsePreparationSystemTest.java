@@ -169,6 +169,25 @@ class OutgoingResponsePreparationSystemTest {
     }
 
     @Test
+    void shouldSurfaceSuspendedTurnMessageWithoutGenericLlmError() {
+        AgentContext context = buildContext();
+        String suspendedMessage = "LLM providers are temporarily unavailable; retry is scheduled.";
+        context.setAttribute(ContextAttributes.LLM_ERROR, suspendedMessage);
+        context.setAttribute(ContextAttributes.LLM_ERROR_CODE, LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER);
+        context.setAttribute(ContextAttributes.RESILIENCE_TURN_SUSPENDED, true);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(suspendedMessage, outgoing.getText());
+        assertEquals(LlmErrorClassifier.LANGCHAIN4J_INTERNAL_SERVER,
+                result.getAttribute(ContextAttributes.LLM_ERROR_CODE));
+        verify(preferencesService, never()).getMessage("system.error.llm");
+        verify(internalTurnService, never()).scheduleAutoContinueRetry(any(), anyString());
+    }
+
+    @Test
     void shouldPreferExistingLlmErrorCodeOverEmbeddedDiagnosticCode() {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_ERROR_CODE, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT);

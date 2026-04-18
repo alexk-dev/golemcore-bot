@@ -22,5 +22,5 @@ package me.golemcore.bot.domain.model;
  * One-shot delayed action kinds scoped to a logical session.
  */
 public enum DelayedActionKind {
-    REMIND_LATER, RUN_LATER, NOTIFY_JOB_READY
+    REMIND_LATER, RUN_LATER, NOTIFY_JOB_READY, RETRY_LLM_TURN
 }

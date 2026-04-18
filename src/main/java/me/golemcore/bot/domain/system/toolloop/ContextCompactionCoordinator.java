@@ -47,7 +47,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @RequiredArgsConstructor
 @Slf4j
-class ContextCompactionCoordinator {
+public class ContextCompactionCoordinator {
 
     private static final String OVERFLOW_OUTCOME_SKIPPED_DISABLED = "skipped_disabled";
     private static final String OVERFLOW_OUTCOME_SKIPPED_TOO_SMALL = "skipped_too_small";
@@ -116,6 +116,7 @@ class ContextCompactionCoordinator {
 
             emitRuntimeEvent(context, RuntimeEventType.COMPACTION_FINISHED,
                     CompactionFinishedPayloads.success(compactionResult, boundedKeepLast, reason));
+            publishCompactionFallbackProgress(context, reason, compactionResult);
             return compactionResult;
         } catch (RuntimeException e) {
             int observedSessionSize = context.getSession() != null && context.getSession().getMessages() != null
@@ -143,7 +144,7 @@ class ContextCompactionCoordinator {
      * @return {@code true} iff compaction removed at least one message, telling the
      *         caller it is safe to retry the provider with the shorter session.
      */
-    boolean recoverFromContextOverflow(AgentContext context, int llmCall, int retryAttempt) {
+    public boolean recoverFromContextOverflow(AgentContext context, int llmCall, int retryAttempt) {
         if (retryAttempt > 0) {
             return false;
         }
@@ -202,6 +203,29 @@ class ContextCompactionCoordinator {
             return "context_overflow_recovery";
         }
         return "compaction";
+    }
+
+    private void publishCompactionFallbackProgress(AgentContext context, CompactionReason reason,
+            CompactionResult result) {
+        if (turnProgressService == null || context == null || result == null || result.removed() <= 0) {
+            return;
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("kind", "context_compaction_fallback");
+        metadata.put("reason", reason.name());
+        metadata.put("removed", result.removed());
+        metadata.put("usedSummary", result.usedSummary());
+        turnProgressService.publishSummary(context, compactionFallbackNotice(reason), metadata);
+    }
+
+    private static String compactionFallbackNotice(CompactionReason reason) {
+        if (reason == CompactionReason.REQUEST_PREFLIGHT) {
+            return "I shortened the conversation context so this request fits the model window.";
+        }
+        if (reason == CompactionReason.CONTEXT_OVERFLOW_RECOVERY) {
+            return "The model rejected the request as too large, so I shortened the conversation context and retried.";
+        }
+        return "I shortened the conversation context before continuing.";
     }
 
     private void emitRuntimeEvent(AgentContext context, RuntimeEventType type, Map<String, Object> payload) {

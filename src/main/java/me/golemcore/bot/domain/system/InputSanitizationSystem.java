@@ -30,8 +30,8 @@ import me.golemcore.bot.domain.model.ContextAttributes;
  * System for input sanitization and security validation (order=10, first in
  * pipeline). Applies HTML sanitization, length limits, injection detection
  * (prompt, command, SQL, path traversal) via
- * {@link domain.component.SanitizerComponent}. Blocks processing if threats are
- * detected.
+ * {@link me.golemcore.bot.domain.component.SanitizerComponent}. Blocks
+ * processing if threats are detected.
  */
 @Component
 @RequiredArgsConstructor

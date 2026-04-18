@@ -2767,7 +2767,8 @@ class SettingsControllerTest {
         when(facade.updateTracingConfig(any(RuntimeConfig.TracingConfig.class))).thenReturn(apiView);
         when(facade.updateAdvancedConfig(any(RuntimeConfig.RateLimitConfig.class),
                 any(RuntimeConfig.SecurityConfig.class),
-                any(RuntimeConfig.CompactionConfig.class))).thenReturn(apiView);
+                any(RuntimeConfig.CompactionConfig.class),
+                any(RuntimeConfig.ResilienceConfig.class))).thenReturn(apiView);
 
         StepVerifier.create(dtoController.updateRuntimeConfig(new RuntimeSettingsWebDtos.RuntimeConfigDto()))
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
@@ -2860,7 +2861,8 @@ class SettingsControllerTest {
                 requestType,
                 new RuntimeSettingsWebDtos.RateLimitConfigDto(),
                 new RuntimeSettingsWebDtos.SecurityConfigDto(),
-                new RuntimeSettingsWebDtos.CompactionConfigDto());
+                new RuntimeSettingsWebDtos.CompactionConfigDto(),
+                new RuntimeSettingsWebDtos.ResilienceConfigDto());
         Method method = SettingsController.class.getMethod("updateAdvancedConfig", requestType);
         Mono<ResponseEntity<RuntimeSettingsWebDtos.RuntimeConfigDto>> response = (Mono<ResponseEntity<RuntimeSettingsWebDtos.RuntimeConfigDto>>) method
                 .invoke(dtoController, request);
@@ -2882,7 +2884,8 @@ class SettingsControllerTest {
                 requestType,
                 RuntimeConfig.RateLimitConfig.builder().build(),
                 RuntimeConfig.SecurityConfig.builder().build(),
-                RuntimeConfig.CompactionConfig.builder().build());
+                RuntimeConfig.CompactionConfig.builder().build(),
+                RuntimeConfig.ResilienceConfig.builder().build());
         Method method = SettingsController.class.getMethod("updateAdvancedConfig", requestType);
 
         Mono<ResponseEntity<RuntimeConfig>> response = (Mono<ResponseEntity<RuntimeConfig>>) method.invoke(controller,
@@ -2914,12 +2917,14 @@ class SettingsControllerTest {
         ttsProviderRegistry.replaceProviders(providerId, List.of(provider));
     }
 
-    private Object instantiateAdvancedConfigRequest(Class<?> requestType, Object first, Object second, Object third)
+    private Object instantiateAdvancedConfigRequest(Class<?> requestType, Object first, Object second, Object third,
+            Object fourth)
             throws Throwable {
         MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(requestType, MethodHandles.lookup());
         MethodHandle constructor = lookup.findConstructor(
                 requestType,
-                MethodType.methodType(void.class, first.getClass(), second.getClass(), third.getClass()));
-        return constructor.invoke(first, second, third);
+                MethodType.methodType(void.class, first.getClass(), second.getClass(), third.getClass(),
+                        fourth.getClass()));
+        return constructor.invoke(first, second, third, fourth);
     }
 }

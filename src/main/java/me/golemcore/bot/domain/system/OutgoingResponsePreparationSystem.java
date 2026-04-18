@@ -103,6 +103,13 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         // Error path: convert LLM_ERROR into a user-facing OutgoingResponse.
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
         if (llmError != null) {
+            if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_TURN_SUSPENDED))) {
+                String reasonCode = resolveLlmErrorCode(context, llmError);
+                context.setAttribute(ContextAttributes.LLM_ERROR_CODE, reasonCode);
+                context.setAttribute(ContextAttributes.LLM_ERROR, LlmErrorClassifier.withCode(reasonCode, llmError));
+                setOutgoingResponse(context, OutgoingResponse.textOnly(llmError));
+                return context;
+            }
             if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED))) {
                 return context;
             }

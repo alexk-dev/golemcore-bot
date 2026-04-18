@@ -75,6 +75,8 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
                 RuntimeConfig.HiveConfig.class, RuntimeConfig.HiveConfig::new, true);
         RuntimeConfig.SelfEvolvingConfig selfEvolving = loadSection(RuntimeConfig.ConfigSection.SELF_EVOLVING,
                 RuntimeConfig.SelfEvolvingConfig.class, RuntimeConfig.SelfEvolvingConfig::new, true);
+        RuntimeConfig.ResilienceConfig resilience = loadSection(RuntimeConfig.ConfigSection.RESILIENCE,
+                RuntimeConfig.ResilienceConfig.class, RuntimeConfig.ResilienceConfig::new, true);
 
         return RuntimeConfig.builder()
                 .telegram(telegram)
@@ -99,6 +101,7 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
                 .delayedActions(delayedActions)
                 .hive(hive)
                 .selfEvolving(selfEvolving)
+                .resilience(resilience)
                 .build();
     }
 
@@ -148,6 +151,8 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
                 RuntimeConfig.HiveConfig::new);
         persistSection(RuntimeConfig.ConfigSection.SELF_EVOLVING, runtimeConfig.getSelfEvolving(),
                 RuntimeConfig.SelfEvolvingConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.RESILIENCE, runtimeConfig.getResilience(),
+                RuntimeConfig.ResilienceConfig::new);
     }
 
     @Override

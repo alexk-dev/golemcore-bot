@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.loop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
 import me.golemcore.bot.domain.model.FailureSource;
@@ -1756,6 +1757,79 @@ class AgentLoopTest {
         assertTrue(observedMessages.get(0).isInternalMessage());
         assertEquals("Continue and finish", observedMessages.get(0).getContent());
         assertTrue(session.getMessages().isEmpty());
+        verify(rateLimitPort, never()).tryConsume();
+    }
+
+    @Test
+    void shouldCopyL5ResumeMetadataFromInternalDelayedRetryMessage() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder()
+                .id("s1").channelType(CHANNEL_TYPE).chatId("1")
+                .messages(new ArrayList<>()).build();
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+
+        Map<String, Object> observedAttributes = new HashMap<>();
+        AgentSystem inspector = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "inspector";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                observedAttributes.putAll(context.getAttributes());
+                return context;
+            }
+        };
+
+        AgentLoop loop = createLoop(
+                sessionPort, rateLimitPort, List.of(inspector), List.of(channel),
+                mockRuntimeConfigService(1), preferencesService, llmPort, clock);
+
+        Map<String, Object> meta = new HashMap<>();
+        meta.put(ContextAttributes.MESSAGE_INTERNAL, true);
+        meta.put(ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_DELAYED_ACTION);
+        meta.put(ContextAttributes.DELAYED_ACTION_ID, "retry-1");
+        meta.put(ContextAttributes.DELAYED_ACTION_KIND, DelayedActionKind.RETRY_LLM_TURN.name());
+        meta.put(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT, 2);
+        meta.put(ContextAttributes.RESILIENCE_L5_ERROR_CODE, "llm.provider.500");
+        meta.put(ContextAttributes.RESILIENCE_L5_ORIGINAL_PROMPT, "finish the migration");
+        Message internalMsg = Message.builder()
+                .role(ROLE_USER).content("Retry")
+                .channelType(CHANNEL_TYPE).chatId("1").senderId("internal")
+                .metadata(meta).timestamp(clock.instant()).build();
+
+        loop.processMessage(internalMsg);
+
+        assertEquals("retry-1", observedAttributes.get(ContextAttributes.DELAYED_ACTION_ID));
+        assertEquals(DelayedActionKind.RETRY_LLM_TURN.name(),
+                observedAttributes.get(ContextAttributes.DELAYED_ACTION_KIND));
+        assertEquals(2, observedAttributes.get(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT));
+        assertEquals("llm.provider.500", observedAttributes.get(ContextAttributes.RESILIENCE_L5_ERROR_CODE));
+        assertEquals("finish the migration", observedAttributes.get(ContextAttributes.RESILIENCE_L5_ORIGINAL_PROMPT));
         verify(rateLimitPort, never()).tryConsume();
     }
 

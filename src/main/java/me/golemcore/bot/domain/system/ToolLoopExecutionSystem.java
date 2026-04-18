@@ -10,8 +10,8 @@ import org.springframework.stereotype.Component;
  * Pipeline system that runs ToolLoopSystem (single-turn internal loop).
  *
  * <p>
- * Intended to replace the legacy pair: legacy LlmExecutionSystem +
- * {@link ToolExecutionSystem} by producing a final
+ * Intended to replace the legacy pair: legacy LlmExecutionSystem + the legacy
+ * tool execution system by producing a final
  * {@link ContextAttributes#LLM_RESPONSE} in a single pipeline pass.
  *
  * <p>

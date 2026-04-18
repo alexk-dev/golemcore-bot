@@ -41,6 +41,7 @@ public class RuntimeSettingsMergeService {
                         RuntimeConfig.DelayedActionsConfig::new))
                 .hive(mergeSection(patch.getHive(), baseline.getHive(), RuntimeConfig.HiveConfig::new))
                 .selfEvolving(mergeSelfEvolvingSection(patch.getSelfEvolving(), baseline.getSelfEvolving()))
+                .resilience(mergeResilienceSection(patch.getResilience(), baseline.getResilience()))
                 .build();
     }
 
@@ -153,6 +154,58 @@ public class RuntimeSettingsMergeService {
             return null;
         }
         return config.getTactics().getSearch().getEmbeddings();
+    }
+
+    private RuntimeConfig.ResilienceConfig mergeResilienceSection(
+            RuntimeConfig.ResilienceConfig incoming,
+            RuntimeConfig.ResilienceConfig current) {
+        RuntimeConfig.ResilienceConfig defaults = new RuntimeConfig.ResilienceConfig();
+        if (incoming == null) {
+            return current != null ? current : defaults;
+        }
+        RuntimeConfig.ResilienceConfig baseline = current != null ? current : defaults;
+        if (incoming.equals(defaults)) {
+            return baseline;
+        }
+        return RuntimeConfig.ResilienceConfig.builder()
+                .enabled(coalesce(incoming.getEnabled(), baseline.getEnabled(), defaults.getEnabled()))
+                .hotRetryMaxAttempts(coalesce(incoming.getHotRetryMaxAttempts(), baseline.getHotRetryMaxAttempts(),
+                        defaults.getHotRetryMaxAttempts()))
+                .hotRetryBaseDelayMs(coalesce(incoming.getHotRetryBaseDelayMs(), baseline.getHotRetryBaseDelayMs(),
+                        defaults.getHotRetryBaseDelayMs()))
+                .hotRetryCapMs(
+                        coalesce(incoming.getHotRetryCapMs(), baseline.getHotRetryCapMs(), defaults.getHotRetryCapMs()))
+                .circuitBreakerFailureThreshold(coalesce(incoming.getCircuitBreakerFailureThreshold(),
+                        baseline.getCircuitBreakerFailureThreshold(), defaults.getCircuitBreakerFailureThreshold()))
+                .circuitBreakerWindowSeconds(coalesce(incoming.getCircuitBreakerWindowSeconds(),
+                        baseline.getCircuitBreakerWindowSeconds(), defaults.getCircuitBreakerWindowSeconds()))
+                .circuitBreakerOpenDurationSeconds(coalesce(incoming.getCircuitBreakerOpenDurationSeconds(),
+                        baseline.getCircuitBreakerOpenDurationSeconds(),
+                        defaults.getCircuitBreakerOpenDurationSeconds()))
+                .l2ProviderFallbackMaxAttempts(coalesce(incoming.getL2ProviderFallbackMaxAttempts(),
+                        baseline.getL2ProviderFallbackMaxAttempts(), defaults.getL2ProviderFallbackMaxAttempts()))
+                .degradationCompactContext(coalesce(incoming.getDegradationCompactContext(),
+                        baseline.getDegradationCompactContext(), defaults.getDegradationCompactContext()))
+                .degradationCompactMinMessages(coalesce(incoming.getDegradationCompactMinMessages(),
+                        baseline.getDegradationCompactMinMessages(), defaults.getDegradationCompactMinMessages()))
+                .degradationDowngradeModel(coalesce(incoming.getDegradationDowngradeModel(),
+                        baseline.getDegradationDowngradeModel(), defaults.getDegradationDowngradeModel()))
+                .degradationFallbackModelTier(coalesce(incoming.getDegradationFallbackModelTier(),
+                        baseline.getDegradationFallbackModelTier(), defaults.getDegradationFallbackModelTier()))
+                .degradationStripTools(coalesce(incoming.getDegradationStripTools(),
+                        baseline.getDegradationStripTools(), defaults.getDegradationStripTools()))
+                .coldRetryEnabled(coalesce(incoming.getColdRetryEnabled(), baseline.getColdRetryEnabled(),
+                        defaults.getColdRetryEnabled()))
+                .coldRetryMaxAttempts(coalesce(incoming.getColdRetryMaxAttempts(), baseline.getColdRetryMaxAttempts(),
+                        defaults.getColdRetryMaxAttempts()))
+                .build();
+    }
+
+    private <T> T coalesce(T preferred, T fallback, T defaultValue) {
+        if (preferred != null) {
+            return preferred;
+        }
+        return fallback != null ? fallback : defaultValue;
     }
 
     private <T> T mergeSection(T incoming, T current, Supplier<T> emptySupplier) {

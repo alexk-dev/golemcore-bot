@@ -66,4 +66,7 @@ public interface RuntimeSettingsWebDtos {
 
     public static class CompactionConfigDto extends RuntimeConfig.CompactionConfig {
     }
+
+    public static class ResilienceConfigDto extends RuntimeConfig.ResilienceConfig {
+    }
 }

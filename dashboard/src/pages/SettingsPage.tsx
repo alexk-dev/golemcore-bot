@@ -198,13 +198,16 @@ export default function SettingsPage(): ReactElement {
       {staticSection === 'updates' && <UpdatesTab />}
 
       {staticSection === 'advanced-rate-limit' && rc != null && (
-        <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="rateLimit" />
+        <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} resilience={rc.resilience} mode="rateLimit" />
       )}
       {staticSection === 'advanced-security' && rc != null && (
-        <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="security" />
+        <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} resilience={rc.resilience} mode="security" />
       )}
       {staticSection === 'advanced-compaction' && rc != null && (
-        <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} mode="compaction" />
+        <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} resilience={rc.resilience} mode="compaction" />
+      )}
+      {staticSection === 'advanced-resilience' && rc != null && (
+        <AdvancedTab rateLimit={rc.rateLimit} security={rc.security} compaction={rc.compaction} resilience={rc.resilience} mode="resilience" />
       )}
     </div>
   );
