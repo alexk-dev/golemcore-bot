@@ -1,6 +1,7 @@
 package me.golemcore.bot.launcher;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.URISyntaxException;
@@ -12,9 +13,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Properties;
 import java.util.Set;
 import java.util.stream.Stream;
 
+import me.golemcore.bot.domain.service.RuntimeVersionSupport;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.IVersionProvider;
@@ -29,8 +32,9 @@ import picocli.CommandLine.Unmatched;
  * The launcher always evaluates the best available runtime source in this
  * order:
  * <ol>
- * <li>a staged jar selected by {@code updates/current.txt}</li>
- * <li>a bundled runtime jar shipped next to the launcher</li>
+ * <li>a staged jar selected by {@code updates/current.txt}, unless the bundled
+ * runtime is strictly newer</li>
+ * <li>a bundled runtime jar shipped next to the launcher or image</li>
  * <li>the image classpath produced by the container build</li>
  * </ol>
  *
@@ -54,6 +58,7 @@ public final class RuntimeLauncher {
     static final String BUNDLED_JAR_ENV = "GOLEMCORE_BUNDLED_JAR";
     static final String BUNDLED_JAR_PROPERTY = "golemcore.launcher.bundled-jar";
     static final String SERVER_PORT_PROPERTY = "server.port";
+    static final String BUILD_INFO_RESOURCE = "META-INF/build-info.properties";
     private static final String LIB_DIR_NAME = "lib";
     private static final String RUNTIME_DIR_NAME = "runtime";
 
@@ -72,10 +77,13 @@ public final class RuntimeLauncher {
     private final PropertyReader propertyReader;
     private final LauncherOutput output;
     private final BundledRuntimeResolver bundledRuntimeResolver;
+    private final RuntimeVersionReader runtimeVersionReader;
+    private final RuntimeVersionSupport runtimeVersionSupport;
 
     public RuntimeLauncher() {
         this(resolveJavaCommand(), new DefaultProcessStarter(), new SystemEnvironmentReader(),
-                new SystemPropertyReader(), new ConsoleLauncherOutput(), new DefaultBundledRuntimeResolver());
+                new SystemPropertyReader(), new ConsoleLauncherOutput(), new DefaultBundledRuntimeResolver(),
+                new ClasspathRuntimeVersionReader(), new RuntimeVersionSupport());
     }
 
     RuntimeLauncher(
@@ -85,12 +93,50 @@ public final class RuntimeLauncher {
             PropertyReader propertyReader,
             LauncherOutput output,
             BundledRuntimeResolver bundledRuntimeResolver) {
+        this(javaCommand, processStarter, environmentReader, propertyReader, output, bundledRuntimeResolver,
+                new ClasspathRuntimeVersionReader(), new RuntimeVersionSupport());
+    }
+
+    RuntimeLauncher(
+            String javaCommand,
+            ProcessStarter processStarter,
+            EnvironmentReader environmentReader,
+            PropertyReader propertyReader,
+            LauncherOutput output,
+            BundledRuntimeResolver bundledRuntimeResolver,
+            RuntimeVersionReader runtimeVersionReader) {
+        this(javaCommand, processStarter, environmentReader, propertyReader, output, bundledRuntimeResolver,
+                runtimeVersionReader, new RuntimeVersionSupport());
+    }
+
+    RuntimeLauncher(
+            String javaCommand,
+            ProcessStarter processStarter,
+            EnvironmentReader environmentReader,
+            PropertyReader propertyReader,
+            LauncherOutput output,
+            RuntimeVersionReader runtimeVersionReader) {
+        this(javaCommand, processStarter, environmentReader, propertyReader, output,
+                new DefaultBundledRuntimeResolver(), runtimeVersionReader, new RuntimeVersionSupport());
+    }
+
+    RuntimeLauncher(
+            String javaCommand,
+            ProcessStarter processStarter,
+            EnvironmentReader environmentReader,
+            PropertyReader propertyReader,
+            LauncherOutput output,
+            BundledRuntimeResolver bundledRuntimeResolver,
+            RuntimeVersionReader runtimeVersionReader,
+            RuntimeVersionSupport runtimeVersionSupport) {
         this.javaCommand = javaCommand;
         this.processStarter = processStarter;
         this.environmentReader = environmentReader;
         this.propertyReader = propertyReader;
         this.output = output;
         this.bundledRuntimeResolver = bundledRuntimeResolver;
+        this.runtimeVersionReader = runtimeVersionReader;
+        this.runtimeVersionSupport = runtimeVersionSupport;
     }
 
     public static void main(String[] args) {
@@ -235,7 +281,9 @@ public final class RuntimeLauncher {
      *
      * <p>
      * The marker content is validated aggressively so a corrupted or hostile marker
-     * cannot escape the updates directory via path traversal.
+     * cannot escape the updates directory via path traversal. If the bundled
+     * runtime version is strictly newer, the marker is ignored so a fresh image can
+     * take over from an older persisted runtime.
      *
      * @param args
      *            original launcher arguments
@@ -271,6 +319,9 @@ public final class RuntimeLauncher {
             }
             if (!Files.isRegularFile(jarPath)) {
                 output.error("Current marker points to a missing jar: " + jarPath);
+                return null;
+            }
+            if (isBundledRuntimeNewer(assetName)) {
                 return null;
             }
             return jarPath;
@@ -547,6 +598,35 @@ public final class RuntimeLauncher {
     }
 
     /**
+     * Decide whether the bundled runtime should override the persisted current jar.
+     *
+     * <p>
+     * Variant A is intentionally preserved here: equal versions keep using the
+     * persisted jar, so only a strictly newer bundled image suppresses the current
+     * marker.
+     * </p>
+     */
+    private boolean isBundledRuntimeNewer(String assetName) {
+        String bundledVersion = runtimeVersionSupport.normalizeVersion(runtimeVersionReader.currentVersion());
+        String currentJarVersion = runtimeVersionSupport.extractVersionFromAssetName(assetName);
+        if (bundledVersion == null || currentJarVersion == null) {
+            return false;
+        }
+        if (!runtimeVersionSupport.isSemanticVersion(bundledVersion)
+                || !runtimeVersionSupport.isSemanticVersion(currentJarVersion)) {
+            return false;
+        }
+
+        // Variant A: equal versions keep using the persisted current jar.
+        boolean bundledIsNewer = runtimeVersionSupport.compareVersions(bundledVersion, currentJarVersion) > 0;
+        if (bundledIsNewer) {
+            output.info("Ignoring current marker because bundled runtime " + bundledVersion
+                    + " is newer than " + currentJarVersion);
+        }
+        return bundledIsNewer;
+    }
+
+    /**
      * Normalizes user-provided paths and expands the home placeholders commonly
      * produced by local launchers and shell invocations.
      *
@@ -808,6 +888,13 @@ public final class RuntimeLauncher {
         Path resolve();
     }
 
+    /**
+     * Reads the version baked into the bundled image runtime.
+     */
+    interface RuntimeVersionReader {
+        String currentVersion();
+    }
+
     private static final class DefaultProcessStarter implements ProcessStarter {
 
         @Override
@@ -882,6 +969,45 @@ public final class RuntimeLauncher {
             } catch (URISyntaxException | IllegalArgumentException ignored) {
                 return null;
             }
+        }
+    }
+
+    /**
+     * Reads the version baked into the bundled image runtime.
+     *
+     * <p>
+     * The context class loader is preferred to satisfy PMD and to work in
+     * environments where the launcher class loader is not the one that sees the
+     * build-info resource. A system-classloader fallback keeps the lookup stable
+     * when no context loader is set.
+     * </p>
+     */
+    static final class ClasspathRuntimeVersionReader implements RuntimeVersionReader {
+
+        @Override
+        public String currentVersion() {
+            try (InputStream inputStream = readBuildInfo()) {
+                if (inputStream == null) {
+                    return "dev";
+                }
+                Properties properties = new Properties();
+                properties.load(inputStream);
+                String version = properties.getProperty("build.version");
+                return version == null || version.isBlank() ? "dev" : version;
+            } catch (IOException ignored) {
+                return "dev";
+            }
+        }
+
+        private InputStream readBuildInfo() {
+            ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+            if (contextClassLoader != null) {
+                InputStream contextStream = contextClassLoader.getResourceAsStream(BUILD_INFO_RESOURCE);
+                if (contextStream != null) {
+                    return contextStream;
+                }
+            }
+            return ClassLoader.getSystemResourceAsStream(BUILD_INFO_RESOURCE);
         }
     }
 }

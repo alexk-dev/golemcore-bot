@@ -4,10 +4,10 @@ import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAdvanced } from '../../hooks/useSettings';
-import type { CompactionConfig, RateLimitConfig, SecurityConfig } from '../../api/settingsTypes';
+import type { CompactionConfig, RateLimitConfig, ResilienceConfig, SecurityConfig } from '../../api/settingsTypes';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
-export type AdvancedMode = 'all' | 'rateLimit' | 'security' | 'compaction';
+export type AdvancedMode = 'all' | 'rateLimit' | 'security' | 'compaction' | 'resilience';
 
 function hasDiff<T>(current: T, initial: T): boolean {
   return JSON.stringify(current) !== JSON.stringify(initial);
@@ -27,6 +27,7 @@ interface AdvancedTabProps {
   rateLimit: RateLimitConfig;
   security: SecurityConfig;
   compaction: CompactionConfig;
+  resilience: ResilienceConfig;
   mode?: AdvancedMode;
 }
 
@@ -135,6 +136,39 @@ function CompactionCard({ comp, setComp }: CompactionCardProps): ReactElement {
   );
 }
 
+
+interface ResilienceCardProps {
+  resilience: ResilienceConfig;
+  setResilience: (value: ResilienceConfig) => void;
+}
+
+function ResilienceCard({ resilience, setResilience }: ResilienceCardProps): ReactElement {
+  return (
+    <Card className="settings-card h-100">
+      <Card.Body>
+        <SettingsCardTitle
+          title="Resilience"
+          tip="Fallback routing, retries, degradation, and delayed recovery behavior"
+        />
+        <Form.Check type="switch" label="Enable" checked={resilience.enabled ?? true}
+          onChange={(e) => setResilience({ ...resilience, enabled: e.target.checked })} className="mb-3" />
+        <Form.Group>
+          <Form.Label className="small fw-medium">
+            L2 Provider Fallback Max Attempts <HelpTip text="Maximum number of L2 reroutes within one turn, regardless of strategy. Sequential still stops earlier if the fallback chain is shorter." />
+          </Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={1}
+            value={resilience.l2ProviderFallbackMaxAttempts ?? 5}
+            onChange={(e) => setResilience({ ...resilience, l2ProviderFallbackMaxAttempts: toNullableInt(e.target.value) })}
+          />
+        </Form.Group>
+      </Card.Body>
+    </Card>
+  );
+}
+
 interface SecurityCardProps {
   sec: SecurityConfig;
   setSec: (value: SecurityConfig) => void;
@@ -193,28 +227,31 @@ function SecurityCard({ sec, setSec }: SecurityCardProps): ReactElement {
   );
 }
 
-export function AdvancedTab({ rateLimit, security, compaction, mode = 'all' }: AdvancedTabProps): ReactElement {
+export function AdvancedTab({ rateLimit, security, compaction, resilience, mode = 'all' }: AdvancedTabProps): ReactElement {
   const updateAdvanced = useUpdateAdvanced();
   const [rl, setRl] = useState<RateLimitConfig>({ ...rateLimit });
   const [sec, setSec] = useState<SecurityConfig>({ ...security });
   const [comp, setComp] = useState<CompactionConfig>({ ...compaction });
+  const [res, setRes] = useState<ResilienceConfig>({ ...resilience });
   const isAdvancedDirty = useMemo(
-    () => hasDiff(rl, rateLimit) || hasDiff(sec, security) || hasDiff(comp, compaction),
-    [rl, rateLimit, sec, security, comp, compaction],
+    () => hasDiff(rl, rateLimit) || hasDiff(sec, security) || hasDiff(comp, compaction) || hasDiff(res, resilience),
+    [rl, rateLimit, sec, security, comp, compaction, res, resilience],
   );
 
   useEffect(() => { setRl({ ...rateLimit }); }, [rateLimit]);
   useEffect(() => { setSec({ ...security }); }, [security]);
   useEffect(() => { setComp({ ...compaction }); }, [compaction]);
+  useEffect(() => { setRes({ ...resilience }); }, [resilience]);
 
   const handleSave = async (): Promise<void> => {
-    await updateAdvanced.mutateAsync({ rateLimit: rl, security: sec, compaction: comp });
+    await updateAdvanced.mutateAsync({ rateLimit: rl, security: sec, compaction: comp, resilience: res });
     toast.success('Advanced settings saved');
   };
 
   const showRateLimit = mode === 'all' || mode === 'rateLimit';
   const showSecurity = mode === 'all' || mode === 'security';
   const showCompaction = mode === 'all' || mode === 'compaction';
+  const showResilience = mode === 'all' || mode === 'resilience';
 
   return (
     <>
@@ -229,6 +266,10 @@ export function AdvancedTab({ rateLimit, security, compaction, mode = 'all' }: A
 
         {showSecurity && <Col lg={4}>
           <SecurityCard sec={sec} setSec={setSec} />
+        </Col>}
+
+        {showResilience && <Col lg={4}>
+          <ResilienceCard resilience={res} setResilience={setRes} />
         </Col>}
       </Row>
 

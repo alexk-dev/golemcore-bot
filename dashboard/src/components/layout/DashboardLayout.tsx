@@ -3,12 +3,18 @@ import { ChatRuntimeController } from '../chat/ChatRuntimeController';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+interface DashboardLayoutProps {
+  children: React.ReactNode;
+}
+
+export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { pathname } = useLocation();
   const isChat = pathname === '/' || pathname.startsWith('/chat');
   const isIde = pathname.startsWith('/ide');
+  const isWorkspace = pathname.startsWith('/workspace');
+  const isShellRoute = isChat || isIde || isWorkspace;
 
-  const mainClassName = isChat || isIde
+  const mainClassName = isShellRoute
     ? 'dashboard-main-shell flex-grow-1 d-flex overflow-hidden'
     : 'dashboard-main flex-grow-1 overflow-auto';
 

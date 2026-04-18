@@ -20,8 +20,8 @@ package me.golemcore.bot.domain.context.layer;
 
 /**
  * Shared cheap character-based token estimator used by every
- * {@link ContextLayer} to report the approximate token footprint of its
- * rendered content.
+ * {@link me.golemcore.bot.domain.context.ContextLayer} to report the
+ * approximate token footprint of its rendered content.
  *
  * <p>
  * The heuristic divides the character length by {@value #CHARS_PER_TOKEN} and

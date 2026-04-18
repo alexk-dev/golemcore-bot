@@ -449,15 +449,31 @@ class RuntimeSettingsFacadeTest {
         RuntimeConfig.RateLimitConfig rateLimit = RuntimeConfig.RateLimitConfig.builder().build();
         RuntimeConfig.SecurityConfig security = RuntimeConfig.SecurityConfig.builder().build();
         RuntimeConfig.CompactionConfig compaction = RuntimeConfig.CompactionConfig.builder().build();
+        RuntimeConfig.ResilienceConfig resilience = RuntimeConfig.ResilienceConfig.builder().build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
 
-        RuntimeConfig response = facade.updateAdvancedConfig(rateLimit, security, compaction);
+        RuntimeConfig response = facade.updateAdvancedConfig(rateLimit, security, compaction, resilience);
 
         assertEquals(current, response);
         assertEquals(rateLimit, current.getRateLimit());
         assertEquals(security, current.getSecurity());
         assertEquals(compaction, current.getCompaction());
+        assertEquals(resilience, current.getResilience());
         verify(runtimeConfigService).updateRuntimeConfig(current);
+    }
+
+    @Test
+    void shouldApplyOnlyResilienceAdvancedConfigSectionWhenOthersAreNull() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        RuntimeConfig.ResilienceConfig resilience = RuntimeConfig.ResilienceConfig.builder()
+                .l2ProviderFallbackMaxAttempts(7)
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+
+        RuntimeConfig response = facade.updateAdvancedConfig(null, null, null, resilience);
+
+        assertEquals(current, response);
+        assertEquals(resilience, current.getResilience());
     }
 
     @Test

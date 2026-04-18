@@ -39,8 +39,8 @@ import java.util.stream.Collectors;
  * Replaces old messages with a concise summary to manage context window limits
  * while preserving essential conversation context. Used by both manual /compact
  * commands and automatic compaction via
- * {@link domain.system.AutoCompactionSystem}. Falls back to simple truncation
- * if LLM is unavailable.
+ * {@link me.golemcore.bot.domain.system.AutoCompactionSystem}. Falls back to
+ * simple truncation if LLM is unavailable.
  */
 @Service
 @RequiredArgsConstructor

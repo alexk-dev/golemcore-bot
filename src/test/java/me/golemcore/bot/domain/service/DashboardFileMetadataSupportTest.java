@@ -67,4 +67,16 @@ class DashboardFileMetadataSupportTest {
 
         assertEquals("text/custom", mimeType);
     }
+
+    @Test
+    void shouldNormalizeMacBinaryProbeToGenericBinary() {
+        Path path = workspacePathService.resolveSafePath("data/archive.bin");
+
+        String mimeType = DashboardFileMetadataSupport.resolveMimeType(
+                workspacePathService,
+                path,
+                "application/macbinary");
+
+        assertEquals("application/octet-stream", mimeType);
+    }
 }

@@ -22,5 +22,16 @@ import java.time.Instant;
 
 /**
  * Structured failure event recorded during the agent pipeline execution.
+ *
+ * @param source
+ *            subsystem that produced the failure
+ * @param component
+ *            component name that reported the failure
+ * @param kind
+ *            failure category
+ * @param message
+ *            diagnostic failure message
+ * @param timestamp
+ *            failure timestamp
  */
 public record FailureEvent(FailureSource source,String component,FailureKind kind,String message,Instant timestamp){}

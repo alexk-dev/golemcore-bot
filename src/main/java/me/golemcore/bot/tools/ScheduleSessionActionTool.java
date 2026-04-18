@@ -349,6 +349,7 @@ public class ScheduleSessionActionTool implements ToolComponent {
         case NOTIFY_JOB_READY -> !StringValueSupport.isBlank(stringParam(parameters, "artifact_path"))
                 ? DelayedActionDeliveryMode.DIRECT_FILE
                 : DelayedActionDeliveryMode.DIRECT_MESSAGE;
+        case RETRY_LLM_TURN -> DelayedActionDeliveryMode.INTERNAL_TURN;
         };
     }
 
@@ -407,6 +408,7 @@ public class ScheduleSessionActionTool implements ToolComponent {
         case NOTIFY_JOB_READY -> message != null
                 ? message
                 : originalSummary != null ? "Result ready: " + originalSummary : "Job result ready";
+        case RETRY_LLM_TURN -> "LLM cold retry scheduled";
         };
     }
 
@@ -415,6 +417,7 @@ public class ScheduleSessionActionTool implements ToolComponent {
         case REMIND_LATER -> "reminder";
         case RUN_LATER -> "check_back";
         case NOTIFY_JOB_READY -> "job_result";
+        case RETRY_LLM_TURN -> "llm_retry";
         };
     }
 

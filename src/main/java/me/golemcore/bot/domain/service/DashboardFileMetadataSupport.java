@@ -9,6 +9,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Shared file metadata helpers for the dashboard IDE and workspace endpoints.
+ */
 final class DashboardFileMetadataSupport {
 
     private static final long MAX_EDITABLE_FILE_SIZE = 1024L * 1024L * 2L;
@@ -43,6 +46,10 @@ final class DashboardFileMetadataSupport {
     private DashboardFileMetadataSupport() {
     }
 
+    /**
+     * Returns whether a text-like file should be rejected for inline editing due to
+     * its size.
+     */
     static boolean shouldRejectEditableFileSize(
             WorkspacePathService workspacePathService,
             Path path,
@@ -51,6 +58,9 @@ final class DashboardFileMetadataSupport {
         return size > MAX_EDITABLE_FILE_SIZE && isTextLikeFile(workspacePathService, path, mimeType);
     }
 
+    /**
+     * Returns whether the path is a directory hidden from the default IDE tree.
+     */
     static boolean isIgnoredDirectory(
             WorkspaceFilePort workspaceFilePort,
             WorkspacePathService workspacePathService,
@@ -59,6 +69,9 @@ final class DashboardFileMetadataSupport {
                 && DEFAULT_IGNORED_DIRECTORIES.contains(requireFileName(workspacePathService, path));
     }
 
+    /**
+     * Returns whether the file can be opened in the inline dashboard editor.
+     */
     static boolean isEditableFile(
             WorkspacePathService workspacePathService,
             Path path,
@@ -70,10 +83,16 @@ final class DashboardFileMetadataSupport {
         return isTextLikeFile(workspacePathService, path, mimeType);
     }
 
+    /**
+     * Returns whether the resolved mime type represents an image asset.
+     */
     static boolean isImageMimeType(String mimeType) {
         return mimeType != null && mimeType.startsWith("image/");
     }
 
+    /**
+     * Normalizes a user-provided filename down to a safe leaf name.
+     */
     static String sanitizeFilename(String filename) {
         String normalized = filename.trim().replace("\\", "/");
         int slashIndex = normalized.lastIndexOf('/');
@@ -84,11 +103,18 @@ final class DashboardFileMetadataSupport {
         return leafName;
     }
 
+    /**
+     * Builds the protected dashboard download URL for a workspace-relative path.
+     */
     static String buildDownloadUrl(String relativePath) {
         String encoded = URLEncoder.encode(relativePath, StandardCharsets.UTF_8).replace("+", "%20");
         return "/api/files/download?path=" + encoded;
     }
 
+    /**
+     * Resolves a stable mime type for dashboard rendering, correcting generic OS
+     * binary probes when the file extension clearly points to a text format.
+     */
     static String resolveMimeType(
             WorkspacePathService workspacePathService,
             Path path,
@@ -96,6 +122,7 @@ final class DashboardFileMetadataSupport {
         String mimeType = workspacePathService.resolveMimeType(path, requestedMimeType);
         String filename = requireFileName(workspacePathService, path);
         if (GENERIC_BINARY_MIME_TYPES.contains(mimeType)) {
+            // Prefer a known text mime type when the OS reports a generic binary value.
             return findTextMimeType(filename, "application/octet-stream");
         }
         return mimeType;

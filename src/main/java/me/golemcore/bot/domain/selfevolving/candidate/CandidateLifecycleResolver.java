@@ -22,7 +22,8 @@ import me.golemcore.bot.domain.service.StringValueSupport;
 /**
  * Shared resolution of lifecycle state, rollout stage, and legacy status for
  * evolution candidates and promotion decisions. Eliminates duplication across
- * {@link PromotionWorkflowService} and {@link EvolutionCandidateService}.
+ * {@link me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService}
+ * and {@link EvolutionCandidateService}.
  */
 public final class CandidateLifecycleResolver {
 

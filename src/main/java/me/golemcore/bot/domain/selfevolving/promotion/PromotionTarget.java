@@ -20,5 +20,12 @@ package me.golemcore.bot.domain.selfevolving.promotion;
 
 /**
  * Normalized target state for a promotion transition.
+ *
+ * @param legacyState
+ *            legacy candidate state
+ * @param lifecycleState
+ *            normalized lifecycle state
+ * @param rolloutStage
+ *            rollout stage to apply
  */
 public record PromotionTarget(String legacyState,String lifecycleState,String rolloutStage){}

@@ -34,7 +34,7 @@ import java.util.List;
  * If no layers contribute content, a minimal fallback prompt is used to ensure
  * the LLM always receives a system instruction.
  *
- * <h3>Example</h3>
+ * <h2>Example</h2>
  *
  * <pre>
  * ContextBlueprint blueprint = ...;

@@ -6,6 +6,7 @@ import { Toaster } from 'react-hot-toast';
 import App from './App';
 import './styles/tailwind.css';
 import './styles/custom.scss';
+import './styles/workspace.scss';
 import './styles/responsive.scss';
 
 const queryClient = new QueryClient({

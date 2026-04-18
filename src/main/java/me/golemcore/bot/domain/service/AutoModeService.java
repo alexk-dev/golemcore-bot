@@ -47,8 +47,8 @@ import java.util.UUID;
  * and global state. Single-user design with simplified storage layout. Auto
  * mode enables the agent to work independently on long-term goals, breaking
  * them into tasks and maintaining a daily diary of progress. Integrates with
- * {@link auto.AutoModeScheduler} for periodic agent invocations routed through
- * the shared per-session run coordinator.
+ * {@link me.golemcore.bot.auto.AutoModeScheduler} for periodic agent
+ * invocations routed through the shared per-session run coordinator.
  * <p>
  * Storage layout:
  * <ul>

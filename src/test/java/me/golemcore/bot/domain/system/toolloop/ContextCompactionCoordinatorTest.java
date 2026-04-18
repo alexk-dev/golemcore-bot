@@ -185,6 +185,12 @@ class ContextCompactionCoordinatorTest {
         assertEquals(2, context.getMessages().size(),
                 "context.messages must be resynced with the now-shorter session");
         verify(turnProgressService).flushBufferedTools(context, "context_overflow_recovery");
+        verify(turnProgressService).publishSummary(context,
+                "The model rejected the request as too large, so I shortened the conversation context and retried.",
+                Map.of("kind", "context_compaction_fallback",
+                        "reason", CompactionReason.CONTEXT_OVERFLOW_RECOVERY.name(),
+                        "removed", 4,
+                        "usedSummary", true));
         List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
         assertTrue(events.stream().anyMatch(event -> RuntimeEventType.COMPACTION_STARTED.equals(event.type())));
         assertTrue(events.stream().anyMatch(event -> RuntimeEventType.COMPACTION_FINISHED.equals(event.type())));

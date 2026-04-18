@@ -38,14 +38,13 @@ import java.util.concurrent.CompletableFuture;
  * <li>{@link McpClientManager} starts MCP server and gets tool definitions
  * <li>For each tool, creates McpToolAdapter instance
  * <li>{@link me.golemcore.bot.domain.system.ContextBuildingSystem} registers
- * adapters in ToolExecutionSystem
+ * adapters in the tool execution registry
  * <li>LLM calls tool → adapter delegates to {@link McpClient#callTool}
- * <li>When skill changes, ToolExecutionSystem unregisters adapters
+ * <li>When skill changes, the tool execution registry unregisters adapters
  * </ol>
  *
  * @see McpClient
  * @see McpClientManager
- * @see me.golemcore.bot.domain.system.ToolExecutionSystem
  */
 public class McpToolAdapter implements ToolComponent {
 

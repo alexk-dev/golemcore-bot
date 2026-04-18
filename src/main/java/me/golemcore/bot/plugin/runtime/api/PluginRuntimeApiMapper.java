@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Explicit engine <-> plugin runtime API mapping.
+ * Explicit engine-to-plugin runtime API mapping.
  */
 @Component
 public class PluginRuntimeApiMapper {

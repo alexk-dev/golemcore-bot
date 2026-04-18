@@ -105,6 +105,9 @@ public class RuntimeConfig {
     @Builder.Default
     private SelfEvolvingConfig selfEvolving = new SelfEvolvingConfig();
 
+    @Builder.Default
+    private ResilienceConfig resilience = new ResilienceConfig();
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -1296,6 +1299,72 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    public static class ResilienceConfig {
+        /** Enables the five-layer LLM resilience pipeline. */
+        @Builder.Default
+        private Boolean enabled = true;
+
+        /** Maximum immediate retry attempts before moving to slower recovery layers. */
+        @Builder.Default
+        private Integer hotRetryMaxAttempts = 5;
+
+        /** Base delay for hot-retry exponential backoff. */
+        @Builder.Default
+        private Long hotRetryBaseDelayMs = 5000L;
+
+        /** Upper bound for hot-retry jitter delay. */
+        @Builder.Default
+        private Long hotRetryCapMs = 60000L;
+
+        /** Failures needed to open a provider circuit inside the sliding window. */
+        @Builder.Default
+        private Integer circuitBreakerFailureThreshold = 5;
+
+        /** Sliding window in seconds for circuit breaker failure counting. */
+        @Builder.Default
+        private Long circuitBreakerWindowSeconds = 60L;
+
+        /** Seconds an open circuit remains unavailable before a half-open probe. */
+        @Builder.Default
+        private Long circuitBreakerOpenDurationSeconds = 120L;
+
+        /** Maximum L2 provider-fallback reroutes before escalating to later layers. */
+        @Builder.Default
+        private Integer l2ProviderFallbackMaxAttempts = 5;
+
+        /** Whether L4 may compact context after provider-side transient errors. */
+        @Builder.Default
+        private Boolean degradationCompactContext = true;
+
+        /** Minimum messages required before L4 context compaction is attempted. */
+        @Builder.Default
+        private Integer degradationCompactMinMessages = 6;
+
+        /** Whether L4 may switch the current turn to a cheaper fallback tier. */
+        @Builder.Default
+        private Boolean degradationDowngradeModel = true;
+
+        /** Model tier used when L4 degradation downgrades the active model. */
+        @Builder.Default
+        private String degradationFallbackModelTier = "balanced";
+
+        /** Whether L4 may remove tool schemas for a think-only retry. */
+        @Builder.Default
+        private Boolean degradationStripTools = true;
+
+        /** Whether exhausted turns should be suspended and retried later. */
+        @Builder.Default
+        private Boolean coldRetryEnabled = true;
+
+        /** Maximum delayed retry attempts before dead-letter handling. */
+        @Builder.Default
+        private Integer coldRetryMaxAttempts = 4;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class DelayedActionsConfig {
         @Builder.Default
         private Boolean enabled = true;
@@ -1349,7 +1418,9 @@ public class RuntimeConfig {
                                                                                                                         "hive",
                                                                                                                         HiveConfig.class), SELF_EVOLVING(
                                                                                                                                 "self-evolving",
-                                                                                                                                SelfEvolvingConfig.class);
+                                                                                                                                SelfEvolvingConfig.class), RESILIENCE(
+                                                                                                                                        "resilience",
+                                                                                                                                        ResilienceConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

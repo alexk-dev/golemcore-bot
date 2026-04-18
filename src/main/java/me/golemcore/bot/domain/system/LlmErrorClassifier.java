@@ -51,6 +51,7 @@ public final class LlmErrorClassifier {
     public static final String LANGCHAIN4J_NON_RETRIABLE = "llm.langchain4j.non_retriable";
     public static final String LANGCHAIN4J_HTTP_ERROR = "llm.langchain4j.http_error";
     public static final String LANGCHAIN4J_ERROR = "llm.langchain4j.error";
+    public static final String PROVIDER_CIRCUIT_OPEN = "llm.provider.circuit_open";
     public static final String UNKNOWN = "llm.error.unknown";
 
     private static final String LANGCHAIN4J_EXCEPTIONS_PREFIX = "dev.langchain4j.exception.";
@@ -197,7 +198,8 @@ public final class LlmErrorClassifier {
                 || LANGCHAIN4J_TIMEOUT.equals(code)
                 || LANGCHAIN4J_INTERNAL_SERVER.equals(code)
                 || REQUEST_TIMEOUT.equals(code)
-                || LANGCHAIN4J_RETRIABLE.equals(code);
+                || LANGCHAIN4J_RETRIABLE.equals(code)
+                || PROVIDER_CIRCUIT_OPEN.equals(code);
     }
 
     /**

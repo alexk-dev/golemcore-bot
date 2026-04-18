@@ -13,6 +13,7 @@ const MOBILE_ROUTES: MobileRouteExpectation[] = [
   { path: '/diagnostics', visibleText: 'This page shows the effective runtime paths/env' },
   { path: '/logs', visibleText: 'Live stream with virtualized rendering' },
   { path: '/settings', visibleText: 'Select a settings category' },
+  { path: '/workspace', visibleText: 'Open a file, make a quick change' },
 ];
 
 function buildRoutePath(routePath: string): string {

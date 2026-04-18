@@ -53,6 +53,7 @@ class ToolExecutionPhaseTest {
                 null,
                 null,
                 null,
+                null,
                 clock);
     }
 

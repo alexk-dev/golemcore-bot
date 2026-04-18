@@ -21,7 +21,7 @@ const SECONDARY_ROUTES: MenuRouteExpectation[] = [
   { label: 'Analytics', path: '/analytics', visibleText: 'Analytics' },
   { label: 'Skills', path: '/skills', visibleText: 'Skill Workspace' },
   { label: 'Diagnostics', path: '/diagnostics', visibleText: 'This page shows the effective runtime paths/env' },
-  { label: 'IDE', path: '/ide', visibleText: 'Open a file, make a quick change' },
+  { label: 'Workspace', path: '/workspace', visibleText: 'Open a file, make a quick change' },
   { label: 'Logs', path: '/logs', visibleText: 'Live stream with virtualized rendering' },
 ];
 

@@ -20,6 +20,11 @@ package me.golemcore.bot.adapter.outbound.hive;
 
 /**
  * Adapter compatibility wrapper for legacy Hive evidence reference type.
+ *
+ * @param kind
+ *            evidence reference kind
+ * @param ref
+ *            evidence reference value
  */
 @Deprecated(forRemoval=false)public record HiveEvidenceRef(String kind,String ref){
 

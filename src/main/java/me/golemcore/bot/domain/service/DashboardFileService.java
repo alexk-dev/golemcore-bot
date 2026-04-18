@@ -70,21 +70,11 @@ public class DashboardFileService {
             boolean editable = DashboardFileMetadataSupport.isEditableFile(workspacePathService, path, mimeType, size);
             String updatedAt = workspaceFilePort.getLastModifiedTime(path);
             if (!editable) {
-                return baseContentBuilder(path, size, updatedAt, mimeType)
-                        .content(null)
-                        .binary(true)
-                        .image(image)
-                        .editable(false)
-                        .build();
+                return buildContent(path, size, updatedAt, mimeType, null, true, image, false);
             }
 
             String content = workspaceFilePort.readString(path);
-            return baseContentBuilder(path, size, updatedAt, mimeType)
-                    .content(content)
-                    .binary(false)
-                    .image(false)
-                    .editable(true)
-                    .build();
+            return buildContent(path, size, updatedAt, mimeType, content, false, false, true);
         } catch (MalformedInputException e) {
             throw new IllegalArgumentException("File is not valid UTF-8 text");
         } catch (IOException e) {
@@ -164,12 +154,8 @@ public class DashboardFileService {
                 workspaceFilePort.createDirectories(parent);
             }
             workspaceFilePort.write(path, data);
-            return baseContentBuilder(path, data.length, Instant.now().toString(), resolvedMimeType)
-                    .content(content)
-                    .binary(!editable)
-                    .image(image)
-                    .editable(editable)
-                    .build();
+            return buildContent(path, data.length, Instant.now().toString(), resolvedMimeType, content, !editable,
+                    image, editable);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to upload file", e);
         }
@@ -261,12 +247,7 @@ public class DashboardFileService {
     private DashboardFileContent buildSavedTextContent(Path path, String content) throws IOException {
         long size = workspaceFilePort.size(path);
         String mimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, null);
-        return baseContentBuilder(path, size, Instant.now().toString(), mimeType)
-                .content(content)
-                .binary(false)
-                .image(false)
-                .editable(true)
-                .build();
+        return buildContent(path, size, Instant.now().toString(), mimeType, content, false, false, true);
     }
 
     private String decodeUtf8(byte[] data) {
@@ -280,18 +261,27 @@ public class DashboardFileService {
         }
     }
 
-    private DashboardFileContent.DashboardFileContentBuilder baseContentBuilder(
+    private DashboardFileContent buildContent(
             Path path,
             long size,
             String updatedAt,
-            String mimeType) {
+            String mimeType,
+            String content,
+            boolean binary,
+            boolean image,
+            boolean editable) {
         String relativePath = toRelativePath(path);
         return DashboardFileContent.builder()
                 .path(relativePath)
+                .content(content)
                 .size(size)
                 .updatedAt(updatedAt)
                 .mimeType(mimeType)
-                .downloadUrl(DashboardFileMetadataSupport.buildDownloadUrl(relativePath));
+                .binary(binary)
+                .image(image)
+                .editable(editable)
+                .downloadUrl(DashboardFileMetadataSupport.buildDownloadUrl(relativePath))
+                .build();
     }
 
     private Path resolveUploadDirectory(String targetDirectory) {

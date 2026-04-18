@@ -49,6 +49,7 @@ export interface RuntimeConfigUiRecord extends UnknownRecord {
   hive?: UnknownRecord;
   selfEvolving?: unknown;
   modelRegistry?: unknown;
+  resilience?: UnknownRecord;
 }
 
 export function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
@@ -63,6 +64,7 @@ export function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
   if (cfg.llm?.providers != null) {
     cfg.llm = { ...cfg.llm, providers: normalizeLlmProviders(cfg.llm.providers) };
   }
+  cfg.resilience = typeof data.resilience === "object" && data.resilience != null ? { ...data.resilience } : {};
   if (cfg.tools) {
     cfg.tools = { ...cfg.tools, shellEnvironmentVariables: toShellEnvironmentVariables(cfg.tools.shellEnvironmentVariables) };
   }

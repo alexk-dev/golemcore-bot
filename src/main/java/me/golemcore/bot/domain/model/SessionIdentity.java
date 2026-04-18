@@ -22,6 +22,11 @@ import me.golemcore.bot.domain.service.StringValueSupport;
 
 /**
  * Canonical logical session identity across channels.
+ *
+ * @param channelType
+ *            logical channel type
+ * @param conversationKey
+ *            stable conversation key inside the channel
  */
 public record SessionIdentity(String channelType,String conversationKey){
 

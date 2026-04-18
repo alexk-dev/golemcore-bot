@@ -1,19 +1,26 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.adapter.inbound.web.dto.UsageStatsResponse;
+import me.golemcore.bot.domain.model.UsageMetric;
 import me.golemcore.bot.domain.model.UsageStats;
+import me.golemcore.bot.domain.system.toolloop.resilience.ProviderCircuitBreaker;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -23,12 +30,15 @@ import reactor.test.StepVerifier;
 class UsageControllerTest {
 
     private UsageTrackingPort usageTrackingPort;
+    private ObjectProvider<ProviderCircuitBreaker> circuitBreakerProvider;
     private UsageController controller;
 
     @BeforeEach
     void setUp() {
         usageTrackingPort = mock(UsageTrackingPort.class);
-        controller = new UsageController(usageTrackingPort);
+        circuitBreakerProvider = mock(ObjectProvider.class);
+        when(circuitBreakerProvider.getIfAvailable()).thenReturn(null);
+        controller = new UsageController(usageTrackingPort, circuitBreakerProvider);
     }
 
     @Test
@@ -110,6 +120,29 @@ class UsageControllerTest {
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertNotNull(response.getBody());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldExposeCircuitBreakerStateInExportedMetrics() {
+        ProviderCircuitBreaker circuitBreaker = new ProviderCircuitBreaker(
+                Clock.fixed(Instant.parse("2026-04-16T04:10:00Z"), ZoneOffset.UTC), 1, 60, 120);
+        circuitBreaker.recordFailure("provider-a");
+        when(circuitBreakerProvider.getIfAvailable()).thenReturn(circuitBreaker);
+        when(usageTrackingPort.exportMetrics()).thenReturn(List.of());
+
+        StepVerifier.create(controller.exportMetrics())
+                .assertNext(response -> {
+                    List<UsageMetric> body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(1, body.size());
+                    UsageMetric metric = body.getFirst();
+                    assertEquals("llm.circuit_breaker.state", metric.getName());
+                    assertEquals(1.0d, metric.getValue());
+                    assertEquals("provider-a", metric.getTags().get("model"));
+                    assertNull(metric.getTags().get("provider"));
+                    assertEquals("OPEN", metric.getTags().get("state"));
                 })
                 .verifyComplete();
     }
