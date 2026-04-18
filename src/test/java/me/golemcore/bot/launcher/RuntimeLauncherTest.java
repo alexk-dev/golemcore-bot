@@ -3,14 +3,17 @@ package me.golemcore.bot.launcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 
@@ -764,6 +767,64 @@ class RuntimeLauncherTest {
         }
     }
 
+    @Test
+    @SuppressWarnings("PMD.CloseResource")
+    void shouldWriteLauncherDiagnosticsToConsoleStreams() {
+        ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream();
+        PrintStream previousOut = System.out;
+        PrintStream previousErr = System.err;
+
+        try (PrintStream out = new PrintStream(standardOutput, true, StandardCharsets.UTF_8);
+                PrintStream err = new PrintStream(errorOutput, true, StandardCharsets.UTF_8)) {
+            System.setOut(out);
+            System.setErr(err);
+
+            LauncherOutput output = new ConsoleLauncherOutput();
+            output.info("ready");
+            output.error("failed");
+
+            assertEquals("[launcher] ready" + System.lineSeparator(), standardOutput.toString(StandardCharsets.UTF_8));
+            assertEquals("[launcher] failed" + System.lineSeparator(), errorOutput.toString(StandardCharsets.UTF_8));
+        } finally {
+            System.setOut(previousOut);
+            System.setErr(previousErr);
+        }
+    }
+
+    @Test
+    void shouldReadCurrentProcessPropertiesAndEnvironment() {
+        String propertyName = "golemcore.launcher.test.property";
+        String previousValue = System.getProperty(propertyName);
+        try {
+            System.setProperty(propertyName, "configured");
+
+            assertEquals("configured", new SystemPropertyReader().get(propertyName));
+            assertEquals(
+                    System.getenv("GOLEMCORE_LAUNCHER_TEST_ENV_THAT_SHOULD_NOT_EXIST"),
+                    new SystemEnvironmentReader().get("GOLEMCORE_LAUNCHER_TEST_ENV_THAT_SHOULD_NOT_EXIST"));
+        } finally {
+            restoreSystemProperty(propertyName, previousValue);
+        }
+    }
+
+    @Test
+    void shouldResolveDefaultBundledRuntimeCodeSource() {
+        Path resolvedLocation = new DefaultBundledRuntimeResolver().resolve();
+
+        assertNotNull(resolvedLocation);
+        assertTrue(resolvedLocation.isAbsolute());
+    }
+
+    @Test
+    void shouldWrapJvmProcessAsChildProcess() throws Exception {
+        Process process = new ProcessBuilder(javaExecutable(), "-version").start();
+        ChildProcess childProcess = new ProcessChildProcess(process);
+
+        assertEquals(0, childProcess.waitFor());
+        childProcess.destroy();
+    }
+
     private static String expectedSystemBuildVersion() {
         try (InputStream inputStream = ClassLoader.getSystemResourceAsStream(RuntimeLauncher.BUILD_INFO_RESOURCE)) {
             if (inputStream == null) {
@@ -780,6 +841,14 @@ class RuntimeLauncherTest {
 
     private static String buildInfoResourceName() {
         return RuntimeLauncher.BUILD_INFO_RESOURCE;
+    }
+
+    private static String javaExecutable() {
+        String executableName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")
+                ? "java.exe"
+                : "java";
+        Path candidate = Path.of(System.getProperty("java.home"), "bin", executableName);
+        return Files.isRegularFile(candidate) ? candidate.toAbsolutePath().normalize().toString() : executableName;
     }
 
     private RuntimeLauncher createLauncher(Path updatesDir, RecordingProcessStarter processStarter) {

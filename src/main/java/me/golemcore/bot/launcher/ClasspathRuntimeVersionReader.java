@@ -26,7 +26,7 @@ final class ClasspathRuntimeVersionReader implements RuntimeVersionReader {
             properties.load(inputStream);
             String version = properties.getProperty("build.version");
             return version == null || version.isBlank() ? "dev" : version;
-        } catch (IOException ignored) {
+        } catch (IOException _) {
             return "dev";
         }
     }

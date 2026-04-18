@@ -61,6 +61,7 @@ public final class RuntimeLauncher {
                 new ClasspathRuntimeVersionReader(), new RuntimeVersionSupport());
     }
 
+    @SuppressWarnings("java:S107")
     RuntimeLauncher(
             String javaCommand,
             ProcessStarter processStarter,

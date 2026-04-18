@@ -1,5 +1,6 @@
 package me.golemcore.bot.launcher;
 
+@SuppressWarnings("java:S106")
 final class ConsoleLauncherOutput implements LauncherOutput {
 
     @Override

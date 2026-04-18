@@ -14,7 +14,7 @@ final class DefaultBundledRuntimeResolver implements BundledRuntimeResolver {
                 return null;
             }
             return Path.of(codeSource.getLocation().toURI()).toAbsolutePath().normalize();
-        } catch (URISyntaxException | IllegalArgumentException ignored) {
+        } catch (URISyntaxException | IllegalArgumentException _) {
             return null;
         }
     }
