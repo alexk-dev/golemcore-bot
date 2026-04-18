@@ -33,13 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Coordinates the L1-L5 resilience cascade for transient LLM failures.
- *
- * <p>
- * Mutable state lives in {@link ProviderCircuitBreaker} and delayed actions;
- * this class chooses the next recovery outcome for the tool loop.
- */
+/** Coordinates the L1-L5 resilience cascade for transient LLM failures. */
 public class LlmResilienceOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(LlmResilienceOrchestrator.class);
@@ -73,100 +67,29 @@ public class LlmResilienceOrchestrator {
                 this.suspendedTurnManager);
     }
 
-    /**
-     * Outcome of the resilience orchestration — tells the caller what to do next.
-     */
     public interface ResilienceOutcome {
 
-        /**
-         * Domain-level trace steps emitted while the orchestrator chose this outcome.
-         *
-         * <p>
-         * The orchestrator deliberately does not depend on {@code TraceService};
-         * callers can map these steps to tracing spans, logs, or diagnostics without
-         * pulling infrastructure concerns into the resilience layer.
-         *
-         * @return ordered trace steps for the recovery decision
-         */
         default List<ResilienceTraceStep> traceSteps() {
             return List.of();
         }
 
-        /**
-         * L1, L2, or L4 recovered the failure and the caller should retry the LLM
-         * request immediately.
-         *
-         * @param layer
-         *            resilience layer that selected the retry, for example {@code L2} or
-         *            {@code L4:model_downgrade}
-         * @param detail
-         *            human-readable recovery detail
-         * @param traceSteps
-         *            ordered trace steps leading to this retry decision
-         */
         record RetryNow(String layer, String detail, List<ResilienceTraceStep> traceSteps)
                 implements ResilienceOutcome {
         }
 
-        /**
-         * L5 suspended the turn and scheduled a delayed retry.
-         *
-         * @param userMessage
-         *            message that can be surfaced to the user
-         * @param traceSteps
-         *            ordered trace steps leading to this suspension
-         */
         record Suspended(String userMessage, List<ResilienceTraceStep> traceSteps) implements ResilienceOutcome {
         }
 
-        /**
-         * All configured resilience layers failed to recover the request.
-         *
-         * @param reason
-         *            terminal failure reason
-         * @param traceSteps
-         *            ordered trace steps leading to exhaustion
-         */
         record Exhausted(String reason, List<ResilienceTraceStep> traceSteps) implements ResilienceOutcome {
         }
     }
 
-    /**
-     * Lightweight tracing DTO produced by resilience code and consumed by the tool
-     * loop tracing adapter.
-     *
-     * @param layer
-     *            resilience layer, for example {@code L2} or {@code L4}
-     * @param action
-     *            machine-readable action such as {@code retry_now} or
-     *            {@code state_transition}
-     * @param detail
-     *            human-readable detail for the span
-     * @param attributes
-     *            additional span attributes; copied defensively on construction
-     */
     public record ResilienceTraceStep(String layer, String action, String detail, Map<String, Object> attributes) {
         public ResilienceTraceStep {
             attributes = attributes != null ? new LinkedHashMap<>(attributes) : new LinkedHashMap<>();
         }
     }
 
-    /**
-     * Attempt to recover from a transient LLM error by cascading through all
-     * defense layers in order.
-     *
-     * @param context
-     *            the current agent context
-     * @param error
-     *            the exception thrown by the LLM call
-     * @param errorCode
-     *            machine-readable code from {@link LlmErrorClassifier}
-     * @param attempt
-     *            current retry attempt number (0-based)
-     * @param config
-     *            resilience configuration
-     * @return outcome instructing the caller what to do next
-     */
     public ResilienceOutcome handle(AgentContext context, RuntimeException error, String errorCode, int attempt,
             RuntimeConfig.ResilienceConfig config) {
         List<ResilienceTraceStep> traceSteps = new ArrayList<>();
