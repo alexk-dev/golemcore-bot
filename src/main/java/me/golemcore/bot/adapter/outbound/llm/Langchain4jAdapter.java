@@ -485,7 +485,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         log.warn(
                                 "[LLM] Retrying request with flattened tool history due to unsupported function/tool role");
                     } else {
-                        log.error("LLM chat failed", e);
+                        logChatFailureDetails(requestToUse, attempt, e);
                         throw new RuntimeException("LLM chat failed: " + e.getMessage(), e);
                     }
                 }
@@ -858,5 +858,37 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     protected void sleepBeforeRetry(long backoffMs) throws InterruptedException {
         Thread.sleep(backoffMs);
+    }
+
+    /**
+     * Emits enough diagnostic signal to triage a terminal LLM failure without
+     * dumping prompt content: model, classified error code, role histogram, tool
+     * count, attempt number, and exception type/message.
+     */
+    private void logChatFailureDetails(LlmRequest request, int attempt, Exception exception) {
+        String classifiedCode = LlmErrorClassifier.classifyFromThrowable(exception);
+        Map<String, Integer> roleCounts = countMessagesByRole(request.getMessages());
+        int toolCount = request.getTools() != null ? request.getTools().size() : 0;
+        String model = request.getModel() != null ? request.getModel() : "<null>";
+        String exceptionClass = exception.getClass().getName();
+        String exceptionMessage = exception.getMessage() != null ? exception.getMessage() : "<null>";
+        log.error(
+                "[LLM] chat failed: model={}, attempt={}, errorCode={}, exceptionClass={}, roles={}, tools={}, message={}",
+                model, attempt, classifiedCode, exceptionClass, roleCounts, toolCount, exceptionMessage, exception);
+    }
+
+    private Map<String, Integer> countMessagesByRole(List<Message> messages) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        if (messages == null) {
+            return counts;
+        }
+        for (Message message : messages) {
+            if (message == null) {
+                continue;
+            }
+            String role = message.getRole() != null ? message.getRole() : "unknown";
+            counts.merge(role, 1, Integer::sum);
+        }
+        return counts;
     }
 }
