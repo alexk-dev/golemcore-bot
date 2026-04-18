@@ -194,6 +194,55 @@ describe('ChatToolbar', () => {
     unmountHarness(harness);
   });
 
+  it('disables the memory selector while presets are loading', () => {
+    const harness = mountHarness(
+      <ChatToolbar
+        {...baseProps()}
+        embedded
+        tier="balanced"
+        tierForce={false}
+        memoryPreset=""
+        memoryPresetOptions={[]}
+        memoryPresetsLoading
+        onTierChange={vi.fn()}
+        onForceChange={vi.fn()}
+        onMemoryPresetChange={vi.fn()}
+      />,
+    );
+    const select = getRequiredSelect(
+      harness.container,
+      '[data-testid="chat-toolbar-memory-preset-select"]',
+    );
+    expect(select.disabled).toBe(true);
+    const placeholderOption = select.querySelector('option[value=""]');
+    expect(placeholderOption?.textContent).toBe('Loading memory');
+    unmountHarness(harness);
+  });
+
+  it('shows the inherited global memory label in the placeholder when no preset is selected', () => {
+    const harness = mountHarness(
+      <ChatToolbar
+        {...baseProps()}
+        embedded
+        tier="balanced"
+        tierForce={false}
+        memoryPreset=""
+        memoryPresetOptions={[{ id: 'coding_balanced', label: 'Coding balanced' }]}
+        inheritedMemoryPresetLabel="Coding balanced"
+        onTierChange={vi.fn()}
+        onForceChange={vi.fn()}
+        onMemoryPresetChange={vi.fn()}
+      />,
+    );
+    const select = getRequiredSelect(
+      harness.container,
+      '[data-testid="chat-toolbar-memory-preset-select"]',
+    );
+    const placeholderOption = select.querySelector('option[value=""]');
+    expect(placeholderOption?.textContent).toBe('Global memory (Coding balanced)');
+    unmountHarness(harness);
+  });
+
   it('fires onMemoryPresetChange when the embedded memory selector changes', () => {
     const onMemoryPresetChange = vi.fn();
     const harness = mountHarness(
