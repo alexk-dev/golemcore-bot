@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.67.0 - 2026-04-18
+#### Features
+- (**llm**) five-layer LLM resilience orchestrator for autonomous agent stability (#293) - (5049e7c) - Alex Kuleshov
+#### Refactoring
+- (**dashboard**) redesign workspace chat toolbar header (#304) - (139f430) - Alex Kuleshov
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
