@@ -141,6 +141,17 @@ jobs:
       - name: Build native distribution bundle
         run: ./.github/scripts/build-native-distribution.sh
 
+      - name: Smoke test native launcher
+        run: |
+          archive="$(find target/native-dist -maxdepth 1 -type f -name '*-linux-x64.tar.gz' | sort | head -n 1)"
+          if [[ -z "${archive}" ]]; then
+            echo "Linux native distribution archive not found." >&2
+            exit 1
+          fi
+          mkdir -p target/native-dist/smoke
+          tar -xzf "${archive}" -C target/native-dist/smoke
+          target/native-dist/smoke/golemcore-bot/bin/golemcore-bot --help
+
       - name: Upload native distribution
         uses: actions/upload-artifact@v7
         with:

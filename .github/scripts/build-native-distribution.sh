@@ -80,6 +80,8 @@ esac
 ASSET_BASENAME="${APP_NAME}-${VERSION}-${PLATFORM}-${ARCH}"
 ARCHIVE_PATH="${NATIVE_DIST_DIR}/${ASSET_BASENAME}.tar.gz"
 LAUNCHER_JAR_PATH="${JPACKAGE_INPUT_DIR}/${APP_NAME}-launcher.jar"
+PICOCLI_VERSION="$(./mvnw -q -DforceStdout help:evaluate -Dexpression=picocli.version)"
+PICOCLI_JAR_PATH="${HOME}/.m2/repository/info/picocli/picocli/${PICOCLI_VERSION}/picocli-${PICOCLI_VERSION}.jar"
 
 rm -rf "${BUILD_DIR}"
 rm -f "${ARCHIVE_PATH}"
@@ -90,6 +92,12 @@ jar --create \
   --file "${LAUNCHER_JAR_PATH}" \
   --main-class "${LAUNCHER_MAIN_CLASS}" \
   -C "${TARGET_DIR}/classes" me/golemcore/bot/launcher
+
+if [[ ! -f "${PICOCLI_JAR_PATH}" ]]; then
+  echo "picocli jar not found: ${PICOCLI_JAR_PATH}" >&2
+  exit 1
+fi
+cp "${PICOCLI_JAR_PATH}" "${JPACKAGE_INPUT_DIR}/$(basename "${PICOCLI_JAR_PATH}")"
 
 # Point the launcher at the bundled runtime jar inside the app-image so the
 # local native build behaves like the released bundle.
