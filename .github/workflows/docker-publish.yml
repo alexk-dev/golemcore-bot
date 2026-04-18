@@ -108,6 +108,46 @@ jobs:
           -Dtest=DashboardSecurityIntegrationTest,RuntimeSettingsHttpIntegrationTest,HiveSdlcDefaultSettingsIntegrationTest
           -DskipGitHooks=true
 
+  native-distribution:
+    name: Native Distribution (linux-x64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Checkout plugin APIs
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+
+      - name: Build release JAR
+        run: ./mvnw -B -ntp clean package -DskipTests -DskipGitHooks=true
+
+      - name: Build native distribution bundle
+        run: ./.github/scripts/build-native-distribution.sh
+
+      - name: Upload native distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: golemcore-bot-linux-x64
+          path: target/native-dist/*.tar.gz
+          if-no-files-found: error
+
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest
