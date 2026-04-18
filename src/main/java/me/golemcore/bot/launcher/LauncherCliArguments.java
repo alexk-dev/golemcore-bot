@@ -23,7 +23,7 @@ import picocli.CommandLine.Unmatched;
 })
 final class LauncherCliArguments {
 
-    private final WebCommand webCommand = new WebCommand();
+    private final WebCommand webSubcommand = new WebCommand();
 
     @Option(names = { "--storage-path",
             "--bot.storage.local.base-path" }, description = "Workspace storage root. Also forwarded to the runtime as -D"
@@ -44,14 +44,14 @@ final class LauncherCliArguments {
     private List<String> javaOptions = new ArrayList<>();
 
     WebCommand webCommand() {
-        return webCommand;
+        return webSubcommand;
     }
 
     LauncherArguments toLauncherArguments() {
         List<String> explicitJavaOptions = new ArrayList<>(javaOptions);
-        explicitJavaOptions.addAll(webCommand.javaOptions);
+        explicitJavaOptions.addAll(webSubcommand.javaOptions);
         List<String> applicationArguments = new ArrayList<>();
-        for (String passThroughArgument : webCommand.passThroughArguments) {
+        for (String passThroughArgument : webSubcommand.passThroughArguments) {
             if (SystemPropertyOption.isSystemPropertyArg(passThroughArgument)) {
                 explicitJavaOptions.add(passThroughArgument);
             } else {
@@ -59,11 +59,11 @@ final class LauncherCliArguments {
             }
         }
         return new LauncherArguments(
-                LauncherText.trimToNull(LauncherText.firstNonBlank(webCommand.storagePath, storagePath)),
-                LauncherText.trimToNull(LauncherText.firstNonBlank(webCommand.updatesPath, updatesPath)),
-                LauncherText.trimToNull(LauncherText.firstNonBlank(webCommand.bundledJar, bundledJar)),
-                LauncherText.trimToNull(webCommand.serverPort),
-                LauncherText.trimToNull(webCommand.serverAddress),
+                LauncherText.trimToNull(LauncherText.firstNonBlank(webSubcommand.storagePath, storagePath)),
+                LauncherText.trimToNull(LauncherText.firstNonBlank(webSubcommand.updatesPath, updatesPath)),
+                LauncherText.trimToNull(LauncherText.firstNonBlank(webSubcommand.bundledJar, bundledJar)),
+                LauncherText.trimToNull(webSubcommand.serverPort),
+                LauncherText.trimToNull(webSubcommand.serverAddress),
                 List.copyOf(explicitJavaOptions),
                 List.copyOf(applicationArguments));
     }
