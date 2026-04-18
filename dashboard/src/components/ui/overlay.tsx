@@ -149,10 +149,12 @@ Modal.Body = OverlayBody;
 Modal.Footer = OverlayFooter;
 Modal.Title = OverlayTitle;
 
+export type OffcanvasPlacement = 'start' | 'end' | 'bottom';
+
 interface OffcanvasProps {
   show?: boolean;
   onHide?: () => void;
-  placement?: 'start' | 'end';
+  placement?: OffcanvasPlacement;
   className?: string;
   children?: React.ReactNode;
 }
@@ -161,6 +163,25 @@ interface OffcanvasComponent extends React.FC<OffcanvasProps> {
   Header: typeof OverlayHeader;
   Body: typeof OverlayBody;
   Title: typeof OverlayTitle;
+}
+
+function getOffcanvasClasses(placement: OffcanvasPlacement): { container: string; panel: string } {
+  if (placement === 'start') {
+    return {
+      container: 'justify-start items-stretch',
+      panel: 'h-full w-full max-w-[28rem] border-r border-border/80',
+    };
+  }
+  if (placement === 'bottom') {
+    return {
+      container: 'items-end justify-stretch',
+      panel: 'w-full max-h-[75vh] rounded-t-[1.5rem] border-t border-border/80',
+    };
+  }
+  return {
+    container: 'justify-end items-stretch',
+    panel: 'h-full w-full max-w-[28rem] border-l border-border/80',
+  };
 }
 
 const BaseOffcanvas: React.FC<OffcanvasProps> = ({
@@ -177,13 +198,12 @@ const BaseOffcanvas: React.FC<OffcanvasProps> = ({
     return null;
   }
 
-  const sideClassName = placement === 'start' ? 'justify-start' : 'justify-end';
-  const panelClassName = placement === 'start' ? 'translate-x-0' : 'translate-x-0';
+  const classes = getOffcanvasClasses(placement);
 
   return createPortal(
     <OverlayContext.Provider value={{ onHide }}>
       <div
-        className={cn('fixed inset-0 z-[1080] flex bg-slate-950/45 backdrop-blur-sm', sideClassName)}
+        className={cn('fixed inset-0 z-[1080] flex bg-slate-950/45 backdrop-blur-sm', classes.container)}
         onMouseDown={(event) => {
           if (event.target === event.currentTarget) {
             onHide?.();
@@ -192,8 +212,8 @@ const BaseOffcanvas: React.FC<OffcanvasProps> = ({
       >
         <div
           className={cn(
-            'h-full w-full max-w-[28rem] border-l border-border/80 bg-card/95 text-card-foreground shadow-[0_20px_80px_rgba(2,6,23,0.38)]',
-            panelClassName,
+            'bg-card/95 text-card-foreground shadow-[0_20px_80px_rgba(2,6,23,0.38)]',
+            classes.panel,
             className
           )}
           onMouseDown={(event) => event.stopPropagation()}

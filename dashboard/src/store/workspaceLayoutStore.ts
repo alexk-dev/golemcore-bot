@@ -4,12 +4,16 @@ const STORAGE_KEY = 'golem-workspace-layout';
 const MIN_PANEL_SIZE = 10;
 const MAX_PANEL_SIZE = 80;
 
+export type WorkspaceCompactPane = 'editor' | 'chat';
+
 export interface WorkspaceLayoutSnapshot {
   sidebarSize: number;
   chatSize: number;
   terminalSize: number;
   isChatVisible: boolean;
   isTerminalVisible: boolean;
+  compactActivePane: WorkspaceCompactPane;
+  isCompactTerminalVisible: boolean;
 }
 
 export const DEFAULT_WORKSPACE_LAYOUT: WorkspaceLayoutSnapshot = {
@@ -18,6 +22,8 @@ export const DEFAULT_WORKSPACE_LAYOUT: WorkspaceLayoutSnapshot = {
   terminalSize: 30,
   isChatVisible: true,
   isTerminalVisible: false,
+  compactActivePane: 'editor',
+  isCompactTerminalVisible: false,
 };
 
 interface WorkspaceLayoutState extends WorkspaceLayoutSnapshot {
@@ -25,8 +31,11 @@ interface WorkspaceLayoutState extends WorkspaceLayoutSnapshot {
   setTerminalSize: (size: number) => void;
   setChatVisible: (visible: boolean) => void;
   setTerminalVisible: (visible: boolean) => void;
+  setCompactPane: (pane: WorkspaceCompactPane) => void;
+  setCompactTerminalVisible: (visible: boolean) => void;
   toggleChat: () => void;
   toggleTerminal: () => void;
+  toggleCompactTerminal: () => void;
 }
 
 function clampSize(size: number, fallback: number): number {
@@ -66,6 +75,21 @@ function pickBoolean(
   return value;
 }
 
+function isWorkspaceCompactPane(value: unknown): value is WorkspaceCompactPane {
+  return value === 'editor' || value === 'chat';
+}
+
+function pickCompactPane(
+  source: Record<string, unknown>,
+  fallback: WorkspaceCompactPane,
+): WorkspaceCompactPane {
+  const value = source.compactActivePane;
+  if (!isWorkspaceCompactPane(value)) {
+    return fallback;
+  }
+  return value;
+}
+
 /**
  * Parses and sanitizes the persisted workspace layout snapshot from localStorage.
  */
@@ -93,6 +117,12 @@ export function normalizeStoredWorkspaceLayout(raw: string | null): WorkspaceLay
       source,
       'isTerminalVisible',
       DEFAULT_WORKSPACE_LAYOUT.isTerminalVisible,
+    ),
+    compactActivePane: pickCompactPane(source, DEFAULT_WORKSPACE_LAYOUT.compactActivePane),
+    isCompactTerminalVisible: pickBoolean(
+      source,
+      'isCompactTerminalVisible',
+      DEFAULT_WORKSPACE_LAYOUT.isCompactTerminalVisible,
     ),
   };
 }
@@ -125,13 +155,19 @@ function snapshotFromState(state: WorkspaceLayoutState): WorkspaceLayoutSnapshot
     terminalSize: state.terminalSize,
     isChatVisible: state.isChatVisible,
     isTerminalVisible: state.isTerminalVisible,
+    compactActivePane: state.compactActivePane,
+    isCompactTerminalVisible: state.isCompactTerminalVisible,
   };
 }
 
 const initialLayout = readInitialLayout();
 
+function persistNextState(get: () => WorkspaceLayoutState): void {
+  persistSnapshot(snapshotFromState(get()));
+}
+
 /**
- * Persists the workspace panel arrangement for chat and terminal panes.
+ * Persists the workspace panel arrangement for desktop splits and compact pane state.
  */
 export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) => ({
   ...initialLayout,
@@ -139,32 +175,47 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) =
   setChatSize: (size: number): void => {
     const next = clampSize(size, DEFAULT_WORKSPACE_LAYOUT.chatSize);
     set({ chatSize: next });
-    persistSnapshot(snapshotFromState(get()));
+    persistNextState(get);
   },
 
   setTerminalSize: (size: number): void => {
     const next = clampSize(size, DEFAULT_WORKSPACE_LAYOUT.terminalSize);
     set({ terminalSize: next });
-    persistSnapshot(snapshotFromState(get()));
+    persistNextState(get);
   },
 
   setChatVisible: (visible: boolean): void => {
     set({ isChatVisible: visible });
-    persistSnapshot(snapshotFromState(get()));
+    persistNextState(get);
   },
 
   setTerminalVisible: (visible: boolean): void => {
     set({ isTerminalVisible: visible });
-    persistSnapshot(snapshotFromState(get()));
+    persistNextState(get);
+  },
+
+  setCompactPane: (pane: WorkspaceCompactPane): void => {
+    set({ compactActivePane: pane });
+    persistNextState(get);
+  },
+
+  setCompactTerminalVisible: (visible: boolean): void => {
+    set({ isCompactTerminalVisible: visible });
+    persistNextState(get);
   },
 
   toggleChat: (): void => {
     set({ isChatVisible: !get().isChatVisible });
-    persistSnapshot(snapshotFromState(get()));
+    persistNextState(get);
   },
 
   toggleTerminal: (): void => {
     set({ isTerminalVisible: !get().isTerminalVisible });
-    persistSnapshot(snapshotFromState(get()));
+    persistNextState(get);
+  },
+
+  toggleCompactTerminal: (): void => {
+    set({ isCompactTerminalVisible: !get().isCompactTerminalVisible });
+    persistNextState(get);
   },
 }));

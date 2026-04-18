@@ -29,6 +29,8 @@ describe('workspaceLayoutStore', () => {
     expect(state.terminalSize).toBe(DEFAULT_WORKSPACE_LAYOUT.terminalSize);
     expect(state.isChatVisible).toBe(true);
     expect(state.isTerminalVisible).toBe(false);
+    expect(state.compactActivePane).toBe('editor');
+    expect(state.isCompactTerminalVisible).toBe(false);
   });
 
   it('setChatSize clamps values and persists', () => {
@@ -93,6 +95,26 @@ describe('workspaceLayoutStore', () => {
     expect(state.isChatVisible).toBe(false);
     expect(state.isTerminalVisible).toBe(true);
   });
+
+  it('setCompactPane stores the compact active pane and persists it', () => {
+    useWorkspaceLayoutStore.getState().setCompactPane('chat');
+
+    const state = useWorkspaceLayoutStore.getState();
+    expect(state.compactActivePane).toBe('chat');
+
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw ?? '{}') as { compactActivePane: string };
+    expect(parsed.compactActivePane).toBe('chat');
+  });
+
+  it('toggleCompactTerminal persists compact terminal visibility', () => {
+    useWorkspaceLayoutStore.getState().toggleCompactTerminal();
+    expect(useWorkspaceLayoutStore.getState().isCompactTerminalVisible).toBe(true);
+
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw ?? '{}') as { isCompactTerminalVisible: boolean };
+    expect(parsed.isCompactTerminalVisible).toBe(true);
+  });
 });
 
 describe('normalizeStoredWorkspaceLayout', () => {
@@ -117,6 +139,8 @@ describe('normalizeStoredWorkspaceLayout', () => {
       terminalSize: 'oops',
       isChatVisible: 'yes',
       isTerminalVisible: true,
+      compactActivePane: 'invalid',
+      isCompactTerminalVisible: 'invalid',
     });
 
     const result = normalizeStoredWorkspaceLayout(raw);
@@ -126,6 +150,8 @@ describe('normalizeStoredWorkspaceLayout', () => {
     expect(result.terminalSize).toBe(DEFAULT_WORKSPACE_LAYOUT.terminalSize);
     expect(result.isChatVisible).toBe(DEFAULT_WORKSPACE_LAYOUT.isChatVisible);
     expect(result.isTerminalVisible).toBe(true);
+    expect(result.compactActivePane).toBe('editor');
+    expect(result.isCompactTerminalVisible).toBe(false);
   });
 
   it('preserves valid fields verbatim', () => {
@@ -135,6 +161,8 @@ describe('normalizeStoredWorkspaceLayout', () => {
       terminalSize: 35,
       isChatVisible: false,
       isTerminalVisible: true,
+      compactActivePane: 'chat',
+      isCompactTerminalVisible: true,
     });
 
     expect(normalizeStoredWorkspaceLayout(raw)).toEqual({
@@ -143,6 +171,8 @@ describe('normalizeStoredWorkspaceLayout', () => {
       terminalSize: 35,
       isChatVisible: false,
       isTerminalVisible: true,
+      compactActivePane: 'chat',
+      isCompactTerminalVisible: true,
     });
   });
 });
