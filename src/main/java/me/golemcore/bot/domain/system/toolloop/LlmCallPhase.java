@@ -691,10 +691,10 @@ class LlmCallPhase {
         }
         log.debug("[ToolLoop] Applying {} attachment(s) to OutgoingResponse", attachments.size());
 
-        me.golemcore.bot.domain.model.OutgoingResponse existing = context.getOutgoingResponse();
-        me.golemcore.bot.domain.model.OutgoingResponse.OutgoingResponseBuilder builder;
+        OutgoingResponse existing = context.getOutgoingResponse();
+        OutgoingResponse.OutgoingResponseBuilder builder;
         if (existing != null) {
-            builder = me.golemcore.bot.domain.model.OutgoingResponse.builder()
+            builder = OutgoingResponse.builder()
                     .text(existing.getText())
                     .voiceRequested(existing.isVoiceRequested())
                     .voiceText(existing.getVoiceText())
@@ -703,12 +703,12 @@ class LlmCallPhase {
                 builder.attachment(attachment);
             }
         } else {
-            builder = me.golemcore.bot.domain.model.OutgoingResponse.builder();
+            builder = OutgoingResponse.builder();
         }
         for (me.golemcore.bot.domain.model.Attachment attachment : attachments) {
             builder.attachment(attachment);
         }
-        me.golemcore.bot.domain.model.OutgoingResponse updated = builder.build();
+        OutgoingResponse updated = builder.build();
         context.setOutgoingResponse(updated);
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, updated);
     }

@@ -821,8 +821,8 @@ class LlmResilienceCascadeIntegrationTest {
 
         private final MutableClock clock;
         private final List<String> timeline;
-        private final List<Long> retryBackoffs = new ArrayList<>();
-        private final List<String> requestModels = new ArrayList<>();
+        private final List<Long> recordedRetryBackoffs = new ArrayList<>();
+        private final List<String> recordedRequestModels = new ArrayList<>();
 
         private ClockAdvancingLangchain4jAdapter(RuntimeConfigService runtimeConfigService,
                 ModelConfigPort modelConfig, ToolArtifactReadPort toolArtifactReadPort,
@@ -834,23 +834,23 @@ class LlmResilienceCascadeIntegrationTest {
 
         @Override
         public CompletableFuture<LlmResponse> chat(me.golemcore.bot.domain.model.LlmRequest request) {
-            requestModels.add(request.getModel());
+            recordedRequestModels.add(request.getModel());
             return super.chat(request);
         }
 
         @Override
         protected void sleepBeforeRetry(long backoffMs) {
-            retryBackoffs.add(backoffMs);
+            recordedRetryBackoffs.add(backoffMs);
             timeline.add("adapter:" + backoffMs);
             clock.advance(Duration.ofMillis(backoffMs));
         }
 
         private List<Long> retryBackoffs() {
-            return retryBackoffs;
+            return recordedRetryBackoffs;
         }
 
         private List<String> requestModels() {
-            return requestModels;
+            return recordedRequestModels;
         }
     }
 
@@ -858,7 +858,7 @@ class LlmResilienceCascadeIntegrationTest {
 
         private final MutableClock clock;
         private final List<String> timeline;
-        private final List<Long> sleepDelays = new ArrayList<>();
+        private final List<Long> recordedSleepDelays = new ArrayList<>();
 
         private RecordingRetryPolicy(MutableClock clock, List<String> timeline) {
             this.clock = clock;
@@ -872,19 +872,19 @@ class LlmResilienceCascadeIntegrationTest {
 
         @Override
         public void sleep(long delayMs) {
-            sleepDelays.add(delayMs);
+            recordedSleepDelays.add(delayMs);
             timeline.add("L1:" + delayMs);
             clock.advance(Duration.ofMillis(delayMs));
         }
 
         private List<Long> sleepDelays() {
-            return sleepDelays;
+            return recordedSleepDelays;
         }
     }
 
     private static final class OneShotRecoveryStrategy implements RecoveryStrategy {
 
-        private int applications;
+        private int applicationCount;
 
         @Override
         public String name() {
@@ -893,24 +893,24 @@ class LlmResilienceCascadeIntegrationTest {
 
         @Override
         public boolean isApplicable(AgentContext context, String errorCode, RuntimeConfig.ResilienceConfig config) {
-            return applications == 0;
+            return applicationCount == 0;
         }
 
         @Override
         public RecoveryResult apply(AgentContext context, String errorCode, RuntimeConfig.ResilienceConfig config) {
-            applications++;
+            applicationCount++;
             context.setAttribute("test.l4.degraded", true);
             return RecoveryResult.success("reduced request complexity");
         }
 
         private int applications() {
-            return applications;
+            return applicationCount;
         }
     }
 
     private static final class MutableClock extends Clock {
 
-        private final AtomicReference<Instant> instant;
+        private final AtomicReference<Instant> currentInstant;
         private final ZoneId zone;
 
         private MutableClock(Instant instant, ZoneId zone) {
@@ -918,7 +918,7 @@ class LlmResilienceCascadeIntegrationTest {
         }
 
         private MutableClock(AtomicReference<Instant> instant, ZoneId zone) {
-            this.instant = instant;
+            this.currentInstant = instant;
             this.zone = zone;
         }
 
@@ -929,16 +929,16 @@ class LlmResilienceCascadeIntegrationTest {
 
         @Override
         public Clock withZone(ZoneId zone) {
-            return new MutableClock(instant, zone);
+            return new MutableClock(currentInstant, zone);
         }
 
         @Override
         public Instant instant() {
-            return instant.get();
+            return currentInstant.get();
         }
 
         private void advance(Duration duration) {
-            instant.updateAndGet(current -> current.plus(duration));
+            currentInstant.updateAndGet(current -> current.plus(duration));
         }
     }
 }
