@@ -9,9 +9,11 @@ import {
 
 export interface WorkspaceFocusSyncOptions {
   focus: string | null;
+  isCompactLayout: boolean;
   setChatVisible: (visible: boolean) => void;
   setCompactPane: (pane: WorkspaceCompactPane) => void;
   setCompactTerminalVisible: (visible: boolean) => void;
+  setTerminalVisible: (visible: boolean) => void;
 }
 
 export interface WorkspaceTerminalShortcutOptions {
@@ -49,12 +51,14 @@ export interface WorkspacePageState {
 
 export function useWorkspaceFocusSync({
   focus,
+  isCompactLayout,
   setChatVisible,
   setCompactPane,
   setCompactTerminalVisible,
+  setTerminalVisible,
 }: WorkspaceFocusSyncOptions): void {
   useEffect(() => {
-    // Sync query-param deep links with the compact workspace pane that should open first.
+    // Sync query-param deep links with the workspace pane or terminal surface that should open first.
     if (focus === 'chat') {
       setChatVisible(true);
       setCompactPane('chat');
@@ -65,9 +69,22 @@ export function useWorkspaceFocusSync({
       return;
     }
     if (focus === 'terminal') {
-      setCompactTerminalVisible(true);
+      if (isCompactLayout) {
+        setTerminalVisible(false);
+        setCompactTerminalVisible(true);
+        return;
+      }
+      setCompactTerminalVisible(false);
+      setTerminalVisible(true);
     }
-  }, [focus, setChatVisible, setCompactPane, setCompactTerminalVisible]);
+  }, [
+    focus,
+    isCompactLayout,
+    setChatVisible,
+    setCompactPane,
+    setCompactTerminalVisible,
+    setTerminalVisible,
+  ]);
 }
 
 export function useWorkspaceTerminalShortcut({
@@ -125,6 +142,7 @@ export function useWorkspacePageState(): WorkspacePageState {
   const setCompactPane = useWorkspaceLayoutStore((state) => state.setCompactPane);
   const setCompactTerminalVisible = useWorkspaceLayoutStore((state) => state.setCompactTerminalVisible);
   const setTerminalSize = useWorkspaceLayoutStore((state) => state.setTerminalSize);
+  const setTerminalVisible = useWorkspaceLayoutStore((state) => state.setTerminalVisible);
   const tabs = useTerminalStore((state) => state.tabs);
   const activeTabId = useTerminalStore((state) => state.activeTabId);
   const openTab = useTerminalStore((state) => state.openTab);
@@ -132,7 +150,14 @@ export function useWorkspacePageState(): WorkspacePageState {
   const [searchParams] = useSearchParams();
   const focus = searchParams.get('focus');
 
-  useWorkspaceFocusSync({ focus, setChatVisible, setCompactPane, setCompactTerminalVisible });
+  useWorkspaceFocusSync({
+    focus,
+    isCompactLayout,
+    setChatVisible,
+    setCompactPane,
+    setCompactTerminalVisible,
+    setTerminalVisible,
+  });
   useWorkspaceTerminalShortcut({ isCompactLayout, toggleCompactTerminal, toggleTerminal });
   useWorkspaceTerminalBootstrap({
     isCompactLayout,

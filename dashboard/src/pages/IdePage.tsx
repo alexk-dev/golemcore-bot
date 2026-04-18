@@ -150,7 +150,7 @@ function IdeEditorPane({ ide, isMobileLayout, onSidebarResizeStart }: IdeEditorP
       />
 
       <section className="ide-editor-card h-full rounded-[1.25rem] border border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-        <div className="flex h-full flex-col overflow-hidden">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
           <EditorTabs
             tabs={ide.editorTabs}
             activePath={ide.activePath}
@@ -164,7 +164,7 @@ function IdeEditorPane({ ide, isMobileLayout, onSidebarResizeStart }: IdeEditorP
             column={ide.activeColumn}
             language={ide.activeLanguage}
             fileSizeBytes={ide.activeFileSize}
-            updatedAt={ide.activeUpdatedAt}
+            updatedAt={ide.activeUpdatedAt ?? ''}
           />
           <IdeEditorSearchBar
             show={ide.isEditorSearchVisible}
@@ -182,7 +182,7 @@ function IdeEditorPane({ ide, isMobileLayout, onSidebarResizeStart }: IdeEditorP
             onMinimapChange={ide.editorSettings.setMinimap}
           />
 
-          <div className="flex-grow-1 overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden">
             <EditorContentState
               isFileOpening={ide.isFileOpening}
               hasFileLoadError={ide.hasFileLoadError}
@@ -308,7 +308,7 @@ export default function IdePage(): ReactElement {
   );
 
   return (
-    <div className="ide-page flex h-full flex-col">
+    <div className="ide-page flex h-full min-h-0 flex-col overflow-hidden">
       <IdeHeader
         activeFileLabel={activeFileLabel}
         isMobileLayout={isMobileLayout}

@@ -175,7 +175,7 @@ function getOffcanvasClasses(placement: OffcanvasPlacement): { container: string
   if (placement === 'bottom') {
     return {
       container: 'items-end justify-stretch',
-      panel: 'w-full max-h-[75vh] rounded-t-[1.5rem] border-t border-border/80',
+      panel: 'h-[90dvh] w-full max-h-[90dvh] rounded-t-[1.5rem] border-t border-border/80',
     };
   }
   return {

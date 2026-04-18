@@ -124,11 +124,26 @@ export function CodeEditor({
       result.push(createMinimapExtension());
     }
 
+    result.push(EditorView.theme({
+      '&': {
+        height: '100%',
+      },
+      '.cm-scroller': {
+        overflow: 'auto',
+      },
+    }));
+
     return result;
   }, [fontSize, languageExtension, onCursorChange, showMinimap, wordWrap]);
 
   return (
-    <div className="ide-editor h-full" id="ide-editor-panel" role="tabpanel" aria-label="Code editor" data-search-query={searchQuery}>
+    <div
+      className="ide-editor h-full min-h-0 overflow-hidden"
+      id="ide-editor-panel"
+      role="tabpanel"
+      aria-label="Code editor"
+      data-search-query={searchQuery}
+    >
       <CodeMirror
         value={value}
         height="100%"
