@@ -610,7 +610,7 @@ class RuntimeLauncherTest {
                 null,
                 Map.of());
 
-        RuntimeLauncher.ParseOutcome parseOutcome = launcher.parseArguments(new String[] {
+        ParseOutcome parseOutcome = launcher.parseArguments(new String[] {
                 "--storage-path=/srv/workspace",
                 "--updates-path=/srv/updates",
                 "--bundled-jar=/opt/bot.jar",
@@ -621,7 +621,7 @@ class RuntimeLauncherTest {
         });
 
         assertFalse(parseOutcome.shouldExit());
-        RuntimeLauncher.LauncherArguments launcherArguments = parseOutcome.launcherArguments();
+        LauncherArguments launcherArguments = parseOutcome.launcherArguments();
         assertNotNull(launcherArguments);
         assertEquals("/srv/workspace", launcherArguments.storagePath());
         assertEquals("/srv/updates", launcherArguments.updatesPath());
@@ -643,7 +643,7 @@ class RuntimeLauncherTest {
                 null,
                 Map.of());
 
-        RuntimeLauncher.ParseOutcome parseOutcome = launcher.parseArguments(new String[] { "--version" });
+        ParseOutcome parseOutcome = launcher.parseArguments(new String[] { "--version" });
 
         assertTrue(parseOutcome.shouldExit());
         assertEquals(0, parseOutcome.exitCode());
@@ -661,7 +661,7 @@ class RuntimeLauncherTest {
                 null,
                 Map.of());
 
-        RuntimeLauncher.ParseOutcome parseOutcome = launcher.parseArguments(new String[] { "--help" });
+        ParseOutcome parseOutcome = launcher.parseArguments(new String[] { "--help" });
 
         assertTrue(parseOutcome.shouldExit());
         assertEquals(0, parseOutcome.exitCode());
@@ -677,7 +677,7 @@ class RuntimeLauncherTest {
                 null,
                 Map.of());
 
-        RuntimeLauncher.ParseOutcome parseOutcome = launcher.parseArguments(new String[] {
+        ParseOutcome parseOutcome = launcher.parseArguments(new String[] {
                 "--unknown-launcher-flag",
                 "value"
         });
@@ -730,7 +730,7 @@ class RuntimeLauncherTest {
 
     @Test
     void shouldReadRuntimeVersionFromContextClassLoaderWhenResourceExists() {
-        RuntimeLauncher.RuntimeVersionReader reader = new RuntimeLauncher.ClasspathRuntimeVersionReader();
+        RuntimeVersionReader reader = new ClasspathRuntimeVersionReader();
         ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(new SingleResourceClassLoader("build.version=1.2.3\n"));
         try {
@@ -742,7 +742,7 @@ class RuntimeLauncherTest {
 
     @Test
     void shouldReturnBundledBuildVersionWhenContextClassLoaderDoesNotProvideBuildInfo() {
-        RuntimeLauncher.RuntimeVersionReader reader = new RuntimeLauncher.ClasspathRuntimeVersionReader();
+        RuntimeVersionReader reader = new ClasspathRuntimeVersionReader();
         ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(new EmptyResourceClassLoader());
         try {
@@ -754,7 +754,7 @@ class RuntimeLauncherTest {
 
     @Test
     void shouldReturnDevWhenBuildInfoContainsBlankVersion() {
-        RuntimeLauncher.RuntimeVersionReader reader = new RuntimeLauncher.ClasspathRuntimeVersionReader();
+        RuntimeVersionReader reader = new ClasspathRuntimeVersionReader();
         ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(new SingleResourceClassLoader("build.version=   \n"));
         try {
@@ -828,15 +828,15 @@ class RuntimeLauncherTest {
      */
     private RuntimeLauncher createLauncher(
             Map<String, String> environment,
-            RuntimeLauncher.ProcessStarter processStarter,
-            RuntimeLauncher.LauncherOutput output) {
+            ProcessStarter processStarter,
+            LauncherOutput output) {
         return createLauncher(environment, processStarter, output, null, null, Map.of(), "0.4.2");
     }
 
     private RuntimeLauncher createLauncher(
             Map<String, String> environment,
-            RuntimeLauncher.ProcessStarter processStarter,
-            RuntimeLauncher.LauncherOutput output,
+            ProcessStarter processStarter,
+            LauncherOutput output,
             Path configuredBundledJar,
             Path resolvedBundledJar,
             Map<String, String> properties) {
@@ -846,8 +846,8 @@ class RuntimeLauncherTest {
 
     private RuntimeLauncher createLauncher(
             Map<String, String> environment,
-            RuntimeLauncher.ProcessStarter processStarter,
-            RuntimeLauncher.LauncherOutput output,
+            ProcessStarter processStarter,
+            LauncherOutput output,
             Path configuredBundledJar,
             Path resolvedBundledJar,
             Map<String, String> properties,
@@ -878,7 +878,7 @@ class RuntimeLauncherTest {
      * Records every command sent to the child process and replays configured exit
      * codes in sequence.
      */
-    private static class RecordingProcessStarter implements RuntimeLauncher.ProcessStarter {
+    private static class RecordingProcessStarter implements ProcessStarter {
 
         private final List<Integer> exitCodes;
         private final List<List<String>> recordedCommands = new ArrayList<>();
@@ -889,7 +889,7 @@ class RuntimeLauncherTest {
         }
 
         @Override
-        public RuntimeLauncher.ChildProcess start(List<String> command) throws IOException {
+        public ChildProcess start(List<String> command) throws IOException {
             recordedCommands.add(List.copyOf(command));
             int exitCode = exitCodes.get(cursor);
             cursor++;
@@ -915,8 +915,8 @@ class RuntimeLauncherTest {
         }
 
         @Override
-        public RuntimeLauncher.ChildProcess start(List<String> command) throws IOException {
-            RuntimeLauncher.ChildProcess childProcess = super.start(command);
+        public ChildProcess start(List<String> command) throws IOException {
+            ChildProcess childProcess = super.start(command);
             if (commands().size() == 1) {
                 Path jarsDir = updatesDir.resolve("jars");
                 Files.createDirectories(jarsDir);
@@ -930,7 +930,7 @@ class RuntimeLauncherTest {
     /**
      * Returns a fixed exit code without spawning a real process.
      */
-    private static final class FixedExitChildProcess implements RuntimeLauncher.ChildProcess {
+    private static final class FixedExitChildProcess implements ChildProcess {
 
         private final int exitCode;
 
@@ -952,16 +952,16 @@ class RuntimeLauncherTest {
     /**
      * Always returns the same child process instance.
      */
-    private static final class SingleChildProcessStarter implements RuntimeLauncher.ProcessStarter {
+    private static final class SingleChildProcessStarter implements ProcessStarter {
 
-        private final RuntimeLauncher.ChildProcess childProcess;
+        private final ChildProcess childProcess;
 
-        private SingleChildProcessStarter(RuntimeLauncher.ChildProcess childProcess) {
+        private SingleChildProcessStarter(ChildProcess childProcess) {
             this.childProcess = childProcess;
         }
 
         @Override
-        public RuntimeLauncher.ChildProcess start(List<String> command) {
+        public ChildProcess start(List<String> command) {
             return childProcess;
         }
     }
@@ -969,7 +969,7 @@ class RuntimeLauncherTest {
     /**
      * Fails immediately when the launcher tries to spawn a child process.
      */
-    private static final class FailingProcessStarter implements RuntimeLauncher.ProcessStarter {
+    private static final class FailingProcessStarter implements ProcessStarter {
 
         private final IOException failure;
 
@@ -978,7 +978,7 @@ class RuntimeLauncherTest {
         }
 
         @Override
-        public RuntimeLauncher.ChildProcess start(List<String> command) throws IOException {
+        public ChildProcess start(List<String> command) throws IOException {
             throw failure;
         }
     }
@@ -987,7 +987,7 @@ class RuntimeLauncherTest {
      * Simulates an interrupted wait so the launcher can prove it destroys the child
      * process and preserves the interrupt flag.
      */
-    private static final class InterruptingChildProcess implements RuntimeLauncher.ChildProcess {
+    private static final class InterruptingChildProcess implements ChildProcess {
 
         private boolean destroyed;
 
@@ -1009,7 +1009,7 @@ class RuntimeLauncherTest {
     /**
      * In-memory environment source for deterministic tests.
      */
-    private static final class MapEnvironmentReader implements RuntimeLauncher.EnvironmentReader {
+    private static final class MapEnvironmentReader implements EnvironmentReader {
 
         private final Map<String, String> values;
 
@@ -1026,7 +1026,7 @@ class RuntimeLauncherTest {
     /**
      * In-memory system property source for deterministic tests.
      */
-    private static final class MapPropertyReader implements RuntimeLauncher.PropertyReader {
+    private static final class MapPropertyReader implements PropertyReader {
 
         private final Map<String, String> values;
 
@@ -1040,7 +1040,7 @@ class RuntimeLauncherTest {
         }
     }
 
-    private static final class FixedRuntimeVersionReader implements RuntimeLauncher.RuntimeVersionReader {
+    private static final class FixedRuntimeVersionReader implements RuntimeVersionReader {
 
         private final String version;
 
@@ -1057,7 +1057,7 @@ class RuntimeLauncherTest {
     /**
      * Discards launcher logs when the test does not assert on them.
      */
-    private static final class NoOpLauncherOutput implements RuntimeLauncher.LauncherOutput {
+    private static final class NoOpLauncherOutput implements LauncherOutput {
 
         @Override
         public void info(String message) {
@@ -1073,7 +1073,7 @@ class RuntimeLauncherTest {
     /**
      * Collects launcher output for assertion-friendly verification.
      */
-    private static final class CapturingLauncherOutput implements RuntimeLauncher.LauncherOutput {
+    private static final class CapturingLauncherOutput implements LauncherOutput {
 
         private final List<String> capturedInfoMessages = new ArrayList<>();
         private final List<String> capturedErrorMessages = new ArrayList<>();
@@ -1101,7 +1101,7 @@ class RuntimeLauncherTest {
      * Returns a fixed code-source location so bundled runtime discovery can be
      * tested without relying on the real test JVM layout.
      */
-    private static final class FixedBundledRuntimeResolver implements RuntimeLauncher.BundledRuntimeResolver {
+    private static final class FixedBundledRuntimeResolver implements BundledRuntimeResolver {
 
         private final Path bundledJar;
 
