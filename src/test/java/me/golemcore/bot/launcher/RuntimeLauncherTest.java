@@ -809,6 +809,26 @@ class RuntimeLauncherTest {
     }
 
     @Test
+    void shouldPreferConfiguredJavaCommandProperty(@TempDir Path tempDir) {
+        Path javaCommand = tempDir.resolve("runtime").resolve("bin").resolve("java");
+
+        String resolvedCommand = RuntimeLauncher.resolveJavaCommand(
+                new MapEnvironmentReader(Map.of(RuntimeLauncher.JAVA_COMMAND_ENV, "java-from-env")),
+                new MapPropertyReader(Map.of(RuntimeLauncher.JAVA_COMMAND_PROPERTY, javaCommand.toString())));
+
+        assertEquals(javaCommand.toAbsolutePath().normalize().toString(), resolvedCommand);
+    }
+
+    @Test
+    void shouldUseConfiguredJavaCommandEnvironmentWhenPropertyIsMissing() {
+        String resolvedCommand = RuntimeLauncher.resolveJavaCommand(
+                new MapEnvironmentReader(Map.of(RuntimeLauncher.JAVA_COMMAND_ENV, "custom-java")),
+                new MapPropertyReader(Map.of()));
+
+        assertEquals("custom-java", resolvedCommand);
+    }
+
+    @Test
     void shouldResolveDefaultBundledRuntimeCodeSource() {
         Path resolvedLocation = new DefaultBundledRuntimeResolver().resolve();
 

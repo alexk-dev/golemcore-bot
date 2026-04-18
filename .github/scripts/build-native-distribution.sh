@@ -56,11 +56,17 @@ case "${UNAME_S}" in
     PLATFORM="linux"
     APP_IMAGE_ROOT_NAME="${APP_NAME}"
     APP_IMAGE_APP_DIR="${APP_NAME}"
+    BUNDLED_RUNTIME_JAR_OPTION="\$APPDIR/../runtime/${RUNTIME_JAR_NAME}"
+    BUNDLED_JAVA_COMMAND_OPTION="\$APPDIR/../runtime/bin/java"
+    APP_IMAGE_JAVA_COMMAND_PATH="${APP_IMAGE_OUTPUT_DIR}/${APP_IMAGE_ROOT_NAME}/lib/runtime/bin/java"
     ;;
   Darwin)
     PLATFORM="macos"
     APP_IMAGE_ROOT_NAME="${APP_NAME}.app"
     APP_IMAGE_APP_DIR="${APP_NAME}.app/Contents/app"
+    BUNDLED_RUNTIME_JAR_OPTION="\$APPDIR/lib/runtime/${RUNTIME_JAR_NAME}"
+    BUNDLED_JAVA_COMMAND_OPTION="\$APPDIR/../runtime/Contents/Home/bin/java"
+    APP_IMAGE_JAVA_COMMAND_PATH="${APP_IMAGE_OUTPUT_DIR}/${APP_IMAGE_ROOT_NAME}/Contents/runtime/Contents/Home/bin/java"
     ;;
   *)
     echo "Unsupported operating system for native distribution: ${UNAME_S}" >&2
@@ -117,12 +123,18 @@ jpackage \
   --app-version "${APP_VERSION}" \
   --vendor "GolemCore" \
   --description "GolemCore Bot local launcher" \
+  --jlink-options "--strip-debug --no-man-pages --no-header-files" \
   --java-options '-Dfile.encoding=UTF-8' \
-  --java-options "-Dgolemcore.launcher.bundled-jar=\$APPDIR/lib/runtime/${RUNTIME_JAR_NAME}"
+  --java-options "-Dgolemcore.launcher.bundled-jar=${BUNDLED_RUNTIME_JAR_OPTION}" \
+  --java-options "-Dgolemcore.launcher.java-command=${BUNDLED_JAVA_COMMAND_OPTION}"
 
 APP_IMAGE_DIR="${APP_IMAGE_OUTPUT_DIR}/${APP_IMAGE_APP_DIR}"
 if [[ ! -d "${APP_IMAGE_DIR}" ]]; then
   echo "Expected app-image directory not found: ${APP_IMAGE_DIR}" >&2
+  exit 1
+fi
+if [[ ! -x "${APP_IMAGE_JAVA_COMMAND_PATH}" ]]; then
+  echo "Expected bundled Java command not found: ${APP_IMAGE_JAVA_COMMAND_PATH}" >&2
   exit 1
 fi
 

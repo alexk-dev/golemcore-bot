@@ -45,6 +45,8 @@ public final class RuntimeLauncher {
     static final String UPDATE_PATH_PROPERTY = "bot.update.updates-path";
     static final String BUNDLED_JAR_ENV = "GOLEMCORE_BUNDLED_JAR";
     static final String BUNDLED_JAR_PROPERTY = "golemcore.launcher.bundled-jar";
+    static final String JAVA_COMMAND_ENV = "GOLEMCORE_JAVA_COMMAND";
+    static final String JAVA_COMMAND_PROPERTY = "golemcore.launcher.java-command";
     static final String SERVER_PORT_PROPERTY = "server.port";
     static final String BUILD_INFO_RESOURCE = "META-INF/build-info.properties";
 
@@ -292,13 +294,32 @@ public final class RuntimeLauncher {
         return bundledRuntimeLocator.resolve(LauncherArguments.empty());
     }
 
-    private static String resolveJavaCommand() {
+    static String resolveJavaCommand(EnvironmentReader environmentReader, PropertyReader propertyReader) {
+        String configuredJavaCommand = LauncherText.firstNonBlank(
+                propertyReader.get(JAVA_COMMAND_PROPERTY),
+                environmentReader.get(JAVA_COMMAND_ENV));
+        if (configuredJavaCommand != null) {
+            return normalizeConfiguredJavaCommand(configuredJavaCommand);
+        }
+
         String executableName = isWindows() ? "java.exe" : "java";
         Path candidate = Path.of(System.getProperty("java.home"), "bin", executableName);
         if (Files.isRegularFile(candidate)) {
             return candidate.toAbsolutePath().normalize().toString();
         }
         return executableName;
+    }
+
+    private static String resolveJavaCommand() {
+        return resolveJavaCommand(new SystemEnvironmentReader(), new SystemPropertyReader());
+    }
+
+    private static String normalizeConfiguredJavaCommand(String configuredJavaCommand) {
+        if (configuredJavaCommand.contains("/") || configuredJavaCommand.contains("\\")
+                || configuredJavaCommand.startsWith("~")) {
+            return LauncherPaths.normalizePath(configuredJavaCommand).toString();
+        }
+        return configuredJavaCommand;
     }
 
     private static boolean isWindows() {

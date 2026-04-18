@@ -150,6 +150,19 @@ jobs:
           fi
           mkdir -p target/native-dist/smoke
           tar -xzf "${archive}" -C target/native-dist/smoke
+          runtime_java="target/native-dist/smoke/golemcore-bot/lib/runtime/bin/java"
+          runtime_jar="$(find target/native-dist/smoke/golemcore-bot/lib/runtime -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
+          if [[ ! -x "${runtime_java}" ]]; then
+            echo "Bundled Java command not found: ${runtime_java}" >&2
+            exit 1
+          fi
+          if [[ -z "${runtime_jar}" ]]; then
+            echo "Bundled runtime jar not found under lib/runtime." >&2
+            exit 1
+          fi
+          grep -F 'golemcore.launcher.bundled-jar=$APPDIR/../runtime/' target/native-dist/smoke/golemcore-bot/lib/app/golemcore-bot.cfg
+          grep -F 'golemcore.launcher.java-command=$APPDIR/../runtime/bin/java' target/native-dist/smoke/golemcore-bot/lib/app/golemcore-bot.cfg
+          "${runtime_java}" -version
           target/native-dist/smoke/golemcore-bot/bin/golemcore-bot --help
 
       - name: Upload native distribution
