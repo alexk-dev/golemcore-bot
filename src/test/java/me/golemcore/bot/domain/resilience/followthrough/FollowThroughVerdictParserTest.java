@@ -172,6 +172,94 @@ class FollowThroughVerdictParserTest {
     }
 
     @Test
+    void shouldExtractJsonEvenWhenStringValuesContainEscapedBraces() {
+        String raw = """
+                {"intent_type":"commitment","has_unfulfilled_commitment":true,\
+                "commitment_text":"say \\"go {ahead}\\" now",\
+                "continuation_prompt":"Say \\"go {ahead}\\" now.",\
+                "reason":"escaped braces inside strings must not confuse the scanner"}
+                """;
+
+        ClassifierVerdict verdict = parser.parse(raw);
+
+        assertEquals(IntentType.COMMITMENT, verdict.intentType());
+        assertTrue(verdict.hasUnfulfilledCommitment());
+        assertEquals("say \"go {ahead}\" now", verdict.commitmentText());
+    }
+
+    @Test
+    void shouldReturnUnknownWhenBraceIsUnbalanced() {
+        ClassifierVerdict verdict = parser.parse("{\"intent_type\":\"commitment\"");
+
+        assertEquals(IntentType.UNKNOWN, verdict.intentType());
+        assertFalse(verdict.hasUnfulfilledCommitment());
+        assertNotNull(verdict.reason());
+    }
+
+    @Test
+    void shouldReturnUnknownWhenFencedBlockContainsInvalidJson() {
+        String raw = """
+                ```json
+                {not valid json}
+                ```
+                """;
+
+        ClassifierVerdict verdict = parser.parse(raw);
+
+        assertEquals(IntentType.UNKNOWN, verdict.intentType());
+        assertFalse(verdict.hasUnfulfilledCommitment());
+        assertTrue(verdict.reason().contains("not parseable as JSON"));
+    }
+
+    @Test
+    void shouldDefaultToUnknownWhenIntentTypeFieldIsMissing() {
+        String json = """
+                {
+                  "has_unfulfilled_commitment": false,
+                  "reason": "no intent_type provided"
+                }
+                """;
+
+        ClassifierVerdict verdict = parser.parse(json);
+
+        assertEquals(IntentType.UNKNOWN, verdict.intentType());
+        assertFalse(verdict.hasUnfulfilledCommitment());
+    }
+
+    @Test
+    void shouldDefaultToUnknownWhenIntentTypeIsEmptyString() {
+        String json = """
+                {
+                  "intent_type": "   ",
+                  "reason": "blank intent_type"
+                }
+                """;
+
+        ClassifierVerdict verdict = parser.parse(json);
+
+        assertEquals(IntentType.UNKNOWN, verdict.intentType());
+        assertFalse(verdict.hasUnfulfilledCommitment());
+    }
+
+    @Test
+    void shouldTreatCommitmentWithRawFlagFalseAsFulfilled() {
+        String json = """
+                {
+                  "intent_type": "commitment",
+                  "has_unfulfilled_commitment": false,
+                  "commitment_text": "already done",
+                  "reason": "carried out"
+                }
+                """;
+
+        ClassifierVerdict verdict = parser.parse(json);
+
+        assertEquals(IntentType.COMMITMENT, verdict.intentType());
+        assertFalse(verdict.hasUnfulfilledCommitment());
+        assertEquals("already done", verdict.commitmentText());
+    }
+
+    @Test
     void shouldTrimCommitmentTextAndContinuationPrompt() {
         String json = """
                 {

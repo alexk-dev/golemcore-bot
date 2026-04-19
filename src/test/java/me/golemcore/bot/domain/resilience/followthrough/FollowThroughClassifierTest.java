@@ -118,6 +118,44 @@ class FollowThroughClassifierTest {
     }
 
     @Test
+    void shouldReturnUnknownNonCommitmentWhenLlmChatThrowsSynchronously() {
+        when(llmPort.chat(any(LlmRequest.class))).thenThrow(new RuntimeException("chat exploded"));
+
+        ClassifierVerdict verdict = classifier.classify(
+                new ClassifierRequest("q", "I'll continue", List.of()), TIER, TIMEOUT);
+
+        assertEquals(IntentType.UNKNOWN, verdict.intentType());
+        assertFalse(verdict.hasUnfulfilledCommitment());
+        assertTrue(verdict.reason().contains("classifier call failed"));
+    }
+
+    @Test
+    void shouldReturnUnknownNonCommitmentWhenLlmResponseContentIsNull() {
+        when(llmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(
+                        LlmResponse.builder().content(null).build()));
+
+        ClassifierVerdict verdict = classifier.classify(
+                new ClassifierRequest("q", "I'll continue", List.of()), TIER, TIMEOUT);
+
+        assertEquals(IntentType.UNKNOWN, verdict.intentType());
+        assertFalse(verdict.hasUnfulfilledCommitment());
+    }
+
+    @Test
+    void shouldReturnUnknownNonCommitmentWhenBuildRequestFailsBecauseTierIsUnresolvable() {
+        when(modelSelectionService.resolveExplicitTier(TIER))
+                .thenThrow(new IllegalStateException("tier not configured"));
+
+        ClassifierVerdict verdict = classifier.classify(
+                new ClassifierRequest("q", "I'll continue", List.of()), TIER, TIMEOUT);
+
+        assertEquals(IntentType.UNKNOWN, verdict.intentType());
+        assertFalse(verdict.hasUnfulfilledCommitment());
+        assertTrue(verdict.reason().contains("failed to build classifier request"));
+    }
+
+    @Test
     void shouldReturnUnknownNonCommitmentWhenCallTimesOut() {
         when(llmPort.chat(any(LlmRequest.class))).thenReturn(new CompletableFuture<>());
 

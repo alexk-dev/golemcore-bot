@@ -43,7 +43,7 @@ public class FollowThroughPromptBuilder {
 
             Intent taxonomy (pick exactly one):
               - commitment:       agent unambiguously says IT WILL do the next step itself right now
-                                  ("I'll now X", "let me run Y", "next I will Z", "сейчас сделаю X").
+                                  ("I'll now X", "let me run Y", "next I will Z", "going to do X now").
               - options_offered:  agent offered alternatives/choices and is waiting for user to pick
                                   ("we could do A, B, or C", "would you prefer X or Y?").
               - question:         agent asked a clarifying question and is waiting for user reply.
