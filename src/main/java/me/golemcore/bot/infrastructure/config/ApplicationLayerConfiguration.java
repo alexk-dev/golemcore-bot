@@ -17,6 +17,7 @@ import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
 import me.golemcore.bot.application.skills.SkillManagementFacade;
 import me.golemcore.bot.application.skills.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
 import me.golemcore.bot.domain.service.HiveManagedPolicyService;
@@ -29,6 +30,7 @@ import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.service.SessionRetentionCleanupService;
 import me.golemcore.bot.domain.service.SkillDocumentService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -133,6 +135,23 @@ public class ApplicationLayerConfiguration {
             RuntimeConfigService runtimeConfigService,
             ChannelRuntimePort channelRuntimePort) {
         return new SchedulerFacade(autoModeService, scheduleService, runtimeConfigService, channelRuntimePort);
+    }
+
+    @Bean
+    SessionRetentionCleanupService sessionRetentionCleanupService(
+            SessionPort sessionPort,
+            RuntimeConfigService runtimeConfigService,
+            ActiveSessionPointerService activeSessionPointerService,
+            PlanService planService,
+            DelayedSessionActionService delayedSessionActionService,
+            java.time.Clock clock) {
+        return new SessionRetentionCleanupService(
+                sessionPort,
+                runtimeConfigService,
+                activeSessionPointerService,
+                planService,
+                delayedSessionActionService,
+                clock);
     }
 
     @Bean
