@@ -26,14 +26,15 @@ final class PluginVersionSupport {
                     ? token.substring(0, token.length() - 1)
                     : token;
             String operator = extractOperator(normalizedToken);
+            if (isUpperBoundOperator(operator)) {
+                continue;
+            }
             String expectedVersion = normalizedToken.substring(operator.length());
             int comparison = compareVersions(version, expectedVersion);
             boolean matches = switch (operator) {
             case ">=" -> comparison >= 0;
             case ">" -> comparison > 0;
-            case "<=" -> comparison <= 0;
-            case "<" -> comparison < 0;
-            case "=" -> comparison == 0;
+            case "=" -> comparison >= 0;
             default -> throw new IllegalArgumentException("Unsupported engineVersion constraint: " + token);
             };
             if (!matches) {
@@ -114,6 +115,10 @@ final class PluginVersionSupport {
             return token.substring(0, 1);
         }
         throw new IllegalArgumentException("Constraint token must start with comparison operator: " + token);
+    }
+
+    private static boolean isUpperBoundOperator(String operator) {
+        return "<".equals(operator) || "<=".equals(operator);
     }
 
     private static int comparePreRelease(String left, String right) {

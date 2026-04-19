@@ -107,7 +107,7 @@ function PluginMarketplaceAvailabilityAlert({ item }: PluginMarketplaceMetaProps
   if (!item.compatible) {
     return (
       <Alert variant="danger" className="small py-2 mb-3">
-        This plugin version does not match the current engine compatibility range.
+        This plugin version requires a newer engine.
       </Alert>
     );
   }

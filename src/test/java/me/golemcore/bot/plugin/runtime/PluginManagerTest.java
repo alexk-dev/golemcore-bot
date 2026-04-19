@@ -132,6 +132,19 @@ class PluginManagerTest {
     }
 
     @Test
+    void shouldIgnoreEngineUpperBoundWhenLoadingPluginArtifact(@TempDir Path tempDir) throws Exception {
+        Path pluginsDir = tempDir.resolve("plugins");
+        createPluginJar(pluginsDir, "golemcore/browser", "1.0.0", ">=0.12.0 <1.0.0");
+        manager = createManager(pluginsDir, "1.1.0");
+
+        manager.reloadAll();
+
+        List<PluginRuntimeInfo> plugins = manager.listPlugins();
+        assertEquals(1, plugins.size());
+        assertEquals("golemcore/browser", plugins.getFirst().getId());
+    }
+
+    @Test
     void shouldLoadPluginWhenHostVersionUsesBranchSuffix(@TempDir Path tempDir) throws Exception {
         Path pluginsDir = tempDir.resolve("plugins");
         createPluginJar(pluginsDir, "golemcore/browser", "1.0.0", ">=0.12.0 <1.0.0");

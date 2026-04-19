@@ -465,7 +465,11 @@ class PluginMarketplaceServiceTest {
         Path installRoot = tempDir.resolve("installed-plugins");
         Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
                 "Playwright-backed browser automation tool with screenshot support.");
-        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath);
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath,
+                "1.0.0.yaml",
+                "dist/golemcore/browser/1.0.0/golemcore-browser-plugin-1.0.0.jar",
+                sha256(artifactPath),
+                ">=2.0.0 <3.0.0");
 
         PluginMarketplaceService service = new PluginMarketplaceService(
                 botProperties(repositoryRoot, installRoot),
@@ -477,6 +481,27 @@ class PluginMarketplaceServiceTest {
                 () -> service.install("golemcore/browser", null));
 
         assertTrue(exception.getMessage().contains("not compatible"));
+    }
+
+    @Test
+    void shouldIgnoreEngineUpperBoundInMarketplaceCompatibility(@TempDir Path tempDir) throws Exception {
+        Path repositoryRoot = tempDir.resolve("golemcore-plugins");
+        Path installRoot = tempDir.resolve("installed-plugins");
+        Path artifactPath = createPluginArtifact(repositoryRoot, "golemcore/browser", "1.0.0",
+                "Playwright-backed browser automation tool with screenshot support.");
+        writeRegistryEntry(repositoryRoot, "golemcore/browser", "1.0.0", artifactPath);
+
+        PluginMarketplaceService service = new PluginMarketplaceService(
+                botProperties(repositoryRoot, installRoot),
+                buildPropertiesProvider("1.0.0"),
+                mock(PluginManager.class),
+                mock(PluginSettingsRegistry.class));
+
+        PluginMarketplaceCatalog catalog = service.getCatalog();
+
+        assertTrue(catalog.isAvailable());
+        assertEquals(1, catalog.getItems().size());
+        assertTrue(catalog.getItems().getFirst().isCompatible());
     }
 
     @Test
@@ -637,6 +662,19 @@ class PluginMarketplaceServiceTest {
             String versionMetadataFileName,
             String artifactUrl,
             String checksumSha256) throws IOException {
+        writeRegistryEntry(repositoryRoot, pluginId, version, artifactPath, versionMetadataFileName, artifactUrl,
+                checksumSha256, ">=0.0.0 <1.0.0");
+    }
+
+    private void writeRegistryEntry(
+            Path repositoryRoot,
+            String pluginId,
+            String version,
+            Path artifactPath,
+            String versionMetadataFileName,
+            String artifactUrl,
+            String checksumSha256,
+            String engineVersion) throws IOException {
         String[] parts = pluginId.split("/", 2);
         Path pluginRegistryDir = repositoryRoot.resolve("registry").resolve(parts[0]).resolve(parts[1]);
         Files.createDirectories(pluginRegistryDir.resolve("versions"));
@@ -654,7 +692,7 @@ class PluginMarketplaceServiceTest {
                 id: %s
                 version: %s
                 pluginApiVersion: 1
-                engineVersion: ">=0.0.0 <1.0.0"
+                engineVersion: "%s"
                 artifactUrl: "%s"
                 checksumSha256: "%s"
                 publishedAt: "2026-03-07T00:00:00Z"
@@ -667,6 +705,7 @@ class PluginMarketplaceServiceTest {
                 """.formatted(
                 pluginId,
                 version,
+                engineVersion,
                 artifactUrl,
                 checksumSha256,
                 parts[0],
