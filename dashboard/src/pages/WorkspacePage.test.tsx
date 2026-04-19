@@ -92,11 +92,28 @@ function resetStore(): void {
   });
 }
 
+function installMatchMedia(matches: boolean): void {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
 describe('WorkspacePage', () => {
   beforeEach(() => {
     window.localStorage.clear();
     document.body.innerHTML = '';
     chatWindowPropsSpy.mockClear();
+    installMatchMedia(false);
     resetStore();
   });
 
@@ -151,14 +168,31 @@ describe('WorkspacePage', () => {
     useWorkspaceLayoutStore.getState().setChatVisible(false);
     const harness = mountHarness('/workspace?focus=chat');
     expect(useWorkspaceLayoutStore.getState().isChatVisible).toBe(true);
+    expect(useWorkspaceLayoutStore.getState().compactActivePane).toBe('chat');
     expect(harness.container.querySelector('[data-testid="workspace-chat-slot"]')).not.toBeNull();
     unmountHarness(harness);
   });
 
-  it('leaves chat hidden when mounted with ?focus=editor', () => {
-    useWorkspaceLayoutStore.getState().setChatVisible(false);
+  it('sets compact editor focus when mounted with ?focus=editor', () => {
+    useWorkspaceLayoutStore.getState().setCompactPane('chat');
     const harness = mountHarness('/workspace?focus=editor');
-    expect(useWorkspaceLayoutStore.getState().isChatVisible).toBe(false);
+    expect(useWorkspaceLayoutStore.getState().compactActivePane).toBe('editor');
+    unmountHarness(harness);
+  });
+
+  it('opens desktop terminal when mounted with ?focus=terminal on wide screens', () => {
+    const harness = mountHarness('/workspace?focus=terminal');
+    expect(useWorkspaceLayoutStore.getState().isTerminalVisible).toBe(true);
+    expect(useWorkspaceLayoutStore.getState().isCompactTerminalVisible).toBe(false);
+    expect(harness.container.querySelector('[data-testid="workspace-terminal-slot"]')).not.toBeNull();
+    unmountHarness(harness);
+  });
+
+  it('opens compact terminal when mounted with ?focus=terminal on narrow screens', () => {
+    installMatchMedia(true);
+    const harness = mountHarness('/workspace?focus=terminal');
+    expect(useWorkspaceLayoutStore.getState().isCompactTerminalVisible).toBe(true);
+    expect(useWorkspaceLayoutStore.getState().isTerminalVisible).toBe(false);
     unmountHarness(harness);
   });
 
@@ -256,6 +290,53 @@ describe('WorkspacePage', () => {
       terminalToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(useWorkspaceLayoutStore.getState().isTerminalVisible).toBe(true);
+
+    unmountHarness(harness);
+  });
+
+  it('renders a compact single-pane shell on narrow screens', () => {
+    installMatchMedia(true);
+    const harness = mountHarness();
+
+    expect(harness.container.querySelector('[data-testid="workspace-page-compact"]')).not.toBeNull();
+    expect(harness.container.querySelector('[data-testid="workspace-compact-main"]')).not.toBeNull();
+    expect(harness.container.querySelector('[data-testid="workspace-toggle-chat"]')).toBeNull();
+
+    unmountHarness(harness);
+  });
+
+  it('switches compact pane focus from editor to chat', () => {
+    installMatchMedia(true);
+    const harness = mountHarness();
+
+    const chatPaneButton = harness.container.querySelector<HTMLButtonElement>(
+      '[data-testid="workspace-compact-pane-chat"]',
+    );
+    expect(chatPaneButton).not.toBeNull();
+
+    act(() => {
+      chatPaneButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(useWorkspaceLayoutStore.getState().compactActivePane).toBe('chat');
+    expect(harness.container.querySelector('[data-testid="workspace-chat-slot"]')).not.toBeNull();
+
+    unmountHarness(harness);
+  });
+
+  it('uses compact terminal overlay toggling on narrow screens', () => {
+    installMatchMedia(true);
+    const harness = mountHarness();
+
+    expect(useWorkspaceLayoutStore.getState().isCompactTerminalVisible).toBe(false);
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: '`', ctrlKey: true, bubbles: true }),
+      );
+    });
+
+    expect(useWorkspaceLayoutStore.getState().isCompactTerminalVisible).toBe(true);
 
     unmountHarness(harness);
   });

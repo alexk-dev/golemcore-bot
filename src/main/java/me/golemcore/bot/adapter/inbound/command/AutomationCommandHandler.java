@@ -422,6 +422,7 @@ class AutomationCommandHandler {
         case RUN_LATER -> originalSummary != null ? msg("command.later.kind.check-back.with-summary", originalSummary)
                 : msg("command.later.kind.check-back");
         case NOTIFY_JOB_READY -> message != null ? message : msg("command.later.kind.job-result");
+        case RETRY_LLM_TURN -> msg("command.later.kind.retry-llm");
         };
     }
 

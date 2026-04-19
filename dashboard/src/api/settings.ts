@@ -14,6 +14,7 @@ import type {
   ModelRouterConfig,
   PlanConfig,
   RateLimitConfig,
+  ResilienceConfig,
   RuntimeConfig,
   SecurityConfig,
   SkillsConfig,
@@ -54,6 +55,7 @@ export type {
   ModelRouterConfig,
   PlanConfig,
   RateLimitConfig,
+  ResilienceConfig,
   RuntimeConfig,
   SecurityConfig,
   SelfEvolvingBenchmarkConfig,
@@ -375,6 +377,7 @@ export async function updateAdvancedConfig(config: {
   rateLimit?: RateLimitConfig;
   security?: SecurityConfig;
   compaction?: CompactionConfig;
+  resilience?: ResilienceConfig;
 }): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>(
     '/settings/runtime/advanced',

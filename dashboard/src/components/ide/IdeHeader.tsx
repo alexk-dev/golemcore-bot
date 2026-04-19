@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { FiCommand, FiFolder, FiMinus, FiPlus, FiSave } from 'react-icons/fi';
+import { FiCommand, FiEdit3, FiFolder, FiMinus, FiPlus, FiSave } from 'react-icons/fi';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 
@@ -9,8 +9,10 @@ export interface IdeHeaderProps {
   hasDirtyTabs: boolean;
   dirtyTabsCount: number;
   canSaveActiveTab: boolean;
+  canOpenInlineEdit: boolean;
   isSaving: boolean;
   onSaveActiveTab: () => void;
+  onOpenInlineEdit: () => void;
   onOpenQuickOpen: () => void;
   onOpenExplorer: () => void;
   onIncreaseSidebarWidth: () => void;
@@ -23,8 +25,10 @@ export function IdeHeader({
   hasDirtyTabs,
   dirtyTabsCount,
   canSaveActiveTab,
+  canOpenInlineEdit,
   isSaving,
   onSaveActiveTab,
+  onOpenInlineEdit,
   onOpenQuickOpen,
   onOpenExplorer,
   onIncreaseSidebarWidth,
@@ -65,6 +69,17 @@ export function IdeHeader({
         <Button size="sm" variant="secondary" onClick={onOpenQuickOpen} title="Quick Open (Ctrl/Cmd+P)">
           <FiCommand size={14} />
           Quick Open
+        </Button>
+
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onOpenInlineEdit}
+          disabled={!canOpenInlineEdit}
+          title="Inline edit selection (Ctrl/Cmd+K)"
+        >
+          <FiEdit3 size={14} />
+          Inline Edit
         </Button>
 
         <Button

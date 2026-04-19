@@ -55,7 +55,7 @@ public final class ContextAttributes {
     /** Boolean ? one or more trace payloads were evicted or truncated. */
     public static final String TRACE_TRUNCATED = "trace.truncated";
 
-    /** List<Message.ToolCall> ? last tool calls requested by the LLM. */
+    /** {@code List<Message.ToolCall>} - last tool calls requested by the LLM. */
 
     /** Boolean ? final answer is ready and the turn can be finalized/routed. */
     public static final String FINAL_ANSWER_READY = "llm.final.ready";
@@ -73,8 +73,8 @@ public final class ContextAttributes {
     public static final String LLM_COMPAT_FLATTEN_FALLBACK_USED = "llm.compat.flatten.fallback.used";
 
     /**
-     * Map<String, ToolComponent> ? context-scoped tools available only in the
-     * current turn.
+     * {@code Map<String, ToolComponent>} - context-scoped tools available only in
+     * the current turn.
      */
     public static final String CONTEXT_SCOPED_TOOLS = "context.scoped.tools";
 
@@ -91,6 +91,73 @@ public final class ContextAttributes {
      * "medium", "high").
      */
     public static final String LLM_REASONING = "llm.reasoning";
+
+    /** String - L2 router fallback model forced for the next retry. */
+    public static final String RESILIENCE_L2_FALLBACK_MODEL = "resilience.l2.fallback.model";
+
+    /** String - reasoning effort for the forced L2 router fallback retry. */
+    public static final String RESILIENCE_L2_FALLBACK_REASONING = "resilience.l2.fallback.reasoning";
+
+    /** String - router fallback selection mode used for the current L2 retry. */
+    public static final String RESILIENCE_L2_FALLBACK_MODE = "resilience.l2.fallback.mode";
+
+    /**
+     * {@code List<String>} - router fallback models already attempted in this turn.
+     */
+    public static final String RESILIENCE_L2_ATTEMPTED_MODELS = "resilience.l2.attempted_models";
+
+    /** Integer - per-turn cursor for round-robin router fallback selection. */
+    public static final String RESILIENCE_L2_ROUND_ROBIN_CURSOR = "resilience.l2.round_robin_cursor";
+
+    /**
+     * Boolean - pre-L2 tool-call flatten already ran for this turn. Flattening runs
+     * at most once per turn because repeat flatten is a no-op.
+     */
+    public static final String RESILIENCE_L2_FLATTEN_ATTEMPTED = "resilience.l2.flatten_attempted";
+
+    /**
+     * Boolean - true if the current turn was suspended by the resilience
+     * orchestrator (L5).
+     */
+    public static final String RESILIENCE_TURN_SUSPENDED = "resilience.turn.suspended";
+
+    /** Integer - current L5 cold retry resume attempt for delayed LLM turns. */
+    public static final String RESILIENCE_L5_RESUME_ATTEMPT = "resilience.l5.resume_attempt";
+
+    /** String - original user prompt saved for an L5 cold retry. */
+    public static final String RESILIENCE_L5_ORIGINAL_PROMPT = "resilience.l5.original_prompt";
+
+    /** String - last LLM error code that triggered L5 cold retry. */
+    public static final String RESILIENCE_L5_ERROR_CODE = "resilience.l5.error_code";
+
+    /** Boolean - true when an L5 delayed retry reached a terminal failure. */
+    public static final String RESILIENCE_L5_TERMINAL_FAILURE = "resilience.l5.terminal_failure";
+
+    /** String - terminal L5 failure reason for delayed action dead-lettering. */
+    public static final String RESILIENCE_L5_TERMINAL_REASON = "resilience.l5.terminal_reason";
+
+    /**
+     * String - the resilience layer that recovered the LLM call (e.g. "L1",
+     * "L4:model_downgrade").
+     */
+    public static final String RESILIENCE_RECOVERY_LAYER = "resilience.recovery.layer";
+
+    /** Boolean - L4 context compaction degradation already ran for this turn. */
+    public static final String RESILIENCE_L4_COMPACTION_ATTEMPTED = "resilience.l4.compaction_attempted";
+
+    /** Boolean - L4 model downgrade degradation already ran for this turn. */
+    public static final String RESILIENCE_L4_MODEL_DOWNGRADE_ATTEMPTED = "resilience.l4.model_downgrade_attempted";
+
+    /** String - model tier active before an L4 downgrade changed it. */
+    public static final String RESILIENCE_L4_ORIGINAL_MODEL_TIER = "resilience.l4.original_model_tier";
+
+    /** Boolean - L4 tool stripping degradation already ran for this turn. */
+    public static final String RESILIENCE_L4_TOOL_STRIP_ATTEMPTED = "resilience.l4.tool_strip_attempted";
+
+    /**
+     * {@code List<ToolDefinition>} - tool definitions saved before L4 stripping.
+     */
+    public static final String RESILIENCE_L4_ORIGINAL_TOOLS = "resilience.l4.original_tools";
 
     /** String ? source that selected the current model tier for this turn. */
     public static final String MODEL_TIER_SOURCE = "model.tier.source";
@@ -123,13 +190,13 @@ public final class ContextAttributes {
     /** String ? prompt suffix/extra context produced by RAG/context building. */
     public static final String RAG_CONTEXT = "rag.context";
 
-    /** Map<String,Object> ? diagnostics for the selected memory pack. */
+    /** {@code Map<String,Object>} - diagnostics for the selected memory pack. */
     public static final String MEMORY_PACK_DIAGNOSTICS = "memory.pack.diagnostics";
 
     /** Boolean ? input sanitization already performed for this context. */
     public static final String SANITIZATION_PERFORMED = "sanitization.performed";
 
-    /** List<String> ? detected sanitization threats (best-effort). */
+    /** {@code List<String>} - detected sanitization threats (best-effort). */
     public static final String SANITIZATION_THREATS = "sanitization.threats";
 
     /**
@@ -152,7 +219,7 @@ public final class ContextAttributes {
     public static final String TOOL_LOOP_LIMIT_REASON = "toolloop.limit.reason";
 
     /**
-     * List<RuntimeEvent> - runtime execution events for the current turn.
+     * {@code List<RuntimeEvent>} - runtime execution events for the current turn.
      */
     public static final String RUNTIME_EVENTS = "runtime.events";
 
@@ -235,7 +302,10 @@ public final class ContextAttributes {
     /** String - memory preset id applied to the current turn. */
     public static final String MEMORY_PRESET_ID = "memory.presetId";
 
-    /** Map<String,Object> ? JSON Schema required for webhook response payloads. */
+    /**
+     * {@code Map<String,Object>} - JSON Schema required for webhook response
+     * payloads.
+     */
     public static final String WEBHOOK_RESPONSE_JSON_SCHEMA = "webhook.response.jsonSchema";
 
     /** String ? rendered JSON Schema text for webhook prompt assembly. */
@@ -255,6 +325,34 @@ public final class ContextAttributes {
 
     /** String ? web dashboard client instance id owning the current session. */
     public static final String WEB_CLIENT_INSTANCE_ID = "session.web.client.instance.id";
+
+    /**
+     * {@code List<Map<String,Object>>} - opened IDE tabs forwarded with web chat
+     * turns.
+     */
+    public static final String WEB_OPENED_TABS = "session.web.openedTabs";
+
+    /** String ? active IDE path forwarded with web chat turns. */
+    public static final String WEB_ACTIVE_PATH = "session.web.activePath";
+
+    /** String ? inline editor selection text forwarded with web chat turns. */
+    public static final String WEB_SELECTION_TEXT = "session.web.selection.text";
+
+    /**
+     * Integer ? inline editor selection start offset forwarded with web chat turns.
+     */
+    public static final String WEB_SELECTION_FROM = "session.web.selection.from";
+
+    /**
+     * Integer ? inline editor selection end offset forwarded with web chat turns.
+     */
+    public static final String WEB_SELECTION_TO = "session.web.selection.to";
+
+    /** String ? inline edit instruction requested from the web IDE. */
+    public static final String WEB_INLINE_EDIT_INSTRUCTION = "session.web.inlineEdit.instruction";
+
+    /** String ? file path targeted by the web inline edit flow. */
+    public static final String WEB_INLINE_EDIT_PATH = "session.web.inlineEdit.path";
 
     /** String ? channel type from canonical session identity. */
     public static final String SESSION_IDENTITY_CHANNEL = "session.identity.channel";
@@ -354,7 +452,8 @@ public final class ContextAttributes {
     public static final String SELF_EVOLVING_TACTIC_QUERY = "selfevolving.tactic.query";
 
     /**
-     * List<TacticSearchResult> ? tactic-search candidates prepared for the turn.
+     * {@code List<TacticSearchResult>} - tactic-search candidates prepared for the
+     * turn.
      */
     public static final String SELF_EVOLVING_TACTIC_RESULTS = "selfevolving.tactic.results";
 
@@ -365,21 +464,28 @@ public final class ContextAttributes {
     public static final String SELF_EVOLVING_TACTIC_GUIDANCE = "selfevolving.tactic.guidance";
 
     /**
-     * List<String> ? tactic ids surfaced to the agent during a run (for
+     * {@code List<String>} - tactic ids surfaced to the agent during a run (for
      * attribution).
      */
     public static final String APPLIED_TACTIC_IDS = "selfevolving.tactic.applied.ids";
 
-    /** Map<String,Object> ? latest structured compaction details. */
+    /** {@code Map<String,Object>} - latest structured compaction details. */
     public static final String COMPACTION_LAST_DETAILS = "compaction.last.details";
 
-    /** Map<String,Object> - latest LLM request token preflight diagnostics. */
+    /**
+     * {@code Map<String,Object>} - latest LLM request token preflight diagnostics.
+     */
     public static final String LLM_REQUEST_PREFLIGHT = "llm.request.preflight";
 
-    /** Map<String,Object> - latest LLM context-overflow recovery diagnostics. */
+    /**
+     * {@code Map<String,Object>} - latest LLM context-overflow recovery
+     * diagnostics.
+     */
     public static final String LLM_CONTEXT_OVERFLOW_RECOVERY = "llm.context.overflow.recovery";
 
-    /** List<Map<String,Object>> ? per-turn edited file stats for UI hints. */
+    /**
+     * {@code List<Map<String,Object>>} - per-turn edited file stats for UI hints.
+     */
     public static final String TURN_FILE_CHANGES = "turn.file.changes";
 
     /**
@@ -387,15 +493,17 @@ public final class ContextAttributes {
      */
     public static final String TURN_PROGRESS_INTENT_PUBLISHED = "turn.progress.intent.published";
 
-    /** List<ToolExecutionTrace> ? buffered tool executions awaiting summary. */
+    /**
+     * {@code List<ToolExecutionTrace>} - buffered tool executions awaiting summary.
+     */
     public static final String TURN_PROGRESS_BUFFER = "turn.progress.buffer";
 
     /** Instant ? timestamp when the current progress batch started. */
     public static final String TURN_PROGRESS_BATCH_STARTED_AT = "turn.progress.batch.startedAt";
 
     /**
-     * List<Map<String,Object>> ? assistant-facing attachments produced during this
-     * turn.
+     * {@code List<Map<String,Object>>} - assistant-facing attachments produced
+     * during this turn.
      */
     public static final String TURN_OUTPUT_ATTACHMENTS = "turn.output.attachments";
 

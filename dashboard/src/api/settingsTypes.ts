@@ -24,6 +24,7 @@ export interface RuntimeConfig {
   rateLimit: RateLimitConfig;
   security: SecurityConfig;
   compaction: CompactionConfig;
+  resilience: ResilienceConfig;
 }
 
 export interface ModelRegistryConfig { repositoryUrl: string | null; branch: string | null; }
@@ -78,3 +79,4 @@ export interface SecurityConfig { sanitizeInput: boolean | null; detectPromptInj
 export interface McpCatalogEntry { name: string; description: string | null; command: string; env: Record<string, string>; startupTimeoutSeconds: number | null; idleTimeoutMinutes: number | null; enabled: boolean | null; }
 export interface McpConfig { enabled: boolean | null; defaultStartupTimeout: number | null; defaultIdleTimeout: number | null; catalog: McpCatalogEntry[]; }
 export interface CompactionConfig { enabled: boolean | null; triggerMode: 'model_ratio' | 'token_threshold' | null; modelThresholdRatio: number | null; maxContextTokens: number | null; keepLastMessages: number | null; }
+export interface ResilienceConfig { enabled: boolean | null; hotRetryMaxAttempts: number | null; hotRetryBaseDelayMs: number | null; hotRetryCapMs: number | null; l2ProviderFallbackMaxAttempts: number | null; circuitBreakerFailureThreshold: number | null; circuitBreakerWindowSeconds: number | null; circuitBreakerOpenDurationSeconds: number | null; degradationCompactContext: boolean | null; degradationCompactMinMessages: number | null; degradationDowngradeModel: boolean | null; degradationFallbackModelTier: string | null; degradationStripTools: boolean | null; coldRetryEnabled: boolean | null; coldRetryMaxAttempts: number | null; }

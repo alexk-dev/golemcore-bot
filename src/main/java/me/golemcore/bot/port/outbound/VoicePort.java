@@ -58,6 +58,17 @@ public interface VoicePort {
 
     /**
      * Result of speech-to-text transcription including text, metadata, and word-level timestamps.
+     *
+     * @param text
+     *            transcribed text
+     * @param language
+     *            detected or requested language
+     * @param confidence
+     *            provider confidence score
+     * @param duration
+     *            audio duration
+     * @param words
+     *            word-level timestamps when available
      */
     record TranscriptionResult(
             String text,
@@ -69,6 +80,13 @@ public interface VoicePort {
 
     /**
      * Word-level timestamp for generating subtitles or precise audio alignment.
+     *
+     * @param word
+     *            transcribed word
+     * @param start
+     *            word start timestamp
+     * @param end
+     *            word end timestamp
      */
     record WordTimestamp(
             String word,
@@ -78,6 +96,15 @@ public interface VoicePort {
 
     /**
      * Configuration for text-to-speech synthesis including voice, language, and audio parameters.
+     *
+     * @param voiceId
+     *            provider voice identifier
+     * @param modelId
+     *            provider model identifier
+     * @param speed
+     *            speech speed multiplier
+     * @param outputFormat
+     *            requested audio output format
      */
     record VoiceConfig(
             String voiceId,

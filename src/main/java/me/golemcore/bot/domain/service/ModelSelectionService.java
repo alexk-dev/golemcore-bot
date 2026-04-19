@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Skill;
@@ -93,11 +94,33 @@ public class ModelSelectionService {
     }
 
     public ModelSelection resolveForContext(AgentContext context) {
+        String fallbackModel = context != null
+                ? context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_MODEL)
+                : null;
+        if (fallbackModel != null && !fallbackModel.isBlank()) {
+            String fallbackReasoning = context.getAttribute(ContextAttributes.RESILIENCE_L2_FALLBACK_REASONING);
+            String effectiveTier = resolveEffectiveTier(context);
+            String validationTier = isImplicitDefaultTier(effectiveTier)
+                    ? normalizeImplicitTier(effectiveTier)
+                    : effectiveTier;
+            return validateResolvedSelection(validationTier, new ModelSelection(fallbackModel, fallbackReasoning));
+        }
+
         String effectiveTier = resolveEffectiveTier(context);
         if (isImplicitDefaultTier(effectiveTier)) {
             return resolveForImplicitTier(effectiveTier);
         }
         return resolveForExplicitTier(effectiveTier);
+    }
+
+    /**
+     * Normalize a router fallback model selection without changing the selected
+     * tier. Applies the same catalog validation, canonicalization, and default
+     * reasoning fill as primary tier resolution.
+     */
+    public ModelSelection resolveRouterFallbackSelection(String tier, String model, String reasoning) {
+        String effectiveTier = normalizeFallbackTier(tier);
+        return validateResolvedSelection(effectiveTier, new ModelSelection(model, reasoning));
     }
 
     /**
@@ -269,6 +292,17 @@ public class ModelSelectionService {
             return "balanced";
         }
         return ModelTierCatalog.isImplicitRoutingTier(tier) ? tier : "balanced";
+    }
+
+    private String normalizeFallbackTier(String tier) {
+        if (isImplicitDefaultTier(tier)) {
+            return normalizeImplicitTier(tier);
+        }
+        String normalized = ModelTierCatalog.normalizeTierId(tier);
+        if (!ModelTierCatalog.isKnownTier(normalized)) {
+            throw new IllegalArgumentException("Unknown model tier: " + tier);
+        }
+        return normalized;
     }
 
     private ModelSelection resolveOverrideSelection(String tier) {

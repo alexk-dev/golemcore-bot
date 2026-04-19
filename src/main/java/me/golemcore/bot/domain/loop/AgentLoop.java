@@ -136,7 +136,7 @@ public class AgentLoop {
         this.traceService = traceService;
     }
 
-    public void processMessage(Message message) {
+    public AgentContext processMessage(Message message) {
         Objects.requireNonNull(message, "message must not be null");
         message.setMetadata(TraceContextSupport.ensureRootMetadata(
                 message.getMetadata(),
@@ -159,7 +159,7 @@ public class AgentLoop {
                 if (!rateLimit.isAllowed()) {
                     log.warn("Rate limit exceeded");
                     notifyRateLimited(message);
-                    return;
+                    return null;
                 }
             }
 
@@ -227,6 +227,7 @@ public class AgentLoop {
             }
 
             log.info("=== MESSAGE PROCESSING COMPLETE ===");
+            return context;
         }
     }
 
@@ -364,6 +365,12 @@ public class AgentLoop {
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_COMMAND_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_RUN_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.HIVE_GOLEM_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.DELAYED_ACTION_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.DELAYED_ACTION_KIND);
+        copyStringMetadataAttribute(message, context, ContextAttributes.DELAYED_ACTION_RUN_AT);
+        copyMetadataAttribute(message, context, ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT);
+        copyStringMetadataAttribute(message, context, ContextAttributes.RESILIENCE_L5_ERROR_CODE);
+        copyStringMetadataAttribute(message, context, ContextAttributes.RESILIENCE_L5_ORIGINAL_PROMPT);
         copyStringMetadataAttribute(message, context, ContextAttributes.TRACE_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.TRACE_SPAN_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.TRACE_PARENT_SPAN_ID);

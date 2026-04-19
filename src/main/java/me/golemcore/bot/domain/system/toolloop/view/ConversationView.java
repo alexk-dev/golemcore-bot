@@ -10,6 +10,11 @@ import java.util.List;
  * <p>
  * Raw history must never be mutated. Any masking/normalization for a target LLM
  * must be represented as a view.
+ *
+ * @param messages
+ *            projected messages for the request
+ * @param diagnostics
+ *            diagnostics collected while building the view
  */
 public record ConversationView(List<Message>messages,List<String>diagnostics){
 

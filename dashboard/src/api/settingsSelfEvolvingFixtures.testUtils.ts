@@ -66,6 +66,7 @@ export function buildRuntimeConfigFixture(selfEvolving: Record<string, unknown>)
     rateLimit: {},
     security: {},
     compaction: {},
+    resilience: {},
   };
 }
 

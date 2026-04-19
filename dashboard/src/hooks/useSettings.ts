@@ -55,6 +55,7 @@ import type {
   AutoModeConfig,
   TracingConfig,
   RateLimitConfig,
+  ResilienceConfig,
   SecurityConfig,
   CompactionConfig,
 } from '../api/settingsTypes';
@@ -299,11 +300,11 @@ export function useUpdateTracing(): UseMutationResult<Awaited<ReturnType<typeof 
 export function useUpdateAdvanced(): UseMutationResult<
   Awaited<ReturnType<typeof updateAdvancedConfig>>,
   unknown,
-  { rateLimit?: RateLimitConfig; security?: SecurityConfig; compaction?: CompactionConfig }
+  { rateLimit?: RateLimitConfig; security?: SecurityConfig; compaction?: CompactionConfig; resilience?: ResilienceConfig }
 > {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (config: { rateLimit?: RateLimitConfig; security?: SecurityConfig; compaction?: CompactionConfig }) =>
+    mutationFn: (config: { rateLimit?: RateLimitConfig; security?: SecurityConfig; compaction?: CompactionConfig; resilience?: ResilienceConfig }) =>
       updateAdvancedConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });

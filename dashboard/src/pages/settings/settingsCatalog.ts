@@ -40,6 +40,7 @@ export const SETTINGS_SECTIONS = [
   { key: 'advanced-rate-limit', title: 'Rate Limit', description: 'Request throttling configuration', icon: FiShield },
   { key: 'advanced-security', title: 'Security', description: 'Input sanitization and injection guards', icon: FiShield },
   { key: 'advanced-compaction', title: 'Compaction', description: 'Context compaction behavior', icon: FiShield },
+  { key: 'advanced-resilience', title: 'Resilience', description: 'LLM fallback and recovery limits', icon: FiShield },
 ] as const;
 
 export type SettingsSectionKey = typeof SETTINGS_SECTIONS[number]['key'];
@@ -80,7 +81,7 @@ export const SETTINGS_BLOCKS: SettingsBlock[] = [
     key: 'advanced',
     title: 'Advanced',
     description: 'Security and infrastructure guardrails',
-    sections: ['advanced-rate-limit', 'advanced-security', 'advanced-compaction'],
+    sections: ['advanced-rate-limit', 'advanced-security', 'advanced-compaction', 'advanced-resilience'],
   },
 ];
 

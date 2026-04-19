@@ -398,6 +398,16 @@ public class RuntimeConfigService {
         return isHiveEnabled() && (value != null ? value : DEFAULT_HIVE_SDLC_FUNCTION_ENABLED);
     }
 
+    public RuntimeConfig.ResilienceConfig getResilienceConfig() {
+        RuntimeConfig.ResilienceConfig resilienceConfig = getRuntimeConfig().getResilience();
+        return resilienceConfig != null ? resilienceConfig : RuntimeConfig.ResilienceConfig.builder().build();
+    }
+
+    public boolean isResilienceEnabled() {
+        Boolean enabled = getResilienceConfig().getEnabled();
+        return enabled != null && enabled;
+    }
+
     public RuntimeConfig.SelfEvolvingConfig getSelfEvolvingConfig() {
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = getRuntimeConfig().getSelfEvolving();
         return selfEvolvingConfig != null ? selfEvolvingConfig : RuntimeConfig.SelfEvolvingConfig.builder().build();
@@ -1941,6 +1951,10 @@ public class RuntimeConfigService {
         if (cfg.getPlan() == null) {
             cfg.setPlan(new RuntimeConfig.PlanConfig());
         }
+        if (cfg.getResilience() == null) {
+            cfg.setResilience(RuntimeConfig.ResilienceConfig.builder().build());
+        }
+        normalizeResilienceConfig(cfg.getResilience());
         if (cfg.getDelayedActions() == null) {
             cfg.setDelayedActions(new RuntimeConfig.DelayedActionsConfig());
         }
@@ -1993,6 +2007,15 @@ public class RuntimeConfigService {
         if (cfg.getDelayedActions().getAllowRunLater() == null) {
             cfg.getDelayedActions().setAllowRunLater(DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER);
         }
+        if (cfg.getResilience() == null) {
+            cfg.setResilience(new RuntimeConfig.ResilienceConfig());
+        }
+        Integer l2ProviderFallbackMaxAttempts = cfg.getResilience().getL2ProviderFallbackMaxAttempts();
+        if (l2ProviderFallbackMaxAttempts == null || l2ProviderFallbackMaxAttempts < 1) {
+            cfg.getResilience().setL2ProviderFallbackMaxAttempts(5);
+        }
+        cfg.getResilience().setDegradationFallbackModelTier(
+                normalizeResilienceFallbackTier(cfg.getResilience().getDegradationFallbackModelTier()));
         if (cfg.getHive() == null) {
             cfg.setHive(new RuntimeConfig.HiveConfig());
         }
@@ -2337,6 +2360,11 @@ public class RuntimeConfigService {
         return null;
     }
 
+    private String normalizeResilienceFallbackTier(String value) {
+        String normalizedTierId = ModelTierCatalog.normalizeTierId(value);
+        return ModelTierCatalog.isExplicitSelectableTier(normalizedTierId) ? normalizedTierId : "balanced";
+    }
+
     private String normalizeSelfEvolvingJudgeTier(String value, String defaultValue) {
         String normalizedValue = normalizeNonBlankString(value, defaultValue);
         if (normalizedValue == null) {
@@ -2420,6 +2448,63 @@ public class RuntimeConfigService {
         RuntimeConfig.MemoryDiagnosticsConfig diagnosticsConfig = memoryConfig.getDiagnostics();
         if (diagnosticsConfig.getVerbosity() == null || diagnosticsConfig.getVerbosity().isBlank()) {
             diagnosticsConfig.setVerbosity(DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY);
+        }
+    }
+
+    private void normalizeResilienceConfig(RuntimeConfig.ResilienceConfig resilienceConfig) {
+        RuntimeConfig.ResilienceConfig defaults = RuntimeConfig.ResilienceConfig.builder().build();
+        if (resilienceConfig.getEnabled() == null) {
+            resilienceConfig.setEnabled(defaults.getEnabled());
+        }
+        Integer hotRetryMaxAttempts = resilienceConfig.getHotRetryMaxAttempts();
+        if (hotRetryMaxAttempts == null || hotRetryMaxAttempts < 0) {
+            resilienceConfig.setHotRetryMaxAttempts(defaults.getHotRetryMaxAttempts());
+        }
+        Long hotRetryBaseDelayMs = resilienceConfig.getHotRetryBaseDelayMs();
+        if (hotRetryBaseDelayMs == null || hotRetryBaseDelayMs < 0L) {
+            resilienceConfig.setHotRetryBaseDelayMs(defaults.getHotRetryBaseDelayMs());
+        }
+        Long hotRetryCapMs = resilienceConfig.getHotRetryCapMs();
+        if (hotRetryCapMs == null || hotRetryCapMs < 0L) {
+            resilienceConfig.setHotRetryCapMs(defaults.getHotRetryCapMs());
+        }
+        Integer circuitBreakerFailureThreshold = resilienceConfig.getCircuitBreakerFailureThreshold();
+        if (circuitBreakerFailureThreshold == null || circuitBreakerFailureThreshold < 1) {
+            resilienceConfig.setCircuitBreakerFailureThreshold(defaults.getCircuitBreakerFailureThreshold());
+        }
+        Long circuitBreakerWindowSeconds = resilienceConfig.getCircuitBreakerWindowSeconds();
+        if (circuitBreakerWindowSeconds == null || circuitBreakerWindowSeconds < 1L) {
+            resilienceConfig.setCircuitBreakerWindowSeconds(defaults.getCircuitBreakerWindowSeconds());
+        }
+        Long circuitBreakerOpenDurationSeconds = resilienceConfig.getCircuitBreakerOpenDurationSeconds();
+        if (circuitBreakerOpenDurationSeconds == null || circuitBreakerOpenDurationSeconds < 1L) {
+            resilienceConfig.setCircuitBreakerOpenDurationSeconds(defaults.getCircuitBreakerOpenDurationSeconds());
+        }
+        if (resilienceConfig.getDegradationCompactContext() == null) {
+            resilienceConfig.setDegradationCompactContext(defaults.getDegradationCompactContext());
+        }
+        Integer degradationCompactMinMessages = resilienceConfig.getDegradationCompactMinMessages();
+        if (degradationCompactMinMessages == null || degradationCompactMinMessages < 0) {
+            resilienceConfig.setDegradationCompactMinMessages(defaults.getDegradationCompactMinMessages());
+        }
+        if (resilienceConfig.getDegradationDowngradeModel() == null) {
+            resilienceConfig.setDegradationDowngradeModel(defaults.getDegradationDowngradeModel());
+        }
+        String degradationFallbackTier = ModelTierCatalog.normalizeTierId(
+                resilienceConfig.getDegradationFallbackModelTier());
+        if (degradationFallbackTier == null || !ModelTierCatalog.isExplicitSelectableTier(degradationFallbackTier)) {
+            degradationFallbackTier = defaults.getDegradationFallbackModelTier();
+        }
+        resilienceConfig.setDegradationFallbackModelTier(degradationFallbackTier);
+        if (resilienceConfig.getDegradationStripTools() == null) {
+            resilienceConfig.setDegradationStripTools(defaults.getDegradationStripTools());
+        }
+        if (resilienceConfig.getColdRetryEnabled() == null) {
+            resilienceConfig.setColdRetryEnabled(defaults.getColdRetryEnabled());
+        }
+        Integer coldRetryMaxAttempts = resilienceConfig.getColdRetryMaxAttempts();
+        if (coldRetryMaxAttempts == null || coldRetryMaxAttempts < 1) {
+            resilienceConfig.setColdRetryMaxAttempts(defaults.getColdRetryMaxAttempts());
         }
     }
 

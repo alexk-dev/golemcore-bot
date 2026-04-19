@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.domain.system.toolloop.ContextCompactionCoordinator;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.HistoryWriter;
@@ -22,6 +23,7 @@ import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
+import me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
@@ -68,10 +70,12 @@ public class ToolLoopAutoConfiguration {
             CompactionOrchestrationService compactionOrchestrationService,
             ContextTokenEstimator contextTokenEstimator,
             ContextCompactionPolicy contextCompactionPolicy,
+            ContextCompactionCoordinator contextCompactionCoordinator,
             RuntimeEventService runtimeEventService,
             TurnProgressService turnProgressService,
             TraceService traceService,
-            ToolFailureRecoveryService toolFailureRecoveryService) {
+            ToolFailureRecoveryService toolFailureRecoveryService,
+            LlmResilienceOrchestrator resilienceOrchestrator) {
         LlmPort tracked = new UsageTrackingLlmPortDecorator(llmPort, usageTracker, telemetryRollupPort);
         return DefaultToolLoopSystem.builder()
                 .llmPort(tracked)
@@ -86,10 +90,12 @@ public class ToolLoopAutoConfiguration {
                 .compactionOrchestrationService(compactionOrchestrationService)
                 .contextTokenEstimator(contextTokenEstimator)
                 .contextCompactionPolicy(contextCompactionPolicy)
+                .contextCompactionCoordinator(contextCompactionCoordinator)
                 .runtimeEventService(runtimeEventService)
                 .turnProgressService(turnProgressService)
                 .traceService(traceService)
                 .toolFailureRecoveryService(toolFailureRecoveryService)
+                .resilienceOrchestrator(resilienceOrchestrator)
                 .clock(Clock.systemUTC())
                 .build();
     }

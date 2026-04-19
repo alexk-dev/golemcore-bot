@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Explicit host <-> plugin extension API mapping.
+ * Explicit host-to-plugin extension API mapping.
  */
 @Component
 public class PluginExtensionApiMapper {

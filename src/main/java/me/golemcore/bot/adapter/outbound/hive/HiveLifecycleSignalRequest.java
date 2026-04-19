@@ -23,6 +23,19 @@ import java.util.List;
 
 /**
  * Adapter compatibility wrapper for legacy Hive lifecycle request type.
+ *
+ * @param signalType
+ *            lifecycle signal type
+ * @param summary
+ *            short lifecycle summary
+ * @param details
+ *            detailed lifecycle explanation
+ * @param blockerCode
+ *            optional blocker code for blocked transitions
+ * @param evidenceRefs
+ *            evidence references attached to the signal
+ * @param createdAt
+ *            signal creation timestamp
  */
 @Deprecated(forRemoval=false)public record HiveLifecycleSignalRequest(String signalType,String summary,String details,String blockerCode,List<HiveEvidenceRef>evidenceRefs,Instant createdAt){
 

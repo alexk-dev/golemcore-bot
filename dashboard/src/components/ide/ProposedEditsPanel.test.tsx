@@ -21,12 +21,13 @@ vi.mock('./InlineDiffView', () => ({
     onAccept,
     onReject,
   }: {
-    proposal: { id: string; path: string };
+    proposal: { id: string; path: string; instruction: string };
     onAccept: (id: string) => void;
     onReject: (id: string) => void;
   }) => (
     <div data-testid={`mock-inline-diff-${proposal.id}`}>
       <span>{proposal.path}</span>
+      <span>{proposal.instruction}</span>
       <button type="button" data-testid={`mock-accept-${proposal.id}`} onClick={() => onAccept(proposal.id)}>
         accept
       </button>
@@ -91,30 +92,45 @@ describe('ProposedEditsPanel', () => {
     unmount(harness);
   });
 
-  it('renders one InlineDiffView per queued proposal', () => {
+  it('renders only the active file proposal', () => {
+    useIdeStore.getState().upsertTab(createNewTab('src/a.ts', 'old a'));
+    useIdeStore.getState().upsertTab(createNewTab('src/b.ts', 'old b'));
+    useIdeStore.getState().setActivePath('src/b.ts');
     useProposedEditStore.getState().submitProposal({
       path: 'src/a.ts',
-      before: 'old',
-      after: 'new',
+      sourceContent: 'old a',
+      before: 'old a',
+      after: 'new a',
+      instruction: 'edit a',
+      selection: { from: 0, to: 5, selectedText: 'old a' },
     });
     useProposedEditStore.getState().submitProposal({
       path: 'src/b.ts',
-      before: '1',
-      after: '2',
+      sourceContent: 'old b',
+      before: 'old b',
+      after: 'new b',
+      instruction: 'edit b',
+      selection: { from: 0, to: 5, selectedText: 'old b' },
     });
 
     const harness = mount();
     const rendered = harness.container.querySelectorAll('[data-testid^="mock-inline-diff-"]');
-    expect(rendered).toHaveLength(2);
+    expect(rendered).toHaveLength(1);
+    expect(harness.container.textContent).toContain('src/b.ts');
+    expect(harness.container.textContent).not.toContain('src/a.ts');
     unmount(harness);
   });
 
   it('applying a proposal updates an opened tab and dismisses the proposal', () => {
     useIdeStore.getState().upsertTab(createNewTab('src/a.ts', 'old content'));
+    useIdeStore.getState().setActivePath('src/a.ts');
     useProposedEditStore.getState().submitProposal({
       path: 'src/a.ts',
-      before: 'old content',
-      after: 'new content',
+      sourceContent: 'old content',
+      before: 'old',
+      after: 'new',
+      instruction: 'replace old with new',
+      selection: { from: 0, to: 3, selectedText: 'old' },
     });
 
     const harness = mount();
@@ -134,10 +150,15 @@ describe('ProposedEditsPanel', () => {
   });
 
   it('rejecting a proposal just dismisses it', () => {
+    useIdeStore.getState().upsertTab(createNewTab('src/c.ts', 'a'));
+    useIdeStore.getState().setActivePath('src/c.ts');
     useProposedEditStore.getState().submitProposal({
       path: 'src/c.ts',
+      sourceContent: 'a',
       before: 'a',
       after: 'b',
+      instruction: 'replace a with b',
+      selection: { from: 0, to: 1, selectedText: 'a' },
     });
     const harness = mount();
     const id = useProposedEditStore.getState().proposals[0]?.id ?? '';

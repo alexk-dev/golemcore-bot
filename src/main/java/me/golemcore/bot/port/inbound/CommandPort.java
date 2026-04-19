@@ -54,6 +54,13 @@ public interface CommandPort {
 
     /**
      * Represents the result of a command execution including success status and output message.
+     *
+     * @param success
+     *            whether the command completed successfully
+     * @param output
+     *            user-facing command output
+     * @param data
+     *            optional structured command payload
      */
     record CommandResult(
             boolean success,
@@ -77,6 +84,13 @@ public interface CommandPort {
 
     /**
      * Defines a command's metadata including name, description, and usage examples.
+     *
+     * @param name
+     *            command name without the leading slash
+     * @param description
+     *            short command description
+     * @param usage
+     *            usage example or syntax hint
      */
     record CommandDefinition(
             String name,

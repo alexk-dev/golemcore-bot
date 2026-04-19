@@ -28,6 +28,7 @@ import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.LlmErrorPatterns;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -100,7 +101,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
     /**
      * Max retry attempts for rate limit / transient errors (exponential backoff).
      */
-    private static final int MAX_RETRIES = 5;
+    private static final int MAX_RETRIES = 3;
     private static final long INITIAL_BACKOFF_MS = 5_000;
     private static final double BACKOFF_MULTIPLIER = 2.0;
     private static final String API_TYPE_OPENAI = "openai";
@@ -415,6 +416,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
             boolean toolAttachmentFallbackApplied = false;
 
             int attempt = 0;
+            Exception lastRateLimitError = null;
             while (attempt <= MAX_RETRIES) {
                 try {
                     ChatResponse response;
@@ -455,7 +457,13 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         log.warn("[LLM] Provider rejected oversized inline tool attachments; retrying without them");
                         continue;
                     }
-                    if (isRateLimitError(e) && attempt < MAX_RETRIES) {
+                    if (isRateLimitError(e)) {
+                        lastRateLimitError = e;
+                        if (attempt >= MAX_RETRIES) {
+                            log.warn("[LLM] Rate limit retries exhausted for {} after {} retry attempt(s)",
+                                    request.getModel(), MAX_RETRIES);
+                            break;
+                        }
                         long exponentialBackoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
                         long resetSeconds = extractResetSeconds(e);
                         long backoffMs = resetSeconds > 0
@@ -477,12 +485,17 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         log.warn(
                                 "[LLM] Retrying request with flattened tool history due to unsupported function/tool role");
                     } else {
-                        log.error("LLM chat failed", e);
+                        logChatFailureDetails(requestToUse, attempt, e);
                         throw new RuntimeException("LLM chat failed: " + e.getMessage(), e);
                     }
                 }
             }
-            throw new RuntimeException("LLM chat failed: max retries exhausted");
+            // Preserve the last rate-limit cause so LlmErrorClassifier can still map
+            // this to a transient code; otherwise the resilience orchestrator sees
+            // UNKNOWN and skips L2 model fallback, jumping straight to L5.
+            String exhaustedMessage = LlmErrorClassifier.withCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT,
+                    "LLM chat failed: rate-limit retries exhausted after " + MAX_RETRIES + " attempt(s)");
+            throw new RuntimeException(exhaustedMessage, lastRateLimitError);
         });
     }
 
@@ -845,5 +858,37 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     protected void sleepBeforeRetry(long backoffMs) throws InterruptedException {
         Thread.sleep(backoffMs);
+    }
+
+    /**
+     * Emits enough diagnostic signal to triage a terminal LLM failure without
+     * dumping prompt content: model, classified error code, role histogram, tool
+     * count, attempt number, and exception type/message.
+     */
+    private void logChatFailureDetails(LlmRequest request, int attempt, Exception exception) {
+        String classifiedCode = LlmErrorClassifier.classifyFromThrowable(exception);
+        Map<String, Integer> roleCounts = countMessagesByRole(request.getMessages());
+        int toolCount = request.getTools() != null ? request.getTools().size() : 0;
+        String model = request.getModel() != null ? request.getModel() : "<null>";
+        String exceptionClass = exception.getClass().getName();
+        String exceptionMessage = exception.getMessage() != null ? exception.getMessage() : "<null>";
+        log.error(
+                "[LLM] chat failed: model={}, attempt={}, errorCode={}, exceptionClass={}, roles={}, tools={}, message={}",
+                model, attempt, classifiedCode, exceptionClass, roleCounts, toolCount, exceptionMessage, exception);
+    }
+
+    private Map<String, Integer> countMessagesByRole(List<Message> messages) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        if (messages == null) {
+            return counts;
+        }
+        for (Message message : messages) {
+            if (message == null) {
+                continue;
+            }
+            String role = message.getRole() != null ? message.getRole() : "unknown";
+            counts.merge(role, 1, Integer::sum);
+        }
+        return counts;
     }
 }
