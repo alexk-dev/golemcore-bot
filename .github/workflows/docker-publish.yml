@@ -162,6 +162,7 @@ jobs:
           fi
           grep -F 'golemcore.launcher.bundled-jar=$APPDIR/../runtime/' target/native-dist/smoke/golemcore-bot/lib/app/golemcore-bot.cfg
           grep -F 'golemcore.launcher.java-command=$APPDIR/../runtime/bin/java' target/native-dist/smoke/golemcore-bot/lib/app/golemcore-bot.cfg
+          grep -F 'spring.profiles.active=prod' target/native-dist/smoke/golemcore-bot/lib/app/golemcore-bot.cfg
           "${runtime_java}" -version
           target/native-dist/smoke/golemcore-bot/bin/golemcore-bot --help
           if target/native-dist/smoke/golemcore-bot/bin/golemcore-bot 2>target/native-dist/smoke/missing-command.err; then

@@ -128,6 +128,8 @@ Common options:
 - `--bundled-jar=<path>` — overrides the bundled runtime jar path
 - `web -J=<jvm-option>` / `web --java-option=<jvm-option>` — forwards extra JVM options to the spawned runtime
 
+The native package starts the Spring runtime with the `prod` profile by default.
+
 Examples:
 
 ```bash
@@ -141,15 +143,15 @@ Examples:
 Unknown arguments are forwarded to Spring Boot unchanged, so existing application arguments continue to work:
 
 ```bash
-./golemcore-bot/bin/golemcore-bot web --spring.profiles.active=prod
 ./golemcore-bot/bin/golemcore-bot web --server.port=9090
-./golemcore-bot/bin/golemcore-bot web -Dspring.profiles.active=prod
+./golemcore-bot/bin/golemcore-bot web --spring.main.banner-mode=off
+./golemcore-bot/bin/golemcore-bot web -Dlogging.level.root=INFO
 ```
 
 If you want to make the split explicit, you can also use `--` before Spring arguments:
 
 ```bash
-./golemcore-bot/bin/golemcore-bot web --port=9090 -- --spring.profiles.active=prod
+./golemcore-bot/bin/golemcore-bot web --port=9090 -- --spring.main.banner-mode=off
 ```
 
 ### Why this matters

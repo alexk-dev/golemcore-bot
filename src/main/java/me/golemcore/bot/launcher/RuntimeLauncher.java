@@ -49,6 +49,7 @@ public final class RuntimeLauncher {
     static final String JAVA_COMMAND_PROPERTY = "golemcore.launcher.java-command";
     static final String SERVER_PORT_PROPERTY = "server.port";
     static final String SERVER_ADDRESS_PROPERTY = "server.address";
+    static final String SPRING_PROFILES_ACTIVE_PROPERTY = "spring.profiles.active";
     static final String BUILD_INFO_RESOURCE = "META-INF/build-info.properties";
 
     private final String javaCommand;

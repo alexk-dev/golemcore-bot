@@ -19,7 +19,7 @@ import picocli.CommandLine.Unmatched;
         "  golemcore-bot web --port=8080 --hostname=0.0.0.0",
         "  golemcore-bot web -J=-Xmx1g --port=9090",
         "  golemcore-bot --storage-path=/srv/golemcore/workspace web --updates-path=/srv/golemcore/updates",
-        "  golemcore-bot web -- --spring.profiles.active=prod"
+        "  golemcore-bot web -- --spring.main.banner-mode=off"
 })
 final class LauncherCliArguments {
 

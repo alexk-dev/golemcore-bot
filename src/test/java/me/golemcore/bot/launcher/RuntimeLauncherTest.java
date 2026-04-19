@@ -85,6 +85,29 @@ class RuntimeLauncherTest {
     }
 
     @Test
+    void shouldForwardSpringProfileSystemPropertyToBundledRuntime(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of(RuntimeLauncher.SPRING_PROFILES_ACTIVE_PROPERTY, "prod"));
+
+        int exitCode = launcher.run(webCommand());
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Dspring.profiles.active=prod",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
     void shouldForwardSystemPropertyArgumentsToBundledRuntime(@TempDir Path tempDir) throws Exception {
         Path bundledJar = tempDir.resolve("bot-bundled.jar");
         Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);

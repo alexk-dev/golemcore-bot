@@ -15,7 +15,8 @@ final class ForwardedJavaOptionsResolver {
             RuntimeLauncher.STORAGE_PATH_PROPERTY,
             RuntimeLauncher.UPDATE_PATH_PROPERTY,
             RuntimeLauncher.SERVER_PORT_PROPERTY,
-            RuntimeLauncher.SERVER_ADDRESS_PROPERTY);
+            RuntimeLauncher.SERVER_ADDRESS_PROPERTY,
+            RuntimeLauncher.SPRING_PROFILES_ACTIVE_PROPERTY);
 
     private final PropertyReader propertyReader;
 

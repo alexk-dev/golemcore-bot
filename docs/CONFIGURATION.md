@@ -840,11 +840,13 @@ Launcher-specific options:
 - `--bundled-jar=<path>` overrides the bundled runtime jar path
 - `web -J=<jvm-option>` / `web --java-option=<jvm-option>` forwards extra JVM options
 
+The native package starts the Spring runtime with the `prod` profile by default.
+
 Unknown arguments are passed through to Spring Boot, so both of these remain valid:
 
 ```bash
 golemcore-bot web --port=9090
-golemcore-bot web --spring.profiles.active=prod
+golemcore-bot web --spring.main.banner-mode=off
 ```
 
 The launcher priority is:

@@ -227,6 +227,8 @@ Launcher-specific options include:
 - `--bundled-jar=<path>`
 - `web -J=<jvm-option>` / `web --java-option=<jvm-option>`
 
+The native package starts the Spring runtime with the `prod` profile by default.
+
 ### Override launcher-managed runtime parameters
 
 The native launcher converts its own options into runtime JVM/system properties.
@@ -244,15 +246,15 @@ Examples:
 Unknown arguments still flow to Spring Boot as application arguments, so existing runtime flags continue to work:
 
 ```bash
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --spring.profiles.active=prod
 /opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --server.port=9090
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web -Dspring.profiles.active=prod
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --spring.main.banner-mode=off
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web -Dlogging.level.root=INFO
 ```
 
 If you want to make the handoff explicit, use `--`:
 
 ```bash
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --port=9090 -- --spring.profiles.active=prod
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --port=9090 -- --spring.main.banner-mode=off
 ```
 
 ### How the launcher behaves

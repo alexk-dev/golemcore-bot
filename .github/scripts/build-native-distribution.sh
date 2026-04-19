@@ -125,6 +125,7 @@ jpackage \
   --description "GolemCore Bot local launcher" \
   --jlink-options "--strip-debug --no-man-pages --no-header-files" \
   --java-options '-Dfile.encoding=UTF-8' \
+  --java-options '-Dspring.profiles.active=prod' \
   --java-options "-Dgolemcore.launcher.bundled-jar=${BUNDLED_RUNTIME_JAR_OPTION}" \
   --java-options "-Dgolemcore.launcher.java-command=${BUNDLED_JAVA_COMMAND_OPTION}"
 
