@@ -44,6 +44,7 @@ logs/
 
 ### Dashboard (generated frontend) ###
 src/main/resources/static/dashboard/
+golemcore-bot-app/src/main/resources/static/dashboard/
 dashboard/node_modules/
 dashboard/node/
 

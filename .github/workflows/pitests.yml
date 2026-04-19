@@ -40,10 +40,11 @@ jobs:
 
       - name: Run PIT mutation tests
         run: >
-          ./mvnw -B -ntp -P pitests
+          ./mvnw -f golemcore-bot-app/pom.xml -B -ntp -P pitests
           test-compile org.pitest:pitest-maven:mutationCoverage
           -DskipGitHooks=true
           -Dpitest.mutationThreshold=${{ env.PITEST_MUTATION_THRESHOLD }}
+          -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Upload PIT reports
         if: always()
