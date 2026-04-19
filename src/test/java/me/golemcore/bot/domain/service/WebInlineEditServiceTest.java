@@ -15,7 +15,6 @@ import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -41,8 +40,7 @@ class WebInlineEditServiceTest {
     @Test
     void shouldCreateInlineEditReplacement() throws Exception {
         when(llmPort.chat(any(LlmRequest.class)))
-                .thenReturn(
-                        CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
         WebInlineEditService.InlineEditResult result = webInlineEditService.createInlineEdit(
                 "src/App.tsx",
@@ -62,8 +60,7 @@ class WebInlineEditServiceTest {
     void shouldUseCurrentModelWhenAvailable() throws Exception {
         when(llmPort.getCurrentModel()).thenReturn("openai/gpt-4.1-mini");
         when(llmPort.chat(any(LlmRequest.class)))
-                .thenReturn(
-                        CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
         webInlineEditService.createInlineEdit(
                 "src/App.tsx",
@@ -101,8 +98,7 @@ class WebInlineEditServiceTest {
     @Test
     void shouldOmitClientInstanceIdWhenBlank() throws Exception {
         when(llmPort.chat(any(LlmRequest.class)))
-                .thenReturn(
-                        CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
         webInlineEditService.createInlineEdit(
                 "src/App.tsx",
@@ -270,8 +266,7 @@ class WebInlineEditServiceTest {
     @Test
     void shouldCaptureInlineEditMetadataInLlmRequest() throws Exception {
         when(llmPort.chat(any(LlmRequest.class)))
-                .thenReturn(
-                        CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
         webInlineEditService.createInlineEdit(
                 "src/App.tsx",
