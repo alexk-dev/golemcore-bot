@@ -30,6 +30,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -214,6 +215,59 @@ class FollowThroughSystemTest {
         assertEquals(61, system.getOrder());
     }
 
+    @Test
+    void shouldSkipWhenLastUserMessageMetadataMarksAutoMode() {
+        Map<String, Object> autoMeta = new LinkedHashMap<>();
+        autoMeta.put(ContextAttributes.AUTO_MODE, true);
+        AgentContext context = contextWith(userMessage(USER_TEXT, autoMeta),
+                assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+
+        assertFalse(system.shouldProcess(context));
+        system.process(context);
+
+        verifyNoInteractions(classifier);
+        verify(internalTurnService, never()).scheduleFollowThroughNudge(any(), anyString(), anyInt());
+    }
+
+    @Test
+    void shouldNotSetScheduledAttributeWhenDispatchReturnsFalse() {
+        when(internalTurnService.scheduleFollowThroughNudge(any(), anyString(), anyInt())).thenReturn(false);
+        when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
+                .thenReturn(ClassifierVerdict.unfulfilledCommitment(
+                        "gather the files", CONTINUATION, "committed but no tool invoked"));
+        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+
+        system.process(context);
+
+        verify(internalTurnService).scheduleFollowThroughNudge(context, CONTINUATION, 0);
+        assertNull(context.getAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED),
+                "failed dispatch must not mark the turn as scheduled");
+    }
+
+    @Test
+    void shouldBuildClassifierRequestFromUserAndAssistantTextWithEmptyToolListWhenNoToolsRan() {
+        when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
+                .thenReturn(ClassifierVerdict.unfulfilledCommitment(
+                        "gather the files", CONTINUATION, "committed but no tool invoked"));
+        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+
+        system.process(context);
+
+        ArgumentCaptor<ClassifierRequest> captor = ArgumentCaptor.forClass(ClassifierRequest.class);
+        verify(classifier).classify(captor.capture(), anyString(), any(Duration.class));
+        ClassifierRequest sent = captor.getValue();
+        assertEquals(USER_TEXT, sent.userMessage());
+        assertEquals(ASSISTANT_TEXT, sent.assistantReply());
+        assertTrue(sent.executedToolsInTurn().isEmpty(),
+                "tools-executed guard trips upstream, so the request carries an empty tool list");
+    }
+
     private AgentContext contextWith(Message... messages) {
         AgentSession session = AgentSession.builder()
                 .id("session-1")
@@ -256,10 +310,5 @@ class FollowThroughSystemTest {
                 .content("{}")
                 .toolName(toolName)
                 .build();
-    }
-
-    @SuppressWarnings("unused")
-    private ArgumentCaptor<ClassifierRequest> classifierRequestCaptor() {
-        return ArgumentCaptor.forClass(ClassifierRequest.class);
     }
 }

@@ -153,6 +153,25 @@ class FollowThroughVerdictParserTest {
     }
 
     @Test
+    void shouldExtractFirstJsonObjectWhenResponseIsPrecededByJsonLikeProse() {
+        String raw = """
+                Reasoning: consider the shape { brace } then produce the verdict below.
+                {"intent_type":"commitment","has_unfulfilled_commitment":true,\
+                "commitment_text":"gather the three files",\
+                "continuation_prompt":"Gather the three files now.",\
+                "reason":"committed but no tool invoked"}
+                """;
+
+        ClassifierVerdict verdict = parser.parse(raw);
+
+        assertEquals(IntentType.COMMITMENT, verdict.intentType());
+        assertTrue(verdict.hasUnfulfilledCommitment(),
+                "greedy regex would absorb the leading '{ brace }' + prose and fail JSON decode → UNKNOWN/false");
+        assertEquals("committed but no tool invoked", verdict.reason());
+        assertEquals("Gather the three files now.", verdict.continuationPrompt());
+    }
+
+    @Test
     void shouldTrimCommitmentTextAndContinuationPrompt() {
         String json = """
                 {

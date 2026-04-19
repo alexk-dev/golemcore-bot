@@ -104,7 +104,7 @@ public class FollowThroughSystem implements AgentSystem {
         RuntimeConfig.FollowThroughConfig cfg = runtimeConfigService.getFollowThroughConfig();
         String modelTier = cfg.getModelTier();
         Duration timeout = Duration.ofSeconds(cfg.getTimeoutSeconds());
-        int maxChainDepth = cfg.getMaxChainDepth() != null ? cfg.getMaxChainDepth() : 1;
+        int maxChainDepth = resolveMaxChainDepth();
         int incomingDepth = readIncomingChainDepth(context);
 
         ClassifierRequest request = new ClassifierRequest(
@@ -215,9 +215,6 @@ public class FollowThroughSystem implements AgentSystem {
             return 0;
         }
         Object raw = lastUser.getMetadata().get(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH);
-        if (raw instanceof Integer integer) {
-            return Math.max(0, integer);
-        }
         if (raw instanceof Number number) {
             return Math.max(0, number.intValue());
         }
@@ -248,11 +245,8 @@ public class FollowThroughSystem implements AgentSystem {
         if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.AUTO_MODE))) {
             return true;
         }
-        if (context.getMessages() == null || context.getMessages().isEmpty()) {
-            return false;
-        }
-        Message last = context.getMessages().get(context.getMessages().size() - 1);
-        return last.getMetadata() != null
-                && Boolean.TRUE.equals(last.getMetadata().get(ContextAttributes.AUTO_MODE));
+        Message lastUser = findLastUserMessage(context);
+        return lastUser != null && lastUser.getMetadata() != null
+                && Boolean.TRUE.equals(lastUser.getMetadata().get(ContextAttributes.AUTO_MODE));
     }
 }

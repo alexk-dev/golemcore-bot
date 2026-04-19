@@ -37,7 +37,6 @@ import java.util.regex.Pattern;
 public class FollowThroughVerdictParser {
 
     private static final Pattern FENCED_JSON = Pattern.compile("```(?:json)?\\s*(\\{.*?})\\s*```", Pattern.DOTALL);
-    private static final Pattern BARE_JSON = Pattern.compile("(\\{.*})", Pattern.DOTALL);
 
     private final TraceSnapshotCodecPort codec;
 
@@ -49,10 +48,45 @@ public class FollowThroughVerdictParser {
         if (rawResponse == null || rawResponse.isBlank()) {
             return ClassifierVerdict.nonCommitment(IntentType.UNKNOWN, "classifier returned empty response");
         }
-        String json = extractJson(rawResponse);
-        if (json == null) {
-            return ClassifierVerdict.nonCommitment(IntentType.UNKNOWN, "classifier response contained no JSON object");
+        String trimmed = rawResponse.trim();
+
+        Matcher fenced = FENCED_JSON.matcher(trimmed);
+        if (fenced.find()) {
+            return decodeAndBuild(fenced.group(1));
         }
+
+        String lastError = null;
+        int cursor = 0;
+        while (cursor < trimmed.length()) {
+            int start = trimmed.indexOf('{', cursor);
+            if (start < 0) {
+                break;
+            }
+            int end = findMatchingBrace(trimmed, start);
+            if (end < 0) {
+                break;
+            }
+            String candidate = trimmed.substring(start, end + 1);
+            try {
+                VerdictDto dto = codec.decodeJson(candidate, VerdictDto.class);
+                if (dto != null) {
+                    return buildVerdictFromDto(dto);
+                }
+                lastError = "decoded to null";
+            } catch (IllegalArgumentException exception) {
+                lastError = exception.getMessage();
+            }
+            cursor = end + 1;
+        }
+
+        if (lastError != null) {
+            return ClassifierVerdict.nonCommitment(IntentType.UNKNOWN,
+                    "classifier response not parseable as JSON: " + lastError);
+        }
+        return ClassifierVerdict.nonCommitment(IntentType.UNKNOWN, "classifier response contained no JSON object");
+    }
+
+    private ClassifierVerdict decodeAndBuild(String json) {
         VerdictDto dto;
         try {
             dto = codec.decodeJson(json, VerdictDto.class);
@@ -63,7 +97,10 @@ public class FollowThroughVerdictParser {
         if (dto == null) {
             return ClassifierVerdict.nonCommitment(IntentType.UNKNOWN, "classifier response decoded to null");
         }
+        return buildVerdictFromDto(dto);
+    }
 
+    private ClassifierVerdict buildVerdictFromDto(VerdictDto dto) {
         IntentType intent = resolveIntent(dto.intentType());
         String reason = trim(dto.reason());
         String commitmentText = trim(dto.commitmentText());
@@ -83,17 +120,36 @@ public class FollowThroughVerdictParser {
         return ClassifierVerdict.unfulfilledCommitment(commitmentText, continuationPrompt, reason);
     }
 
-    private String extractJson(String rawResponse) {
-        String trimmed = rawResponse.trim();
-        Matcher fenced = FENCED_JSON.matcher(trimmed);
-        if (fenced.find()) {
-            return fenced.group(1);
+    private int findMatchingBrace(String text, int openIndex) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = openIndex; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (inString) {
+                if (c == '\\') {
+                    escape = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
         }
-        Matcher bare = BARE_JSON.matcher(trimmed);
-        if (bare.find()) {
-            return bare.group(1);
-        }
-        return null;
+        return -1;
     }
 
     private IntentType resolveIntent(String raw) {
