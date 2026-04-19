@@ -7,31 +7,50 @@ import { search } from '@codemirror/search';
 import { useThemeStore } from '../../store/themeStore';
 import { loadEditorLanguage, resolveEditorLanguage } from './codeEditorLanguages';
 
+export interface CodeEditorSelection {
+  from: number;
+  to: number;
+  selectedText: string;
+}
+
 export interface CodeEditorProps {
   filePath: string | null;
   value: string;
   onChange: (value: string) => void;
   onCursorChange?: (line: number, column: number) => void;
+  onSelectionChange?: (selection: CodeEditorSelection | null) => void;
   showMinimap?: boolean;
   wordWrap?: boolean;
   fontSize?: number;
   searchQuery?: string;
 }
 
-function createCursorUpdateExtension(onCursorChange?: (line: number, column: number) => void): Extension {
+function createCursorUpdateExtension(
+  onCursorChange?: (line: number, column: number) => void,
+  onSelectionChange?: (selection: CodeEditorSelection | null) => void,
+): Extension {
   return EditorView.updateListener.of((update: ViewUpdate) => {
-    if (onCursorChange == null) {
-      return;
+    if (onCursorChange != null) {
+      if (update.docChanged || update.selectionSet || update.focusChanged || update.viewportChanged) {
+        const head = update.state.selection.main.head;
+        const line = update.state.doc.lineAt(head);
+        const column = head - line.from + 1;
+        onCursorChange(line.number, column);
+      }
     }
 
-    if (!update.docChanged && !update.selectionSet && !update.focusChanged && !update.viewportChanged) {
-      return;
+    if (onSelectionChange != null && (update.selectionSet || update.docChanged)) {
+      const selection = update.state.selection.main;
+      if (selection.empty) {
+        onSelectionChange(null);
+        return;
+      }
+      onSelectionChange({
+        from: selection.from,
+        to: selection.to,
+        selectedText: update.state.sliceDoc(selection.from, selection.to),
+      });
     }
-
-    const head = update.state.selection.main.head;
-    const line = update.state.doc.lineAt(head);
-    const column = head - line.from + 1;
-    onCursorChange(line.number, column);
   });
 }
 
@@ -97,6 +116,7 @@ export function CodeEditor({
   value,
   onChange,
   onCursorChange,
+  onSelectionChange,
   showMinimap = false,
   wordWrap = true,
   fontSize = 14,
@@ -109,7 +129,7 @@ export function CodeEditor({
     const result: Extension[] = [
       createFontSizeExtension(fontSize),
       search({ top: true }),
-      createCursorUpdateExtension(onCursorChange),
+      createCursorUpdateExtension(onCursorChange, onSelectionChange),
     ];
 
     if (wordWrap) {
@@ -134,7 +154,7 @@ export function CodeEditor({
     }));
 
     return result;
-  }, [fontSize, languageExtension, onCursorChange, showMinimap, wordWrap]);
+  }, [fontSize, languageExtension, onCursorChange, onSelectionChange, showMinimap, wordWrap]);
 
   return (
     <div

@@ -335,3 +335,33 @@
 .ide-breadcrumbs button:disabled {
   cursor: default;
 }
+
+.inline-diff-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inline-diff-instruction {
+  font-size: 11px;
+  color: var(--gc-secondary-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ide-inline-edit-trigger-note {
+  font-size: 0.78rem;
+  color: var(--gc-secondary-color);
+}
+
+@media (max-width: 767.98px) {
+  .inline-diff-title-group {
+    max-width: 100%;
+  }
+
+  .inline-diff-instruction {
+    white-space: normal;
+  }
+}

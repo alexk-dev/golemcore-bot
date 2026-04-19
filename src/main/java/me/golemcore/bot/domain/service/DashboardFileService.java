@@ -244,6 +244,13 @@ public class DashboardFileService {
         }
     }
 
+    public void validateEditablePath(String relativePath) {
+        DashboardFileContent content = getContent(relativePath);
+        if (!content.isEditable()) {
+            throw new IllegalArgumentException("File is not editable: " + relativePath);
+        }
+    }
+
     private DashboardFileContent buildSavedTextContent(Path path, String content) throws IOException {
         long size = workspaceFilePort.size(path);
         String mimeType = DashboardFileMetadataSupport.resolveMimeType(workspacePathService, path, null);

@@ -1,5 +1,7 @@
 import client from './client';
 
+const CHAT_CLIENT_INSTANCE_STORAGE_KEY = 'golem-chat-client-instance-id';
+
 export interface FileTreeNode {
   path: string;
   name: string;
@@ -39,6 +41,28 @@ export interface DownloadedFile {
 export interface GetFileTreeOptions {
   depth?: number;
   includeIgnored?: boolean;
+}
+
+export interface InlineEditRequest {
+  path: string;
+  content: string;
+  selectionFrom: number;
+  selectionTo: number;
+  selectedText: string;
+  instruction: string;
+}
+
+export interface InlineEditResponse {
+  path: string;
+  replacement: string;
+}
+
+function readChatClientInstanceId(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const value = window.localStorage.getItem(CHAT_CLIENT_INSTANCE_STORAGE_KEY);
+  return value != null && value.length > 0 ? value : null;
 }
 
 export async function getFileTree(path: string, options?: GetFileTreeOptions): Promise<FileTreeNode[]> {
@@ -84,6 +108,14 @@ export async function renameFilePath(sourcePath: string, targetPath: string): Pr
 
 export async function deleteFilePath(path: string): Promise<void> {
   await client.delete('/files', { params: { path } });
+}
+
+export async function createInlineEdit(request: InlineEditRequest): Promise<InlineEditResponse> {
+  const clientInstanceId = readChatClientInstanceId();
+  const { data } = await client.post<InlineEditResponse>('/files/inline-edit', request, {
+    headers: clientInstanceId != null ? { 'X-Golem-Client-Instance-Id': clientInstanceId } : undefined,
+  });
+  return data;
 }
 
 export async function fetchProtectedFileObjectUrl(path: string): Promise<DownloadedFile> {

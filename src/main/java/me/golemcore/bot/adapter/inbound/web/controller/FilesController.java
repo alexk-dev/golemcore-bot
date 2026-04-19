@@ -7,11 +7,14 @@ import me.golemcore.bot.adapter.inbound.web.dto.FileRenameRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileRenameResponse;
 import me.golemcore.bot.adapter.inbound.web.dto.FileSaveRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileTreeNodeDto;
+import me.golemcore.bot.adapter.inbound.web.dto.InlineEditRequest;
+import me.golemcore.bot.adapter.inbound.web.dto.InlineEditResponse;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.domain.service.DashboardFileService;
 import me.golemcore.bot.domain.service.ToolArtifactService;
+import me.golemcore.bot.domain.service.WebInlineEditService;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.ContentDisposition;
@@ -24,6 +27,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -40,8 +44,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class FilesController {
 
+    private static final String CLIENT_INSTANCE_HEADER = "X-Golem-Client-Instance-Id";
+
     private final DashboardFileService dashboardFileService;
     private final ToolArtifactService toolArtifactService;
+    private final WebInlineEditService webInlineEditService;
 
     public Mono<ResponseEntity<List<FileTreeNodeDto>>> getTree(String path) {
         try {
@@ -124,6 +131,29 @@ public class FilesController {
             FileRenameResponse payload = FileRenameResponse.builder()
                     .sourcePath(request.getSourcePath())
                     .targetPath(request.getTargetPath())
+                    .build();
+            return Mono.just(ResponseEntity.ok(payload));
+        } catch (IllegalArgumentException _) {
+            return Mono.just(ResponseEntity.badRequest().build());
+        }
+    }
+
+    @PostMapping("/inline-edit")
+    public Mono<ResponseEntity<InlineEditResponse>> inlineEdit(
+            @RequestBody InlineEditRequest request,
+            @RequestHeader(name = CLIENT_INSTANCE_HEADER, required = false) String clientInstanceId) {
+        try {
+            WebInlineEditService.InlineEditResult result = webInlineEditService.createInlineEdit(
+                    request.getPath(),
+                    request.getContent(),
+                    request.getSelectionFrom() != null ? request.getSelectionFrom() : -1,
+                    request.getSelectionTo() != null ? request.getSelectionTo() : -1,
+                    request.getSelectedText(),
+                    request.getInstruction(),
+                    clientInstanceId);
+            InlineEditResponse payload = InlineEditResponse.builder()
+                    .path(result.path())
+                    .replacement(result.replacement())
                     .build();
             return Mono.just(ResponseEntity.ok(payload));
         } catch (IllegalArgumentException _) {

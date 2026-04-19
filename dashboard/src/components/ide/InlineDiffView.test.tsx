@@ -31,8 +31,15 @@ interface Harness {
 const sampleProposal: ProposedEdit = {
   id: 'prop-1',
   path: 'src/example.ts',
+  sourceContent: 'const greeting = "hi";\n',
   before: 'const greeting = "hi";\n',
   after: 'const greeting = "hello";\n',
+  instruction: 'refactor this greeting',
+  selection: {
+    from: 0,
+    to: 23,
+    selectedText: 'const greeting = "hi";\n',
+  },
 };
 
 function mount(props: {
@@ -72,6 +79,16 @@ describe('InlineDiffView', () => {
       onReject: vi.fn(),
     });
     expect(harness.container.textContent).toContain('src/example.ts');
+    unmount(harness);
+  });
+
+  it('renders the instruction in the header', () => {
+    const harness = mount({
+      proposal: sampleProposal,
+      onAccept: vi.fn(),
+      onReject: vi.fn(),
+    });
+    expect(harness.container.textContent).toContain('refactor this greeting');
     unmount(harness);
   });
 
