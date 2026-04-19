@@ -50,7 +50,7 @@ jobs:
         run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Build and run tests
-        run: ./mvnw clean verify -DskipGitHooks=true
+        run: ./mvnw -DskipGitHooks=true -Dsurefire.failIfNoSpecifiedTests=false clean verify
 
       - name: Check Codecov token availability
         if: always() && matrix.arch == 'amd64'
@@ -107,6 +107,7 @@ jobs:
           ./mvnw -B -ntp test
           -Dtest=DashboardSecurityIntegrationTest,RuntimeSettingsHttpIntegrationTest,HiveSdlcDefaultSettingsIntegrationTest
           -DskipGitHooks=true
+          -Dsurefire.failIfNoSpecifiedTests=false
 
   code-quality:
     name: Code Quality
@@ -144,16 +145,16 @@ jobs:
         run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Check formatting
-        run: ./mvnw formatter:validate -DskipGitHooks=true
+        run: ./mvnw -f golemcore-bot-app/pom.xml formatter:validate -DskipGitHooks=true
 
       - name: Run PMD
-        run: ./mvnw -P strict pmd:check -DskipGitHooks=true
+        run: ./mvnw -f golemcore-bot-app/pom.xml -P strict pmd:check -DskipGitHooks=true
 
       - name: Run SpotBugs
-        run: ./mvnw -P strict compile spotbugs:check -DskipGitHooks=true
+        run: ./mvnw -f golemcore-bot-app/pom.xml -P strict compile spotbugs:check -DskipGitHooks=true
 
       - name: Generate Javadoc
-        run: ./mvnw -B -ntp javadoc:javadoc -DskipGitHooks=true
+        run: ./mvnw -f golemcore-bot-app/pom.xml -B -ntp javadoc:javadoc -DskipGitHooks=true
 
       - name: Upload PMD report
         if: always()
@@ -219,6 +220,7 @@ jobs:
         run: >
           ./mvnw clean verify sonar:sonar
           -DskipGitHooks=true
+          -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Skip SonarCloud Analysis (missing SONAR_TOKEN)
         if: steps.sonar-token.outputs.available != 'true'
@@ -282,7 +284,7 @@ jobs:
 
       - name: Build and push app image (${{ matrix.arch }})
         run: |
-          ./mvnw prepare-package jib:build \
+          ./mvnw -f golemcore-bot-app/pom.xml prepare-package jib:build \
             -DskipTests \
             -DskipGitHooks=true \
             -Djib.from.image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:latest \

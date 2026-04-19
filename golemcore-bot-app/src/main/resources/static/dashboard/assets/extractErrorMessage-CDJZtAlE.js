@@ -1,1 +1,0 @@
-function a(t){if(typeof t=="object"&&t!==null&&"response"in t){const n=t.response,e=n==null?void 0:n.data;if(typeof e=="object"&&e!==null&&"message"in e){const s=e.message;if(typeof s=="string"&&s.trim().length>0)return s}}return t instanceof Error&&t.message.trim().length>0?t.message:"Unknown error"}export{a as e};

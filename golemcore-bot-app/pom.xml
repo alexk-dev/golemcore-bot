@@ -15,6 +15,7 @@
     <description>Runnable application module for GolemCore Bot</description>
 
     <properties>
+        <frontend.skip>false</frontend.skip>
         <sonar.sources>src/main/java,src/main/resources</sonar.sources>
         <sonar.tests>src/test/java</sonar.tests>
         <sonar.java.coveragePlugin>jacoco</sonar.java.coveragePlugin>
@@ -352,6 +353,9 @@
                         <id>install-node-npm</id>
                         <phase>generate-resources</phase>
                         <goals><goal>install-node-and-npm</goal></goals>
+                        <configuration>
+                            <skip>${frontend.skip}</skip>
+                        </configuration>
                     </execution>
                     <execution>
                         <id>npm-install</id>
@@ -359,6 +363,7 @@
                         <goals><goal>npm</goal></goals>
                         <configuration>
                             <arguments>ci</arguments>
+                            <skip>${frontend.skip}</skip>
                         </configuration>
                     </execution>
                     <execution>
@@ -367,6 +372,7 @@
                         <goals><goal>npm</goal></goals>
                         <configuration>
                             <arguments>run build</arguments>
+                            <skip>${frontend.skip}</skip>
                         </configuration>
                     </execution>
                 </executions>

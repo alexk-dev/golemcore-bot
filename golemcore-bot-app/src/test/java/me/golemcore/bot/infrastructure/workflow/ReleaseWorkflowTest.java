@@ -1,17 +1,16 @@
 package me.golemcore.bot.infrastructure.workflow;
 
-import org.junit.jupiter.api.Test;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReleaseWorkflowTest {
 
-    private static final Path RELEASE_WORKFLOW = Path.of(".github/workflows/release.yml");
+    private static final Path RELEASE_WORKFLOW = Path.of("..", ".github", "workflows", "release.yml");
     private static final String RELEASE_JOB_HEADER = "jobs:\n  release:\n";
     private static final String RELEASE_STEPS_HEADER = "\n    steps:\n";
 
