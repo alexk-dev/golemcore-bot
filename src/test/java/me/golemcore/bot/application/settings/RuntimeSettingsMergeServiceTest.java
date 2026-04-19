@@ -229,4 +229,22 @@ class RuntimeSettingsMergeServiceTest {
         assertFalse(Boolean.FALSE.equals(incoming.getTelegram().getToken().getPresent()));
         assertNotNull(incoming.getLlm().getProviders());
     }
+
+    @Test
+    void shouldMergeSessionRetentionSectionWhenPatchProvidesIt() {
+        RuntimeConfig.SessionRetentionConfig incoming = RuntimeConfig.SessionRetentionConfig.builder()
+                .enabled(false)
+                .maxAge("P14D")
+                .cleanupInterval("PT12H")
+                .protectActiveSessions(false)
+                .protectSessionsWithPlans(true)
+                .protectSessionsWithDelayedActions(false)
+                .build();
+        RuntimeConfig merged = mergeService.mergeRuntimeConfigSections(
+                RuntimeConfig.builder().build(),
+                RuntimeConfig.builder().sessionRetention(incoming).build());
+
+        assertEquals(incoming, merged.getSessionRetention());
+    }
+
 }
