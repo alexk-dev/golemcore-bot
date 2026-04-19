@@ -52,6 +52,9 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
                 RuntimeConfig.CompactionConfig.class, RuntimeConfig.CompactionConfig::new, true);
         RuntimeConfig.TurnConfig turn = loadSection(RuntimeConfig.ConfigSection.TURN,
                 RuntimeConfig.TurnConfig.class, RuntimeConfig.TurnConfig::new, true);
+        RuntimeConfig.SessionRetentionConfig sessionRetention = loadSection(
+                RuntimeConfig.ConfigSection.SESSION_RETENTION,
+                RuntimeConfig.SessionRetentionConfig.class, RuntimeConfig.SessionRetentionConfig::new, true);
         RuntimeConfig.MemoryConfig memory = loadSection(RuntimeConfig.ConfigSection.MEMORY,
                 RuntimeConfig.MemoryConfig.class, RuntimeConfig.MemoryConfig::new, true);
         RuntimeConfig.SkillsConfig skills = loadSection(RuntimeConfig.ConfigSection.SKILLS,
@@ -89,6 +92,7 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
                 .security(security)
                 .compaction(compaction)
                 .turn(turn)
+                .sessionRetention(sessionRetention)
                 .memory(memory)
                 .skills(skills)
                 .modelRegistry(modelRegistry)
@@ -128,6 +132,8 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
                 RuntimeConfig.CompactionConfig::new);
         persistSection(RuntimeConfig.ConfigSection.TURN, runtimeConfig.getTurn(),
                 RuntimeConfig.TurnConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.SESSION_RETENTION, runtimeConfig.getSessionRetention(),
+                RuntimeConfig.SessionRetentionConfig::new);
         persistSection(RuntimeConfig.ConfigSection.MEMORY, runtimeConfig.getMemory(),
                 RuntimeConfig.MemoryConfig::new);
         persistSection(RuntimeConfig.ConfigSection.SKILLS, runtimeConfig.getSkills(),

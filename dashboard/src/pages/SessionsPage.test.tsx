@@ -30,6 +30,25 @@ vi.mock('../components/common/ConfirmModal', () => ({
 }));
 
 describe('SessionsPage', () => {
+  it('renders maintenance note about automatic cleanup configuration', () => {
+    sessionHookMocks.useSessions.mockReturnValue({
+      data: [],
+      isLoading: false,
+    });
+    sessionHookMocks.useDeleteSession.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
+    sessionHookMocks.useCompactSession.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
+    sessionHookMocks.useClearSession.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
+
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/sessions">
+        <SessionsPage />
+      </StaticRouter>,
+    );
+
+    expect(html).toContain('Automatic cleanup is configured in Settings');
+    expect(html).toContain('/settings/usage');
+  });
+
   it('renders session id links to full-page detail routes', () => {
     sessionHookMocks.useSessions.mockReturnValue({
       data: [

@@ -11,6 +11,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ModelRouterConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SessionRetentionConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SecurityConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
@@ -92,6 +93,14 @@ public class RuntimeSettingsWebMapper {
 
     public RuntimeConfig.TurnConfig toTurnConfig(TurnConfigDto source) {
         return copy(source, new RuntimeConfig.TurnConfig());
+    }
+
+    public SessionRetentionConfigDto toSessionRetentionConfigDto(RuntimeConfig.SessionRetentionConfig source) {
+        return copy(source, new SessionRetentionConfigDto());
+    }
+
+    public RuntimeConfig.SessionRetentionConfig toSessionRetentionConfig(SessionRetentionConfigDto source) {
+        return copy(source, new RuntimeConfig.SessionRetentionConfig());
     }
 
     public MemoryConfigDto toMemoryConfigDto(RuntimeConfig.MemoryConfig source) {
@@ -205,6 +214,7 @@ public class RuntimeSettingsWebMapper {
         target.setSecurity(source.getSecurity());
         target.setCompaction(source.getCompaction());
         target.setTurn(source.getTurn());
+        target.setSessionRetention(source.getSessionRetention());
         target.setMemory(source.getMemory());
         target.setSkills(source.getSkills());
         target.setModelRegistry(source.getModelRegistry());

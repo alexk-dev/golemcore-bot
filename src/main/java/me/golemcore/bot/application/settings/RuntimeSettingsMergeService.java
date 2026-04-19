@@ -28,6 +28,8 @@ public class RuntimeSettingsMergeService {
                 .compaction(mergeSection(patch.getCompaction(), baseline.getCompaction(),
                         RuntimeConfig.CompactionConfig::new))
                 .turn(mergeSection(patch.getTurn(), baseline.getTurn(), RuntimeConfig.TurnConfig::new))
+                .sessionRetention(mergeSection(patch.getSessionRetention(), baseline.getSessionRetention(),
+                        RuntimeConfig.SessionRetentionConfig::new))
                 .memory(mergeSection(patch.getMemory(), baseline.getMemory(), RuntimeConfig.MemoryConfig::new))
                 .skills(mergeSection(patch.getSkills(), baseline.getSkills(), RuntimeConfig.SkillsConfig::new))
                 .modelRegistry(mergeSection(patch.getModelRegistry(), baseline.getModelRegistry(),

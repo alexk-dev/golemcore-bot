@@ -19,6 +19,7 @@ import {
   getMemoryPresets,
   updateSkillsConfig,
   updateTurnConfig,
+  updateSessionRetentionConfig,
   updateUsageConfig,
   updateTelemetryConfig,
   updateMcpConfig,
@@ -44,6 +45,7 @@ import type {
   MemoryPreset,
   SkillsConfig,
   TurnConfig,
+  SessionRetentionConfig,
   UsageConfig,
   TelemetryConfig,
   McpConfig,
@@ -202,6 +204,14 @@ export function useUpdateTurn(): UseMutationResult<Awaited<ReturnType<typeof upd
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: TurnConfig) => updateTurnConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateSessionRetention(): UseMutationResult<Awaited<ReturnType<typeof updateSessionRetentionConfig>>, unknown, SessionRetentionConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: SessionRetentionConfig) => updateSessionRetentionConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

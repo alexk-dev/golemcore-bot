@@ -28,7 +28,7 @@ export const SETTINGS_SECTIONS = [
   { key: 'memory', title: 'Memory', description: 'Conversation memory persistence and retention', icon: FiHardDrive },
   { key: 'skills', title: 'Skills Runtime', description: 'Enable skills and progressive loading behavior', icon: FiTool },
   { key: 'turn', title: 'Turn Budget', description: 'Runtime limits for LLM/tool calls and deadline', icon: FiCpu },
-  { key: 'usage', title: 'Usage Tracking', description: 'Enable/disable analytics usage tracking', icon: FiBarChart2 },
+  { key: 'usage', title: 'Usage & Retention', description: 'Analytics tracking and automatic session cleanup', icon: FiBarChart2 },
   { key: 'telemetry', title: 'Telemetry', description: 'Anonymous product statistics and UI error summaries', icon: FiActivity },
   { key: 'mcp', title: 'MCP', description: 'MCP server catalog and runtime defaults', icon: FiTool },
   { key: 'hive', title: 'Hive', description: 'Hive control-plane integration and managed join settings', icon: FiLink },

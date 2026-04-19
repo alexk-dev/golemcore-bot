@@ -135,6 +135,12 @@ public class RuntimeConfigService {
     private static final String DEFAULT_MEMORY_RERANKING_PROFILE = "balanced";
     private static final String DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY = "basic";
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
+    private static final boolean DEFAULT_SESSION_RETENTION_ENABLED = true;
+    private static final Duration DEFAULT_SESSION_RETENTION_MAX_AGE = Duration.ofDays(30);
+    private static final Duration DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL = Duration.ofHours(24);
+    private static final boolean DEFAULT_SESSION_RETENTION_PROTECT_ACTIVE = true;
+    private static final boolean DEFAULT_SESSION_RETENTION_PROTECT_PLANS = true;
+    private static final boolean DEFAULT_SESSION_RETENTION_PROTECT_DELAYED_ACTIONS = true;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
     private static final Duration DEFAULT_TURN_DEADLINE = Duration.ofHours(1);
     private static final String DEFAULT_STT_PROVIDER = "golemcore/elevenlabs";
@@ -1335,6 +1341,70 @@ public class RuntimeConfigService {
         }
     }
 
+    public boolean isSessionRetentionEnabled() {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
+        if (sessionRetentionConfig == null) {
+            return DEFAULT_SESSION_RETENTION_ENABLED;
+        }
+        Boolean val = sessionRetentionConfig.getEnabled();
+        return val != null ? val : DEFAULT_SESSION_RETENTION_ENABLED;
+    }
+
+    public Duration getSessionRetentionMaxAge() {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
+        if (sessionRetentionConfig == null || sessionRetentionConfig.getMaxAge() == null
+                || sessionRetentionConfig.getMaxAge().isBlank()) {
+            return DEFAULT_SESSION_RETENTION_MAX_AGE;
+        }
+        try {
+            Duration parsed = Duration.parse(sessionRetentionConfig.getMaxAge());
+            return parsed.isNegative() || parsed.isZero() ? DEFAULT_SESSION_RETENTION_MAX_AGE : parsed;
+        } catch (DateTimeParseException e) {
+            return DEFAULT_SESSION_RETENTION_MAX_AGE;
+        }
+    }
+
+    public Duration getSessionRetentionCleanupInterval() {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
+        if (sessionRetentionConfig == null || sessionRetentionConfig.getCleanupInterval() == null
+                || sessionRetentionConfig.getCleanupInterval().isBlank()) {
+            return DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL;
+        }
+        try {
+            Duration parsed = Duration.parse(sessionRetentionConfig.getCleanupInterval());
+            return parsed.isNegative() || parsed.isZero() ? DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL : parsed;
+        } catch (DateTimeParseException e) {
+            return DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL;
+        }
+    }
+
+    public boolean isSessionRetentionProtectActiveSessions() {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
+        if (sessionRetentionConfig == null) {
+            return DEFAULT_SESSION_RETENTION_PROTECT_ACTIVE;
+        }
+        Boolean val = sessionRetentionConfig.getProtectActiveSessions();
+        return val != null ? val : DEFAULT_SESSION_RETENTION_PROTECT_ACTIVE;
+    }
+
+    public boolean isSessionRetentionProtectSessionsWithPlans() {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
+        if (sessionRetentionConfig == null) {
+            return DEFAULT_SESSION_RETENTION_PROTECT_PLANS;
+        }
+        Boolean val = sessionRetentionConfig.getProtectSessionsWithPlans();
+        return val != null ? val : DEFAULT_SESSION_RETENTION_PROTECT_PLANS;
+    }
+
+    public boolean isSessionRetentionProtectSessionsWithDelayedActions() {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
+        if (sessionRetentionConfig == null) {
+            return DEFAULT_SESSION_RETENTION_PROTECT_DELAYED_ACTIONS;
+        }
+        Boolean val = sessionRetentionConfig.getProtectSessionsWithDelayedActions();
+        return val != null ? val : DEFAULT_SESSION_RETENTION_PROTECT_DELAYED_ACTIONS;
+    }
+
     public boolean isTurnAutoRetryEnabled() {
         RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
         if (turnConfig == null) {
@@ -1831,6 +1901,31 @@ public class RuntimeConfigService {
         }
         if (cfg.getTurn() == null) {
             cfg.setTurn(new RuntimeConfig.TurnConfig());
+        }
+        if (cfg.getSessionRetention() == null) {
+            cfg.setSessionRetention(new RuntimeConfig.SessionRetentionConfig());
+        }
+        if (cfg.getSessionRetention().getEnabled() == null) {
+            cfg.getSessionRetention().setEnabled(DEFAULT_SESSION_RETENTION_ENABLED);
+        }
+        if (cfg.getSessionRetention().getMaxAge() == null || cfg.getSessionRetention().getMaxAge().isBlank()
+                || !isValidDuration(cfg.getSessionRetention().getMaxAge())) {
+            cfg.getSessionRetention().setMaxAge(DEFAULT_SESSION_RETENTION_MAX_AGE.toString());
+        }
+        if (cfg.getSessionRetention().getCleanupInterval() == null
+                || cfg.getSessionRetention().getCleanupInterval().isBlank()
+                || !isValidDuration(cfg.getSessionRetention().getCleanupInterval())) {
+            cfg.getSessionRetention().setCleanupInterval(DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL.toString());
+        }
+        if (cfg.getSessionRetention().getProtectActiveSessions() == null) {
+            cfg.getSessionRetention().setProtectActiveSessions(DEFAULT_SESSION_RETENTION_PROTECT_ACTIVE);
+        }
+        if (cfg.getSessionRetention().getProtectSessionsWithPlans() == null) {
+            cfg.getSessionRetention().setProtectSessionsWithPlans(DEFAULT_SESSION_RETENTION_PROTECT_PLANS);
+        }
+        if (cfg.getSessionRetention().getProtectSessionsWithDelayedActions() == null) {
+            cfg.getSessionRetention()
+                    .setProtectSessionsWithDelayedActions(DEFAULT_SESSION_RETENTION_PROTECT_DELAYED_ACTIONS);
         }
         if (cfg.getModelRegistry() == null) {
             cfg.setModelRegistry(new RuntimeConfig.ModelRegistryConfig());

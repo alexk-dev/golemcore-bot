@@ -21,6 +21,7 @@ import type {
   ToolsConfig,
   TracingConfig,
   TurnConfig,
+  SessionRetentionConfig,
   UsageConfig,
   VoiceConfig,
 } from './settingsTypes';
@@ -73,6 +74,7 @@ export type {
   ToolsConfig,
   TracingConfig,
   TurnConfig,
+  SessionRetentionConfig,
   UsageConfig,
   VoiceConfig,
 } from './settingsTypes';
@@ -271,6 +273,15 @@ export async function updateTurnConfig(config: TurnConfig): Promise<RuntimeConfi
     '/settings/runtime/turn',
     config,
     withSettingsSectionTelemetry('turn'),
+  );
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateSessionRetentionConfig(config: SessionRetentionConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/session-retention',
+    config,
+    withSettingsSectionTelemetry('usage'),
   );
   return toUiRuntimeConfig(data);
 }

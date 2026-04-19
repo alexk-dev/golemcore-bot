@@ -28,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -228,6 +229,32 @@ public class SessionService implements SessionPort {
         return listByChannelType(channelType).stream()
                 .filter(session -> SessionIdentitySupport.belongsToTransport(session, normalizedTransportChatId))
                 .toList();
+    }
+
+    @Override
+    public int cleanupExpiredSessions(Instant cutoff, Predicate<AgentSession> shouldRetain) {
+        if (cutoff == null) {
+            throw new IllegalArgumentException("cutoff is required");
+        }
+        Predicate<AgentSession> retentionPredicate = shouldRetain != null ? shouldRetain : session -> false;
+        hydrateCacheFromStorage(path -> true);
+
+        int deletedCount = 0;
+        for (AgentSession session : List.copyOf(sessionCache.values())) {
+            if (session == null || StringValueSupport.isBlank(session.getId())) {
+                continue;
+            }
+            if (retentionPredicate.test(session)) {
+                continue;
+            }
+            Instant updatedAt = session.getUpdatedAt() != null ? session.getUpdatedAt() : session.getCreatedAt();
+            if (updatedAt == null || !updatedAt.isBefore(cutoff)) {
+                continue;
+            }
+            delete(session.getId());
+            deletedCount++;
+        }
+        return deletedCount;
     }
 
     private void hydrateCacheFromStorage(Predicate<String> pathFilter) {
