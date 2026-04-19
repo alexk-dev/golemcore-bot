@@ -1,7 +1,8 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.inlineedit;
 
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.service.DashboardFileService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,8 +36,7 @@ class WebInlineEditServiceTest {
     @Test
     void shouldCreateInlineEditReplacement() throws Exception {
         when(llmPort.chat(any(LlmRequest.class)))
-                .thenReturn(
-                        CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
         WebInlineEditService.InlineEditResult result = webInlineEditService.createInlineEdit(
                 "src/App.tsx",
@@ -85,8 +85,7 @@ class WebInlineEditServiceTest {
     @Test
     void shouldCaptureInlineEditMetadataInLlmRequest() throws Exception {
         when(llmPort.chat(any(LlmRequest.class)))
-                .thenReturn(
-                        CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
         webInlineEditService.createInlineEdit(
                 "src/App.tsx",

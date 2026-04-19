@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.inlineedit;
 
 import org.springframework.stereotype.Service;
 

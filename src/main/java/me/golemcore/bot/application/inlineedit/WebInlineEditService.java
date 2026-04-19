@@ -1,10 +1,11 @@
-package me.golemcore.bot.domain.service;
+package me.golemcore.bot.application.inlineedit;
 
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.service.DashboardFileService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.springframework.stereotype.Service;
 

@@ -25,12 +25,12 @@ import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.net.URI;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -303,8 +303,9 @@ public class WebSocketChatHandler implements WebSocketHandler {
             }
             String path = asString(tabMap.get("path"));
             String title = asString(tabMap.get("title"));
-            Boolean isDirty = asBoolean(tabMap.get("isDirty"));
-            if (path == null || path.isBlank() || title == null || title.isBlank() || isDirty == null) {
+            Object isDirtyValue = tabMap.get("isDirty");
+            if (path == null || path.isBlank() || title == null || title.isBlank()
+                    || !(isDirtyValue instanceof Boolean isDirty)) {
                 continue;
             }
             Map<String, Object> normalized = new LinkedHashMap<>();
@@ -326,13 +327,6 @@ public class WebSocketChatHandler implements WebSocketHandler {
     private Integer asInteger(Object value) {
         if (value instanceof Number number) {
             return number.intValue();
-        }
-        return null;
-    }
-
-    private Boolean asBoolean(Object value) {
-        if (value instanceof Boolean booleanValue) {
-            return booleanValue;
         }
         return null;
     }
