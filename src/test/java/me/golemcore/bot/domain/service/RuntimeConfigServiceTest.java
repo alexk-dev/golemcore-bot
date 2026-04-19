@@ -115,6 +115,50 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldReturnExistingTelemetryClientIdWithoutRegenerating() throws Exception {
+        RuntimeConfig.TelemetryConfig telemetry = RuntimeConfig.TelemetryConfig.builder()
+                .clientId("existing-client-id")
+                .build();
+        persistedSections.put("telemetry.json", objectMapper.writeValueAsString(telemetry));
+
+        String clientId = service.ensureTelemetryClientId();
+
+        assertEquals("existing-client-id", clientId);
+        RuntimeConfig.TelemetryConfig persisted = objectMapper.readValue(
+                persistedSections.get("telemetry.json"),
+                RuntimeConfig.TelemetryConfig.class);
+        assertEquals("existing-client-id", persisted.getClientId());
+    }
+
+    @Test
+    void shouldCreateTelemetryConfigWhenEnsuringClientIdAndTelemetryConfigIsMissing() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setTelemetry(null);
+
+        String clientId = service.ensureTelemetryClientId();
+
+        assertNotNull(clientId);
+        assertNotNull(config.getTelemetry());
+        assertEquals(clientId, config.getTelemetry().getClientId());
+        RuntimeConfig.TelemetryConfig persisted = objectMapper.readValue(
+                persistedSections.get("telemetry.json"),
+                RuntimeConfig.TelemetryConfig.class);
+        assertEquals(clientId, persisted.getClientId());
+    }
+
+    @Test
+    void shouldReturnGeneratedTelemetryClientIdWhenPersistenceFails() {
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("disk full")));
+
+        String clientId = service.ensureTelemetryClientId();
+
+        assertNotNull(clientId);
+        assertFalse(clientId.isBlank());
+        assertNull(persistedSections.get("telemetry.json"));
+    }
+
+    @Test
     void shouldDefaultTelemetryToFalseForUpgradeWithoutTelemetrySection() throws Exception {
         RuntimeConfig.UsageConfig usage = RuntimeConfig.UsageConfig.builder()
                 .enabled(true)
