@@ -1,4 +1,4 @@
-package me.golemcore.bot.application.inlineedit;
+package me.golemcore.bot.adapter.inbound.web.inlineedit;
 
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -7,7 +7,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.DashboardFileService;
 import me.golemcore.bot.port.outbound.LlmPort;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,7 +16,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-@Service
+@Component
 @RequiredArgsConstructor
 public class WebInlineEditService {
 

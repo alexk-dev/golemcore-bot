@@ -1,11 +1,11 @@
-package me.golemcore.bot.application.inlineedit;
+package me.golemcore.bot.adapter.inbound.web.inlineedit;
 
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Locale;
 
-@Service
+@Component
 public class WebInlineEditPromptFactory {
 
     private static final List<String> QUICK_PREFIXES = List.of(

@@ -1,4 +1,4 @@
-package me.golemcore.bot.application.inlineedit;
+package me.golemcore.bot.adapter.inbound.web.inlineedit;
 
 import org.junit.jupiter.api.Test;
 
