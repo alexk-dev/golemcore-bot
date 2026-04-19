@@ -16,7 +16,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -47,6 +46,7 @@ class TelemetryEventPublisherTest {
         telemetryConfig.setClientId("test-client-id");
         config.setTelemetry(telemetryConfig);
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(config);
+        when(runtimeConfigService.ensureTelemetryClientId()).thenReturn("test-client-id");
 
         Clock clock = Clock.fixed(Instant.parse("2026-04-08T10:00:00Z"), ZoneOffset.UTC);
         publisher = new TelemetryEventPublisher(runtimeConfigService, gaTelemetryClient, buildPropertiesProvider,
@@ -89,15 +89,13 @@ class TelemetryEventPublisherTest {
     }
 
     @Test
-    void shouldGenerateAndPersistClientIdWhenMissing() {
+    void shouldResolveClientIdWhenMissing() {
         when(runtimeConfigService.isTelemetryEnabled()).thenReturn(true);
-        RuntimeConfig config = new RuntimeConfig();
-        config.setTelemetry(new RuntimeConfig.TelemetryConfig());
-        when(runtimeConfigService.getRuntimeConfig()).thenReturn(config);
+        when(runtimeConfigService.ensureTelemetryClientId()).thenReturn("generated-client-id");
 
         publisher.publishEvent("heartbeat", Map.of());
 
-        verify(runtimeConfigService).updateRuntimeConfig(any(RuntimeConfig.class));
-        verify(gaTelemetryClient).sendEvent(anyString(), anyLong(), eq("heartbeat"), anyMap());
+        verify(runtimeConfigService).ensureTelemetryClientId();
+        verify(gaTelemetryClient).sendEvent(eq("generated-client-id"), anyLong(), eq("heartbeat"), anyMap());
     }
 }

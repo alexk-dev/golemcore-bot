@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.FallbackModes;
@@ -288,6 +289,36 @@ public class RuntimeConfigService {
         }
     }
 
+    public String ensureTelemetryClientId() {
+        String existingClientId = findTelemetryClientId(getRuntimeConfig());
+        if (existingClientId != null) {
+            return existingClientId;
+        }
+
+        synchronized (this) {
+            RuntimeConfig config = getRuntimeConfig();
+            existingClientId = findTelemetryClientId(config);
+            if (existingClientId != null) {
+                return existingClientId;
+            }
+
+            String generated = UUID.randomUUID().toString();
+            RuntimeConfig.TelemetryConfig telemetryConfig = config.getTelemetry();
+            if (telemetryConfig == null) {
+                telemetryConfig = new RuntimeConfig.TelemetryConfig();
+                config.setTelemetry(telemetryConfig);
+            }
+            telemetryConfig.setClientId(generated);
+            try {
+                updateRuntimeConfig(config);
+                log.info("[Telemetry] Generated and persisted GA4 client_id: {}", generated);
+            } catch (RuntimeException exception) {
+                log.warn("[Telemetry] Failed to persist GA4 client_id: {}", exception.getMessage());
+            }
+            return generated;
+        }
+    }
+
     public RuntimeConfig snapshotRuntimeConfig() {
         return copyRuntimeConfig(getRuntimeConfig());
     }
@@ -318,6 +349,14 @@ public class RuntimeConfigService {
             this.configRef.set(oldConfig);
             throw e;
         }
+    }
+
+    private static String findTelemetryClientId(RuntimeConfig config) {
+        if (config == null || config.getTelemetry() == null) {
+            return null;
+        }
+        String clientId = config.getTelemetry().getClientId();
+        return clientId != null && !clientId.isBlank() ? clientId : null;
     }
 
     public RuntimeConfig reloadRuntimeConfig() {

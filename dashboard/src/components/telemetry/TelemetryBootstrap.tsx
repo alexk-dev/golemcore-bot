@@ -1,12 +1,14 @@
 import { type ReactElement, type ReactNode, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 
 import { postTelemetryRollup } from '../../api/telemetry';
 import { useRuntimeConfig } from '../../hooks/useSettings';
 import { TelemetryProvider } from '../../lib/telemetry/TelemetryProvider';
+import { sanitizeTelemetryRoute } from '../../lib/telemetry/telemetrySanitizers';
 import { TelemetryErrorBoundary } from './TelemetryErrorBoundary';
 import { TelemetryRouteTracker } from './TelemetryRouteTracker';
 
-declare function gtag(command: 'config', targetId: string, params: Record<string, unknown>): void;
+declare function gtag(command: 'config' | 'event', targetOrEventName: string, params: Record<string, unknown>): void;
 
 const GA_MEASUREMENT_ID = 'G-ZB1YDYV2MB';
 
@@ -16,24 +18,42 @@ interface TelemetryBootstrapProps {
 
 export function TelemetryBootstrap({ children }: TelemetryBootstrapProps): ReactElement {
   const { data: runtimeConfig } = useRuntimeConfig();
-  const gtagConfigured = useRef(false);
+  const location = useLocation();
+  const configuredClientId = useRef<string | null>(null);
+  const lastPageViewRoute = useRef<string | null>(null);
+  const telemetryConfig = runtimeConfig?.telemetry;
+  const telemetryClientId = telemetryConfig?.clientId;
+  const enabled = telemetryConfig?.enabled !== false;
 
-  // Sync GA4 client_id with backend RuntimeConfig so frontend and backend
-  // events are attributed to the same user in GA4 reports.
+  // Configure GA only after the backend client_id is available, then send page views manually.
   useEffect(() => {
-    const clientId = runtimeConfig?.telemetry?.clientId;
-    if (clientId == null || gtagConfigured.current || typeof gtag !== 'function') {
+    if (!enabled || telemetryClientId == null || telemetryClientId.trim().length === 0
+      || typeof gtag !== 'function') {
       return;
     }
-    gtag('config', GA_MEASUREMENT_ID, { client_id: clientId });
-    gtagConfigured.current = true;
-  }, [runtimeConfig?.telemetry?.clientId]);
+    if (configuredClientId.current !== telemetryClientId) {
+      gtag('config', GA_MEASUREMENT_ID, {
+        client_id: telemetryClientId,
+        send_page_view: false,
+      });
+      configuredClientId.current = telemetryClientId;
+      lastPageViewRoute.current = null;
+    }
+
+    const route = sanitizeTelemetryRoute(location.pathname);
+    if (lastPageViewRoute.current === route) {
+      return;
+    }
+    gtag('event', 'page_view', {
+      page_location: `${window.location.origin}${route}`,
+      page_title: document.title,
+    });
+    lastPageViewRoute.current = route;
+  }, [enabled, location.pathname, telemetryClientId]);
 
   if (runtimeConfig == null) {
     return <>{children}</>;
   }
-
-  const enabled = runtimeConfig.telemetry?.enabled !== false;
 
   return (
     <TelemetryProvider enabled={enabled} flushRollup={postTelemetryRollup}>

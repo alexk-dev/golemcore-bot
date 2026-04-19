@@ -98,6 +98,23 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldGenerateAndPersistTelemetryClientIdWhenMissing() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        assertNull(config.getTelemetry().getClientId());
+
+        String clientId = service.ensureTelemetryClientId();
+        String secondClientId = service.ensureTelemetryClientId();
+
+        assertNotNull(clientId);
+        assertFalse(clientId.isBlank());
+        assertEquals(clientId, secondClientId);
+        RuntimeConfig.TelemetryConfig persisted = objectMapper.readValue(
+                persistedSections.get("telemetry.json"),
+                RuntimeConfig.TelemetryConfig.class);
+        assertEquals(clientId, persisted.getClientId());
+    }
+
+    @Test
     void shouldDefaultTelemetryToFalseForUpgradeWithoutTelemetrySection() throws Exception {
         RuntimeConfig.UsageConfig usage = RuntimeConfig.UsageConfig.builder()
                 .enabled(true)

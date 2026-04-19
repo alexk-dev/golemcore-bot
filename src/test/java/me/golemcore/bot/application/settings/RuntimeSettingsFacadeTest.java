@@ -496,4 +496,26 @@ class RuntimeSettingsFacadeTest {
         assertEquals(usage, current.getUsage());
         assertEquals(telemetry, current.getTelemetry());
     }
+
+    @Test
+    void shouldPreserveTelemetryClientIdWhenUpdatingTelemetrySettings() {
+        RuntimeConfig current = RuntimeConfig.builder()
+                .telemetry(RuntimeConfig.TelemetryConfig.builder()
+                        .enabled(true)
+                        .clientId("stable-client-id")
+                        .build())
+                .build();
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        RuntimeConfig.TelemetryConfig incoming = RuntimeConfig.TelemetryConfig.builder()
+                .enabled(false)
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+
+        RuntimeConfig response = facade.updateTelemetryConfig(incoming);
+
+        assertEquals(apiView, response);
+        assertFalse(current.getTelemetry().getEnabled());
+        assertEquals("stable-client-id", current.getTelemetry().getClientId());
+    }
 }
