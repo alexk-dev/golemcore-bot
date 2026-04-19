@@ -33,9 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.port.outbound.SessionPort;
-import org.springframework.stereotype.Service;
 
-@Service
 @RequiredArgsConstructor
 @Slf4j
 public class SessionRetentionCleanupService {

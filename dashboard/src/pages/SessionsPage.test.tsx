@@ -45,7 +45,7 @@ describe('SessionsPage', () => {
       </StaticRouter>,
     );
 
-    expect(html).toContain('Automatic cleanup is configured in Settings');
+    expect(html).toContain('Automatic cleanup is configured in <a href="/settings/usage">Settings');
     expect(html).toContain('/settings/usage');
   });
 
