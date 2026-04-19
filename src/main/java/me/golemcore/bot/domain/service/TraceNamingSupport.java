@@ -16,6 +16,8 @@ public final class TraceNamingSupport {
     public static final String WEBHOOK_AGENT = "webhook.agent";
     public static final String INTERNAL_AUTO_CONTINUE = "internal.auto_continue";
     public static final String DELAYED_ACTION = "delayed.action";
+    public static final String RESILIENCE_FOLLOW_THROUGH_ANALYZE = "resilience.follow_through.analyze";
+    public static final String RESILIENCE_FOLLOW_THROUGH_NUDGE = "resilience.follow_through.nudge";
 
     private TraceNamingSupport() {
     }
@@ -44,6 +46,9 @@ public final class TraceNamingSupport {
             }
             if (ContextAttributes.MESSAGE_INTERNAL_KIND_DELAYED_ACTION.equals(internalKind)) {
                 return DELAYED_ACTION;
+            }
+            if (ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE.equals(internalKind)) {
+                return RESILIENCE_FOLLOW_THROUGH_NUDGE;
             }
         }
         String channelType = message.getChannelType();

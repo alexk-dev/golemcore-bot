@@ -402,6 +402,19 @@ public class RuntimeConfigService {
         return enabled != null && enabled;
     }
 
+    public RuntimeConfig.FollowThroughConfig getFollowThroughConfig() {
+        RuntimeConfig.FollowThroughConfig cfg = getResilienceConfig().getFollowThrough();
+        return cfg != null ? cfg : RuntimeConfig.FollowThroughConfig.builder().build();
+    }
+
+    public boolean isFollowThroughEnabled() {
+        if (!isResilienceEnabled()) {
+            return false;
+        }
+        Boolean enabled = getFollowThroughConfig().getEnabled();
+        return enabled == null || enabled;
+    }
+
     public RuntimeConfig.SelfEvolvingConfig getSelfEvolvingConfig() {
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = getRuntimeConfig().getSelfEvolving();
         return selfEvolvingConfig != null ? selfEvolvingConfig : RuntimeConfig.SelfEvolvingConfig.builder().build();
@@ -1921,6 +1934,7 @@ public class RuntimeConfigService {
         }
         cfg.getResilience().setDegradationFallbackModelTier(
                 normalizeResilienceFallbackTier(cfg.getResilience().getDegradationFallbackModelTier()));
+        normalizeFollowThroughConfig(cfg.getResilience());
         if (cfg.getHive() == null) {
             cfg.setHive(new RuntimeConfig.HiveConfig());
         }
@@ -2410,6 +2424,30 @@ public class RuntimeConfigService {
         Integer coldRetryMaxAttempts = resilienceConfig.getColdRetryMaxAttempts();
         if (coldRetryMaxAttempts == null || coldRetryMaxAttempts < 1) {
             resilienceConfig.setColdRetryMaxAttempts(defaults.getColdRetryMaxAttempts());
+        }
+    }
+
+    private void normalizeFollowThroughConfig(RuntimeConfig.ResilienceConfig resilienceConfig) {
+        RuntimeConfig.FollowThroughConfig defaults = RuntimeConfig.FollowThroughConfig.builder().build();
+        if (resilienceConfig.getFollowThrough() == null) {
+            resilienceConfig.setFollowThrough(RuntimeConfig.FollowThroughConfig.builder().build());
+        }
+        RuntimeConfig.FollowThroughConfig cfg = resilienceConfig.getFollowThrough();
+        if (cfg.getEnabled() == null) {
+            cfg.setEnabled(defaults.getEnabled());
+        }
+        String tier = ModelTierCatalog.normalizeTierId(cfg.getModelTier());
+        if (tier == null || !ModelTierCatalog.isExplicitSelectableTier(tier)) {
+            tier = defaults.getModelTier();
+        }
+        cfg.setModelTier(tier);
+        Integer timeoutSeconds = cfg.getTimeoutSeconds();
+        if (timeoutSeconds == null || timeoutSeconds < 1) {
+            cfg.setTimeoutSeconds(defaults.getTimeoutSeconds());
+        }
+        Integer maxChainDepth = cfg.getMaxChainDepth();
+        if (maxChainDepth == null || maxChainDepth < 0) {
+            cfg.setMaxChainDepth(defaults.getMaxChainDepth());
         }
     }
 

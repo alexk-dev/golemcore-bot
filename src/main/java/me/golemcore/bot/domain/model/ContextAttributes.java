@@ -281,6 +281,24 @@ public final class ContextAttributes {
      */
     public static final String MESSAGE_INTERNAL_KIND_TACTIC_ADVISORY = "tactic_advisory";
 
+    /**
+     * String value for {@link #MESSAGE_INTERNAL_KIND}: follow-through classifier
+     * forced continuation after the assistant committed but did not invoke a tool.
+     */
+    public static final String MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE = "follow_through_nudge";
+
+    /**
+     * Boolean - follow-through classifier scheduled a continuation nudge in the
+     * current turn.
+     */
+    public static final String RESILIENCE_FOLLOW_THROUGH_SCHEDULED = "resilience.follow_through.scheduled";
+
+    /**
+     * Integer - consecutive follow-through nudge chain depth. Incremented each time
+     * a nudge is scheduled; used to enforce the max-chain-depth anti-loop guard.
+     */
+    public static final String RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH = "resilience.follow_through.chain_depth";
+
     /** Boolean ? current inbound message is an internal runtime-only message. */
     public static final String TURN_INPUT_INTERNAL = "turn.input.internal";
 

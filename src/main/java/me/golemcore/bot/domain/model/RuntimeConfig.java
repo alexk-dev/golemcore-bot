@@ -1359,6 +1359,41 @@ public class RuntimeConfig {
         /** Maximum delayed retry attempts before dead-letter handling. */
         @Builder.Default
         private Integer coldRetryMaxAttempts = 4;
+
+        /**
+         * Follow-through classifier: detects unfulfilled commitments in the assistant
+         * reply and forces a synthetic continuation turn.
+         */
+        @Builder.Default
+        private FollowThroughConfig followThrough = new FollowThroughConfig();
+    }
+
+    /**
+     * Settings for the follow-through resilience classifier. The classifier
+     * analyses the last assistant reply after the main turn completes and, if the
+     * model committed to a next action but failed to invoke any tool, it schedules
+     * a synthetic "continue" user message to unblock the agent.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class FollowThroughConfig {
+        /** Enables the follow-through classifier. Default: on. */
+        @Builder.Default
+        private Boolean enabled = true;
+
+        /** Model tier used for the classifier LLM call. Default: routing. */
+        @Builder.Default
+        private String modelTier = "routing";
+
+        /** Per-call timeout in seconds for the classifier LLM call. */
+        @Builder.Default
+        private Integer timeoutSeconds = 5;
+
+        /** Maximum consecutive follow-through nudges allowed per conversation. */
+        @Builder.Default
+        private Integer maxChainDepth = 1;
     }
 
     @Data
