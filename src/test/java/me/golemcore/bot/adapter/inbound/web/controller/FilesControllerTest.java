@@ -4,7 +4,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.FileCreateRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileRenameRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.FileSaveRequest;
 import me.golemcore.bot.adapter.inbound.web.dto.InlineEditRequest;
-import me.golemcore.bot.application.inlineedit.WebInlineEditService;
+import me.golemcore.bot.adapter.inbound.web.inlineedit.WebInlineEditService;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
