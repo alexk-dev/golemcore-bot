@@ -66,12 +66,29 @@ test('renders compact workspace mode on mobile and switches between editor and c
   await expect(page.locator('[data-testid="workspace-compact-pane-chat"]')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('[data-testid="workspace-toggle-chat"]')).toHaveCount(0);
 
+  const buttons = page.locator('.workspace-toolbar-button');
+  const buttonCount = await buttons.count();
+  for (let index = 0; index < buttonCount; index += 1) {
+    const height = await buttons.nth(index).evaluate((element) => Math.round(element.getBoundingClientRect().height));
+    expect(height).toBeGreaterThanOrEqual(44);
+  }
+
   await page.locator('[data-testid="workspace-compact-pane-chat"]').click();
   await expect(page.locator('[data-testid="workspace-compact-pane-chat"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('[data-testid="workspace-chat-pane"]')).toBeVisible();
 
   await page.locator('[data-testid="workspace-compact-pane-editor"]').click();
   await expect(page.locator('[data-testid="workspace-editor-pane"]')).toBeVisible();
+});
+
+test('opens terminal deep-link on desktop', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/dashboard/workspace?focus=terminal');
+
+  const terminalToggle = page.locator('[data-testid="workspace-toggle-terminal"]');
+  await expect(page.locator('[data-testid="workspace-page-desktop"]')).toBeVisible();
+  await expect(terminalToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('[data-testid="workspace-terminal-pane"]')).toBeVisible();
 });
 
 test('opens mobile terminal as bottom sheet and supports focus route for chat', async ({ page }) => {
@@ -88,6 +105,11 @@ test('opens mobile terminal as bottom sheet and supports focus route for chat', 
   await expect(terminalToggle).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('heading', { name: 'Terminal' })).toBeVisible();
   await expect(page.locator('.workspace-terminal-offcanvas')).toBeVisible();
+  const metrics = await page.locator('.workspace-terminal-offcanvas').evaluate((element) => ({
+    height: element.getBoundingClientRect().height,
+    viewportHeight: window.innerHeight,
+  }));
+  expect(metrics.height / metrics.viewportHeight).toBeGreaterThanOrEqual(0.88);
   await expect(page.locator('.workspace-terminal-offcanvas [data-testid="workspace-terminal-pane"]')).toBeVisible();
 
   await page.locator('.workspace-terminal-offcanvas').getByRole('button', { name: 'Close', exact: true }).click();
