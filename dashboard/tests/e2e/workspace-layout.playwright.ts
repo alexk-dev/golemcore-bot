@@ -105,10 +105,11 @@ test('opens mobile terminal as bottom sheet and supports focus route for chat', 
   await expect(terminalToggle).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('heading', { name: 'Terminal' })).toBeVisible();
   await expect(page.locator('.workspace-terminal-offcanvas')).toBeVisible();
-  const sheetHeight = await page.locator('.workspace-terminal-offcanvas').evaluate((element) => {
-    return Math.round(element.getBoundingClientRect().height);
-  });
-  expect(sheetHeight).toBeGreaterThanOrEqual(590);
+  const metrics = await page.locator('.workspace-terminal-offcanvas').evaluate((element) => ({
+    height: element.getBoundingClientRect().height,
+    viewportHeight: window.innerHeight,
+  }));
+  expect(metrics.height / metrics.viewportHeight).toBeGreaterThanOrEqual(0.88);
   await expect(page.locator('.workspace-terminal-offcanvas [data-testid="workspace-terminal-pane"]')).toBeVisible();
 
   await page.locator('.workspace-terminal-offcanvas').getByRole('button', { name: 'Close', exact: true }).click();
