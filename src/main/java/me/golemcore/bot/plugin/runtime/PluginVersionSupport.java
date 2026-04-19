@@ -31,13 +31,7 @@ final class PluginVersionSupport {
             }
             String expectedVersion = normalizedToken.substring(operator.length());
             int comparison = compareVersions(version, expectedVersion);
-            boolean matches = switch (operator) {
-            case ">=" -> comparison >= 0;
-            case ">" -> comparison > 0;
-            case "=" -> comparison >= 0;
-            default -> throw new IllegalArgumentException("Unsupported engineVersion constraint: " + token);
-            };
-            if (!matches) {
+            if (!satisfiesMinimumConstraint(operator, comparison, token)) {
                 return false;
             }
         }
@@ -119,6 +113,16 @@ final class PluginVersionSupport {
 
     private static boolean isUpperBoundOperator(String operator) {
         return "<".equals(operator) || "<=".equals(operator);
+    }
+
+    private static boolean satisfiesMinimumConstraint(String operator, int comparison, String token) {
+        if (">".equals(operator)) {
+            return comparison > 0;
+        }
+        if (">=".equals(operator) || "=".equals(operator)) {
+            return comparison >= 0;
+        }
+        throw new IllegalArgumentException("Unsupported engineVersion constraint: " + token);
     }
 
     private static int comparePreRelease(String left, String right) {
