@@ -36,7 +36,8 @@ class WebInlineEditServiceTest {
     @Test
     void shouldCreateInlineEditReplacement() throws Exception {
         when(llmPort.chat(any(LlmRequest.class)))
-                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
+                .thenReturn(
+                        CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
         WebInlineEditService.InlineEditResult result = webInlineEditService.createInlineEdit(
                 "src/App.tsx",
@@ -85,7 +86,8 @@ class WebInlineEditServiceTest {
     @Test
     void shouldCaptureInlineEditMetadataInLlmRequest() throws Exception {
         when(llmPort.chat(any(LlmRequest.class)))
-                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
+                .thenReturn(
+                        CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
         webInlineEditService.createInlineEdit(
                 "src/App.tsx",
