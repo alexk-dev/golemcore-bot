@@ -3,7 +3,7 @@
 ## Build & Test
 
 ```bash
-./mvnw clean package -DskipTests   # build
+./mvnw clean package -DskipTests   # build all modules
 ./mvnw test                         # run tests
 ./mvnw clean verify -P strict       # full check (tests + PMD + SpotBugs)
 ```
@@ -14,6 +14,23 @@ Common env vars (Spring) for local/Docker:
 
 - `STORAGE_PATH` (workspace base path)
 - `TOOLS_WORKSPACE` (sandbox for filesystem/shell tools)
+
+---
+
+## Modules
+
+- `golemcore-bot-contracts` — shared contracts: ports, shared domain models, contract-style component interfaces, lightweight shared views.
+- `golemcore-bot-app` — runnable Spring Boot application and runtime implementation.
+
+**Rule:** new shared contracts must go into `golemcore-bot-contracts`, not into the app module.
+
+Use `golemcore-bot-contracts` for:
+- port interfaces
+- shared boundary/domain models used across modules
+- contract-style component interfaces
+- lightweight shared views
+
+Do **not** put controllers, adapters, Spring services, or tool implementations into `golemcore-bot-contracts`.
 
 ---
 

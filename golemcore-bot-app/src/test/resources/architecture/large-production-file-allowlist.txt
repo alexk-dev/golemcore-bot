@@ -1,0 +1,8 @@
+# Files that currently exceed the production LOC threshold.
+me/golemcore/bot/domain/service/RuntimeConfigService.java
+me/golemcore/bot/plugin/runtime/PluginMarketplaceService.java
+me/golemcore/bot/adapter/outbound/llm/Langchain4jAdapter.java
+me/golemcore/bot/adapter/outbound/hive/HiveEventBatchPublisher.java
+me/golemcore/bot/domain/loop/AgentLoop.java
+me/golemcore/bot/domain/service/AutoModeService.java
+me/golemcore/bot/domain/system/toolloop/LlmCallPhase.java

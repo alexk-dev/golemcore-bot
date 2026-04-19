@@ -150,7 +150,7 @@ sudo mkdir -p /opt/golemcore-bot
 sudo chown golemcore:golemcore /opt/golemcore-bot
 
 # Copy JAR
-sudo cp target/golemcore-bot-0.1.0-SNAPSHOT.jar /opt/golemcore-bot/golemcore-bot.jar
+sudo cp golemcore-bot-app/target/bot-0.0.0-SNAPSHOT-exec.jar /opt/golemcore-bot/golemcore-bot.jar
 
 # Create .env file
 sudo nano /opt/golemcore-bot/.env

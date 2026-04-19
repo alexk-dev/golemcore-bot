@@ -113,7 +113,7 @@ After saving settings, restart Telegram from the dashboard (or restart the conta
 git clone https://github.com/alexk-dev/golemcore-bot.git
 cd golemcore-bot
 ./mvnw clean package -DskipTests
-java -jar target/golemcore-bot-0.1.0-SNAPSHOT.jar
+java -jar golemcore-bot-app/target/bot-0.0.0-SNAPSHOT-exec.jar
 ```
 
 Then open the dashboard at `http://localhost:8080/dashboard` and configure providers.

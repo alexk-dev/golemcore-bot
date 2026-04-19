@@ -50,5 +50,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: pit-reports
-          path: target/pit-reports
+          path: golemcore-bot-app/target/pit-reports
           if-no-files-found: ignore
