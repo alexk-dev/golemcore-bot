@@ -23,6 +23,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Resilience follow-through classifier system.
@@ -77,6 +78,9 @@ public class FollowThroughSystem implements AgentSystem {
                 || context.getAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED) != null) {
             return false;
         }
+        if (isInterruptRequested(context)) {
+            return false;
+        }
         if (isAutoModeContext(context)) {
             return false;
         }
@@ -104,7 +108,6 @@ public class FollowThroughSystem implements AgentSystem {
         RuntimeConfig.FollowThroughConfig cfg = runtimeConfigService.getFollowThroughConfig();
         String modelTier = cfg.getModelTier();
         Duration timeout = Duration.ofSeconds(cfg.getTimeoutSeconds());
-        int maxChainDepth = resolveMaxChainDepth();
         int incomingDepth = readIncomingChainDepth(context);
 
         ClassifierRequest request = new ClassifierRequest(
@@ -120,9 +123,12 @@ public class FollowThroughSystem implements AgentSystem {
                     verdict.intentType(), verdict.reason());
             return context;
         }
-        if (incomingDepth >= maxChainDepth) {
-            log.debug("[FollowThrough] chain depth guard tripped post-classifier (incoming={}, max={})",
-                    incomingDepth, maxChainDepth);
+        if (isInterruptRequested(context)) {
+            // /stop arrived while the classifier was in-flight. The coordinator
+            // will drop the synthetic inbound at enqueue time, but short-circuit
+            // here to keep the outcome deterministic and avoid leaving the turn
+            // marked as scheduled.
+            log.debug("[FollowThrough] skipping nudge dispatch: interrupt requested mid-classifier");
             return context;
         }
 
@@ -248,5 +254,15 @@ public class FollowThroughSystem implements AgentSystem {
         Message lastUser = findLastUserMessage(context);
         return lastUser != null && lastUser.getMetadata() != null
                 && Boolean.TRUE.equals(lastUser.getMetadata().get(ContextAttributes.AUTO_MODE));
+    }
+
+    private boolean isInterruptRequested(AgentContext context) {
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERRUPT_REQUESTED))) {
+            return true;
+        }
+        Map<String, Object> metadata = context.getSession() != null
+                ? context.getSession().getMetadata()
+                : null;
+        return metadata != null && Boolean.TRUE.equals(metadata.get(ContextAttributes.TURN_INTERRUPT_REQUESTED));
     }
 }

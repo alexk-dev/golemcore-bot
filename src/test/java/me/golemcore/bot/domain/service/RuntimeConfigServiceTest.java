@@ -2064,6 +2064,26 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldDisableFollowThroughWhenMasterResilienceFlagIsOffEvenIfFollowThroughEnabled() {
+        RuntimeConfig config = service.snapshotRuntimeConfig();
+        config.getResilience().setEnabled(false);
+        RuntimeConfig.FollowThroughConfig followThrough = RuntimeConfig.FollowThroughConfig.builder()
+                .enabled(true)
+                .modelTier("routing")
+                .timeoutSeconds(5)
+                .maxChainDepth(1)
+                .build();
+        config.getResilience().setFollowThrough(followThrough);
+        service.updateRuntimeConfig(config);
+
+        assertFalse(service.isResilienceEnabled());
+        assertTrue(service.getFollowThroughConfig().getEnabled(),
+                "sub-flag stays true — fix must be on the computed aggregate, not the raw field");
+        assertFalse(service.isFollowThroughEnabled(),
+                "master resilience.enabled=false must short-circuit follow-through regardless of its own flag");
+    }
+
+    @Test
     void shouldNormalizeResilienceNullsAndUnknownFallbackTier() {
         RuntimeConfig config = service.snapshotRuntimeConfig();
         RuntimeConfig.ResilienceConfig resilience = RuntimeConfig.ResilienceConfig.builder().build();

@@ -249,6 +249,63 @@ class FollowThroughSystemTest {
     }
 
     @Test
+    void shouldSkipClassifierWhenTurnAlreadyHasInterruptRequestedOnContext() {
+        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+        context.setAttribute(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
+
+        assertFalse(system.shouldProcess(context),
+                "classifier must not run when /stop already marked this turn as interrupt-requested");
+        system.process(context);
+
+        verifyNoInteractions(classifier);
+        verify(internalTurnService, never()).scheduleFollowThroughNudge(any(), anyString(), anyInt());
+    }
+
+    @Test
+    void shouldSkipClassifierWhenSessionMetadataHasInterruptRequested() {
+        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+        Map<String, Object> sessionMetadata = new LinkedHashMap<>();
+        sessionMetadata.put(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
+        context.getSession().setMetadata(sessionMetadata);
+
+        assertFalse(system.shouldProcess(context),
+                "classifier must not run when the session carries a pending /stop request");
+        system.process(context);
+
+        verifyNoInteractions(classifier);
+        verify(internalTurnService, never()).scheduleFollowThroughNudge(any(), anyString(), anyInt());
+    }
+
+    @Test
+    void shouldNotDispatchNudgeWhenStopArrivesBetweenClassifierAndDispatch() {
+        Map<String, Object> sessionMetadata = new LinkedHashMap<>();
+        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+        context.getSession().setMetadata(sessionMetadata);
+
+        // Simulate /stop arriving while classifier is in-flight: mutate session
+        // metadata during the classify() call so the flag flips mid-process.
+        when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
+                .thenAnswer(invocation -> {
+                    sessionMetadata.put(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
+                    return ClassifierVerdict.unfulfilledCommitment(
+                            "gather the files", CONTINUATION, "committed but no tool invoked");
+                });
+
+        system.process(context);
+
+        verify(classifier, times(1)).classify(any(), anyString(), any(Duration.class));
+        verify(internalTurnService, never()).scheduleFollowThroughNudge(any(), anyString(), anyInt());
+        assertNull(context.getAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED),
+                "stop arriving mid-classifier must not leave the turn marked as scheduled");
+    }
+
+    @Test
     void shouldBuildClassifierRequestFromUserAndAssistantTextWithEmptyToolListWhenNoToolsRan() {
         when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
                 .thenReturn(ClassifierVerdict.unfulfilledCommitment(

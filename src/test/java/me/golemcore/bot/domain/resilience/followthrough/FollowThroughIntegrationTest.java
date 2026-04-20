@@ -33,6 +33,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -231,6 +236,45 @@ class FollowThroughIntegrationTest {
                 .get(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH));
         assertEquals(2, dispatched.get(1).getMetadata()
                 .get(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH));
+    }
+
+    @Test
+    void shouldSkipDispatchWhenStopArrivesWhileClassifierIsInFlight() throws Exception {
+        CompletableFuture<LlmResponse> llmFuture = new CompletableFuture<>();
+        CountDownLatch classifierEntered = new CountDownLatch(1);
+        when(llmPort.chat(any(LlmRequest.class))).thenAnswer(invocation -> {
+            classifierEntered.countDown();
+            return llmFuture;
+        });
+
+        AgentContext context = contextWith(userMessage(USER_TEXT, null),
+                assistantMessage(ASSISTANT_TEXT));
+        Map<String, Object> sessionMetadata = new LinkedHashMap<>();
+        context.getSession().setMetadata(sessionMetadata);
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            Future<AgentContext> processFuture = executor.submit(() -> system.process(context));
+
+            assertTrue(classifierEntered.await(5, TimeUnit.SECONDS),
+                    "classifier must enter the LLM call so we can race /stop against it");
+
+            // /stop arrives — coordinator would mark this on the session metadata.
+            sessionMetadata.put(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
+
+            llmFuture.complete(LlmResponse.builder().content("""
+                    {"intent_type":"commitment","has_unfulfilled_commitment":true,
+                     "commitment_text":"gather the three files",
+                     "continuation_prompt":"%s",
+                     "reason":"committed but no tool invoked"}
+                    """.formatted(CONTINUATION)).build());
+
+            processFuture.get(5, TimeUnit.SECONDS);
+        }
+
+        verifyNoInteractions(inboundMessageDispatchPort);
+        assertFalse(Boolean.TRUE.equals(
+                context.getAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED)),
+                "stop arriving mid-classifier must not leave the turn marked as scheduled");
     }
 
     private void stubLlmResponse(String rawJson) {
