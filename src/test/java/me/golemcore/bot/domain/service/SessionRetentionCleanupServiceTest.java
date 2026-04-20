@@ -72,6 +72,15 @@ class SessionRetentionCleanupServiceTest {
     }
 
     @Test
+    void shouldNotResolvePointerSnapshotWhenFeatureDisabled() {
+        when(runtimeConfigService.isSessionRetentionEnabled()).thenReturn(false);
+
+        service.cleanupExpiredSessions();
+
+        verify(activeSessionPointerService, never()).getPointersSnapshot();
+    }
+
+    @Test
     void shouldDeleteExpiredSessionsWhenNoProtectionMatches() {
         when(sessionPort.cleanupExpiredSessions(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenAnswer(invocation -> {
@@ -104,24 +113,25 @@ class SessionRetentionCleanupServiceTest {
         when(activeSessionPointerService.getPointersSnapshot()).thenReturn(new LinkedHashMap<>(Map.of(
                 "telegram|100", "active-conv",
                 "web|admin|client-1", "webconv1")));
+        when(planService.hasActivePlans(new SessionIdentity(ChannelTypes.WEB, "plan-conv")))
+                .thenReturn(true);
+        when(delayedSessionActionService.hasPendingActions(ChannelTypes.TELEGRAM, "delayed-conv"))
+                .thenReturn(true);
+        AgentSession active = session("telegram:active-conv", ChannelTypes.TELEGRAM, "active-conv",
+                NOW.minus(Duration.ofDays(90)));
+        AgentSession plan = session("web:plan-conv", ChannelTypes.WEB, "plan-conv",
+                NOW.minus(Duration.ofDays(90)));
+        AgentSession delayed = session("telegram:delayed-conv", ChannelTypes.TELEGRAM, "delayed-conv",
+                NOW.minus(Duration.ofDays(90)));
+        AgentSession expired = session("telegram:expired", ChannelTypes.TELEGRAM, "expired",
+                NOW.minus(Duration.ofDays(90)));
+        List<AgentSession> candidates = List.of(active, plan, delayed, expired);
         when(sessionPort.cleanupExpiredSessions(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
                     java.util.function.Predicate<AgentSession> predicate = invocation.getArgument(1);
-                    AgentSession active = session("telegram:active-conv", ChannelTypes.TELEGRAM, "active-conv",
-                            NOW.minus(Duration.ofDays(90)));
-                    AgentSession plan = session("web:plan-conv", ChannelTypes.WEB, "plan-conv",
-                            NOW.minus(Duration.ofDays(90)));
-                    AgentSession delayed = session("telegram:delayed-conv", ChannelTypes.TELEGRAM, "delayed-conv",
-                            NOW.minus(Duration.ofDays(90)));
-                    AgentSession expired = session("telegram:expired", ChannelTypes.TELEGRAM, "expired",
-                            NOW.minus(Duration.ofDays(90)));
-                    when(planService.hasActivePlans(new SessionIdentity(ChannelTypes.WEB, "plan-conv")))
-                            .thenReturn(true);
-                    when(delayedSessionActionService.hasPendingActions(ChannelTypes.TELEGRAM, "delayed-conv"))
-                            .thenReturn(true);
                     int deleted = 0;
-                    for (AgentSession candidate : List.of(active, plan, delayed, expired)) {
+                    for (AgentSession candidate : candidates) {
                         if (!predicate.test(candidate)) {
                             deleted++;
                         }

@@ -231,7 +231,9 @@ public class SessionService implements SessionPort {
         if (cutoff == null) {
             throw new IllegalArgumentException("cutoff is required");
         }
-        Predicate<AgentSession> retentionPredicate = shouldRetain != null ? shouldRetain : session -> false;
+        if (shouldRetain == null) {
+            throw new IllegalArgumentException("shouldRetain predicate is required");
+        }
         hydrateCacheFromStorage(path -> true);
 
         int deletedCount = 0;
@@ -239,7 +241,7 @@ public class SessionService implements SessionPort {
             if (session == null || StringValueSupport.isBlank(session.getId())) {
                 continue;
             }
-            if (retentionPredicate.test(session)) {
+            if (shouldRetain.test(session)) {
                 continue;
             }
             Instant updatedAt = session.getUpdatedAt() != null ? session.getUpdatedAt() : session.getCreatedAt();

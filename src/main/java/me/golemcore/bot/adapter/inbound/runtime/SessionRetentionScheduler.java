@@ -28,16 +28,19 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionRetentionCleanupService;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class SessionRetentionScheduler {
 
     private static final Duration TICK_INTERVAL = Duration.ofMinutes(1);
+    private static final Duration SHUTDOWN_GRACE = Duration.ofSeconds(5);
 
     private final SessionRetentionCleanupService sessionRetentionCleanupService;
     private final RuntimeConfigService runtimeConfigService;
@@ -46,14 +49,6 @@ public class SessionRetentionScheduler {
     private final AtomicReference<Instant> lastRunAt = new AtomicReference<>();
 
     private ScheduledExecutorService scheduler;
-
-    public SessionRetentionScheduler(SessionRetentionCleanupService sessionRetentionCleanupService,
-            RuntimeConfigService runtimeConfigService,
-            Clock clock) {
-        this.sessionRetentionCleanupService = sessionRetentionCleanupService;
-        this.runtimeConfigService = runtimeConfigService;
-        this.clock = clock;
-    }
 
     @PostConstruct
     public void init() {
@@ -66,7 +61,6 @@ public class SessionRetentionScheduler {
                 TICK_INTERVAL.toSeconds(),
                 TICK_INTERVAL.toSeconds(),
                 TimeUnit.SECONDS);
-        tick();
         log.info("[SessionRetention] Scheduler started with tick interval: {}s", TICK_INTERVAL.toSeconds());
     }
 
@@ -75,7 +69,15 @@ public class SessionRetentionScheduler {
         if (scheduler == null) {
             return;
         }
-        scheduler.shutdownNow();
+        scheduler.shutdown();
+        try {
+            if (!scheduler.awaitTermination(SHUTDOWN_GRACE.toSeconds(), TimeUnit.SECONDS)) {
+                scheduler.shutdownNow();
+            }
+        } catch (InterruptedException interrupted) {
+            scheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     void tick() {

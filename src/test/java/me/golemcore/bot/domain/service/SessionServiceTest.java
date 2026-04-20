@@ -521,6 +521,16 @@ class SessionServiceTest {
     }
 
     @Test
+    void cleanupExpiredSessionsRejectsNullShouldRetainPredicate() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.cleanupExpiredSessions(FIXED_TIME, null));
+
+        assertTrue(error.getMessage().contains("shouldRetain"),
+                "error should name the missing argument so misuse is obvious");
+        verify(storagePort, never()).deleteObject(anyString(), anyString());
+    }
+
+    @Test
     void cleanupExpiredSessionsDoesNotCountDeletionFailures() {
         when(storagePort.getObject(SESSIONS_DIR, "telegram:old.pb"))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));

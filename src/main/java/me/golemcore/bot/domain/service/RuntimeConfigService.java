@@ -1352,67 +1352,70 @@ public class RuntimeConfigService {
     }
 
     public boolean isSessionRetentionEnabled() {
-        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
-        if (sessionRetentionConfig == null) {
-            return DEFAULT_SESSION_RETENTION_ENABLED;
-        }
-        Boolean val = sessionRetentionConfig.getEnabled();
-        return val != null ? val : DEFAULT_SESSION_RETENTION_ENABLED;
+        return sessionRetentionBoolean(RuntimeConfig.SessionRetentionConfig::getEnabled,
+                DEFAULT_SESSION_RETENTION_ENABLED);
     }
 
     public Duration getSessionRetentionMaxAge() {
-        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
-        if (sessionRetentionConfig == null || sessionRetentionConfig.getMaxAge() == null
-                || sessionRetentionConfig.getMaxAge().isBlank()) {
-            return DEFAULT_SESSION_RETENTION_MAX_AGE;
-        }
-        try {
-            Duration parsed = Duration.parse(sessionRetentionConfig.getMaxAge());
-            return parsed.isNegative() || parsed.isZero() ? DEFAULT_SESSION_RETENTION_MAX_AGE : parsed;
-        } catch (DateTimeParseException e) {
-            return DEFAULT_SESSION_RETENTION_MAX_AGE;
-        }
+        return sessionRetentionDuration(RuntimeConfig.SessionRetentionConfig::getMaxAge,
+                DEFAULT_SESSION_RETENTION_MAX_AGE, "sessionRetention.maxAge");
     }
 
     public Duration getSessionRetentionCleanupInterval() {
-        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
-        if (sessionRetentionConfig == null || sessionRetentionConfig.getCleanupInterval() == null
-                || sessionRetentionConfig.getCleanupInterval().isBlank()) {
-            return DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL;
-        }
-        try {
-            Duration parsed = Duration.parse(sessionRetentionConfig.getCleanupInterval());
-            return parsed.isNegative() || parsed.isZero() ? DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL : parsed;
-        } catch (DateTimeParseException e) {
-            return DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL;
-        }
+        return sessionRetentionDuration(RuntimeConfig.SessionRetentionConfig::getCleanupInterval,
+                DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL, "sessionRetention.cleanupInterval");
     }
 
     public boolean isSessionRetentionProtectActiveSessions() {
-        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
-        if (sessionRetentionConfig == null) {
-            return DEFAULT_SESSION_RETENTION_PROTECT_ACTIVE;
-        }
-        Boolean val = sessionRetentionConfig.getProtectActiveSessions();
-        return val != null ? val : DEFAULT_SESSION_RETENTION_PROTECT_ACTIVE;
+        return sessionRetentionBoolean(RuntimeConfig.SessionRetentionConfig::getProtectActiveSessions,
+                DEFAULT_SESSION_RETENTION_PROTECT_ACTIVE);
     }
 
     public boolean isSessionRetentionProtectSessionsWithPlans() {
-        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
-        if (sessionRetentionConfig == null) {
-            return DEFAULT_SESSION_RETENTION_PROTECT_PLANS;
-        }
-        Boolean val = sessionRetentionConfig.getProtectSessionsWithPlans();
-        return val != null ? val : DEFAULT_SESSION_RETENTION_PROTECT_PLANS;
+        return sessionRetentionBoolean(RuntimeConfig.SessionRetentionConfig::getProtectSessionsWithPlans,
+                DEFAULT_SESSION_RETENTION_PROTECT_PLANS);
     }
 
     public boolean isSessionRetentionProtectSessionsWithDelayedActions() {
-        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = getRuntimeConfig().getSessionRetention();
-        if (sessionRetentionConfig == null) {
-            return DEFAULT_SESSION_RETENTION_PROTECT_DELAYED_ACTIONS;
+        return sessionRetentionBoolean(RuntimeConfig.SessionRetentionConfig::getProtectSessionsWithDelayedActions,
+                DEFAULT_SESSION_RETENTION_PROTECT_DELAYED_ACTIONS);
+    }
+
+    private boolean sessionRetentionBoolean(
+            java.util.function.Function<RuntimeConfig.SessionRetentionConfig, Boolean> getter,
+            boolean defaultValue) {
+        RuntimeConfig.SessionRetentionConfig cfg = getRuntimeConfig().getSessionRetention();
+        if (cfg == null) {
+            return defaultValue;
         }
-        Boolean val = sessionRetentionConfig.getProtectSessionsWithDelayedActions();
-        return val != null ? val : DEFAULT_SESSION_RETENTION_PROTECT_DELAYED_ACTIONS;
+        Boolean val = getter.apply(cfg);
+        return val != null ? val : defaultValue;
+    }
+
+    private Duration sessionRetentionDuration(
+            java.util.function.Function<RuntimeConfig.SessionRetentionConfig, String> getter,
+            Duration defaultValue,
+            String fieldName) {
+        RuntimeConfig.SessionRetentionConfig cfg = getRuntimeConfig().getSessionRetention();
+        if (cfg == null) {
+            return defaultValue;
+        }
+        String raw = getter.apply(cfg);
+        if (raw == null || raw.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            Duration parsed = Duration.parse(raw);
+            if (parsed.isNegative() || parsed.isZero()) {
+                log.warn("Ignoring non-positive duration for {}: {} (falling back to {})", fieldName, raw,
+                        defaultValue);
+                return defaultValue;
+            }
+            return parsed;
+        } catch (DateTimeParseException e) {
+            log.warn("Failed to parse duration for {}: {} (falling back to {})", fieldName, raw, defaultValue);
+            return defaultValue;
+        }
     }
 
     public boolean isTurnAutoRetryEnabled() {

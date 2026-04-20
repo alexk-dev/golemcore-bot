@@ -39,7 +39,6 @@ import me.golemcore.bot.port.outbound.SessionPort;
 public class SessionRetentionCleanupService {
 
     private static final String LOG_PREFIX = "[SessionRetention]";
-    private static final String POINTER_KEY_SEPARATOR = "|";
 
     private final SessionPort sessionPort;
     private final RuntimeConfigService runtimeConfigService;
@@ -58,20 +57,20 @@ public class SessionRetentionCleanupService {
         boolean protectSessionsWithDelayedActions = runtimeConfigService
                 .isSessionRetentionProtectSessionsWithDelayedActions();
 
-        Set<String> protectedActiveSessionKeys = protectActiveSessions ? resolveProtectedActiveSessionKeys() : Set.of();
         if (!enabled) {
             return SessionRetentionCleanupResult.builder()
                     .enabled(false)
                     .cutoff(cutoff)
                     .maxAge(maxAge)
                     .deletedCount(0)
-                    .protectedActiveSessionCount(protectedActiveSessionKeys.size())
+                    .protectedActiveSessionCount(0)
                     .protectActiveSessions(protectActiveSessions)
                     .protectSessionsWithPlans(protectSessionsWithPlans)
                     .protectSessionsWithDelayedActions(protectSessionsWithDelayedActions)
                     .build();
         }
 
+        Set<String> protectedActiveSessionKeys = protectActiveSessions ? resolveProtectedActiveSessionKeys() : Set.of();
         int deletedCount = sessionPort.cleanupExpiredSessions(cutoff,
                 session -> shouldRetainSession(session, protectedActiveSessionKeys, protectSessionsWithPlans,
                         protectSessionsWithDelayedActions));
@@ -119,8 +118,11 @@ public class SessionRetentionCleanupService {
         Map<String, String> pointers = activeSessionPointerService.getPointersSnapshot();
         Set<String> protectedKeys = new LinkedHashSet<>();
         for (Map.Entry<String, String> entry : pointers.entrySet()) {
-            String channelType = resolveChannelType(entry.getKey());
-            if (StringValueSupport.isBlank(channelType) || StringValueSupport.isBlank(entry.getValue())) {
+            if (StringValueSupport.isBlank(entry.getValue())) {
+                continue;
+            }
+            String channelType = ActiveSessionPointerService.extractChannelType(entry.getKey()).orElse(null);
+            if (channelType == null) {
                 continue;
             }
             SessionIdentity sessionIdentity = SessionIdentitySupport.resolveSessionIdentity(channelType,
@@ -130,17 +132,6 @@ public class SessionRetentionCleanupService {
             }
         }
         return protectedKeys;
-    }
-
-    private String resolveChannelType(String pointerKey) {
-        if (StringValueSupport.isBlank(pointerKey)) {
-            return null;
-        }
-        int separatorIndex = pointerKey.indexOf(POINTER_KEY_SEPARATOR);
-        if (separatorIndex <= 0) {
-            return null;
-        }
-        return pointerKey.substring(0, separatorIndex).trim();
     }
 
     @Data
