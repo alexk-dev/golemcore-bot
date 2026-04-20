@@ -71,6 +71,21 @@ public class ActiveSessionPointerService {
         return Optional.ofNullable(pointers.get(pointerKey));
     }
 
+    public static Optional<String> extractChannelType(String pointerKey) {
+        if (StringValueSupport.isBlank(pointerKey)) {
+            return Optional.empty();
+        }
+        int separatorIndex = pointerKey.indexOf(KEY_SEPARATOR);
+        if (separatorIndex <= 0) {
+            return Optional.empty();
+        }
+        String prefix = pointerKey.substring(0, separatorIndex).trim();
+        if (prefix.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(prefix);
+    }
+
     public Map<String, String> getPointersSnapshot() {
         ensureLoaded();
         synchronized (lock) {

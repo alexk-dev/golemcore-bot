@@ -97,6 +97,33 @@ class RuntimeSettingsHttpIntegrationTest extends GolemCoreBotIntegrationTestBase
     }
 
     @Test
+    void shouldPersistSessionRetentionSettingsThroughHttpApi() throws Exception {
+        String accessToken = loginAndExtractAccessToken();
+
+        authenticatedPut("/api/settings/runtime/session-retention", accessToken, """
+                {
+                  "enabled": true,
+                  "maxAge": "P14D",
+                  "cleanupInterval": "PT12H",
+                  "protectActiveSessions": true,
+                  "protectSessionsWithPlans": true,
+                  "protectSessionsWithDelayedActions": false
+                }
+                """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.sessionRetention.maxAge").isEqualTo("P14D")
+                .jsonPath("$.sessionRetention.cleanupInterval").isEqualTo("PT12H")
+                .jsonPath("$.sessionRetention.protectSessionsWithDelayedActions").isEqualTo(false);
+
+        JsonNode persistedSessionRetention = readPersistedPreferenceSection("session-retention.json");
+        assertEquals("P14D", persistedSessionRetention.path("maxAge").asText());
+        assertEquals("PT12H", persistedSessionRetention.path("cleanupInterval").asText());
+        assertFalse(persistedSessionRetention.path("protectSessionsWithDelayedActions").asBoolean());
+    }
+
+    @Test
     void shouldPersistShellEnvironmentVariableLifecycleThroughHttpApi() throws Exception {
         String accessToken = loginAndExtractAccessToken();
 

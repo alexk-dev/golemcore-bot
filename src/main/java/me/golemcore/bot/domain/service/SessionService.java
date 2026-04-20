@@ -18,16 +18,8 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.model.AgentSession;
-import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.port.outbound.SessionRecordCodecPort;
-import me.golemcore.bot.port.outbound.SessionPort;
-import me.golemcore.bot.port.outbound.StoragePort;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,6 +27,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.port.outbound.SessionRecordCodecPort;
+import me.golemcore.bot.port.outbound.StoragePort;
+import org.springframework.stereotype.Service;
 
 /**
  * Service for managing agent conversation sessions including message history
@@ -47,15 +47,15 @@ import java.util.function.Predicate;
 @Slf4j
 public class SessionService implements SessionPort {
 
+    private static final String LEGACY_PATH_SEPARATOR = "\\\\";
+    private static final String PATH_SEPARATOR = "/";
+    private static final String PROTO_EXTENSION = ".pb";
+    private static final String SESSION_ID_SEPARATOR = ":";
+    private static final String SESSIONS_DIR = "sessions";
+
     private final StoragePort storagePort;
     private final SessionRecordCodecPort sessionRecordCodecPort;
     private final Clock clock;
-
-    private static final String SESSIONS_DIR = "sessions";
-    private static final String PROTO_EXTENSION = ".pb";
-    private static final String PATH_SEPARATOR = "/";
-    private static final String LEGACY_PATH_SEPARATOR = "\\\\";
-    private static final String SESSION_ID_SEPARATOR = ":";
 
     private final Map<String, AgentSession> sessionCache = new ConcurrentHashMap<>();
 
@@ -106,12 +106,9 @@ public class SessionService implements SessionPort {
     }
 
     public void delete(String sessionId) {
-        sessionCache.remove(sessionId);
-        try {
-            storagePort.deleteObject(SESSIONS_DIR, sessionId + PROTO_EXTENSION).join();
-            log.info("Deleted session: {}", sessionId);
-        } catch (Exception e) {
-            log.error("Failed to delete session: {}", sessionId, e);
+        AgentSession removed = sessionCache.remove(sessionId);
+        if (!deletePersistedSession(sessionId)) {
+            restoreCachedSession(sessionId, removed);
         }
     }
 
@@ -195,7 +192,6 @@ public class SessionService implements SessionPort {
 
     @Override
     public List<AgentSession> listAll() {
-        // Merge cached sessions with any on-disk sessions not yet loaded
         hydrateCacheFromStorage(path -> true);
         return sessionCache.values().stream()
                 .filter(java.util.Objects::nonNull)
@@ -228,6 +224,56 @@ public class SessionService implements SessionPort {
         return listByChannelType(channelType).stream()
                 .filter(session -> SessionIdentitySupport.belongsToTransport(session, normalizedTransportChatId))
                 .toList();
+    }
+
+    @Override
+    public int cleanupExpiredSessions(Instant cutoff, Predicate<AgentSession> shouldRetain) {
+        if (cutoff == null) {
+            throw new IllegalArgumentException("cutoff is required");
+        }
+        if (shouldRetain == null) {
+            throw new IllegalArgumentException("shouldRetain predicate is required");
+        }
+        hydrateCacheFromStorage(path -> true);
+
+        int deletedCount = 0;
+        for (AgentSession session : List.copyOf(sessionCache.values())) {
+            if (session == null || StringValueSupport.isBlank(session.getId())) {
+                continue;
+            }
+            if (shouldRetain.test(session)) {
+                continue;
+            }
+            Instant updatedAt = session.getUpdatedAt() != null ? session.getUpdatedAt() : session.getCreatedAt();
+            if (updatedAt == null || !updatedAt.isBefore(cutoff)) {
+                continue;
+            }
+            sessionCache.remove(session.getId());
+            if (deletePersistedSession(session.getId())) {
+                deletedCount++;
+                continue;
+            }
+            restoreCachedSession(session.getId(), session);
+        }
+        return deletedCount;
+    }
+
+    private boolean deletePersistedSession(String sessionId) {
+        try {
+            storagePort.deleteObject(SESSIONS_DIR, sessionId + PROTO_EXTENSION).join();
+            log.info("Deleted session: {}", sessionId);
+            return true;
+        } catch (Exception e) {
+            log.error("Failed to delete session: {}", sessionId, e);
+            return false;
+        }
+    }
+
+    private void restoreCachedSession(String sessionId, AgentSession session) {
+        if (session == null || StringValueSupport.isBlank(sessionId)) {
+            return;
+        }
+        sessionCache.putIfAbsent(sessionId, session);
     }
 
     private void hydrateCacheFromStorage(Predicate<String> pathFilter) {

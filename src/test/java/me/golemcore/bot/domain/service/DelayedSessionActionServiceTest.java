@@ -414,4 +414,39 @@ class DelayedSessionActionServiceTest {
 
         assertTrue(failingService.listActions("telegram", "conv-1").isEmpty());
     }
+
+    @Test
+    void shouldReportPendingActionsForSession() {
+        service.schedule(DelayedSessionAction.builder()
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.REMIND_LATER)
+                .deliveryMode(DelayedActionDeliveryMode.DIRECT_MESSAGE)
+                .runAt(NOW.plusSeconds(30))
+                .payload(Map.of("message", "Reminder"))
+                .build());
+
+        assertTrue(service.hasPendingActions("telegram", "conv-1"));
+        assertFalse(service.hasPendingActions("telegram", "conv-2"));
+    }
+
+    @Test
+    void shouldIgnoreCompletedActionsWhenCheckingPendingState() {
+        DelayedSessionAction created = service.schedule(DelayedSessionAction.builder()
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.REMIND_LATER)
+                .deliveryMode(DelayedActionDeliveryMode.DIRECT_MESSAGE)
+                .runAt(NOW)
+                .payload(Map.of("message", "Reminder"))
+                .build());
+
+        service.leaseDueActions(10);
+        service.markCompleted(created.getId());
+
+        assertFalse(service.hasPendingActions("telegram", "conv-1"));
+    }
+
 }

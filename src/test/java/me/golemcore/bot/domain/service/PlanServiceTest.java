@@ -1429,4 +1429,21 @@ class PlanServiceTest {
         assertEquals(originalExecutedAt, recoveredStep.getExecutedAt());
     }
 
+    @Test
+    void shouldReportActivePlansForSessionIdentity() {
+        me.golemcore.bot.domain.model.SessionIdentity sessionIdentity = new me.golemcore.bot.domain.model.SessionIdentity(
+                "legacy", TEST_CHAT_ID);
+        service.activatePlanMode(TEST_CHAT_ID, TEST_MODEL_TIER);
+
+        assertTrue(service.hasActivePlans(sessionIdentity));
+    }
+
+    @Test
+    void shouldReturnFalseWhenSessionHasNoActivePlans() {
+        me.golemcore.bot.domain.model.SessionIdentity sessionIdentity = new me.golemcore.bot.domain.model.SessionIdentity(
+                "legacy", TEST_CHAT_ID);
+
+        assertFalse(service.hasActivePlans(sessionIdentity));
+    }
+
 }

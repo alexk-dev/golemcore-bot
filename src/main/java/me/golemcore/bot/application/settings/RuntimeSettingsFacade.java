@@ -267,6 +267,14 @@ public class RuntimeSettingsFacade {
         return runtimeConfigService.getRuntimeConfigForApi();
     }
 
+    public RuntimeConfig updateSessionRetentionConfig(RuntimeConfig.SessionRetentionConfig sessionRetentionConfig) {
+        validator.validateSessionRetentionConfig(sessionRetentionConfig);
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setSessionRetention(sessionRetentionConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return runtimeConfigService.getRuntimeConfigForApi();
+    }
+
     public List<MemoryPreset> getMemoryPresets() {
         return memoryPresetService.getPresets();
     }

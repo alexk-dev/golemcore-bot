@@ -76,6 +76,9 @@ public class RuntimeConfig {
     private TurnConfig turn = new TurnConfig();
 
     @Builder.Default
+    private SessionRetentionConfig sessionRetention = new SessionRetentionConfig();
+
+    @Builder.Default
     private MemoryConfig memory = new MemoryConfig();
 
     @Builder.Default
@@ -794,6 +797,26 @@ public class RuntimeConfig {
     @AllArgsConstructor
     @Builder
     @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SessionRetentionConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private String maxAge = "P30D";
+        @Builder.Default
+        private String cleanupInterval = "PT24H";
+        @Builder.Default
+        private Boolean protectActiveSessions = true;
+        @Builder.Default
+        private Boolean protectSessionsWithPlans = true;
+        @Builder.Default
+        private Boolean protectSessionsWithDelayedActions = true;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class MemoryConfig {
         @Builder.Default
         private Integer version = 2;
@@ -1434,28 +1457,31 @@ public class RuntimeConfig {
                                         "rate-limit",
                                         RateLimitConfig.class), SECURITY("security", SecurityConfig.class), COMPACTION(
                                                 "compaction",
-                                                CompactionConfig.class), TURN("turn", TurnConfig.class), MEMORY(
-                                                        "memory",
-                                                        MemoryConfig.class), SKILLS("skills",
-                                                                SkillsConfig.class), MODEL_REGISTRY(
-                                                                        "model-registry",
-                                                                        ModelRegistryConfig.class), USAGE(
-                                                                                "usage",
-                                                                                UsageConfig.class), TELEMETRY(
-                                                                                        "telemetry",
-                                                                                        TelemetryConfig.class), MCP(
-                                                                                                "mcp",
-                                                                                                McpConfig.class), PLAN(
-                                                                                                        "plan",
-                                                                                                        PlanConfig.class), DELAYED_ACTIONS(
-                                                                                                                "delayed-actions",
-                                                                                                                DelayedActionsConfig.class), HIVE(
-                                                                                                                        "hive",
-                                                                                                                        HiveConfig.class), SELF_EVOLVING(
-                                                                                                                                "self-evolving",
-                                                                                                                                SelfEvolvingConfig.class), RESILIENCE(
-                                                                                                                                        "resilience",
-                                                                                                                                        ResilienceConfig.class);
+                                                CompactionConfig.class), TURN("turn",
+                                                        TurnConfig.class), SESSION_RETENTION(
+                                                                "session-retention",
+                                                                SessionRetentionConfig.class), MEMORY(
+                                                                        "memory",
+                                                                        MemoryConfig.class), SKILLS("skills",
+                                                                                SkillsConfig.class), MODEL_REGISTRY(
+                                                                                        "model-registry",
+                                                                                        ModelRegistryConfig.class), USAGE(
+                                                                                                "usage",
+                                                                                                UsageConfig.class), TELEMETRY(
+                                                                                                        "telemetry",
+                                                                                                        TelemetryConfig.class), MCP(
+                                                                                                                "mcp",
+                                                                                                                McpConfig.class), PLAN(
+                                                                                                                        "plan",
+                                                                                                                        PlanConfig.class), DELAYED_ACTIONS(
+                                                                                                                                "delayed-actions",
+                                                                                                                                DelayedActionsConfig.class), HIVE(
+                                                                                                                                        "hive",
+                                                                                                                                        HiveConfig.class), SELF_EVOLVING(
+                                                                                                                                                "self-evolving",
+                                                                                                                                                SelfEvolvingConfig.class), RESILIENCE(
+                                                                                                                                                        "resilience",
+                                                                                                                                                        ResilienceConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;
