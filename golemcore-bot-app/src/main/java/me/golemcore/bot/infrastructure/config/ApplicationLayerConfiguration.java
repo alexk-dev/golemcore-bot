@@ -10,7 +10,6 @@ import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
 import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.prompts.PromptManagementFacade;
 import me.golemcore.bot.application.scheduler.SchedulerFacade;
-import me.golemcore.bot.application.selfevolving.tactic.TacticEmbeddingProbeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
