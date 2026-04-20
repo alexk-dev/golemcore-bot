@@ -294,8 +294,7 @@ jobs:
         run: |
           ./mvnw -pl ./golemcore-bot-app -am install \
             -DskipTests \
-            -DskipGitHooks=true \
-            -Djib.skip=true
+            -DskipGitHooks=true
 
       - name: Build and push app image (${{ matrix.arch }})
         run: |
