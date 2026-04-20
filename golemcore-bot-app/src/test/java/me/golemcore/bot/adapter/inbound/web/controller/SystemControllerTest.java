@@ -4,7 +4,7 @@ import me.golemcore.bot.client.dto.LogEntryDto;
 import me.golemcore.bot.client.dto.SystemHealthResponse;
 import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
-import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
+import me.golemcore.bot.port.outbound.SelfEvolvingTacticSearchStatusPort;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
@@ -44,7 +44,7 @@ class SystemControllerTest {
     private StoragePort storagePort;
     private RagPort ragPort;
     private DashboardLogService dashboardLogService;
-    private LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
+    private SelfEvolvingTacticSearchStatusPort tacticSearchStatusPort;
     private ObjectProvider<BuildProperties> buildPropertiesProvider;
     private ObjectProvider<GitProperties> gitPropertiesProvider;
     private SystemController controller;
@@ -64,7 +64,7 @@ class SystemControllerTest {
         storagePort = mock(StoragePort.class);
         ragPort = mock(RagPort.class);
         dashboardLogService = mock(DashboardLogService.class);
-        localEmbeddingBootstrapService = mock(LocalEmbeddingBootstrapService.class);
+        tacticSearchStatusPort = mock(SelfEvolvingTacticSearchStatusPort.class);
         buildPropertiesProvider = mockObjectProvider();
         gitPropertiesProvider = mockObjectProvider();
 
@@ -87,12 +87,12 @@ class SystemControllerTest {
                 buildPropertiesProvider,
                 gitPropertiesProvider,
                 dashboardLogService,
-                localEmbeddingBootstrapService);
+                tacticSearchStatusPort);
     }
 
     @Test
     void shouldReturnHealthStatus() {
-        when(localEmbeddingBootstrapService.probeStatus()).thenReturn(TacticSearchStatus.builder()
+        when(tacticSearchStatusPort.getCurrentStatus()).thenReturn(TacticSearchStatus.builder()
                 .mode("bm25")
                 .degraded(false)
                 .build());
@@ -111,7 +111,7 @@ class SystemControllerTest {
 
     @Test
     void shouldKeepHealthUpWhileSurfacingSelfEvolvingEmbeddingDegradation() {
-        when(localEmbeddingBootstrapService.probeStatus()).thenReturn(TacticSearchStatus.builder()
+        when(tacticSearchStatusPort.getCurrentStatus()).thenReturn(TacticSearchStatus.builder()
                 .mode("bm25")
                 .reason("Ollama did not become healthy within 5 seconds")
                 .degraded(true)

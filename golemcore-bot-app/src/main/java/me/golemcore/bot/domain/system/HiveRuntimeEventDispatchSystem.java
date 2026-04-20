@@ -30,9 +30,8 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
-import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
-import me.golemcore.bot.domain.selfevolving.tactic.TacticSearchMetricsService;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
+import me.golemcore.bot.port.outbound.SelfEvolvingTacticSearchStatusPort;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -40,19 +39,16 @@ import org.springframework.stereotype.Component;
 public class HiveRuntimeEventDispatchSystem implements AgentSystem {
 
     private final HiveEventPublishPort hiveEventPublishPort;
-    private final TacticSearchMetricsService tacticSearchMetricsService;
     private final HiveSessionStateStore hiveSessionStateStore;
-    private final LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
+    private final SelfEvolvingTacticSearchStatusPort tacticSearchStatusPort;
 
     public HiveRuntimeEventDispatchSystem(
             HiveEventPublishPort hiveEventPublishPort,
-            TacticSearchMetricsService tacticSearchMetricsService,
             HiveSessionStateStore hiveSessionStateStore,
-            LocalEmbeddingBootstrapService localEmbeddingBootstrapService) {
+            SelfEvolvingTacticSearchStatusPort tacticSearchStatusPort) {
         this.hiveEventPublishPort = hiveEventPublishPort;
-        this.tacticSearchMetricsService = tacticSearchMetricsService;
         this.hiveSessionStateStore = hiveSessionStateStore;
-        this.localEmbeddingBootstrapService = localEmbeddingBootstrapService;
+        this.tacticSearchStatusPort = tacticSearchStatusPort;
     }
 
     @Override
@@ -169,29 +165,12 @@ public class HiveRuntimeEventDispatchSystem implements AgentSystem {
     }
 
     private TacticSearchStatus buildTacticSearchStatus() {
-        if (localEmbeddingBootstrapService != null) {
-            return localEmbeddingBootstrapService.probeStatus();
+        if (tacticSearchStatusPort != null) {
+            return tacticSearchStatusPort.getCurrentStatus();
         }
-        if (tacticSearchMetricsService == null) {
-            return TacticSearchStatus.builder()
-                    .mode("bm25")
-                    .degraded(false)
-                    .build();
-        }
-        TacticSearchMetricsService.Snapshot snapshot = tacticSearchMetricsService.snapshot();
         return TacticSearchStatus.builder()
-                .mode(snapshot.activeMode())
-                .reason(snapshot.lastReason())
-                .provider(snapshot.provider())
-                .model(snapshot.model())
-                .degraded(snapshot.degraded())
-                .runtimeHealthy(snapshot.runtimeHealthy())
-                .modelAvailable(snapshot.modelAvailable())
-                .autoInstallConfigured(snapshot.autoInstallConfigured())
-                .pullOnStartConfigured(snapshot.pullOnStartConfigured())
-                .pullAttempted(snapshot.pullAttempted())
-                .pullSucceeded(snapshot.pullSucceeded())
-                .updatedAt(snapshot.updatedAt())
+                .mode("bm25")
+                .degraded(false)
                 .build();
     }
 }

@@ -35,7 +35,6 @@ import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.WorkspacePathService;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
-import me.golemcore.bot.port.outbound.EmbeddingClientResolverPort;
 import me.golemcore.bot.port.outbound.HiveGatewayPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
@@ -273,12 +272,5 @@ public class ApplicationLayerConfiguration {
                 skillMarketplaceService,
                 mcpPort,
                 storagePort);
-    }
-
-    @Bean
-    TacticEmbeddingProbeService tacticEmbeddingProbeService(
-            EmbeddingClientResolverPort embeddingClientResolverPort,
-            RuntimeConfigService runtimeConfigService) {
-        return new TacticEmbeddingProbeService(embeddingClientResolverPort, runtimeConfigService);
     }
 }

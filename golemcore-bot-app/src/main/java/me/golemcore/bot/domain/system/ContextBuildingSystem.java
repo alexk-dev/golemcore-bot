@@ -20,12 +20,6 @@ package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.domain.context.ContextAssembler;
 import me.golemcore.bot.domain.model.AgentContext;
-import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.selfevolving.RunRecord;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
-import me.golemcore.bot.domain.selfevolving.tactic.TacticTurnContextService;
-
 import org.springframework.stereotype.Component;
 
 /**
@@ -42,18 +36,9 @@ import org.springframework.stereotype.Component;
 public class ContextBuildingSystem implements AgentSystem {
 
     private final ContextAssembler contextAssembler;
-    private final RuntimeConfigService runtimeConfigService;
-    private final SelfEvolvingRunService selfEvolvingRunService;
-    private final TacticTurnContextService tacticTurnContextService;
 
-    public ContextBuildingSystem(ContextAssembler contextAssembler,
-            RuntimeConfigService runtimeConfigService,
-            SelfEvolvingRunService selfEvolvingRunService,
-            TacticTurnContextService tacticTurnContextService) {
+    public ContextBuildingSystem(ContextAssembler contextAssembler) {
         this.contextAssembler = contextAssembler;
-        this.runtimeConfigService = runtimeConfigService;
-        this.selfEvolvingRunService = selfEvolvingRunService;
-        this.tacticTurnContextService = tacticTurnContextService;
     }
 
     @Override
@@ -68,26 +53,6 @@ public class ContextBuildingSystem implements AgentSystem {
 
     @Override
     public AgentContext process(AgentContext context) {
-        AgentContext assembledContext = contextAssembler.assemble(context);
-        ensureSelfEvolvingRun(assembledContext);
-        if (tacticTurnContextService != null) {
-            tacticTurnContextService.attach(assembledContext);
-        }
-        return assembledContext;
-    }
-
-    private void ensureSelfEvolvingRun(AgentContext context) {
-        if (runtimeConfigService == null || selfEvolvingRunService == null || context == null
-                || context.getSession() == null
-                || !runtimeConfigService.isSelfEvolvingEnabled()) {
-            return;
-        }
-        if (context.getAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID) != null) {
-            return;
-        }
-        RunRecord run = selfEvolvingRunService.startRun(context);
-        context.setAttribute(ContextAttributes.SELF_EVOLVING_RUN_ID, run.getId());
-        context.setAttribute(ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID, run.getArtifactBundleId());
-        context.setAttribute(ContextAttributes.SELF_EVOLVING_ANALYSIS_COMPLETED, false);
+        return contextAssembler.assemble(context);
     }
 }
