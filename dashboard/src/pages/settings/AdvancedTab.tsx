@@ -4,7 +4,13 @@ import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAdvanced } from '../../hooks/useSettings';
-import type { CompactionConfig, RateLimitConfig, ResilienceConfig, SecurityConfig } from '../../api/settingsTypes';
+import type {
+  CompactionConfig,
+  FollowThroughConfig,
+  RateLimitConfig,
+  ResilienceConfig,
+  SecurityConfig,
+} from '../../api/settingsTypes';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 export type AdvancedMode = 'all' | 'rateLimit' | 'security' | 'compaction' | 'resilience';
@@ -142,7 +148,23 @@ interface ResilienceCardProps {
   setResilience: (value: ResilienceConfig) => void;
 }
 
+const DEFAULT_FOLLOW_THROUGH: FollowThroughConfig = {
+  enabled: true,
+  modelTier: 'routing',
+  timeoutSeconds: 5,
+  maxChainDepth: 1,
+};
+
+function readFollowThrough(resilience: ResilienceConfig): FollowThroughConfig {
+  return resilience.followThrough ?? DEFAULT_FOLLOW_THROUGH;
+}
+
 function ResilienceCard({ resilience, setResilience }: ResilienceCardProps): ReactElement {
+  const followThrough = readFollowThrough(resilience);
+  const updateFollowThrough = (patch: Partial<FollowThroughConfig>): void => {
+    setResilience({ ...resilience, followThrough: { ...followThrough, ...patch } });
+  };
+
   return (
     <Card className="settings-card h-100">
       <Card.Body>
@@ -152,7 +174,7 @@ function ResilienceCard({ resilience, setResilience }: ResilienceCardProps): Rea
         />
         <Form.Check type="switch" label="Enable" checked={resilience.enabled ?? true}
           onChange={(e) => setResilience({ ...resilience, enabled: e.target.checked })} className="mb-3" />
-        <Form.Group>
+        <Form.Group className="mb-3">
           <Form.Label className="small fw-medium">
             L2 Provider Fallback Max Attempts <HelpTip text="Maximum number of L2 reroutes within one turn, regardless of strategy. Sequential still stops earlier if the fallback chain is shorter." />
           </Form.Label>
@@ -162,6 +184,51 @@ function ResilienceCard({ resilience, setResilience }: ResilienceCardProps): Rea
             min={1}
             value={resilience.l2ProviderFallbackMaxAttempts ?? 5}
             onChange={(e) => setResilience({ ...resilience, l2ProviderFallbackMaxAttempts: toNullableInt(e.target.value) })}
+          />
+        </Form.Group>
+
+        <hr className="my-3" />
+        <div className="small fw-semibold mb-2">
+          Follow-Through Nudge <HelpTip text="Detect assistant replies that commit to an action without invoking any tool, then inject a synthetic user-role nudge so the agent loop continues." />
+        </div>
+        <Form.Check type="switch"
+          label={<>Enable <HelpTip text="Master switch for the follow-through classifier. Also gated by the top-level Resilience Enable switch." /></>}
+          checked={followThrough.enabled ?? true}
+          onChange={(e) => updateFollowThrough({ enabled: e.target.checked })}
+          className="mb-2" />
+        <Form.Group className="mb-2">
+          <Form.Label className="small fw-medium">
+            Classifier Model Tier <HelpTip text="Model tier used for the classifier LLM call (e.g. routing, fast, balanced)." />
+          </Form.Label>
+          <Form.Control
+            size="sm"
+            type="text"
+            value={followThrough.modelTier ?? 'routing'}
+            onChange={(e) => updateFollowThrough({ modelTier: e.target.value })}
+          />
+        </Form.Group>
+        <Form.Group className="mb-2">
+          <Form.Label className="small fw-medium">
+            Classifier Timeout (seconds) <HelpTip text="Per-call timeout for the classifier. Exceeding it fails closed (no nudge)." />
+          </Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={1}
+            value={followThrough.timeoutSeconds ?? 5}
+            onChange={(e) => updateFollowThrough({ timeoutSeconds: toNullableInt(e.target.value) })}
+          />
+        </Form.Group>
+        <Form.Group>
+          <Form.Label className="small fw-medium">
+            Max Chain Depth <HelpTip text="Maximum consecutive nudges per conversation before the layer stands down. Default 1 (one nudge per stranded commitment)." />
+          </Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={0}
+            value={followThrough.maxChainDepth ?? 1}
+            onChange={(e) => updateFollowThrough({ maxChainDepth: toNullableInt(e.target.value) })}
           />
         </Form.Group>
       </Card.Body>
