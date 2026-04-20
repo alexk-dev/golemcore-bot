@@ -3,6 +3,8 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import me.golemcore.bot.client.dto.FileCreateRequest;
 import me.golemcore.bot.client.dto.FileRenameRequest;
 import me.golemcore.bot.client.dto.FileSaveRequest;
+import me.golemcore.bot.client.dto.InlineEditRequest;
+import me.golemcore.bot.adapter.inbound.web.inlineedit.WebInlineEditService;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
@@ -33,13 +35,15 @@ class FilesControllerTest {
 
     private DashboardFileService dashboardFileService;
     private ToolArtifactService toolArtifactService;
+    private WebInlineEditService webInlineEditService;
     private FilesController filesController;
 
     @BeforeEach
     void setUp() {
         dashboardFileService = mock(DashboardFileService.class);
         toolArtifactService = mock(ToolArtifactService.class);
-        filesController = new FilesController(dashboardFileService, toolArtifactService);
+        webInlineEditService = mock(WebInlineEditService.class);
+        filesController = new FilesController(dashboardFileService, toolArtifactService, webInlineEditService);
     }
 
     @Test
@@ -392,6 +396,63 @@ class FilesControllerTest {
                 .renamePath("../etc/passwd", "x");
 
         StepVerifier.create(filesController.renamePath(request))
+                .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldCreateInlineEditWhenRequestIsValid() {
+        InlineEditRequest request = InlineEditRequest.builder()
+                .path("src/App.tsx")
+                .content("const x = 1;")
+                .selectionFrom(0)
+                .selectionTo(11)
+                .selectedText("const x = 1")
+                .instruction("refactor this")
+                .build();
+
+        when(webInlineEditService.createInlineEdit(
+                "src/App.tsx",
+                "const x = 1;",
+                0,
+                11,
+                "const x = 1",
+                "refactor this",
+                "client-1"))
+                .thenReturn(new WebInlineEditService.InlineEditResult("src/App.tsx", "const value = 1"));
+
+        StepVerifier.create(filesController.inlineEdit(request, "client-1"))
+                .assertNext(response -> {
+                    assertStatus(response, HttpStatus.OK);
+                    assertNotNull(response.getBody());
+                    assertEquals("src/App.tsx", response.getBody().getPath());
+                    assertEquals("const value = 1", response.getBody().getReplacement());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenInlineEditRequestIsInvalid() {
+        InlineEditRequest request = InlineEditRequest.builder()
+                .path("src/App.tsx")
+                .content("const x = 1;")
+                .selectionFrom(0)
+                .selectionTo(11)
+                .selectedText("const x = 1")
+                .instruction("refactor this")
+                .build();
+
+        when(webInlineEditService.createInlineEdit(
+                "src/App.tsx",
+                "const x = 1;",
+                0,
+                11,
+                "const x = 1",
+                "refactor this",
+                null))
+                .thenThrow(new IllegalArgumentException("Instruction is required"));
+
+        StepVerifier.create(filesController.inlineEdit(request, null))
                 .assertNext(response -> assertStatus(response, HttpStatus.BAD_REQUEST))
                 .verifyComplete();
     }

@@ -225,6 +225,22 @@ class ModelManagementFacadeTest {
     }
 
     @Test
+    void shouldBuildMinimalInlineEditFriendlyTestRequest() throws Exception {
+        when(llmPort.chat(any(LlmRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content("I am GPT-5").build()));
+
+        facade.testModel("gpt-5");
+
+        org.mockito.ArgumentCaptor<LlmRequest> captor = org.mockito.ArgumentCaptor.forClass(LlmRequest.class);
+        verify(llmPort).chat(captor.capture());
+        LlmRequest request = captor.getValue();
+        assertEquals(0.0, request.getTemperature());
+        assertEquals(256, request.getMaxTokens());
+        assertEquals(1, request.getMessages().size());
+        assertEquals("user", request.getMessages().get(0).getRole());
+    }
+
+    @Test
     void shouldMapSuccessfulModelTestWithEmptyReplyWhenContentIsMissing() {
         when(llmPort.chat(any(LlmRequest.class)))
                 .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content(null).build()));

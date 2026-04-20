@@ -25,12 +25,12 @@ import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.net.URI;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -103,7 +103,12 @@ public class WebSocketChatHandler implements WebSocketHandler {
             String clientInstanceId = normalizeClientInstanceId((String) json.get("clientInstanceId"));
             String clientMessageId = normalizeClientMessageId(asString(json.get("clientMessageId")));
             String requestedMemoryPreset = asString(json.get("memoryPreset"));
+            String activePath = normalizeActivePath(asString(json.get("activePath")));
+            String selectionText = asString(json.get("selectionText"));
+            Integer selectionFrom = asInteger(json.get("selectionFrom"));
+            Integer selectionTo = asInteger(json.get("selectionTo"));
             List<Map<String, Object>> attachments = extractImageAttachments(json.get("attachments"));
+            List<Map<String, Object>> openedTabs = extractOpenedTabs(json.get("openedTabs"));
             webChannelAdapter.bindConnectionToChatId(connectionId, sessionId);
             bindWebPointer(username, clientInstanceId, sessionId);
 
@@ -144,6 +149,30 @@ public class WebSocketChatHandler implements WebSocketHandler {
                     metadata = new LinkedHashMap<>();
                 }
                 metadata.put(ContextAttributes.MEMORY_PRESET_ID, memoryPreset);
+            }
+            if (!openedTabs.isEmpty()) {
+                if (metadata == null) {
+                    metadata = new LinkedHashMap<>();
+                }
+                metadata.put(ContextAttributes.WEB_OPENED_TABS, openedTabs);
+            }
+            if (activePath != null) {
+                if (metadata == null) {
+                    metadata = new LinkedHashMap<>();
+                }
+                metadata.put(ContextAttributes.WEB_ACTIVE_PATH, activePath);
+            }
+            if (selectionText != null && !selectionText.isBlank()) {
+                if (metadata == null) {
+                    metadata = new LinkedHashMap<>();
+                }
+                metadata.put(ContextAttributes.WEB_SELECTION_TEXT, selectionText);
+                if (selectionFrom != null) {
+                    metadata.put(ContextAttributes.WEB_SELECTION_FROM, selectionFrom);
+                }
+                if (selectionTo != null) {
+                    metadata.put(ContextAttributes.WEB_SELECTION_TO, selectionTo);
+                }
             }
             metadata = TraceContextSupport.ensureRootMetadata(
                     metadata,
@@ -262,9 +291,42 @@ public class WebSocketChatHandler implements WebSocketHandler {
         return result;
     }
 
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractOpenedTabs(Object rawOpenedTabs) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (!(rawOpenedTabs instanceof List<?> openedTabs)) {
+            return result;
+        }
+        for (Object tabObj : openedTabs) {
+            if (!(tabObj instanceof Map<?, ?> tabMap)) {
+                continue;
+            }
+            String path = asString(tabMap.get("path"));
+            String title = asString(tabMap.get("title"));
+            Object isDirtyValue = tabMap.get("isDirty");
+            if (path == null || path.isBlank() || title == null || title.isBlank()
+                    || !(isDirtyValue instanceof Boolean isDirty)) {
+                continue;
+            }
+            Map<String, Object> normalized = new LinkedHashMap<>();
+            normalized.put("path", path);
+            normalized.put("title", title);
+            normalized.put("isDirty", isDirty);
+            result.add(normalized);
+        }
+        return result;
+    }
+
     private String asString(Object value) {
         if (value instanceof String stringValue) {
             return stringValue;
+        }
+        return null;
+    }
+
+    private Integer asInteger(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
         }
         return null;
     }
@@ -302,6 +364,14 @@ public class WebSocketChatHandler implements WebSocketHandler {
         }
         String candidate = memoryPreset.trim().toLowerCase(Locale.ROOT);
         return candidate;
+    }
+
+    private String normalizeActivePath(String activePath) {
+        if (StringValueSupport.isBlank(activePath)) {
+            return null;
+        }
+        String candidate = activePath.trim();
+        return candidate.isEmpty() ? null : candidate;
     }
 
     /**

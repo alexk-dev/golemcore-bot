@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getFilename } from '../components/ide/ideTabLabels';
 import { useBeforeUnloadGuard, useGlobalIdeShortcuts, useSyncContentToTabs } from './useIdeLifecycle';
 import { useIdeCloseWorkflow } from './useIdeCloseWorkflow';
+import { useIdeInlineEdit } from './useIdeInlineEdit';
 import { useIdeQuickOpen } from './useIdeQuickOpen';
 import { useIdeTreeActions } from './useIdeTreeActions';
 import { useProtectedFileDownload } from './useProtectedFileDownload';
@@ -28,6 +29,137 @@ import {
 
 const SIDEBAR_WIDTH_CSS_VARIABLE = '--ide-sidebar-width';
 const DEFAULT_TREE_DEPTH = 2;
+
+interface BuildIdeWorkspaceResultOptions {
+  store: ReturnType<typeof useIdeStoreBindings>;
+  derived: ReturnType<typeof useIdeWorkspaceDerived>;
+  treeActions: ReturnType<typeof useIdeTreeActions>;
+  treeQuery: ReturnType<typeof useFileTree>;
+  viewState: ReturnType<typeof useIdeWorkspaceViewState>['viewState'];
+  quickOpen: ReturnType<typeof useIdeQuickOpen>;
+  closeWorkflow: ReturnType<typeof useIdeCloseWorkflow>;
+  actions: ReturnType<typeof useIdeWorkspaceActions>;
+  inlineEdit: ReturnType<typeof useIdeInlineEdit>;
+  sidebar: ReturnType<typeof useResizableSidebar>;
+  activeFileDownload: ReturnType<typeof useProtectedFileDownload>;
+  saveMutation: ReturnType<typeof useSaveFileContent>;
+  contentQuery: ReturnType<typeof useFileContent>;
+  saveActiveTab: () => void;
+  setEditorSearchQuery: (value: string) => void;
+  setEditorWordWrap: (wordWrap: boolean) => void;
+  setEditorMinimap: (value: boolean) => void;
+}
+
+function buildIdeWorkspaceResult({
+  store,
+  derived,
+  treeActions,
+  treeQuery,
+  viewState,
+  quickOpen,
+  closeWorkflow,
+  actions,
+  inlineEdit,
+  sidebar,
+  activeFileDownload,
+  saveMutation,
+  contentQuery,
+  saveActiveTab,
+  setEditorSearchQuery,
+  setEditorWordWrap,
+  setEditorMinimap,
+}: BuildIdeWorkspaceResultOptions): UseIdeWorkspaceResult {
+  return {
+    openedTabs: store.openedTabs,
+    editorTabs: derived.editorTabs,
+    activePath: store.activePath,
+    activeTab: derived.activeTab,
+    closeCandidate: closeWorkflow.closeCandidate,
+    closeCandidateLabel: derived.closeCandidateLabel,
+    treeAction: treeActions.treeAction,
+    treeQuery,
+    treeNodes: viewState.treeNodes,
+    contentQuery,
+    saveMutation,
+    hasDirtyTabs: derived.hasDirtyTabs,
+    dirtyTabsCount: derived.dirtyTabsCount,
+    dirtyPaths: derived.dirtyPaths,
+    canSaveActiveTab: derived.canSaveActiveTab,
+    canOpenInlineEdit: derived.activeTab?.editable === true && inlineEdit.currentSelection != null,
+    currentInlineEditSelection: inlineEdit.currentSelection,
+    isInlineEditVisible: inlineEdit.isInlineEditVisible,
+    isSubmittingInlineEdit: inlineEdit.isSubmittingInlineEdit,
+    isCloseWithSavePending: closeWorkflow.isCloseWithSavePending,
+    isTreeActionPending: treeActions.isTreeActionPending,
+    isFileOpening: derived.isFileOpening,
+    hasFileLoadError: derived.hasFileLoadError,
+    treeSearchQuery: quickOpen.treeSearchQuery,
+    debouncedTreeSearchQuery: quickOpen.debouncedTreeSearchQuery,
+    quickOpenQuery: quickOpen.quickOpenQuery,
+    isQuickOpenVisible: quickOpen.isQuickOpenVisible,
+    isCommandPaletteVisible: viewState.isCommandPaletteVisible,
+    isEditorSearchVisible: viewState.isEditorSearchVisible,
+    isEditorSettingsVisible: viewState.isEditorSettingsVisible,
+    includeIgnored: viewState.includeIgnored,
+    quickOpenItems: quickOpen.quickOpenItems,
+    activeLine: viewState.activeLine,
+    activeColumn: viewState.activeColumn,
+    activeLanguage: derived.activeLanguage,
+    activeFileSize: derived.activeFileSize,
+    activeUpdatedAt: derived.activeUpdatedAt,
+    sidebarWidth: sidebar.width,
+    editorSearchQuery: viewState.editorSearchQuery,
+    editorSettings: {
+      fontSize: viewState.editorFontSize,
+      wordWrap: viewState.editorWordWrap,
+      minimap: viewState.editorMinimap,
+      setMinimap: setEditorMinimap,
+    },
+    setActivePath: store.setActivePath,
+    setTreeSearchQuery: quickOpen.setTreeSearchQuery,
+    setEditorSearchQuery,
+    setEditorFontSize: actions.setEditorFontSize,
+    setEditorWordWrap,
+    refreshTree: actions.refreshTree,
+    saveActiveTab,
+    openInlineEdit: inlineEdit.openInlineEdit,
+    closeInlineEdit: inlineEdit.closeInlineEdit,
+    submitInlineEdit: inlineEdit.submitInlineEdit,
+    handleEditorSelectionChange: inlineEdit.handleEditorSelectionChange,
+    requestCloseActiveTab: closeWorkflow.requestCloseActiveTab,
+    requestCloseTab: closeWorkflow.requestCloseTab,
+    cancelCloseCandidate: closeWorkflow.cancelCloseCandidate,
+    closeCandidateWithoutSaving: closeWorkflow.closeCandidateWithoutSaving,
+    saveAndCloseCandidate: closeWorkflow.saveAndCloseCandidate,
+    retryLoadContent: actions.retryLoadContent,
+    updateActiveTabContent: actions.updateActiveTabContent,
+    openQuickOpen: quickOpen.openQuickOpen,
+    closeQuickOpen: quickOpen.closeQuickOpen,
+    updateQuickOpenQuery: quickOpen.updateQuickOpenQuery,
+    openFileFromQuickOpen: quickOpen.openFileFromQuickOpen,
+    toggleQuickOpenPinned: quickOpen.toggleQuickOpenPinned,
+    toggleCommandPalette: actions.toggleCommandPalette,
+    closeCommandPalette: actions.closeCommandPalette,
+    toggleEditorSearch: actions.toggleEditorSearch,
+    toggleEditorSettings: actions.toggleEditorSettings,
+    toggleIncludeIgnored: actions.toggleIncludeIgnored,
+    loadDirectory: actions.loadDirectory,
+    uploadFiles: actions.uploadFiles,
+    downloadActiveFile: actions.downloadActiveFile,
+    isDownloadingActiveFile: activeFileDownload.isDownloading,
+    setEditorCursor: actions.setEditorCursor,
+    startSidebarResize: sidebar.startResize,
+    increaseSidebarWidth: sidebar.increase,
+    decreaseSidebarWidth: sidebar.decrease,
+    requestCreateFromTree: treeActions.requestCreateFromTree,
+    requestRenameFromTree: treeActions.requestRenameFromTree,
+    requestDeleteFromTree: treeActions.requestDeleteFromTree,
+    cancelTreeAction: treeActions.cancelTreeAction,
+    submitCreateFromTree: treeActions.submitCreateFromTree,
+    submitRenameFromTree: treeActions.submitRenameFromTree,
+    submitDeleteFromTree: treeActions.submitDeleteFromTree,
+  };
+}
 
 /**
  * Aggregates IDE tree, editor, quick-open, and close-workflow state for the
@@ -80,6 +212,8 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     isSavePending: saveMutation.isPending,
     isCloseWithSavePending: closeWorkflow.isCloseWithSavePending,
   });
+
+  const inlineEdit = useIdeInlineEdit({ activeTab: derived.activeTab });
 
   useSyncTreeNodes(treeQuery.data, setters.setTreeNodes);
 
@@ -157,90 +291,28 @@ export function useIdeWorkspace(): UseIdeWorkspaceResult {
     onCloseActiveTab: closeWorkflow.requestCloseActiveTab,
     onActivatePreviousTab: store.activatePreviousTab,
     onActivateNextTab: store.activateNextTab,
+    onInlineEdit: inlineEdit.openInlineEdit,
   });
 
   useBeforeUnloadGuard(derived.hasDirtyTabs);
 
-  return {
-    openedTabs: store.openedTabs,
-    editorTabs: derived.editorTabs,
-    activePath: store.activePath,
-    activeTab: derived.activeTab,
-    closeCandidate: closeWorkflow.closeCandidate,
-    closeCandidateLabel: derived.closeCandidateLabel,
-    treeAction: treeActions.treeAction,
+  return buildIdeWorkspaceResult({
+    store,
+    derived,
+    treeActions,
     treeQuery,
-    treeNodes: viewState.treeNodes,
-    contentQuery,
+    viewState,
+    quickOpen,
+    closeWorkflow,
+    actions,
+    inlineEdit,
+    sidebar,
+    activeFileDownload,
     saveMutation,
-    hasDirtyTabs: derived.hasDirtyTabs,
-    dirtyTabsCount: derived.dirtyTabsCount,
-    dirtyPaths: derived.dirtyPaths,
-    canSaveActiveTab: derived.canSaveActiveTab,
-    isCloseWithSavePending: closeWorkflow.isCloseWithSavePending,
-    isTreeActionPending: treeActions.isTreeActionPending,
-    isFileOpening: derived.isFileOpening,
-    hasFileLoadError: derived.hasFileLoadError,
-    treeSearchQuery: quickOpen.treeSearchQuery,
-    debouncedTreeSearchQuery: quickOpen.debouncedTreeSearchQuery,
-    quickOpenQuery: quickOpen.quickOpenQuery,
-    isQuickOpenVisible: quickOpen.isQuickOpenVisible,
-    isCommandPaletteVisible: viewState.isCommandPaletteVisible,
-    isEditorSearchVisible: viewState.isEditorSearchVisible,
-    isEditorSettingsVisible: viewState.isEditorSettingsVisible,
-    includeIgnored: viewState.includeIgnored,
-    quickOpenItems: quickOpen.quickOpenItems,
-    activeLine: viewState.activeLine,
-    activeColumn: viewState.activeColumn,
-    activeLanguage: derived.activeLanguage,
-    activeFileSize: derived.activeFileSize,
-    activeUpdatedAt: derived.activeUpdatedAt,
-    sidebarWidth: sidebar.width,
-    editorSearchQuery: viewState.editorSearchQuery,
-    editorSettings: {
-      fontSize: viewState.editorFontSize,
-      wordWrap: viewState.editorWordWrap,
-      minimap: viewState.editorMinimap,
-      setMinimap: setters.setEditorMinimap,
-    },
-    setActivePath: store.setActivePath,
-    setTreeSearchQuery: quickOpen.setTreeSearchQuery,
-    setEditorSearchQuery: setters.setEditorSearchQuery,
-    setEditorFontSize: actions.setEditorFontSize,
-    setEditorWordWrap: setters.setEditorWordWrap,
-    refreshTree: actions.refreshTree,
+    contentQuery,
     saveActiveTab,
-    requestCloseActiveTab: closeWorkflow.requestCloseActiveTab,
-    requestCloseTab: closeWorkflow.requestCloseTab,
-    cancelCloseCandidate: closeWorkflow.cancelCloseCandidate,
-    closeCandidateWithoutSaving: closeWorkflow.closeCandidateWithoutSaving,
-    saveAndCloseCandidate: closeWorkflow.saveAndCloseCandidate,
-    retryLoadContent: actions.retryLoadContent,
-    updateActiveTabContent: actions.updateActiveTabContent,
-    openQuickOpen: quickOpen.openQuickOpen,
-    closeQuickOpen: quickOpen.closeQuickOpen,
-    updateQuickOpenQuery: quickOpen.updateQuickOpenQuery,
-    openFileFromQuickOpen: quickOpen.openFileFromQuickOpen,
-    toggleQuickOpenPinned: quickOpen.toggleQuickOpenPinned,
-    toggleCommandPalette: actions.toggleCommandPalette,
-    closeCommandPalette: actions.closeCommandPalette,
-    toggleEditorSearch: actions.toggleEditorSearch,
-    toggleEditorSettings: actions.toggleEditorSettings,
-    toggleIncludeIgnored: actions.toggleIncludeIgnored,
-    loadDirectory: actions.loadDirectory,
-    uploadFiles: actions.uploadFiles,
-    downloadActiveFile: actions.downloadActiveFile,
-    isDownloadingActiveFile: activeFileDownload.isDownloading,
-    setEditorCursor: actions.setEditorCursor,
-    startSidebarResize: sidebar.startResize,
-    increaseSidebarWidth: sidebar.increase,
-    decreaseSidebarWidth: sidebar.decrease,
-    requestCreateFromTree: treeActions.requestCreateFromTree,
-    requestRenameFromTree: treeActions.requestRenameFromTree,
-    requestDeleteFromTree: treeActions.requestDeleteFromTree,
-    cancelTreeAction: treeActions.cancelTreeAction,
-    submitCreateFromTree: treeActions.submitCreateFromTree,
-    submitRenameFromTree: treeActions.submitRenameFromTree,
-    submitDeleteFromTree: treeActions.submitDeleteFromTree,
-  };
+    setEditorSearchQuery: setters.setEditorSearchQuery,
+    setEditorWordWrap: setters.setEditorWordWrap,
+    setEditorMinimap: setters.setEditorMinimap,
+  });
 }

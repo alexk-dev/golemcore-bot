@@ -22,6 +22,7 @@ interface PrimaryShortcutHandlers {
   onQuickOpen: () => void;
   onCommandPalette: () => void;
   onCloseActiveTab: () => void;
+  onInlineEdit: () => void;
 }
 
 function findTabByPath(tabs: IdeTabState[], path: string): IdeTabState | undefined {
@@ -80,6 +81,7 @@ export interface UseGlobalIdeShortcutsOptions {
   onCloseActiveTab: () => void;
   onActivatePreviousTab: () => void;
   onActivateNextTab: () => void;
+  onInlineEdit: () => void;
 }
 
 function isEditableElement(target: EventTarget | null): boolean {
@@ -129,6 +131,12 @@ function handlePrimaryModifierShortcut(
     return true;
   }
 
+  if (key === 'k' && !event.shiftKey) {
+    event.preventDefault();
+    handlers.onInlineEdit();
+    return true;
+  }
+
   return false;
 }
 
@@ -164,6 +172,7 @@ export function useGlobalIdeShortcuts({
   onCloseActiveTab,
   onActivatePreviousTab,
   onActivateNextTab,
+  onInlineEdit,
 }: UseGlobalIdeShortcutsOptions): void {
   useEffect(() => {
     // Register global save/quick-open/command-palette/tab shortcuts for editor workflow.
@@ -174,6 +183,7 @@ export function useGlobalIdeShortcuts({
         onQuickOpen,
         onCommandPalette,
         onCloseActiveTab,
+        onInlineEdit,
       };
 
       if (handlePrimaryModifierShortcut(event, key, primaryHandlers)) {
@@ -187,7 +197,7 @@ export function useGlobalIdeShortcuts({
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [onActivateNextTab, onActivatePreviousTab, onCloseActiveTab, onCommandPalette, onQuickOpen, onSave]);
+  }, [onActivateNextTab, onActivatePreviousTab, onCloseActiveTab, onCommandPalette, onQuickOpen, onSave, onInlineEdit]);
 }
 
 /**
