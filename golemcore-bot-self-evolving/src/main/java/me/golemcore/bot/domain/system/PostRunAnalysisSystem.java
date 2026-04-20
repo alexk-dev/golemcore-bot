@@ -37,7 +37,6 @@ import me.golemcore.bot.domain.selfevolving.candidate.LlmEvolutionService;
 import me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService;
 import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticOutcomeJournalService;
-import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
 import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
 import org.springframework.stereotype.Component;
