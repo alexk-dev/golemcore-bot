@@ -21,8 +21,10 @@ package me.golemcore.bot.port.outbound;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 /**
  * Port for managing agent conversation sessions. Abstracts session CRUD and
@@ -53,4 +55,6 @@ public interface SessionPort {
     List<AgentSession> listByChannelType(String channelType);
 
     List<AgentSession> listByChannelTypeAndTransportChatId(String channelType, String transportChatId);
+
+    int cleanupExpiredSessions(Instant cutoff, Predicate<AgentSession> shouldRetain);
 }

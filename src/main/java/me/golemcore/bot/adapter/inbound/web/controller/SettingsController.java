@@ -15,6 +15,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ResilienceConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SessionRetentionConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SecurityConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
@@ -312,6 +313,14 @@ public class SettingsController {
             @RequestBody MemoryConfigDto memoryConfig) {
         return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
                 runtimeSettingsFacade.updateMemoryConfig(runtimeSettingsWebMapper.toMemoryConfig(memoryConfig))));
+    }
+
+    @PutMapping("/runtime/session-retention")
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateSessionRetentionConfig(
+            @RequestBody SessionRetentionConfigDto sessionRetentionConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateSessionRetentionConfig(
+                        runtimeSettingsWebMapper.toSessionRetentionConfig(sessionRetentionConfig))));
     }
 
     @GetMapping("/runtime/memory/presets")

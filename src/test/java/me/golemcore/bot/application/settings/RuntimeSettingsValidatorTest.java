@@ -785,4 +785,31 @@ class RuntimeSettingsValidatorTest {
         assertEquals(Map.of(), llmConfig.getProviders());
         assertEquals("model_ratio", compactionConfig.getTriggerMode());
     }
+
+    @Test
+    void shouldAcceptValidSessionRetentionConfig() {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = RuntimeConfig.SessionRetentionConfig.builder()
+                .enabled(true)
+                .maxAge("P30D")
+                .cleanupInterval("PT24H")
+                .protectActiveSessions(true)
+                .protectSessionsWithPlans(true)
+                .protectSessionsWithDelayedActions(true)
+                .build();
+
+        assertDoesNotThrow(() -> validator.validateSessionRetentionConfig(sessionRetentionConfig));
+    }
+
+    @Test
+    void shouldRejectInvalidSessionRetentionConfig() {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = RuntimeConfig.SessionRetentionConfig.builder()
+                .maxAge("PT1H")
+                .cleanupInterval("PT1M")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateSessionRetentionConfig(sessionRetentionConfig));
+        assertTrue(error.getMessage().contains("sessionRetention.maxAge"));
+    }
+
 }

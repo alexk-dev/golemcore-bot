@@ -2134,4 +2134,66 @@ class RuntimeConfigServiceTest {
     private void assertPersistedModelMissing(Map<?, ?> binding) {
         assertTrue(!binding.containsKey("model") || binding.get("model") == null);
     }
+
+    @Test
+    void shouldReturnDefaultSessionRetentionSettings() {
+        assertTrue(service.isSessionRetentionEnabled());
+        assertEquals(java.time.Duration.ofDays(30), service.getSessionRetentionMaxAge());
+        assertEquals(java.time.Duration.ofHours(24), service.getSessionRetentionCleanupInterval());
+        assertTrue(service.isSessionRetentionProtectActiveSessions());
+        assertTrue(service.isSessionRetentionProtectSessionsWithPlans());
+        assertTrue(service.isSessionRetentionProtectSessionsWithDelayedActions());
+    }
+
+    @Test
+    void shouldReturnConfiguredSessionRetentionSettings() throws Exception {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = RuntimeConfig.SessionRetentionConfig.builder()
+                .enabled(false)
+                .maxAge("P14D")
+                .cleanupInterval("PT12H")
+                .protectActiveSessions(false)
+                .protectSessionsWithPlans(true)
+                .protectSessionsWithDelayedActions(false)
+                .build();
+        persistedSections.put("session-retention.json", objectMapper.writeValueAsString(sessionRetentionConfig));
+
+        assertFalse(service.isSessionRetentionEnabled());
+        assertEquals(java.time.Duration.ofDays(14), service.getSessionRetentionMaxAge());
+        assertEquals(java.time.Duration.ofHours(12), service.getSessionRetentionCleanupInterval());
+        assertFalse(service.isSessionRetentionProtectActiveSessions());
+        assertTrue(service.isSessionRetentionProtectSessionsWithPlans());
+        assertFalse(service.isSessionRetentionProtectSessionsWithDelayedActions());
+    }
+
+    @Test
+    void shouldNormalizeInvalidSessionRetentionSettingsDuringUpdate() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = RuntimeConfig.SessionRetentionConfig.builder()
+                .enabled(null)
+                .maxAge("bad")
+                .cleanupInterval("bad")
+                .protectActiveSessions(null)
+                .protectSessionsWithPlans(null)
+                .protectSessionsWithDelayedActions(null)
+                .build();
+        config.setSessionRetention(sessionRetentionConfig);
+
+        service.updateRuntimeConfig(config);
+
+        assertTrue(service.isSessionRetentionEnabled());
+        assertEquals(java.time.Duration.ofDays(30), service.getSessionRetentionMaxAge());
+        assertEquals(java.time.Duration.ofHours(24), service.getSessionRetentionCleanupInterval());
+        assertTrue(service.isSessionRetentionProtectActiveSessions());
+        assertTrue(service.isSessionRetentionProtectSessionsWithPlans());
+        assertTrue(service.isSessionRetentionProtectSessionsWithDelayedActions());
+    }
+
+    @Test
+    void shouldExposeSessionRetentionConfigSectionMetadata() {
+        assertTrue(RuntimeConfig.ConfigSection.isValidSection("session-retention"));
+        assertEquals(RuntimeConfig.ConfigSection.SESSION_RETENTION,
+                RuntimeConfig.ConfigSection.fromFileId("session-retention").orElseThrow());
+        assertEquals("session-retention.json", RuntimeConfig.ConfigSection.SESSION_RETENTION.getFileName());
+    }
+
 }

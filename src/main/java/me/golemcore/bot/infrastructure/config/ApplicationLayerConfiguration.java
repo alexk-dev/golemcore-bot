@@ -1,5 +1,6 @@
 package me.golemcore.bot.infrastructure.config;
 
+import me.golemcore.bot.adapter.outbound.skills.SkillMarketplaceLegacySupport;
 import me.golemcore.bot.application.command.AutomationCommandService;
 import me.golemcore.bot.application.command.ModelSelectionCommandService;
 import me.golemcore.bot.application.command.PlanCommandService;
@@ -8,15 +9,15 @@ import me.golemcore.bot.application.models.ModelRegistryService;
 import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
 import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.prompts.PromptManagementFacade;
-import me.golemcore.bot.application.selfevolving.tactic.TacticEmbeddingProbeService;
 import me.golemcore.bot.application.scheduler.SchedulerFacade;
+import me.golemcore.bot.application.selfevolving.tactic.TacticEmbeddingProbeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;
 import me.golemcore.bot.application.settings.RuntimeSettingsValidator;
-import me.golemcore.bot.adapter.outbound.skills.SkillMarketplaceLegacySupport;
 import me.golemcore.bot.application.skills.SkillManagementFacade;
 import me.golemcore.bot.application.skills.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.ActiveSessionPointerService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
 import me.golemcore.bot.domain.service.HiveManagedPolicyService;
@@ -29,6 +30,7 @@ import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.service.SessionRetentionCleanupService;
 import me.golemcore.bot.domain.service.SkillDocumentService;
 import me.golemcore.bot.domain.service.SkillService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -38,9 +40,9 @@ import me.golemcore.bot.port.outbound.EmbeddingClientResolverPort;
 import me.golemcore.bot.port.outbound.HiveGatewayPort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
+import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 import me.golemcore.bot.port.outbound.ModelRegistryCachePort;
 import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
-import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
 import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
@@ -133,6 +135,23 @@ public class ApplicationLayerConfiguration {
             RuntimeConfigService runtimeConfigService,
             ChannelRuntimePort channelRuntimePort) {
         return new SchedulerFacade(autoModeService, scheduleService, runtimeConfigService, channelRuntimePort);
+    }
+
+    @Bean
+    SessionRetentionCleanupService sessionRetentionCleanupService(
+            SessionPort sessionPort,
+            RuntimeConfigService runtimeConfigService,
+            ActiveSessionPointerService activeSessionPointerService,
+            PlanService planService,
+            DelayedSessionActionService delayedSessionActionService,
+            java.time.Clock clock) {
+        return new SessionRetentionCleanupService(
+                sessionPort,
+                runtimeConfigService,
+                activeSessionPointerService,
+                planService,
+                delayedSessionActionService,
+                clock);
     }
 
     @Bean
