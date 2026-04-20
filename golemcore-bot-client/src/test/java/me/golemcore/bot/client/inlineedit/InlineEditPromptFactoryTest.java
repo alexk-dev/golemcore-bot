@@ -1,12 +1,12 @@
-package me.golemcore.bot.adapter.inbound.web.inlineedit;
+package me.golemcore.bot.client.inlineedit;
 
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class WebInlineEditPromptFactoryTest {
+class InlineEditPromptFactoryTest {
 
-    private final WebInlineEditPromptFactory promptFactory = new WebInlineEditPromptFactory();
+    private final InlineEditPromptFactory promptFactory = new InlineEditPromptFactory();
 
     @Test
     void shouldBuildInlineEditPromptWithSelectedCodeAndInstruction() {

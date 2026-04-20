@@ -9,7 +9,7 @@ import me.golemcore.bot.client.dto.FileSaveRequest;
 import me.golemcore.bot.client.dto.FileTreeNodeDto;
 import me.golemcore.bot.client.dto.InlineEditRequest;
 import me.golemcore.bot.client.dto.InlineEditResponse;
-import me.golemcore.bot.adapter.inbound.web.inlineedit.WebInlineEditService;
+import me.golemcore.bot.client.inlineedit.InlineEditFacade;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
@@ -48,7 +48,7 @@ public class FilesController {
 
     private final DashboardFileService dashboardFileService;
     private final ToolArtifactService toolArtifactService;
-    private final WebInlineEditService webInlineEditService;
+    private final InlineEditFacade inlineEditFacade;
 
     public Mono<ResponseEntity<List<FileTreeNodeDto>>> getTree(String path) {
         try {
@@ -143,18 +143,7 @@ public class FilesController {
             @RequestBody InlineEditRequest request,
             @RequestHeader(name = CLIENT_INSTANCE_HEADER, required = false) String clientInstanceId) {
         try {
-            WebInlineEditService.InlineEditResult result = webInlineEditService.createInlineEdit(
-                    request.getPath(),
-                    request.getContent(),
-                    request.getSelectionFrom() != null ? request.getSelectionFrom() : -1,
-                    request.getSelectionTo() != null ? request.getSelectionTo() : -1,
-                    request.getSelectedText(),
-                    request.getInstruction(),
-                    clientInstanceId);
-            InlineEditResponse payload = InlineEditResponse.builder()
-                    .path(result.path())
-                    .replacement(result.replacement())
-                    .build();
+            InlineEditResponse payload = inlineEditFacade.createInlineEdit(request, clientInstanceId);
             return Mono.just(ResponseEntity.ok(payload));
         } catch (IllegalArgumentException _) {
             return Mono.just(ResponseEntity.badRequest().build());

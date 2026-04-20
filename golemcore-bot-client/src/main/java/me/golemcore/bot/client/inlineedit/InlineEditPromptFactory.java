@@ -1,4 +1,4 @@
-package me.golemcore.bot.adapter.inbound.web.inlineedit;
+package me.golemcore.bot.client.inlineedit;
 
 import org.springframework.stereotype.Component;
 
@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Locale;
 
 @Component
-public class WebInlineEditPromptFactory {
+public class InlineEditPromptFactory {
 
     private static final List<String> QUICK_PREFIXES = List.of(
             "refactor",
