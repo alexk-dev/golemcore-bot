@@ -431,9 +431,10 @@ public class SettingsController {
                         runtimeSettingsWebMapper.toResilienceConfig(request.resilience()))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateRuntimeConfig(RuntimeConfig config) {
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateRuntimeConfig(RuntimeConfig config) {
         try {
-            return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateRuntimeConfig(config)));
+            return Mono.just(ResponseEntity.ok(
+                    runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateRuntimeConfig(config))));
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (NoSuchElementException e) {
@@ -443,10 +444,11 @@ public class SettingsController {
         }
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateModelRouterConfig(
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateModelRouterConfig(
             RuntimeConfig.ModelRouterConfig modelRouterConfig) {
         try {
-            return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateModelRouterConfig(modelRouterConfig)));
+            return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                    .toRuntimeConfigDto(runtimeSettingsFacade.updateModelRouterConfig(modelRouterConfig))));
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (IllegalStateException e) {
@@ -454,9 +456,10 @@ public class SettingsController {
         }
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateLlmConfig(RuntimeConfig.LlmConfig llmConfig) {
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateLlmConfig(RuntimeConfig.LlmConfig llmConfig) {
         try {
-            return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateLlmConfig(llmConfig)));
+            return Mono.just(ResponseEntity
+                    .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateLlmConfig(llmConfig))));
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (IllegalStateException e) {
@@ -464,14 +467,16 @@ public class SettingsController {
         }
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> addLlmProvider(String name,
+    public Mono<ResponseEntity<RuntimeConfigDto>> addLlmProvider(String name,
             RuntimeConfig.LlmProviderConfig providerConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.addLlmProvider(name, providerConfig)));
+        return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.addLlmProvider(name, providerConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateLlmProvider(String name,
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateLlmProvider(String name,
             RuntimeConfig.LlmProviderConfig providerConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateLlmProvider(name, providerConfig)));
+        return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateLlmProvider(name, providerConfig))));
     }
 
     public Mono<ResponseEntity<Void>> removeLlmProvider(String name, boolean unused) {
@@ -479,68 +484,81 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok().build());
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateToolsConfig(RuntimeConfig.ToolsConfig toolsConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateToolsConfig(toolsConfig)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateToolsConfig(RuntimeConfig.ToolsConfig toolsConfig) {
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateToolsConfig(toolsConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> createShellEnvironmentVariable(
+    public Mono<ResponseEntity<RuntimeConfigDto>> createShellEnvironmentVariable(
             RuntimeConfig.ShellEnvironmentVariable variable) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.createShellEnvironmentVariable(variable)));
+        return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.createShellEnvironmentVariable(variable))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateShellEnvironmentVariable(String name,
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateShellEnvironmentVariable(String name,
             RuntimeConfig.ShellEnvironmentVariable variable) {
         try {
-            return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateShellEnvironmentVariable(name, variable)));
+            return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                    .toRuntimeConfigDto(runtimeSettingsFacade.updateShellEnvironmentVariable(name, variable))));
         } catch (NoSuchElementException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> deleteShellEnvironmentVariable(String name, boolean unused) {
+    public Mono<ResponseEntity<RuntimeConfigDto>> deleteShellEnvironmentVariable(String name, boolean unused) {
         try {
-            return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.deleteShellEnvironmentVariable(name)));
+            return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                    .toRuntimeConfigDto(runtimeSettingsFacade.deleteShellEnvironmentVariable(name))));
         } catch (NoSuchElementException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateVoiceConfig(RuntimeConfig.VoiceConfig voiceConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateVoiceConfig(voiceConfig)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateVoiceConfig(RuntimeConfig.VoiceConfig voiceConfig) {
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateVoiceConfig(voiceConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateTurnConfig(turnConfig)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateTurnConfig(turnConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateMemoryConfig(memoryConfig)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
+        return Mono.just(ResponseEntity.ok(
+                runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateMemoryConfig(memoryConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateSkillsConfig(RuntimeConfig.SkillsConfig skillsConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateSkillsConfig(skillsConfig)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateSkillsConfig(RuntimeConfig.SkillsConfig skillsConfig) {
+        return Mono.just(ResponseEntity.ok(
+                runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateSkillsConfig(skillsConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateUsageConfig(RuntimeConfig.UsageConfig usageConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateUsageConfig(usageConfig)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateUsageConfig(RuntimeConfig.UsageConfig usageConfig) {
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateUsageConfig(usageConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateTelemetryConfig(RuntimeConfig.TelemetryConfig telemetryConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateTelemetryConfig(telemetryConfig)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateTelemetryConfig(RuntimeConfig.TelemetryConfig telemetryConfig) {
+        return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateTelemetryConfig(telemetryConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateMcpConfig(RuntimeConfig.McpConfig mcpConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateMcpConfig(mcpConfig)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateMcpConfig(RuntimeConfig.McpConfig mcpConfig) {
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateMcpConfig(mcpConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry entry) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.addMcpCatalogEntry(entry)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry entry) {
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.addMcpCatalogEntry(entry))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateMcpCatalogEntry(String name,
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateMcpCatalogEntry(String name,
             RuntimeConfig.McpCatalogEntry entry) {
         try {
-            return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateMcpCatalogEntry(name, entry)));
+            return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                    .toRuntimeConfigDto(runtimeSettingsFacade.updateMcpCatalogEntry(name, entry))));
         } catch (NoSuchElementException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
@@ -551,31 +569,36 @@ public class SettingsController {
         return Mono.just(ResponseEntity.ok().build());
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
         try {
-            return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateHiveConfig(hiveConfig)));
+            return Mono.just(ResponseEntity.ok(
+                    runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateHiveConfig(hiveConfig))));
         } catch (IllegalStateException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
         }
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updatePlanConfig(planConfig)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updatePlanConfig(planConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateAutoConfig(RuntimeConfig.AutoModeConfig autoConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateAutoConfig(autoConfig)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateAutoConfig(RuntimeConfig.AutoModeConfig autoConfig) {
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateAutoConfig(autoConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateTracingConfig(RuntimeConfig.TracingConfig tracingConfig) {
-        return Mono.just(ResponseEntity.ok(runtimeSettingsFacade.updateTracingConfig(tracingConfig)));
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateTracingConfig(RuntimeConfig.TracingConfig tracingConfig) {
+        return Mono.just(ResponseEntity.ok(
+                runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateTracingConfig(tracingConfig))));
     }
 
-    public Mono<ResponseEntity<RuntimeConfig>> updateAdvancedConfig(RuntimeConfig.RateLimitConfig rateLimit,
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateAdvancedConfig(RuntimeConfig.RateLimitConfig rateLimit,
             RuntimeConfig.SecurityConfig security, RuntimeConfig.CompactionConfig compaction,
             RuntimeConfig.ResilienceConfig resilience) {
         return Mono.just(ResponseEntity.ok(
-                runtimeSettingsFacade.updateAdvancedConfig(rateLimit, security, compaction, resilience)));
+                runtimeSettingsWebMapper.toRuntimeConfigDto(
+                        runtimeSettingsFacade.updateAdvancedConfig(rateLimit, security, compaction, resilience))));
     }
 
     @GetMapping("/memory-presets")
