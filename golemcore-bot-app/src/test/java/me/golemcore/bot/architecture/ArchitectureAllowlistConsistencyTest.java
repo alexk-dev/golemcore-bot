@@ -18,7 +18,11 @@ import org.junit.jupiter.api.Test;
 
 class ArchitectureAllowlistConsistencyTest {
 
-    private static final Path MAIN_JAVA_ROOT = Paths.get("src/main/java");
+    private static final List<Path> MAIN_JAVA_ROOTS = List.of(
+            Paths.get("src/main/java"),
+            Paths.get("../golemcore-bot-self-evolving/src/main/java"),
+            Paths.get("../golemcore-bot-contracts/src/main/java"),
+            Paths.get("../golemcore-bot-client/src/main/java"));
     private static final List<AllowlistSpec> ALLOWLISTS = List.of(
             new AllowlistSpec(
                     "architecture/domain-spring-stereotype-allowlist.txt",
@@ -50,8 +54,10 @@ class ArchitectureAllowlistConsistencyTest {
         for (AllowlistSpec allowlist : ALLOWLISTS) {
             Set<String> missingEntries = new LinkedHashSet<>();
             for (String entry : loadEntries(allowlist.resourcePath())) {
-                Path sourcePath = MAIN_JAVA_ROOT.resolve(entry.replace('.', '/') + ".java");
-                if (!Files.exists(sourcePath)) {
+                boolean exists = MAIN_JAVA_ROOTS.stream()
+                        .map(root -> root.resolve(entry.replace('.', '/') + ".java"))
+                        .anyMatch(Files::exists);
+                if (!exists) {
                     missingEntries.add(entry);
                 }
             }

@@ -138,6 +138,8 @@ me.golemcore.bot.domain.system.OutgoingResponsePreparationSystem
 me.golemcore.bot.domain.system.PostRunAnalysisSystem
 me.golemcore.bot.domain.system.RagIndexingSystem
 me.golemcore.bot.domain.system.ResponseRoutingSystem
+me.golemcore.bot.domain.system.SelfEvolvingRunBootstrapSystem
+me.golemcore.bot.domain.system.SelfEvolvingTacticContextSystem
 me.golemcore.bot.domain.system.SkillPipelineSystem
 me.golemcore.bot.domain.system.TacticOutcomeFeedbackSystem
 me.golemcore.bot.domain.system.ToolLoopExecutionSystem
