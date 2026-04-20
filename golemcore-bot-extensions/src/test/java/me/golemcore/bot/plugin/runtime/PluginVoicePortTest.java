@@ -1,7 +1,7 @@
 package me.golemcore.bot.plugin.runtime;
 
 import me.golemcore.bot.domain.model.AudioFormat;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;
 import me.golemcore.bot.plugin.runtime.extension.PluginExtensionApiMapper;
 import me.golemcore.bot.port.outbound.VoicePort;
 import me.golemcore.plugin.api.extension.spi.SttProvider;
@@ -27,18 +27,18 @@ import static org.mockito.Mockito.when;
 
 class PluginVoicePortTest {
 
-    private RuntimeConfigService runtimeConfigService;
+    private RuntimeConfigQueryPort runtimeConfigQueryPort;
     private SttProviderRegistry sttProviderRegistry;
     private TtsProviderRegistry ttsProviderRegistry;
     private PluginVoicePort pluginVoicePort;
 
     @BeforeEach
     void setUp() {
-        runtimeConfigService = mock(RuntimeConfigService.class);
+        runtimeConfigQueryPort = mock(RuntimeConfigQueryPort.class);
         sttProviderRegistry = new SttProviderRegistry();
         ttsProviderRegistry = new TtsProviderRegistry();
         pluginVoicePort = new PluginVoicePort(
-                runtimeConfigService,
+                runtimeConfigQueryPort,
                 sttProviderRegistry,
                 ttsProviderRegistry,
                 new PluginExtensionApiMapper());
@@ -48,9 +48,9 @@ class PluginVoicePortTest {
     void shouldNormalizeLegacyProviderIdsForAvailabilityAndTranscription() {
         SttProvider sttProvider = mock(SttProvider.class);
         TtsProvider ttsProvider = mock(TtsProvider.class);
-        when(runtimeConfigService.isVoiceEnabled()).thenReturn(true);
-        when(runtimeConfigService.getSttProvider()).thenReturn("whisper");
-        when(runtimeConfigService.getTtsProvider()).thenReturn("elevenlabs");
+        when(runtimeConfigQueryPort.isVoiceEnabled()).thenReturn(true);
+        when(runtimeConfigQueryPort.getSttProvider()).thenReturn("whisper");
+        when(runtimeConfigQueryPort.getTtsProvider()).thenReturn("elevenlabs");
         when(sttProvider.getProviderId()).thenReturn("golemcore/whisper");
         when(sttProvider.isAvailable()).thenReturn(true);
         when(sttProvider.transcribe(any(byte[].class), eq(me.golemcore.plugin.api.extension.model.AudioFormat.WAV)))
@@ -78,7 +78,7 @@ class PluginVoicePortTest {
     @Test
     void shouldTranslateAsyncQuotaFailureFromPluginFuture() {
         TtsProvider ttsProvider = mock(TtsProvider.class);
-        when(runtimeConfigService.getTtsProvider()).thenReturn("golemcore/elevenlabs");
+        when(runtimeConfigQueryPort.getTtsProvider()).thenReturn("golemcore/elevenlabs");
         when(ttsProvider.getProviderId()).thenReturn("golemcore/elevenlabs");
         when(ttsProvider.isAvailable()).thenReturn(true);
         when(ttsProvider.synthesize(anyString(),
@@ -99,7 +99,7 @@ class PluginVoicePortTest {
     @Test
     void shouldTranslateSynchronousQuotaFailureFromPluginCall() {
         SttProvider sttProvider = mock(SttProvider.class);
-        when(runtimeConfigService.getSttProvider()).thenReturn("golemcore/whisper");
+        when(runtimeConfigQueryPort.getSttProvider()).thenReturn("golemcore/whisper");
         when(sttProvider.getProviderId()).thenReturn("golemcore/whisper");
         when(sttProvider.isAvailable()).thenReturn(true);
         when(sttProvider.transcribe(any(byte[].class), any(me.golemcore.plugin.api.extension.model.AudioFormat.class)))
@@ -116,14 +116,14 @@ class PluginVoicePortTest {
 
     @Test
     void shouldReturnUnavailableWhenVoiceIsDisabled() {
-        when(runtimeConfigService.isVoiceEnabled()).thenReturn(false);
+        when(runtimeConfigQueryPort.isVoiceEnabled()).thenReturn(false);
 
         assertFalse(pluginVoicePort.isAvailable());
     }
 
     @Test
     void shouldFailWhenConfiguredProviderIsMissing() {
-        when(runtimeConfigService.getTtsProvider()).thenReturn("golemcore/elevenlabs");
+        when(runtimeConfigQueryPort.getTtsProvider()).thenReturn("golemcore/elevenlabs");
 
         IllegalStateException exception = assertThrows(IllegalStateException.class,
                 () -> pluginVoicePort.synthesize("hello", VoicePort.VoiceConfig.defaultConfig()));
@@ -134,7 +134,7 @@ class PluginVoicePortTest {
     @Test
     void shouldFailWhenConfiguredSttProviderIsUnavailable() {
         SttProvider sttProvider = mock(SttProvider.class);
-        when(runtimeConfigService.getSttProvider()).thenReturn("golemcore/whisper");
+        when(runtimeConfigQueryPort.getSttProvider()).thenReturn("golemcore/whisper");
         when(sttProvider.getProviderId()).thenReturn("golemcore/whisper");
         when(sttProvider.isAvailable()).thenReturn(false);
 
@@ -149,7 +149,7 @@ class PluginVoicePortTest {
     @Test
     void shouldUseFirstLoadedTtsProviderWhenConfiguredValueIsBlank() {
         TtsProvider ttsProvider = mock(TtsProvider.class);
-        when(runtimeConfigService.getTtsProvider()).thenReturn("   ");
+        when(runtimeConfigQueryPort.getTtsProvider()).thenReturn("   ");
         when(ttsProvider.getProviderId()).thenReturn("golemcore/elevenlabs");
         when(ttsProvider.isAvailable()).thenReturn(true);
         when(ttsProvider.synthesize(anyString(),
@@ -166,7 +166,7 @@ class PluginVoicePortTest {
     @Test
     void shouldNormalizeLegacyWhisperTtsProviderIdForSynthesis() {
         TtsProvider ttsProvider = mock(TtsProvider.class);
-        when(runtimeConfigService.getTtsProvider()).thenReturn("whisper");
+        when(runtimeConfigQueryPort.getTtsProvider()).thenReturn("whisper");
         when(ttsProvider.getProviderId()).thenReturn("golemcore/whisper");
         when(ttsProvider.isAvailable()).thenReturn(true);
         when(ttsProvider.synthesize(anyString(),

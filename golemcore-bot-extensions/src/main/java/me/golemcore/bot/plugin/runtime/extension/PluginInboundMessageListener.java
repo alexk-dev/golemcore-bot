@@ -2,7 +2,7 @@ package me.golemcore.bot.plugin.runtime.extension;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.service.SessionRunCoordinator;
+import me.golemcore.bot.port.outbound.InboundMessageDispatchPort;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class PluginInboundMessageListener {
 
-    private final SessionRunCoordinator coordinator;
+    private final InboundMessageDispatchPort inboundMessageDispatchPort;
     private final PluginExtensionApiMapper mapper;
 
     @EventListener
@@ -22,6 +22,6 @@ public class PluginInboundMessageListener {
         me.golemcore.bot.domain.model.Message message = mapper.toHostMessage(event.message());
         log.debug("[Inbound] enqueue plugin message (channel={}, chatId={})",
                 message.getChannelType(), message.getChatId());
-        coordinator.enqueue(message);
+        inboundMessageDispatchPort.dispatch(message);
     }
 }

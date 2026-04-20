@@ -2,7 +2,7 @@ package me.golemcore.bot.plugin.runtime;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.runtime.config.PluginRuntimeProperties;
 import me.golemcore.plugin.api.extension.spi.PluginSettingsCatalogItem;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -289,7 +289,7 @@ class PluginMarketplaceServiceTest {
             when(pluginManager.listPlugins()).thenReturn(List.of());
 
             PluginMarketplaceService service = new PluginMarketplaceService(
-                    remoteBotProperties(remoteServer.baseUrl(), installRoot),
+                    remotePluginRuntimeProperties(remoteServer.baseUrl(), installRoot),
                     buildPropertiesProvider("0.0.0-SNAPSHOT"),
                     pluginManager,
                     mock(PluginSettingsRegistry.class));
@@ -329,7 +329,7 @@ class PluginMarketplaceServiceTest {
                     .build()));
 
             PluginMarketplaceService service = new PluginMarketplaceService(
-                    remoteBotProperties(remoteServer.baseUrl(), installRoot),
+                    remotePluginRuntimeProperties(remoteServer.baseUrl(), installRoot),
                     buildPropertiesProvider("0.0.0-SNAPSHOT"),
                     pluginManager,
                     mock(PluginSettingsRegistry.class));
@@ -362,7 +362,7 @@ class PluginMarketplaceServiceTest {
             when(pluginManager.listPlugins()).thenReturn(List.of());
 
             PluginMarketplaceService service = new PluginMarketplaceService(
-                    remoteBotProperties(remoteServer.baseUrl(), installRoot),
+                    remotePluginRuntimeProperties(remoteServer.baseUrl(), installRoot),
                     buildPropertiesProvider("0.0.0-SNAPSHOT"),
                     pluginManager,
                     mock(PluginSettingsRegistry.class));
@@ -556,22 +556,22 @@ class PluginMarketplaceServiceTest {
         assertFalse(catalog.getItems().getFirst().isArtifactAvailable());
     }
 
-    private BotProperties remoteBotProperties(String baseUrl, Path installRoot) {
-        BotProperties properties = new BotProperties();
-        properties.getPlugins().setDirectory(installRoot.toString());
-        properties.getPlugins().getMarketplace().setRepositoryDirectory("");
-        properties.getPlugins().getMarketplace().setRepositoryUrl(baseUrl + "/alexk-dev/golemcore-plugins");
-        properties.getPlugins().getMarketplace().setApiBaseUrl(baseUrl + "/api");
-        properties.getPlugins().getMarketplace().setRawBaseUrl(baseUrl + "/raw");
-        properties.getPlugins().getMarketplace().setBranch("main");
-        properties.getPlugins().getMarketplace().setRemoteCacheTtl(Duration.ofSeconds(30));
+    private PluginRuntimeProperties remotePluginRuntimeProperties(String baseUrl, Path installRoot) {
+        PluginRuntimeProperties properties = new PluginRuntimeProperties();
+        properties.setDirectory(installRoot.toString());
+        properties.getMarketplace().setRepositoryDirectory("");
+        properties.getMarketplace().setRepositoryUrl(baseUrl + "/alexk-dev/golemcore-plugins");
+        properties.getMarketplace().setApiBaseUrl(baseUrl + "/api");
+        properties.getMarketplace().setRawBaseUrl(baseUrl + "/raw");
+        properties.getMarketplace().setBranch("main");
+        properties.getMarketplace().setRemoteCacheTtl(Duration.ofSeconds(30));
         return properties;
     }
 
-    private BotProperties botProperties(Path repositoryRoot, Path installRoot) {
-        BotProperties properties = new BotProperties();
-        properties.getPlugins().setDirectory(installRoot.toString());
-        properties.getPlugins().getMarketplace().setRepositoryDirectory(repositoryRoot.toString());
+    private PluginRuntimeProperties botProperties(Path repositoryRoot, Path installRoot) {
+        PluginRuntimeProperties properties = new PluginRuntimeProperties();
+        properties.setDirectory(installRoot.toString());
+        properties.getMarketplace().setRepositoryDirectory(repositoryRoot.toString());
         return properties;
     }
 

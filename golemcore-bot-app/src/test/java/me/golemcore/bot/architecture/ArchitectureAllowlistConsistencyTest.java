@@ -22,7 +22,8 @@ class ArchitectureAllowlistConsistencyTest {
             Paths.get("src/main/java"),
             Paths.get("../golemcore-bot-self-evolving/src/main/java"),
             Paths.get("../golemcore-bot-contracts/src/main/java"),
-            Paths.get("../golemcore-bot-client/src/main/java"));
+            Paths.get("../golemcore-bot-client/src/main/java"),
+            Paths.get("../golemcore-bot-extensions/src/main/java"));
     private static final List<AllowlistSpec> ALLOWLISTS = List.of(
             new AllowlistSpec(
                     "architecture/domain-spring-stereotype-allowlist.txt",

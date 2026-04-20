@@ -5,7 +5,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.runtime.config.PluginRuntimeProperties;
 import me.golemcore.plugin.api.extension.spi.PluginDescriptor;
 import me.golemcore.plugin.api.extension.spi.PluginSettingsCatalogItem;
 import org.springframework.beans.factory.ObjectProvider;
@@ -65,7 +65,7 @@ public class PluginMarketplaceService {
     private static final Pattern GITHUB_PACKAGE_DOWNLOAD_PATTERN = Pattern.compile(
             "href=\"(https?://[^\"]+)\"");
 
-    private final BotProperties botProperties;
+    private final PluginRuntimeProperties pluginRuntimeProperties;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final PluginManager pluginManager;
     private final PluginSettingsRegistry pluginSettingsRegistry;
@@ -77,7 +77,7 @@ public class PluginMarketplaceService {
     private final AtomicReference<RemoteCatalogCache> remoteCatalogCache = new AtomicReference<>();
 
     public PluginMarketplaceCatalog getCatalog() {
-        if (!botProperties.getPlugins().getMarketplace().isEnabled()) {
+        if (!pluginRuntimeProperties.getMarketplace().isEnabled()) {
             return unavailable("Plugin marketplace is disabled by backend configuration.");
         }
 
@@ -136,7 +136,7 @@ public class PluginMarketplaceService {
         }
         String normalizedPluginId = requestedPlugin.id();
         String normalizedVersion = normalizeVersion(version);
-        if (!botProperties.getPlugins().getMarketplace().isEnabled()) {
+        if (!pluginRuntimeProperties.getMarketplace().isEnabled()) {
             throw new IllegalStateException("Plugin marketplace is disabled");
         }
 
@@ -341,7 +341,7 @@ public class PluginMarketplaceService {
     }
 
     private Map<String, TrustedPluginRecord> loadRemoteCatalogPlugins(String engineVersion) {
-        Duration cacheTtl = botProperties.getPlugins().getMarketplace().getRemoteCacheTtl();
+        Duration cacheTtl = pluginRuntimeProperties.getMarketplace().getRemoteCacheTtl();
         if (cacheTtl == null || cacheTtl.isZero() || cacheTtl.isNegative()) {
             return fetchRemoteCatalogPlugins(engineVersion);
         }
@@ -740,7 +740,7 @@ public class PluginMarketplaceService {
     }
 
     private Optional<Path> resolveLocalRepositoryRoot() {
-        String configured = botProperties.getPlugins().getMarketplace().getRepositoryDirectory();
+        String configured = pluginRuntimeProperties.getMarketplace().getRepositoryDirectory();
         if (configured != null && !configured.isBlank()) {
             Path configuredPath = Path.of(configured).toAbsolutePath().normalize();
             return Files.isDirectory(configuredPath) ? Optional.of(configuredPath) : Optional.empty();
@@ -749,7 +749,7 @@ public class PluginMarketplaceService {
     }
 
     private boolean isLocalRepositoryConfigured() {
-        String configured = botProperties.getPlugins().getMarketplace().getRepositoryDirectory();
+        String configured = pluginRuntimeProperties.getMarketplace().getRepositoryDirectory();
         return configured != null && !configured.isBlank();
     }
 
@@ -928,7 +928,7 @@ public class PluginMarketplaceService {
     }
 
     private URI remoteRepositoryUrl() {
-        String repositoryUrl = botProperties.getPlugins().getMarketplace().getRepositoryUrl();
+        String repositoryUrl = pluginRuntimeProperties.getMarketplace().getRepositoryUrl();
         if (repositoryUrl == null || repositoryUrl.isBlank()) {
             throw new IllegalStateException("bot.plugins.marketplace.repository-url must not be blank");
         }
@@ -936,7 +936,7 @@ public class PluginMarketplaceService {
     }
 
     private URI remoteTreeApiUri() {
-        BotProperties.MarketplaceProperties marketplace = botProperties.getPlugins().getMarketplace();
+        PluginRuntimeProperties.MarketplaceProperties marketplace = pluginRuntimeProperties.getMarketplace();
         GitHubRepository repository = parseRemoteRepository();
         String encodedBranch = encodePathSegment(marketplace.getBranch());
         String relativePath = "repos/" + repository.owner() + "/" + repository.name()
@@ -949,7 +949,7 @@ public class PluginMarketplaceService {
     }
 
     private URI remoteRawFileUri(String ref, String filePath) {
-        BotProperties.MarketplaceProperties marketplace = botProperties.getPlugins().getMarketplace();
+        PluginRuntimeProperties.MarketplaceProperties marketplace = pluginRuntimeProperties.getMarketplace();
         GitHubRepository repository = parseRemoteRepository();
         String relativePath = repository.owner() + "/" + repository.name() + "/" + ref + "/" + filePath;
         return buildUri(marketplace.getRawBaseUrl(), relativePath);
@@ -1095,7 +1095,7 @@ public class PluginMarketplaceService {
     }
 
     private String remoteBranchRef() {
-        String branch = botProperties.getPlugins().getMarketplace().getBranch();
+        String branch = pluginRuntimeProperties.getMarketplace().getBranch();
         if (branch == null || branch.isBlank()) {
             throw new IllegalStateException("bot.plugins.marketplace.branch must not be blank");
         }
@@ -1454,7 +1454,7 @@ public class PluginMarketplaceService {
     }
 
     private Path pluginDirectoryRoot() {
-        return Path.of(botProperties.getPlugins().getDirectory()).toAbsolutePath().normalize();
+        return Path.of(pluginRuntimeProperties.getDirectory()).toAbsolutePath().normalize();
     }
 
     private record TrustedPluginRecord(

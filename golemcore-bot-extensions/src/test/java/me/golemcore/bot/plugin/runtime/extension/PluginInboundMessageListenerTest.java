@@ -1,7 +1,7 @@
 package me.golemcore.bot.plugin.runtime.extension;
 
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.service.SessionRunCoordinator;
+import me.golemcore.bot.port.outbound.InboundMessageDispatchPort;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -15,9 +15,9 @@ class PluginInboundMessageListenerTest {
 
     @Test
     void shouldMapAndEnqueueInboundPluginMessages() {
-        SessionRunCoordinator coordinator = mock(SessionRunCoordinator.class);
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
         PluginInboundMessageListener listener = new PluginInboundMessageListener(
-                coordinator,
+                inboundMessageDispatchPort,
                 new PluginExtensionApiMapper());
 
         me.golemcore.plugin.api.extension.model.Message pluginMessage = me.golemcore.plugin.api.extension.model.Message
@@ -33,7 +33,7 @@ class PluginInboundMessageListenerTest {
                 pluginMessage));
 
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
-        verify(coordinator).enqueue(messageCaptor.capture());
+        verify(inboundMessageDispatchPort).dispatch(messageCaptor.capture());
         assertEquals("telegram", messageCaptor.getValue().getChannelType());
         assertEquals("42", messageCaptor.getValue().getChatId());
         assertEquals("hello", messageCaptor.getValue().getContent());

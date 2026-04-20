@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
+import me.golemcore.bot.port.outbound.ToolRegistryPort;
 import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 import org.springframework.stereotype.Component;
 
@@ -34,7 +35,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Slf4j
-public class ToolCallExecutionService {
+public class ToolCallExecutionService implements ToolRegistryPort {
 
     private static final long TOOL_TIMEOUT_SECONDS = 30;
     private static final int MAX_BASE64_LENGTH = 67_000_000;
@@ -86,10 +87,12 @@ public class ToolCallExecutionService {
         }
     }
 
+    @Override
     public void registerTool(ToolComponent tool) {
         toolRegistry.put(tool.getToolName(), tool);
     }
 
+    @Override
     public void unregisterTools(Collection<String> toolNames) {
         if (toolNames == null) {
             return;
