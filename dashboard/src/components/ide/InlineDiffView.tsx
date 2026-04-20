@@ -40,7 +40,10 @@ export function InlineDiffView({ proposal, onAccept, onReject }: InlineDiffViewP
   return (
     <div className="inline-diff-view">
       <div className="inline-diff-header">
-        <span className="inline-diff-path">{proposal.path}</span>
+        <div className="inline-diff-title-group">
+          <span className="inline-diff-path">{proposal.path}</span>
+          <span className="inline-diff-instruction">{proposal.instruction}</span>
+        </div>
         <div className="inline-diff-actions">
           <button
             type="button"

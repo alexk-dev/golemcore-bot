@@ -393,6 +393,45 @@ class WebSocketChatHandlerTest {
     }
 
     @Test
+    void shouldPersistOpenedTabsAndSelectionContextInInboundMetadata() {
+        String token = tokenProvider.generateAccessToken("admin");
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        HandshakeInfo handshakeInfo = mock(HandshakeInfo.class);
+        when(session.getHandshakeInfo()).thenReturn(handshakeInfo);
+        when(handshakeInfo.getUri()).thenReturn(URI.create("ws://localhost/ws/chat?token=" + token));
+        when(session.getId()).thenReturn("session-inline-context");
+
+        WebSocketMessage wsMessage = mock(WebSocketMessage.class);
+        when(wsMessage.getPayloadAsText())
+                .thenReturn("{\"text\":\"help me edit this\",\"sessionId\":\"chat-1\","
+                        + "\"activePath\":\"src/App.tsx\","
+                        + "\"selectionText\":\"const x = 1\","
+                        + "\"selectionFrom\":0,"
+                        + "\"selectionTo\":11,"
+                        + "\"openedTabs\":[{\"path\":\"src/App.tsx\",\"title\":\"App.tsx\",\"isDirty\":true}]}");
+        when(session.receive()).thenReturn(Flux.just(wsMessage));
+
+        StepVerifier.create(handler.handle(session))
+                .verifyComplete();
+
+        ArgumentCaptor<AgentLoop.InboundMessageEvent> captor = ArgumentCaptor
+                .forClass(AgentLoop.InboundMessageEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        Map<String, Object> metadata = captor.getValue().message().getMetadata();
+        assertEquals("src/App.tsx", metadata.get(ContextAttributes.WEB_ACTIVE_PATH));
+        assertEquals("const x = 1", metadata.get(ContextAttributes.WEB_SELECTION_TEXT));
+        assertEquals(0, metadata.get(ContextAttributes.WEB_SELECTION_FROM));
+        assertEquals(11, metadata.get(ContextAttributes.WEB_SELECTION_TO));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> openedTabs = (List<Map<String, Object>>) metadata
+                .get(ContextAttributes.WEB_OPENED_TABS);
+        assertEquals(1, openedTabs.size());
+        assertEquals("src/App.tsx", openedTabs.get(0).get("path"));
+        assertEquals(Boolean.TRUE, openedTabs.get(0).get("isDirty"));
+    }
+
+    @Test
     void shouldIgnoreBlankMessages() {
         String token = tokenProvider.generateAccessToken("admin");
 

@@ -646,6 +646,26 @@ class DashboardFileServiceTest {
         assertTrue(Files.exists(workspaceRoot.resolve("uploads/notes.txt")));
     }
 
+    @Test
+    void shouldValidateEditablePathForInlineEdit() throws IOException {
+        writeTextFile("src/App.tsx", "export default function App() {}\n");
+
+        dashboardFileService.validateEditablePath("src/App.tsx");
+    }
+
+    @Test
+    void shouldRejectNonEditablePathForInlineEditValidation() throws IOException {
+        byte[] pngBytes = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 };
+        Path path = workspaceRoot.resolve("images/logo.png");
+        Files.createDirectories(path.getParent());
+        Files.write(path, pngBytes);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> dashboardFileService.validateEditablePath("images/logo.png"));
+
+        assertTrue(exception.getMessage().contains("not editable"));
+    }
+
     private static Stream<String> extensionOnlyTextPaths() {
         return Stream.of(
                 "src/App.java",

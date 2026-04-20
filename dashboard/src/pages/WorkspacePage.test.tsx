@@ -180,6 +180,22 @@ describe('WorkspacePage', () => {
     unmountHarness(harness);
   });
 
+  it('opens desktop terminal when mounted with ?focus=terminal on wide screens', () => {
+    const harness = mountHarness('/workspace?focus=terminal');
+    expect(useWorkspaceLayoutStore.getState().isTerminalVisible).toBe(true);
+    expect(useWorkspaceLayoutStore.getState().isCompactTerminalVisible).toBe(false);
+    expect(harness.container.querySelector('[data-testid="workspace-terminal-slot"]')).not.toBeNull();
+    unmountHarness(harness);
+  });
+
+  it('opens compact terminal when mounted with ?focus=terminal on narrow screens', () => {
+    installMatchMedia(true);
+    const harness = mountHarness('/workspace?focus=terminal');
+    expect(useWorkspaceLayoutStore.getState().isCompactTerminalVisible).toBe(true);
+    expect(useWorkspaceLayoutStore.getState().isTerminalVisible).toBe(false);
+    unmountHarness(harness);
+  });
+
   it('renders the toolbar as an ARIA toolbar landmark', () => {
     const harness = mountHarness();
     const toolbar = harness.container.querySelector('[role="toolbar"]');

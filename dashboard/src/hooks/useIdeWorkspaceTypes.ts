@@ -3,6 +3,7 @@ import type { FileContent, FileTreeNode } from '../api/files';
 import type { IdeTabState } from '../store/ideStore';
 import type { QuickOpenItem } from './useIdeQuickOpen';
 import type { TreeActionState } from './useIdeTreeActions';
+import type { IdeInlineEditSelection } from './useIdeInlineEdit';
 
 export interface EditorSettingsState {
   fontSize: number;
@@ -36,6 +37,10 @@ export interface UseIdeWorkspaceResult {
   dirtyTabsCount: number;
   dirtyPaths: Set<string>;
   canSaveActiveTab: boolean;
+  canOpenInlineEdit: boolean;
+  currentInlineEditSelection: IdeInlineEditSelection | null;
+  isInlineEditVisible: boolean;
+  isSubmittingInlineEdit: boolean;
   isCloseWithSavePending: boolean;
   isTreeActionPending: boolean;
   isFileOpening: boolean;
@@ -64,6 +69,10 @@ export interface UseIdeWorkspaceResult {
   setEditorWordWrap: (wordWrap: boolean) => void;
   refreshTree: () => void;
   saveActiveTab: () => void;
+  openInlineEdit: () => void;
+  closeInlineEdit: () => void;
+  submitInlineEdit: (instruction: string) => void;
+  handleEditorSelectionChange: (selection: IdeInlineEditSelection | null) => void;
   requestCloseActiveTab: () => void;
   requestCloseTab: (path: string) => void;
   cancelCloseCandidate: () => void;

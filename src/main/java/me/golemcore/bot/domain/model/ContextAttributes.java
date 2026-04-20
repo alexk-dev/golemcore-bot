@@ -344,6 +344,34 @@ public final class ContextAttributes {
     /** String ? web dashboard client instance id owning the current session. */
     public static final String WEB_CLIENT_INSTANCE_ID = "session.web.client.instance.id";
 
+    /**
+     * {@code List<Map<String,Object>>} - opened IDE tabs forwarded with web chat
+     * turns.
+     */
+    public static final String WEB_OPENED_TABS = "session.web.openedTabs";
+
+    /** String ? active IDE path forwarded with web chat turns. */
+    public static final String WEB_ACTIVE_PATH = "session.web.activePath";
+
+    /** String ? inline editor selection text forwarded with web chat turns. */
+    public static final String WEB_SELECTION_TEXT = "session.web.selection.text";
+
+    /**
+     * Integer ? inline editor selection start offset forwarded with web chat turns.
+     */
+    public static final String WEB_SELECTION_FROM = "session.web.selection.from";
+
+    /**
+     * Integer ? inline editor selection end offset forwarded with web chat turns.
+     */
+    public static final String WEB_SELECTION_TO = "session.web.selection.to";
+
+    /** String ? inline edit instruction requested from the web IDE. */
+    public static final String WEB_INLINE_EDIT_INSTRUCTION = "session.web.inlineEdit.instruction";
+
+    /** String ? file path targeted by the web inline edit flow. */
+    public static final String WEB_INLINE_EDIT_PATH = "session.web.inlineEdit.path";
+
     /** String ? channel type from canonical session identity. */
     public static final String SESSION_IDENTITY_CHANNEL = "session.identity.channel";
 

@@ -9,6 +9,7 @@ import { IdeEditorSearchBar } from '../components/ide/IdeEditorSearchBar';
 import { IdeEditorSettingsPanel } from '../components/ide/IdeEditorSettingsPanel';
 import { IdeFileExplorer, type IdeFileExplorerProps } from '../components/ide/IdeFileExplorer';
 import { IdeHeader } from '../components/ide/IdeHeader';
+import { IdeInlineEditModal } from '../components/ide/IdeInlineEditModal';
 import { QuickOpenModal } from '../components/ide/QuickOpenModal';
 import { TreeActionModal } from '../components/ide/TreeActionModal';
 import { UnsavedChangesModal } from '../components/ide/UnsavedChangesModal';
@@ -150,7 +151,7 @@ function IdeEditorPane({ ide, isMobileLayout, onSidebarResizeStart }: IdeEditorP
       />
 
       <section className="ide-editor-card h-full rounded-[1.25rem] border border-border/80 bg-card/95 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-        <div className="flex h-full flex-col overflow-hidden">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
           <EditorTabs
             tabs={ide.editorTabs}
             activePath={ide.activePath}
@@ -164,7 +165,7 @@ function IdeEditorPane({ ide, isMobileLayout, onSidebarResizeStart }: IdeEditorP
             column={ide.activeColumn}
             language={ide.activeLanguage}
             fileSizeBytes={ide.activeFileSize}
-            updatedAt={ide.activeUpdatedAt}
+            updatedAt={ide.activeUpdatedAt ?? ''}
           />
           <IdeEditorSearchBar
             show={ide.isEditorSearchVisible}
@@ -182,7 +183,7 @@ function IdeEditorPane({ ide, isMobileLayout, onSidebarResizeStart }: IdeEditorP
             onMinimapChange={ide.editorSettings.setMinimap}
           />
 
-          <div className="flex-grow-1 overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden">
             <EditorContentState
               isFileOpening={ide.isFileOpening}
               hasFileLoadError={ide.hasFileLoadError}
@@ -208,6 +209,7 @@ function IdeEditorPane({ ide, isMobileLayout, onSidebarResizeStart }: IdeEditorP
                     value={ide.activeTab.content}
                     onChange={ide.updateActiveTabContent}
                     onCursorChange={ide.setEditorCursor}
+                    onSelectionChange={ide.handleEditorSelectionChange}
                     showMinimap={!isMobileLayout && ide.editorSettings.minimap}
                     wordWrap={ide.editorSettings.wordWrap}
                     fontSize={ide.editorSettings.fontSize}
@@ -231,15 +233,25 @@ function IdePageModals({ ide }: IdePageModalsProps): ReactElement {
       <IdeCommandPalette
         show={ide.isCommandPaletteVisible}
         canSaveActiveTab={ide.canSaveActiveTab}
+        canOpenInlineEdit={ide.canOpenInlineEdit}
         hasActiveTab={ide.activeTab != null}
         activePath={ide.activePath}
         isDownloadingActiveFile={ide.isDownloadingActiveFile}
         onClose={ide.closeCommandPalette}
         onSaveActiveTab={ide.saveActiveTab}
+        onOpenInlineEdit={ide.openInlineEdit}
         onOpenQuickOpen={ide.openQuickOpen}
         onToggleEditorSearch={ide.toggleEditorSearch}
         onToggleSettings={ide.toggleEditorSettings}
         onDownloadActiveFile={ide.downloadActiveFile}
+      />
+
+      <IdeInlineEditModal
+        show={ide.isInlineEditVisible}
+        selectedText={ide.currentInlineEditSelection?.selectedText ?? ''}
+        isSubmitting={ide.isSubmittingInlineEdit}
+        onClose={ide.closeInlineEdit}
+        onSubmit={ide.submitInlineEdit}
       />
 
       <QuickOpenModal
@@ -308,15 +320,17 @@ export default function IdePage(): ReactElement {
   );
 
   return (
-    <div className="ide-page flex h-full flex-col">
+    <div className="ide-page flex h-full min-h-0 flex-col overflow-hidden">
       <IdeHeader
         activeFileLabel={activeFileLabel}
         isMobileLayout={isMobileLayout}
         hasDirtyTabs={ide.hasDirtyTabs}
         dirtyTabsCount={ide.dirtyTabsCount}
         canSaveActiveTab={ide.canSaveActiveTab}
+        canOpenInlineEdit={ide.canOpenInlineEdit}
         isSaving={ide.saveMutation.isPending}
         onSaveActiveTab={ide.saveActiveTab}
+        onOpenInlineEdit={ide.openInlineEdit}
         onOpenQuickOpen={ide.openQuickOpen}
         onOpenExplorer={mobileExplorer.open}
         onIncreaseSidebarWidth={ide.increaseSidebarWidth}
