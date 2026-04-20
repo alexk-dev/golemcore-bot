@@ -220,6 +220,16 @@ public class SessionRunCoordinator {
             String queueKind = resolveQueueKind(inbound);
             synchronized (lock) {
                 if (pausedAfterStop) {
+                    if (inbound.isInternalMessage()) {
+                        // Internal traffic (resilience retries, follow-through nudges, delayed
+                        // wake-ups) must not override a user-issued /stop. Drop silently and
+                        // keep the pause intact.
+                        rejectPendingCompletion(inbound, "Dropped internal inbound after stop");
+                        log.debug(
+                                "[SessionRunCoordinator] dropped internal inbound during paused-after-stop: channel={}, chatId={}",
+                                key.channelType(), key.chatId());
+                        return;
+                    }
                     resumeWithInbound(inbound);
                     return;
                 }
