@@ -40,11 +40,7 @@ class ContextBuildingSystemTacticQueryTest {
                 runtimeConfigService,
                 tacticSearchService,
                 null);
-        ContextBuildingSystem system = new ContextBuildingSystem(
-                assembler,
-                runtimeConfigService,
-                selfEvolvingRunService,
-                tacticTurnContextService);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("session-1")
@@ -115,11 +111,7 @@ class ContextBuildingSystemTacticQueryTest {
                 runtimeConfigService,
                 tacticSearchService,
                 null);
-        ContextBuildingSystem system = new ContextBuildingSystem(
-                assembler,
-                runtimeConfigService,
-                selfEvolvingRunService,
-                tacticTurnContextService);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("session-1")
@@ -177,11 +169,7 @@ class ContextBuildingSystemTacticQueryTest {
                 runtimeConfigService,
                 tacticSearchService,
                 null);
-        ContextBuildingSystem system = new ContextBuildingSystem(
-                assembler,
-                runtimeConfigService,
-                selfEvolvingRunService,
-                tacticTurnContextService);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("session-2")
@@ -238,11 +226,7 @@ class ContextBuildingSystemTacticQueryTest {
                 runtimeConfigService,
                 tacticSearchService,
                 null);
-        ContextBuildingSystem system = new ContextBuildingSystem(
-                assembler,
-                runtimeConfigService,
-                selfEvolvingRunService,
-                tacticTurnContextService);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("session-applied")
@@ -302,11 +286,7 @@ class ContextBuildingSystemTacticQueryTest {
                 runtimeConfigService,
                 tacticSearchService,
                 null);
-        ContextBuildingSystem system = new ContextBuildingSystem(
-                assembler,
-                runtimeConfigService,
-                selfEvolvingRunService,
-                tacticTurnContextService);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         Map<String, Object> advisoryMetadata = new LinkedHashMap<>();
         advisoryMetadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         advisoryMetadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,

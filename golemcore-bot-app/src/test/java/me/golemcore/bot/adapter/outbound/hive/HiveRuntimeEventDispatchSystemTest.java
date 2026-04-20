@@ -10,7 +10,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,8 +25,7 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
-import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
-import me.golemcore.bot.domain.selfevolving.tactic.TacticSearchMetricsService;
+import me.golemcore.bot.port.outbound.SelfEvolvingTacticSearchStatusPort;
 import me.golemcore.bot.domain.system.HiveRuntimeEventDispatchSystem;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.junit.jupiter.api.Test;
@@ -37,7 +35,7 @@ class HiveRuntimeEventDispatchSystemTest {
     @Test
     void shouldDispatchHiveRuntimeEventsWithTurnMetadata() {
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null, null);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("hive:thread-1")
@@ -72,7 +70,7 @@ class HiveRuntimeEventDispatchSystemTest {
     @Test
     void shouldSkipNonHiveSessions() {
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null, null);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null, null);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("web:chat-1")
@@ -92,14 +90,14 @@ class HiveRuntimeEventDispatchSystemTest {
     void shouldPublishRuntimeTacticSearchProjectionFromContextAttributes() {
         HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
         HiveSessionStateStore sessionStateStore = mock(HiveSessionStateStore.class);
-        LocalEmbeddingBootstrapService localEmbeddingBootstrapService = mock(LocalEmbeddingBootstrapService.class);
+        SelfEvolvingTacticSearchStatusPort tacticSearchStatusPort = mock(SelfEvolvingTacticSearchStatusPort.class);
         when(sessionStateStore.load())
                 .thenReturn(java.util.Optional.of(HiveSessionState.builder()
                         .serverUrl("https://hive.example")
                         .golemId("golem-1")
                         .accessToken("token")
                         .build()));
-        when(localEmbeddingBootstrapService.probeStatus()).thenReturn(TacticSearchStatus.builder()
+        when(tacticSearchStatusPort.getCurrentStatus()).thenReturn(TacticSearchStatus.builder()
                 .mode("bm25")
                 .reason("Managed Ollama exited with code 137")
                 .provider("ollama")
@@ -114,9 +112,8 @@ class HiveRuntimeEventDispatchSystemTest {
                 .build());
         HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
                 publisher,
-                null,
                 sessionStateStore,
-                localEmbeddingBootstrapService);
+                tacticSearchStatusPort);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("web:chat-1")
@@ -164,7 +161,6 @@ class HiveRuntimeEventDispatchSystemTest {
         when(sessionStateStore.load()).thenReturn(java.util.Optional.empty());
         HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
                 publisher,
-                null,
                 sessionStateStore,
                 null);
         AgentContext context = AgentContext.builder()
@@ -213,7 +209,6 @@ class HiveRuntimeEventDispatchSystemTest {
                         .build()));
         HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
                 publisher,
-                null,
                 sessionStateStore,
                 null);
         AgentContext context = AgentContext.builder()
@@ -247,7 +242,6 @@ class HiveRuntimeEventDispatchSystemTest {
                         .build()));
         HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
                 publisher,
-                null,
                 sessionStateStore,
                 null);
         AgentContext context = AgentContext.builder()
@@ -287,7 +281,6 @@ class HiveRuntimeEventDispatchSystemTest {
                 .publishSelfEvolvingTacticSearchProjection(any(String.class), any(TacticSearchStatus.class), anyList());
         HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(
                 publisher,
-                null,
                 sessionStateStore,
                 null);
         AgentContext context = AgentContext.builder()
@@ -308,25 +301,21 @@ class HiveRuntimeEventDispatchSystemTest {
     }
 
     @Test
-    void shouldBuildFallbackTacticStatusFromMetricsSnapshot() {
-        TacticSearchMetricsService metricsService = new TacticSearchMetricsService(Clock.systemUTC());
-        metricsService.recordStatus(TacticSearchStatus.builder()
+    void shouldBuildTacticStatusFromStatusPort() {
+        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
+        SelfEvolvingTacticSearchStatusPort tacticSearchStatusPort = mock(SelfEvolvingTacticSearchStatusPort.class);
+        when(tacticSearchStatusPort.getCurrentStatus()).thenReturn(TacticSearchStatus.builder()
                 .mode("hybrid")
-                .reason("degraded by metrics")
+                .reason("projected by status port")
                 .provider("ollama")
                 .model("qwen3-embedding:0.6b")
                 .degraded(true)
                 .runtimeHealthy(false)
                 .modelAvailable(false)
-                .autoInstallConfigured(true)
-                .pullOnStartConfigured(true)
-                .pullAttempted(true)
-                .pullSucceeded(false)
                 .updatedAt(Instant.parse("2026-04-06T04:00:00Z"))
                 .build());
-        HiveEventPublishPort publisher = mock(HiveEventPublishPort.class);
-        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, metricsService, null,
-                null);
+        HiveRuntimeEventDispatchSystem system = new HiveRuntimeEventDispatchSystem(publisher, null,
+                tacticSearchStatusPort);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
                         .id("web:chat-1")
@@ -346,7 +335,7 @@ class HiveRuntimeEventDispatchSystemTest {
                 argThat(query -> "recover failed shell command".equals(query)),
                 argThat(status -> status != null
                         && "hybrid".equals(status.getMode())
-                        && "degraded by metrics".equals(status.getReason())
+                        && "projected by status port".equals(status.getReason())
                         && Boolean.TRUE.equals(status.getDegraded())
                         && Instant.parse("2026-04-06T04:00:00Z").equals(status.getUpdatedAt())),
                 anyList());

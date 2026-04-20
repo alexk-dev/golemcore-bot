@@ -35,6 +35,7 @@ import java.util.Locale;
 import java.util.Objects;
 import me.golemcore.bot.domain.selfevolving.SelfEvolvingTacticSearchStatusProjectionService;
 import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
+import me.golemcore.bot.port.outbound.SelfEvolvingTacticSearchStatusPort;
 
 /**
  * Probes optional local embedding runtime state and degrades tactic search to
@@ -42,7 +43,7 @@ import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
  */
 @Service
 @Slf4j
-public class LocalEmbeddingBootstrapService {
+public class LocalEmbeddingBootstrapService implements SelfEvolvingTacticSearchStatusPort {
 
     private static final String MODE_BM25 = "bm25";
     private static final String MODE_HYBRID = "hybrid";
@@ -95,6 +96,11 @@ public class LocalEmbeddingBootstrapService {
         TacticSearchStatus status = mergeStartupBootstrapStatus(computeProjectedStatus(), bootstrapStatus);
         metricsService.recordStatus(status);
         return status;
+    }
+
+    @Override
+    public TacticSearchStatus getCurrentStatus() {
+        return probeStatus();
     }
 
     public TacticSearchStatus probeStatus() {

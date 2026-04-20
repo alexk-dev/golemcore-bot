@@ -4,7 +4,7 @@ import me.golemcore.bot.client.dto.LogsPageResponse;
 import me.golemcore.bot.client.dto.SystemHealthResponse;
 import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
-import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
+import me.golemcore.bot.port.outbound.SelfEvolvingTacticSearchStatusPort;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
@@ -43,7 +43,7 @@ public class SystemController {
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
     private final DashboardLogService dashboardLogService;
-    private final LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
+    private final SelfEvolvingTacticSearchStatusPort tacticSearchStatusPort;
 
     public SystemController(ChannelRegistry channelRegistry,
             BotProperties botProperties,
@@ -53,7 +53,7 @@ public class SystemController {
             ObjectProvider<BuildProperties> buildPropertiesProvider,
             ObjectProvider<GitProperties> gitPropertiesProvider,
             DashboardLogService dashboardLogService,
-            LocalEmbeddingBootstrapService localEmbeddingBootstrapService) {
+            SelfEvolvingTacticSearchStatusPort tacticSearchStatusPort) {
         this.channelRegistry = channelRegistry;
         this.botProperties = botProperties;
         this.runtimeConfigService = runtimeConfigService;
@@ -62,7 +62,7 @@ public class SystemController {
         this.buildPropertiesProvider = buildPropertiesProvider;
         this.gitPropertiesProvider = gitPropertiesProvider;
         this.dashboardLogService = dashboardLogService;
-        this.localEmbeddingBootstrapService = localEmbeddingBootstrapService;
+        this.tacticSearchStatusPort = tacticSearchStatusPort;
     }
 
     @GetMapping("/health")
@@ -172,11 +172,11 @@ public class SystemController {
     }
 
     private SystemHealthResponse.SelfEvolvingEmbeddingsStatus buildSelfEvolvingEmbeddingsStatus() {
-        if (localEmbeddingBootstrapService == null) {
+        if (tacticSearchStatusPort == null) {
             return null;
         }
         try {
-            TacticSearchStatus status = localEmbeddingBootstrapService.probeStatus();
+            TacticSearchStatus status = tacticSearchStatusPort.getCurrentStatus();
             return SystemHealthResponse.SelfEvolvingEmbeddingsStatus.builder()
                     .mode(status.getMode())
                     .reason(status.getReason())

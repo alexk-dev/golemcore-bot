@@ -144,7 +144,7 @@ class ContextBuildingSystemPromptTest {
                 new WebhookResponseSchemaLayer());
 
         ContextAssembler contextAssembler = new ContextAssembler(skillResolver, tierResolver, layers, promptComposer);
-        return new ContextBuildingSystem(contextAssembler, null, null, null);
+        return new ContextBuildingSystem(contextAssembler);
     }
 
     private AgentContext createContext() {

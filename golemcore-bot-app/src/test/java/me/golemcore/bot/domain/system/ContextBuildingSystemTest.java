@@ -58,7 +58,7 @@ class ContextBuildingSystemTest {
         ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
         ContextAssembler assembler = buildAssembler(skillComponent, toolLayer);
 
-        ContextBuildingSystem system = new ContextBuildingSystem(assembler, null, null, null);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
 
         AgentContext context = AgentContext.builder().build();
 
@@ -97,7 +97,7 @@ class ContextBuildingSystemTest {
         ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
         ContextAssembler assembler = buildAssembler(skillComponent, toolLayer);
 
-        ContextBuildingSystem system = new ContextBuildingSystem(assembler, null, null, null);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
 
         AgentContext webContext = AgentContext.builder()
                 .session(AgentSession.builder()
@@ -149,7 +149,7 @@ class ContextBuildingSystemTest {
         ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
         ContextAssembler assembler = buildAssembler(skillComponent, toolLayer);
 
-        ContextBuildingSystem system = new ContextBuildingSystem(assembler, null, null, null);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
 
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
@@ -185,7 +185,7 @@ class ContextBuildingSystemTest {
         ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
         ContextAssembler assembler = buildAssembler(skillComponent, toolLayer);
 
-        ContextBuildingSystem system = new ContextBuildingSystem(assembler, null, null, null);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
 
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder()
@@ -207,11 +207,7 @@ class ContextBuildingSystemTest {
         ContextAssembler assembler = mock(ContextAssembler.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
-        ContextBuildingSystem system = new ContextBuildingSystem(
-                assembler,
-                runtimeConfigService,
-                selfEvolvingRunService,
-                null);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().id("session-1").chatId("chat-1").build())
                 .build();
@@ -235,11 +231,7 @@ class ContextBuildingSystemTest {
         ContextAssembler assembler = mock(ContextAssembler.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
-        ContextBuildingSystem system = new ContextBuildingSystem(
-                assembler,
-                runtimeConfigService,
-                selfEvolvingRunService,
-                null);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().id("session-2").chatId("chat-2").build())
                 .build();
@@ -257,11 +249,7 @@ class ContextBuildingSystemTest {
         ContextAssembler assembler = mock(ContextAssembler.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
-        ContextBuildingSystem system = new ContextBuildingSystem(
-                assembler,
-                runtimeConfigService,
-                selfEvolvingRunService,
-                null);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         AgentContext context = AgentContext.builder().build();
         when(assembler.assemble(context)).thenReturn(context);
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
@@ -275,7 +263,7 @@ class ContextBuildingSystemTest {
     @Test
     void shouldAssembleContextWhenSelfEvolvingDependenciesAreMissing() {
         ContextAssembler assembler = mock(ContextAssembler.class);
-        ContextBuildingSystem system = new ContextBuildingSystem(assembler, null, null, null);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().id("session-4").chatId("chat-4").build())
                 .build();
@@ -291,7 +279,7 @@ class ContextBuildingSystemTest {
     void shouldSkipSelfEvolvingRunWhenRunServiceIsMissing() {
         ContextAssembler assembler = mock(ContextAssembler.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
-        ContextBuildingSystem system = new ContextBuildingSystem(assembler, runtimeConfigService, null, null);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().id("session-5").chatId("chat-5").build())
                 .build();
@@ -308,11 +296,7 @@ class ContextBuildingSystemTest {
         ContextAssembler assembler = mock(ContextAssembler.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
-        ContextBuildingSystem system = new ContextBuildingSystem(
-                assembler,
-                runtimeConfigService,
-                selfEvolvingRunService,
-                null);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().id("session-6").chatId("chat-6").build())
                 .build();
@@ -330,11 +314,7 @@ class ContextBuildingSystemTest {
         ContextAssembler assembler = mock(ContextAssembler.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         SelfEvolvingRunService selfEvolvingRunService = mock(SelfEvolvingRunService.class);
-        ContextBuildingSystem system = new ContextBuildingSystem(
-                assembler,
-                runtimeConfigService,
-                selfEvolvingRunService,
-                null);
+        ContextBuildingSystem system = new ContextBuildingSystem(assembler);
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().id("session-3").chatId("chat-3").build())
                 .build();
